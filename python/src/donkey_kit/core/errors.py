@@ -350,23 +350,36 @@ def classify(
 
 def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     """The ``(correlation_id, call_id)`` the client sent, read back from the
-    response's own request headers under the DEFAULT header names (§2.3, #195).
+    response's own request headers under the names the transport actually used
+    (§2.3, #195, #363).
+
+    The transport stamps the resolved header names onto ``request.extensions``
+    at injection time (``donkey_correlation_header`` / ``donkey_call_id_header``),
+    so a per-``Donkey`` header-name override (``DonkeyConfig.correlation_header``
+    / ``.call_id_header``, docs §3) is honoured here without ``core/errors``
+    importing ``DonkeyConfig`` — it only reads a plain dict carried on the same
+    object ``response.request`` returns. When the stamp is absent (a response not
+    produced by our transport — e.g. a hand-built stock-client response), the
+    placeholder names are used directly, **not** ``Unverified.get()``, so reading
+    an id back never emits the §0.3 unverified warning; that warning belongs at
+    injection time, in the transport.
 
     Returns ``(None, None)`` when the request is unavailable (httpx raises if it
-    was never set on the response). Uses the placeholder header names directly —
-    not ``Unverified.get()`` — so reading an id back never emits the §0.3
-    unverified warning; that warning belongs at injection time, in the transport.
-    A per-Donkey header-name override is not visible here, which is why
-    :func:`classify` lets the caller pass the ids explicitly to override this."""
+    was never set on the response)."""
     try:
         request = response.request
     except RuntimeError:
         return None, None
     headers = request.headers
-    return (
-        headers.get(_verify.CORRELATION_ID_HEADER.placeholder),
-        headers.get(_verify.CALL_ID_HEADER.placeholder),
+    corr_name = (
+        request.extensions.get("donkey_correlation_header")
+        or _verify.CORRELATION_ID_HEADER.placeholder
     )
+    call_name = (
+        request.extensions.get("donkey_call_id_header")
+        or _verify.CALL_ID_HEADER.placeholder
+    )
+    return headers.get(corr_name), headers.get(call_name)
 
 
 def _retry_after(response: httpx.Response) -> float | None:
