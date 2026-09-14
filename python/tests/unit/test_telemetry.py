@@ -309,3 +309,120 @@ def test_start_genai_span_is_detached_and_ends_only_when_told(
     assert attrs["gen_ai.request.model"] == "gpt-4o"
     assert attrs["gen_ai.usage.input_tokens"] == 11
     assert attrs["gen_ai.usage.output_tokens"] == 3
+
+
+# --- Content redaction boundary (#306, BG §1.6) -----------------------------
+# Message content (prompt/completion) is emitted ONLY behind an explicit
+# telemetry_capture_content opt-in, because spans are exported upstream of the
+# gateway's PII masking. Two enforcement points: the generic span() allowlist
+# (nothing content-shaped reaches a span by accident) and GenAiSpan.record's
+# gate (content dropped unless the span was opened with capture_content=True).
+
+
+def test_content_attribute_keys_are_the_pinned_literals() -> None:
+    # Transcribed at the pinned semconv version, like the other gen_ai.* keys.
+    assert telemetry.GEN_AI_PROMPT == "gen_ai.prompt"
+    assert telemetry.GEN_AI_COMPLETION == "gen_ai.completion"
+
+
+def test_content_attributes_are_gated_and_never_allowlisted() -> None:
+    # The two content keys are the members of _CONTENT_ATTRIBUTES (the opt-in
+    # set) and are deliberately absent from the generic-span allowlist, so no
+    # call site can leak them through span().
+    assert telemetry._CONTENT_ATTRIBUTES == frozenset(
+        {telemetry.GEN_AI_PROMPT, telemetry.GEN_AI_COMPLETION}
+    )
+    assert not (telemetry._CONTENT_ATTRIBUTES & telemetry._ALLOWED_SPAN_ATTRIBUTES)
+
+
+def test_build_genai_attributes_maps_prompt_and_completion_to_pinned_keys() -> None:
+    # The builder maps content to the pinned keys; the opt-in gate lives in
+    # GenAiSpan.record (its only caller), tested below.
+    attrs = telemetry.build_genai_attributes(prompt="who is alice?", completion="alice is …")
+    assert attrs[telemetry.GEN_AI_PROMPT] == "who is alice?"
+    assert attrs[telemetry.GEN_AI_COMPLETION] == "alice is …"
+
+
+def test_genai_span_drops_content_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracer, exporter = _in_memory_tracer()
+    monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
+
+    # Default: capture_content is False. Content handed to record() is dropped;
+    # the non-content metadata still lands.
+    with telemetry.genai_span(enabled=True) as gspan:
+        gspan.record(
+            request_model="gpt-4o",
+            prompt="my SSN is 000-00-0000",
+            completion="I stored 000-00-0000",
+        )
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.request.model"] == "gpt-4o"
+    assert "gen_ai.prompt" not in attrs
+    assert "gen_ai.completion" not in attrs
+
+
+def test_genai_span_emits_content_only_when_opted_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracer, exporter = _in_memory_tracer()
+    monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
+
+    with telemetry.genai_span(enabled=True, capture_content=True) as gspan:
+        gspan.record(
+            request_model="gpt-4o",
+            prompt="who is alice?",
+            completion="alice is a user",
+        )
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    # Emitted under the pinned semconv attribute names, and only those.
+    assert attrs["gen_ai.prompt"] == "who is alice?"
+    assert attrs["gen_ai.completion"] == "alice is a user"
+    assert attrs["gen_ai.request.model"] == "gpt-4o"
+
+
+def test_start_genai_span_honours_the_content_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The streaming path (detached span) gates content the same way.
+    tracer, exporter = _in_memory_tracer()
+    monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
+
+    off = telemetry.start_genai_span(enabled=True)
+    off.record(prompt="secret", completion="secret")
+    off.end()
+    on = telemetry.start_genai_span(enabled=True, capture_content=True)
+    on.record(prompt="visible", completion="visible")
+    on.end()
+
+    off_span, on_span = exporter.get_finished_spans()
+    assert "gen_ai.prompt" not in dict(off_span.attributes)
+    assert dict(on_span.attributes)["gen_ai.prompt"] == "visible"
+
+
+def test_generic_span_allowlist_drops_content_and_unknown_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracer, exporter = _in_memory_tracer()
+    monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
+
+    # A rogue content attribute AND an unrecognised key handed to the generic
+    # span() are both dropped by the allowlist; an allowlisted key survives.
+    # run_context scopes the correlation binding so it resets on exit (span()
+    # calls ensure_correlation_id(), which would otherwise pin an ambient ID).
+    with telemetry.run_context("run-allowlist"), telemetry.span(
+        telemetry.SPAN_TOOL_CALL,
+        enabled=True,
+        **{
+            telemetry.GEN_AI_PROMPT: "leak me",
+            "some.unknown.key": "also dropped",
+            telemetry.GEN_AI_REQUEST_MODEL: "gpt-4o",
+        },
+    ):
+        pass
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert "gen_ai.prompt" not in attrs
+    assert "some.unknown.key" not in attrs
+    assert attrs["gen_ai.request.model"] == "gpt-4o"
+    assert "donkey.correlation_id" in attrs  # always attached

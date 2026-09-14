@@ -2355,6 +2355,36 @@ lets the sink be your choice. It does not promise your spans appear in Agent
 Visualizer, because that has not been confirmed — see
 [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
 
+### Message content stays off spans by default
+
+Spans carry **metadata only** — model, token counts, policy decision, cost tags,
+correlation id. They do **not** carry prompt or completion text. This is a
+deliberate boundary, not an omission:
+
+  **Spans are emitted upstream of the gateway's PII masking.** The Omni Gateway
+  masks sensitive content in *its* logs; a Donkey span is created inside your
+  process, before the request reaches the gateway. Putting message text on the
+  span would re-export the very content the platform masks — straight to
+  whatever OTLP collector you have wired up. So capturing content is **opt-in,
+  and opting in is you assuming that obligation.**
+
+Turn it on only when your collector is a trusted sink and you have accepted
+responsibility for the content that lands there:
+
+```python
+# kwarg, or DONKEY_TELEMETRY_CAPTURE_CONTENT=true, or
+# telemetry_capture_content = true in .donkey-kit.toml
+donkey = Donkey.from_env(telemetry_capture_content=True)
+```
+
+`telemetry_capture_content` resolves along the standard precedence
+(kwarg → env → `.donkey-kit.toml` → default) and **defaults to `False`**. When
+enabled, content is emitted under the pinned semconv attribute names —
+`gen_ai.prompt` and `gen_ai.completion` — and no others. When off (the default),
+those attributes never reach a span, and the allowlist that builds every span
+drops any content-shaped attribute a call site hands it, so there is no accidental
+path for message text to leak.
+
 ## Correlation IDs
 
   **Shipped in Phase 1** (#195) — unlike the cost-attribution tags below, which
@@ -3822,6 +3852,15 @@ entry — not something a transitive dependency bump does behind your back.
   independent of any `gen_ai.*` version bump. Build dashboards and alerts on them
   with the same confidence you'd give a documented field.
 
+Note what is **not** in that table: prompt and completion **text**. The span
+carries metadata only. Message content (`gen_ai.prompt` / `gen_ai.completion`)
+is emitted **only** when you set `telemetry_capture_content=true`, because spans
+are created upstream of the gateway's PII masking — defaulting it on would
+re-export the content the platform just masked. The emitter is allowlist-driven,
+so a content-shaped attribute handed in from any call site is dropped unless that
+opt-in is set. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) for the obligation you take on
+by enabling it.
+
 ### `gen_ai.system` is never guessed
 
 The proxy routes to several providers (OpenAI, Azure OpenAI, Gemini, Bedrock,
@@ -3986,6 +4025,19 @@ placeholders — point them at your real names with `DONKEY_COST_TEAM_HEADER`,
 `DONKEY_COST_ENDUSER_HEADER` (or the matching `cost_*_header` config keys). The
 `donkey.cost.*` span attributes carry the full value regardless
 ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
+
+## Telemetry
+
+| Env var | `Donkey.from_env` kwarg | Meaning |
+|---|---|---|
+| `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
+| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
+
+`telemetry_capture_content` defaults to `false` on purpose: spans are emitted
+inside your process, **upstream of the gateway's PII masking**, so capturing
+content re-exports the very text the platform masks. Opting in is you assuming
+that obligation — enable it only for a trusted collector. See
+[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
 
 ## Anypoint control plane (used by later phases)
 
