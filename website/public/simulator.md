@@ -33,9 +33,10 @@ curl -s http://localhost:8080/responses \
 ```
 
 The selectable shapes are `token-rate-limit`, `pii-detected`,
-`injection-protection`, `content-moderation`, `model-not-found`, `upstream-5xx`,
-and `client-id-missing` — the six documented rejections plus the consumer-auth
-`401`. Any other `model` value gets the happy path. The `donkey-sim/` prefix is
+`injection-protection`, `regex-prompt-guard`, `content-safety`,
+`content-moderation`, `model-not-found`, `upstream-5xx`, and `client-id-missing`
+— the eight documented rejections plus the consumer-auth `401`. Any other
+`model` value gets the happy path. The `donkey-sim/` prefix is
 a simulator-only control surface; the real gateway never interprets it.
 
 ## Why this is the one feature `base_url` cannot give you

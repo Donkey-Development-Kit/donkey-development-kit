@@ -141,7 +141,19 @@ class PromptInjectionBlocked(PolicyViolation):
 
 
 class ContentSafetyBlocked(PolicyViolation):
+    """A provider-backed content-moderation policy (Azure Content Safety or
+    Amazon Bedrock Guardrails) blocked the request or response.
+
+    ``categories`` carries the flagged reasons the gateway reports in its
+    ``x-llm-proxy-<vendor>-...-reason`` header (e.g. ``severity_hate``,
+    ``blocklist``, ``denied_topic``) — the moderation analog of
+    :attr:`PIIDetected.entities`. Empty when the gateway reported no reason."""
+
     policy = "content-safety"
+
+    def __init__(self, message: str, *, categories: list[str] | None = None, **kw: Any) -> None:
+        super().__init__(message, **kw)
+        self.categories = categories or []
 
 
 class PIIDetected(PolicyViolation):
@@ -235,9 +247,22 @@ def classify(
     * **Injection protection** rejects with the ``x-injection-protection:
       blocked`` header (the header, not the status, is the discriminator; #181)
       → :class:`PromptInjectionBlocked`.
+    * **Regex Prompt Guard** rejects with **403** and a *flat-string* ``error``
+      plus a top-level ``matched_patterns`` list → :class:`PromptInjectionBlocked`
+      (``policy="regex-prompt-guard"``). Keyed on ``matched_patterns`` and checked
+      BEFORE the 401/403→auth rule so a deny-list block is not mis-typed as auth.
+    * **Content safety / guardrails** (Azure Content Safety, Amazon Bedrock
+      Guardrails) reject with **403** and a vendor header
+      ``x-llm-proxy-<vendor>-...-action: reject`` → :class:`ContentSafetyBlocked`
+      (flagged reasons parsed from the sibling ``...-reason`` header). Also
+      checked before the auth rule.
 
-    Content moderation / federated guardrails are still under-documented and
-    fall through to a generic :class:`PolicyViolation` whose message says so.
+    These two shapes are **documented, not yet live-captured** (same posture as
+    #181's header-based injection typing; docs §4). Exact strings are pinned from
+    the policy pages; no ``_verify.py`` row flips to ``verified=True`` until a
+    live sandbox round-trip confirms them (#253). Any other content-moderation /
+    federated-guardrail shape still falls through to a generic
+    :class:`PolicyViolation` whose message says so.
     """
 
     request_id = response.headers.get("x-request-id")
@@ -255,8 +280,13 @@ def classify(
     # A nested ``{"error": {...}}`` object is emitted by BOTH the upstream
     # provider AND some gateway LLM policies (e.g. PII). The ``type`` field —
     # not the status code or the mere presence of a nested object — is the
-    # authoritative discriminator (docs §4).
-    error_obj = _provider_error_object(response)
+    # authoritative discriminator (docs §4). ``body`` is the top-level JSON
+    # object (used also to spot the Regex-Prompt-Guard ``matched_patterns`` key);
+    # ``error_obj`` is its nested ``error`` object iff it is itself an object.
+    body = _json_body(response)
+    error_obj = body.get("error") if body is not None else None
+    if not isinstance(error_obj, dict):
+        error_obj = None
     error_type = _str_or_none(error_obj.get("type")) if error_obj is not None else None
 
     # Gateway PII policy: 403 + nested object, type == "pii_detected". Checked
@@ -271,6 +301,45 @@ def classify(
                 "(or completion) contained personally identifiable information. "
                 "Remove or redact the flagged values, or relax the policy's entity "
                 "list / action in API Manager."
+            ),
+            **kw,
+        )
+
+    # Content-safety / guardrails policy: 403 + a vendor `...-action: reject`
+    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs §4).
+    # Documented, pending live capture (#253). Checked before the 401/403 → auth
+    # rule because a moderation block is not an auth failure. Keyed on the
+    # header, not the body, so the body-less Bedrock reject is caught too.
+    cs = _content_safety_reject(response)
+    if cs is not None:
+        vendor, categories = cs
+        cats = f" ({', '.join(categories)})" if categories else ""
+        return ContentSafetyBlocked(
+            f"Request blocked by {vendor}{cats} ({status}).",
+            categories=categories,
+            remediation=(
+                f"The {vendor} content-moderation policy blocked this request. "
+                "Revise the flagged content, or adjust the policy's categories / "
+                "severity thresholds in API Manager."
+            ),
+            **kw,
+        )
+
+    # Regex Prompt Guard policy: 403 + a top-level `matched_patterns` list
+    # (flat-string `error`, so NOT the nested upstream envelope; docs §4).
+    # Documented, pending live capture (#253). Checked before the 401/403 → auth
+    # rule so a deny-list block is not mis-typed as an auth failure.
+    matched = body.get("matched_patterns") if body is not None else None
+    if isinstance(matched, list):
+        pats = ", ".join(str(p) for p in matched)
+        return PromptInjectionBlocked(
+            f"Request blocked by the regex prompt-guard policy ({status})"
+            + (f": matched {pats}." if pats else "."),
+            policy="regex-prompt-guard",
+            remediation=(
+                "The Regex Prompt Guard policy matched a denied pattern in the "
+                "prompt. Remove or rephrase the flagged content, or adjust the "
+                "policy's deny-list patterns in API Manager."
             ),
             **kw,
         )
@@ -394,24 +463,57 @@ _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
 def _pii_entities(message: str | None) -> list[str]:
     """Best-effort extraction of the flagged PII entity types from the PII
     policy's rejection message (a JSON-ish list of ``{"pii_type": "...", ...}``
-    objects; docs §4). Returns an empty list if none can be parsed."""
+    objects; docs §4). Returns an empty list if none can be parsed.
+
+    Deliberately best-effort (#289): the LLM PII Detection policy documents only
+    the ``{"error":{"message","type":"pii_detected"}}`` envelope, not a structured
+    entity field — the ``pii_type`` markers are observed in the live-captured
+    message string, so ``PIIDetected.entities`` is populated from the message and
+    is ``[]`` when the message carries no such markers, never invented. Reconcile
+    against a documented entity field if one lands (#253)."""
     if not message:
         return []
     return _PII_TYPE_RE.findall(message)
 
 
-def _provider_error_object(response: httpx.Response) -> dict[str, Any] | None:
-    """Return the provider's error object iff the body is the upstream-passthrough
-    envelope ``{"error": {..object..}}``. An Anypoint policy rejection uses a flat
-    ``{"error": "<string>"}`` and returns ``None`` (see docs §4)."""
+def _json_body(response: httpx.Response) -> dict[str, Any] | None:
+    """The response's top-level JSON object, or ``None`` when the body is absent,
+    not JSON, or not an object. Never raises on the caller's request path (§0.3)."""
     try:
         body = response.json()
     except (ValueError, UnicodeDecodeError):
         return None
-    if isinstance(body, dict):
-        err = body.get("error")
-        if isinstance(err, dict):
-            return err
+    return body if isinstance(body, dict) else None
+
+
+# Content-safety / guardrails policies report their verdict in a pair of vendor
+# headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
+# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs §4). Pinned from the
+# Azure Content Safety and Amazon Bedrock Guardrails policy pages; documented,
+# pending live capture (#253).
+_CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
+    (
+        "x-llm-proxy-azure-content-safety-action",
+        "x-llm-proxy-azure-content-safety-reason",
+        "Azure Content Safety",
+    ),
+    (
+        "x-llm-proxy-bedrock-guardrail-action",
+        "x-llm-proxy-bedrock-guardrail-reason",
+        "Amazon Bedrock Guardrails",
+    ),
+)
+
+
+def _content_safety_reject(response: httpx.Response) -> tuple[str, list[str]] | None:
+    """``(vendor, categories)`` when a content-safety policy header reports
+    ``action: reject``, else ``None``. Categories are the comma-separated flagged
+    reasons from the sibling ``...-reason`` header (empty list if absent)."""
+    for action_h, reason_h, vendor in _CONTENT_SAFETY_VENDORS:
+        if response.headers.get(action_h) == "reject":
+            reason = response.headers.get(reason_h, "")
+            categories = [c.strip() for c in reason.split(",") if c.strip()]
+            return vendor, categories
     return None
 
 

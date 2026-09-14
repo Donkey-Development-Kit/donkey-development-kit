@@ -43,11 +43,12 @@ refusal is never mistaken for a real gateway response in a log or trace.
 
 The selectable refusals are the ones `classify()` produces from a captured
 fixture: `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
-`UpstreamRequestError`, `UpstreamModelError`, `AuthError`, and the generic
-`PolicyViolation` (the still-under-documented content-moderation shape,
-[#253](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/253)).
-Asking for a refusal with no captured fixture — e.g. `ContentSafetyBlocked` —
-is a clear `ValueError`, never a silent miss.
+`ContentSafetyBlocked`, `UpstreamRequestError`, `UpstreamModelError`, `AuthError`,
+and the generic `PolicyViolation` (the still-under-documented content-moderation
+shape, [#253](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/253)).
+Asking for a refusal with no captured fixture — e.g. a client-side
+`ConfigError`, which no gateway response produces — is a clear `ValueError`,
+never a silent miss.
 
 <Callout type="info">
   `simulate()` injects the fixture **verbatim**. Shaping the body — specific

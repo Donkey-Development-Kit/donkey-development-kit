@@ -23,6 +23,7 @@ from donkey_kit import Donkey
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import (
     AuthError,
+    ConfigError,
     ContentSafetyBlocked,
     PIIDetected,
     PolicyViolation,
@@ -60,6 +61,7 @@ _ROUND_TRIP = [
     (TokenBudgetExceeded, "token-rate-limit"),
     (PIIDetected, "pii-detected"),
     (PromptInjectionBlocked, "injection-protection"),
+    (ContentSafetyBlocked, "content-safety"),
     (UpstreamRequestError, "model-not-found"),
     (UpstreamModelError, "upstream-5xx"),
     (AuthError, "client-id-missing"),
@@ -185,12 +187,13 @@ async def test_sync_client_built_inside_block_is_not_retro_swapped() -> None:
 
 
 async def test_unmapped_donkey_error_raises_value_error() -> None:
-    # ContentSafetyBlocked is deliberately unmapped (classify() never produces it
-    # from the captured shapes); asking for it is a clear error, not a silent miss.
+    # ConfigError is a DonkeyError that classify() never produces from a gateway
+    # response (it is a client-side config failure), so no captured fixture maps
+    # back to it; asking to inject it is a clear error, not a silent miss.
     donkey = _donkey()
     async with donkey:
-        with pytest.raises(ValueError, match="ContentSafetyBlocked"):
-            with donkey.simulate(ContentSafetyBlocked):
+        with pytest.raises(ValueError, match="ConfigError"):
+            with donkey.simulate(ConfigError):
                 pass
 
 

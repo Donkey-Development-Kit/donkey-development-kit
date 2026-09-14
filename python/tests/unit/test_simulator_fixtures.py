@@ -22,6 +22,8 @@ _CONTRACT_STATUS = {
     "token-rate-limit": 429,
     "pii-detected": 403,
     "injection-protection": 400,
+    "regex-prompt-guard": 403,
+    "content-safety": 403,
     "content-moderation": 400,
     "model-not-found": 400,
     "upstream-5xx": 503,
