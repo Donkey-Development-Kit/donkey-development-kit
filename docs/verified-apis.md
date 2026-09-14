@@ -14,8 +14,9 @@
 > (§2) and the token-rate-limit (`429`, empty body, header-only budget) + PII
 > (`403`, `type:pii_detected`) rejection contracts (§4) are now also
 > `VERIFIED (LIVE)` — both policies were applied to `openai-sdk` for capture and
-> removed. Still `UNVERIFIED`: prompt-injection / content-safety rejection
-> bodies (§4) and the **framework constructor/binding names** (§§8–10). §11
+> removed. Still `UNVERIFIED`: prompt-injection / regex-prompt-guard /
+> content-safety rejection bodies (§4, typed from the policy pages, pending live
+> capture #253) and the **framework constructor/binding names** (§§8–10). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
 > code path was wired to them.
@@ -182,19 +183,34 @@ headers.
    `x-token-reset` (**milliseconds** to reset). There is **NO** `retry-after`.
 
 `core/errors.classify()` implements this (tests: `test_llm_proxy_contract.py`,
-`test_rejection_contract.py`): error `type == "pii_detected"` → `PIIDetected`
-(checked *before* the 401/403→auth rule; parses `entities` from the message);
-header `x-injection-protection: blocked` → `PromptInjectionBlocked` (the header,
-not the status, is the discriminator, so a bare `400` is unaffected); `429` →
-`TokenBudgetExceeded` with `retry_after` derived from `x-token-reset` (ms→s);
-non-auth 4xx with a nested `error` object → `UpstreamRequestError` (carries
-provider `code`/`type`/`param`); `5xx` → `UpstreamModelError`; otherwise
-`PolicyViolation`. The full six-shape taxonomy is indexed in
-`tests/fixtures/rejections/README.md`. The **injection body** and
-**content-moderation / federated-guardrail** shapes remain uncaptured (the
-latter falls through to a generic `PolicyViolation`) — re-confirming both against
-current docs and a sandbox is tracked in #253 (§0.3: no invented docs URL or
-version is recorded for them).
+`test_rejection_contract.py`, `test_errors.py`): error `type == "pii_detected"` →
+`PIIDetected` (checked *before* the 401/403→auth rule; parses `entities` from the
+message); a top-level `matched_patterns` list → `PromptInjectionBlocked`
+(`policy="regex-prompt-guard"`); a vendor `x-llm-proxy-<vendor>-…-action: reject`
+header (Azure Content Safety / Amazon Bedrock Guardrails) → `ContentSafetyBlocked`
+(parses `categories` from the sibling `…-reason` header) — both of these also
+checked *before* the 401/403→auth rule so a `403` moderation block is not
+mis-typed as auth; header `x-injection-protection: blocked` →
+`PromptInjectionBlocked` (the header, not the status, is the discriminator, so a
+bare `400` is unaffected); `429` → `TokenBudgetExceeded` with `retry_after`
+derived from `x-token-reset` (ms→s); non-auth 4xx with a nested `error` object →
+`UpstreamRequestError` (carries provider `code`/`type`/`param`); `5xx` →
+`UpstreamModelError`; otherwise `PolicyViolation`. The full eight-shape taxonomy
+is indexed in `tests/fixtures/rejections/README.md`.
+
+Two of those shapes are **DOCUMENTED, pending live capture (#253)** — typed from
+the policy pages, not from a live sandbox round-trip, so **no `_verify.py` row
+flips to `verified=True`** for them:
+
+| Shape | HTTP | Discriminator | Maps to | Source |
+|---|---|---|---|---|
+| Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | DOCUMENTED, pending live capture (#253) |
+| Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | DOCUMENTED, pending live capture (#253) |
+
+The **injection body** and any **other content-moderation / federated-guardrail**
+shape remain uncaptured (the latter falls through to a generic `PolicyViolation`)
+— re-confirming all of these against current docs and a sandbox is tracked in #253
+(§0.3: no invented docs URL or version is recorded for them).
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two

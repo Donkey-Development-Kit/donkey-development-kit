@@ -205,6 +205,10 @@ def _apply_base_headers(
     ``donkey.run(...)`` per-run overrides are applied on top here (read from the
     contextvar per send), so a run-scope dimension wins for its block (#196)."""
     request.headers[correlation_header] = correlation_id
+    # Stamp the resolved name so read-back (errors._sent_ids) honours a
+    # header-name override without core/errors importing DonkeyConfig (#363).
+    # Idempotent across retries — same name each send.
+    request.extensions["donkey_correlation_header"] = correlation_header
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
     run = current_cost_tags()
@@ -225,6 +229,9 @@ def _apply_call_id_header(request: httpx.Request, call_id_header: str) -> None:
     request even when the send fails at the transport layer before any response,
     so an error built from ``response.request`` can always read it back."""
     request.headers[call_id_header] = new_call_id()
+    # Stamp the resolved name (once, beside the header) so read-back honours a
+    # header-name override — the read-back counterpart of the header write (#363).
+    request.extensions["donkey_call_id_header"] = call_id_header
 
 
 def _retry_delay(attempt: int, response: httpx.Response) -> float:
@@ -614,7 +621,9 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # (started here, ended by the stream wrapper in ``_finish``); a buffered
         # call keeps the auto-closing context manager (#192).
         if enabled and bool(kwargs.get("stream")):
-            gspan = start_genai_span(enabled=True)
+            gspan = start_genai_span(
+                enabled=True, capture_content=self._cfg.telemetry_capture_content
+            )
             try:
                 gspan.record(request_model=model)
                 return await self._send_with_retries(request, gspan, kwargs, streaming=True)
@@ -629,7 +638,9 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # even when ``super().send()`` raises before a response exists — a
         # transport error escapes ``_finish``, so the lifecycle cannot rely on it
         # (see ``_finish``'s note, #179/#192).
-        with genai_span(enabled=enabled) as gspan:
+        with genai_span(
+            enabled=enabled, capture_content=self._cfg.telemetry_capture_content
+        ) as gspan:
             gspan.record(request_model=model)
             return await self._send_with_retries(request, gspan, kwargs, streaming=False)
 
@@ -803,7 +814,9 @@ class DonkeyClient(httpx.Client):
         if enabled and bool(kwargs.get("stream")):
             # Streaming: a detached span the stream wrapper ends (see
             # DonkeyAsyncClient.send, #193).
-            gspan = start_genai_span(enabled=True)
+            gspan = start_genai_span(
+                enabled=True, capture_content=self._cfg.telemetry_capture_content
+            )
             try:
                 gspan.record(request_model=model)
                 return self._send_with_retries(request, gspan, kwargs, streaming=True)
@@ -811,7 +824,9 @@ class DonkeyClient(httpx.Client):
                 gspan.set_error()
                 gspan.end()
                 raise
-        with genai_span(enabled=enabled) as gspan:
+        with genai_span(
+            enabled=enabled, capture_content=self._cfg.telemetry_capture_content
+        ) as gspan:
             gspan.record(request_model=model)
             return self._send_with_retries(request, gspan, kwargs, streaming=False)
 

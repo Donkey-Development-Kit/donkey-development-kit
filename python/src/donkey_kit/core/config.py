@@ -79,6 +79,12 @@ class DonkeyConfig:
     max_retries: int = 3
     registry_cache_ttl_s: int = 300
     telemetry: bool = True
+    # Emit message content (prompts, completions, tool arguments/results) on OTel
+    # spans. Default FALSE: the gateway masks PII in ITS logs, but spans are
+    # emitted upstream of the gateway, so defaulting this on would re-export the
+    # very content the platform just masked to whatever OTLP collector is wired
+    # up (#306, BG §1.6). Opting in is the developer assuming that obligation.
+    telemetry_capture_content: bool = False
 
     # ----------------------------------------------------------------- factory
     @classmethod
@@ -139,6 +145,9 @@ class DonkeyConfig:
                 pick("DONKEY_REGISTRY_CACHE_TTL_S", "registry_cache_ttl_s", 300)
             ),
             telemetry=_as_bool(pick("DONKEY_TELEMETRY", "telemetry", True)),
+            telemetry_capture_content=_as_bool(
+                pick("DONKEY_TELEMETRY_CAPTURE_CONTENT", "telemetry_capture_content", False)
+            ),
         )
 
     # --------------------------------------------------------------- derived

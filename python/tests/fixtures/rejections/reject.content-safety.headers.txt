@@ -1,0 +1,5 @@
+HTTP/1.1 403 Forbidden
+content-type: application/json
+x-llm-proxy-azure-content-safety-action: reject
+x-llm-proxy-azure-content-safety-phase: request
+x-llm-proxy-azure-content-safety-reason: severity_hate,blocklist

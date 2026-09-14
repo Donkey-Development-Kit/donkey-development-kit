@@ -23,6 +23,7 @@ import httpx  # noqa: E402
 from donkey_kit import Budget  # noqa: E402
 from donkey_kit.core.errors import (  # noqa: E402
     AuthError,
+    ContentSafetyBlocked,
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
@@ -147,12 +148,17 @@ async def test_framework_generated_405_is_still_honesty_stamped() -> None:
     assert resp.headers[SIMULATOR_HEADER] == "true"
 
 
-# The six documented rejection shapes plus the consumer-auth 401, each fed to
+# The eight documented rejection shapes plus the consumer-auth 401, each fed to
 # classify() exactly as a stock client would receive it from the simulator.
+# regex-prompt-guard classifies to PromptInjectionBlocked (its captured 403 carries
+# matched_patterns), content-safety to ContentSafetyBlocked (its provider action
+# header reads reject) — the two shapes #289 adds.
 _CLASSIFY = [
     ("token-rate-limit", TokenBudgetExceeded),
     ("pii-detected", PIIDetected),
     ("injection-protection", PromptInjectionBlocked),
+    ("regex-prompt-guard", PromptInjectionBlocked),
+    ("content-safety", ContentSafetyBlocked),
     ("model-not-found", UpstreamRequestError),
     ("upstream-5xx", UpstreamModelError),
     ("client-id-missing", AuthError),

@@ -26,6 +26,7 @@ import httpx
 
 from ..core.errors import (
     AuthError,
+    ContentSafetyBlocked,
     DonkeyError,
     PIIDetected,
     PolicyViolation,
@@ -45,13 +46,16 @@ from .fixtures import Fixture, load, replay_headers
 # shapes), so ``PolicyViolation`` selects the generic content-moderation shape
 # while its subclasses select their specific captures.
 #
-# ``ContentSafetyBlocked`` is intentionally absent: classify() never produces it
-# from a captured shape (content-moderation falls through to the generic
-# PolicyViolation, #253), so there is no honest fixture to inject for it.
+# ``PromptInjectionBlocked`` maps to the injection-protection shape; the
+# Regex-Prompt-Guard shape (#289) also classifies to it but is not the injected
+# representative. ``ContentSafetyBlocked`` maps to the documented content-safety
+# shape (#289); an *undiscriminated* moderation 4xx still falls through to the
+# generic ``PolicyViolation`` (the "content-moderation" shape).
 _EXC_TO_SHAPE: dict[type[DonkeyError], str] = {
     TokenBudgetExceeded: "token-rate-limit",
     PIIDetected: "pii-detected",
     PromptInjectionBlocked: "injection-protection",
+    ContentSafetyBlocked: "content-safety",
     UpstreamRequestError: "model-not-found",
     UpstreamModelError: "upstream-5xx",
     AuthError: "client-id-missing",
