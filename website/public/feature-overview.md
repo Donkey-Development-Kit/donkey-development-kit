@@ -83,14 +83,17 @@ fetched token — but it does mean the control-plane surfaces (`registry`,
 
 ## A typed governed error taxonomy
 
-`classify()` maps the proxy's six rejection shapes to typed exceptions —
+`classify()` maps the proxy's eight rejection shapes to typed exceptions —
 `PIIDetected` (403), `TokenBudgetExceeded` (429), `PromptInjectionBlocked`
-(`x-injection-protection`), a generic `PolicyViolation` fall-through for
-content-moderation, `UpstreamRequestError` (4xx) and `UpstreamModelError` (5xx),
-plus `AuthError` (401) for the separate consumer-auth case — so you branch on
-governance outcomes instead of parsing bodies. Four are live-verified; the
-injection and content-moderation bodies are pending sandbox capture (#253). See
-[Error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+(`x-injection-protection` **or** the regex prompt-guard's `matched_patterns`),
+`ContentSafetyBlocked` (Azure Content Safety / Bedrock Guardrails vendor reject
+header; parses `categories`), a generic `PolicyViolation` fall-through for
+undiscriminated content-moderation, `UpstreamRequestError` (4xx) and
+`UpstreamModelError` (5xx), plus `AuthError` (401) for the separate consumer-auth
+case — so you branch on governance outcomes instead of parsing bodies. Four are
+live-verified; the injection, regex-prompt-guard, content-safety and
+content-moderation bodies are pinned from the policy pages, pending sandbox
+capture (#253). See [Error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
 
 Those exception types are the client-side mirror of the policies the gateway
 enforces. The **LLM** lane below is the one this SDK targets today; the same

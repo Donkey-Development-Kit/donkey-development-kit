@@ -118,10 +118,11 @@ class _Spec:
 
 
 # The full shape table. Keys are the canonical shape names the simulator and the
-# tests share. The six policy-rejection rows classify() is tested against, plus
+# tests share. The eight policy-rejection rows classify() is tested against, plus
 # the consumer-auth 401, the happy path, the SSE stream, and the /models 404.
 SHAPES: dict[str, _Spec] = {
-    # --- the six documented rejection shapes (#181) ---
+    # --- the documented rejection shapes (#181, +#289 regex-prompt-guard /
+    #     content-safety) ---
     "token-rate-limit": _Spec(
         "anypoint/llm_proxy", "reject.token-rate-limit.headers.txt", None, 429
     ),
@@ -133,6 +134,18 @@ SHAPES: dict[str, _Spec] = {
     ),
     "injection-protection": _Spec(
         "rejections", "reject.injection-protection.headers.txt", None, 400
+    ),
+    "regex-prompt-guard": _Spec(
+        "rejections",
+        "reject.regex-prompt-guard.headers.txt",
+        "reject.regex-prompt-guard.body.json",
+        403,
+    ),
+    "content-safety": _Spec(
+        "rejections",
+        "reject.content-safety.headers.txt",
+        "reject.content-safety.body.json",
+        403,
     ),
     "content-moderation": _Spec(
         "rejections", "reject.content-moderation.headers.txt", None, 400
@@ -147,7 +160,7 @@ SHAPES: dict[str, _Spec] = {
         "application/json",
     ),
     "upstream-5xx": _Spec("rejections", "reject.upstream-5xx.headers.txt", None, 503),
-    # --- consumer-auth 401 (NOT one of the six; classify() → AuthError) ---
+    # --- consumer-auth 401 (NOT one of the eight; classify() → AuthError) ---
     "client-id-missing": _Spec(
         "anypoint/llm_proxy",
         "reject.client-id-missing.headers.txt",
