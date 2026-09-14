@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import warnings
 
 import httpx
 import pytest
@@ -14,6 +15,7 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
+from donkey_kit.core.errors import PIIDetected, classify
 from donkey_kit.core.telemetry import current_correlation_id, run_context, run_scope
 from donkey_kit.core.transport import (
     CALL_ID_HEADER,
@@ -263,6 +265,103 @@ async def test_config_overrides_correlation_and_call_id_header_names() -> None:
     # The default placeholder names are NOT also sent when overridden.
     assert CORRELATION_HEADER.lower() not in seen
     assert CALL_ID_HEADER.lower() not in seen
+
+
+# A minimal PII refusal body — classify() maps 403 + type "pii_detected" (and no
+# www-authenticate) to PIIDetected; every branch sets correlation_id/call_id from
+# the request, so this is enough to exercise the #363 read-back.
+_PII_REFUSAL = {"error": {"type": "pii_detected", "message": "PII detected."}}
+
+
+async def test_overridden_header_names_survive_classify_round_trip() -> None:
+    """#363: with the header names overridden, the ids the transport SENT are the
+    ids ``classify()`` reads back — not ``None`` because ``_sent_ids`` looked up
+    the default placeholder names. The transport stamps the resolved names on
+    ``request.extensions``; read-back honours them without importing config.
+
+    This is the round-trip companion the existing override test above never made:
+    it asserted only that the configured names are *sent*."""
+    captured: dict[str, httpx.Request] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["req"] = request
+        return httpx.Response(200)
+
+    cfg = DonkeyConfig(correlation_header="X-Trace-Id", call_id_header="X-Req-Seq")
+    async with _client(handler, cfg) as client:
+        with run_context("run-42"):
+            await client.get("https://x")
+
+    request = captured["req"]
+    # A refusal carrying that same request, exactly as ``response.request`` would.
+    err = classify(httpx.Response(403, json=_PII_REFUSAL, request=request))
+    assert isinstance(err, PIIDetected)
+    assert err.correlation_id == "run-42"  # was None before #363
+    assert err.call_id == request.headers["x-req-seq"]  # the id actually on the wire
+
+
+async def test_default_header_names_survive_classify_round_trip() -> None:
+    """#363 AC3: the no-override default path is unchanged — the stamped name is
+    the placeholder name, so read-back still matches."""
+    captured: dict[str, httpx.Request] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["req"] = request
+        return httpx.Response(200)
+
+    async with _client(handler) as client:  # no override
+        with run_context("run-def"):
+            await client.get("https://x")
+
+    request = captured["req"]
+    err = classify(httpx.Response(403, json=_PII_REFUSAL, request=request))
+    assert err.correlation_id == "run-def"
+    assert err.call_id == request.headers[CALL_ID_HEADER.lower()]
+
+
+async def test_classify_round_trip_emits_no_unverified_warning() -> None:
+    """#363 AC4 / §0.3: read-back must never emit an ``UnverifiedValueWarning`` —
+    that warning belongs at injection time. The extensions fallback touches
+    ``.placeholder``, never ``Unverified.get()``. Covers both the stamped path
+    and a response with no stamp at all (a hand-built stock-client response)."""
+    captured: dict[str, httpx.Request] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["req"] = request
+        return httpx.Response(200)
+
+    async with _client(handler) as client:
+        with run_context("run-w"):
+            await client.get("https://x")
+
+    request = captured["req"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        # Stamped path.
+        classify(httpx.Response(403, json=_PII_REFUSAL, request=request))
+        # No-stamp path: a bare request the SDK's transport never touched.
+        bare = httpx.Request("POST", "https://x")
+        classify(httpx.Response(403, json=_PII_REFUSAL, request=bare))
+
+
+def test_sync_overridden_header_names_survive_classify_round_trip() -> None:
+    """#363 cross-surface lockstep: the sync ``DonkeyClient`` shares the same
+    header-apply helpers, so the same read-back round trip holds."""
+    captured: dict[str, httpx.Request] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["req"] = request
+        return httpx.Response(200)
+
+    cfg = DonkeyConfig(correlation_header="X-Trace-Id", call_id_header="X-Req-Seq")
+    with _sync_client(handler, cfg) as client:
+        with run_context("run-sync"):
+            client.get("https://x")
+
+    request = captured["req"]
+    err = classify(httpx.Response(403, json=_PII_REFUSAL, request=request))
+    assert err.correlation_id == "run-sync"
+    assert err.call_id == request.headers["x-req-seq"]
 
 
 async def test_concurrent_runs_do_not_leak_correlation_ids() -> None:
