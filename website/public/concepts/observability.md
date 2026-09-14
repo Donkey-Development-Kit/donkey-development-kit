@@ -52,6 +52,15 @@ entry — not something a transitive dependency bump does behind your back.
   independent of any `gen_ai.*` version bump. Build dashboards and alerts on them
   with the same confidence you'd give a documented field.
 
+Note what is **not** in that table: prompt and completion **text**. The span
+carries metadata only. Message content (`gen_ai.prompt` / `gen_ai.completion`)
+is emitted **only** when you set `telemetry_capture_content=true`, because spans
+are created upstream of the gateway's PII masking — defaulting it on would
+re-export the content the platform just masked. The emitter is allowlist-driven,
+so a content-shaped attribute handed in from any call site is dropped unless that
+opt-in is set. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) for the obligation you take on
+by enabling it.
+
 ### `gen_ai.system` is never guessed
 
 The proxy routes to several providers (OpenAI, Azure OpenAI, Gemini, Bedrock,

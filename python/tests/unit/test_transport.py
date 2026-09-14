@@ -1371,3 +1371,84 @@ async def test_run_scope_cost_override_reflected_in_span(monkeypatch) -> None:
     attrs = dict(span.attributes)
     assert attrs["donkey.cost.team"] == "triage"  # run override
     assert attrs["donkey.cost.project"] == "triage-v2"  # run-added dimension
+
+
+# --- Content redaction boundary threaded from config (#306, BG §1.6) --------
+# Every governed call — the raw client (donkey.llm.client()) and every adapter —
+# opens its span through this one transport, so a single default-config model
+# call proves the boundary for BOTH routes: no message content on the span. The
+# transport also forwards config.telemetry_capture_content to the span factory,
+# where the opt-in gate lives (tested in test_telemetry).
+
+
+async def test_default_model_call_emits_no_content_on_the_span(monkeypatch) -> None:
+    # Default config: capture_content is False. A model call's span carries
+    # metadata but never prompt/completion — the raw-client and adapter routes
+    # both flow through here, so this covers both.
+    exporter = _use_tracer(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={_PROVIDER_HEADER: "openai"}, json=_SUCCESS_BODY)
+
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.post(
+            "https://proxy/chat",
+            json={"model": "gpt-4o", "input": "my SSN is 000-00-0000"},
+        )
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.request.model"] == "gpt-4o"  # metadata still recorded
+    assert "gen_ai.prompt" not in attrs
+    assert "gen_ai.completion" not in attrs
+
+
+def _spy_capture_content(monkeypatch) -> list[bool]:
+    """Spy on the transport's span factories, capturing the ``capture_content``
+    flag each buffered/streaming call is given. Yields inert handles so send()
+    still completes. Returns the list the flags are appended to."""
+    import contextlib
+
+    seen: list[bool] = []
+
+    @contextlib.contextmanager
+    def fake_genai_span(*, enabled, capture_content=False):
+        if enabled:
+            seen.append(capture_content)
+        yield telemetry.GenAiSpan(None)
+
+    def fake_start_genai_span(*, enabled, capture_content=False):
+        if enabled:
+            seen.append(capture_content)
+        return telemetry.GenAiSpan(None)
+
+    monkeypatch.setattr("donkey_kit.core.transport.genai_span", fake_genai_span)
+    monkeypatch.setattr("donkey_kit.core.transport.start_genai_span", fake_start_genai_span)
+    return seen
+
+
+@pytest.mark.parametrize("capture", [False, True])
+async def test_async_send_forwards_capture_content_flag(monkeypatch, capture: bool) -> None:
+    seen = _spy_capture_content(monkeypatch)
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", telemetry_capture_content=capture)
+    client = DonkeyAsyncClient(
+        cfg, None, transport=httpx.MockTransport(lambda r: httpx.Response(200))
+    )
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "gpt-4o"})  # buffered
+        await client.post("https://proxy/chat", json={"model": "gpt-4o", "stream": True})
+    assert seen == [capture, capture]  # buffered + streaming both forward the flag
+
+
+@pytest.mark.parametrize("capture", [False, True])
+def test_sync_send_forwards_capture_content_flag(monkeypatch, capture: bool) -> None:
+    seen = _spy_capture_content(monkeypatch)
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", telemetry_capture_content=capture)
+    client = DonkeyClient(
+        cfg, transport=httpx.MockTransport(lambda r: httpx.Response(200))
+    )
+    with client:
+        client.post("https://proxy/chat", json={"model": "gpt-4o"})  # buffered
+        client.post("https://proxy/chat", json={"model": "gpt-4o", "stream": True})
+    assert seen == [capture, capture]

@@ -621,7 +621,9 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # (started here, ended by the stream wrapper in ``_finish``); a buffered
         # call keeps the auto-closing context manager (#192).
         if enabled and bool(kwargs.get("stream")):
-            gspan = start_genai_span(enabled=True)
+            gspan = start_genai_span(
+                enabled=True, capture_content=self._cfg.telemetry_capture_content
+            )
             try:
                 gspan.record(request_model=model)
                 return await self._send_with_retries(request, gspan, kwargs, streaming=True)
@@ -636,7 +638,9 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # even when ``super().send()`` raises before a response exists — a
         # transport error escapes ``_finish``, so the lifecycle cannot rely on it
         # (see ``_finish``'s note, #179/#192).
-        with genai_span(enabled=enabled) as gspan:
+        with genai_span(
+            enabled=enabled, capture_content=self._cfg.telemetry_capture_content
+        ) as gspan:
             gspan.record(request_model=model)
             return await self._send_with_retries(request, gspan, kwargs, streaming=False)
 
@@ -810,7 +814,9 @@ class DonkeyClient(httpx.Client):
         if enabled and bool(kwargs.get("stream")):
             # Streaming: a detached span the stream wrapper ends (see
             # DonkeyAsyncClient.send, #193).
-            gspan = start_genai_span(enabled=True)
+            gspan = start_genai_span(
+                enabled=True, capture_content=self._cfg.telemetry_capture_content
+            )
             try:
                 gspan.record(request_model=model)
                 return self._send_with_retries(request, gspan, kwargs, streaming=True)
@@ -818,7 +824,9 @@ class DonkeyClient(httpx.Client):
                 gspan.set_error()
                 gspan.end()
                 raise
-        with genai_span(enabled=enabled) as gspan:
+        with genai_span(
+            enabled=enabled, capture_content=self._cfg.telemetry_capture_content
+        ) as gspan:
             gspan.record(request_model=model)
             return self._send_with_retries(request, gspan, kwargs, streaming=False)
 

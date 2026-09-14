@@ -60,6 +60,30 @@ def test_unknown_region_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         DonkeyConfig.from_env()
 
 
+# --- telemetry_capture_content resolution (#306, BG §1.6) -------------------
+# Safe by default: content is emitted on spans only when the developer opts in,
+# through the normal kwarg → env → toml → default precedence.
+
+
+def test_capture_content_defaults_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    assert DonkeyConfig().telemetry_capture_content is False  # dataclass default
+    assert DonkeyConfig.from_env().telemetry_capture_content is False  # resolved default
+
+
+def test_capture_content_from_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_TELEMETRY_CAPTURE_CONTENT", "true")
+    assert DonkeyConfig.from_env().telemetry_capture_content is True
+
+
+def test_capture_content_env_overrides_toml(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch, "telemetry_capture_content = false\n")
+    assert DonkeyConfig.from_env().telemetry_capture_content is False  # toml layer
+    monkeypatch.setenv("DONKEY_TELEMETRY_CAPTURE_CONTENT", "true")
+    assert DonkeyConfig.from_env().telemetry_capture_content is True  # env wins
+
+
 # --- cost-attribution tag resolution (§3, BG §1.7, #196) --------------------
 
 
