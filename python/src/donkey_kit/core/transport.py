@@ -46,7 +46,13 @@ from .budget import Budget
 from .config import DonkeyConfig
 from .cost import CostTags
 from .errors import classify
-from .lastcall import observe_last_call
+from .lastcall import (
+    observe_last_call,
+    observe_usage,
+    parse_usage,
+    usage_from_response,
+    usage_mapping,
+)
 from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
@@ -281,39 +287,6 @@ def _request_model(request: httpx.Request) -> str | None:
     return None
 
 
-def _first_int(mapping: dict[str, object], *keys: str) -> int | None:
-    """The first key present as an ``int`` (``bool`` excluded — it subclasses int)."""
-    for key in keys:
-        value = mapping.get(key)
-        if isinstance(value, int) and not isinstance(value, bool):
-            return value
-    return None
-
-
-def _usage_tokens(response: httpx.Response) -> tuple[int | None, int | None]:
-    """``(input, output)`` token counts from a buffered 2xx JSON body, else
-    ``(None, None)``. Handles the Responses API (``input_tokens`` /
-    ``output_tokens``) and Chat Completions (``prompt_tokens`` /
-    ``completion_tokens``). SSE bodies and non-2xx refusals carry no usage here."""
-    if response.status_code // 100 != 2:
-        return None, None
-    if _STREAM_CONTENT_TYPE in response.headers.get("content-type", ""):
-        return None, None
-    try:
-        body = response.json()
-    except Exception:  # noqa: BLE001 — unread/streaming/invalid body: no usage
-        return None, None
-    if not isinstance(body, dict):
-        return None, None
-    usage = body.get("usage")
-    if not isinstance(usage, dict):
-        return None, None
-    return (
-        _first_int(usage, "input_tokens", "prompt_tokens"),
-        _first_int(usage, "output_tokens", "completion_tokens"),
-    )
-
-
 def _span_decision(response: httpx.Response) -> tuple[str | None, str | None]:
     """``(donkey.policy.decision, donkey.policy.type)`` for the final response:
     ``allow`` on 2xx; ``refuse`` + a policy-type slug when :func:`classify` maps
@@ -349,11 +322,14 @@ def _record_response(
     the run id is the cross-call join key (§2.3, #195)."""
     try:
         decision, policy_type = _span_decision(response)
-        input_tokens, output_tokens = _usage_tokens(response)
+        usage = usage_from_response(response)
         gspan.record(
             system=response.headers.get(_PROVIDER_HEADER),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=usage["input_tokens"],
+            output_tokens=usage["output_tokens"],
+            cached_tokens=usage["cached_tokens"],
+            cache_write_tokens=usage["cache_write_tokens"],
+            reasoning_tokens=usage["reasoning_tokens"],
             decision=decision,
             policy_type=policy_type,
             budget_remaining=budget.remaining if budget is not None else None,
@@ -391,41 +367,23 @@ def _is_streaming_success(response: httpx.Response) -> bool:
     return _STREAM_CONTENT_TYPE in response.headers.get("content-type", "")
 
 
-def _extract_usage_tokens(obj: object) -> tuple[int | None, int | None] | None:
-    """``(input, output)`` from a parsed SSE ``data:`` object that carries a
-    ``usage`` block, else ``None``. Handles Chat Completions (top-level ``usage``
-    with ``prompt_tokens``/``completion_tokens``) and the Responses API (``usage``
-    nested under ``response`` with ``input_tokens``/``output_tokens``)."""
-    if not isinstance(obj, dict):
-        return None
-    usage = obj.get("usage")
-    if not isinstance(usage, dict):
-        nested = obj.get("response")
-        usage = nested.get("usage") if isinstance(nested, dict) else None
-    if not isinstance(usage, dict):
-        return None
-    return (
-        _first_int(usage, "input_tokens", "prompt_tokens"),
-        _first_int(usage, "output_tokens", "completion_tokens"),
-    )
-
-
 class _SseUsageScanner:
     """Incrementally scans an SSE byte stream for the terminal ``usage`` event,
-    keeping the latest observed token counts (#193).
+    keeping the latest observed token counts (#193, #307).
 
     Line-buffered, so it reconstructs ``data:`` lines across arbitrary chunk
     boundaries, and it only parses JSON for lines that mention ``usage`` — a
     cheap substring test skips the vast majority of delta events, so memory and
     CPU stay bounded no matter how long the completion is (buffering the whole
-    body would defeat the point of streaming)."""
+    body would defeat the point of streaming). ``counts`` holds the six usage
+    fields (:func:`parse_usage`); a scanned value fills its field, so a later
+    partial event never nulls a count already seen."""
 
-    __slots__ = ("_buf", "input_tokens", "output_tokens")
+    __slots__ = ("_buf", "counts")
 
     def __init__(self) -> None:
         self._buf: bytes = b""
-        self.input_tokens: int | None = None
-        self.output_tokens: int | None = None
+        self.counts: dict[str, int | None] = parse_usage(None)
 
     def feed(self, chunk: bytes) -> None:
         self._buf += chunk
@@ -450,14 +408,12 @@ class _SseUsageScanner:
             obj = json.loads(payload)
         except (ValueError, UnicodeDecodeError):
             return
-        tokens = _extract_usage_tokens(obj)
-        if tokens is None:
+        usage = usage_mapping(obj)
+        if usage is None:
             return
-        input_tokens, output_tokens = tokens
-        if input_tokens is not None:
-            self.input_tokens = input_tokens
-        if output_tokens is not None:
-            self.output_tokens = output_tokens
+        for field, value in parse_usage(usage).items():
+            if value is not None:
+                self.counts[field] = value
 
 
 class _SpanClosingStream:
@@ -476,10 +432,19 @@ class _SpanClosingStream:
         self._finalized = True
         try:
             self._scanner.close()
+            counts = self._scanner.counts
             self._gspan.record(
-                input_tokens=self._scanner.input_tokens,
-                output_tokens=self._scanner.output_tokens,
+                input_tokens=counts["input_tokens"],
+                output_tokens=counts["output_tokens"],
+                cached_tokens=counts["cached_tokens"],
+                cache_write_tokens=counts["cache_write_tokens"],
+                reasoning_tokens=counts["reasoning_tokens"],
             )
+            # The record set in _on_response had no usage (the body was unread on
+            # a stream); merge the terminal event's counts into it now (#307). The
+            # stream is consumed in the same context that set the record, so this
+            # updates the caller's own donkey.last_call.
+            observe_usage(counts)
         except Exception:  # noqa: BLE001 — telemetry must never break teardown
             pass
         self._gspan.end()
