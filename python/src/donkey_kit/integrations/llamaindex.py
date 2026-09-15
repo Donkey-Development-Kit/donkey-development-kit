@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
 class LlamaIndexAdapter(Adapter):
     extra = "llamaindex"
+    # We hand OpenAILike only default_headers, never our httpx client, so no
+    # response reaches donkey.last_call (#362) — the SDK does not own the transport.
+    observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAILike(model=…, **kwargs)`` you build

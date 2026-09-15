@@ -59,8 +59,30 @@ GEN_AI_SEMCONV_VERSION = "1.30.0"
 # gen_ai.* — pinned to GEN_AI_SEMCONV_VERSION.
 GEN_AI_SYSTEM = "gen_ai.system"
 GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
+# The model the gateway ACTUALLY served (``x-llm-proxy-llm-model``). Distinct
+# from ``gen_ai.request.model``: after a routing fallback the two differ, and the
+# semconv's ``gen_ai.response.model`` is exactly "the model that generated the
+# response" (#309). When latency spikes, seeing request≠response model on the
+# span is the single fastest read that a failover happened.
+GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
 GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+# Cached-input and reasoning-output token counts (#307). The GenAI semconv at
+# GEN_AI_SEMCONV_VERSION pins ONLY ``gen_ai.usage.input_tokens`` /
+# ``output_tokens`` — it defines no stable key for cached or reasoning tokens — so
+# per AC #4 ("under the pinned semconv names where they exist") these ride the
+# stable ``donkey.*`` namespace instead of an invented ``gen_ai.*`` key. Promote a
+# row to ``gen_ai.*`` only when a semconv version that pins it is adopted here.
+
+# gen_ai.* CONTENT attributes — the message text itself, pinned like the rest.
+# These are the ONLY attributes gated behind ``telemetry_capture_content`` (#306):
+# the semconv defines them as opt-in, and emitting them by default would
+# re-export prompts/completions upstream of the gateway's PII masking. They are
+# deliberately kept OUT of :data:`_ALLOWED_SPAN_ATTRIBUTES` so the generic
+# :func:`span` can never carry them, and are dropped by :meth:`GenAiSpan.record`
+# unless the caller opted in.
+GEN_AI_PROMPT = "gen_ai.prompt"
+GEN_AI_COMPLETION = "gen_ai.completion"
 
 # donkey.* — stable public API (renaming a value here is a breaking change).
 DONKEY_CORRELATION_ID = "donkey.correlation_id"
@@ -75,10 +97,59 @@ DONKEY_COST_TEAM = "donkey.cost.team"
 DONKEY_COST_PROJECT = "donkey.cost.project"
 DONKEY_COST_ENV = "donkey.cost.env"
 DONKEY_COST_ENDUSER = "donkey.cost.enduser.id"
+# Gateway routing & resilience (§3, #309). The served provider already lands on
+# ``gen_ai.system`` and the served model on ``gen_ai.response.model``; these two
+# carry the gateway-specific routing facts the semconv has no key for. Emitted
+# even when ``fallback`` is ``False`` — "we routed normally" is a signal an
+# operator wants on every span, not just the failover ones.
+DONKEY_ROUTING_TYPE = "donkey.routing.type"
+DONKEY_ROUTING_FALLBACK = "donkey.routing.fallback"
+# Per-call usage token counts the semconv has no pinned key for (#307). Stable
+# public API, same as the other donkey.* keys — renaming one is a breaking change.
+DONKEY_USAGE_CACHED_TOKENS = "donkey.usage.cached_tokens"
+DONKEY_USAGE_CACHE_WRITE_TOKENS = "donkey.usage.cache_write_tokens"
+DONKEY_USAGE_REASONING_TOKENS = "donkey.usage.reasoning_tokens"
 
 # donkey.policy.decision values.
 POLICY_DECISION_ALLOW = "allow"
 POLICY_DECISION_REFUSE = "refuse"
+
+# --- Content redaction boundary (#306, BG §1.6) -----------------------------
+# The attributes that carry message TEXT. Emitting any of these requires an
+# explicit ``telemetry_capture_content=True`` opt-in — see :data:`GEN_AI_PROMPT`.
+# Adding a new content-bearing attribute (e.g. tool-call arguments/results, when
+# that span grows one) means adding it HERE, so the single switch keeps covering
+# it and it stays out of the allowlist below.
+_CONTENT_ATTRIBUTES = frozenset({GEN_AI_PROMPT, GEN_AI_COMPLETION})
+
+# The allowlist for the generic :func:`span` emitter: every non-content span
+# attribute the SDK is permitted to set. The mechanism is an allowlist, not a
+# denylist, so a content attribute (or any future key) cannot reach a span by
+# accident from any call site — only a key added here is ever emitted, and
+# content keys are deliberately excluded. Kept in sync by construction: it is
+# the union of the metadata constants, with :data:`_CONTENT_ATTRIBUTES` removed.
+_ALLOWED_SPAN_ATTRIBUTES = frozenset(
+    {
+        GEN_AI_SYSTEM,
+        GEN_AI_REQUEST_MODEL,
+        GEN_AI_RESPONSE_MODEL,
+        GEN_AI_USAGE_INPUT_TOKENS,
+        GEN_AI_USAGE_OUTPUT_TOKENS,
+        DONKEY_USAGE_CACHED_TOKENS,
+        DONKEY_USAGE_CACHE_WRITE_TOKENS,
+        DONKEY_USAGE_REASONING_TOKENS,
+        DONKEY_CORRELATION_ID,
+        DONKEY_POLICY_DECISION,
+        DONKEY_POLICY_TYPE,
+        DONKEY_BUDGET_REMAINING,
+        DONKEY_COST_TEAM,
+        DONKEY_COST_PROJECT,
+        DONKEY_COST_ENV,
+        DONKEY_COST_ENDUSER,
+        DONKEY_ROUTING_TYPE,
+        DONKEY_ROUTING_FALLBACK,
+    }
+)
 
 
 def new_correlation_id() -> str:
@@ -233,6 +304,12 @@ def span(name: str, *, enabled: bool, **attributes: Any) -> Iterator[None]:
     Always attaches the correlation ID. A no-op (and never an error) when
     telemetry is off or OTel is not installed — telemetry must never be a hard
     dependency of the library.
+
+    Only attributes in :data:`_ALLOWED_SPAN_ATTRIBUTES` are set: the emitter is
+    allowlist-driven, so a content attribute (or any unrecognised key) handed in
+    from any call site is dropped rather than exported (#306). Message content
+    has no path through this function at all — it is carried only by the GenAI
+    span, and only under an explicit opt-in (see :meth:`GenAiSpan.record`).
     """
 
     if not enabled:
@@ -245,7 +322,7 @@ def span(name: str, *, enabled: bool, **attributes: Any) -> Iterator[None]:
     with tracer.start_as_current_span(name) as sp:  # pragma: no cover - needs otel
         sp.set_attribute(DONKEY_CORRELATION_ID, ensure_correlation_id())
         for key, value in attributes.items():
-            if value is not None:
+            if value is not None and key in _ALLOWED_SPAN_ATTRIBUTES:
                 sp.set_attribute(key, value)
         yield
 
@@ -276,8 +353,14 @@ def build_genai_attributes(
     *,
     system: str | None = None,
     request_model: str | None = None,
+    response_model: str | None = None,
+    routing_type: str | None = None,
+    fallback: bool | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
+    cached_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
     decision: str | None = None,
     policy_type: str | None = None,
     budget_remaining: int | None = None,
@@ -286,6 +369,8 @@ def build_genai_attributes(
     cost_env: str | None = None,
     cost_enduser_id: str | None = None,
     correlation_id: str | None = None,
+    prompt: str | None = None,
+    completion: str | None = None,
 ) -> dict[str, Any]:
     """Assemble the dual-namespace GenAI span attributes, omitting any field left
     ``None``.
@@ -295,16 +380,35 @@ def build_genai_attributes(
     an unobserved value: it is dropped, never emitted as a null or a placeholder,
     so a caller can record what it knows as it learns it (request model first,
     response fields once the response settles).
+
+    ``prompt`` / ``completion`` are message CONTENT: this function will place
+    them under the pinned :data:`GEN_AI_PROMPT` / :data:`GEN_AI_COMPLETION` keys,
+    but the opt-in gate lives in :meth:`GenAiSpan.record` — the only caller —
+    which drops these keys unless ``telemetry_capture_content`` was set (#306).
     """
     attrs: dict[str, Any] = {}
     if system is not None:
         attrs[GEN_AI_SYSTEM] = system
     if request_model is not None:
         attrs[GEN_AI_REQUEST_MODEL] = request_model
+    if response_model is not None:
+        attrs[GEN_AI_RESPONSE_MODEL] = response_model
+    if routing_type is not None:
+        attrs[DONKEY_ROUTING_TYPE] = routing_type
+    # ``fallback`` is emitted even when ``False`` — "no fallback" is a real,
+    # useful observation; only an absent header (``None``) is dropped (#309).
+    if fallback is not None:
+        attrs[DONKEY_ROUTING_FALLBACK] = fallback
     if input_tokens is not None:
         attrs[GEN_AI_USAGE_INPUT_TOKENS] = input_tokens
     if output_tokens is not None:
         attrs[GEN_AI_USAGE_OUTPUT_TOKENS] = output_tokens
+    if cached_tokens is not None:
+        attrs[DONKEY_USAGE_CACHED_TOKENS] = cached_tokens
+    if cache_write_tokens is not None:
+        attrs[DONKEY_USAGE_CACHE_WRITE_TOKENS] = cache_write_tokens
+    if reasoning_tokens is not None:
+        attrs[DONKEY_USAGE_REASONING_TOKENS] = reasoning_tokens
     if decision is not None:
         attrs[DONKEY_POLICY_DECISION] = decision
     if policy_type is not None:
@@ -321,6 +425,10 @@ def build_genai_attributes(
         attrs[DONKEY_COST_ENDUSER] = cost_enduser_id
     if correlation_id is not None:
         attrs[DONKEY_CORRELATION_ID] = correlation_id
+    if prompt is not None:
+        attrs[GEN_AI_PROMPT] = prompt
+    if completion is not None:
+        attrs[GEN_AI_COMPLETION] = completion
     return attrs
 
 
@@ -331,22 +439,35 @@ class GenAiSpan:
     sets each resulting attribute on the span. When there is no live span
     (telemetry off, or OpenTelemetry not installed) it wraps ``None`` and every
     call is a no-op — telemetry must never be a hard dependency or an error path.
+
+    ``capture_content`` is the per-span copy of ``telemetry_capture_content``
+    (#306): when ``False`` (the default), :meth:`record` drops every
+    content-bearing attribute (:data:`_CONTENT_ATTRIBUTES`) before it touches the
+    span, so prompts/completions never reach the exporter regardless of what a
+    call site passes.
     """
 
-    __slots__ = ("_span",)
+    __slots__ = ("_span", "_capture_content")
 
-    def __init__(self, span: Any | None) -> None:
+    def __init__(self, span: Any | None, *, capture_content: bool = False) -> None:
         self._span = span
+        self._capture_content = capture_content
 
     def record(self, **fields: Any) -> None:
         """Set the (non-``None``) attributes named by ``fields`` on the span.
 
         Idempotent-friendly: call it repeatedly as values become known; each key
         is set to its latest observed value and unobserved fields are skipped.
+
+        Message-content attributes (prompt/completion) are dropped here unless
+        this span was opened with ``capture_content=True`` — the redaction
+        boundary (#306), enforced regardless of the caller.
         """
         if self._span is None:
             return
         for key, value in build_genai_attributes(**fields).items():
+            if key in _CONTENT_ATTRIBUTES and not self._capture_content:
+                continue
             self._span.set_attribute(key, value)
 
     def set_error(self) -> None:
@@ -371,13 +492,17 @@ class GenAiSpan:
 
 
 @contextlib.contextmanager
-def genai_span(*, enabled: bool) -> Iterator[GenAiSpan]:
+def genai_span(*, enabled: bool, capture_content: bool = False) -> Iterator[GenAiSpan]:
     """The GenAI chat span (:data:`SPAN_LLM_CHAT`) for one governed model call.
 
     Yields a :class:`GenAiSpan` the caller records onto. Both the pinned
     ``gen_ai.*`` attributes and the stable ``donkey.*`` attributes go on this one
     span (AC #5). A no-op (yielding an inert handle, never raising) when
     telemetry is off or OpenTelemetry is not installed.
+
+    ``capture_content`` carries ``telemetry_capture_content`` down to the yielded
+    handle (#306); when ``False`` (default) the handle drops prompt/completion
+    content before it reaches the span.
 
     The span is opened as a context manager so it closes on the way out even when
     the wrapped call raises before a response exists — a transport error escapes
@@ -392,10 +517,10 @@ def genai_span(*, enabled: bool) -> Iterator[GenAiSpan]:
         yield GenAiSpan(None)
         return
     with tracer.start_as_current_span(SPAN_LLM_CHAT) as sp:
-        yield GenAiSpan(sp)
+        yield GenAiSpan(sp, capture_content=capture_content)
 
 
-def start_genai_span(*, enabled: bool) -> GenAiSpan:
+def start_genai_span(*, enabled: bool, capture_content: bool = False) -> GenAiSpan:
     """A DETACHED :data:`SPAN_LLM_CHAT` span the caller must :meth:`GenAiSpan.end`.
 
     Unlike :func:`genai_span` (a context manager that ends the span on block
@@ -409,10 +534,14 @@ def start_genai_span(*, enabled: bool) -> GenAiSpan:
     The span is deliberately NOT made the current context: a streamed response is
     consumed long after ``send()`` returns, so there is no live scope to nest
     under. It records attributes and closes correctly, which is the whole of the
-    span contract #193 requires."""
+    span contract #193 requires.
+
+    ``capture_content`` carries ``telemetry_capture_content`` to the returned
+    handle (#306); when ``False`` (default) the handle drops prompt/completion
+    content before it reaches the span."""
     if not enabled:
         return GenAiSpan(None)
     tracer = _tracer()
     if tracer is None:
         return GenAiSpan(None)
-    return GenAiSpan(tracer.start_span(SPAN_LLM_CHAT))
+    return GenAiSpan(tracer.start_span(SPAN_LLM_CHAT), capture_content=capture_content)

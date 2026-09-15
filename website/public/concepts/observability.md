@@ -43,6 +43,9 @@ entry — not something a transitive dependency bump does behind your back.
 | `gen_ai.request.model` | `gen_ai.*` (pinned) | The `model` field of the request body. |
 | `gen_ai.usage.input_tokens` | `gen_ai.*` (pinned) | The `usage` block of a buffered response, or the terminal `usage` event of a stream (`input_tokens`, falling back to `prompt_tokens`). |
 | `gen_ai.usage.output_tokens` | `gen_ai.*` (pinned) | The `usage` block of a buffered response, or the terminal `usage` event of a stream (`output_tokens`, falling back to `completion_tokens`). |
+| `donkey.usage.cached_tokens` | `donkey.*` (stable) | Prompt tokens served from cache, from `usage.input_tokens_details.cached_tokens`. The semconv pins no key for this at the pinned version, so it lives in `donkey.*`. Omitted — never `0` — when the provider reports no detail counts. |
+| `donkey.usage.cache_write_tokens` | `donkey.*` (stable) | Prompt tokens written to cache, from `usage.input_tokens_details.cache_write_tokens`. Omitted when absent. |
+| `donkey.usage.reasoning_tokens` | `donkey.*` (stable) | Reasoning-model thinking tokens, from `usage.output_tokens_details.reasoning_tokens`. Omitted when absent. |
 | `donkey.policy.decision` | `donkey.*` (stable) | `allow` on success; `refuse` on a classified policy refusal (which also sets the span's OTel status to `ERROR`). |
 | `donkey.policy.type` | `donkey.*` (stable) | The refusal type slug (e.g. `token_budget`, `pii_detected`) — see [Errors](https://donkey-development-kit.github.io/donkey-development-kit/errors.md). |
 | `donkey.budget.remaining` | `donkey.*` (stable) | The remaining token budget after this call, from the `x-token-*` headers. |
@@ -51,6 +54,15 @@ entry — not something a transitive dependency bump does behind your back.
   **The `donkey.*` keys are public API.** Renaming one is a breaking change,
   independent of any `gen_ai.*` version bump. Build dashboards and alerts on them
   with the same confidence you'd give a documented field.
+
+Note what is **not** in that table: prompt and completion **text**. The span
+carries metadata only. Message content (`gen_ai.prompt` / `gen_ai.completion`)
+is emitted **only** when you set `telemetry_capture_content=true`, because spans
+are created upstream of the gateway's PII masking — defaulting it on would
+re-export the content the platform just masked. The emitter is allowlist-driven,
+so a content-shaped attribute handed in from any call site is dropped unless that
+opt-in is set. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) for the obligation you take on
+by enabling it.
 
 ### `gen_ai.system` is never guessed
 
@@ -117,7 +129,8 @@ takes, it produces **exactly one span**, and that span closes:
   terminal `usage` event the caller reads long after the request returns. The
   span stays open until the stream finishes and is closed **exactly once**,
   whether you drain it fully, abandon it mid-iteration, or it raises partway
-  through. `gen_ai.usage.*` are populated from that terminal event.
+  through. `gen_ai.usage.*` and the `donkey.usage.*` detail counts are populated
+  from that terminal event (and merged onto `donkey.last_call` at the same time).
 
   Streaming token counts appear **only if the stream actually carries a usage
   event.** For OpenAI-style Chat Completions that means requesting it with

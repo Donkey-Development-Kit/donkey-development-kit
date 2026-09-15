@@ -28,6 +28,14 @@ from .errors import ConfigError
 
 Region = Literal["us", "eu", "ca", "jp"]
 
+# What to do when the gateway serves a different model than the one requested —
+# a routing fallback substituted the model (§3, #309). ``"off"`` (default): the
+# substitution is surfaced passively on ``donkey.last_call.substituted`` and the
+# span, but the call succeeds. ``"raise"``: the transport raises
+# :class:`~donkey_kit.core.errors.ModelSubstituted`, for callers who need model
+# determinism (e.g. an evaluation whose results are only comparable per-model).
+OnModelSubstitution = Literal["off", "raise"]
+
 _TOML_NAME = ".donkey-kit.toml"
 
 
@@ -79,6 +87,16 @@ class DonkeyConfig:
     max_retries: int = 3
     registry_cache_ttl_s: int = 300
     telemetry: bool = True
+    # Emit message content (prompts, completions, tool arguments/results) on OTel
+    # spans. Default FALSE: the gateway masks PII in ITS logs, but spans are
+    # emitted upstream of the gateway, so defaulting this on would re-export the
+    # very content the platform just masked to whatever OTLP collector is wired
+    # up (#306, BG §1.6). Opting in is the developer assuming that obligation.
+    telemetry_capture_content: bool = False
+    # What to do when the gateway serves a different model than requested (§3,
+    # #309). Default "off" — the substitution is surfaced passively on
+    # ``donkey.last_call``; "raise" opts into a hard ``ModelSubstituted`` error.
+    on_model_substitution: OnModelSubstitution = "off"
 
     # ----------------------------------------------------------------- factory
     @classmethod
@@ -139,6 +157,12 @@ class DonkeyConfig:
                 pick("DONKEY_REGISTRY_CACHE_TTL_S", "registry_cache_ttl_s", 300)
             ),
             telemetry=_as_bool(pick("DONKEY_TELEMETRY", "telemetry", True)),
+            telemetry_capture_content=_as_bool(
+                pick("DONKEY_TELEMETRY_CAPTURE_CONTENT", "telemetry_capture_content", False)
+            ),
+            on_model_substitution=_as_substitution(
+                pick("DONKEY_ON_MODEL_SUBSTITUTION", "on_model_substitution", "off")
+            ),
         )
 
     # --------------------------------------------------------------- derived
@@ -231,6 +255,19 @@ def _as_bool(v: object) -> bool:
     if isinstance(v, bool):
         return v
     return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _as_substitution(v: object) -> OnModelSubstitution:
+    """Coerce and validate ``on_model_substitution`` (§3, #309). An unknown value
+    is a config mistake worth reporting up front — a silent fall-back to ``"off"``
+    would leave a caller who typed ``"error"`` believing they had opted into
+    strictness. Validated at resolve time, like ``region``."""
+    token = str(v).strip().lower()
+    if token not in ("off", "raise"):
+        raise ConfigError(
+            f"Unknown on_model_substitution {v!r}. Expected 'off' or 'raise'."
+        )
+    return cast(OnModelSubstitution, token)
 
 
 def _load_toml() -> dict[str, object]:

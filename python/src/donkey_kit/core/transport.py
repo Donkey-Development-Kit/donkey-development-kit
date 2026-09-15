@@ -45,7 +45,20 @@ from .auth import AuthProvider
 from .budget import Budget
 from .config import DonkeyConfig
 from .cost import CostTags
-from .errors import classify
+from .errors import ModelSubstituted, classify
+from .lastcall import (
+    LLM_MODEL_HEADER,
+    LLM_PROVIDER_HEADER,
+    REQUEST_ID_HEADER,
+    ROUTING_TYPE_HEADER,
+    is_fallback,
+    observe_last_call,
+    observe_usage,
+    parse_usage,
+    routing_fallback,
+    usage_from_response,
+    usage_mapping,
+)
 from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
@@ -252,8 +265,9 @@ def _retry_delay(attempt: int, response: httpx.Response) -> float:
 # VERIFIED (LIVE) — docs/verified-apis.md §2 "Model routing" and §3 "Gateway
 # identity on response" — and is the SOLE source of gen_ai.system; absent → the
 # attribute is omitted, never guessed (§0.3), because the proxy routes to
-# several providers and defaulting one would misattribute the call.
-_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
+# several providers and defaulting one would misattribute the call. The header
+# NAME is defined once in ``lastcall`` (which also parses it onto ``last_call``)
+# and imported here as ``LLM_PROVIDER_HEADER`` so there is a single source (#309).
 # Streaming (SSE) responses carry no usage on the envelope; it lives in a
 # terminal event, captured by the span-closing stream wrapper (#193).
 _STREAM_CONTENT_TYPE = "text/event-stream"
@@ -278,39 +292,6 @@ def _request_model(request: httpx.Request) -> str | None:
         model = body.get("model")
         return model if isinstance(model, str) else None
     return None
-
-
-def _first_int(mapping: dict[str, object], *keys: str) -> int | None:
-    """The first key present as an ``int`` (``bool`` excluded — it subclasses int)."""
-    for key in keys:
-        value = mapping.get(key)
-        if isinstance(value, int) and not isinstance(value, bool):
-            return value
-    return None
-
-
-def _usage_tokens(response: httpx.Response) -> tuple[int | None, int | None]:
-    """``(input, output)`` token counts from a buffered 2xx JSON body, else
-    ``(None, None)``. Handles the Responses API (``input_tokens`` /
-    ``output_tokens``) and Chat Completions (``prompt_tokens`` /
-    ``completion_tokens``). SSE bodies and non-2xx refusals carry no usage here."""
-    if response.status_code // 100 != 2:
-        return None, None
-    if _STREAM_CONTENT_TYPE in response.headers.get("content-type", ""):
-        return None, None
-    try:
-        body = response.json()
-    except Exception:  # noqa: BLE001 — unread/streaming/invalid body: no usage
-        return None, None
-    if not isinstance(body, dict):
-        return None, None
-    usage = body.get("usage")
-    if not isinstance(usage, dict):
-        return None, None
-    return (
-        _first_int(usage, "input_tokens", "prompt_tokens"),
-        _first_int(usage, "output_tokens", "completion_tokens"),
-    )
 
 
 def _span_decision(response: httpx.Response) -> tuple[str | None, str | None]:
@@ -348,11 +329,20 @@ def _record_response(
     the run id is the cross-call join key (§2.3, #195)."""
     try:
         decision, policy_type = _span_decision(response)
-        input_tokens, output_tokens = _usage_tokens(response)
+        usage = usage_from_response(response)
         gspan.record(
-            system=response.headers.get(_PROVIDER_HEADER),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            system=response.headers.get(LLM_PROVIDER_HEADER),
+            # Served model + routing facts (§3, #309): request≠response model on
+            # the span is the fastest read that a gateway failover happened, and
+            # the fallback flag is emitted even when False.
+            response_model=response.headers.get(LLM_MODEL_HEADER),
+            routing_type=response.headers.get(ROUTING_TYPE_HEADER),
+            fallback=routing_fallback(response),
+            input_tokens=usage["input_tokens"],
+            output_tokens=usage["output_tokens"],
+            cached_tokens=usage["cached_tokens"],
+            cache_write_tokens=usage["cache_write_tokens"],
+            reasoning_tokens=usage["reasoning_tokens"],
             decision=decision,
             policy_type=policy_type,
             budget_remaining=budget.remaining if budget is not None else None,
@@ -369,6 +359,38 @@ def _record_response(
             gspan.set_error()
     except Exception:  # noqa: BLE001 — telemetry must never break the request
         pass
+
+
+def _substitution_error(
+    cfg: DonkeyConfig, request: httpx.Request, response: httpx.Response
+) -> ModelSubstituted | None:
+    """The :class:`ModelSubstituted` to raise for this response, or ``None``.
+
+    Off unless ``on_model_substitution="raise"`` (§3, #309): the default surfaces
+    a substitution passively on ``donkey.last_call.substituted`` and the span.
+    Only a **2xx** is checked — a refusal or upstream error is classified on its
+    own terms elsewhere and is not a "silent substitution". A substitution
+    requires both the requested model (from the body) and the served model (the
+    gateway header) to be known and to differ; a missing either side is never a
+    guess (§0.3). Never raises here — it returns the error for the caller path to
+    raise once telemetry has been recorded."""
+    if cfg.on_model_substitution != "raise":
+        return None
+    if response.status_code // 100 != 2:
+        return None
+    requested = _request_model(request)
+    served = response.headers.get(LLM_MODEL_HEADER)
+    if requested is None or served is None or requested == served:
+        return None
+    return ModelSubstituted(
+        f"Gateway served model {served!r}, but {requested!r} was requested "
+        f"(routing fallback); raised because on_model_substitution='raise'.",
+        requested_model=requested,
+        served_model=served,
+        served_provider=response.headers.get(LLM_PROVIDER_HEADER),
+        request_id=response.headers.get(REQUEST_ID_HEADER),
+        response=response,
+    )
 
 
 # --- streaming span lifecycle (#193, BG §1.6) -------------------------------
@@ -390,41 +412,23 @@ def _is_streaming_success(response: httpx.Response) -> bool:
     return _STREAM_CONTENT_TYPE in response.headers.get("content-type", "")
 
 
-def _extract_usage_tokens(obj: object) -> tuple[int | None, int | None] | None:
-    """``(input, output)`` from a parsed SSE ``data:`` object that carries a
-    ``usage`` block, else ``None``. Handles Chat Completions (top-level ``usage``
-    with ``prompt_tokens``/``completion_tokens``) and the Responses API (``usage``
-    nested under ``response`` with ``input_tokens``/``output_tokens``)."""
-    if not isinstance(obj, dict):
-        return None
-    usage = obj.get("usage")
-    if not isinstance(usage, dict):
-        nested = obj.get("response")
-        usage = nested.get("usage") if isinstance(nested, dict) else None
-    if not isinstance(usage, dict):
-        return None
-    return (
-        _first_int(usage, "input_tokens", "prompt_tokens"),
-        _first_int(usage, "output_tokens", "completion_tokens"),
-    )
-
-
 class _SseUsageScanner:
     """Incrementally scans an SSE byte stream for the terminal ``usage`` event,
-    keeping the latest observed token counts (#193).
+    keeping the latest observed token counts (#193, #307).
 
     Line-buffered, so it reconstructs ``data:`` lines across arbitrary chunk
     boundaries, and it only parses JSON for lines that mention ``usage`` — a
     cheap substring test skips the vast majority of delta events, so memory and
     CPU stay bounded no matter how long the completion is (buffering the whole
-    body would defeat the point of streaming)."""
+    body would defeat the point of streaming). ``counts`` holds the six usage
+    fields (:func:`parse_usage`); a scanned value fills its field, so a later
+    partial event never nulls a count already seen."""
 
-    __slots__ = ("_buf", "input_tokens", "output_tokens")
+    __slots__ = ("_buf", "counts")
 
     def __init__(self) -> None:
         self._buf: bytes = b""
-        self.input_tokens: int | None = None
-        self.output_tokens: int | None = None
+        self.counts: dict[str, int | None] = parse_usage(None)
 
     def feed(self, chunk: bytes) -> None:
         self._buf += chunk
@@ -449,14 +453,12 @@ class _SseUsageScanner:
             obj = json.loads(payload)
         except (ValueError, UnicodeDecodeError):
             return
-        tokens = _extract_usage_tokens(obj)
-        if tokens is None:
+        usage = usage_mapping(obj)
+        if usage is None:
             return
-        input_tokens, output_tokens = tokens
-        if input_tokens is not None:
-            self.input_tokens = input_tokens
-        if output_tokens is not None:
-            self.output_tokens = output_tokens
+        for field, value in parse_usage(usage).items():
+            if value is not None:
+                self.counts[field] = value
 
 
 class _SpanClosingStream:
@@ -475,10 +477,19 @@ class _SpanClosingStream:
         self._finalized = True
         try:
             self._scanner.close()
+            counts = self._scanner.counts
             self._gspan.record(
-                input_tokens=self._scanner.input_tokens,
-                output_tokens=self._scanner.output_tokens,
+                input_tokens=counts["input_tokens"],
+                output_tokens=counts["output_tokens"],
+                cached_tokens=counts["cached_tokens"],
+                cache_write_tokens=counts["cache_write_tokens"],
+                reasoning_tokens=counts["reasoning_tokens"],
             )
+            # The record set in _on_response had no usage (the body was unread on
+            # a stream); merge the terminal event's counts into it now (#307). The
+            # stream is consumed in the same context that set the record, so this
+            # updates the caller's own donkey.last_call.
+            observe_usage(counts)
         except Exception:  # noqa: BLE001 — telemetry must never break teardown
             pass
         self._gspan.end()
@@ -588,10 +599,21 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         span end and ``classify()``.
 
         Feeds the attached :class:`Budget` from the response's ``x-token-*``
-        headers (#185); a no-op when none is attached. A subclass that overrides
-        this hook must call ``super()._on_response(...)`` to keep budget tracking."""
+        headers (#185) and records the gateway identity of a governed model call
+        into ``donkey.last_call`` (#362); both are no-ops when not applicable. A
+        subclass that overrides this hook must call ``super()._on_response(...)``
+        to keep budget and last-call tracking."""
         if self._budget is not None:
             self._budget.observe(response)
+        # Only a model call feeds ``last_call`` — a token fetch or a registry
+        # GET shares this transport but is not "the last call" a developer means
+        # (#362). ``_request_model`` is the same signal ``send()`` uses to decide
+        # whether to open a GenAI span, so the two stay in step. The requested
+        # model is threaded through so ``last_call`` can report a substitution
+        # (requested≠served) against what the caller actually asked for (#309).
+        model = _request_model(request)
+        if model is not None:
+            observe_last_call(response, requested_model=model)
 
     async def _on_refusal(self, violation: object) -> None:
         """Refusal seam for Phase 2 reaction handlers. Defined here so the
@@ -621,7 +643,9 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # (started here, ended by the stream wrapper in ``_finish``); a buffered
         # call keeps the auto-closing context manager (#192).
         if enabled and bool(kwargs.get("stream")):
-            gspan = start_genai_span(enabled=True)
+            gspan = start_genai_span(
+                enabled=True, capture_content=self._cfg.telemetry_capture_content
+            )
             try:
                 gspan.record(request_model=model)
                 return await self._send_with_retries(request, gspan, kwargs, streaming=True)
@@ -636,7 +660,9 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # even when ``super().send()`` raises before a response exists — a
         # transport error escapes ``_finish``, so the lifecycle cannot rely on it
         # (see ``_finish``'s note, #179/#192).
-        with genai_span(enabled=enabled) as gspan:
+        with genai_span(
+            enabled=enabled, capture_content=self._cfg.telemetry_capture_content
+        ) as gspan:
             gspan.record(request_model=model)
             return await self._send_with_retries(request, gspan, kwargs, streaming=False)
 
@@ -680,7 +706,17 @@ class DonkeyAsyncClient(httpx.AsyncClient):
                 # Event hooks re-run on send() → fresh token.
                 continue
 
-            if response.status_code in _RETRYABLE_STATUS and attempt < attempts - 1:
+            # A response the gateway already failed over (routing fallback) is NOT
+            # retried, even on a retryable status: the gateway's Enhanced
+            # Resilience routing is the first recovery layer, and an SDK retry on
+            # top multiplies latency against an outage the gateway is already
+            # handling (§3, #309, #183). ``is_fallback`` is definitive-True-only,
+            # so a non-proxy 5xx with no routing header still retries as before.
+            if (
+                response.status_code in _RETRYABLE_STATUS
+                and not is_fallback(response)
+                and attempt < attempts - 1
+            ):
                 delay = _retry_delay(attempt, response)
                 await response.aclose()
                 await asyncio.sleep(delay)
@@ -735,6 +771,16 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             correlation_header=self._correlation_header,
             cost_tags=effective_cost_tags(self._cfg),
         )
+        # After telemetry (so the substituted call is still on the span), a
+        # caller who opted into ``on_model_substitution="raise"`` gets a hard
+        # error instead of the response (§3, #309). Raising here propagates out
+        # through the span context manager (buffered) or the detached-span guard
+        # in ``send()`` (streaming), so the span still closes. The response is
+        # closed first so an aborted stream leaks no connection.
+        substitution = _substitution_error(self._cfg, request, response)
+        if substitution is not None:
+            await response.aclose()
+            raise substitution
         if streaming:
             if _is_streaming_success(response):
                 # An async client's response.stream is an AsyncByteStream; httpx
@@ -791,10 +837,16 @@ class DonkeyClient(httpx.Client):
 
     def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         """Called once with the final response returned to the caller. Feeds the
-        attached :class:`Budget` (#185); a no-op when none is attached. A subclass
-        that overrides this must call ``super()._on_response(...)``."""
+        attached :class:`Budget` (#185) and records a governed model call's
+        gateway identity into ``donkey.last_call`` (#362); both no-ops when not
+        applicable. A subclass that overrides this must call
+        ``super()._on_response(...)``."""
         if self._budget is not None:
             self._budget.observe(response)
+        # Model calls only — see the async twin (#362/#309).
+        model = _request_model(request)
+        if model is not None:
+            observe_last_call(response, requested_model=model)
 
     def _on_refusal(self, violation: object) -> None:
         """Refusal seam for Phase 2; no caller until ``classify()`` (#181)."""
@@ -810,7 +862,9 @@ class DonkeyClient(httpx.Client):
         if enabled and bool(kwargs.get("stream")):
             # Streaming: a detached span the stream wrapper ends (see
             # DonkeyAsyncClient.send, #193).
-            gspan = start_genai_span(enabled=True)
+            gspan = start_genai_span(
+                enabled=True, capture_content=self._cfg.telemetry_capture_content
+            )
             try:
                 gspan.record(request_model=model)
                 return self._send_with_retries(request, gspan, kwargs, streaming=True)
@@ -818,7 +872,9 @@ class DonkeyClient(httpx.Client):
                 gspan.set_error()
                 gspan.end()
                 raise
-        with genai_span(enabled=enabled) as gspan:
+        with genai_span(
+            enabled=enabled, capture_content=self._cfg.telemetry_capture_content
+        ) as gspan:
             gspan.record(request_model=model)
             return self._send_with_retries(request, gspan, kwargs, streaming=False)
 
@@ -844,7 +900,13 @@ class DonkeyClient(httpx.Client):
 
             # No 401-refresh branch: with no token provider there is nothing to
             # refresh, so a 401 here is a real credential failure and terminal.
-            if response.status_code in _RETRYABLE_STATUS and attempt < attempts - 1:
+            # A routing-fallback response is not double-retried — see the async
+            # twin (§3, #309, #183).
+            if (
+                response.status_code in _RETRYABLE_STATUS
+                and not is_fallback(response)
+                and attempt < attempts - 1
+            ):
                 delay = _retry_delay(attempt, response)
                 response.close()
                 time.sleep(delay)
@@ -877,6 +939,12 @@ class DonkeyClient(httpx.Client):
             correlation_header=self._correlation_header,
             cost_tags=effective_cost_tags(self._cfg),
         )
+        # After telemetry, raise for an opted-in substitution — see the async
+        # twin (§3, #309).
+        substitution = _substitution_error(self._cfg, request, response)
+        if substitution is not None:
+            response.close()
+            raise substitution
         if streaming:
             if _is_streaming_success(response):
                 # A sync client's response.stream is a SyncByteStream; httpx types

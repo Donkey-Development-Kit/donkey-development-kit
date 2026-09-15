@@ -89,8 +89,8 @@ request against the deployed gateway.
 | Endpoint/API surface | `llm/client.py` | VERIFIED (LIVE) | OpenAI **Responses API** works (`POST /openai-sdk/responses`, body `{model, input}`). Upstream registered as `https://api.openai.com/v1/`; `proxyUri http://0.0.0.0:8081/openai-sdk` | 2026-08-28 | `api:describe`, live probe |
 | Auth: header name / model | `core/transport.py`, `core/config.py` | VERIFIED (LIVE) | **`client_id` + `client_secret` request headers** (NOT bearer) — enforced by `client-id-enforcement` 1.3.3. A consumer **credential pair**, mapped to an Anypoint client application | 2026-08-28 | live probe + `policy:list` |
 | Auth: model-wallet ingress (alt to `client_id`/`client_secret`, #372) | `core/transport.py`, `core/config.py` — UNVERIFIED, not wired | UNVERIFIED | Wallet-backed model proxies auth via an **IdP-issued JWT + a client ID**, with **no `client_secret`**: the client ID travels as the `X-Client-Id` request header (selects the wallet) *and* as a `client_id` **JWT claim** (`#[authentication.properties.claims.client_id]`, read after the **JWT Validation** policy publishes verified claims); requires an org **IdP** (JWKS URL / signing key — "orgs without an IdP can't use model wallets"); the default **DataWeave Headers Transformation** + **Client ID Enforcement** policies are disabled. A **parallel** ingress model, NOT a replacement of the LIVE `client_id`/`client_secret` pair above. **Live-capture worklist:** confirm the exact `X-Client-Id` header name/casing, the JWT claim path, and the request auth shape against a wallet-enabled sandbox with an IdP configured — until then no `_verify.py` value is marked verified and no guard comes off (§12.8; a doc read is not a live capture). | — | `docs.mulesoft.com/general/exp-model-wallets-manage` (doc read, not a live probe) |
-| Model routing | `llm/client.py` | VERIFIED (LIVE) | `model-based-routing` 1.0.3 reads `model` from body → provider. Response headers `x-llm-proxy-routing-type: ModelBased`, `x-llm-proxy-llm-provider`, `x-llm-proxy-llm-model` | 2026-08-28 | live probe |
-| Token accounting (cost attribution) | `llm/*`, telemetry | VERIFIED (LIVE) | response `usage: {input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}`; also upstream `x-ratelimit-*` headers passed through (Go-style **duration-string** resets, e.g. `0s`/`12ms` — distinct from the gateway's own `x-llm-proxy-ratelimit`/`x-token-*` window, see §4) | 2026-08-28 | `responses.success.body.json` |
+| Model routing | `llm/client.py`; consumed by `core/lastcall.py` + `core/transport.py` (#309) | VERIFIED (LIVE) | `model-based-routing` 1.0.3 reads `model` from body → provider. Response headers `x-llm-proxy-routing-type: ModelBased`, `x-llm-proxy-routing-fallback: false`, `x-llm-proxy-llm-provider: openai`, `x-llm-proxy-llm-model: gpt-5.1`, `x-llm-proxy-model-based-routing-success: Request successfully matched. …`. As of #309 the SDK surfaces these at `donkey.last_call` (`served_provider`/`served_model`/`routing_type`/`fallback`, `substituted` when served≠requested), emits them as `gen_ai.response.model` / `donkey.routing.type` / `donkey.routing.fallback` span attrs, and **does not retry** a `503` a fallback header already marked failed-over (§309, must not fight #183) | 2026-08-28 | live probe (`responses.success.headers.txt`) |
+| Token accounting (cost attribution) | `llm/*`, telemetry | VERIFIED (LIVE) | response `usage: {input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}` — the detail sub-objects carry `cached_tokens` / `cache_write_tokens` (under `input_tokens_details`) and `reasoning_tokens` (under `output_tokens_details`), surfaced per-call at `donkey.last_call` and on the span (#307, see §3); also upstream `x-ratelimit-*` headers passed through (Go-style **duration-string** resets, e.g. `0s`/`12ms` — distinct from the gateway's own `x-llm-proxy-ratelimit`/`x-token-*` window, see §4) | 2026-08-28 | `responses.success.body.json` |
 | Request fields passed through | `llm/client.py` | VERIFIED (LIVE) | OpenAI body passed through verbatim; response returned verbatim (model `gpt-5.1`→`gpt-5.1-2025-11-13`, full Responses object) | 2026-08-28 | live probe |
 | Streaming support | `llm/client.py` | VERIFIED (LIVE) | `"stream": true` → `200`, `content-type: text/event-stream`, chunked SSE (`event: response.created` / `response.in_progress` / …); same `x-llm-proxy-*` headers | 2026-08-28 | live probe (`responses.stream.*`) |
 | `/models` endpoint | `llm/catalog.py` | VERIFIED (LIVE) | **Does not exist** — `GET /openai-sdk/models` → `404`, `x-llm-proxy-model-based-routing-success: Request passed through without model-based routing`. The proxy only routes requests carrying `model` in the body; no catalog endpoint. `llm/catalog.py` must source models elsewhere | 2026-08-28 | live probe (`models.notfound.headers.txt`) |
@@ -127,11 +127,39 @@ attribution comes from the response `usage` block (§2). The
 `x-anypoint-api-instance-id` **request** header (below) is the separate
 agent→agent egress-telemetry path, not needed for direct LLM proxy calls.
 
+As of #362, `core/lastcall.py` **parses** two of these response headers on the
+happy path and surfaces them at `donkey.last_call`: `x-request-id` becomes
+`LastCall.request_id` (the same value `classify()` surfaces as
+`DonkeyError.request_id` on a refusal), and `x-envoy-decorator-operation`
+(`api-instance-<instanceId>.<environmentId>.svc`) is split into
+`LastCall.api_instance_id` (`21133858`) and `LastCall.environment_id`
+(`3e6ce455-…`, a UUID — dashes but no dots, so a three-way split on `.` is
+unambiguous). An absent or unrecognised shape leaves both `None` and never
+raises (§0.3). The response `x-correlation-id` is **not** parsed into the record
+yet — whether it echoes the client-sent id is unconfirmed (#300).
+
+As of #307, `core/lastcall.py` also parses the per-call **usage token counts**
+from the response *body* (the already-VERIFIED `usage` block, §2) and surfaces
+them on the same record: `input_tokens` / `output_tokens` / `total_tokens`, plus
+the cost-relevant `cached_tokens` / `cache_write_tokens` (from
+`usage.input_tokens_details`) and `reasoning_tokens` (from
+`usage.output_tokens_details`). Both the Responses-API (`input_tokens*`) and
+Chat-Completions (`prompt_tokens*` / `completion_tokens*`) shapes are read. An
+absent detail field (or an absent `usage` object entirely) leaves the field
+`None`, **never a fabricated `0`** — a real `0` is a distinct, kept observation.
+On a streamed response the counts land once the terminal SSE `usage` event has
+been consumed, not at first read, and are also emitted as span attributes
+(`gen_ai.usage.input_tokens`/`.output_tokens`, and `donkey.usage.cached_tokens`
+/ `.cache_write_tokens` / `.reasoning_tokens` — the semconv pins no key for the
+detail counts at the pinned version, so they live in the stable `donkey.*`
+namespace). This is a *consumption* of the live-verified §2 shape, so it warrants
+no `UnverifiedValueWarning`.
+
 | Item | Where used | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
 | Per-agent attribution unit (direct proxy) | `core/config.py`, transport | VERIFIED (LIVE) | the `client_id`/`client_secret` credential pair = the agent identity; issued per client application | 2026-08-28 | live probe + `policy:list` |
 | Per-agent attribution unit (model-wallet ingress, #372) | `core/config.py`, transport | UNVERIFIED | under a **model wallet**, the caller is identified by the JWT `client_id` claim + the `X-Client-Id` request header (not the `client_id`/`client_secret` pair) and requires an org IdP — see the §2 "model-wallet ingress" row for the full shape and live-capture worklist. Doc read only; nothing wired or verified. | — | `docs.mulesoft.com/general/exp-model-wallets-manage` (doc read) |
-| Gateway identity on response | `core/transport.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.3e6ce455-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type` | 2026-08-28 | `responses.success.headers.txt` |
+| Gateway identity on response | `core/transport.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192); `core/lastcall.py` **parses** `x-envoy-decorator-operation` and `x-request-id` (#362) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.3e6ce455-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type` | 2026-08-28 | `responses.success.headers.txt` |
 | Agent→agent egress attribution header | `core/_verify.py` → transport | VERIFIED (build) | `x-anypoint-api-instance-id` → `agent-connection-telemetry` policy `sourceAgentId`; `tracing` labels `mulesoft.api.instance.id`, `mulesoft.api.type=llm` | 2026-08-28 | built `connection.json` (§12.6) |
 | Business-group attribution header name | `core/_verify.py` → transport | UNVERIFIED | not surfaced as a request header in the direct-proxy path | — | — |
 | Run correlation id **request** header (`X-Correlation-Id`, #195) | `core/_verify.py` `CORRELATION_ID_HEADER` → transport | UNVERIFIED | `x-correlation-id` is verified as a **response echo** (row above); that the gateway **reads** an inbound `X-Correlation-Id` as the run/trace join key is NOT confirmed. Placeholder, overridable via `correlation_header` / `DONKEY_CORRELATION_HEADER`. | — | — |

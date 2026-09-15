@@ -36,6 +36,12 @@ CONFORMANCE_SCENARIOS = [
     "auto_vs_live_agree",
     "dynamic_tools_detected",
     "asset_type_detection",
+    # After a governed 200, donkey.last_call carries the gateway's own identity
+    # (request_id / api_instance_id / environment_id) for the call just made
+    # (§3, #362). Mirrors correlation_id_propagated: the adapters that route
+    # outside our transport cannot observe it and record an asserted exemption
+    # below rather than a bare None.
+    "gateway_identity_observed",
 ]
 
 # Documented, ASSERTED exemptions — published in the README (§8.1). A framework
@@ -46,8 +52,38 @@ _LITELLM_TRANSPORT_EXEMPTION = (
     "logger callback may later recover trace correlation."
 )
 
+# gateway_identity_observed has the SAME structural cause as the correlation-id
+# exemption, stated for last_call (#362): the record is populated by our
+# transport's _on_response, so an adapter that does not route through our httpx
+# client can never observe it. donkey.last_call reports UNAVAILABLE (naming the
+# surface) rather than a bare None — the honest-state contract (hazard #3) —
+# and mirrors Adapter.observes_last_call = False on each of these adapters.
+_LITELLM_LAST_CALL_EXEMPTION = (
+    "LiteLLM owns the transport; no response reaches our _on_response, so "
+    "donkey.last_call cannot observe the gateway identity of the call and "
+    "reports UNAVAILABLE (#362, same cause as correlation_id_propagated §3.3)."
+)
+_DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
+    "The adapter is handed only default_headers, never our httpx client, so no "
+    "response reaches our _on_response; donkey.last_call cannot observe the "
+    "gateway identity and reports UNAVAILABLE (#362)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # ADK and CrewAI both reach models through LiteLLM (§3.3).
-    "adk": {"correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION},
-    "crewai": {"correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION},
+    "adk": {
+        "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
+        "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
+    },
+    "crewai": {
+        "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
+        "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
+    },
+    # LlamaIndex and MS Agent Framework get only default_headers, no httpx client
+    # (§3.3), so they cannot observe last_call either — but they CAN propagate the
+    # correlation id through those headers, so that scenario is not exempt for them.
+    "llamaindex": {"gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION},
+    "agent_framework": {
+        "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION
+    },
 }

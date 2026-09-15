@@ -64,6 +64,19 @@ placeholders — point them at your real names with `DONKEY_COST_TEAM_HEADER`,
 `donkey.cost.*` span attributes carry the full value regardless
 ([Verification policy](/concepts/verification)).
 
+## Telemetry
+
+| Env var | `Donkey.from_env` kwarg | Meaning |
+|---|---|---|
+| `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
+| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
+
+`telemetry_capture_content` defaults to `false` on purpose: spans are emitted
+inside your process, **upstream of the gateway's PII masking**, so capturing
+content re-exports the very text the platform masks. Opting in is you assuming
+that obligation — enable it only for a trusted collector. See
+[Telemetry & cost](/telemetry).
+
 ## Anypoint control plane (used by later phases)
 
 These match the Anypoint CLI's own variable names (CLI-verified):

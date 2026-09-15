@@ -60,6 +60,78 @@ def test_unknown_region_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         DonkeyConfig.from_env()
 
 
+# --- telemetry_capture_content resolution (#306, BG §1.6) -------------------
+# Safe by default: content is emitted on spans only when the developer opts in,
+# through the normal kwarg → env → toml → default precedence.
+
+
+def test_capture_content_defaults_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    assert DonkeyConfig().telemetry_capture_content is False  # dataclass default
+    assert DonkeyConfig.from_env().telemetry_capture_content is False  # resolved default
+
+
+def test_capture_content_from_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_TELEMETRY_CAPTURE_CONTENT", "true")
+    assert DonkeyConfig.from_env().telemetry_capture_content is True
+
+
+def test_capture_content_env_overrides_toml(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch, "telemetry_capture_content = false\n")
+    assert DonkeyConfig.from_env().telemetry_capture_content is False  # toml layer
+    monkeypatch.setenv("DONKEY_TELEMETRY_CAPTURE_CONTENT", "true")
+    assert DonkeyConfig.from_env().telemetry_capture_content is True  # env wins
+
+
+# --- on_model_substitution resolution + validation (§3, #309) ---------------
+# Off by default: a routing substitution is surfaced passively on last_call
+# unless the developer opts into a hard error, through the normal precedence.
+
+
+def test_on_model_substitution_defaults_to_off(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    assert DonkeyConfig().on_model_substitution == "off"  # dataclass default
+    assert DonkeyConfig.from_env().on_model_substitution == "off"  # resolved default
+
+
+def test_on_model_substitution_from_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_ON_MODEL_SUBSTITUTION", "raise")
+    assert DonkeyConfig.from_env().on_model_substitution == "raise"
+
+
+def test_on_model_substitution_env_overrides_toml(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_toml(tmp_path, monkeypatch, 'on_model_substitution = "off"\n')
+    assert DonkeyConfig.from_env().on_model_substitution == "off"  # toml layer
+    monkeypatch.setenv("DONKEY_ON_MODEL_SUBSTITUTION", "raise")
+    assert DonkeyConfig.from_env().on_model_substitution == "raise"  # env wins
+
+
+def test_on_model_substitution_is_case_insensitive(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_ON_MODEL_SUBSTITUTION", "RAISE")
+    assert DonkeyConfig.from_env().on_model_substitution == "raise"
+
+
+def test_unknown_on_model_substitution_is_a_config_error(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A typo like "error" must fail loudly at resolve time — a silent fall-back to
+    # "off" would leave a caller believing they had opted into strictness (§309).
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_ON_MODEL_SUBSTITUTION", "error")
+    with pytest.raises(ConfigError) as exc:
+        DonkeyConfig.from_env()
+    assert "error" in str(exc.value)
+
+
 # --- cost-attribution tag resolution (§3, BG §1.7, #196) --------------------
 
 
