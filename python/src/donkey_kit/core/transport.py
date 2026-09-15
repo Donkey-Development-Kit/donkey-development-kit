@@ -46,6 +46,7 @@ from .budget import Budget
 from .config import DonkeyConfig
 from .cost import CostTags
 from .errors import classify
+from .lastcall import observe_last_call
 from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
@@ -588,10 +589,18 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         span end and ``classify()``.
 
         Feeds the attached :class:`Budget` from the response's ``x-token-*``
-        headers (#185); a no-op when none is attached. A subclass that overrides
-        this hook must call ``super()._on_response(...)`` to keep budget tracking."""
+        headers (#185) and records the gateway identity of a governed model call
+        into ``donkey.last_call`` (#362); both are no-ops when not applicable. A
+        subclass that overrides this hook must call ``super()._on_response(...)``
+        to keep budget and last-call tracking."""
         if self._budget is not None:
             self._budget.observe(response)
+        # Only a model call feeds ``last_call`` — a token fetch or a registry
+        # GET shares this transport but is not "the last call" a developer means
+        # (#362). ``_request_model`` is the same signal ``send()`` uses to decide
+        # whether to open a GenAI span, so the two stay in step.
+        if _request_model(request) is not None:
+            observe_last_call(response)
 
     async def _on_refusal(self, violation: object) -> None:
         """Refusal seam for Phase 2 reaction handlers. Defined here so the
@@ -795,10 +804,15 @@ class DonkeyClient(httpx.Client):
 
     def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         """Called once with the final response returned to the caller. Feeds the
-        attached :class:`Budget` (#185); a no-op when none is attached. A subclass
-        that overrides this must call ``super()._on_response(...)``."""
+        attached :class:`Budget` (#185) and records a governed model call's
+        gateway identity into ``donkey.last_call`` (#362); both no-ops when not
+        applicable. A subclass that overrides this must call
+        ``super()._on_response(...)``."""
         if self._budget is not None:
             self._budget.observe(response)
+        # Model calls only — see the async twin (#362).
+        if _request_model(request) is not None:
+            observe_last_call(response)
 
     def _on_refusal(self, violation: object) -> None:
         """Refusal seam for Phase 2; no caller until ``classify()`` (#181)."""

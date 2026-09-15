@@ -126,10 +126,21 @@ attribution comes from the response `usage` block (§2). The
 `x-anypoint-api-instance-id` **request** header (below) is the separate
 agent→agent egress-telemetry path, not needed for direct LLM proxy calls.
 
+As of #362, `core/lastcall.py` **parses** two of these response headers on the
+happy path and surfaces them at `donkey.last_call`: `x-request-id` becomes
+`LastCall.request_id` (the same value `classify()` surfaces as
+`DonkeyError.request_id` on a refusal), and `x-envoy-decorator-operation`
+(`api-instance-<instanceId>.<environmentId>.svc`) is split into
+`LastCall.api_instance_id` (`21133858`) and `LastCall.environment_id`
+(`3e6ce455-…`, a UUID — dashes but no dots, so a three-way split on `.` is
+unambiguous). An absent or unrecognised shape leaves both `None` and never
+raises (§0.3). The response `x-correlation-id` is **not** parsed into the record
+yet — whether it echoes the client-sent id is unconfirmed (#300).
+
 | Item | Where used | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
 | Per-agent attribution unit (direct proxy) | `core/config.py`, transport | VERIFIED (LIVE) | the `client_id`/`client_secret` credential pair = the agent identity; issued per client application | 2026-08-28 | live probe + `policy:list` |
-| Gateway identity on response | `core/transport.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.3e6ce455-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type` | 2026-08-28 | `responses.success.headers.txt` |
+| Gateway identity on response | `core/transport.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192); `core/lastcall.py` **parses** `x-envoy-decorator-operation` and `x-request-id` (#362) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.3e6ce455-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type` | 2026-08-28 | `responses.success.headers.txt` |
 | Agent→agent egress attribution header | `core/_verify.py` → transport | VERIFIED (build) | `x-anypoint-api-instance-id` → `agent-connection-telemetry` policy `sourceAgentId`; `tracing` labels `mulesoft.api.instance.id`, `mulesoft.api.type=llm` | 2026-08-28 | built `connection.json` (§12.6) |
 | Business-group attribution header name | `core/_verify.py` → transport | UNVERIFIED | not surfaced as a request header in the direct-proxy path | — | — |
 | Run correlation id **request** header (`X-Correlation-Id`, #195) | `core/_verify.py` `CORRELATION_ID_HEADER` → transport | UNVERIFIED | `x-correlation-id` is verified as a **response echo** (row above); that the gateway **reads** an inbound `X-Correlation-Id` as the run/trace join key is NOT confirmed. Placeholder, overridable via `correlation_header` / `DONKEY_CORRELATION_HEADER`. | — | — |

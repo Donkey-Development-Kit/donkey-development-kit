@@ -26,6 +26,16 @@ class Adapter:
     #: ImportError raised on access when it is not installed (§3.2).
     extra: str = ""
 
+    #: Whether a governed model call through this adapter reaches ``donkey.last_call``
+    #: (#362). True when the adapter hands the framework our shared
+    #: :class:`DonkeyAsyncClient` (its ``_on_response`` observes the response);
+    #: False when the SDK does not own the transport — LiteLLM-backed adapters
+    #: (ADK, CrewAI) or adapters given only ``default_headers`` (LlamaIndex, MS
+    #: Agent Framework). A ``False`` here is why ``donkey.last_call`` reports
+    #: "not available on this surface" rather than a bare ``None`` (hazard #3),
+    #: and it is the fact the conformance suite asserts as an exemption (§8.1).
+    observes_last_call: bool = True
+
     def __init__(self, cfg: DonkeyConfig, http_client: DonkeyAsyncClient) -> None:
         self._cfg = cfg
         self._http = http_client

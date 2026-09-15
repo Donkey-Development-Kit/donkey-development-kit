@@ -23,6 +23,7 @@ from .core.auth import AnypointConnectedApp, AuthProvider
 from .core.budget import Budget
 from .core.config import DonkeyConfig
 from .core.cost import CostTags
+from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.telemetry import RunScope, run_scope
 from .core.transport import (
     DonkeyAsyncClient,
@@ -178,6 +179,45 @@ class Donkey:
         ``None``) until the first call returns; there is no budget-query endpoint,
         so it is only as fresh as ``budget.observed_at`` (upstream gap #2)."""
         return self._budget
+
+    @property
+    def last_call(self) -> LastCall:
+        """The gateway's own metadata about the most recent governed model call in
+        this context — its ``request_id``, ``api_instance_id`` and
+        ``environment_id`` (§3, #362). The success-path counterpart to the ids
+        :class:`~donkey_kit.core.errors.DonkeyError` hands you on a refusal.
+
+        Contextvar-scoped, not instance-scoped (hazard #2): under the parallel
+        fan-out ``donkey.run()`` encourages, each task reads the call *it* made,
+        never whichever sibling's response landed last. A framework-spawned task
+        copies the context at creation, so it sees its own record and never
+        clobbers the parent's.
+
+        Three honest states, never a bare ``None`` (hazard #3):
+
+        * **OBSERVED** — a governed response populated it (fields may still be
+          ``None`` if the gateway sent no identity headers: "we saw the response,
+          it said nothing").
+        * **UNOBSERVED** — no governed model call has returned in this context yet.
+        * **UNAVAILABLE** — every adapter used on this Donkey routes outside our
+          transport (LiteLLM-backed ADK/CrewAI, or ``default_headers``-only
+          LlamaIndex / MS Agent Framework), so a response can never reach the
+          record. :attr:`LastCall.surface` names which. This is derived from the
+          adapters actually resolved, and the conformance suite asserts the
+          exemption rather than skipping it (§8.1).
+        """
+        observed = current_last_call()
+        if observed is not None:
+            return observed
+        # No response reached the contextvar. Distinguish a cold read from a
+        # structurally-unobservable surface: if every adapter resolved on this
+        # Donkey routes outside our transport, say so by name instead of leaving
+        # an indistinguishable UNOBSERVED (hazard #3). An empty cache (raw client
+        # / not used yet) is a cold read, not UNAVAILABLE.
+        used = list(self._adapter_cache.values())
+        if used and all(not a.observes_last_call for a in used):
+            return unavailable(", ".join(sorted(self._adapter_cache)))
+        return UNOBSERVED
 
     @overload
     def openai(self, *, sync: Literal[False] = ..., **kw: Any) -> AsyncOpenAI: ...
