@@ -55,16 +55,27 @@ __all__ = [
 # Header replay is an allow-list, not a deny-list: replay only the semantic and
 # discriminator headers a client (and classify()) actually consume, and let the
 # consumer generate framing (content-length, transfer-encoding, connection).
-# Gateway-identity headers (server, cf-ray, date, strict-transport-security, …)
-# are dropped — replaying them would undercut the x-donkey-simulator honesty
+# Transport/CDN framing headers (server, cf-ray, date, strict-transport-security,
+# …) are dropped — replaying them would undercut the x-donkey-simulator honesty
 # guarantee and, for in-process injection, misrepresent a fixture as a live
 # gateway response. content-type is NOT in the allow-list: the ASGI simulator
 # carries it via the response media_type, and in-process injection re-adds it
-# from Fixture.content_type — so it is never double-set. `x-request-id` is kept
-# because classify() surfaces it as DonkeyError.request_id (it is the upstream
-# request id, not gateway identity).
+# from Fixture.content_type — so it is never double-set. `x-request-id` and
+# `x-envoy-decorator-operation` ARE kept: both are semantic gateway-identity
+# headers the SDK consumes — classify() surfaces `x-request-id` as
+# DonkeyError.request_id, and `donkey.last_call` parses the decorator op into the
+# API-instance/environment ids (#362) — so replaying them is what makes
+# simulate()/`donkey mock` populate the record from the committed fixtures. The
+# honesty marker stays the injected `x-donkey-simulator: true`, not the absence
+# of identity headers.
 _KEEP_EXACT = frozenset(
-    {"www-authenticate", "x-injection-protection", "x-correlation-id", "x-request-id"}
+    {
+        "www-authenticate",
+        "x-injection-protection",
+        "x-correlation-id",
+        "x-request-id",
+        "x-envoy-decorator-operation",
+    }
 )
 _KEEP_PREFIX = ("x-token-", "x-llm-proxy-")
 
