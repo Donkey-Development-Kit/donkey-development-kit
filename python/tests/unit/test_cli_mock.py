@@ -52,7 +52,8 @@ def test_mock_wires_host_and_port_through_to_serve(monkeypatch: pytest.MonkeyPat
     result = runner.invoke(app, ["mock", "--host", "0.0.0.0", "--port", "9999"])
 
     assert result.exit_code == 0
-    assert captured == {"host": "0.0.0.0", "port": 9999}
+    # No --scenario: config is None so the no-scenario boot path is byte-identical.
+    assert captured == {"host": "0.0.0.0", "port": 9999, "config": None}
 
 
 def test_mock_defaults_bind_localhost_8080(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -63,4 +64,49 @@ def test_mock_defaults_bind_localhost_8080(monkeypatch: pytest.MonkeyPatch) -> N
     result = runner.invoke(app, ["mock"])
 
     assert result.exit_code == 0
-    assert captured == {"host": "127.0.0.1", "port": 8080}
+    assert captured == {"host": "127.0.0.1", "port": 8080, "config": None}
+
+
+def test_mock_parses_scenarios_into_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Repeatable --scenario flags are parsed into the SimulatorConfig handed to
+    serve() (#188)."""
+    from donkey_kit.simulator.app import SimulatorConfig
+    from donkey_kit.simulator.scenarios import (
+        BudgetScenario,
+        InjectionScenario,
+        PiiBlockScenario,
+    )
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "donkey_kit.simulator.server.serve", lambda **kw: captured.update(kw)
+    )
+    result = runner.invoke(
+        app,
+        [
+            "mock",
+            "--scenario",
+            "pii_block:every=5",
+            "--scenario",
+            "budget:limit=20000,window=60s",
+            "--scenario",
+            "injection:on-pattern=ignore previous",
+        ],
+    )
+
+    assert result.exit_code == 0
+    config = captured["config"]
+    assert isinstance(config, SimulatorConfig)
+    kinds = {type(s) for s in config.scenarios}
+    assert kinds == {PiiBlockScenario, BudgetScenario, InjectionScenario}
+
+
+def test_mock_invalid_scenario_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A malformed --scenario is a usage error (exit 2), not a stack trace."""
+    monkeypatch.setattr(
+        "donkey_kit.simulator.server.serve", lambda **kw: None
+    )
+    result = runner.invoke(app, ["mock", "--scenario", "nonsense:foo=1"])
+
+    assert result.exit_code == 2
+    assert "Invalid --scenario" in _combined(result)
