@@ -30,8 +30,10 @@ from .fixtures import (
     RATELIMIT_HEADER,
     Fixture,
     load,
+    render_ratelimit_prose,
     replay_headers,
 )
+from .scenarios import BudgetScenario, Scenario, request_text
 
 __all__ = [
     "ASGIApp",
@@ -107,6 +109,10 @@ class SimulatorConfig:
     token_limit: int = 100_000
     token_step: int = 500
     token_reset_ms: int = 60_000
+    # Scripted fault-injection rules applied per POST /responses (#188). Parsed
+    # from the CLI's repeatable --scenario flag. Stateful and single-use: one set
+    # drives one simulator instance (see donkey_kit.simulator.scenarios).
+    scenarios: tuple[Scenario, ...] = ()
 
 
 class _Simulator:
@@ -117,6 +123,18 @@ class _Simulator:
         self._config = config
         self._remaining = config.token_limit
         self._lock = asyncio.Lock()
+        # Split scenarios: rejection rules run first (in injection-before-pii
+        # precedence, independent of CLI order), then the single budget scenario
+        # (#188). A budget scenario, when it passes, owns the happy-path prose
+        # ratelimit header instead of the default synthesised counter.
+        self._budget: BudgetScenario | None = next(
+            (s for s in config.scenarios if isinstance(s, BudgetScenario)), None
+        )
+        _order = {"injection": 0, "pii_block": 1}
+        self._reject_scenarios: list[Scenario] = sorted(
+            (s for s in config.scenarios if not isinstance(s, BudgetScenario)),
+            key=lambda s: _order.get(s.name, 99),
+        )
 
     def _response(self, fixture: Fixture, extra: dict[str, str] | None = None) -> Any:
         """Build a starlette Response for a resolved fixture, always honesty-stamped."""
@@ -139,9 +157,8 @@ class _Simulator:
         async with self._lock:
             self._remaining = max(0, self._remaining - self._config.token_step)
             remaining = self._remaining
-        sentence = (
-            f"Token rate limit: {remaining} tokens remaining of "
-            f"{self._config.token_limit} limit. Reset in {self._config.token_reset_ms}ms."
+        sentence = render_ratelimit_prose(
+            remaining, self._config.token_limit, self._config.token_reset_ms
         )
         return {RATELIMIT_HEADER: sentence}
 
@@ -165,9 +182,33 @@ class _Simulator:
         if isinstance(model, str) and model.startswith(SIM_MODEL_PREFIX):
             shape = model[len(SIM_MODEL_PREFIX) :]
             if shape in _REJECTION_SHAPES:
+                # The model-id sentinel is an explicit "force this exact shape"
+                # override and wins over ambient scenario fault-injection.
                 return self._response(load(shape))
-            # Unknown sentinel suffix falls through to the happy path.
+            # Unknown sentinel suffix falls through to the scenario/happy path.
+
+        # Scenario fault-injection (#188): rejection rules first (injection, then
+        # pii_block), then the budget scenario; the first hit short-circuits.
+        if self._reject_scenarios or self._budget is not None:
+            text = request_text(payload)
+            for scenario in self._reject_scenarios:
+                hit = scenario.on_call(text)
+                if hit is not None:
+                    return self._response(load(hit.shape), extra=hit.extra_headers)
+            if self._budget is not None:
+                hit = self._budget.on_call(text)
+                if hit is not None:
+                    return self._response(load(hit.shape), extra=hit.extra_headers)
+                # Budget passed: it owns the happy-path prose ratelimit header.
+                ratelimit_header = self._budget.happy_path_headers()
+                return self._happy(payload, ratelimit_header)
+
         ratelimit_header = await self._synth_ratelimit_header()
+        return self._happy(payload, ratelimit_header)
+
+    def _happy(self, payload: Any, ratelimit_header: dict[str, str]) -> Any:
+        """Serve the happy-path 200 (or the stream sample), carrying the given
+        budget-window prose header."""
         if isinstance(payload, dict) and payload.get("stream") is True:
             # The captured stream sample is a single, truncated `response.created`
             # event — a real capture, NOT a complete SSE stream ending in

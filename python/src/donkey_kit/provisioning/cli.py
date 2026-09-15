@@ -127,6 +127,14 @@ def verify() -> None:
 def mock(
     port: int = typer.Option(8080, "--port", help="TCP port to bind"),
     host: str = typer.Option("127.0.0.1", "--host", help="host/interface to bind"),
+    scenario: list[str] = typer.Option(
+        [],
+        "--scenario",
+        help=(
+            "Fault-injection rule, repeatable. e.g. 'pii_block:every=5', "
+            "'budget:limit=20000,window=60s', 'injection:on-pattern=ignore previous'."
+        ),
+    ),
 ) -> None:
     """Run the local gateway simulator (BG §1.4).
 
@@ -135,14 +143,27 @@ def mock(
     sees the real rejection shapes locally. Every response carries
     ``x-donkey-simulator: true`` — it is a fixture replay, never a real gateway.
 
+    ``--scenario`` scripts a specific failure on demand (#188): ``pii_block``
+    fails every Nth call, ``injection`` matches request text, and ``budget``
+    runs a real windowed token counter (429 on exhaustion). Repeatable.
+
     Needs the ``[local]`` extra (starlette + uvicorn); this is NOT one of the
     verification-gated platform commands, so a missing extra is an install
     prompt (exit 1), not a ``blocked on verification`` message (exit 3).
     """
     from ..simulator import server
+    from ..simulator.app import SimulatorConfig
+    from ..simulator.scenarios import ScenarioError, parse_scenarios
 
     try:
-        server.serve(host=host, port=port)
+        scenarios = parse_scenarios(scenario)
+    except ScenarioError as exc:
+        typer.secho(f"Invalid --scenario: {exc}", fg="red", err=True)
+        raise typer.Exit(2) from exc
+
+    config = SimulatorConfig(scenarios=scenarios) if scenarios else None
+    try:
+        server.serve(host=host, port=port, config=config)
     except ImportError as exc:
         typer.secho(
             'The local gateway simulator needs the [local] extra. Install it with:\n'
