@@ -136,6 +136,37 @@ class BudgetReserveReached(DonkeyError):
         self.reset_at = reset_at
 
 
+class ModelSubstituted(DonkeyError):
+    """The gateway served a *different* model than the one requested — a routing
+    fallback substituted the model, and ``on_model_substitution="raise"`` opted
+    the caller into treating that as an error (§3, #309).
+
+    Deliberately NOT a :class:`PolicyViolation`: the request was neither refused
+    nor failed — it succeeded, just against a model the developer did not choose.
+    It is a client-side determinism signal (like :class:`BudgetReserveReached`),
+    off by default; a caller who has not opted in gets the substitution surfaced
+    passively on ``donkey.last_call.substituted`` instead. Carries the response,
+    so a handler can still read the served completion if it decides to accept it.
+
+    ``request_id`` (the gateway's own id) is inherited from :class:`DonkeyError`
+    and populated from the response, so a substitution can be quoted in a ticket
+    on the same terms as any other gateway event."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        requested_model: str,
+        served_model: str,
+        served_provider: str | None = None,
+        **kw: Any,
+    ) -> None:
+        super().__init__(message, **kw)
+        self.requested_model = requested_model
+        self.served_model = served_model
+        self.served_provider = served_provider
+
+
 class PromptInjectionBlocked(PolicyViolation):
     policy = "prompt-injection-protection"
 

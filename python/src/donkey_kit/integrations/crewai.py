@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 
 class CrewAIAdapter(Adapter):
     extra = "crewai"
+    # LiteLLM owns the transport, so no response reaches donkey.last_call (#362,
+    # the same reason as the §8.1 correlation_id_propagated exemption).
+    observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``crewai.LLM(model="openai/<id>", **kwargs)`` you

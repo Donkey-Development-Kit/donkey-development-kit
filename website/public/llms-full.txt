@@ -2332,7 +2332,19 @@ donkey.cost.team            = support
 donkey.cost.project         = triage-v2
 donkey.cost.env             = prod
 donkey.cost.enduser.id      = user-42
+donkey.routing.type         = ModelBased          # how the gateway routed
+donkey.routing.fallback     = false               # did it fail over?
+gen_ai.response.model       = gpt-5.1             # the model that actually served
+donkey.usage.cached_tokens        = 512   # omitted when the provider reports none
+donkey.usage.cache_write_tokens   = 128
+donkey.usage.reasoning_tokens     = 96
 ```
+
+The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
+semconv has no pinned key for — cached / cache-write prompt tokens and
+reasoning-model thinking tokens. They are read from the response `usage` block's
+detail sub-objects and are **omitted, never `0`,** when the provider reports no
+detail counts. The same counts are exposed per-call on `donkey.last_call`.
 
 Export goes over OTLP to wherever you already send spans. **Nothing in the
 emit path is Anypoint-specific.**
@@ -2384,6 +2396,61 @@ enabled, content is emitted under the pinned semconv attribute names —
 those attributes never reach a span, and the allowlist that builds every span
 drops any content-shaped attribute a call site hands it, so there is no accidental
 path for message text to leak.
+
+## Routing & resilience
+
+The gateway can fail over between providers when one degrades ("Enhanced
+Resilience for Intelligent Routing"). It reports what it *did* with each request
+on the response — which provider and model served it, how it routed, and whether
+that was a **fallback**. Donkey reads those signals off the shared transport, so
+you get them with **no framework required** — the raw `donkey.llm.client()` path
+benefits just as the deep adapters do.
+
+Every governed call exposes them on `donkey.last_call`, beside the usage and
+identity fields:
+
+```python
+donkey = Donkey.from_env()
+await donkey.openai().responses.create(model="gpt-5.1", input="…")
+
+r = donkey.last_call
+r.requested_model    # "gpt-5.1"  — what you asked for
+r.served_model       # "gpt-5.1"  — or a substitute after failover
+r.served_provider    # "openai"
+r.routing_type       # "ModelBased"
+r.fallback           # False      — True if the gateway failed over
+r.substituted        # False      — served_model != requested_model
+```
+
+They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
+`donkey.routing.fallback`) — the single most useful thing to have on hand when
+latency spikes: it tells an operator whether a slow call was routed normally or
+recovered from a degraded provider.
+
+### Two behaviours worth knowing
+
+**The SDK never double-retries a fallback.** Donkey retries `502/503/504` with
+backoff, but if the gateway already failed over internally, a `503` it marked as
+a fallback is **not** retried again — a second recovery layer stacked on a
+working first one just multiplies latency against an outage the gateway already
+handled.
+
+**Opt in to model determinism.** A silent substitution is surfaced passively on
+`last_call.substituted` by default. When a substitution is not acceptable — your
+evaluation, cost model and token assumptions are all pinned to one model — opt
+into a hard error:
+
+```python
+donkey = Donkey.from_env(on_model_substitution="raise")
+# raises ModelSubstituted when the served model differs from the requested one
+```
+
+`on_model_substitution` resolves along the standard precedence (kwarg → env
+`DONKEY_ON_MODEL_SUBSTITUTION` → `.donkey-kit.toml` → default) and **defaults to
+`"off"`**.
+
+  **TypeScript parity is planned (Phase 5).** The same signals will surface as
+  `donkey.lastRouting.servedModel` / `.fallback` once the TypeScript SDK ships.
 
 ## Correlation IDs
 
@@ -3756,8 +3823,9 @@ bespoke header the SDK invents.
   `x-envoy-decorator-operation` carrying the API-instance id + environment id, an
   `x-correlation-id`, and `x-llm-proxy-*` routing headers.
 - **Token usage** for cost attribution comes from the response `usage` block
-  (`input_tokens`, `output_tokens`, `total_tokens`, …), passed through verbatim
-  from the provider.
+  (`input_tokens`, `output_tokens`, `total_tokens`, plus the detail counts
+  `cached_tokens` / `cache_write_tokens` / `reasoning_tokens`), passed through
+  verbatim from the provider and surfaced per-call on `donkey.last_call`.
 
 ## Optional attribution metadata
 
@@ -3843,6 +3911,9 @@ entry — not something a transitive dependency bump does behind your back.
 | `gen_ai.request.model` | `gen_ai.*` (pinned) | The `model` field of the request body. |
 | `gen_ai.usage.input_tokens` | `gen_ai.*` (pinned) | The `usage` block of a buffered response, or the terminal `usage` event of a stream (`input_tokens`, falling back to `prompt_tokens`). |
 | `gen_ai.usage.output_tokens` | `gen_ai.*` (pinned) | The `usage` block of a buffered response, or the terminal `usage` event of a stream (`output_tokens`, falling back to `completion_tokens`). |
+| `donkey.usage.cached_tokens` | `donkey.*` (stable) | Prompt tokens served from cache, from `usage.input_tokens_details.cached_tokens`. The semconv pins no key for this at the pinned version, so it lives in `donkey.*`. Omitted — never `0` — when the provider reports no detail counts. |
+| `donkey.usage.cache_write_tokens` | `donkey.*` (stable) | Prompt tokens written to cache, from `usage.input_tokens_details.cache_write_tokens`. Omitted when absent. |
+| `donkey.usage.reasoning_tokens` | `donkey.*` (stable) | Reasoning-model thinking tokens, from `usage.output_tokens_details.reasoning_tokens`. Omitted when absent. |
 | `donkey.policy.decision` | `donkey.*` (stable) | `allow` on success; `refuse` on a classified policy refusal (which also sets the span's OTel status to `ERROR`). |
 | `donkey.policy.type` | `donkey.*` (stable) | The refusal type slug (e.g. `token_budget`, `pii_detected`) — see [Errors](https://donkey-development-kit.github.io/donkey-development-kit/errors.md). |
 | `donkey.budget.remaining` | `donkey.*` (stable) | The remaining token budget after this call, from the `x-token-*` headers. |
@@ -3926,7 +3997,8 @@ takes, it produces **exactly one span**, and that span closes:
   terminal `usage` event the caller reads long after the request returns. The
   span stays open until the stream finishes and is closed **exactly once**,
   whether you drain it fully, abandon it mid-iteration, or it raises partway
-  through. `gen_ai.usage.*` are populated from that terminal event.
+  through. `gen_ai.usage.*` and the `donkey.usage.*` detail counts are populated
+  from that terminal event (and merged onto `donkey.last_call` at the same time).
 
   Streaming token counts appear **only if the stream actually carries a usage
   event.** For OpenAI-style Chat Completions that means requesting it with

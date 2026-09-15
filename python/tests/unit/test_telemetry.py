@@ -67,11 +67,32 @@ def test_donkey_keys_are_the_stable_public_literal_strings() -> None:
     assert telemetry.DONKEY_COST_PROJECT == "donkey.cost.project"
     assert telemetry.DONKEY_COST_ENV == "donkey.cost.env"
     assert telemetry.DONKEY_COST_ENDUSER == "donkey.cost.enduser.id"
+    # Cached/reasoning usage counts (#307): the semconv pins no key for these at
+    # GEN_AI_SEMCONV_VERSION, so they live in the stable donkey.* namespace.
+    assert telemetry.DONKEY_USAGE_CACHED_TOKENS == "donkey.usage.cached_tokens"
+    assert telemetry.DONKEY_USAGE_CACHE_WRITE_TOKENS == "donkey.usage.cache_write_tokens"
+    assert telemetry.DONKEY_USAGE_REASONING_TOKENS == "donkey.usage.reasoning_tokens"
 
 
 def test_policy_decision_values_are_the_documented_literals() -> None:
     assert telemetry.POLICY_DECISION_ALLOW == "allow"
     assert telemetry.POLICY_DECISION_REFUSE == "refuse"
+
+
+def test_routing_keys_are_the_pinned_and_stable_literal_strings() -> None:
+    # The served model uses the pinned semconv key; the two routing facts the
+    # semconv has no key for live under the stable donkey.* namespace (§3, #309).
+    # gen_ai.response.model is pinned; the donkey.routing.* pair is public API.
+    assert telemetry.GEN_AI_RESPONSE_MODEL == "gen_ai.response.model"
+    assert telemetry.DONKEY_ROUTING_TYPE == "donkey.routing.type"
+    assert telemetry.DONKEY_ROUTING_FALLBACK == "donkey.routing.fallback"
+
+
+def test_routing_keys_are_allowlisted_for_the_generic_emitter() -> None:
+    # They must be emittable — an allowlist-driven span drops anything not here.
+    assert telemetry.GEN_AI_RESPONSE_MODEL in telemetry._ALLOWED_SPAN_ATTRIBUTES
+    assert telemetry.DONKEY_ROUTING_TYPE in telemetry._ALLOWED_SPAN_ATTRIBUTES
+    assert telemetry.DONKEY_ROUTING_FALLBACK in telemetry._ALLOWED_SPAN_ATTRIBUTES
 
 
 # --- build_genai_attributes: the pure dual-namespace assembler --------------
@@ -83,6 +104,9 @@ def test_build_genai_attributes_emits_every_key_when_all_present() -> None:
         request_model="gpt-4o",
         input_tokens=1420,
         output_tokens=310,
+        cached_tokens=512,
+        cache_write_tokens=128,
+        reasoning_tokens=96,
         decision=telemetry.POLICY_DECISION_ALLOW,
         policy_type="pii_detected",
         budget_remaining=18450,
@@ -97,6 +121,9 @@ def test_build_genai_attributes_emits_every_key_when_all_present() -> None:
         "gen_ai.request.model": "gpt-4o",
         "gen_ai.usage.input_tokens": 1420,
         "gen_ai.usage.output_tokens": 310,
+        "donkey.usage.cached_tokens": 512,
+        "donkey.usage.cache_write_tokens": 128,
+        "donkey.usage.reasoning_tokens": 96,
         "donkey.policy.decision": "allow",
         "donkey.policy.type": "pii_detected",
         "donkey.budget.remaining": 18450,
@@ -124,6 +151,48 @@ def test_build_genai_attributes_keeps_zero_token_counts() -> None:
     attrs = telemetry.build_genai_attributes(input_tokens=0, output_tokens=0)
     assert attrs["gen_ai.usage.input_tokens"] == 0
     assert attrs["gen_ai.usage.output_tokens"] == 0
+
+
+def test_build_genai_attributes_emits_the_routing_facts() -> None:
+    # §3, #309: the served model, routing strategy and fallback flag land on the
+    # span beside the request model.
+    attrs = telemetry.build_genai_attributes(
+        request_model="gpt-5.1",
+        response_model="gpt-4o",
+        routing_type="ModelBased",
+        fallback=True,
+    )
+    assert attrs["gen_ai.request.model"] == "gpt-5.1"
+    assert attrs["gen_ai.response.model"] == "gpt-4o"
+    assert attrs["donkey.routing.type"] == "ModelBased"
+    assert attrs["donkey.routing.fallback"] is True
+
+
+def test_build_genai_attributes_emits_fallback_false_but_drops_none() -> None:
+    # "We routed normally" (fallback=False) is a signal worth emitting on every
+    # span; only an absent header (None) is dropped — a False must not vanish.
+    assert telemetry.build_genai_attributes(fallback=False) == {"donkey.routing.fallback": False}
+    assert telemetry.build_genai_attributes(fallback=None) == {}
+
+
+def test_build_genai_attributes_omits_none_usage_details_keeps_zero() -> None:
+    # cached/reasoning follow the same rule (#307): a present 0 is emitted (an
+    # uncached prompt / a non-reasoning model), an absent one is omitted entirely.
+    attrs = telemetry.build_genai_attributes(cached_tokens=0, reasoning_tokens=7)
+    assert attrs["donkey.usage.cached_tokens"] == 0
+    assert attrs["donkey.usage.reasoning_tokens"] == 7
+    assert "donkey.usage.cache_write_tokens" not in attrs  # None → omitted
+
+
+def test_usage_detail_keys_are_in_the_span_allowlist() -> None:
+    # The generic span emitter allowlists only permitted keys; the new usage keys
+    # must be present or a span would silently drop them.
+    for key in (
+        telemetry.DONKEY_USAGE_CACHED_TOKENS,
+        telemetry.DONKEY_USAGE_CACHE_WRITE_TOKENS,
+        telemetry.DONKEY_USAGE_REASONING_TOKENS,
+    ):
+        assert key in telemetry._ALLOWED_SPAN_ATTRIBUTES
 
 
 # --- policy_type_slug: classified refusal -> donkey.policy.type -------------

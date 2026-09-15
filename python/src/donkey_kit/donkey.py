@@ -21,8 +21,9 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 from .core import _verify
 from .core.auth import AnypointConnectedApp, AuthProvider
 from .core.budget import Budget
-from .core.config import DonkeyConfig
+from .core.config import DonkeyConfig, OnModelSubstitution
 from .core.cost import CostTags
+from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.telemetry import RunScope, run_scope
 from .core.transport import (
     DonkeyAsyncClient,
@@ -143,6 +144,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        on_model_substitution: OnModelSubstitution | None = None,
     ) -> Donkey:
         """Build from the environment (`BG §1.1`), optionally setting the fixed
         cost-attribution tags once for every call (§3, BG §1.7, #196)::
@@ -155,11 +157,21 @@ class Donkey:
         ``[donkey.cost]`` toml table. Values are validated by
         :class:`~donkey_kit.core.cost.CostTags`. Per-call overrides layer on via
         ``donkey.run(...)``.
+
+        ``on_model_substitution`` opts into model determinism (§3, #309): pass
+        ``"raise"`` to have a call raise
+        :class:`~donkey_kit.core.errors.ModelSubstituted` when the gateway serves
+        a different model than requested (a routing fallback). Defaults to the
+        resolved config value (``DONKEY_ON_MODEL_SUBSTITUTION`` / toml / ``"off"``)
+        when left ``None``; the substitution is always visible passively on
+        ``donkey.last_call`` regardless.
         """
         cfg = DonkeyConfig.from_env()
         override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
         if not override.is_empty:
             cfg = cfg.with_overrides(cost=cfg.cost.merge(override))
+        if on_model_substitution is not None:
+            cfg = cfg.with_overrides(on_model_substitution=on_model_substitution)
         return cls(cfg)
 
     # --- framework-free surfaces -------------------------------------------
@@ -178,6 +190,55 @@ class Donkey:
         ``None``) until the first call returns; there is no budget-query endpoint,
         so it is only as fresh as ``budget.observed_at`` (upstream gap #2)."""
         return self._budget
+
+    @property
+    def last_call(self) -> LastCall:
+        """The gateway's own metadata about the most recent governed model call in
+        this context — its ``request_id``, ``api_instance_id`` and
+        ``environment_id`` (§3, #362); what the gateway *did* with the request —
+        ``served_provider`` / ``served_model`` / ``routing_type`` and the
+        ``fallback`` flag, with ``substituted`` true when the served model differs
+        from ``requested_model`` (§3, #309); and the per-call usage token counts
+        (``input_tokens`` / ``output_tokens`` / ``total_tokens`` and the
+        cost-relevant ``cached_tokens`` / ``cache_write_tokens`` /
+        ``reasoning_tokens``, #307). The success-path counterpart to the ids
+        :class:`~donkey_kit.core.errors.DonkeyError` hands you on a refusal.
+
+        Usage counts are read from the response body, so they are ``None`` (never
+        ``0``) when the gateway sent no ``usage`` object; on a streamed response
+        they land once the terminal SSE event has been consumed, not at first read.
+
+        Contextvar-scoped, not instance-scoped (hazard #2): under the parallel
+        fan-out ``donkey.run()`` encourages, each task reads the call *it* made,
+        never whichever sibling's response landed last. A framework-spawned task
+        copies the context at creation, so it sees its own record and never
+        clobbers the parent's.
+
+        Three honest states, never a bare ``None`` (hazard #3):
+
+        * **OBSERVED** — a governed response populated it (fields may still be
+          ``None`` if the gateway sent no identity headers: "we saw the response,
+          it said nothing").
+        * **UNOBSERVED** — no governed model call has returned in this context yet.
+        * **UNAVAILABLE** — every adapter used on this Donkey routes outside our
+          transport (LiteLLM-backed ADK/CrewAI, or ``default_headers``-only
+          LlamaIndex / MS Agent Framework), so a response can never reach the
+          record. :attr:`LastCall.surface` names which. This is derived from the
+          adapters actually resolved, and the conformance suite asserts the
+          exemption rather than skipping it (§8.1).
+        """
+        observed = current_last_call()
+        if observed is not None:
+            return observed
+        # No response reached the contextvar. Distinguish a cold read from a
+        # structurally-unobservable surface: if every adapter resolved on this
+        # Donkey routes outside our transport, say so by name instead of leaving
+        # an indistinguishable UNOBSERVED (hazard #3). An empty cache (raw client
+        # / not used yet) is a cold read, not UNAVAILABLE.
+        used = list(self._adapter_cache.values())
+        if used and all(not a.observes_last_call for a in used):
+            return unavailable(", ".join(sorted(self._adapter_cache)))
+        return UNOBSERVED
 
     @overload
     def openai(self, *, sync: Literal[False] = ..., **kw: Any) -> AsyncOpenAI: ...

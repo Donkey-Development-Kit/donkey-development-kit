@@ -16,6 +16,7 @@ from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
 from donkey_kit.core.errors import PIIDetected, classify
+from donkey_kit.core.lastcall import LastCallStatus, current_last_call
 from donkey_kit.core.telemetry import current_correlation_id, run_context, run_scope
 from donkey_kit.core.transport import (
     CALL_ID_HEADER,
@@ -981,6 +982,17 @@ _SSE_WITH_USAGE = [
     b"data: [DONE]\n\n",
 ]
 
+# A Responses-API-shaped terminal usage event carrying the #307 detail counts
+# (cached / cache_write / reasoning), which arrive only in the final SSE event.
+_SSE_WITH_USAGE_DETAILS = [
+    b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+    b'data: {"choices":[{"delta":{}}],'
+    b'"usage":{"input_tokens":1420,"output_tokens":310,"total_tokens":1730,'
+    b'"input_tokens_details":{"cached_tokens":512,"cache_write_tokens":128},'
+    b'"output_tokens_details":{"reasoning_tokens":96}}}\n\n',
+    b"data: [DONE]\n\n",
+]
+
 
 class _AsyncSSE(httpx.AsyncByteStream):
     """A minimal async byte stream so MockTransport can return a genuinely
@@ -1094,6 +1106,50 @@ async def test_streaming_span_captures_usage_from_terminal_chunk(monkeypatch) ->
     assert attrs["donkey.policy.decision"] == "allow"
     assert attrs["gen_ai.usage.input_tokens"] == 11  # prompt_tokens from the usage event
     assert attrs["gen_ai.usage.output_tokens"] == 3  # completion_tokens from the usage event
+
+
+async def test_streaming_usage_details_fill_span_and_last_call(monkeypatch) -> None:
+    # #307 on the streaming path: the terminal SSE usage event carries the
+    # cached / cache_write / reasoning detail counts. They land on the span's
+    # donkey.usage.* attributes AND merge into donkey.last_call once the stream is
+    # drained — both are unknown at send() time, since the body is unread then.
+    exporter = _use_tracer(monkeypatch)
+    sse = _AsyncSSE(_SSE_WITH_USAGE_DETAILS)
+
+    client = DonkeyAsyncClient(
+        _LLM_CFG, None, transport=httpx.MockTransport(lambda r: _sse_response(sse))
+    )
+    async with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = await client.send(req, stream=True)
+        # Mid-stream: the record is already OBSERVED (a response arrived) but usage
+        # is still None — the terminal event has not been read yet, and None is the
+        # honest state, never a premature 0.
+        mid = current_last_call()
+        assert mid is not None and mid.status is LastCallStatus.OBSERVED
+        assert mid.cached_tokens is None and mid.reasoning_tokens is None
+        async for _line in resp.aiter_lines():
+            pass
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.usage.input_tokens"] == 1420
+    assert attrs["gen_ai.usage.output_tokens"] == 310
+    assert attrs["donkey.usage.cached_tokens"] == 512
+    assert attrs["donkey.usage.cache_write_tokens"] == 128
+    assert attrs["donkey.usage.reasoning_tokens"] == 96
+
+    # last_call now carries the merged usage from the terminal event.
+    final = current_last_call()
+    assert final is not None
+    assert final.input_tokens == 1420
+    assert final.output_tokens == 310
+    assert final.total_tokens == 1730
+    assert final.cached_tokens == 512
+    assert final.cache_write_tokens == 128
+    assert final.reasoning_tokens == 96
 
 
 async def test_streaming_span_closes_when_abandoned_mid_iteration(monkeypatch) -> None:
@@ -1452,3 +1508,158 @@ def test_sync_send_forwards_capture_content_flag(monkeypatch, capture: bool) -> 
         client.post("https://proxy/chat", json={"model": "gpt-4o"})  # buffered
         client.post("https://proxy/chat", json={"model": "gpt-4o", "stream": True})
     assert seen == [capture, capture]
+
+
+# --- gateway routing & fallback: never double-retry, opt-in raise (§3, #309) --
+# The gateway's Enhanced Resilience routing is the FIRST recovery layer; an SDK
+# retry stacked on a response it already failed over just multiplies latency
+# against an outage the gateway is already handling. And a silent model
+# substitution (served ≠ requested) is invisible unless the caller opts in.
+
+_ROUTING_FALLBACK = "x-llm-proxy-routing-fallback"
+_LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
+_ROUTING_TYPE_HEADER = "x-llm-proxy-routing-type"
+
+
+async def test_does_not_retry_a_503_the_gateway_marked_a_fallback() -> None:
+    # AC5: a retryable status carrying routing-fallback:true is terminal — the
+    # gateway already failed over, so the SDK must not retry on top of it.
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(503, headers={_ROUTING_FALLBACK: "true"})
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as client:
+        resp = await client.get("https://x")
+    assert resp.status_code == 503
+    assert calls["n"] == 1  # NOT retried — the gateway's failover is the recovery
+
+
+async def test_still_retries_a_503_that_is_not_a_fallback() -> None:
+    # The no-retry rule is fallback-specific: a plain transient 503 (no routing
+    # header, or fallback:false) still retries to exhaustion as before.
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        # fallback:false is a definitive "no failover" → still retryable.
+        return (
+            httpx.Response(503, headers={_ROUTING_FALLBACK: "false"})
+            if calls["n"] < 3
+            else httpx.Response(200)
+        )
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as client:
+        resp = await client.get("https://x")
+    assert resp.status_code == 200
+    assert calls["n"] == 3  # fallback:false does not suppress the retry
+
+
+def test_sync_does_not_retry_a_503_the_gateway_marked_a_fallback() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(503, headers={_ROUTING_FALLBACK: "true"})
+
+    with _sync_client(handler, DonkeyConfig(max_retries=3)) as client:
+        resp = client.get("https://x")
+    assert resp.status_code == 503
+    assert calls["n"] == 1
+
+
+def _substitution_handler(request: httpx.Request) -> httpx.Response:
+    # 200, but the gateway served a different model than the body requested.
+    return httpx.Response(
+        200,
+        headers={_LLM_MODEL_HEADER: "gpt-4o", _ROUTING_TYPE_HEADER: "ModelBased"},
+        json={"model": "gpt-4o"},
+    )
+
+
+async def test_on_model_substitution_off_by_default_does_not_raise() -> None:
+    # AC4: default config is "off" — a substitution is surfaced passively on
+    # last_call, never as an exception. The call returns the served response.
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy")  # on_model_substitution defaults "off"
+    async with _client(_substitution_handler, cfg) as client:
+        resp = await client.post("https://proxy/chat", json={"model": "gpt-5.1", "input": "hi"})
+    assert resp.status_code == 200
+
+
+async def test_on_model_substitution_raise_raises_typed_error() -> None:
+    # AC4: opted in, a served ≠ requested model raises ModelSubstituted carrying
+    # both models and the served provider — a hard determinism signal.
+    from donkey_kit.core.errors import ModelSubstituted
+
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
+    async with _client(_substitution_handler, cfg) as client:
+        with pytest.raises(ModelSubstituted) as exc:
+            await client.post("https://proxy/chat", json={"model": "gpt-5.1", "input": "hi"})
+    assert exc.value.requested_model == "gpt-5.1"
+    assert exc.value.served_model == "gpt-4o"
+
+
+async def test_on_model_substitution_raise_is_silent_when_models_match() -> None:
+    # No substitution when the served model equals the requested one, even opted in.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={_LLM_MODEL_HEADER: "gpt-5.1"}, json={"model": "gpt-5.1"}
+        )
+
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
+    async with _client(handler, cfg) as client:
+        resp = await client.post("https://proxy/chat", json={"model": "gpt-5.1", "input": "hi"})
+    assert resp.status_code == 200
+
+
+async def test_on_model_substitution_raise_ignores_a_refusal() -> None:
+    # A non-2xx is classified on its own terms — it is never a "silent
+    # substitution", so the raise path leaves it alone even when opted in.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, headers={_LLM_MODEL_HEADER: "gpt-4o"}, json=_PII_403)
+
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
+    async with _client(handler, cfg) as client:
+        resp = await client.post("https://proxy/chat", json={"model": "gpt-5.1", "input": "e@x.io"})
+    assert resp.status_code == 403  # returned, not raised as ModelSubstituted
+
+
+def test_sync_on_model_substitution_raise_raises_typed_error() -> None:
+    from donkey_kit.core.errors import ModelSubstituted
+
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
+    with _sync_client(_substitution_handler, cfg) as client:
+        with pytest.raises(ModelSubstituted) as exc:
+            client.post("https://proxy/chat", json={"model": "gpt-5.1", "input": "hi"})
+    assert exc.value.requested_model == "gpt-5.1"
+    assert exc.value.served_model == "gpt-4o"
+
+
+async def test_served_model_and_fallback_recorded_on_the_span(monkeypatch) -> None:
+    # AC3: the served model, routing type and fallback flag land as span
+    # attributes; a served ≠ requested model is the fastest read of a failover.
+    exporter = _use_tracer(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={
+                _PROVIDER_HEADER: "openai",
+                _LLM_MODEL_HEADER: "gpt-4o",
+                _ROUTING_TYPE_HEADER: "ModelBased",
+                _ROUTING_FALLBACK: "true",
+            },
+            json=_SUCCESS_BODY,
+        )
+
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "gpt-5.1", "input": "hi"})
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.request.model"] == "gpt-5.1"  # what the caller asked for
+    assert attrs["gen_ai.response.model"] == "gpt-4o"  # what the gateway served
+    assert attrs["donkey.routing.type"] == "ModelBased"
+    assert attrs["donkey.routing.fallback"] is True

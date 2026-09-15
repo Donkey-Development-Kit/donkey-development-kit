@@ -27,6 +27,9 @@ if TYPE_CHECKING:
 
 class AgentFrameworkAdapter(Adapter):
     extra = "agent_framework"
+    # We hand OpenAIChatClient only default_headers, never our httpx client, so no
+    # response reaches donkey.last_call (#362) — the SDK does not own the transport.
+    observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatClient(model_id=…, **kwargs)`` you
