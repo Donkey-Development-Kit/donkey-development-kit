@@ -23,6 +23,9 @@ donkey.cost.team            = support
 donkey.cost.project         = triage-v2
 donkey.cost.env             = prod
 donkey.cost.enduser.id      = user-42
+donkey.routing.type         = ModelBased          # how the gateway routed
+donkey.routing.fallback     = false               # did it fail over?
+gen_ai.response.model       = gpt-5.1             # the model that actually served
 ```
 
 Export goes over OTLP to wherever you already send spans. **Nothing in the
@@ -75,6 +78,61 @@ enabled, content is emitted under the pinned semconv attribute names —
 those attributes never reach a span, and the allowlist that builds every span
 drops any content-shaped attribute a call site hands it, so there is no accidental
 path for message text to leak.
+
+## Routing & resilience
+
+The gateway can fail over between providers when one degrades ("Enhanced
+Resilience for Intelligent Routing"). It reports what it *did* with each request
+on the response — which provider and model served it, how it routed, and whether
+that was a **fallback**. Donkey reads those signals off the shared transport, so
+you get them with **no framework required** — the raw `donkey.llm.client()` path
+benefits just as the deep adapters do.
+
+Every governed call exposes them on `donkey.last_call`, beside the usage and
+identity fields:
+
+```python
+donkey = Donkey.from_env()
+await donkey.openai().responses.create(model="gpt-5.1", input="…")
+
+r = donkey.last_call
+r.requested_model    # "gpt-5.1"  — what you asked for
+r.served_model       # "gpt-5.1"  — or a substitute after failover
+r.served_provider    # "openai"
+r.routing_type       # "ModelBased"
+r.fallback           # False      — True if the gateway failed over
+r.substituted        # False      — served_model != requested_model
+```
+
+They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
+`donkey.routing.fallback`) — the single most useful thing to have on hand when
+latency spikes: it tells an operator whether a slow call was routed normally or
+recovered from a degraded provider.
+
+### Two behaviours worth knowing
+
+**The SDK never double-retries a fallback.** Donkey retries `502/503/504` with
+backoff, but if the gateway already failed over internally, a `503` it marked as
+a fallback is **not** retried again — a second recovery layer stacked on a
+working first one just multiplies latency against an outage the gateway already
+handled.
+
+**Opt in to model determinism.** A silent substitution is surfaced passively on
+`last_call.substituted` by default. When a substitution is not acceptable — your
+evaluation, cost model and token assumptions are all pinned to one model — opt
+into a hard error:
+
+```python
+donkey = Donkey.from_env(on_model_substitution="raise")
+# raises ModelSubstituted when the served model differs from the requested one
+```
+
+`on_model_substitution` resolves along the standard precedence (kwarg → env
+`DONKEY_ON_MODEL_SUBSTITUTION` → `.donkey-kit.toml` → default) and **defaults to
+`"off"`**.
+
+  **TypeScript parity is planned (Phase 5).** The same signals will surface as
+  `donkey.lastRouting.servedModel` / `.fallback` once the TypeScript SDK ships.
 
 ## Correlation IDs
 
