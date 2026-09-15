@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 from .core import _verify
 from .core.auth import AnypointConnectedApp, AuthProvider
 from .core.budget import Budget
-from .core.config import DonkeyConfig
+from .core.config import DonkeyConfig, OnModelSubstitution
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.telemetry import RunScope, run_scope
@@ -144,6 +144,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        on_model_substitution: OnModelSubstitution | None = None,
     ) -> Donkey:
         """Build from the environment (`BG §1.1`), optionally setting the fixed
         cost-attribution tags once for every call (§3, BG §1.7, #196)::
@@ -156,11 +157,21 @@ class Donkey:
         ``[donkey.cost]`` toml table. Values are validated by
         :class:`~donkey_kit.core.cost.CostTags`. Per-call overrides layer on via
         ``donkey.run(...)``.
+
+        ``on_model_substitution`` opts into model determinism (§3, #309): pass
+        ``"raise"`` to have a call raise
+        :class:`~donkey_kit.core.errors.ModelSubstituted` when the gateway serves
+        a different model than requested (a routing fallback). Defaults to the
+        resolved config value (``DONKEY_ON_MODEL_SUBSTITUTION`` / toml / ``"off"``)
+        when left ``None``; the substitution is always visible passively on
+        ``donkey.last_call`` regardless.
         """
         cfg = DonkeyConfig.from_env()
         override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
         if not override.is_empty:
             cfg = cfg.with_overrides(cost=cfg.cost.merge(override))
+        if on_model_substitution is not None:
+            cfg = cfg.with_overrides(on_model_substitution=on_model_substitution)
         return cls(cfg)
 
     # --- framework-free surfaces -------------------------------------------
@@ -184,7 +195,10 @@ class Donkey:
     def last_call(self) -> LastCall:
         """The gateway's own metadata about the most recent governed model call in
         this context — its ``request_id``, ``api_instance_id`` and
-        ``environment_id`` (§3, #362), plus the per-call usage token counts
+        ``environment_id`` (§3, #362); what the gateway *did* with the request —
+        ``served_provider`` / ``served_model`` / ``routing_type`` and the
+        ``fallback`` flag, with ``substituted`` true when the served model differs
+        from ``requested_model`` (§3, #309); and the per-call usage token counts
         (``input_tokens`` / ``output_tokens`` / ``total_tokens`` and the
         cost-relevant ``cached_tokens`` / ``cache_write_tokens`` /
         ``reasoning_tokens``, #307). The success-path counterpart to the ids

@@ -51,6 +51,13 @@ _IDENTITY_HEADERS = {
     "x-request-id": _REQUEST_ID,
     "x-envoy-decorator-operation": _DECORATOR,
 }
+# The LIVE-VERIFIED §3 routing headers (responses.success.headers.txt, #309).
+_ROUTING_HEADERS = {
+    "x-llm-proxy-routing-type": "ModelBased",
+    "x-llm-proxy-routing-fallback": "false",
+    "x-llm-proxy-llm-provider": "openai",
+    "x-llm-proxy-llm-model": "gpt-5.1",
+}
 _LLM_CFG = DonkeyConfig(llm_proxy_url="https://proxy")
 
 
@@ -555,3 +562,105 @@ def test_no_unverified_warning_on_the_read_path() -> None:
         # The usage path traces to the same verified §3 row — no warning either.
         parse_usage(_RESPONSES_USAGE)
         usage_from_response(_json_response(200, _RESPONSES_USAGE))
+
+
+# --- gateway routing & fallback (§3, #309) ----------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("false", False),
+        ("true", True),
+        ("False", False),  # case-insensitive
+        ("TRUE", True),
+        ("  true  ", True),  # whitespace tolerated
+        (None, None),  # header absent — a non-proxy / simulated response
+        ("", None),  # empty is not a guess
+        ("maybe", None),  # unrecognised is unknown, never a default False (§0.3)
+    ],
+)
+def test_parse_fallback_shapes(raw, expected) -> None:
+    assert lastcall._parse_fallback(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("true", True), ("false", False), (None, False), ("garbage", False)],
+)
+def test_is_fallback_is_definitive_true_only(raw, expected) -> None:
+    # The retry predicate gates on this: only a definitive "true" counts as a
+    # fallback, so an absent/unknown header still retries as before.
+    headers = {"x-llm-proxy-routing-fallback": raw} if raw is not None else {}
+    assert lastcall.is_fallback(httpx.Response(503, headers=headers)) is expected
+
+
+def test_routing_fallback_is_tri_state() -> None:
+    assert lastcall.routing_fallback(httpx.Response(200, headers=_ROUTING_HEADERS)) is False
+    assert lastcall.routing_fallback(httpx.Response(200)) is None
+
+
+def test_from_response_parses_all_five_routing_fields_from_the_live_fixture() -> None:
+    # AC1: all five routing signals surfaced — the served provider/model, the
+    # routing strategy, the fallback flag, and the requested model the caller sent.
+    fixture = load("success")
+    replayed = replay_headers(fixture)
+    record = LastCall.from_response(
+        httpx.Response(200, headers=replayed), requested_model="gpt-5.1"
+    )
+
+    assert record.requested_model == "gpt-5.1"
+    assert record.served_provider == "openai"
+    assert record.served_model == "gpt-5.1"
+    assert record.routing_type == "ModelBased"
+    assert record.fallback is False
+    assert record.substituted is False
+
+
+def test_missing_routing_headers_report_none_and_do_not_crash() -> None:
+    # AC2: a non-proxy or simulated response with none of the routing headers must
+    # leave every field None/None and never raise (§0.3).
+    record = LastCall.from_response(httpx.Response(200))
+    assert record.served_provider is None
+    assert record.served_model is None
+    assert record.routing_type is None
+    assert record.fallback is None  # tri-state None, NOT a definitive False
+    assert record.requested_model is None
+    assert record.substituted is False  # can't claim a substitution with no data
+
+
+def test_substituted_is_true_only_when_both_known_and_differ() -> None:
+    def rec(**kw) -> LastCall:
+        return LastCall(status=LastCallStatus.OBSERVED, **kw)
+
+    assert rec(requested_model="gpt-5.1", served_model="gpt-4o").substituted is True
+    assert rec(requested_model="gpt-5.1", served_model="gpt-5.1").substituted is False
+    assert rec(requested_model="gpt-5.1", served_model=None).substituted is False
+    assert rec(requested_model=None, served_model="gpt-4o").substituted is False
+
+
+async def test_transport_threads_requested_model_onto_the_record() -> None:
+    # The requested model comes from the request body; the served model from the
+    # gateway header. A substitution is only knowable when both are on the record.
+    def handler(request: httpx.Request) -> httpx.Response:
+        headers = {**_ROUTING_HEADERS, "x-llm-proxy-llm-model": "gpt-4o"}  # served ≠ requested
+        return httpx.Response(200, headers=headers, json={"model": "gpt-4o"})
+
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "gpt-5.1", "input": "hi"})
+
+    record = current_last_call()
+    assert record is not None
+    assert record.requested_model == "gpt-5.1"
+    assert record.served_model == "gpt-4o"
+    assert record.substituted is True
+
+
+def test_no_unverified_warning_on_the_routing_read_path() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        LastCall.from_response(
+            httpx.Response(200, headers={**_IDENTITY_HEADERS, **_ROUTING_HEADERS}),
+            requested_model="gpt-5.1",
+        )

@@ -77,6 +77,19 @@ if TYPE_CHECKING:
 REQUEST_ID_HEADER = "x-request-id"
 DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 
+# VERIFIED (LIVE, docs/verified-apis.md §3 "Gateway identity on response",
+# 2026-08-28, ``responses.success.headers.txt``). The gateway states what it did
+# with the request: which provider/model actually served it, whether that was a
+# routing FALLBACK (the "Enhanced Resilience for Intelligent Routing" failover),
+# and the routing strategy. All four are consumed here on the success path
+# (#309) — a substitution the developer did not choose is otherwise invisible.
+# ``LLM_PROVIDER_HEADER`` is also the SOLE source of ``gen_ai.system`` on the
+# span, so ``core/transport.py`` imports it from here (one definition, §0.3).
+ROUTING_TYPE_HEADER = "x-llm-proxy-routing-type"
+ROUTING_FALLBACK_HEADER = "x-llm-proxy-routing-fallback"
+LLM_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
+LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
+
 # ``api-instance-21133858.3e6ce455-e3e8-4402-b830-9fcf07d9207b.svc`` → instance
 # ``21133858`` + environment ``3e6ce455-…`` (a UUID; it carries dashes but no
 # dots, so a plain three-way split on ``.`` is unambiguous). An unrecognised
@@ -113,6 +126,42 @@ def _parse_decorator_operation(raw: str | None) -> tuple[str | None, str | None]
     if m is None:
         return None, None
     return m["instance"], m["env"]
+
+
+def _parse_fallback(raw: str | None) -> bool | None:
+    """The routing-fallback flag from ``x-llm-proxy-routing-fallback``, or ``None``
+    when the header is absent (a non-proxy / simulated response) or carries an
+    unrecognised value. VERIFIED values are the literal strings ``"true"`` /
+    ``"false"``; anything else is treated as unknown (``None``) rather than
+    guessed, so a bare ``None`` never masquerades as a definitive ``False``
+    (§0.3)."""
+    if raw is None:
+        return None
+    token = raw.strip().lower()
+    if token == "true":
+        return True
+    if token == "false":
+        return False
+    return None
+
+
+def routing_fallback(response: httpx.Response) -> bool | None:
+    """The tri-state routing-fallback flag for a response: ``True`` / ``False``
+    when the gateway stated it, ``None`` when the header is absent (non-proxy /
+    simulated) or unrecognised. This is the value that lands on
+    :attr:`LastCall.fallback` and the span, where ``False`` is a meaningful
+    observation distinct from ``None``."""
+    return _parse_fallback(response.headers.get(ROUTING_FALLBACK_HEADER))
+
+
+def is_fallback(response: httpx.Response) -> bool:
+    """True iff the gateway definitively marked this response as a routing
+    FALLBACK. Used by the transport's retry predicate: a response the gateway
+    already failed over must not be additionally retried by the SDK, or an outage
+    the gateway handled gets a second recovery layer stacked on top (#309, #183).
+    An absent or unrecognised header is *not* a fallback, so this definitive-
+    ``True``-only reading is safe to gate a retry decision on."""
+    return routing_fallback(response) is True
 
 
 # --- per-call usage token counts (#307, BG §1.3) ----------------------------
@@ -249,6 +298,22 @@ class LastCall:
     observed_at: datetime | None = None
     #: For UNAVAILABLE, the adapter surface(s) that cannot observe; else ``None``.
     surface: str | None = None
+    # --- gateway routing & fallback (§3, #309) -----------------------------
+    #: The model the caller ASKED for (from the request body). The reference
+    #: point for :attr:`substituted`; ``None`` when the request carried none.
+    requested_model: str | None = None
+    #: The provider the gateway actually routed to (``x-llm-proxy-llm-provider``).
+    served_provider: str | None = None
+    #: The model the gateway actually served (``x-llm-proxy-llm-model``). After a
+    #: routing fallback this may differ from :attr:`requested_model`.
+    served_model: str | None = None
+    #: The routing strategy the gateway applied (``x-llm-proxy-routing-type``,
+    #: e.g. ``"ModelBased"``).
+    routing_type: str | None = None
+    #: Whether the gateway performed a routing FALLBACK. ``None`` when the header
+    #: is absent (non-proxy / simulated response) — distinct from a definitive
+    #: ``False`` ("no fallback occurred").
+    fallback: bool | None = None
     # --- per-call usage token counts (#307), from the response BODY's ``usage``.
     # ``None`` (never ``0``) when unobserved or absent; on a stream they land once
     # the terminal SSE event is scanned (:func:`observe_usage`), not at record time.
@@ -271,6 +336,19 @@ class LastCall:
         return self.status is LastCallStatus.OBSERVED
 
     @property
+    def substituted(self) -> bool:
+        """True iff the gateway served a *different* model than the one requested
+        — a silent model substitution the developer's cost model, token
+        assumptions and evaluation are otherwise blind to (#309). Requires both
+        the requested and served model to be known; a missing either side is not
+        a substitution claim."""
+        return (
+            self.requested_model is not None
+            and self.served_model is not None
+            and self.requested_model != self.served_model
+        )
+
+    @property
     def available(self) -> bool:
         """False only when the current surface structurally cannot be observed
         (LiteLLM-backed / ``default_headers``-only adapters); a plain cold read is
@@ -278,13 +356,21 @@ class LastCall:
         return self.status is not LastCallStatus.UNAVAILABLE
 
     @classmethod
-    def from_response(cls, response: httpx.Response, *, now: datetime | None = None) -> LastCall:
+    def from_response(
+        cls,
+        response: httpx.Response,
+        *,
+        requested_model: str | None = None,
+        now: datetime | None = None,
+    ) -> LastCall:
         """Build an ``OBSERVED`` record from a governed response's §3 headers.
 
         Always ``OBSERVED`` — the SDK saw a response — even if the gateway
         carried no identity headers (each field then stays ``None``): "we saw the
         response, it said nothing" is a true and different statement from "we
-        never saw a response". ``now`` is injectable for tests."""
+        never saw a response". ``requested_model`` is the model the caller sent
+        (the transport reads it from the request body); it is the reference point
+        for :attr:`substituted`. ``now`` is injectable for tests."""
         api_instance_id, environment_id = _parse_decorator_operation(
             response.headers.get(DECORATOR_OPERATION_HEADER)
         )
@@ -295,6 +381,11 @@ class LastCall:
             api_instance_id=api_instance_id,
             environment_id=environment_id,
             observed_at=now if now is not None else _utcnow(),
+            requested_model=requested_model,
+            served_provider=response.headers.get(LLM_PROVIDER_HEADER),
+            served_model=response.headers.get(LLM_MODEL_HEADER),
+            routing_type=response.headers.get(ROUTING_TYPE_HEADER),
+            fallback=_parse_fallback(response.headers.get(ROUTING_FALLBACK_HEADER)),
             input_tokens=usage["input_tokens"],
             output_tokens=usage["output_tokens"],
             total_tokens=usage["total_tokens"],
@@ -331,12 +422,18 @@ def current_last_call() -> LastCall | None:
     return _last_call.get()
 
 
-def observe_last_call(response: httpx.Response, *, now: datetime | None = None) -> LastCall:
-    """Record the gateway identity from a governed model response into this
-    context (§2.3, #362). Called from the transport's ``_on_response`` beside
-    :meth:`Budget.observe`. Returns the record it set, for tests. ``now`` is
-    injectable; production uses the wall clock (UTC)."""
-    record = LastCall.from_response(response, now=now)
+def observe_last_call(
+    response: httpx.Response,
+    *,
+    requested_model: str | None = None,
+    now: datetime | None = None,
+) -> LastCall:
+    """Record the gateway identity, routing and fallback from a governed model
+    response into this context (§2.3, #362/#309). Called from the transport's
+    ``_on_response`` beside :meth:`Budget.observe`, which passes the requested
+    model it already parsed from the request body. Returns the record it set, for
+    tests. ``now`` is injectable; production uses the wall clock (UTC)."""
+    record = LastCall.from_response(response, requested_model=requested_model, now=now)
     _last_call.set(record)
     return record
 
