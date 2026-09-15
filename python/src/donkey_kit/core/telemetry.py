@@ -67,6 +67,12 @@ GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
 GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
 GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+# Cached-input and reasoning-output token counts (#307). The GenAI semconv at
+# GEN_AI_SEMCONV_VERSION pins ONLY ``gen_ai.usage.input_tokens`` /
+# ``output_tokens`` — it defines no stable key for cached or reasoning tokens — so
+# per AC #4 ("under the pinned semconv names where they exist") these ride the
+# stable ``donkey.*`` namespace instead of an invented ``gen_ai.*`` key. Promote a
+# row to ``gen_ai.*`` only when a semconv version that pins it is adopted here.
 
 # gen_ai.* CONTENT attributes — the message text itself, pinned like the rest.
 # These are the ONLY attributes gated behind ``telemetry_capture_content`` (#306):
@@ -98,6 +104,11 @@ DONKEY_COST_ENDUSER = "donkey.cost.enduser.id"
 # operator wants on every span, not just the failover ones.
 DONKEY_ROUTING_TYPE = "donkey.routing.type"
 DONKEY_ROUTING_FALLBACK = "donkey.routing.fallback"
+# Per-call usage token counts the semconv has no pinned key for (#307). Stable
+# public API, same as the other donkey.* keys — renaming one is a breaking change.
+DONKEY_USAGE_CACHED_TOKENS = "donkey.usage.cached_tokens"
+DONKEY_USAGE_CACHE_WRITE_TOKENS = "donkey.usage.cache_write_tokens"
+DONKEY_USAGE_REASONING_TOKENS = "donkey.usage.reasoning_tokens"
 
 # donkey.policy.decision values.
 POLICY_DECISION_ALLOW = "allow"
@@ -124,6 +135,9 @@ _ALLOWED_SPAN_ATTRIBUTES = frozenset(
         GEN_AI_RESPONSE_MODEL,
         GEN_AI_USAGE_INPUT_TOKENS,
         GEN_AI_USAGE_OUTPUT_TOKENS,
+        DONKEY_USAGE_CACHED_TOKENS,
+        DONKEY_USAGE_CACHE_WRITE_TOKENS,
+        DONKEY_USAGE_REASONING_TOKENS,
         DONKEY_CORRELATION_ID,
         DONKEY_POLICY_DECISION,
         DONKEY_POLICY_TYPE,
@@ -344,6 +358,9 @@ def build_genai_attributes(
     fallback: bool | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
+    cached_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
     decision: str | None = None,
     policy_type: str | None = None,
     budget_remaining: int | None = None,
@@ -386,6 +403,12 @@ def build_genai_attributes(
         attrs[GEN_AI_USAGE_INPUT_TOKENS] = input_tokens
     if output_tokens is not None:
         attrs[GEN_AI_USAGE_OUTPUT_TOKENS] = output_tokens
+    if cached_tokens is not None:
+        attrs[DONKEY_USAGE_CACHED_TOKENS] = cached_tokens
+    if cache_write_tokens is not None:
+        attrs[DONKEY_USAGE_CACHE_WRITE_TOKENS] = cache_write_tokens
+    if reasoning_tokens is not None:
+        attrs[DONKEY_USAGE_REASONING_TOKENS] = reasoning_tokens
     if decision is not None:
         attrs[DONKEY_POLICY_DECISION] = decision
     if policy_type is not None:

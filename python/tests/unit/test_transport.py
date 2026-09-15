@@ -16,6 +16,7 @@ from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
 from donkey_kit.core.errors import PIIDetected, classify
+from donkey_kit.core.lastcall import LastCallStatus, current_last_call
 from donkey_kit.core.telemetry import current_correlation_id, run_context, run_scope
 from donkey_kit.core.transport import (
     CALL_ID_HEADER,
@@ -981,6 +982,17 @@ _SSE_WITH_USAGE = [
     b"data: [DONE]\n\n",
 ]
 
+# A Responses-API-shaped terminal usage event carrying the #307 detail counts
+# (cached / cache_write / reasoning), which arrive only in the final SSE event.
+_SSE_WITH_USAGE_DETAILS = [
+    b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+    b'data: {"choices":[{"delta":{}}],'
+    b'"usage":{"input_tokens":1420,"output_tokens":310,"total_tokens":1730,'
+    b'"input_tokens_details":{"cached_tokens":512,"cache_write_tokens":128},'
+    b'"output_tokens_details":{"reasoning_tokens":96}}}\n\n',
+    b"data: [DONE]\n\n",
+]
+
 
 class _AsyncSSE(httpx.AsyncByteStream):
     """A minimal async byte stream so MockTransport can return a genuinely
@@ -1094,6 +1106,50 @@ async def test_streaming_span_captures_usage_from_terminal_chunk(monkeypatch) ->
     assert attrs["donkey.policy.decision"] == "allow"
     assert attrs["gen_ai.usage.input_tokens"] == 11  # prompt_tokens from the usage event
     assert attrs["gen_ai.usage.output_tokens"] == 3  # completion_tokens from the usage event
+
+
+async def test_streaming_usage_details_fill_span_and_last_call(monkeypatch) -> None:
+    # #307 on the streaming path: the terminal SSE usage event carries the
+    # cached / cache_write / reasoning detail counts. They land on the span's
+    # donkey.usage.* attributes AND merge into donkey.last_call once the stream is
+    # drained — both are unknown at send() time, since the body is unread then.
+    exporter = _use_tracer(monkeypatch)
+    sse = _AsyncSSE(_SSE_WITH_USAGE_DETAILS)
+
+    client = DonkeyAsyncClient(
+        _LLM_CFG, None, transport=httpx.MockTransport(lambda r: _sse_response(sse))
+    )
+    async with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = await client.send(req, stream=True)
+        # Mid-stream: the record is already OBSERVED (a response arrived) but usage
+        # is still None — the terminal event has not been read yet, and None is the
+        # honest state, never a premature 0.
+        mid = current_last_call()
+        assert mid is not None and mid.status is LastCallStatus.OBSERVED
+        assert mid.cached_tokens is None and mid.reasoning_tokens is None
+        async for _line in resp.aiter_lines():
+            pass
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.usage.input_tokens"] == 1420
+    assert attrs["gen_ai.usage.output_tokens"] == 310
+    assert attrs["donkey.usage.cached_tokens"] == 512
+    assert attrs["donkey.usage.cache_write_tokens"] == 128
+    assert attrs["donkey.usage.reasoning_tokens"] == 96
+
+    # last_call now carries the merged usage from the terminal event.
+    final = current_last_call()
+    assert final is not None
+    assert final.input_tokens == 1420
+    assert final.output_tokens == 310
+    assert final.total_tokens == 1730
+    assert final.cached_tokens == 512
+    assert final.cache_write_tokens == 128
+    assert final.reasoning_tokens == 96
 
 
 async def test_streaming_span_closes_when_abandoned_mid_iteration(monkeypatch) -> None:

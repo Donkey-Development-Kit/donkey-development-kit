@@ -26,7 +26,16 @@ donkey.cost.enduser.id      = user-42
 donkey.routing.type         = ModelBased          # how the gateway routed
 donkey.routing.fallback     = false               # did it fail over?
 gen_ai.response.model       = gpt-5.1             # the model that actually served
+donkey.usage.cached_tokens        = 512   # omitted when the provider reports none
+donkey.usage.cache_write_tokens   = 128
+donkey.usage.reasoning_tokens     = 96
 ```
+
+The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
+semconv has no pinned key for — cached / cache-write prompt tokens and
+reasoning-model thinking tokens. They are read from the response `usage` block's
+detail sub-objects and are **omitted, never `0`,** when the provider reports no
+detail counts. The same counts are exposed per-call on `donkey.last_call`.
 
 Export goes over OTLP to wherever you already send spans. **Nothing in the
 emit path is Anypoint-specific.**

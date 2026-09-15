@@ -32,7 +32,11 @@ from donkey_kit.core.lastcall import (
     LastCallStatus,
     current_last_call,
     observe_last_call,
+    observe_usage,
+    parse_usage,
     unavailable,
+    usage_from_response,
+    usage_mapping,
 )
 from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient
 from donkey_kit.simulator.fixtures import load, replay_headers
@@ -348,6 +352,204 @@ def test_committed_success_fixture_feeds_the_record() -> None:
     assert record.environment_id == _ENVIRONMENT_ID
 
 
+# --- per-call usage token counts (#307) -------------------------------------
+
+# The Responses API usage shape, verbatim from responses.success.body.json — the
+# detail fields are present-but-zero here (0, NOT absent), which is the contrast
+# the None-not-zero tests below rely on.
+_RESPONSES_USAGE = {
+    "input_tokens": 17,
+    "input_tokens_details": {"cache_write_tokens": 0, "cached_tokens": 0},
+    "output_tokens": 51,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 68,
+}
+
+
+def test_parse_usage_responses_api_shape() -> None:
+    assert parse_usage(_RESPONSES_USAGE) == {
+        "input_tokens": 17,
+        "output_tokens": 51,
+        "total_tokens": 68,
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0,
+    }
+
+
+def test_parse_usage_chat_completions_shape() -> None:
+    # prompt_tokens/completion_tokens + *_tokens_details is the OpenAI Chat shape;
+    # cache_write has no Chat equivalent, so it stays None.
+    usage = {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "total_tokens": 120,
+        "prompt_tokens_details": {"cached_tokens": 40},
+        "completion_tokens_details": {"reasoning_tokens": 8},
+    }
+    assert parse_usage(usage) == {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "total_tokens": 120,
+        "cached_tokens": 40,
+        "cache_write_tokens": None,
+        "reasoning_tokens": 8,
+    }
+
+
+def test_parse_usage_absent_detail_fields_are_none_not_zero() -> None:
+    # Only the top-level counts present: the detail fields are ABSENT, so None —
+    # distinct from the fixture's present-but-zero 0 (AC2).
+    assert parse_usage({"input_tokens": 5, "output_tokens": 3}) == {
+        "input_tokens": 5,
+        "output_tokens": 3,
+        "total_tokens": None,
+        "cached_tokens": None,
+        "cache_write_tokens": None,
+        "reasoning_tokens": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [None, {}, "usage", 17, {"input_tokens": "x"}, {"input_tokens": True}],
+)
+def test_parse_usage_non_dict_or_garbage_is_all_none(bad) -> None:
+    # Never raises, never a fabricated 0; a bool is not accepted as an int (§0.3).
+    assert set(parse_usage(bad).values()) == {None}
+
+
+def test_usage_mapping_reads_both_shapes_and_rejects_others() -> None:
+    assert usage_mapping({"usage": {"prompt_tokens": 1}}) == {"prompt_tokens": 1}
+    # The Responses API terminal event nests usage under `response`.
+    assert usage_mapping({"response": {"usage": {"input_tokens": 2}}}) == {"input_tokens": 2}
+    assert usage_mapping({"type": "response.output_text.delta"}) is None
+    assert usage_mapping("not-a-dict") is None
+
+
+def _json_response(status: int, usage: object) -> httpx.Response:
+    body: dict[str, object] = {"model": "gpt-5.1"}
+    if usage is not None:
+        body["usage"] = usage
+    return httpx.Response(status, json=body, headers={"content-type": "application/json"})
+
+
+def test_usage_from_response_reads_the_body() -> None:
+    parsed = usage_from_response(_json_response(200, _RESPONSES_USAGE))
+    assert parsed["input_tokens"] == 17
+    assert parsed["reasoning_tokens"] == 0
+
+
+def test_usage_from_response_no_usage_object_is_all_none() -> None:
+    assert set(usage_from_response(_json_response(200, None)).values()) == {None}
+
+
+def test_usage_from_response_non_2xx_is_all_none() -> None:
+    # We never parse a refusal body for usage even if it carried a usage-like key.
+    assert set(usage_from_response(_json_response(403, _RESPONSES_USAGE)).values()) == {None}
+
+
+def test_usage_from_response_unread_or_empty_body_never_raises() -> None:
+    # An SSE / bodyless response's .json() raises; it is caught → all None (§0.3).
+    resp = httpx.Response(200, headers={"content-type": "text/event-stream"})
+    assert set(usage_from_response(resp).values()) == {None}
+
+
+def test_from_response_populates_usage_from_the_committed_fixture() -> None:
+    # AC1: the three detail fields (and the totals) parse from the captured LIVE
+    # fixture, with the fixture bytes themselves as the test input.
+    fixture = load("success")
+    resp = httpx.Response(
+        200, content=fixture.body, headers={"content-type": "application/json"}
+    )
+    record = LastCall.from_response(resp)
+    assert record.status is LastCallStatus.OBSERVED
+    assert record.input_tokens == 17
+    assert record.output_tokens == 51
+    assert record.total_tokens == 68
+    assert record.cached_tokens == 0
+    assert record.cache_write_tokens == 0
+    assert record.reasoning_tokens == 0
+
+
+def test_from_response_identity_only_leaves_usage_none() -> None:
+    # A headers-only response is OBSERVED with identity but no usage — usage None,
+    # never 0, exactly like an unobserved budget window.
+    record = LastCall.from_response(httpx.Response(200, headers=_IDENTITY_HEADERS))
+    assert record.request_id == _REQUEST_ID
+    assert record.input_tokens is None
+    assert record.total_tokens is None
+    assert record.reasoning_tokens is None
+
+
+def test_observe_usage_merges_into_the_observed_record() -> None:
+    def body() -> None:
+        # A stream first sets an OBSERVED record with identity but no usage...
+        observe_last_call(httpx.Response(200, headers=_IDENTITY_HEADERS))
+        before = current_last_call()
+        assert before is not None and before.input_tokens is None
+        # ...then the terminal SSE event's counts merge in without touching identity.
+        merged = observe_usage(
+            parse_usage(
+                {
+                    "prompt_tokens": 11,
+                    "completion_tokens": 3,
+                    "completion_tokens_details": {"reasoning_tokens": 2},
+                }
+            )
+        )
+        assert merged is not None
+        rec = current_last_call()
+        assert rec is not None
+        assert rec.input_tokens == 11
+        assert rec.output_tokens == 3
+        assert rec.reasoning_tokens == 2
+        assert rec.request_id == _REQUEST_ID  # identity preserved through the merge
+
+    contextvars.copy_context().run(body)
+
+
+def test_observe_usage_is_a_noop_without_an_observed_record() -> None:
+    def body() -> None:
+        # A cold context has no record to merge into: no-op, returns None.
+        assert observe_usage(parse_usage({"input_tokens": 5})) is None
+        assert current_last_call() is None
+
+    contextvars.copy_context().run(body)
+
+
+def _usage_handler(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(
+        200, headers=_IDENTITY_HEADERS, json={"model": "gpt-4o", "usage": _RESPONSES_USAGE}
+    )
+
+
+async def test_async_transport_populates_usage_on_a_model_call() -> None:
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(_usage_handler))
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
+    rec = current_last_call()
+    assert rec is not None
+    assert rec.input_tokens == 17
+    assert rec.reasoning_tokens == 0
+    assert rec.request_id == _REQUEST_ID  # identity and usage on one record
+
+
+def test_sync_transport_populates_usage_identically() -> None:
+    def body() -> LastCall:
+        client = DonkeyClient(_LLM_CFG, transport=httpx.MockTransport(_usage_handler))
+        with client:
+            client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
+        rec = current_last_call()
+        assert rec is not None
+        return rec
+
+    record = contextvars.copy_context().run(body)
+    assert record.input_tokens == 17
+    assert record.total_tokens == 68
+    assert record.cached_tokens == 0
+
+
 # --- no UnverifiedValueWarning: every field traces to a verified row (AC10) --
 
 
@@ -357,6 +559,9 @@ def test_no_unverified_warning_on_the_read_path() -> None:
         LastCall.from_response(httpx.Response(200, headers=_IDENTITY_HEADERS))
         observe_last_call(httpx.Response(200, headers=_IDENTITY_HEADERS))
         _ = current_last_call()
+        # The usage path traces to the same verified §3 row — no warning either.
+        parse_usage(_RESPONSES_USAGE)
+        usage_from_response(_json_response(200, _RESPONSES_USAGE))
 
 
 # --- gateway routing & fallback (§3, #309) ----------------------------------
