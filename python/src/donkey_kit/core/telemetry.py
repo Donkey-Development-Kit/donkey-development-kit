@@ -59,6 +59,12 @@ GEN_AI_SEMCONV_VERSION = "1.30.0"
 # gen_ai.* — pinned to GEN_AI_SEMCONV_VERSION.
 GEN_AI_SYSTEM = "gen_ai.system"
 GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
+# The model the gateway ACTUALLY served (``x-llm-proxy-llm-model``). Distinct
+# from ``gen_ai.request.model``: after a routing fallback the two differ, and the
+# semconv's ``gen_ai.response.model`` is exactly "the model that generated the
+# response" (#309). When latency spikes, seeing request≠response model on the
+# span is the single fastest read that a failover happened.
+GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
 GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
 
@@ -85,6 +91,13 @@ DONKEY_COST_TEAM = "donkey.cost.team"
 DONKEY_COST_PROJECT = "donkey.cost.project"
 DONKEY_COST_ENV = "donkey.cost.env"
 DONKEY_COST_ENDUSER = "donkey.cost.enduser.id"
+# Gateway routing & resilience (§3, #309). The served provider already lands on
+# ``gen_ai.system`` and the served model on ``gen_ai.response.model``; these two
+# carry the gateway-specific routing facts the semconv has no key for. Emitted
+# even when ``fallback`` is ``False`` — "we routed normally" is a signal an
+# operator wants on every span, not just the failover ones.
+DONKEY_ROUTING_TYPE = "donkey.routing.type"
+DONKEY_ROUTING_FALLBACK = "donkey.routing.fallback"
 
 # donkey.policy.decision values.
 POLICY_DECISION_ALLOW = "allow"
@@ -108,6 +121,7 @@ _ALLOWED_SPAN_ATTRIBUTES = frozenset(
     {
         GEN_AI_SYSTEM,
         GEN_AI_REQUEST_MODEL,
+        GEN_AI_RESPONSE_MODEL,
         GEN_AI_USAGE_INPUT_TOKENS,
         GEN_AI_USAGE_OUTPUT_TOKENS,
         DONKEY_CORRELATION_ID,
@@ -118,6 +132,8 @@ _ALLOWED_SPAN_ATTRIBUTES = frozenset(
         DONKEY_COST_PROJECT,
         DONKEY_COST_ENV,
         DONKEY_COST_ENDUSER,
+        DONKEY_ROUTING_TYPE,
+        DONKEY_ROUTING_FALLBACK,
     }
 )
 
@@ -323,6 +339,9 @@ def build_genai_attributes(
     *,
     system: str | None = None,
     request_model: str | None = None,
+    response_model: str | None = None,
+    routing_type: str | None = None,
+    fallback: bool | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
     decision: str | None = None,
@@ -355,6 +374,14 @@ def build_genai_attributes(
         attrs[GEN_AI_SYSTEM] = system
     if request_model is not None:
         attrs[GEN_AI_REQUEST_MODEL] = request_model
+    if response_model is not None:
+        attrs[GEN_AI_RESPONSE_MODEL] = response_model
+    if routing_type is not None:
+        attrs[DONKEY_ROUTING_TYPE] = routing_type
+    # ``fallback`` is emitted even when ``False`` — "no fallback" is a real,
+    # useful observation; only an absent header (``None``) is dropped (#309).
+    if fallback is not None:
+        attrs[DONKEY_ROUTING_FALLBACK] = fallback
     if input_tokens is not None:
         attrs[GEN_AI_USAGE_INPUT_TOKENS] = input_tokens
     if output_tokens is not None:

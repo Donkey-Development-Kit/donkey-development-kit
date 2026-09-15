@@ -162,6 +162,32 @@ def test_from_env_kwargs_merge_over_env_tags(
     assert fab.config.cost == CostTags(team="kwarg-team", env="prod")
 
 
+# --- on_model_substitution override on the public surface (§3, #309) --------
+
+
+def test_from_env_sets_on_model_substitution(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The kwarg opts a Donkey into model determinism without an env var / toml —
+    # it merges over the resolved config the same way the cost tags do.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("DONKEY_ON_MODEL_SUBSTITUTION", raising=False)
+
+    assert Donkey.from_env().config.on_model_substitution == "off"  # resolved default
+    fab = Donkey.from_env(on_model_substitution="raise")
+    assert fab.config.on_model_substitution == "raise"
+
+
+def test_model_substituted_is_a_public_export() -> None:
+    # The typed error the "raise" mode surfaces must be importable from the
+    # top-level package so a caller can `except ModelSubstituted` (§3, #309).
+    from donkey_kit import ModelSubstituted
+    from donkey_kit.core.errors import DonkeyError
+
+    assert issubclass(ModelSubstituted, DonkeyError)
+
+
 def test_run_binds_cost_override_for_the_block() -> None:
     from donkey_kit.core.cost import CostTags
     from donkey_kit.core.telemetry import current_cost_tags

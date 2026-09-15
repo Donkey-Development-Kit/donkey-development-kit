@@ -45,8 +45,16 @@ from .auth import AuthProvider
 from .budget import Budget
 from .config import DonkeyConfig
 from .cost import CostTags
-from .errors import classify
-from .lastcall import observe_last_call
+from .errors import ModelSubstituted, classify
+from .lastcall import (
+    LLM_MODEL_HEADER,
+    LLM_PROVIDER_HEADER,
+    REQUEST_ID_HEADER,
+    ROUTING_TYPE_HEADER,
+    is_fallback,
+    observe_last_call,
+    routing_fallback,
+)
 from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
@@ -253,8 +261,9 @@ def _retry_delay(attempt: int, response: httpx.Response) -> float:
 # VERIFIED (LIVE) — docs/verified-apis.md §2 "Model routing" and §3 "Gateway
 # identity on response" — and is the SOLE source of gen_ai.system; absent → the
 # attribute is omitted, never guessed (§0.3), because the proxy routes to
-# several providers and defaulting one would misattribute the call.
-_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
+# several providers and defaulting one would misattribute the call. The header
+# NAME is defined once in ``lastcall`` (which also parses it onto ``last_call``)
+# and imported here as ``LLM_PROVIDER_HEADER`` so there is a single source (#309).
 # Streaming (SSE) responses carry no usage on the envelope; it lives in a
 # terminal event, captured by the span-closing stream wrapper (#193).
 _STREAM_CONTENT_TYPE = "text/event-stream"
@@ -351,7 +360,13 @@ def _record_response(
         decision, policy_type = _span_decision(response)
         input_tokens, output_tokens = _usage_tokens(response)
         gspan.record(
-            system=response.headers.get(_PROVIDER_HEADER),
+            system=response.headers.get(LLM_PROVIDER_HEADER),
+            # Served model + routing facts (§3, #309): request≠response model on
+            # the span is the fastest read that a gateway failover happened, and
+            # the fallback flag is emitted even when False.
+            response_model=response.headers.get(LLM_MODEL_HEADER),
+            routing_type=response.headers.get(ROUTING_TYPE_HEADER),
+            fallback=routing_fallback(response),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             decision=decision,
@@ -370,6 +385,38 @@ def _record_response(
             gspan.set_error()
     except Exception:  # noqa: BLE001 — telemetry must never break the request
         pass
+
+
+def _substitution_error(
+    cfg: DonkeyConfig, request: httpx.Request, response: httpx.Response
+) -> ModelSubstituted | None:
+    """The :class:`ModelSubstituted` to raise for this response, or ``None``.
+
+    Off unless ``on_model_substitution="raise"`` (§3, #309): the default surfaces
+    a substitution passively on ``donkey.last_call.substituted`` and the span.
+    Only a **2xx** is checked — a refusal or upstream error is classified on its
+    own terms elsewhere and is not a "silent substitution". A substitution
+    requires both the requested model (from the body) and the served model (the
+    gateway header) to be known and to differ; a missing either side is never a
+    guess (§0.3). Never raises here — it returns the error for the caller path to
+    raise once telemetry has been recorded."""
+    if cfg.on_model_substitution != "raise":
+        return None
+    if response.status_code // 100 != 2:
+        return None
+    requested = _request_model(request)
+    served = response.headers.get(LLM_MODEL_HEADER)
+    if requested is None or served is None or requested == served:
+        return None
+    return ModelSubstituted(
+        f"Gateway served model {served!r}, but {requested!r} was requested "
+        f"(routing fallback); raised because on_model_substitution='raise'.",
+        requested_model=requested,
+        served_model=served,
+        served_provider=response.headers.get(LLM_PROVIDER_HEADER),
+        request_id=response.headers.get(REQUEST_ID_HEADER),
+        response=response,
+    )
 
 
 # --- streaming span lifecycle (#193, BG §1.6) -------------------------------
@@ -598,9 +645,12 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # Only a model call feeds ``last_call`` — a token fetch or a registry
         # GET shares this transport but is not "the last call" a developer means
         # (#362). ``_request_model`` is the same signal ``send()`` uses to decide
-        # whether to open a GenAI span, so the two stay in step.
-        if _request_model(request) is not None:
-            observe_last_call(response)
+        # whether to open a GenAI span, so the two stay in step. The requested
+        # model is threaded through so ``last_call`` can report a substitution
+        # (requested≠served) against what the caller actually asked for (#309).
+        model = _request_model(request)
+        if model is not None:
+            observe_last_call(response, requested_model=model)
 
     async def _on_refusal(self, violation: object) -> None:
         """Refusal seam for Phase 2 reaction handlers. Defined here so the
@@ -693,7 +743,17 @@ class DonkeyAsyncClient(httpx.AsyncClient):
                 # Event hooks re-run on send() → fresh token.
                 continue
 
-            if response.status_code in _RETRYABLE_STATUS and attempt < attempts - 1:
+            # A response the gateway already failed over (routing fallback) is NOT
+            # retried, even on a retryable status: the gateway's Enhanced
+            # Resilience routing is the first recovery layer, and an SDK retry on
+            # top multiplies latency against an outage the gateway is already
+            # handling (§3, #309, #183). ``is_fallback`` is definitive-True-only,
+            # so a non-proxy 5xx with no routing header still retries as before.
+            if (
+                response.status_code in _RETRYABLE_STATUS
+                and not is_fallback(response)
+                and attempt < attempts - 1
+            ):
                 delay = _retry_delay(attempt, response)
                 await response.aclose()
                 await asyncio.sleep(delay)
@@ -748,6 +808,16 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             correlation_header=self._correlation_header,
             cost_tags=effective_cost_tags(self._cfg),
         )
+        # After telemetry (so the substituted call is still on the span), a
+        # caller who opted into ``on_model_substitution="raise"`` gets a hard
+        # error instead of the response (§3, #309). Raising here propagates out
+        # through the span context manager (buffered) or the detached-span guard
+        # in ``send()`` (streaming), so the span still closes. The response is
+        # closed first so an aborted stream leaks no connection.
+        substitution = _substitution_error(self._cfg, request, response)
+        if substitution is not None:
+            await response.aclose()
+            raise substitution
         if streaming:
             if _is_streaming_success(response):
                 # An async client's response.stream is an AsyncByteStream; httpx
@@ -810,9 +880,10 @@ class DonkeyClient(httpx.Client):
         ``super()._on_response(...)``."""
         if self._budget is not None:
             self._budget.observe(response)
-        # Model calls only — see the async twin (#362).
-        if _request_model(request) is not None:
-            observe_last_call(response)
+        # Model calls only — see the async twin (#362/#309).
+        model = _request_model(request)
+        if model is not None:
+            observe_last_call(response, requested_model=model)
 
     def _on_refusal(self, violation: object) -> None:
         """Refusal seam for Phase 2; no caller until ``classify()`` (#181)."""
@@ -866,7 +937,13 @@ class DonkeyClient(httpx.Client):
 
             # No 401-refresh branch: with no token provider there is nothing to
             # refresh, so a 401 here is a real credential failure and terminal.
-            if response.status_code in _RETRYABLE_STATUS and attempt < attempts - 1:
+            # A routing-fallback response is not double-retried — see the async
+            # twin (§3, #309, #183).
+            if (
+                response.status_code in _RETRYABLE_STATUS
+                and not is_fallback(response)
+                and attempt < attempts - 1
+            ):
                 delay = _retry_delay(attempt, response)
                 response.close()
                 time.sleep(delay)
@@ -899,6 +976,12 @@ class DonkeyClient(httpx.Client):
             correlation_header=self._correlation_header,
             cost_tags=effective_cost_tags(self._cfg),
         )
+        # After telemetry, raise for an opted-in substitution — see the async
+        # twin (§3, #309).
+        substitution = _substitution_error(self._cfg, request, response)
+        if substitution is not None:
+            response.close()
+            raise substitution
         if streaming:
             if _is_streaming_success(response):
                 # A sync client's response.stream is a SyncByteStream; httpx types
