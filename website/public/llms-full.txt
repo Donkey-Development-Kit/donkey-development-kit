@@ -2332,7 +2332,16 @@ donkey.cost.team            = support
 donkey.cost.project         = triage-v2
 donkey.cost.env             = prod
 donkey.cost.enduser.id      = user-42
+donkey.usage.cached_tokens        = 512   # omitted when the provider reports none
+donkey.usage.cache_write_tokens   = 128
+donkey.usage.reasoning_tokens     = 96
 ```
+
+The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
+semconv has no pinned key for — cached / cache-write prompt tokens and
+reasoning-model thinking tokens. They are read from the response `usage` block's
+detail sub-objects and are **omitted, never `0`,** when the provider reports no
+detail counts. The same counts are exposed per-call on `donkey.last_call`.
 
 Export goes over OTLP to wherever you already send spans. **Nothing in the
 emit path is Anypoint-specific.**
@@ -3756,8 +3765,9 @@ bespoke header the SDK invents.
   `x-envoy-decorator-operation` carrying the API-instance id + environment id, an
   `x-correlation-id`, and `x-llm-proxy-*` routing headers.
 - **Token usage** for cost attribution comes from the response `usage` block
-  (`input_tokens`, `output_tokens`, `total_tokens`, …), passed through verbatim
-  from the provider.
+  (`input_tokens`, `output_tokens`, `total_tokens`, plus the detail counts
+  `cached_tokens` / `cache_write_tokens` / `reasoning_tokens`), passed through
+  verbatim from the provider and surfaced per-call on `donkey.last_call`.
 
 ## Optional attribution metadata
 
@@ -3843,6 +3853,9 @@ entry — not something a transitive dependency bump does behind your back.
 | `gen_ai.request.model` | `gen_ai.*` (pinned) | The `model` field of the request body. |
 | `gen_ai.usage.input_tokens` | `gen_ai.*` (pinned) | The `usage` block of a buffered response, or the terminal `usage` event of a stream (`input_tokens`, falling back to `prompt_tokens`). |
 | `gen_ai.usage.output_tokens` | `gen_ai.*` (pinned) | The `usage` block of a buffered response, or the terminal `usage` event of a stream (`output_tokens`, falling back to `completion_tokens`). |
+| `donkey.usage.cached_tokens` | `donkey.*` (stable) | Prompt tokens served from cache, from `usage.input_tokens_details.cached_tokens`. The semconv pins no key for this at the pinned version, so it lives in `donkey.*`. Omitted — never `0` — when the provider reports no detail counts. |
+| `donkey.usage.cache_write_tokens` | `donkey.*` (stable) | Prompt tokens written to cache, from `usage.input_tokens_details.cache_write_tokens`. Omitted when absent. |
+| `donkey.usage.reasoning_tokens` | `donkey.*` (stable) | Reasoning-model thinking tokens, from `usage.output_tokens_details.reasoning_tokens`. Omitted when absent. |
 | `donkey.policy.decision` | `donkey.*` (stable) | `allow` on success; `refuse` on a classified policy refusal (which also sets the span's OTel status to `ERROR`). |
 | `donkey.policy.type` | `donkey.*` (stable) | The refusal type slug (e.g. `token_budget`, `pii_detected`) — see [Errors](https://donkey-development-kit.github.io/donkey-development-kit/errors.md). |
 | `donkey.budget.remaining` | `donkey.*` (stable) | The remaining token budget after this call, from the `x-token-*` headers. |
@@ -3926,7 +3939,8 @@ takes, it produces **exactly one span**, and that span closes:
   terminal `usage` event the caller reads long after the request returns. The
   span stays open until the stream finishes and is closed **exactly once**,
   whether you drain it fully, abandon it mid-iteration, or it raises partway
-  through. `gen_ai.usage.*` are populated from that terminal event.
+  through. `gen_ai.usage.*` and the `donkey.usage.*` detail counts are populated
+  from that terminal event (and merged onto `donkey.last_call` at the same time).
 
   Streaming token counts appear **only if the stream actually carries a usage
   event.** For OpenAI-style Chat Completions that means requesting it with

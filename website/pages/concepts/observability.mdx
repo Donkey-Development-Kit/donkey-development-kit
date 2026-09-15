@@ -51,6 +51,9 @@ entry — not something a transitive dependency bump does behind your back.
 | `gen_ai.request.model` | `gen_ai.*` (pinned) | The `model` field of the request body. |
 | `gen_ai.usage.input_tokens` | `gen_ai.*` (pinned) | The `usage` block of a buffered response, or the terminal `usage` event of a stream (`input_tokens`, falling back to `prompt_tokens`). |
 | `gen_ai.usage.output_tokens` | `gen_ai.*` (pinned) | The `usage` block of a buffered response, or the terminal `usage` event of a stream (`output_tokens`, falling back to `completion_tokens`). |
+| `donkey.usage.cached_tokens` | `donkey.*` (stable) | Prompt tokens served from cache, from `usage.input_tokens_details.cached_tokens`. The semconv pins no key for this at the pinned version, so it lives in `donkey.*`. Omitted — never `0` — when the provider reports no detail counts. |
+| `donkey.usage.cache_write_tokens` | `donkey.*` (stable) | Prompt tokens written to cache, from `usage.input_tokens_details.cache_write_tokens`. Omitted when absent. |
+| `donkey.usage.reasoning_tokens` | `donkey.*` (stable) | Reasoning-model thinking tokens, from `usage.output_tokens_details.reasoning_tokens`. Omitted when absent. |
 | `donkey.policy.decision` | `donkey.*` (stable) | `allow` on success; `refuse` on a classified policy refusal (which also sets the span's OTel status to `ERROR`). |
 | `donkey.policy.type` | `donkey.*` (stable) | The refusal type slug (e.g. `token_budget`, `pii_detected`) — see [Errors](/errors). |
 | `donkey.budget.remaining` | `donkey.*` (stable) | The remaining token budget after this call, from the `x-token-*` headers. |
@@ -138,7 +141,8 @@ takes, it produces **exactly one span**, and that span closes:
   terminal `usage` event the caller reads long after the request returns. The
   span stays open until the stream finishes and is closed **exactly once**,
   whether you drain it fully, abandon it mid-iteration, or it raises partway
-  through. `gen_ai.usage.*` are populated from that terminal event.
+  through. `gen_ai.usage.*` and the `donkey.usage.*` detail counts are populated
+  from that terminal event (and merged onto `donkey.last_call` at the same time).
 
 <Callout type="info">
   Streaming token counts appear **only if the stream actually carries a usage

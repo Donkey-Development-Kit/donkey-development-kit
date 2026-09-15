@@ -184,8 +184,15 @@ class Donkey:
     def last_call(self) -> LastCall:
         """The gateway's own metadata about the most recent governed model call in
         this context — its ``request_id``, ``api_instance_id`` and
-        ``environment_id`` (§3, #362). The success-path counterpart to the ids
+        ``environment_id`` (§3, #362), plus the per-call usage token counts
+        (``input_tokens`` / ``output_tokens`` / ``total_tokens`` and the
+        cost-relevant ``cached_tokens`` / ``cache_write_tokens`` /
+        ``reasoning_tokens``, #307). The success-path counterpart to the ids
         :class:`~donkey_kit.core.errors.DonkeyError` hands you on a refusal.
+
+        Usage counts are read from the response body, so they are ``None`` (never
+        ``0``) when the gateway sent no ``usage`` object; on a streamed response
+        they land once the terminal SSE event has been consumed, not at first read.
 
         Contextvar-scoped, not instance-scoped (hazard #2): under the parallel
         fan-out ``donkey.run()`` encourages, each task reads the call *it* made,
