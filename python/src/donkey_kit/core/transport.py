@@ -251,7 +251,12 @@ def _retry_delay(attempt: int, response: httpx.Response) -> float:
     retry_after = response.headers.get("retry-after")
     if retry_after is not None:
         try:
-            return min(float(retry_after), _BACKOFF_CAP_S)
+            # Floor at 0: a malformed/negative Retry-After (e.g. "-1") must retry
+            # immediately, never become a negative sleep — asyncio.sleep()/
+            # time.sleep() raise ValueError on a negative argument, which would
+            # turn the retryable status the loop exists to absorb into an
+            # unhandled exception (#286).
+            return max(0.0, min(float(retry_after), _BACKOFF_CAP_S))
         except ValueError:
             pass  # HTTP-date form not handled here; fall through to backoff
     exp = min(_BACKOFF_BASE_S * (2.0**attempt), _BACKOFF_CAP_S)
