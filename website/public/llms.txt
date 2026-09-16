@@ -5,7 +5,7 @@
 ## Getting started
 
 - [Introduction](https://donkey-development-kit.github.io/donkey-development-kit/index.md): An SDK for Agent Fabric — governed model access from your own agent framework, with budget, refusals, telemetry and simulation on one skeleton.
-- [Quickstart](https://donkey-development-kit.github.io/donkey-development-kit/quickstart.md): Make your first **governed** model call. You'll install the SDK with one framework extra, set three environment variables, and get back your framework's own native model object pointed at your Omni G…
+- [Quickstart](https://donkey-development-kit.github.io/donkey-development-kit/quickstart.md): Make your first **governed** model call and see the three things a bare `base_url` + headers can't give you — a **typed refusal**, a **budget** object, and a **span** — in under 15 minutes, with **no…
 - [Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md): A tour of everything governed model access gives you today.
 - [Use with your agent](https://donkey-development-kit.github.io/donkey-development-kit/use-with-your-agent.md): Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
 - [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md): What ships when — the five phases, the six-piece minimum, and what this SDK deliberately will not build.
