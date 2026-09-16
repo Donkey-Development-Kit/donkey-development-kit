@@ -65,6 +65,25 @@ jobs:
       - name: local gateway simulator boot (BG §1.4)
         run: pytest -q -m local_gateway
 
+  quickstart:
+    # #203 / BG §1.4: the gateway-free 15-minute quickstart, executed on a clean
+    # runner so the documented first-run experience can never silently rot. No
+    # Anypoint credentials and no real gateway — examples/quickstart/main.py
+    # boots the local simulator in-process, so this proves `pip install` →
+    # typed refusal works end to end with nothing but the published extras.
+    # The example is the exact code the docs quickstart shows; keeping it in CI
+    # is what stops the two from drifting. `timeout` bounds wall-clock so a hang
+    # or a slow regression fails rather than blocking.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[llm,local,otel]"
+      - name: run the gateway-free quickstart (must exit 0, no credentials)
+        run: timeout 120 python examples/quickstart/main.py
+
   # Nightly framework matrix (§8.4) — runs the conformance kit against the
   # LATEST release of each framework and opens an issue on failure. Scheduled
   # separately once adapters are conformance-wired (M1+).
