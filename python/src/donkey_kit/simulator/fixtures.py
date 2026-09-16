@@ -49,8 +49,23 @@ __all__ = [
     "load",
     "parse_headers",
     "parse_status",
+    "render_ratelimit_prose",
     "replay_headers",
 ]
+
+
+def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
+    """Render the live ``x-llm-proxy-ratelimit`` prose header the happy-path ``200``
+    carries when the ``llm-token-rate-limit`` policy is applied (#352/#353).
+
+    The exact sentence is fixed by the live/fixture capture; defining it once here
+    (shared by the simulator app's default budget window and the ``budget``
+    scenario, #188) is what stops the two renderers from drifting apart.
+    """
+    return (
+        f"Token rate limit: {remaining} tokens remaining of "
+        f"{limit} limit. Reset in {reset_ms}ms."
+    )
 
 # Header replay is an allow-list, not a deny-list: replay only the semantic and
 # discriminator headers a client (and classify()) actually consume, and let the

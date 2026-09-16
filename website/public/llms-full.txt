@@ -2079,11 +2079,11 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/simulato
 
 # Local simulator
 
-  **Phase 1 — the replay server ships.** `donkey mock` boots a local
-  server that replays the captured rejection fixtures, honesty-stamps every
-  response, and synthesises a budget window on the happy path. Configurable
-  *scenario scripting* (frequency-based failures, a shrinking budget window) is
-  the linked follow-up, [#188](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/188).
+  **Phase 1 — the replay server ships, with scenario scripting.** `donkey mock`
+  boots a local server that replays the captured rejection fixtures,
+  honesty-stamps every response, and synthesises a budget window on the happy
+  path. The repeatable `--scenario` flag scripts a specific failure on demand —
+  frequency-based PII blocks, a shrinking budget window, injection matching.
   See [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
 
 Nobody can make the production gateway emit a PII block on cue. Which means
@@ -2118,6 +2118,85 @@ The selectable shapes are `token-rate-limit`, `pii-detected`,
 `model` value gets the happy path. The `donkey-sim/` prefix is
 a simulator-only control surface; the real gateway never interprets it.
 
+## Scenario scripting
+
+The sentinel makes *you* decide which call fails. A **scenario** makes the
+simulator decide, on a rule you script once at boot — so a failure fires on its
+own, deterministically, across a whole run. Pass `--scenario` once per rule
+(repeatable); the grammar is `<name>:<key=value,key=value>`.
+
+Three scenarios ship, each mapping to a worked example below:
+
+```bash
+donkey mock --port 8080 \
+  --scenario pii_block:every=5 \
+  --scenario budget:limit=20000,window=60s \
+  --scenario injection:on-pattern="ignore previous"
+```
+
+When more than one is set, they are evaluated `injection` → `pii_block` →
+`budget`, and the first that fires wins. The `donkey-sim/<shape>` sentinel still
+takes precedence over all of them — it's an explicit "force this exact shape"
+override.
+
+### Scenario A — `pii_block:every=N`
+
+Nobody can make the production gateway emit a PII block on cue, so the branch of
+your agent that handles `PIIDetected` may never have run. `pii_block:every=5`
+serves the captured `pii-detected` **403** on every fifth `POST /responses`,
+deterministically — the other four get the happy path.
+
+```bash
+donkey mock --scenario pii_block:every=5
+```
+
+Because the body is the *same fixture* `donkey_kit.core.errors.classify()` is
+tested against, call five lights up as a typed
+[`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), not a raw `403`, and your masking logic runs in your
+own terminal before the PR is opened.
+
+### Scenario B — `budget:limit=<tokens>,window=<duration>`
+
+`budget:limit=20000,window=60s` shrinks an hour-long budget window to one
+minute, so the pacing and resume logic from [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) is tested
+end-to-end in ninety seconds instead of "we'll find out tonight."
+
+```bash
+donkey mock --scenario budget:limit=20000,window=60s
+```
+
+It runs a **real, wall-clock-windowed token counter**. Each call deducts the
+happy-path completion's own reported token usage (override with `cost=<tokens>`).
+While budget remains, the happy-path `200` carries the live
+`x-llm-proxy-ratelimit` prose header the real gateway emits, decreasing as you
+spend. Once the window's budget is spent, calls are served the captured
+`token-rate-limit` **429** — with `x-token-remaining` and `x-token-reset`
+recomputed from the counter and the real milliseconds left in the window — until
+the window rolls over and the budget resets. `duration` accepts `ms`, `s`, `m`
+(a bare number is seconds).
+
+  The numeric `x-token-*` trio appears on the `429`, and the prose
+  `x-llm-proxy-ratelimit` header on the `200` — matching the observed live
+  contract, where the happy-path `200` carries the window as prose and the
+  numeric headers appear only on the `429`. The simulator never emits a header
+  shape the gateway does not
+  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
+
+### Scenario C — `injection:on-pattern=<substring>`
+
+`injection:on-pattern="ignore previous"` serves the `injection-protection`
+**400** on any request whose text contains the substring (case-insensitive),
+matched against the request's `input` / `messages` / `instructions` content.
+
+```bash
+donkey mock --scenario injection:on-pattern="ignore previous"
+```
+
+A request carrying a prompt-injection attempt lights up as a typed
+[`PromptInjectionBlocked`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) (via the `x-injection-protection: blocked`
+discriminator), so the "I can't help with that" branch of a guardrailed bot is
+exercised before it faces a real attack.
+
 ## Why this is the one feature `base_url` cannot give you
 
 Everything else the SDK does happens on the client side, so a determined
@@ -2134,14 +2213,16 @@ before the pull request is opened, instead of in production — and because the
 body is the *same fixture* `classify()` is tested against, it lights up as a
 typed `PIIDetected`, not a raw `403`.
 
-The happy path carries a synthesised `x-token-*` budget window that decrements
-on every call, so the pacing and resume logic from [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md)
-runs end-to-end against the simulator instead of "we'll find out tonight."
+The happy path carries a synthesised `x-llm-proxy-ratelimit` budget window that
+decrements on every call, so the pacing and resume logic from
+[Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) runs end-to-end against the simulator instead of
+"we'll find out tonight." For a *real* windowed counter that resets and emits
+the `429` on exhaustion, use the [`budget` scenario](#scenario-scripting).
 
-  Deciding *which* calls fail by hand (send the sentinel) is what ships today.
-  Declarative scenario scripting — "fail every fifth call", "shrink the budget
-  window to 60s" — is the follow-up
-  [#188](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/188).
+  Deciding *which* calls fail by hand (send the `donkey-sim/<shape>` sentinel)
+  and scripting a rule so failures fire on their own
+  ([`--scenario`](#scenario-scripting)) are complementary — the sentinel is a
+  one-off, a scenario runs across a whole session.
 
 ## The honesty guarantee
 
@@ -2167,18 +2248,19 @@ contract that no longer exists.
   the two fail together if the gateway contract ever drifts. ✅
 - Every response carries `x-donkey-simulator: true`. ✅
 - Ships as `pip install "donkey-kit[local]"`, pure-Python, no Docker. ✅
-- Happy-path responses emit a synthesised `x-token-*` window so budget pacing
-  works against it — an **UNVERIFIED overlay** (the live `200` capture carries
-  no budget headers; whether the real proxy emits them is pending
-  [#253](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/253),
-  recorded in [`docs/verified-apis.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)).
-- Declarative scenario scripting with worked examples —
-  [#188](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/188).
+- Happy-path responses emit a synthesised `x-llm-proxy-ratelimit` prose window
+  so budget pacing works against it — matching the observed live contract, where
+  the `200` carries the window as prose and the numeric `x-token-*` trio appears
+  only on the `429`
+  (recorded in [`docs/verified-apis.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)). ✅
+- Declarative scenario scripting with three worked examples (Scenarios A, B, C).
+  `pii_block:every=N` fails every Nth call, `budget:limit=,window=` runs a real
+  windowed counter, `injection:on-pattern=` matches request text. ✅
 
 ---
 
-**Status: Phase 1 — the fixture-replay server (`donkey mock`) is shipped;
-scenario scripting is [#188](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/188).**
+**Status: Phase 1 — the fixture-replay server (`donkey mock`) and `--scenario`
+scripting are shipped.**
 
 ---
 
@@ -2590,7 +2672,7 @@ migration later.
 ```bash
 donkey init          # writes .donkey-kit.toml, prints which env vars are missing
 donkey doctor        # checks creds, reaches the gateway, reports budget state
-donkey mock          # the local simulator — SHIPPED, run as: donkey mock
+donkey mock          # the local simulator — SHIPPED; --scenario scripts failures
 donkey test          # the conformance suite
 ```
 
