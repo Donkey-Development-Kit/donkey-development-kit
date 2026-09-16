@@ -117,6 +117,23 @@ async def test_retries_on_503_then_succeeds() -> None:
     assert calls["n"] == 3
 
 
+async def test_negative_retry_after_does_not_crash_the_retry() -> None:
+    # A 503 with a negative Retry-After must retry immediately (delay floored to
+    # 0), not raise ValueError out of asyncio.sleep(-1.0) (#286).
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            return httpx.Response(503, headers={"retry-after": "-1"})
+        return httpx.Response(200)
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as client:
+        resp = await client.get("https://x")
+    assert resp.status_code == 200
+    assert calls["n"] == 2
+
+
 async def test_does_not_retry_4xx_policy_rejection() -> None:
     calls = {"n": 0}
 
@@ -439,6 +456,24 @@ def test_sync_retries_on_503_then_succeeds() -> None:
         resp = client.get("https://x")
     assert resp.status_code == 200
     assert calls["n"] == 3
+
+
+def test_sync_negative_retry_after_does_not_crash_the_retry() -> None:
+    # The sync twin shares _retry_delay, so it is equally affected: a negative
+    # Retry-After must retry immediately, not raise ValueError from
+    # time.sleep(-1.0) (#286).
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            return httpx.Response(503, headers={"retry-after": "-1"})
+        return httpx.Response(200)
+
+    with _sync_client(handler, DonkeyConfig(max_retries=3)) as client:
+        resp = client.get("https://x")
+    assert resp.status_code == 200
+    assert calls["n"] == 2
 
 
 def test_sync_does_not_retry_4xx_policy_rejection() -> None:
