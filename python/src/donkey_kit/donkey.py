@@ -13,10 +13,13 @@ bare ``ModuleNotFoundError`` (§3.2).
 
 from __future__ import annotations
 
+import functools
 import importlib
 import importlib.util
+import inspect
+from collections.abc import Callable
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 from .core import _verify
 from .core.auth import AnypointConnectedApp, AuthProvider
@@ -25,6 +28,7 @@ from .core.config import DonkeyConfig, OnModelSubstitution
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.telemetry import RunScope, configure_otlp_export, run_scope
+from .core.toolspec import register_tool
 from .core.transport import (
     DonkeyAsyncClient,
     DonkeyClient,
@@ -50,6 +54,9 @@ if TYPE_CHECKING:
     from .integrations.llamaindex import LlamaIndexAdapter
     from .integrations.openai_agents import OpenAIAgentsAdapter
     from .integrations.strands import StrandsAdapter
+
+
+_Callable = TypeVar("_Callable", bound=Callable[..., Any])
 
 
 def _framework_installed(probe: str) -> bool:
@@ -321,6 +328,92 @@ class Donkey:
     def run_context(self, run_id: str | None = None) -> RunScope:
         """Back-compat alias for :meth:`run` (§2.3). Prefer ``donkey.run(id=…)``."""
         return self.run(run_id)
+
+    # --- one-line on-ramps: decorators (#200) ------------------------------
+    def governed(
+        self,
+        func: _Callable | None = None,
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> _Callable | Callable[[_Callable], _Callable]:
+        """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
+
+        The one-line on-ramp to governed execution: every governed model call
+        made inside the decorated function carries a fresh run/correlation id (a
+        "run of one"), the optional per-run cost tags, the OTel span and typed
+        refusals — exactly the scope :meth:`run` establishes (§2.3, #195), with
+        nothing to thread through framework state::
+
+            @donkey.governed(team="support")
+            async def handle_ticket(ticket): ...
+
+        Wraps **both sync and async** callables: an async callable is wrapped with
+        ``async with self.run(...)`` so every ``await`` inside sees the same run
+        id (contextvar propagation reaches framework-spawned tasks); a sync
+        callable uses the plain ``with`` form. Usable bare (``@donkey.governed``)
+        or parametrised (``@donkey.governed(team=...)``).
+
+        There is deliberately **no** ``id=`` argument: each call opens its own
+        run, and a fixed id pinned across every call would collapse unrelated runs
+        into one correlation. When you need to pin a specific id, use
+        ``donkey.run(id=...)`` directly. ``approval=`` / ``risk=`` arrive with
+        HITL (2.3) and are out of scope here (#200).
+        """
+
+        def decorate(fn: _Callable) -> _Callable:
+            if inspect.iscoroutinefunction(fn):
+
+                @functools.wraps(fn)
+                async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                    async with self.run(
+                        team=team, project=project, env=env, enduser_id=enduser_id
+                    ):
+                        return await fn(*args, **kwargs)
+
+                return async_wrapper  # type: ignore[return-value]
+
+            @functools.wraps(fn)
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+                with self.run(
+                    team=team, project=project, env=env, enduser_id=enduser_id
+                ):
+                    return fn(*args, **kwargs)
+
+            return sync_wrapper  # type: ignore[return-value]
+
+        # Bare ``@donkey.governed`` passes the callable positionally; the
+        # parametrised ``@donkey.governed(...)`` passes nothing and returns the
+        # decorator to be applied next.
+        if func is not None:
+            return decorate(func)
+        return decorate
+
+    @staticmethod
+    def tool(func: _Callable) -> _Callable:
+        """Mark a callable as a governed tool **without changing call behaviour**,
+        recording its name, signature and docstring in an introspectable registry
+        (#200).
+
+        Returns the **same** callable (identity preserved — it is not wrapped)
+        with a ``__donkey_tool__`` marker attached, and appends a
+        :class:`~donkey_kit.core.toolspec.ToolSpec` to the process-global registry
+        read by :func:`~donkey_kit.core.toolspec.registered_tools`::
+
+            @donkey.tool
+            async def lookup_crm(customer_id: str) -> dict: ...
+
+        The same marker is what the Phase 2 scanner (§2.5) and the A2A agent-card
+        generator (§2.9) both read, so the one annotation pays off three times
+        (#200).
+
+        Raises :class:`ValueError` when the callable has no docstring — an
+        undescribed tool is useless to a model and to the registry, so it is
+        rejected at decoration time rather than recorded blank (#200).
+        """
+        return register_tool(func)
 
     def simulate(
         self, error: type[DonkeyError], *, times: int = 1
