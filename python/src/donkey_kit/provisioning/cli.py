@@ -143,6 +143,12 @@ def mock(
     sees the real rejection shapes locally. Every response carries
     ``x-donkey-simulator: true`` — it is a fixture replay, never a real gateway.
 
+    It REPLAYS captured shapes; it does NOT evaluate policy. It tests how your
+    agent handles a refusal, never which prompts get refused — you choose the
+    refusal (the ``donkey-sim/<shape>`` model sentinel or a ``--scenario`` rule),
+    the simulator does not decide it. Testing against real policy configuration
+    needs gateway-side dry-run mode (#250).
+
     ``--scenario`` scripts a specific failure on demand (#188): ``pii_block``
     fails every Nth call, ``injection`` matches request text, and ``budget``
     runs a real windowed token counter (429 on exhaustion). Repeatable.
