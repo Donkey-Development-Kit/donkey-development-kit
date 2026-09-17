@@ -223,6 +223,79 @@ class UpstreamRequestError(DonkeyError):
         self.param = param
 
 
+class GatewayUnavailable(DonkeyError):
+    """The gateway could not be reached at all — a transport-level failure (DNS,
+    refused connection, TLS error, timeout) with NO HTTP response behind it
+    (BG §1.2, #379).
+
+    This is the one *ungoverned* failure the taxonomy names. Every other error
+    here describes something the gateway told us; this one is the gateway not
+    being there to tell us anything. Deliberately NOT a :class:`PolicyViolation`:
+    nothing was refused — the request never reached a policy — so surfacing it as
+    a refusal would misrepresent it at the framework boundary. Giving it a type
+    lets a long-running agent distinguish "lost the gateway" from any other
+    network fault and react — checkpoint, queue, shed load, or fall back to a
+    non-AI path — instead of pattern-matching a raw ``httpx.TransportError``.
+
+    Carries ``base_url`` (the origin that failed, so a handler can act on it
+    without re-parsing the message) and ``cause`` (the underlying httpx
+    exception, also chained via ``raise ... from``). ``request_id`` is inherited
+    from :class:`DonkeyError` and is always ``None`` here — there was no response
+    to read the gateway's own id from — while ``correlation_id`` / ``call_id``
+    (the ids the client sent) are populated from the request that failed.
+
+    ``remediation`` is a class attribute so it has a single canonical wording,
+    shared with ``donkey doctor`` (#202) rather than duplicated."""
+
+    #: The three real causes, named, plus the pointer to the startup/CI
+    #: diagnostic. Single source of wording for this failure (#202, #379).
+    remediation: str = (
+        "The gateway could not be reached and no HTTP response came back. The "
+        "three usual causes: (1) the host is unreachable — DNS failure or the "
+        "gateway is down; (2) the configured base URL is wrong; or (3) network "
+        "egress to the gateway is blocked — a firewall or air-gapped environment. "
+        "Run `donkey doctor` to diagnose connectivity, and check `base_url` on "
+        "this error against your gateway's address."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        base_url: str | None = None,
+        cause: BaseException | None = None,
+        remediation: str | None = None,
+        **kw: Any,
+    ) -> None:
+        super().__init__(message, **kw)
+        self.base_url = base_url
+        self.cause = cause
+        if remediation is not None:
+            self.remediation = remediation
+
+
+def gateway_unavailable(
+    *,
+    base_url: str | None = None,
+    cause: BaseException | None = None,
+    correlation_id: str | None = None,
+    call_id: str | None = None,
+) -> GatewayUnavailable:
+    """Build a :class:`GatewayUnavailable` with the standard message from a
+    transport-level failure. The message names the origin and the underlying
+    cause; the full remediation lives on the returned exception's
+    :attr:`GatewayUnavailable.remediation`."""
+    where = f" at {base_url}" if base_url else ""
+    detail = f": {cause}" if cause is not None and str(cause) else "."
+    return GatewayUnavailable(
+        f"The gateway could not be reached{where}{detail}",
+        base_url=base_url,
+        cause=cause,
+        correlation_id=correlation_id,
+        call_id=call_id,
+    )
+
+
 class ToolInvocationError(DonkeyError):
     """An MCP tool call failed."""
 

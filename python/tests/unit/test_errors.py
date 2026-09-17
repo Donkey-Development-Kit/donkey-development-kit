@@ -7,11 +7,14 @@ import httpx
 from donkey_kit.core.errors import (
     AuthError,
     ContentSafetyBlocked,
+    DonkeyError,
+    GatewayUnavailable,
     PolicyViolation,
     PromptInjectionBlocked,
     TokenBudgetExceeded,
     UpstreamModelError,
     classify,
+    gateway_unavailable,
 )
 from donkey_kit.core.transport import CALL_ID_HEADER, CORRELATION_HEADER
 
@@ -153,3 +156,36 @@ def test_classify_without_a_request_yields_no_ids() -> None:
     assert err.correlation_id is None
     assert err.call_id is None
     assert err.request_id == "gw-1"  # gateway's own id, from the response header
+
+
+def test_gateway_unavailable_is_a_donkey_error_not_a_policy_violation() -> None:
+    # An ungoverned failure — nothing was refused — so it must NOT be a
+    # PolicyViolation (that base marks a terminal gateway refusal), but it is a
+    # catchable DonkeyError like the rest of the taxonomy (#379, BG §1.2).
+    err = gateway_unavailable(base_url="https://gw.example")
+    assert isinstance(err, DonkeyError)
+    assert not isinstance(err, PolicyViolation)
+
+
+def test_gateway_unavailable_carries_base_url_cause_and_ids() -> None:
+    cause = httpx.ConnectError("connection refused")
+    err = gateway_unavailable(
+        base_url="https://gw.example",
+        cause=cause,
+        correlation_id="run-9",
+        call_id="call-9",
+    )
+    assert err.base_url == "https://gw.example"
+    assert err.cause is cause
+    assert err.correlation_id == "run-9"
+    assert err.call_id == "call-9"
+    assert err.request_id is None  # no response behind a transport failure
+    assert "gw.example" in str(err)  # the origin is in the message, not only .base_url
+
+
+def test_gateway_unavailable_remediation_names_the_three_causes_and_doctor() -> None:
+    err = gateway_unavailable(base_url="https://gw.example")
+    # Single canonical wording, reusable by `donkey doctor` (#202).
+    assert err.remediation is GatewayUnavailable.remediation
+    for needle in ("unreachable", "base URL", "egress", "donkey doctor"):
+        assert needle in err.remediation

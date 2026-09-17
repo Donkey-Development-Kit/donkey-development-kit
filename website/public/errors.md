@@ -54,9 +54,39 @@ DonkeyError                     # base of the whole tree
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns (pending #253)
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories (pending #253)
+├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 └─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ```
+
+`GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one
+*ungoverned* failure in the tree (see below). Everything under `PolicyViolation` is
+something the gateway told the SDK; `GatewayUnavailable` is the gateway not being
+there to tell it anything.
+
+## When the gateway can't be reached at all
+
+Every rejection above describes something the gateway *told* the SDK.
+`GatewayUnavailable` is the opposite: a transport-level failure — DNS, refused
+connection, TLS error or timeout — with **no HTTP response** behind it. It is the
+one *ungoverned* failure the taxonomy names, so a long-running agent can tell
+"lost the gateway" apart from any other network fault and react — checkpoint,
+queue, shed load, or fall back to a non-AI path — instead of pattern-matching a
+raw `httpx` exception.
+
+`DonkeyAsyncClient` and its blocking twin both raise it, so the async and sync
+surfaces behave identically. It is terminal here and **not retried** — this issue
+only *names* the failure; failover is separate. It carries:
+
+- `.base_url` — the origin that failed, on the exception, not only in the message.
+- `.cause` — the underlying `httpx` exception (also chained via `raise … from`).
+- `.request_id` — always `None`; there was no response to read the gateway's own id from.
+- `.correlation_id` / `.call_id` — the run and per-call ids the client sent, carried
+  even though no response came back, so the failure joins your logs like any other.
+
+Its `.remediation` is a single canonical string that names the three real causes —
+an unreachable host, a wrong base URL, or blocked network egress — and points at
+`donkey doctor` for connectivity diagnosis.
 
 ## The ids every `DonkeyError` carries
 
