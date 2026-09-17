@@ -148,26 +148,56 @@ the `429` on exhaustion, use the [`budget` scenario](#scenario-scripting).
 ## The honesty guarantee
 
 A simulator that could be mistaken for a real gateway would be worse than no
-simulator, so two rules are non-negotiable:
+simulator, so three rules are non-negotiable:
 
   **Every simulator response carries `x-donkey-simulator: true`.** It can
-  never be confused for a real gateway in a log, a trace, or a screenshot.
+  never be confused for a real gateway in a log, a trace, or a screenshot —
+  and the same holds for the framework-generated `405`/`500` responses, not
+  just the ones the simulator hand-builds.
 
 And the fixtures are the **same files** used by the `classify()` tests. One
 source of truth: if the gateway contract drifts, the simulator and the error
 taxonomy fail together, rather than the simulator quietly teaching you a
 contract that no longer exists.
 
+Because "same files, both fail together" only catches a fixture edit that
+flips something a test asserts on, a committed **integrity lock**
+(`tests/fixtures/fixtures.lock`) pins the sha256 of every fixture the
+simulator serves. A *benign* byte edit — reformatted JSON, an added field —
+fails the lock loudly instead of silently drifting the replayed bytes. A
+genuine re-capture is accepted by regenerating the lock
+(`python -m donkey_kit.simulator.fixtures --relock`) and committing it.
+
+### It replays; it does not evaluate
+
+  **The simulator replays captured shapes — it does not evaluate policy.** It
+  tests how your agent handles a refusal, never *which* prompts get refused.
+  *You* choose the refusal (the `donkey-sim/<shape>` sentinel, or a
+  `--scenario` rule); the simulator never inspects a prompt and decides it
+  violates a policy, because the real gateway's policy logic does not live on
+  your laptop. Testing against a real policy *configuration* — "would this
+  exact prompt be blocked by the rules we deployed?" — needs gateway-side
+  dry-run mode, tracked in
+  [#250](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/250).
+
 ## Acceptance bar
 
-- A **stock non-SDK client** (plain `httpx`, not `donkey.llm.client()`) receives
-  byte-identical rejection bodies and the exact discriminator headers — proof
-  the simulator is honest rather than merely convenient. Formalising the same
-  against a stock `openai.OpenAI(base_url="http://localhost:8080", …)` client is
-  [#189](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/189). ✅
+- A **stock non-SDK client** receives byte-identical rejection bodies and the
+  exact discriminator headers — proof the simulator is honest rather than
+  merely convenient. Asserted against both plain `httpx` and a stock
+  `openai.OpenAI(base_url="http://localhost:8080", …)` client, comparing the
+  status, body bytes and headers the client actually received (not the SDK's
+  parsed view)
+  ([#189](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/189)). ✅
 - The fixtures are the *same files* the `classify()` contract tests load, so
-  the two fail together if the gateway contract ever drifts. ✅
-- Every response carries `x-donkey-simulator: true`. ✅
+  the two fail together if the gateway contract ever drifts — and a committed
+  integrity lock fails loudly on any byte edit that the "both fail together"
+  rule would otherwise miss. ✅
+- The simulator replays captured shapes; it does **not** evaluate policy
+  (real policy-configuration testing needs gateway
+  [dry-run mode, #250](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/250)). ✅
+- Every response carries `x-donkey-simulator: true`, including the
+  framework-generated `405`/`500`. ✅
 - Ships as `pip install "donkey-kit[local]"`, pure-Python, no Docker. ✅
 - Happy-path responses emit a synthesised `x-llm-proxy-ratelimit` prose window
   so budget pacing works against it — matching the observed live contract, where
