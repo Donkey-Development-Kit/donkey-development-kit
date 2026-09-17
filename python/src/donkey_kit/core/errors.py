@@ -8,8 +8,12 @@ Two design points that matter:
 1. :class:`PolicyViolation` must be distinguishable from a transient error at
    the framework boundary so host frameworks do not silently retry a refusal.
    It is NEVER retried by our transport.
-2. ``remediation`` is a required, human-readable next step — worth more than a
-   stack trace.
+2. ``remediation`` is a structurally-guaranteed, human-readable next step —
+   worth more than a stack trace. Every :class:`PolicyViolation` carries one:
+   the constructor refuses to build an instance whose remediation is empty or
+   whitespace, and every concrete subclass ships a canonical default (§2.4,
+   #182). That default is the single source ``donkey doctor`` (#202) reuses, so
+   a diagnosis and the exception it stands for can never disagree.
 
 The concrete HTTP-response → exception mapping lives in :func:`classify`, which
 is driven by a table that MUST be populated from real captured fixtures (§8.2),
@@ -76,29 +80,61 @@ class AuthError(DonkeyError):
 class PolicyViolation(DonkeyError):
     """Base for gateway-enforced refusals. NEVER retried.
 
-    ``remediation`` is required: it names the concrete next step, e.g.
+    ``remediation`` names the concrete next step the caller can take, e.g.
     "Token budget exceeded for business group `finance`; limit resets in 42m;
-    request an increase in API Manager".
+    request an increase in API Manager". It is **structurally mandatory** (#182):
+    the constructor raises :class:`ValueError` if the resolved remediation is
+    empty or whitespace, because a typed refusal with no next step is just a
+    renamed exception. When no ``remediation`` is passed, the class-level
+    :attr:`remediation` default applies; every concrete subclass ships its own,
+    and that default is the single source ``donkey doctor`` (#202) reuses so the
+    CLI and the exception never disagree. It names the *action*, not the policy
+    that fired.
     """
 
     policy: str = "unknown"
+
+    #: Default next-step wording, used when the caller passes no ``remediation``.
+    #: This base value is the generic-refusal fall-through (the shape ``classify``
+    #: cannot pin more precisely); every concrete subclass overrides it.
+    remediation: str = (
+        "A gateway policy refused this request. This is terminal and was NOT "
+        "retried. PII (403), token-budget (429) and prompt-injection "
+        "(x-injection-protection) rejections are identified specifically; "
+        "content-moderation / federated-guardrail shapes are still "
+        "under-documented (#253) and fall through to here. Inspect "
+        ".response for the raw body."
+    )
 
     def __init__(
         self,
         message: str,
         *,
-        remediation: str,
+        remediation: str | None = None,
         policy: str | None = None,
         **kw: Any,
     ) -> None:
         super().__init__(message, **kw)
-        self.remediation = remediation
+        # An explicit remediation wins; otherwise the concrete class's default
+        # (resolved via the instance type, so the most-derived default applies).
+        resolved = remediation if remediation is not None else type(self).remediation
+        if not resolved.strip():
+            raise ValueError(
+                f"{type(self).__name__} requires a non-empty remediation naming the "
+                "caller's next step (§2.4, #182)."
+            )
+        self.remediation = resolved
         if policy is not None:
             self.policy = policy
 
 
 class TokenBudgetExceeded(PolicyViolation):
     policy = "token-rate-limit"
+    remediation: str = (
+        "A token-rate-limit policy exhausted the budget window. Wait for it "
+        "to reset (see retry_after / x-token-reset) or request an increase in "
+        "API Manager."
+    )
 
     def __init__(self, message: str, *, retry_after: float | None = None, **kw: Any) -> None:
         super().__init__(message, **kw)
@@ -169,6 +205,11 @@ class ModelSubstituted(DonkeyError):
 
 class PromptInjectionBlocked(PolicyViolation):
     policy = "prompt-injection-protection"
+    remediation: str = (
+        "The prompt-injection-protection policy flagged this request as a "
+        "prompt-injection attempt. Review and sanitise the untrusted input "
+        "in the prompt, or adjust the policy's sensitivity in API Manager."
+    )
 
 
 class ContentSafetyBlocked(PolicyViolation):
@@ -181,6 +222,11 @@ class ContentSafetyBlocked(PolicyViolation):
     :attr:`PIIDetected.entities`. Empty when the gateway reported no reason."""
 
     policy = "content-safety"
+    remediation: str = (
+        "A content-moderation policy (Azure Content Safety or Amazon Bedrock "
+        "Guardrails) blocked this request. Revise the flagged content, or "
+        "adjust the policy's categories / severity thresholds in API Manager."
+    )
 
     def __init__(self, message: str, *, categories: list[str] | None = None, **kw: Any) -> None:
         super().__init__(message, **kw)
@@ -189,6 +235,12 @@ class ContentSafetyBlocked(PolicyViolation):
 
 class PIIDetected(PolicyViolation):
     policy = "pii-detection"
+    remediation: str = (
+        "The PII-detection policy blocked this request because the prompt "
+        "(or completion) contained personally identifiable information. "
+        "Remove or redact the flagged values, or relax the policy's entity "
+        "list / action in API Manager."
+    )
 
     def __init__(self, message: str, *, entities: list[str] | None = None, **kw: Any) -> None:
         super().__init__(message, **kw)
@@ -221,6 +273,79 @@ class UpstreamRequestError(DonkeyError):
         self.code = code
         self.error_type = error_type
         self.param = param
+
+
+class GatewayUnavailable(DonkeyError):
+    """The gateway could not be reached at all — a transport-level failure (DNS,
+    refused connection, TLS error, timeout) with NO HTTP response behind it
+    (BG §1.2, #379).
+
+    This is the one *ungoverned* failure the taxonomy names. Every other error
+    here describes something the gateway told us; this one is the gateway not
+    being there to tell us anything. Deliberately NOT a :class:`PolicyViolation`:
+    nothing was refused — the request never reached a policy — so surfacing it as
+    a refusal would misrepresent it at the framework boundary. Giving it a type
+    lets a long-running agent distinguish "lost the gateway" from any other
+    network fault and react — checkpoint, queue, shed load, or fall back to a
+    non-AI path — instead of pattern-matching a raw ``httpx.TransportError``.
+
+    Carries ``base_url`` (the origin that failed, so a handler can act on it
+    without re-parsing the message) and ``cause`` (the underlying httpx
+    exception, also chained via ``raise ... from``). ``request_id`` is inherited
+    from :class:`DonkeyError` and is always ``None`` here — there was no response
+    to read the gateway's own id from — while ``correlation_id`` / ``call_id``
+    (the ids the client sent) are populated from the request that failed.
+
+    ``remediation`` is a class attribute so it has a single canonical wording,
+    shared with ``donkey doctor`` (#202) rather than duplicated."""
+
+    #: The three real causes, named, plus the pointer to the startup/CI
+    #: diagnostic. Single source of wording for this failure (#202, #379).
+    remediation: str = (
+        "The gateway could not be reached and no HTTP response came back. The "
+        "three usual causes: (1) the host is unreachable — DNS failure or the "
+        "gateway is down; (2) the configured base URL is wrong; or (3) network "
+        "egress to the gateway is blocked — a firewall or air-gapped environment. "
+        "Run `donkey doctor` to diagnose connectivity, and check `base_url` on "
+        "this error against your gateway's address."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        base_url: str | None = None,
+        cause: BaseException | None = None,
+        remediation: str | None = None,
+        **kw: Any,
+    ) -> None:
+        super().__init__(message, **kw)
+        self.base_url = base_url
+        self.cause = cause
+        if remediation is not None:
+            self.remediation = remediation
+
+
+def gateway_unavailable(
+    *,
+    base_url: str | None = None,
+    cause: BaseException | None = None,
+    correlation_id: str | None = None,
+    call_id: str | None = None,
+) -> GatewayUnavailable:
+    """Build a :class:`GatewayUnavailable` with the standard message from a
+    transport-level failure. The message names the origin and the underlying
+    cause; the full remediation lives on the returned exception's
+    :attr:`GatewayUnavailable.remediation`."""
+    where = f" at {base_url}" if base_url else ""
+    detail = f": {cause}" if cause is not None and str(cause) else "."
+    return GatewayUnavailable(
+        f"The gateway could not be reached{where}{detail}",
+        base_url=base_url,
+        cause=cause,
+        correlation_id=correlation_id,
+        call_id=call_id,
+    )
 
 
 class ToolInvocationError(DonkeyError):
@@ -327,12 +452,7 @@ def classify(
         return PIIDetected(
             message or f"Request blocked: personally identifiable information detected ({status}).",
             entities=_pii_entities(message),
-            remediation=(
-                "The PII-detection policy blocked this request because the prompt "
-                "(or completion) contained personally identifiable information. "
-                "Remove or redact the flagged values, or relax the policy's entity "
-                "list / action in API Manager."
-            ),
+            # remediation: PIIDetected's canonical class default (#182).
             **kw,
         )
 
@@ -383,11 +503,7 @@ def classify(
     if response.headers.get("x-injection-protection") == "blocked":
         return PromptInjectionBlocked(
             f"Request blocked by the injection-protection policy ({status}).",
-            remediation=(
-                "The prompt-injection-protection policy flagged this request as a "
-                "prompt-injection attempt. Review and sanitise the untrusted input "
-                "in the prompt, or adjust the policy's sensitivity in API Manager."
-            ),
+            # remediation: PromptInjectionBlocked's canonical class default (#182).
             **kw,
         )
 
@@ -404,11 +520,7 @@ def classify(
         return TokenBudgetExceeded(
             "Token rate limit or budget exceeded (429).",
             retry_after=_retry_after(response),
-            remediation=(
-                "A token-rate-limit policy exhausted the budget window. Wait for it "
-                "to reset (see retry_after / x-token-reset) or request an increase in "
-                "API Manager."
-            ),
+            # remediation: TokenBudgetExceeded's canonical class default (#182).
             **kw,
         )
 
@@ -428,14 +540,7 @@ def classify(
         return PolicyViolation(
             f"Request refused by a gateway policy ({status}).",
             policy="unknown",
-            remediation=(
-                "A gateway policy refused this request. This is terminal and was NOT "
-                "retried. PII (403), token-budget (429) and prompt-injection "
-                "(x-injection-protection) rejections are identified specifically; "
-                "content-moderation / federated-guardrail shapes are still "
-                "under-documented (#253) and fall through to here. Inspect "
-                ".response for the raw body."
-            ),
+            # remediation: PolicyViolation's canonical generic-refusal default (#182).
             **kw,
         )
 

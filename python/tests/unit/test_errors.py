@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from donkey_kit.core.errors import (
     AuthError,
     ContentSafetyBlocked,
+    DonkeyError,
+    GatewayUnavailable,
+    PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
     TokenBudgetExceeded,
     UpstreamModelError,
     classify,
+    gateway_unavailable,
 )
 from donkey_kit.core.transport import CALL_ID_HEADER, CORRELATION_HEADER
 
@@ -153,3 +158,115 @@ def test_classify_without_a_request_yields_no_ids() -> None:
     assert err.correlation_id is None
     assert err.call_id is None
     assert err.request_id == "gw-1"  # gateway's own id, from the response header
+
+
+def test_gateway_unavailable_is_a_donkey_error_not_a_policy_violation() -> None:
+    # An ungoverned failure — nothing was refused — so it must NOT be a
+    # PolicyViolation (that base marks a terminal gateway refusal), but it is a
+    # catchable DonkeyError like the rest of the taxonomy (#379, BG §1.2).
+    err = gateway_unavailable(base_url="https://gw.example")
+    assert isinstance(err, DonkeyError)
+    assert not isinstance(err, PolicyViolation)
+
+
+def test_gateway_unavailable_carries_base_url_cause_and_ids() -> None:
+    cause = httpx.ConnectError("connection refused")
+    err = gateway_unavailable(
+        base_url="https://gw.example",
+        cause=cause,
+        correlation_id="run-9",
+        call_id="call-9",
+    )
+    assert err.base_url == "https://gw.example"
+    assert err.cause is cause
+    assert err.correlation_id == "run-9"
+    assert err.call_id == "call-9"
+    assert err.request_id is None  # no response behind a transport failure
+    assert "gw.example" in str(err)  # the origin is in the message, not only .base_url
+
+
+def test_gateway_unavailable_remediation_names_the_three_causes_and_doctor() -> None:
+    err = gateway_unavailable(base_url="https://gw.example")
+    # Single canonical wording, reusable by `donkey doctor` (#202).
+    assert err.remediation is GatewayUnavailable.remediation
+    for needle in ("unreachable", "base URL", "egress", "donkey doctor"):
+        assert needle in err.remediation
+
+
+# --- mandatory remediation on every PolicyViolation (#182) ------------------
+# A typed refusal without a next step is just a renamed exception: remediation
+# is structurally guaranteed non-empty, and every concrete subclass ships its
+# own canonical default — the single source `donkey doctor` (#202) reuses.
+
+
+def _all_policy_violation_types() -> set[type[PolicyViolation]]:
+    """Every PolicyViolation type, the base included, discovered transitively so
+    a subclass added later is covered without editing this test."""
+    seen: set[type[PolicyViolation]] = {PolicyViolation}
+    stack: list[type[PolicyViolation]] = [PolicyViolation]
+    while stack:
+        for sub in stack.pop().__subclasses__():
+            if sub not in seen:
+                seen.add(sub)
+                stack.append(sub)
+    return seen
+
+
+def test_every_policy_violation_type_ships_its_own_nonempty_default() -> None:
+    """AC: every concrete subclass supplies a default (its OWN, not merely the
+    inherited base one, so each diagnosis carries tailored wording)."""
+    types = _all_policy_violation_types()
+    # Guard the known taxonomy is covered; a new member must make a deliberate
+    # appearance here (and, by the assertion below, ship its own remediation).
+    assert {
+        PolicyViolation,
+        PIIDetected,
+        TokenBudgetExceeded,
+        PromptInjectionBlocked,
+        ContentSafetyBlocked,
+    } <= types
+    for cls in types:
+        assert "remediation" in vars(cls), f"{cls.__name__} ships no own remediation default"
+        assert vars(cls)["remediation"].strip(), f"{cls.__name__} default is empty/whitespace"
+
+
+def test_every_policy_violation_instance_has_a_nonempty_remediation() -> None:
+    """Constructed with only a message (every subclass's extra kwargs are
+    optional), each still carries a non-empty next step."""
+    for cls in _all_policy_violation_types():
+        err = cls("boom")
+        assert err.remediation.strip(), f"{cls.__name__}('boom').remediation is empty"
+
+
+def test_policy_violation_raises_on_empty_or_whitespace_remediation() -> None:
+    """AC: the constructor fails on an empty remediation — an explicit blank is a
+    bug, not a silent acceptance."""
+    for bad in ("", "   ", "\n\t "):
+        with pytest.raises(ValueError):
+            PolicyViolation("boom", remediation=bad)
+
+
+def test_omitting_remediation_uses_the_class_default_not_a_copy() -> None:
+    # The default is the same object as the class attribute — one source of
+    # wording, so `donkey doctor` (#202) and the exception can't drift apart.
+    assert PolicyViolation("boom").remediation is PolicyViolation.remediation
+    assert PIIDetected("boom").remediation is PIIDetected.remediation
+
+
+def test_explicit_remediation_overrides_the_default() -> None:
+    err = PIIDetected("boom", remediation="mask the CREDIT_CARD value before resubmitting")
+    assert err.remediation == "mask the CREDIT_CARD value before resubmitting"
+
+
+def test_classify_pii_falls_back_to_the_class_default_remediation() -> None:
+    # classify() no longer passes PII remediation inline; it must resolve to the
+    # canonical class default (#182) — the same string, one source.
+    err = classify(_json_resp(403, {"error": {"type": "pii_detected", "message": "blocked"}}))
+    assert isinstance(err, PIIDetected)
+    assert err.remediation is PIIDetected.remediation
+
+
+def test_classify_token_budget_falls_back_to_the_class_default_remediation() -> None:
+    err = classify(_resp(429))
+    assert isinstance(err, TokenBudgetExceeded)
+    assert err.remediation is TokenBudgetExceeded.remediation
