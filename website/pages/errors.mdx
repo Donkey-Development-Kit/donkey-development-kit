@@ -90,6 +90,27 @@ Its `.remediation` is a single canonical string that names the three real causes
 an unreachable host, a wrong base URL, or blocked network egress — and points at
 `donkey doctor` for connectivity diagnosis.
 
+## Every refusal names a next step
+
+`remediation` is not optional. Every `PolicyViolation` carries a non-empty,
+human-readable next step — the constructor **raises** if you try to build one
+without it — and each concrete subclass ships a canonical default:
+
+- `PIIDetected` → remove or redact the flagged values, or relax the policy's
+  entity list in API Manager.
+- `TokenBudgetExceeded` → wait for the window to reset (see `retry_after`) or
+  request an increase.
+- `PromptInjectionBlocked` → review and sanitise the untrusted input, or adjust
+  the policy's sensitivity.
+- `ContentSafetyBlocked` → revise the flagged content, or adjust the policy's
+  categories / severity thresholds.
+
+The text names the **action you can take**, not the policy that fired — a typed
+refusal without a next step is just a renamed exception. Because each default
+lives on the exception class, it is a single source of wording that
+[`donkey doctor`](/cli) reuses for its own failure output, so the CLI and the
+exception can never disagree.
+
 ## The ids every `DonkeyError` carries
 
 Every exception in the tree carries three ids so you can join a failure to your
