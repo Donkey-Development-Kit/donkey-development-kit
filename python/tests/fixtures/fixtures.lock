@@ -1,0 +1,20 @@
+{
+  "anypoint/llm_proxy/models.notfound.headers.txt": "sha256:c74a31f6c9dd41ff96e24f5fb1b1ea671e37bdd3f7613bde46ca01fdc2c66111",
+  "anypoint/llm_proxy/reject.client-id-missing.body.json": "sha256:941cbdfbf3ef3d0180c49724810ddbd41f858d32a7e0780dcb070dda855890e6",
+  "anypoint/llm_proxy/reject.client-id-missing.headers.txt": "sha256:3d9bc878643e399c6800dca5708a58309a4ae6b2fd9b8ca26e802cafc74e73c2",
+  "anypoint/llm_proxy/reject.model-not-found.body.json": "sha256:4fee836984142e5c188df9070738a206918463707cd8e3c8db7c5c1988017928",
+  "anypoint/llm_proxy/reject.pii-detected.body.json": "sha256:0813aaaa848f1cb254e36515d6033c98d007228a84d74fd9f545ebfaf1a5c75d",
+  "anypoint/llm_proxy/reject.pii-detected.headers.txt": "sha256:cba746a46b59c40266b196ec7a6eeb3732c54a585c927af64d78a12258a49b57",
+  "anypoint/llm_proxy/reject.token-rate-limit.headers.txt": "sha256:564e581be4d35045979001c1c665b14b1362dc023f2f819fbf18aec4fea064c6",
+  "anypoint/llm_proxy/responses.stream.headers.txt": "sha256:d313349a5459cb23380b22277d40789ebb49b41cb5a5dd4ccbba7cd64c8d9a35",
+  "anypoint/llm_proxy/responses.stream.sample.sse": "sha256:ab00aae222cd5c5d900bc57cd6a9a7a7ca5dcb177904ac9794df7f4fc7856ac5",
+  "anypoint/llm_proxy/responses.success.body.json": "sha256:c47727c6ffb0d2dec80ed37d182825d5707de043517a890999fefa4e407dc90e",
+  "anypoint/llm_proxy/responses.success.headers.txt": "sha256:263ce673cad339d8cc06e095924fb5ff1310f84d47f591f18eb1a8c90fb8027b",
+  "rejections/reject.content-moderation.headers.txt": "sha256:5df6a849d1ea245db54617e66f1d380566270f23102ca0cb8046a1c8b990cbda",
+  "rejections/reject.content-safety.body.json": "sha256:4c9c71529bd564d3c72e4e6dc383fa527088290c9016b3afb2f8706e5e32fbf1",
+  "rejections/reject.content-safety.headers.txt": "sha256:9bfd3b7d8e34b08a1df5771ce4e545dc000473ab9f240da623892e049bc587fa",
+  "rejections/reject.injection-protection.headers.txt": "sha256:7964c425ed91c8498b6f25474d6cd91c0350ec3803496f75c40fb71004930ea2",
+  "rejections/reject.regex-prompt-guard.body.json": "sha256:9bf2ca369b9250edbac362f3d74904d76d8c6e338c1c9ef53fe33b9848db7f23",
+  "rejections/reject.regex-prompt-guard.headers.txt": "sha256:01c9848a2470e700602713dc0530656c4ff6be647b69441308b24e78ab3e11ae",
+  "rejections/reject.upstream-5xx.headers.txt": "sha256:0e284c1ab5e63c77a51ee3ba8386c4c5c4caadca5b55ac14d51b215251e89a79"
+}
