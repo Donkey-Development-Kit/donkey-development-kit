@@ -45,7 +45,7 @@ from .auth import AuthProvider
 from .budget import Budget
 from .config import DonkeyConfig
 from .cost import CostTags
-from .errors import ModelSubstituted, classify
+from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
 from .lastcall import (
     LLM_MODEL_HEADER,
     LLM_PROVIDER_HEADER,
@@ -261,6 +261,34 @@ def _retry_delay(attempt: int, response: httpx.Response) -> float:
             pass  # HTTP-date form not handled here; fall through to backoff
     exp = min(_BACKOFF_BASE_S * (2.0**attempt), _BACKOFF_CAP_S)
     return exp * (0.5 + random.random() / 2.0)  # full-ish jitter
+
+
+def _gateway_unavailable(
+    request: httpx.Request,
+    exc: httpx.TransportError,
+    *,
+    correlation_header: str,
+    call_id_header: str,
+) -> GatewayUnavailable:
+    """Wrap a transport-level httpx failure (DNS, refused connection, TLS error,
+    timeout — no HTTP response) as the typed :class:`GatewayUnavailable` (#379,
+    BG §1.2). ``httpx.TransportError`` is the precise base: it covers exactly the
+    "never got a response" family and excludes response-bearing failures
+    (``HTTPStatusError``), so a 4xx/5xx still flows to :func:`classify` unchanged.
+
+    The origin that failed is put on the exception (the request URL is the
+    truthful target, honouring any proxy/base-url override). The run/call ids the
+    client already stamped on the request are carried so an availability failure
+    quotes the same ids a response error would — even though the gateway's own
+    ``request_id`` is necessarily absent."""
+    url = request.url
+    host = url.host if url.port is None else f"{url.host}:{url.port}"
+    return gateway_unavailable(
+        base_url=f"{url.scheme}://{host}" if host else None,
+        cause=exc,
+        correlation_id=request.headers.get(correlation_header),
+        call_id=request.headers.get(call_id_header),
+    )
 
 
 # --- GenAI span extraction (#192, BG §1.6) ----------------------------------
@@ -694,7 +722,23 @@ class DonkeyAsyncClient(httpx.AsyncClient):
 
         attempt = 0
         while attempt < attempts:
-            response = await super().send(request, **kwargs)  # type: ignore[arg-type]
+            # A transport-level failure (DNS, refused, TLS, timeout) never yields
+            # a response, so it is not retried here (retries key off a status
+            # code) and is not routed through ``_on_refusal`` — it is not a
+            # governed refusal (#379). It is re-raised as the typed
+            # ``GatewayUnavailable`` so the caller can distinguish a lost gateway
+            # from any other fault; the span still closes via ``send()``'s
+            # context manager / detached-span guard, exactly as for a raw
+            # transport error today (#179/#192).
+            try:
+                response = await super().send(request, **kwargs)  # type: ignore[arg-type]
+            except httpx.TransportError as exc:
+                raise _gateway_unavailable(
+                    request,
+                    exc,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                ) from exc
             last_response = response
 
             provider = self._token_provider
@@ -900,7 +944,18 @@ class DonkeyClient(httpx.Client):
         last_response: httpx.Response | None = None
 
         for attempt in range(attempts):
-            response = super().send(request, **kwargs)  # type: ignore[arg-type]
+            # Transport-level failure → typed ``GatewayUnavailable``, identical to
+            # the async twin (#379): not retried, not a refusal, span closed by
+            # ``send()``'s span lifecycle.
+            try:
+                response = super().send(request, **kwargs)  # type: ignore[arg-type]
+            except httpx.TransportError as exc:
+                raise _gateway_unavailable(
+                    request,
+                    exc,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                ) from exc
             last_response = response
 
             # No 401-refresh branch: with no token provider there is nothing to

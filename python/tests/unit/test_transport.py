@@ -15,7 +15,7 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
-from donkey_kit.core.errors import PIIDetected, classify
+from donkey_kit.core.errors import GatewayUnavailable, PIIDetected, classify
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call
 from donkey_kit.core.telemetry import current_correlation_id, run_context, run_scope
 from donkey_kit.core.transport import (
@@ -586,8 +586,9 @@ async def test_on_response_not_called_when_transport_errors() -> None:
 
     client = _RecordingAsync(DonkeyConfig(), None, transport=httpx.MockTransport(handler))
     async with client:
-        with pytest.raises(httpx.ConnectError):
+        with pytest.raises(GatewayUnavailable) as ei:  # typed, wrapping the transport error (#379)
             await client.get("https://x")
+    assert isinstance(ei.value.__cause__, httpx.ConnectError)  # original preserved
     assert client.requests == 1  # request hook ran before the send
     assert client.responses == []  # transport error is never masked by a response hook
 
@@ -620,8 +621,9 @@ def test_sync_on_response_not_called_when_transport_errors() -> None:
 
     client = _RecordingSync(DonkeyConfig(), transport=httpx.MockTransport(handler))
     with client:
-        with pytest.raises(httpx.ConnectError):
+        with pytest.raises(GatewayUnavailable) as ei:  # typed, wrapping the transport error (#379)
             client.get("https://x")
+    assert isinstance(ei.value.__cause__, httpx.ConnectError)
     assert client.requests == 1
     assert client.responses == []
 
@@ -960,7 +962,7 @@ async def test_transport_error_closes_span_without_masking(monkeypatch) -> None:
 
     client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
     async with client:
-        with pytest.raises(httpx.ConnectError):
+        with pytest.raises(GatewayUnavailable):  # typed wrapper; span lifecycle unchanged (#379)
             await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
 
     (span,) = exporter.get_finished_spans()  # closed, not leaked
@@ -1106,7 +1108,7 @@ async def test_transport_error_span_has_error_status(monkeypatch) -> None:
 
     client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
     async with client:
-        with pytest.raises(httpx.ConnectError):
+        with pytest.raises(GatewayUnavailable):  # typed wrapper; span still ERROR (#379)
             await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
 
     (span,) = exporter.get_finished_spans()
@@ -1698,3 +1700,106 @@ async def test_served_model_and_fallback_recorded_on_the_span(monkeypatch) -> No
     assert attrs["gen_ai.response.model"] == "gpt-4o"  # what the gateway served
     assert attrs["donkey.routing.type"] == "ModelBased"
     assert attrs["donkey.routing.fallback"] is True
+
+
+# --- GatewayUnavailable: transport-level failures are typed (#379, BG §1.2) --
+# A transport error (DNS, refused, TLS, timeout) yields NO response, so it must
+# surface as the typed GatewayUnavailable — not a raw httpx exception — and it
+# must behave identically on the async and sync transports. A MockTransport
+# handler that raises simulates the failure without a network.
+
+# ConnectError is what httpx raises for DNS failure, connection refused AND TLS
+# errors; the timeout family (a subclass of TransportError) covers timeouts.
+_TRANSPORT_ERRORS = [
+    httpx.ConnectError("nodename nor servname provided"),  # DNS failure
+    httpx.ConnectError("[Errno 61] Connection refused"),  # connection refused
+    httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED]"),  # TLS failure
+    httpx.ConnectTimeout("timed out"),  # connect timeout
+    httpx.ReadTimeout("timed out"),  # read timeout
+]
+
+
+def _raiser(exc: httpx.TransportError):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise exc
+
+    return handler
+
+
+def _assert_gateway_unavailable(err: GatewayUnavailable, cause: httpx.TransportError) -> None:
+    assert err.base_url == "https://gw.example"  # the origin, not the full path
+    assert err.cause is cause
+    assert err.__cause__ is cause  # chained via `raise ... from`
+    assert err.request_id is None  # no response → no gateway-minted id
+    # Remediation names the three real causes and points at `donkey doctor`.
+    assert "donkey doctor" in err.remediation
+    assert "unreachable" in err.remediation
+    assert "base URL" in err.remediation
+    assert "egress" in err.remediation
+
+
+@pytest.mark.parametrize("exc", _TRANSPORT_ERRORS, ids=lambda e: repr(str(e)))
+async def test_transport_error_raises_gateway_unavailable_async(exc: httpx.TransportError) -> None:
+    client = _client(_raiser(exc))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)  # placeholder header names
+        async with client:
+            with pytest.raises(GatewayUnavailable) as ei:
+                await client.post("https://gw.example/v1/chat", json={"model": "m", "input": "hi"})
+    _assert_gateway_unavailable(ei.value, exc)
+
+
+@pytest.mark.parametrize("exc", _TRANSPORT_ERRORS, ids=lambda e: repr(str(e)))
+def test_transport_error_raises_gateway_unavailable_sync(exc: httpx.TransportError) -> None:
+    client = _sync_client(_raiser(exc))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        with client:
+            with pytest.raises(GatewayUnavailable) as ei:
+                client.post("https://gw.example/v1/chat", json={"model": "m", "input": "hi"})
+    _assert_gateway_unavailable(ei.value, exc)
+
+
+async def test_gateway_unavailable_carries_the_sent_ids() -> None:
+    # The run correlation id and the per-call id the client stamped on the failed
+    # request are carried, so an availability failure quotes the same ids a
+    # response error would — even with no response (§2.3, #195).
+    client = _client(_raiser(httpx.ConnectError("refused")))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        async with client:
+            with run_context("run-boom"):
+                with pytest.raises(GatewayUnavailable) as ei:
+                    await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert ei.value.correlation_id == "run-boom"
+    assert ei.value.call_id is not None  # per-call id was pinned before the send
+
+
+async def test_transport_error_is_not_retried() -> None:
+    # A request that never got a response is not retried (retries key off a status
+    # code) — the handler is invoked exactly once even with retries configured.
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("refused")
+
+    client = _client(handler, DonkeyConfig(max_retries=3))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        async with client:
+            with pytest.raises(GatewayUnavailable):
+                await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert calls == 1
+
+
+async def test_5xx_response_still_returns_a_response_not_gateway_unavailable() -> None:
+    # Regression guard: a response-bearing failure (5xx) is NOT a transport error;
+    # it flows through unchanged for classify() to type, never GatewayUnavailable.
+    client = _client(lambda r: httpx.Response(503), DonkeyConfig(max_retries=0))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        async with client:
+            resp = await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert resp.status_code == 503
