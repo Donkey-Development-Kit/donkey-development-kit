@@ -44,6 +44,38 @@ That is the point: if your team already runs Langfuse, Datadog, or Phoenix,
 then "policy refusals per hour by type" and "tokens per ticket" show up in the
 dashboard you already have, with no new tooling to adopt.
 
+### Zero-config export
+
+  **Shipped in Phase 1** (#194). Set the standard OpenTelemetry endpoint env
+  var and spans flow — **no SDK-specific variable**.
+
+```bash
+pip install "donkey-kit[otel]"
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://langfuse.acme.internal
+export OTEL_SERVICE_NAME=support-triage       # standard OTel var, honoured for free
+python -m my_app                              # spans flow, refused calls included
+```
+
+`Donkey.from_env()` reads `OTEL_EXPORTER_OTLP_ENDPOINT` (or the traces-specific
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, installs an OTLP
+exporter behind a batch processor. The network flush runs on that background
+thread, off your request path — which is how instrumentation stays under the
+1&nbsp;ms/call bar. The `[otel]` extra ships the **http/protobuf** exporter;
+`OTEL_EXPORTER_OTLP_PROTOCOL=grpc` is honoured only if you also install
+`opentelemetry-exporter-otlp-proto-grpc`.
+
+**With no endpoint set, the export path is inert and silent** — no exporter is
+built, nothing connects, nothing is printed. And if your process already
+configures its own OpenTelemetry provider (say via `opentelemetry-instrument`),
+Donkey rides it rather than replacing it, so your spans flow through the
+pipeline you already set up.
+
+Opt out of telemetry entirely with a single flag:
+
+```bash
+export DONKEY_TELEMETRY=false      # or telemetry = false in .donkey-kit.toml
+```
+
 ### Two honest caveats
 
   **The GenAI conventions are still `Development` status upstream.** Attribute
