@@ -1,21 +1,35 @@
-"""Telemetry (§2.5) and the run-scoped correlation ID (§2.3).
+"""Telemetry (§2.5, BG §1.6) and the run-scoped correlation ID (§2.3).
 
-OpenTelemetry is an optional dependency, off by default in the library and on by
-default in the CLI. The correlation ID lives in a ``contextvar`` so a single
-agent run's fan-out of model calls and tool calls shares one trace ID end to
-end — letting a developer correlate their local trace with what the platform
-team sees in Omni Gateway's observability view (a headline feature, §2.5).
+OpenTelemetry is an optional dependency (the ``[otel]`` extra). Telemetry is
+**on by default** (``DonkeyConfig.telemetry``), but the export pipeline is
+**inert unless an OTLP endpoint is configured**: :func:`configure_otlp_export`
+installs a real exporter only when ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the
+traces-specific variant) is set — so a process with no endpoint produces no
+spans, connects to nothing, and prints nothing (BG §1.6 "inert and silent",
+#194). This is what makes the zero-config promise hold: set the standard OTel
+endpoint env var and spans flow to your sink with **no SDK-specific env var**.
+Opt out of telemetry entirely with the single flag ``DONKEY_TELEMETRY=false``.
+
+The correlation ID lives in a ``contextvar`` so a single agent run's fan-out of
+model calls and tool calls shares one trace ID end to end — letting a developer
+correlate their local trace with what the platform team sees in Omni Gateway's
+observability view (a headline feature, §2.5).
 """
 
 from __future__ import annotations
 
 import contextlib
+import os
 import uuid
+import warnings
 from collections.abc import Iterator
 from contextvars import ContextVar
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .cost import CostTags
+
+if TYPE_CHECKING:
+    from .config import DonkeyConfig
 from .errors import (
     ContentSafetyBlocked,
     DonkeyError,
@@ -295,6 +309,163 @@ def _tracer() -> Any | None:
     except ImportError:
         return None
     return trace.get_tracer("donkey_kit")
+
+
+# --- Zero-config OTLP export bootstrap (BG §1.6, #194) -----------------------
+# The span helpers above only ever call ``trace.get_tracer(...)`` — they ride
+# whatever global TracerProvider the host process installed. On their own they
+# export nothing: OpenTelemetry's default is a no-op provider. This section is
+# what turns "we build spans" into "spans reach the customer's sink", with the
+# zero-config contract of BG §1.6:
+#
+#   set OTEL_EXPORTER_OTLP_ENDPOINT (the *standard* OTel env var) → spans export.
+#   no SDK-specific env var, and no endpoint set → inert and silent.
+#
+# Export I/O runs on the BatchSpanProcessor's background thread, off the request
+# hot path — which is exactly why per-call overhead stays under the 1ms bar
+# (benchmarked in CI, #194): the call site only creates the span, sets attributes
+# and enqueues; the network flush is somebody else's thread.
+
+
+class TelemetryExportWarning(UserWarning):
+    """Emitted once when an OTLP endpoint is configured but the exporter it needs
+    is not installed — so the caller asked for export and would otherwise get
+    silence. Never raised when no endpoint is set (that path is inert by design).
+    """
+
+
+# Guards ``configure_otlp_export`` so multiple ``Donkey()`` constructions install
+# at most one provider per process (an OTel provider is a process-global; a second
+# install is refused by OTel with a warning anyway). Reset only by tests.
+_otlp_export_configured = False
+# One-time de-dupe for the missing-exporter warning, keyed by protocol.
+_warned_missing_exporter: set[str] = set()
+
+
+def _otlp_endpoint_configured() -> bool:
+    """True iff a standard OTLP endpoint env var is set (BG §1.6). This is the
+    inert-and-silent gate: with neither set we never build a provider, so an
+    unconfigured process connects to nothing and prints nothing (AC #4)."""
+    for name in ("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"):
+        if os.environ.get(name, "").strip():
+            return True
+    return False
+
+
+def _otlp_protocol() -> str:
+    """The configured OTLP protocol, honouring the standard env vars (traces-
+    specific overrides the generic), defaulting to ``http/protobuf`` — the
+    OTel-recommended default and the one the ``[otel]`` extra ships an exporter
+    for."""
+    raw = (
+        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
+        or os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL")
+        or "http/protobuf"
+    )
+    return raw.strip().lower()
+
+
+def _warn_missing_exporter(protocol: str, package: str) -> None:
+    if protocol in _warned_missing_exporter:
+        return
+    _warned_missing_exporter.add(protocol)
+    warnings.warn(
+        f"OTEL_EXPORTER_OTLP_ENDPOINT is set and Donkey telemetry is on, but the "
+        f"OTLP {protocol!r} exporter is not installed, so no spans will be "
+        f"exported. Install it with: pip install {package}",
+        TelemetryExportWarning,
+        stacklevel=2,
+    )
+
+
+def _build_otlp_exporter() -> Any | None:
+    """Construct the OTLP span exporter for the configured protocol, or ``None``
+    (after a one-time warning) if that protocol's exporter package is absent.
+
+    The exporter reads ``OTEL_EXPORTER_OTLP_ENDPOINT`` / headers / timeout from
+    the environment itself — that is what keeps the wiring zero-config."""
+    protocol = _otlp_protocol()
+    if protocol in ("http/protobuf", "http/json", "http"):
+        try:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                OTLPSpanExporter,
+            )
+        except ImportError:
+            _warn_missing_exporter("http/protobuf", "opentelemetry-exporter-otlp-proto-http")
+            return None
+        return OTLPSpanExporter()
+    if protocol == "grpc":
+        try:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                OTLPSpanExporter as GRPCSpanExporter,
+            )
+        except ImportError:
+            # grpc is intentionally NOT in the [otel] extra (it drags in grpcio);
+            # honour the protocol only if the caller installed the grpc exporter.
+            _warn_missing_exporter("grpc", "opentelemetry-exporter-otlp-proto-grpc")
+            return None
+        return GRPCSpanExporter()
+    _warn_missing_exporter(protocol, "opentelemetry-exporter-otlp-proto-http")
+    return None
+
+
+def _build_tracer_provider(config: DonkeyConfig) -> Any | None:
+    """Build a configured ``TracerProvider`` (OTLP exporter behind a
+    ``BatchSpanProcessor``), or ``None`` when export must stay inert.
+
+    Returns ``None`` — and touches no global state — when telemetry is off
+    (``DONKEY_TELEMETRY=false``), when no OTLP endpoint is configured (AC #4), or
+    when the ``[otel]`` SDK/exporter is not installed. Pure with respect to the
+    OTel global provider, so it is unit-testable without fighting the process
+    singleton; the caller (:func:`configure_otlp_export`) owns installation.
+
+    The default ``TracerProvider`` resource already reads ``OTEL_SERVICE_NAME``
+    and ``OTEL_RESOURCE_ATTRIBUTES``, so those standard env vars are honoured for
+    free — no Donkey-specific service-name knob."""
+    if not config.telemetry or not _otlp_endpoint_configured():
+        return None
+    try:
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    except ImportError:
+        return None
+    exporter = _build_otlp_exporter()
+    if exporter is None:
+        return None
+    provider = TracerProvider()
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    return provider
+
+
+def configure_otlp_export(config: DonkeyConfig) -> None:
+    """Install a zero-config OTLP exporter for this process, once (BG §1.6, #194).
+
+    Called from ``Donkey.__init__``. Inert and silent (AC #4) when telemetry is
+    off, when no OTLP endpoint env var is set, or when ``[otel]`` is not
+    installed. When an endpoint *is* set, installs a ``TracerProvider`` + OTLP
+    ``BatchSpanProcessor`` as the global provider — **unless a host already
+    installed an SDK provider** (``opentelemetry-instrument``, a manual setup),
+    in which case that one is left untouched and our spans simply ride it.
+
+    Idempotent: guarded so repeated ``Donkey()`` construction installs at most
+    one provider per process."""
+    global _otlp_export_configured
+    if _otlp_export_configured:
+        return
+    provider = _build_tracer_provider(config)
+    if provider is None:
+        return  # inert: opt-out, no endpoint, or [otel]/exporter absent.
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+
+    if isinstance(trace.get_tracer_provider(), TracerProvider):
+        # A host already owns the global provider — never clobber it. Drop the
+        # one we just built so its batch thread does not linger unused.
+        provider.shutdown()
+        _otlp_export_configured = True
+        return
+    trace.set_tracer_provider(provider)
+    _otlp_export_configured = True
 
 
 @contextlib.contextmanager

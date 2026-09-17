@@ -1,6 +1,9 @@
 """The ``donkey`` CLI (§5.2, §7).
 
-Telemetry is ON by default in the CLI (§2.5). Commands that need a verified
+Telemetry is on by default (§2.5, BG §1.6), but export stays inert unless an
+OTLP endpoint is configured: set ``OTEL_EXPORTER_OTLP_ENDPOINT`` and spans flow
+to your own sink with no SDK-specific env var; opt out entirely with
+``DONKEY_TELEMETRY=false``. Commands that need a verified
 platform API print an honest, actionable "blocked pending verification" message
 and exit non-zero rather than fabricating calls (working instruction #2).
 Commands that need no platform API (spec validation) do real work now.

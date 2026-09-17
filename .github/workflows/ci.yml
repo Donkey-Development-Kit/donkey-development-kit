@@ -65,6 +65,23 @@ jobs:
       - name: local gateway simulator boot (BG §1.4)
         run: pytest -q -m local_gateway
 
+  benchmark:
+    # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The
+    # `benchmark`-marked test is deselected from the default run (addopts), so it
+    # runs here as its own blocking gate — a regression that makes span
+    # instrumentation expensive fails the build. `[otel]` for the real SDK
+    # TracerProvider it measures against; `-s` so the measured µs/call is visible
+    # in the job log even on a pass.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev,llm,cli,local,otel]"
+      - name: GenAI span overhead < 1ms/call (BG §1.6, #194)
+        run: pytest -q -m benchmark -s
+
   quickstart:
     # #203 / BG §1.4: the gateway-free 15-minute quickstart, executed on a clean
     # runner so the documented first-run experience can never silently rot. No

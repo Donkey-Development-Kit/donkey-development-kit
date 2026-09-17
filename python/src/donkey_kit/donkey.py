@@ -27,7 +27,7 @@ from .core.budget import Budget
 from .core.config import DonkeyConfig, OnModelSubstitution
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
-from .core.telemetry import RunScope, run_scope
+from .core.telemetry import RunScope, configure_otlp_export, run_scope
 from .core.toolspec import register_tool
 from .core.transport import (
     DonkeyAsyncClient,
@@ -128,6 +128,11 @@ class Donkey:
         auth: AuthProvider | None = None,
     ) -> None:
         self._cfg = config or DonkeyConfig.from_env()
+        # Zero-config OTLP export (BG §1.6, #194): installs an exporter when an
+        # OTEL_EXPORTER_OTLP_ENDPOINT is set and telemetry is on; a no-op (and
+        # never an error) otherwise. This is the single funnel — from_env()
+        # delegates here — and it is idempotent across many Donkey() instances.
+        configure_otlp_export(self._cfg)
         self._auth = auth if auth is not None else self._default_auth(self._cfg)
         # One Budget per Donkey (never global, §1.3 / #185): both transports feed
         # it in-band from every response's x-token-* headers.
