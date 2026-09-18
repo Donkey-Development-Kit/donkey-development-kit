@@ -314,6 +314,13 @@ typed refusals, same span and budget. From here:
 
 ## Where to go next
 
+- **[LangGraph support-triage demo](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md)** — this quickstart
+  scaled to a real agent: `examples/langgraph/main.py` triages five support
+  tickets through a two-node LangGraph graph against the simulator, blocks the
+  PII-laden one as a typed `PIIDetected`, and exports every call's span to a
+  bundled local OTLP collector — end to end, still no gateway. Run it with
+  `python -m examples.langgraph.main`. It's the Phase-1 acceptance demo, timed in
+  CI.
 - **[Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md)** — everything governed model access
   gives you, including `donkey.budget` pacing and the telemetry span contract.
 - **[Error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md)** — every rejection shape, its discriminator, and
