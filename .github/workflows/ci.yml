@@ -122,7 +122,11 @@ jobs:
       - name: run the gateway-free Scenario-A demo (must exit 0, no credentials)
         run: timeout 120 python -m examples.langgraph.main
       - name: conformance passes against the demo's own agent factory
-        run: pytest -q --donkey-conformance --agent=examples.langgraph.main:build
+        # `python -m pytest` (not the bare `pytest` console script) so the
+        # working directory (python/) lands on sys.path — that's what makes the
+        # `examples` namespace package importable for --agent=examples.langgraph.
+        # main:build. The bare script omits cwd from sys.path and fails to import.
+        run: python -m pytest -q --donkey-conformance --agent=examples.langgraph.main:build
 
   # Nightly framework matrix (§8.4) — runs the conformance kit against the
   # LATEST release of each framework and opens an issue on failure. Scheduled
