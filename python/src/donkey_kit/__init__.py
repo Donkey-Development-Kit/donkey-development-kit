@@ -40,6 +40,7 @@ from .core.errors import (
     ToolInvocationError,
     UpstreamModelError,
 )
+from .core.toolspec import ToolSpec, registered_tools
 from .donkey import Donkey
 from .governance import (
     GatewayTarget,
@@ -90,6 +91,8 @@ __all__ = [
     "RegistryError",
     "TokenBudgetExceeded",
     "ToolInvocationError",
+    "ToolSpec",
     "UpstreamModelError",
     "__version__",
+    "registered_tools",
 ]

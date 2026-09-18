@@ -24,7 +24,9 @@ CI job (``[dev]`` only, no ``[local]`` extra). It imports only the framework-fre
 
 from __future__ import annotations
 
+import hashlib
 import importlib.resources
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,17 +42,21 @@ from ..core.budget import (
 
 __all__ = [
     "LIMIT_HEADER",
+    "LOCK_PATH",
     "RATELIMIT_HEADER",
     "REMAINING_HEADER",
     "RESET_HEADER",
     "Fixture",
     "SHAPES",
+    "compute_manifest",
     "fixture_bytes",
     "load",
     "parse_headers",
     "parse_status",
+    "read_lock",
     "render_ratelimit_prose",
     "replay_headers",
+    "write_lock",
 ]
 
 
@@ -313,3 +319,76 @@ def replay_headers(fixture: Fixture) -> dict[str, str]:
         if key in _KEEP_EXACT or key.startswith(_KEEP_PREFIX):
             out[key] = value
     return out
+
+
+# --- fixture integrity lock (BG §1.4 honesty, #189) --------------------------
+#
+# The "same files, both fail together" rule (above) catches a fixture edit that
+# changes a discriminator classify() asserts on. It does NOT catch a *benign*
+# byte edit — reformatted JSON, an added field, a whitespace tweak — that leaves
+# every assertion green while silently drifting the bytes the simulator replays
+# away from the captured shape. That is exactly the "subtly wrong simulator"
+# BG §1.4 warns is worse than none.
+#
+# The lock closes that gap: a committed sha256 of every fixture file the
+# simulator serves, checked in tests/unit/test_fixture_integrity.py. Any byte
+# change fails loudly until the lock is regenerated with
+# ``python -m donkey_kit.simulator.fixtures --relock`` — the deliberate,
+# reviewable "I re-captured this, I meant it" step. This is an integrity
+# assertion, not fixture-capture tooling (which #189 puts out of scope).
+LOCK_PATH = _SOURCE_ROOT / "fixtures.lock"
+
+
+def _served_files() -> list[tuple[str, str]]:
+    """The (directory, name) of every fixture file the simulator serves, deduped
+    and sorted. Derived from :data:`SHAPES` so a new shape is locked automatically
+    the moment it is added to the table."""
+    seen: set[tuple[str, str]] = set()
+    for spec in SHAPES.values():
+        for name in (spec.headers, spec.body):
+            if name is not None:
+                seen.add((spec.directory, name))
+    return sorted(seen)
+
+
+def compute_manifest() -> dict[str, str]:
+    """A ``{"<directory>/<name>": "sha256:<hex>"}`` map over every fixture file
+    the simulator serves, computed from the bytes on disk right now."""
+    return {
+        f"{directory}/{name}": "sha256:" + hashlib.sha256(
+            fixture_bytes(directory, name)
+        ).hexdigest()
+        for directory, name in _served_files()
+    }
+
+
+def read_lock() -> dict[str, str]:
+    """The committed manifest at :data:`LOCK_PATH`."""
+    data: dict[str, str] = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    return data
+
+
+def write_lock() -> None:
+    """Regenerate :data:`LOCK_PATH` from the current fixture bytes. Called by
+    ``python -m donkey_kit.simulator.fixtures --relock`` after a re-capture."""
+    LOCK_PATH.write_text(
+        json.dumps(compute_manifest(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover - dev-only relock entrypoint
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Simulator fixture integrity lock.")
+    parser.add_argument(
+        "--relock",
+        action="store_true",
+        help="regenerate fixtures.lock from the current fixture bytes",
+    )
+    args = parser.parse_args()
+    if args.relock:
+        write_lock()
+        print(f"wrote {LOCK_PATH} ({len(compute_manifest())} fixtures)")
+    else:
+        parser.error("nothing to do; pass --relock to regenerate the lock")

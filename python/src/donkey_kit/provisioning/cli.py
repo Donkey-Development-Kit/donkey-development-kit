@@ -1,6 +1,9 @@
 """The ``donkey`` CLI (§5.2, §7).
 
-Telemetry is ON by default in the CLI (§2.5). Commands that need a verified
+Telemetry is on by default (§2.5, BG §1.6), but export stays inert unless an
+OTLP endpoint is configured: set ``OTEL_EXPORTER_OTLP_ENDPOINT`` and spans flow
+to your own sink with no SDK-specific env var; opt out entirely with
+``DONKEY_TELEMETRY=false``. Commands that need a verified
 platform API print an honest, actionable "blocked pending verification" message
 and exit non-zero rather than fabricating calls (working instruction #2).
 Commands that need no platform API (spec validation) do real work now.
@@ -143,6 +146,12 @@ def mock(
     sees the real rejection shapes locally. Every response carries
     ``x-donkey-simulator: true`` — it is a fixture replay, never a real gateway.
 
+    It REPLAYS captured shapes; it does NOT evaluate policy. It tests how your
+    agent handles a refusal, never which prompts get refused — you choose the
+    refusal (the ``donkey-sim/<shape>`` model sentinel or a ``--scenario`` rule),
+    the simulator does not decide it. Testing against real policy configuration
+    needs gateway-side dry-run mode (#250).
+
     ``--scenario`` scripts a specific failure on demand (#188): ``pii_block``
     fails every Nth call, ``injection`` matches request text, and ``budget``
     runs a real windowed token counter (429 on exhaustion). Repeatable.
@@ -172,6 +181,67 @@ def mock(
             err=True,
         )
         raise typer.Exit(1) from exc
+
+
+@app.command()
+def doctor(
+    model: str = typer.Option(
+        "gpt-4o", "--model", help="model id to test against the proxy allow-list"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="emit machine-readable JSON"),
+) -> None:
+    """Diagnose governed access: config, credentials, gateway, model, budget (#202).
+
+    Makes ONE real governed call and reads the result through the §2.4 error
+    taxonomy to tell the three look-alike failures apart — wrong URL
+    (``GatewayUnavailable``), wrong credentials (``AuthError``), and
+    credentials-fine-but-model-rejected (the verified ``model_not_found``
+    passthrough → ``UpstreamRequestError``). Each failure prints the remediation
+    the exception itself carries (one source of wording), and the budget line
+    always states how stale the reading is — the proxy has no budget endpoint, so
+    doctor never implies live data.
+
+    Exits non-zero if any check fails, so it works as a CI preflight. Needs the
+    ``[llm]`` extra for the probe client (a missing extra is an install prompt,
+    exit 1, not a ``blocked on verification`` message).
+    """
+    from ..core.errors import DonkeyError
+    from . import doctor as _doctor
+
+    try:
+        checks = _doctor.run_diagnostics(model)
+    except ImportError as exc:  # openai (the [llm] extra) not installed
+        typer.secho(
+            'donkey doctor needs the [llm] extra for the probe client. Install it with:\n'
+            '    pip install "donkey-kit[llm]"',
+            fg="yellow",
+            err=True,
+        )
+        raise typer.Exit(1) from exc
+    except DonkeyError as exc:
+        # A config/probe failure that escaped the taxonomy mapping: surface it
+        # rather than crash with a traceback.
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1) from exc
+
+    if as_json:
+        import json
+
+        typer.echo(
+            json.dumps(
+                [
+                    {"name": c.name, "level": c.level.value, "detail": c.detail,
+                     "remediation": c.remediation}
+                    for c in checks
+                ],
+                indent=2,
+            )
+        )
+    else:
+        typer.echo(_doctor.format_report(checks))
+
+    if _doctor.has_failure(checks):
+        raise typer.Exit(1)
 
 
 def main() -> None:  # pragma: no cover
