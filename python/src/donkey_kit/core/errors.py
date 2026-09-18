@@ -74,7 +74,21 @@ class ConfigError(DonkeyError):
 
 
 class AuthError(DonkeyError):
-    """401/403 on the control plane."""
+    """401/403 on the control plane.
+
+    ``remediation`` is a class attribute (like :class:`GatewayUnavailable`, not
+    the constructor-enforced :class:`PolicyViolation` contract) so ``donkey
+    doctor`` (#202) has one canonical wording to print for a credentials
+    rejection rather than a second copy."""
+
+    #: Single source of next-step wording for a rejected-credentials diagnosis.
+    remediation: str = (
+        "The gateway rejected the credentials (401/403). Check "
+        "DONKEY_LLM_PROXY_CLIENT_ID / DONKEY_LLM_PROXY_CLIENT_SECRET are the "
+        "consumer client_id/secret pair for this LLM-proxy instance — not an "
+        "Anypoint control-plane credential and not a bearer token — and that the "
+        "consumer is authorized on the instance in API Manager (§2)."
+    )
 
 
 class PolicyViolation(DonkeyError):
@@ -258,7 +272,22 @@ class UpstreamRequestError(DonkeyError):
     terminal (never retried) but distinct from :class:`PolicyViolation`.
 
     Carries the provider's own ``code``/``type``/``param`` when present so the
-    caller can act (fix the model, the params, etc.)."""
+    caller can act (fix the model, the params, etc.).
+
+    ``remediation`` is a class attribute so ``donkey doctor`` (#202) has one
+    canonical wording for a model-rejected diagnosis (the LIVE-VERIFIED
+    ``model_not_found`` passthrough, docs/verified-apis.md §4) rather than a
+    second copy."""
+
+    #: Single source of next-step wording for a rejected-request diagnosis. The
+    #: common case doctor keys on is ``code == "model_not_found"``.
+    remediation: str = (
+        "The upstream provider rejected the request (a 4xx passed through the "
+        "gateway). If `code`/`param` names the model (e.g. model_not_found), the "
+        "requested model is not available on this proxy — request it in API "
+        "Manager or choose a model this instance routes. Otherwise fix the "
+        "flagged parameter (inspect .code / .param / .response)."
+    )
 
     def __init__(
         self,
