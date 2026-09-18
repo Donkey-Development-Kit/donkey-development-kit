@@ -101,6 +101,33 @@ jobs:
       - name: run the gateway-free quickstart (must exit 0, no credentials)
         run: timeout 120 python examples/quickstart/main.py
 
+  langgraph-demo:
+    # #199 / BG §1.8: the Phase-1 acceptance artefact — Scenario A end to end
+    # against the simulator only. examples/langgraph/main.py triages five support
+    # tickets through a real two-node LangGraph graph, blocks the PII-laden one as
+    # a typed PIIDetected (the pii_block:every=5 scenario), and exports every
+    # call's span to a bundled local OTLP collector (zero-config export, #194).
+    # Timed on a clean runner (no credentials, no gateway) so the demo can never
+    # silently rot, and the same build() factory is re-run through the
+    # customer-facing conformance plugin — the exact `--donkey-conformance`
+    # invocation a team runs against its own agent. `[dev]` for pytest + the
+    # conformance plugin entry point.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev,llm,langgraph,local,otel]"
+      - name: run the gateway-free Scenario-A demo (must exit 0, no credentials)
+        run: timeout 120 python -m examples.langgraph.main
+      - name: conformance passes against the demo's own agent factory
+        # `python -m pytest` (not the bare `pytest` console script) so the
+        # working directory (python/) lands on sys.path — that's what makes the
+        # `examples` namespace package importable for --agent=examples.langgraph.
+        # main:build. The bare script omits cwd from sys.path and fails to import.
+        run: python -m pytest -q --donkey-conformance --agent=examples.langgraph.main:build
+
   # Nightly framework matrix (§8.4) — runs the conformance kit against the
   # LATEST release of each framework and opens an issue on failure. Scheduled
   # separately once adapters are conformance-wired (M1+).

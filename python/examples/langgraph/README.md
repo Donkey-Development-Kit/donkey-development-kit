@@ -1,6 +1,8 @@
-# LangGraph example
+# LangGraph support-triage demo — Scenario A
 
-Deep adapter — conformance-tested (BG §1.8).
+Deep adapter — conformance-tested (BG §1.8) — and the Phase-1 acceptance
+artefact (#199): Scenario A end to end, from `pip install` to a drafted reply,
+**against the local simulator only** — no Anypoint credentials, no real gateway.
 
 **What this shows.** A real, two-node LangGraph app (`prepare` → `call_model`,
 a compiled `StateGraph`) — not a bare model call — built against the governed
@@ -8,8 +10,28 @@ Agent Fabric LLM proxy. `build(donkey)` is a **conformance-able agent factory**:
 it returns an object with an awaitable `run(text)`, which is exactly the shape
 the customer-facing conformance plugin drives (and the SDK's own
 `tests/conformance/test_langgraph_conformance.py` runs the four scenarios
-against). `main()` then builds the agent from the environment and makes one live
-governed call.
+against). `main()` then runs the full Scenario A:
+
+- **No gateway.** It boots the local gateway simulator (BG §1.4) in-process on
+  an ephemeral port and points the SDK at it. The simulator ignores auth, so the
+  credentials are throwaway placeholders.
+- **The PII masking branch.** The simulator runs the `pii_block:every=5`
+  scenario (#188): every 5th `POST /responses` is served the `pii-detected`
+  403. The demo triages five support tickets, so the fifth — which we fill with
+  an SSN — is blocked, surfacing out of `graph.ainvoke` as a typed `PIIDetected`
+  (not a framework-wrapped generic error). *The simulator triggers on the
+  **count**, not by scanning content — it is a fixture replay, not a PII
+  detector; the SSN just makes the blocked ticket read true. The gateway does
+  the real detection.*
+- **Spans to a local OTLP collector.** `collector.py` is a ~40-line stdlib
+  OTLP/HTTP receiver. Pointing `OTEL_EXPORTER_OTLP_ENDPOINT` at it lights up the
+  SDK's zero-config export (#194) automatically — every governed call's span
+  (refusals included) flows over the wire and is counted.
+
+It is timed in CI (the `langgraph-demo` job) so this first-run experience can
+never silently rot. On startup you'll see two `UnverifiedValueWarning` lines
+about the correlation header names — that is the SDK's honest §0.3 signal that
+those header names aren't yet confirmed against a live proxy, not an error.
 
 The model itself is a *native* `langchain_openai.ChatOpenAI` pointed at the
 proxy — correct base URL (no `/v1`), `client_id`/`client_secret` header auth (not
@@ -36,16 +58,31 @@ prove (#198):
 > This README duplicates the runnable essentials on purpose so you can run it in
 > place; if the two ever differ, the docs page is canonical.
 
-## Run
+## Run (no gateway, no credentials)
 
 ```bash
-pip install "donkey-kit[langgraph]"
+pip install "donkey-kit[langgraph,local,otel]"
 
-export DONKEY_LLM_PROXY_URL="https://<ingress-gw>/<instance>/"   # note: no /v1
-export DONKEY_LLM_PROXY_CLIENT_ID="<consumer client id>"
-export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
+# Run as a module (it imports the bundled collector as a sibling):
+python -m examples.langgraph.main
+```
 
-python examples/langgraph/main.py
+- `langgraph` — `langchain_openai.ChatOpenAI` + `langgraph`.
+- `local` — the local gateway simulator (`starlette` + `uvicorn`).
+- `otel` — the OpenTelemetry SDK + OTLP exporter, so spans reach the collector.
+
+Expected output: four drafted replies, ticket 5 **blocked** by `PIIDetected`,
+the budget remaining, and the span count the local OTLP collector received. The
+whole run takes ~1–2 seconds.
+
+## Verify it against conformance
+
+The same `build` factory the demo uses is what the customer-facing conformance
+plugin drives — run the four scenarios against it exactly as a customer would
+against their own agent:
+
+```bash
+pytest --donkey-conformance --agent=examples.langgraph.main:build
 ```
 
 ## The manual equivalent
