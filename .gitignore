@@ -48,6 +48,10 @@ scripts/rebrand/sweep-report/
 .donkey-kit.local.toml
 donkey.lock.local
 
+# Sandbox suite manifest — real proxy base URLs / cred env-var wiring (#400).
+# The committed proxies.toml.example is the template; the filled file stays local.
+python/tests/sandbox/proxies.toml
+
 # Env
 .env
 .envrc

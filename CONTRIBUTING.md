@@ -207,8 +207,11 @@ the test docstring.
 
 ### `local_gateway` and `sandbox` — infra-gated, clean-skip by default
 
-Both markers are declared in `python/pyproject.toml`; neither has a test using it
-yet — they're declared ahead of the M1+ tests that will need them.
+Both markers are declared in `python/pyproject.toml`. `local_gateway` is
+exercised by `tests/conformance/test_simulator_boot.py` (and run in CI's `test`
+job via `pytest -q -m local_gateway`); `sandbox` is exercised by
+`tests/sandbox/` (#400), which calls the real provisioned proxies and is
+**never** run in CI — it is opt-in, local only.
 
 - **`@pytest.mark.local_gateway`** needs a local Omni Gateway via docker (§6.5).
   Docker is a hard dependency **for this feature only** — it ships behind the
@@ -222,7 +225,13 @@ yet — they're declared ahead of the M1+ tests that will need them.
   `policy_events(policy_name)` parsed from gateway logs, so a test can assert a
   policy actually fired.
 - **`@pytest.mark.sandbox`** needs a real Anypoint sandbox and is gated by
-  `DONKEY_SANDBOX_TESTS=1`.
+  `DONKEY_SANDBOX_TESTS=1`. The suite (`tests/sandbox/`) calls the LLM Gateway
+  proxies provisioned in `donkey-development-kit-provisioning`, each declared in a
+  gitignored `proxies.toml` (copy from `proxies.toml.example`) that names a
+  `base_url` plus the env vars holding that proxy's consumer creds. See
+  `tests/sandbox/README.md`. It is the live twin of the fixture-driven
+  `test_llm_proxy_contract.py`, and the path that captures the #253 rejection
+  bodies against real proxies.
 
 A test under either marker must **degrade to a clean skip** (not a failure) when
 its docker service / env var is absent — that's what "off by default" means. This
