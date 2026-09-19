@@ -225,8 +225,13 @@ mis-typed as auth; header `x-injection-protection: blocked` →
 bare `400` is unaffected); `429` → `TokenBudgetExceeded` with `retry_after`
 derived from `x-token-reset` (ms→s); non-auth 4xx with a nested `error` object →
 `UpstreamRequestError` (carries provider `code`/`type`/`param`); `5xx` →
-`UpstreamModelError`; otherwise `PolicyViolation`. The full eight-shape taxonomy
-is indexed in `tests/fixtures/rejections/README.md`.
+`UpstreamModelError`. Auth is then the verified client-id-enforcement shape: a
+`401`, **or** a `403` carrying a `www-authenticate` header → `AuthError`. A `403`
+**without** `www-authenticate` that matched none of the discriminators above is
+therefore *not* coerced to auth — it falls through to a generic `PolicyViolation`
+whose message names the observed status and any `x-llm-proxy-*` policy headers and
+states the **shape is unconfirmed** (#184), rather than being mis-typed. The full
+eight-shape taxonomy is indexed in `tests/fixtures/rejections/README.md`.
 
 Two of those shapes are **DOCUMENTED, pending live capture (#253)** — typed from
 the policy pages, not from a live sandbox round-trip, so **no `_verify.py` row
@@ -236,11 +241,17 @@ flips to `verified=True`** for them:
 |---|---|---|---|---|
 | Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | DOCUMENTED, pending live capture (#253) |
 | Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | DOCUMENTED, pending live capture (#253) |
+| Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no known contract; capture + type via #184/#253 |
 
 The **injection body** and any **other content-moderation / federated-guardrail**
-shape remain uncaptured (the latter falls through to a generic `PolicyViolation`)
-— re-confirming all of these against current docs and a sandbox is tracked in #253
-(§0.3: no invented docs URL or version is recorded for them).
+shape remain uncaptured. Rather than guess a type for them, `classify()` surfaces
+any such unrecognised refusal **honestly** — a `PolicyViolation` whose message
+states the shape is unconfirmed and whose remediation asks the operator to file
+the observed status/headers/body so the shape can be typed (#184). This is the
+last row above; it is deliberately **not** an `AuthError`, even for a `403`, once
+the verified `www-authenticate` auth shape is excluded. Re-confirming all of these
+against current docs and a sandbox is tracked in #253 (§0.3: no invented docs URL
+or version is recorded for them).
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two
