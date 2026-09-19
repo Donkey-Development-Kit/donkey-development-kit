@@ -99,10 +99,68 @@ def test_content_safety_403_header_is_content_safety_not_auth() -> None:
 
 def test_content_safety_action_allow_is_not_content_safety_blocked() -> None:
     """The vendor header only discriminates on ``reject``; an ``allow`` verdict on
-    a 403 is an ordinary auth failure, not a moderation block (#289)."""
+    a 403 is not a moderation block (#289). Nor is it auth: the header-less 403
+    carries no ``www-authenticate`` challenge, so it is an unrecognised gateway
+    policy refusal surfaced honestly as a generic PolicyViolation, not mis-typed
+    as AuthError (#184)."""
     err = classify(_resp(403, {"x-llm-proxy-azure-content-safety-action": "allow"}))
     assert not isinstance(err, ContentSafetyBlocked)
+    assert not isinstance(err, AuthError)
+    assert isinstance(err, PolicyViolation)
+    assert "shape unconfirmed" in str(err)
+
+
+# --- honest fall-through for unrecognised refusals (#184) -------------------
+# A non-429 4xx that matches none of the documented discriminators above and
+# carries no nested provider envelope must NOT be coerced into a subclass whose
+# contract we haven't verified. It is surfaced as a generic PolicyViolation that
+# names what was observed and says the shape is unconfirmed. A 403 is auth ONLY
+# when it carries the verified www-authenticate challenge (docs §4).
+
+
+def test_unrecognised_403_falls_through_to_honest_policy_violation() -> None:
+    """A header-less 403 matching no documented discriminator is an unrecognised
+    gateway refusal, surfaced honestly — not mis-typed as AuthError (#184)."""
+    err = classify(_resp(403))
+    assert isinstance(err, PolicyViolation)
+    assert not isinstance(err, AuthError)
+    assert err.policy == "unknown"
+    assert "shape unconfirmed" in str(err)
+    # The remediation must tell the operator this is unconfirmed and to file it.
+    assert err.remediation
+    assert "unconfirmed" in err.remediation
+    assert "issue" in err.remediation.lower()
+
+
+def test_unrecognised_403_names_the_observed_policy_headers() -> None:
+    """The message names the observable discriminators — status plus any
+    ``x-llm-proxy-*`` policy headers present — so the unconfirmed shape can be
+    typed from the report alone (#184, #253)."""
+    err = classify(
+        _resp(403, {"x-llm-proxy-mystery-verdict": "deny", "content-type": "application/json"})
+    )
+    assert isinstance(err, PolicyViolation)
+    message = str(err)
+    assert "status 403" in message
+    assert "x-llm-proxy-mystery-verdict" in message
+    # Non-policy headers are not part of the discriminator surface.
+    assert "content-type" not in message
+
+
+def test_403_with_www_authenticate_is_still_auth_error() -> None:
+    """Regression guard for the #184 split: a 403 carrying a ``www-authenticate``
+    challenge is the verified client-id-enforcement shape (docs §4) and must
+    remain an AuthError, so ``donkey doctor``'s credentials diagnosis (#202)
+    stays intact."""
+    err = classify(_resp(403, {"www-authenticate": 'Bearer realm="anypoint"'}))
     assert isinstance(err, AuthError)
+
+
+def test_401_is_auth_error_regardless_of_headers() -> None:
+    """A 401 is always auth, with or without a www-authenticate header — the
+    #184 www-authenticate gate applies only to disambiguating 403s."""
+    assert isinstance(classify(_resp(401)), AuthError)
+    assert isinstance(classify(_resp(401, {"x-llm-proxy-mystery-verdict": "deny"})), AuthError)
 
 
 def test_5xx_is_retryable_upstream() -> None:
