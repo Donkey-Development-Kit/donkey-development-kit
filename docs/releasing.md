@@ -8,29 +8,36 @@ the **PyPI publish**, wired as `.github/workflows/release.yml` (#206).
 
 ## How a release reaches PyPI
 
-Publishing is fully automated from a **GitHub Release**, and uses **PyPI Trusted
-Publishing (OpenID Connect)** — there is **no long-lived API token** stored in
-the repo or in Actions secrets. PyPI mints a short-lived token for the workflow
-run, keyed on the repository, the workflow filename, and the GitHub Environment.
+Publishing uses **PyPI Trusted Publishing (OpenID Connect)** on both indexes —
+there is **no long-lived API token** stored in the repo or in Actions secrets.
+PyPI mints a short-lived token for the workflow run, keyed on the repository, the
+workflow filename, and the GitHub Environment.
 
-The lifecycle, end to end:
+There are **two paths, one per destination** (#410), and they never overlap:
 
-1. Finish a version's work on `develop`, bumping the version string in **both**
-   `python/pyproject.toml` and `python/src/donkey_kit/__init__.py` (they must
-   agree — `ddk-release`).
-2. Promote `develop → main` (`ddk-merge-strategy`).
-3. Tag `main`'s tip and cut a **GitHub Release** (`ddk-release`). Flag it
-   **pre-release** for any version below the milestone's final `X.Y.Z` (the
-   `.devN → aN → bN → rcN` ladder).
-4. Publishing the Release fires `release.yml`, which builds the sdist + wheel,
-   runs `twine check`, asserts the built metadata carries only `>=` floors
-   (floors-never-ceilings, §8.4), and uploads via `pypa/gh-action-pypi-publish`:
-   - **pre-release** → **TestPyPI** (`https://test.pypi.org/legacy/`), the
-     dry-run round-trip (#339);
-   - **final `X.Y.Z`** → **production PyPI**.
+- **Dev snapshots → TestPyPI, via manual `workflow_dispatch`.** Dev builds are
+  deliberately **not** GitHub Releases — the Releases page is reserved for real
+  releases. To dry-run: bump the `.devN` counter (the `.devN → aN → bN → rcN`
+  ladder, `ddk-release`) in **both** `python/pyproject.toml` and
+  `python/src/donkey_kit/__init__.py` (they must agree), push, then
+  **Actions → Release → Run workflow** on that ref. It publishes to
+  `https://test.pypi.org/legacy/` via OIDC — the same trusted-publishing path
+  prod uses. Each dry-run needs a fresh `.devN`: a filename, once uploaded to
+  TestPyPI, can never be reused, even after deletion.
+- **Final release → production PyPI, via a published GitHub Release.** The
+  **first published GitHub Release is `0.1.0`**; that and every later final
+  `X.Y.Z` route to prod. Finish the version's work on `develop`, promote
+  `develop → main` (`ddk-merge-strategy`), then tag `main`'s tip and cut a
+  **non-pre-release** GitHub Release (`ddk-release`). Publishing it fires the
+  prod path.
 
-The workflow never creates tags or releases — it only reacts to them. Cutting a
-release stays a deliberate, human, `main`-only act.
+Either trigger runs the same `build` job first — sdist + wheel, `twine check`,
+and the assertion that the built metadata carries only `>=` floors
+(floors-never-ceilings, §8.4) — then uploads via `pypa/gh-action-pypi-publish`.
+A manual dispatch is **structurally incapable** of reaching prod: the
+`publish-pypi` job gates on `github.event_name == 'release'`, so only a published
+Release can trigger it. The workflow never creates tags or releases — it only
+reacts to them.
 
 ## The public API surface semver governs
 
