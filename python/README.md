@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="brand/ddk-logo-stacked-black.png" alt="Donkey Development Kit (DDK)" width="180" />
+  <img src="https://raw.githubusercontent.com/Donkey-Development-Kit/donkey-development-kit/main/brand/ddk-logo-stacked-black.png" alt="Donkey Development Kit (DDK)" width="180" />
 </p>
 
 # Donkey Development Kit
