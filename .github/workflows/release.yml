@@ -4,20 +4,27 @@
 # the GitHub Environment. The trust must be registered once on PyPI/TestPyPI
 # ("pending publisher" flow) with the exact values documented in docs/releasing.md.
 #
-# Trigger: a GitHub Release being *published* — which is exactly what the
-# `ddk-release` skill produces (`gh release create`). The pre-release flag on
-# that Release (set for every tag below a milestone's final version — .devN /
-# aN / bN / rcN, per the ddk-release ladder) routes the upload:
-#   - pre-release  -> TestPyPI   (the #339 dry-run round-trip)
-#   - final X.Y.Z  -> production PyPI
+# Two trigger paths, one per destination (#410):
 #
-# This workflow does NOT create tags or releases; it reacts to them. Cutting the
-# release stays a deliberate, human, `main`-only step (ddk-release).
+#   - workflow_dispatch (manual "Run workflow") -> TestPyPI. The dev-snapshot
+#     dry-run: bump the `version` to the next `.devN`, run the workflow on that
+#     ref, and it publishes to TestPyPI via OIDC — exercising the exact
+#     trusted-publishing path prod uses. Dev builds are deliberately NOT GitHub
+#     Releases (the Releases page is reserved for real releases).
+#   - release: published, NOT a pre-release -> production PyPI. The first
+#     published GitHub Release is `0.1.0`; that (and every later final X.Y.Z)
+#     routes to prod. A pre-release Release, if one is ever cut, is routed to
+#     TestPyPI too — a belt-and-braces guard so a pre-release never hits prod.
+#
+# A manual dispatch is structurally incapable of reaching prod: publish-pypi
+# gates on `github.event_name == 'release'`. This workflow does NOT create tags
+# or releases; it reacts to them (ddk-release owns cutting the release).
 name: Release
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 # Least privilege by default; only the publish jobs opt into id-token below.
 permissions:
@@ -66,9 +73,11 @@ jobs:
           path: python/dist/
 
   publish-testpypi:
-    name: Publish to TestPyPI (pre-release)
+    name: Publish to TestPyPI (dev dry-run / pre-release)
     needs: build
-    if: ${{ github.event.release.prerelease == true }}
+    # Manual dispatch (the dev-snapshot dry-run) always lands here; a published
+    # pre-release Release, if one is ever cut, is routed here too — never prod.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.release.prerelease == true }}
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:
@@ -86,7 +95,9 @@ jobs:
   publish-pypi:
     name: Publish to PyPI (final release)
     needs: build
-    if: ${{ github.event.release.prerelease == false }}
+    # Prod requires a *published, non-pre-release* GitHub Release. The explicit
+    # event_name check means a manual dispatch can never reach prod.
+    if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
