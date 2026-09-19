@@ -447,7 +447,11 @@ def classify(
     the policy pages; no ``_verify.py`` row flips to ``verified=True`` until a
     live sandbox round-trip confirms them (#253). Any other content-moderation /
     federated-guardrail shape still falls through to a generic
-    :class:`PolicyViolation` whose message says so.
+    :class:`PolicyViolation` whose message names what was observed and says the
+    shape is unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate``
+    shape (docs §4), a **403 carrying no ``www-authenticate`` header** and matching
+    none of the policy discriminators above is treated as one of these unconfirmed
+    refusals, not mis-typed as an :class:`AuthError`.
     """
 
     request_id = response.headers.get("x-request-id")
@@ -536,7 +540,14 @@ def classify(
             **kw,
         )
 
-    if status in (401, 403):
+    # Auth is discriminated by the verified client-id-enforcement shape (docs §4):
+    # a 401, or a 403 carrying a ``www-authenticate`` challenge. A 403 WITHOUT that
+    # header matched none of the policy discriminators above, so it is an
+    # unrecognised gateway policy refusal — not an auth failure — and falls through
+    # to the honest generic PolicyViolation below rather than being mis-typed as
+    # auth (#184). ``donkey doctor``'s (#202) credentials diagnosis stays intact: a
+    # wrong-credential 401 still lands here.
+    if status == 401 or (status == 403 and "www-authenticate" in response.headers):
         return AuthError(
             f"Authentication/authorization failed ({status}). Check the "
             f"connected-app credentials and their scopes (see docs/verified-apis.md §1).",
@@ -566,10 +577,30 @@ def classify(
                 param=_str_or_none(error_obj.get("param")),
                 **kw,
             )
+        # An unrecognised non-429 4xx with no nested provider envelope: a refusal
+        # whose contract we cannot pin (content-moderation / federated-guardrail
+        # shapes are still under-documented, #253). Surface it honestly — name what
+        # was observed and say the shape is unconfirmed — rather than coerce it into
+        # a subclass we have not verified (#184). ``error_obj`` is None here (the
+        # envelope branch above owns the nested case), so the observable
+        # discriminators are the status and any gateway policy headers present.
+        policy_headers = sorted(
+            name for name in response.headers if name.lower().startswith("x-llm-proxy-")
+        )
+        observed = f"status {status}"
+        if policy_headers:
+            observed += f"; policy headers: {', '.join(policy_headers)}"
         return PolicyViolation(
-            f"Request refused by a gateway policy ({status}).",
+            f"Request refused by a gateway policy; shape unconfirmed ({observed}). "
+            "It matched no documented rejection contract.",
             policy="unknown",
-            # remediation: PolicyViolation's canonical generic-refusal default (#182).
+            remediation=(
+                "This refusal matched no documented rejection shape, so its contract "
+                "is unconfirmed (#184, #253). It is terminal and was NOT retried. "
+                "Please file an issue on the donkey-development-kit repo with the response "
+                "status, headers and body (all carried on this exception's .response) "
+                "so the shape can be typed."
+            ),
             **kw,
         )
 
