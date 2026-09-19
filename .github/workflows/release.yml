@@ -1,0 +1,101 @@
+# Release: build the distribution and publish it to PyPI via Trusted Publishing
+# (#206). No long-lived API token exists anywhere — PyPI mints a short-lived
+# OIDC token for this workflow at run time, keyed on the repo + this filename +
+# the GitHub Environment. The trust must be registered once on PyPI/TestPyPI
+# ("pending publisher" flow) with the exact values documented in docs/releasing.md.
+#
+# Trigger: a GitHub Release being *published* — which is exactly what the
+# `ddk-release` skill produces (`gh release create`). The pre-release flag on
+# that Release (set for every tag below a milestone's final version — .devN /
+# aN / bN / rcN, per the ddk-release ladder) routes the upload:
+#   - pre-release  -> TestPyPI   (the #339 dry-run round-trip)
+#   - final X.Y.Z  -> production PyPI
+#
+# This workflow does NOT create tags or releases; it reacts to them. Cutting the
+# release stays a deliberate, human, `main`-only step (ddk-release).
+name: Release
+
+on:
+  release:
+    types: [published]
+
+# Least privilege by default; only the publish jobs opt into id-token below.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: python
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Build
+        run: |
+          pip install build twine
+          python -m build
+      - name: twine check (PyPI long description renders cleanly)
+        run: twine check dist/*
+      - name: Floors, never ceilings (§8.4) — no upper pins in the built metadata
+        # A release is the last place an accidental upper pin could slip into what
+        # consumers resolve. Read the actual wheel metadata (not the source
+        # pyproject) and inspect ONLY the version specifier — everything before the
+        # ';' environment marker — so the 'extra == ...' and 'python_version < ...'
+        # markers are never mistaken for a dependency ceiling. Flag <, <=, ==, ~=,
+        # != : anything that is not a bare >= floor.
+        run: |
+          pins="$(unzip -p dist/*.whl '*/METADATA' \
+            | sed -n 's/^Requires-Dist: //p' \
+            | sed 's/;.*//' \
+            | grep -E '(<|~=|==|!=)' || true)"
+          if [ -n "$pins" ]; then
+            echo "::error::Upper version pins found in built metadata (floors-never-ceilings, §8.4):"
+            echo "$pins"
+            exit 1
+          fi
+          echo "Requires-Dist carries only >= floors."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: python/dist/
+
+  publish-testpypi:
+    name: Publish to TestPyPI (pre-release)
+    needs: build
+    if: ${{ github.event.release.prerelease == true }}
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write # OIDC token for Trusted Publishing; no stored secret.
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+  publish-pypi:
+    name: Publish to PyPI (final release)
+    needs: build
+    if: ${{ github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC token for Trusted Publishing; no stored secret.
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
