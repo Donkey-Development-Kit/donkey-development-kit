@@ -1,10 +1,12 @@
 # CLI & decorators
 
-  **Phase 1 — mostly designed, not yet shipped.** One command has landed: the
-  local simulator, run as `donkey mock` (see [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md)).
-  The remaining commands and the decorator names below are a proposal; the
-  committed part is the behaviour and the acceptance bar. See
-  [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+  **Phase 1 — the decorators are shipped; the CLI is mostly designed.** Both
+  decorators below (`@donkey.governed` / `@donkey.tool`) have landed (#200), as
+  has one CLI command — the local simulator, run as `donkey mock` (see
+  [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md)). The remaining commands (`init` / `doctor` /
+  `test`) are still a proposal; the committed part is the behaviour and the
+  acceptance bar. See [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and
+  [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
 
 Two on-ramps. Everything on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md)'s six-piece list attaches
 to the same transport hooks, and these are how you reach all of it without
@@ -12,23 +14,40 @@ wiring each piece by hand.
 
 ## Decorators
 
+`@donkey.governed` runs a function inside a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) scope:
+
 ```python
 @donkey.governed(team="support")
 async def handle_ticket(ticket): ...
 ```
 
-One decorator gives that function a run ID, cost tags, an OTel span, and typed
-refusals — the four things you would otherwise set up per call site.
+One decorator gives that function a run/correlation ID, cost tags, an OTel span,
+and typed refusals — the four things you would otherwise set up per call site.
+It wraps **both sync and async** callables, works bare (`@donkey.governed`) or
+parametrised (`@donkey.governed(team=…, project=…, env=…, enduser_id=…)`), and
+deliberately takes **no `id=`**: each call opens its own run (a "run of one"),
+and a fixed id pinned across calls would collapse unrelated runs into one
+correlation. When you need a specific id, use `donkey.run(id=…)` directly.
 
 ```python
 @donkey.tool
-async def lookup_crm(customer_id: str) -> dict: ...
+async def lookup_crm(customer_id: str) -> dict:
+    """Look up a customer record by id."""
+    ...
 ```
 
-`@donkey.tool` marks a function as a governed tool. It does nothing on its own
-in Phase 1; the [Phase 2 scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) reads these markers to derive a
-manifest from your code, so marking them early costs nothing and saves the
-migration later.
+`@donkey.tool` marks a function as a governed tool **without changing how it's
+called** — it returns the same function with a `__donkey_tool__` marker and
+records a `ToolSpec` (name, qualname, signature, docstring, `is_async`) in a
+process-global registry you read with `registered_tools()`. A tool with **no
+docstring is rejected at decoration time** (`ValueError`) — an undescribed tool
+is useless to a model and to the registry. `ToolSpec` and `registered_tools`
+are exported from `donkey_kit`.
+
+The registry exists in Phase 1; its **consumers** are Phase 2 — the
+[scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) reads these markers to derive a manifest from your code,
+and the [A2A](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) agent-card generator reads the same markers to build a card.
+Marking tools early costs nothing and saves the migration later.
 
 ## The CLI
 
@@ -64,5 +83,6 @@ is the difference between an afternoon of guessing and thirty seconds.
 
 ---
 
-**Status: Phase 1 — `donkey mock` (the local simulator) is shipped;
-`init` / `doctor` / `test` and the decorators are designed, not yet shipped.**
+**Status: Phase 1 — the `@donkey.governed` / `@donkey.tool` decorators (#200)
+and `donkey mock` (the local simulator) are shipped; `init` / `doctor` / `test`
+are designed, not yet shipped.**
