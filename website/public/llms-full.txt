@@ -295,7 +295,20 @@ The *same code* runs against your Omni Gateway proxy — you only change the
 environment. Stop the simulator and set the three real governed-access values.
 The proxy authenticates on a `client_id` / `client_secret` **header pair**
 (consumer auth) — **not** a bearer token, and separate from any Anypoint
-control-plane credential:
+control-plane credential.
+
+  **Don't have these values yet?** They come from the platform, not the SDK —
+  create the proxy, then request access to mint the consumer credentials. The
+  official docs own each step (linking rather than restating so this page can't
+  drift from them):
+
+  - **[Create the model proxy](https://docs.mulesoft.com/general/model-proxy-create-model-proxy)**
+    on the Omni Gateway — its consumer endpoint is your `DONKEY_LLM_PROXY_URL`
+    (with **no `/v1`**).
+  - **[Request access](https://docs.mulesoft.com/exchange/to-request-access)** in
+    Exchange — the proxy is protected by a client-ID enforcement policy, so
+    requesting access registers a client application and mints the pair that
+    becomes `DONKEY_LLM_PROXY_CLIENT_ID` / `DONKEY_LLM_PROXY_CLIENT_SECRET`.
 
 ```bash
 export DONKEY_LLM_PROXY_URL="https://<ingress-gw>/<instance>/"   # note: no /v1
