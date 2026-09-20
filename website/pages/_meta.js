@@ -19,6 +19,11 @@ export default {
   testing: 'Testing & conformance',
   telemetry: 'Telemetry & cost',
   cli: 'CLI & decorators',
+  '-- scenarios': {
+    type: 'separator',
+    title: 'Scenarios — the pieces together',
+  },
+  scenarios: 'Scenarios',
   '-- phase-2': {
     type: 'separator',
     title: 'Phase 2 — differentiate',

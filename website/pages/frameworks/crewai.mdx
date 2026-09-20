@@ -7,7 +7,7 @@ CrewAI gets a governed `LLM`, backed by LiteLLM under the hood, pointed at
 the Agent Fabric LLM proxy through LiteLLM's own model-string and kwarg
 conventions rather than raw OpenAI ones.
 
-> **Supported at `connection_kwargs()`**, with one documented exemption: LiteLLM
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one documented exemption: LiteLLM
 > owns its own transport, so the SDK's shared httpx client is not injected
 > here (see below) — the same exemption as the [Google ADK](/frameworks/adk)
 > adapter.

@@ -34,6 +34,13 @@
 - [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md): OpenTelemetry GenAI spans, per-run correlation IDs, and cost-attribution tags — in the dashboard you already run.
 - [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md): Decorators and a four-command CLI so the six pieces are reachable in one line.
 
+## Scenarios
+
+- [Overview](https://donkey-development-kit.github.io/donkey-development-kit/scenarios.md): Three end-to-end walkthroughs — support triage, an overnight batch job, and an internal copilot — each showing the governance layer a bare base_url cannot give you.
+- [Support triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md): Draft replies to a queue of support tickets, one carrying PII, with typed refusals, correlation IDs, and OTel spans — the shipped LangGraph demo, end to end, no gateway.
+- [Nightly batch](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/nightly-batch.md): Enrich tens of thousands of records overnight against a windowed token budget, unattended — pacing before the wall and resuming after the window resets, tested end to end against the simulator.
+- [Internal copilot](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md): An internal assistant whose output must clear a content-safety guardrail — the ContentSafetyBlocked branch driven by the simulator, with per-run correlation joining the refusal to your logs.
+
 ## Tool access
 
 - [Overview](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md): Phase 2 — discover governed MCP tools and bind them into any framework as native tool objects.

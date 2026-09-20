@@ -968,7 +968,7 @@ Google's Agent Development Kit (ADK) is Gemini-first; it reaches the
 Agent Fabric LLM proxy through ADK's `LiteLlm` model wrapper, which speaks
 LiteLLM's own model-string and kwarg conventions rather than raw OpenAI ones.
 
-> **Supported at `connection_kwargs()`**, with one documented exemption: LiteLLM
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one documented exemption: LiteLLM
 > owns its own transport, so the SDK's shared httpx client is not injected
 > here (see below).
 
@@ -1089,7 +1089,7 @@ Strands Agents gets a governed `OpenAIModel`, with proxy connection details
 forwarded through Strands' `client_args`, which Strands passes straight
 through to the underlying OpenAI client.
 
-> **Supported at `connection_kwargs()`.** `client_args` gives full header AND
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** `client_args` gives full header AND
 > transport injection, on par with the LangGraph adapter.
 
 ## Install
@@ -1208,7 +1208,7 @@ Microsoft Agent Framework gets a governed chat client at the Agent Fabric LLM
 proxy, plus first-class policy middleware for terminating a run cleanly on a
 governance rejection instead of letting the agent loop retry.
 
-> **Supported at `connection_kwargs()`.** This adapter also ships the strongest
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** This adapter also ships the strongest
 > policy-integration story of the eight frameworks (`policy_middleware()`),
 > but its native client class is young and **UNVERIFIED** — read the callout
 > below before depending on it.
@@ -1336,7 +1336,7 @@ The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
 SDK constructs the OpenAI client itself, wired with its shared http client and
 verified headers, and hands it to the Agents SDK ready-made.
 
-> **Supported at `connection_kwargs()`.** Full header AND transport injection —
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** Full header AND transport injection —
 > the adapter builds the `AsyncOpenAI` client itself, so both travel together
 > as one object.
 
@@ -1466,7 +1466,7 @@ The Anthropic SDK gets a governed `AsyncAnthropic` client pointed at the
 Agent Fabric LLM proxy, with the SDK's shared transport and verified headers
 injected directly into the client constructor.
 
-> **Supported at `connection_kwargs()`**, with one important divergence from
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one important divergence from
 > every other adapter in this roster: this factory returns a bare **client**,
 > not a model-bound object — see below before you reach for it.
 
@@ -1603,7 +1603,7 @@ CrewAI gets a governed `LLM`, backed by LiteLLM under the hood, pointed at
 the Agent Fabric LLM proxy through LiteLLM's own model-string and kwarg
 conventions rather than raw OpenAI ones.
 
-> **Supported at `connection_kwargs()`**, with one documented exemption: LiteLLM
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one documented exemption: LiteLLM
 > owns its own transport, so the SDK's shared httpx client is not injected
 > here (see below) — the same exemption as the [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md)
 > adapter.
@@ -1721,7 +1721,7 @@ LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM prox
 with the one flag that a chat-only gateway absolutely requires forced on for
 you.
 
-> **Supported at `connection_kwargs()`.** Full header injection; watch the
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** Full header injection; watch the
 > `is_chat_model` gotcha below if you ever build the client by hand.
 
 ## Install
@@ -1896,6 +1896,37 @@ DonkeyError                     # base of the whole tree
 *ungoverned* failure in the tree (see below). Everything under `PolicyViolation` is
 something the gateway told the SDK; `GatewayUnavailable` is the gateway not being
 there to tell it anything.
+
+## Cookbook: every exception — discriminator, retryable, next step
+
+One row per exception you can catch, with the three facts you need to write a
+handler: **what tells it apart** (the discriminator), **whether retrying it can
+ever succeed**, and **the next step** its `.remediation` names. "Retryable" here
+means *by you* — the transport already retries the only class that is safe to
+(`UpstreamModelError`), and treats every governance refusal as terminal so it can
+never burn an exhausted budget or replay a blocked prompt.
+
+| Exception | Discriminator | Retryable? | Next step (`.remediation`) |
+|---|---|---|---|
+| `AuthError` | `401`, or `403` + `www-authenticate` | **No** — terminal. The async client refreshes its token and retries **once** on a `401`, then surfaces it. | Check the consumer `client_id` / `client_secret` pair and that the consumer is authorized in API Manager. |
+| `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
+| `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
+| `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
+| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) — *body shape pending [#253]* | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
+| `PolicyViolation` (generic) | a `4xx` matching **no** documented rejection shape | **No** — terminal; the shape is simply not yet typed. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed ([#184]/[#253]). |
+| `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
+| `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
+| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here (failover is separate); you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md). |
+
+Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
+they sit outside the retry question: `BudgetReserveReached` is raised *before* a
+call by [`donkey.budget.pace()`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and is meant to be recovered from
+(`await donkey.budget.wait_for_reset()`, then continue), and `ModelSubstituted`
+reports that a call *succeeded* against a different model than requested (opt-in
+via `on_model_substitution="raise"`). `ConfigError` is raised locally, pre-flight,
+and reports every missing field at once — fix the config and re-run.
+
+[#184]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/184
 
 ## When the gateway can't be reached at all
 
@@ -2809,6 +2840,392 @@ is the difference between an afternoon of guessing and thirty seconds.
 
 **Status: Phase 1 — `donkey mock` (the local simulator) is shipped;
 `init` / `doctor` / `test` and the decorators are designed, not yet shipped.**
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/scenarios.md
+
+# Scenarios
+
+The feature pages tell you what each piece *is*. These pages show three of them
+working together on a real job, start to finish — the same three scenarios the
+build guide uses to justify the skeleton (`BG §1.8`). Each one is runnable
+today against the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), with no Anypoint credentials
+and no real gateway, so you can watch the governance branch execute in your own
+terminal before it ever runs on a customer's data.
+
+| Scenario | The job | What it exercises |
+| --- | --- | --- |
+| [Support triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md)), [correlation IDs](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md), [OTel spans](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) — the shipped LangGraph demo, end to end |
+| [Nightly batch](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/nightly-batch.md) | Enrich 50,000 records overnight against a windowed budget, unattended | [Budget pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) (`pace()` / `wait_for_reset()`) and resume, driven by the [simulator's `budget` scenario](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting) |
+| [Internal copilot](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md) | An internal assistant whose output must clear a content-safety guardrail | [`ContentSafetyBlocked`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) via the `donkey-sim/content-safety` sentinel, plus per-run correlation |
+
+  **"Scenario" means two different things in these docs — don't conflate them.**
+  These pages are the three *product* scenarios (a job you'd actually run). The
+  [simulator's `--scenario` flag](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting) names three
+  *failure-injection rules* (`pii_block`, `budget`, `injection`). The pages
+  below use those rules as the engine, but the job is the story.
+
+## What's runnable, and what's honest about being blocked
+
+Support triage runs **completely** today — it is the Phase-1 acceptance
+artefact (`BG §1.8`), timed in CI so its first-run experience can't rot. The
+nightly-batch and internal-copilot walkthroughs run their **governed-call and
+refusal-handling** paths against the simulator now; where a step depends on a
+surface that is still [blocked on verification](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) — MCP
+tool access, agent identity, the kill switch — the page says so in the reader's
+terms and shows the shape without inventing an endpoint (§0.3). A "blocked"
+note here means *known, deliberate, and tracked*, never *guessed*.
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md
+
+# Support triage
+
+A support agent drafts a one-line reply to each ticket in a queue. Most are
+routine; one contains a customer's SSN. On a bare `base_url` that PII-laden call
+sails straight through to the model. Through a governed proxy it comes back as a
+**typed refusal** — and the branch that masks and re-routes it is a branch you
+can watch execute *before* it runs on real data.
+
+This is the shipped Phase-1 acceptance demo (`BG §1.8`): `pip install` to a
+drafted reply against the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) only — no Anypoint
+credentials, no real gateway — exercising four governance pieces at once.
+
+## What it demonstrates
+
+- **Runs with no gateway.** The demo boots the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md)
+  in-process on an ephemeral port and points the SDK at it; the simulator
+  ignores auth, so the credentials are throwaway placeholders.
+- **The PII-masking branch actually executes.** The simulator runs the
+  `pii_block:every=5` [scenario](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting) — every fifth
+  `POST /responses` is served the captured `pii-detected` **403**. The fifth
+  ticket (the one with the SSN) is blocked, and the refusal surfaces out of the
+  LangGraph run as a typed [`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), not a framework-wrapped
+  generic error.
+- **Correlation reaches every node for free.** Each ticket runs inside a
+  [`donkey.run(id=...)`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) block; the run id shows up in a graph
+  node's own logs without being threaded through graph state, because LangGraph
+  runs nodes on context-copying `asyncio` tasks.
+- **Every governed call emits an OTel span** — refusals included — exported to a
+  bundled local OTLP collector with [zero config](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md): setting the
+  standard `OTEL_EXPORTER_OTLP_ENDPOINT` is all it takes.
+
+## Run it
+
+### Install the extras
+
+```bash
+pip install "donkey-kit[langgraph,local,otel]"
+```
+
+`langgraph` brings the framework and the adapter, `local` the simulator, `otel`
+the OpenTelemetry export path.
+
+### Run the demo
+
+```bash
+python -m examples.langgraph.main
+```
+
+No environment setup: the demo boots its own simulator, sets its own throwaway
+credentials, and stands up its own local OTLP collector. You'll see one drafted
+reply per routine ticket, a `BLOCKED by policy — PIIDetected` line for the
+PII-laden one, the remaining budget, and the count of spans exported.
+
+## The governed core
+
+The whole demo is ordinary framework code; the SDK touches it in exactly two
+places. First, the model is built off a shared `Donkey` so it rides that
+instance's governed transport:
+
+```python
+model = donkey.langgraph.chat_model("gpt-4o")
+```
+
+Second, the node that calls the model wraps the call in `typed_refusals()`, so a
+proxy rejection comes back as a `DonkeyError` subclass instead of a
+framework-wrapped generic error:
+
+```python
+from donkey_kit.integrations.langgraph import typed_refusals
+
+async def _call_model(state):
+    with typed_refusals():
+        reply = await model.ainvoke(state["messages"])
+    return {"messages": [reply]}
+```
+
+The caller binds a run id per ticket and catches the typed refusal:
+
+```python
+async with donkey.run(id=f"ticket-{i}"):
+    try:
+        result = await agent.run(f"Draft a one-line support reply to: {ticket}")
+    except PIIDetected as refusal:
+        print(f"  ticket {i}: BLOCKED by policy — PIIDetected ({refusal.policy})")
+```
+
+  **Honest note on the block.** The simulator triggers on the request *count*
+  (`every=5`), not by scanning content — it replays a captured fixture, it is
+  not a PII detector. The real gateway does the detection; here the SSN in
+  ticket five just makes the blocked ticket read true. See
+  [It replays; it does not evaluate](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#it-replays-it-does-not-evaluate).
+
+## Verification status
+
+The proxy *contract* the demo depends on — the base URL shape (no `/v1`), the
+`client_id`/`client_secret` header pair, the attribution headers, and the four
+live-verified rejection shapes including PII — is **live-verified**
+([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). `ChatOpenAI` / `StateGraph` are
+the frameworks' own classes and `.ainvoke` is their documented API:
+construction via the SDK factory is the verified surface, and everything after
+is the framework's own runtime.
+
+## Where to go next
+
+- [Nightly batch](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/nightly-batch.md) — the same governance, applied to an
+  unattended overnight job that paces itself against a budget window.
+- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) — the full exception taxonomy the block above lands
+  in, with a per-exception "retryable?" cookbook.
+- [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) — run this same agent factory through the
+  conformance suite (`pytest --donkey-conformance`).
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/scenarios/nightly-batch.md
+
+# Nightly batch
+
+50,000 product records, enriched overnight against a governed model, budget
+window resetting every hour, no human awake. Without a budget object the script
+runs flat out, takes a `429` partway through, crashes, and someone re-runs it
+from record zero in the morning — spending the budget twice to do the same work.
+
+The fix is to make the remaining budget a [first-class object](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and pace
+against it: slow down *before* the wall, wait for the window to reset, and carry
+on. This page runs that loop end to end against the [local
+simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) in about ninety seconds, instead of "we'll find out
+tonight."
+
+## What it demonstrates
+
+- **`pace()` raises before the request that would cross your reserve**, not
+  after a `429` comes back — the distinction that is the whole feature.
+- **The window actually resets and the job resumes**, driven by the simulator's
+  `budget` [scenario](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting), which runs a *real*
+  wall-clock-windowed token counter and serves the captured `token-rate-limit`
+  **429** on exhaustion.
+- **The batch finishes unattended** — nobody re-runs anything.
+
+## Run it
+
+### Install the extras
+
+```bash
+pip install "donkey-kit[llm,local]"
+```
+
+### Boot the simulator with a one-minute budget window
+
+In one terminal, shrink the hour-long window to a minute so the whole
+pace-exhaust-reset cycle plays out in seconds:
+
+```bash
+donkey mock --port 8080 --scenario budget:limit=20000,window=60s
+```
+
+The happy-path `200` carries the live `x-llm-proxy-ratelimit` prose window
+(decreasing as you spend); once the window's 20,000 tokens are gone, calls get
+the `token-rate-limit` **429** with `x-token-remaining` / `x-token-reset`
+recomputed from the real milliseconds left, until the window rolls over.
+
+### Point the SDK at it and run the batch
+
+In a second terminal:
+
+```bash
+export DONKEY_LLM_PROXY_URL=http://localhost:8080
+export DONKEY_LLM_PROXY_CLIENT_ID=local        # simulator ignores auth
+export DONKEY_LLM_PROXY_CLIENT_SECRET=local
+python enrich.py
+```
+
+## The batch loop
+
+The pacing and resume logic is a handful of lines. `pace()` guards each batch;
+on `BudgetReserveReached` you wait for the window and continue from where you
+left off:
+
+```python
+import asyncio
+from donkey_kit import Donkey, BudgetReserveReached
+
+async def enrich_all(records, enrich):
+    async with Donkey.from_env() as donkey:
+        i = 0
+        while i < len(records):
+            batch = records[i : i + 200]
+            try:
+                async with donkey.budget.pace(reserve=0.05):
+                    await enrich(donkey, batch)
+            except BudgetReserveReached:
+                # We're within 5% of the window's limit — don't take the 429.
+                await donkey.budget.wait_for_reset()   # sleeps until reset_at
+                continue                                # retry the same batch
+            checkpoint(batch)                           # only advance on success
+            i += 200
+```
+
+  `pace(reserve=0.05)` raises `BudgetReserveReached` **before** issuing the
+  request that would cross the last 5% of the window — so you never spend the
+  request that earns the `429`. `wait_for_reset()` sleeps until
+  `donkey.budget.reset_at`, computed from the gateway's `x-token-reset` header
+  (milliseconds, converted for you). See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+
+## The honest limitation
+
+  **Budget is only visible in-band.** The gateway reports it on response
+  headers; there is **no endpoint that answers "what is my remaining budget?"**.
+  So `donkey.budget.remaining` is only as fresh as your last call, and a
+  brand-new process knows nothing until its first request completes — which is
+  why `donkey.budget.observed_at` is part of the public surface. A budget-query
+  endpoint is filed as an [upstream gap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) against the gateway.
+
+## Verification status
+
+The budget object, `pace()`, and `wait_for_reset()` are **shipped** (Phase 1).
+The windowed-counter behaviour you're pacing against here is the
+[simulator's](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — a faithful replay of the observed live contract
+(prose window on the `200`, numeric `x-token-*` trio on the `429`), never a
+header shape the gateway does not emit ([Verification
+policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The end-to-end assertion against the simulator
+is exactly what this scenario runs.
+
+## Where to go next
+
+- [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) — the full `Budget` object and its two helpers.
+- [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — the `budget` scenario and how the windowed
+  counter is computed.
+- [Internal copilot](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md) — a content-safety guardrail
+  and per-run correlation for an internal assistant.
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md
+
+# Internal copilot
+
+An internal copilot answers employee questions against company systems. Its
+output has to clear a **content-safety guardrail** before it reaches a person,
+and when the guardrail fires you need the refusal to (a) surface as something
+you can branch on and (b) carry an id that joins the block back to the run in
+your own logs. This page runs that content-safety branch against the [local
+simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), and is honest about the parts of a full internal
+copilot that are still [blocked on verification](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+
+## What it demonstrates
+
+- **The content-safety branch executes** as a typed
+  [`ContentSafetyBlocked`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), driven by the `donkey-sim/content-safety`
+  sentinel — no need to craft a prompt that a real guardrail would reject.
+- **Per-run correlation joins the refusal to your logs.** Inside a
+  [`donkey.run(id=...)`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) block the bound id becomes the
+  `X-Correlation-Id` on every request *and* lands on
+  `ContentSafetyBlocked.correlation_id`, so a log line for the block joins to
+  the gateway's own record with no extra wiring.
+
+## Run it
+
+### Install the extras
+
+```bash
+pip install "donkey-kit[llm,local]"
+```
+
+### Boot the simulator
+
+```bash
+donkey mock --port 8080
+```
+
+No `--scenario` needed: the [`donkey-sim/<shape>` sentinel](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) lets
+*you* pick which call fails by setting the request's `model`. The selectable
+shapes include `content-safety`.
+
+### Force a content-safety block and catch it typed
+
+```python
+import asyncio
+import openai
+from donkey_kit import Donkey, ContentSafetyBlocked
+from donkey_kit.core.errors import classify
+
+async def ask(donkey, question, *, run_id):
+    client = donkey.llm.client()          # the native AsyncOpenAI, governed transport
+    async with donkey.run(id=run_id):
+        try:
+            return await client.chat.completions.create(
+                # the sentinel forces the captured content-safety 403 from the simulator
+                model="donkey-sim/content-safety",
+                messages=[{"role": "user", "content": question}],
+            )
+        except openai.APIStatusError as e:
+            governed = classify(e.response)       # -> a DonkeyError subclass
+            if isinstance(governed, ContentSafetyBlocked):
+                print(f"[{run_id}] blocked by guardrail:", governed.remediation)
+                print(f"[{run_id}] correlation id:", governed.correlation_id)
+            raise governed from e
+
+asyncio.run(...)   # DONKEY_LLM_PROXY_URL=http://localhost:8080, throwaway creds
+```
+
+  **The raw client raises `openai.APIStatusError`, not a `DonkeyError`.**
+  `donkey.llm.client()` is the real OpenAI SDK, so you bridge into the taxonomy
+  with `classify(e.response)` — see [Bridging from the raw
+  client](https://donkey-development-kit.github.io/donkey-development-kit/errors.md#bridging-from-the-raw-client). An adapter that wraps calls in
+  `typed_refusals()` (as the [support-triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md) demo
+  does) surfaces the typed refusal directly instead.
+
+## What a full internal copilot also needs — and what's blocked
+
+A production internal copilot wants more than a content-safety branch. Three of
+those pieces are **not yet buildable** because they depend on surfaces still
+blocked on verification (§0.3) — this page shows the *shape* without inventing
+an endpoint:
+
+  **Governed access to internal tools** — reaching company systems through
+  governed MCP tools rather than ad-hoc HTTP — is a [Phase 2 surface](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+  Exchange→MCP tool discovery is still blocked on verification; the SDK raises
+  `NotImplementedError("blocked on verification: …")` at call time rather than
+  guessing an endpoint. See [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md).
+
+  **Agent identity and a kill switch** — a verifiable identity for the copilot,
+  and the ability to disable it centrally — are platform capabilities the SDK's
+  job is to make *reachable and typed*, not to reimplement. Both are
+  [Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and gated on verifying the platform's own contract; see
+  [Identity](https://donkey-development-kit.github.io/donkey-development-kit/identity.md). Until then the SDK does not fabricate a stand-in.
+
+## Verification status
+
+The content-safety **discriminator** (the vendor `…-action: reject` header) is
+typed by `donkey_kit.core.errors.classify()`, but its exact body is
+**documented-but-not-live-captured** — pinned from the policy pages and pending
+a live sandbox round-trip ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The
+simulator replays the captured fixture so the branch runs today; no verification
+row flips to `verified` until a live capture confirms the shape. The correlation
+mechanism (`donkey.run()` → `X-Correlation-Id` → `.correlation_id`) is shipped
+and framework-agnostic.
+
+## Where to go next
+
+- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) — the `ContentSafetyBlocked` shape and the
+  documented-but-not-captured caveat, plus the retryable cookbook.
+- [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) — how the run id ties spans, logs, and the
+  gateway record together.
+- [Support triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md) — the same governance surfacing a
+  refusal directly through a framework adapter.
 
 ---
 
