@@ -4,10 +4,9 @@
 [`donkey-development-kit-build-guide.md`](donkey-development-kit-build-guide.md) are the
 spec for what gets built and in what order.
 
-**Date:** September 2026. Supersedes
-[`archive/donkey-development-kit-build-plan-v1.md`](archive/donkey-development-kit-build-plan-v1.md),
-whose three-pillar model, provisioning control plane, and eight-adapter
-conformance roster are cut.
+**Date:** September 2026. Supersedes the retired v1 plan, whose three-pillar
+model, provisioning control plane, and eight-adapter conformance roster are
+cut.
 
 ## What this document is, and what the other two are
 
@@ -17,30 +16,28 @@ Three documents, one job each. Read them in this order:
 |---|---|---|
 | **This plan** | Phases, milestones, label taxonomy, implementation order, standing invariants | `Phase N`, or the section name |
 | **[Build guide](donkey-development-kit-build-guide.md)** | Feature-by-feature scope: what each capability is, its scenario, its acceptance bar | `BG §1.1` … `BG §3.5` |
-| **[Archived v1 plan](archive/donkey-development-kit-build-plan-v1.md)** | Nothing current. Retained so legacy citations resolve | bare `§N.N` |
 
 The per-issue detail is **not** in any of them. It is in the GitHub issues,
 because the issue is the plan — see the backlog index below.
 
 ## Citation convention
 
-The v1 plan's numbering is load-bearing: roughly **500 `§N.N` citations**
-across ~70 files in `python/` and `docs/` point into it. The build guide
-independently numbers its own sections `1.1`–`3.5`. Those two schemes
-collide — v1 `§1.1` is the layered-architecture rule, build guide `1.1` is
-the LLM client — so they are kept textually distinct:
+Two active forms, kept textually distinct because their numbers would
+otherwise collide (the layered-architecture rule versus the build guide's
+LLM-client section):
 
 - **`BG §1.1`** — a build guide section. Always prefixed `BG`. This is the
-  form to use in all new code, tests, issues, and commit messages that
-  reference feature scope.
-- **bare `§1.1`** — a section of the **archived v1 plan**. Every existing
-  citation in the tree means this. Do not add new ones.
+  form to use in all code, tests, issues, and commit messages that reference
+  feature scope.
 - **`Phase N`** — a milestone in this plan. Named, never numbered with `§`.
 
-Migrating the ~500 legacy citations is deliberately **out of scope** for the
-document swap and still needs its own issue. Until that lands, a bare `§N.N`
-is a valid pointer into the archive, not a dangling reference — which is the
-whole reason the archive is retained rather than deleted.
+The five **standing invariants** below keep a bare `§` label — `§0.3`,
+`§1.1`, `§2.1`, `§8.1`, `§8.4` — as their stable historical name. Those five
+headings are the **only** bare `§` anchors that remain in the tree; the
+~500 legacy citations that used to point into the retired v1 plan have been
+migrated to `BG §N.N`, a named invariant, or a `Phase N` (issue #266). Cite
+an invariant by its `§` label or its section name; do not introduce new bare
+`§` numbers anywhere else.
 
 ## The product thesis
 
@@ -85,7 +82,7 @@ target; two are standing and unversioned.
 | `Phase 3 — Platform capabilities (0.3.0)` | 6 | Policy handshake, to-the-code push, structured output + eval hooks. Largely gated on the Upstream gaps milestone. Build guide 3.2-3.4. |
 | `Phase 4 — Enterprise readiness (0.4.0)` | 10 | Security review, performance budget, error-message pass, migration and deprecation policy, compliance evidence, log shipping, residency, workload identity, support model. |
 | `Phase 5 — Complete rollout (1.0.0)` | 6 | TypeScript port, remaining adapters by demand, go-to-market, 1.0 stability guarantees. Build guide 3.5, gated on Python PMF. |
-| `Verification` | 6 | The §0.3 worklist: never invent an endpoint, header, class name or kwarg. Cross-phase, unversioned — each row blocks specific feature work. |
+| `Verification` | 6 | The verification-discipline worklist: never invent an endpoint, header, class name or kwarg. Cross-phase, unversioned — each row blocks specific feature work. |
 | `Upstream gaps` | 6 | Product asks to the Omni Gateway team. Filed in Phase 1, landing whenever the gateway ships them. Build guide 3.1. |
 
 `Verification` and `Upstream gaps` do not complete and are not versioned.
@@ -96,8 +93,9 @@ needs it starts will block that phase. Started early, it resolves in time.
 ## Standing invariants
 
 These survive the strategy change unaltered and several are enforced in
-CI. They are stated here because the document that used to own them is now
-archived; the `§` anchors resolve into that archive.
+CI. Each keeps its bare `§` label as a stable historical name, and the
+headings below are now their canonical home — the `§` anchors resolve here,
+not into any archive (the v1 plan that used to own them is deleted, #266).
 
 ### Verification discipline (`§0.3`) — the most important rule
 
@@ -648,7 +646,7 @@ which part of the guide is its spec.
 
 | Label | Meaning |
 |---|---|
-| `blocked-on-verification` | Cannot be closed by writing code (§0.3) |
+| `blocked-on-verification` | Cannot be closed by writing code (verification discipline) |
 | `upstream-gap` | A product ask to the Omni Gateway team, not SDK code |
 | `epic` | Tracking issue spanning several child issues |
 | `six-piece-minimum` | Part of the minimum set that justifies installing the SDK |

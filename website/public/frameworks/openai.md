@@ -5,7 +5,7 @@ The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
 SDK constructs the OpenAI client itself, wired with its shared http client and
 verified headers, and hands it to the Agents SDK ready-made.
 
-> **Supported at `connection_kwargs()`.** Full header AND transport injection —
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** Full header AND transport injection —
 > the adapter builds the `AsyncOpenAI` client itself, so both travel together
 > as one object.
 

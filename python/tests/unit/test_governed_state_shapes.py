@@ -6,7 +6,7 @@ Proves that `AssetRef` / `McpServerHandle` / the governance `Check`+`evaluate`
 logic faithfully represent the direct Anypoint control-plane contract — the
 join `ExchangeRegistry` will perform once its (still-blocked) live fetch path is
 wired (docs/verified-apis.md §12). The raw→domain mapping lives here in the test,
-not in the SDK, keeping the §0.3 discipline: shapes are verified, the live fetch
+not in the SDK, keeping the verification discipline: shapes are verified, the live fetch
 endpoint is not yet.
 """
 
@@ -74,7 +74,7 @@ def test_policies_drive_governed_verdict() -> None:
         ),
     ]
     # Use STRICT minus the ruleset-pass check (ruleset result-read shape is still
-    # UNVERIFIED, §6); everything else is real and should pass.
+    # UNVERIFIED, docs/verified-apis.md §6); everything else is real and should pass.
     criteria = GovernanceCriteria(
         require_governance_pass=False,
         required_policies=STRICT.required_policies,
@@ -88,7 +88,8 @@ def test_policies_drive_governed_verdict() -> None:
 
 def test_missing_required_policy_fails_and_explains() -> None:
     # Same instance but demand a policy it does NOT have → not governed, with a
-    # retained reason (the "filtered vs broken credential" distinction, §6.1.2).
+    # retained reason (the "filtered vs broken credential" distinction, the governed-state check
+    # API).
     checks = [Check("required_policies", False, "rate-limiting not applied")]
     report = evaluate(checks, GovernanceCriteria(allow_unknown=False))
     assert report.governed is False

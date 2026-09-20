@@ -1,10 +1,10 @@
-"""Governed-only discovery (§6.1).
+"""Governed-only discovery.
 
 "Governed" is NOT a flag — it is a computed predicate joining state across three
-systems, environment-scoped (§6.1.1). The criteria and report types here are
+systems, environment-scoped. The criteria and report types here are
 pure and fully implemented. The JOIN that populates a report from live API
 Manager / ruleset state lives in :mod:`donkey_kit.registry.exchange` and is
-gated on M0 verification (§6.7).
+gated on M0 verification (the Verification milestone).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class GovernanceCriteria:
     require_lifecycle: list[str] = field(default_factory=list)
     #: If a check cannot be evaluated, does the asset pass? Matters a lot: with
     #: allow_unknown=False an unavailable API silently filters the catalog to
-    #: zero — which is why every excluded asset MUST carry a reason (§6.1.1).
+    #: zero — which is why every excluded asset MUST carry a reason (governed-only discovery).
     allow_unknown: bool = False
 
 
@@ -42,7 +42,7 @@ STRICT = GovernanceCriteria(
 @dataclass(frozen=True)
 class Check:
     """One governance condition's outcome. ``passed=None`` means UNKNOWN /
-    could-not-evaluate — surfaced, never silently dropped (§6.1.2)."""
+    could-not-evaluate — surfaced, never silently dropped (governed-only discovery)."""
 
     name: str
     passed: bool | None
@@ -51,7 +51,7 @@ class Check:
 
 @dataclass(frozen=True)
 class GovernanceReport:
-    """Result of :meth:`explain` — why an asset is (not) governed (§6.1.2)."""
+    """Result of :meth:`explain` — why an asset is (not) governed."""
 
     governed: bool
     checks: list[Check]
@@ -65,7 +65,7 @@ def evaluate(checks: list[Check], criteria: GovernanceCriteria) -> GovernanceRep
 
     A ``passed=None`` (UNKNOWN) check passes only when ``allow_unknown`` is True;
     otherwise it fails the asset — but the reason is always retained so a
-    developer can tell "filtered out" from "broken credential" (§6.1.2).
+    developer can tell "filtered out" from "broken credential" (governed-only discovery).
     """
 
     governed = True

@@ -31,7 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Verified header names, imported from the framework-free core so the simulator
-# and the client parse the identical strings (upward import, allowed under §1.1).
+# and the client parse the identical strings (upward import, allowed under the layered
+# architecture).
 # RATELIMIT_HEADER is the prose budget header the live 200/403 carries (#352/#353).
 from ..core.budget import (
     LIMIT_HEADER,
@@ -248,7 +249,7 @@ def _source_bytes(directory: str, name: str) -> bytes | None:
 def fixture_bytes(directory: str, name: str) -> bytes:
     """Return the raw bytes of one fixture file, packaged copy first then the
     source-checkout fallback. Raises a clear, actionable error if neither is
-    found rather than serving a fabricated body (§0.3)."""
+    found rather than serving a fabricated body (verification discipline)."""
     data = _packaged_bytes(directory, name)
     if data is not None:
         return data

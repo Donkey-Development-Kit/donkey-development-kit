@@ -1,4 +1,4 @@
-"""provisioning/ — CI-oriented declarative provisioning (§5).
+"""provisioning/ — CI-oriented declarative provisioning-as-code.
 
 Separate entry point from the runtime SDK. Nothing in the runtime path mutates
 shared state (working instruction #11); every mutation lives here and runs in CI

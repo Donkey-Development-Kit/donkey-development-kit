@@ -1,9 +1,9 @@
-"""Exchange discovery + the governed-only join (§4.2, §6.1).
+"""Exchange discovery + the governed-only join (BG §2.7).
 
 The public signatures are fixed here so callers and tests can be written now.
 Every method that requires a real Anypoint endpoint is gated behind a
-verification-blocked error (§0.3, working instruction #2) rather than a
-fabricated request path. The N+1-avoiding index design (§6.1.3) is documented in
+verification-blocked error (verification discipline, working instruction #2) rather than a
+fabricated request path. The N+1-avoiding index design is documented in
 :meth:`warm` for the implementer who fills it in after M0.
 """
 
@@ -38,7 +38,7 @@ class ExchangeRegistry:
         raise _verify.blocked(
             "Exchange search API (endpoint, query params, response shape — "
             "docs/verified-apis.md §1/§7). Confirm against a sandbox and capture "
-            "a fixture (§8.2) before implementing search()."
+            "a fixture (BG §1.5) before implementing search()."
         )
 
     async def resolve_mcp(self, ref: AssetRef | str) -> McpServerHandle:
@@ -56,28 +56,29 @@ class ExchangeRegistry:
     async def explain(
         self, ref: AssetRef | str, *, criteria: GovernanceCriteria
     ) -> GovernanceReport:
-        """Explain why an asset is (not) governed (§6.1.2).
+        """Explain why an asset is (not) governed.
 
         First-class, documented, referenced in the empty-result warning — without
         it, ``governed=True`` returning empty is indistinguishable from a broken
         credential. Blocked until the API Manager / ruleset read APIs are
-        verified (§6.7).
+        verified (the Verification milestone).
         """
 
         AssetRef.parse(ref)
         raise _verify.blocked(
-            "governed-state join: per-instance 'deployed' readability and ruleset "
-            "results API (§6.7). Until verified, explain() cannot produce real "
-            "Check rows; see registry/governance.py for the pure evaluation logic."
+            "governed-state join: per-instance 'deployed' readability and ruleset results API (the "
+            "Verification milestone). Until verified, explain() cannot produce real Check rows; "
+            "see registry/governance.py for the pure evaluation logic."
         )
 
     async def warm(self, *, environment: str | None = None) -> None:
-        """Build the in-memory governance index at startup (§6.1.3).
+        """Build the in-memory governance index at startup.
 
         Design (fill in after M0):
           1. ONE call to list all API Manager instances for (org, environment);
              index by (groupId, assetId, version) AND (groupId, assetId).
-          2. Bulk policies call if one exists (verify §6.7), else per-candidate.
+          2. Bulk policies call if one exists (verify the Verification milestone), else
+             per-candidate.
           3. Apply Exchange-side filters (tags/lifecycle/type) BEFORE any API
              Manager calls to shrink the candidate set.
           4. Cache the whole index under registry_cache_ttl_s, keyed by env.
@@ -85,7 +86,7 @@ class ExchangeRegistry:
 
         raise _verify.blocked(
             "API Manager instance-list + bulk-policy APIs for the governed-state "
-            "index (§6.1.3, §6.7)."
+            "index (the Verification milestone)."
         )
 
     def refresh(self) -> None:

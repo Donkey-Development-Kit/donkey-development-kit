@@ -5,11 +5,11 @@
 :data:`TOOL_MARKER` (``__donkey_tool__``) to it, and appends a :class:`ToolSpec`
 to a process-global registry (:func:`registered_tools`).
 
-That one marker is the single thing the Phase 2 scanner (§2.5) and the A2A
-agent-card generator (§2.9) both read — so the annotation pays off three times
+That one marker is the single thing the Phase 2 scanner (BG §2.5) and the A2A
+agent-card generator (BG §2.9) both read — so the annotation pays off three times
 (#200). Neither consumer exists yet; this introduces the marker they will read.
 
-Framework-free (core, §1.1): stdlib ``inspect`` + ``dataclasses`` only — no
+Framework-free (core, the layered architecture): stdlib ``inspect`` + ``dataclasses`` only — no
 httpx, no pydantic, no agent framework.
 """
 

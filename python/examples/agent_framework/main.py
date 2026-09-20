@@ -1,4 +1,4 @@
-"""Microsoft Agent Framework adapter example (§3.3).
+"""Microsoft Agent Framework adapter example (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -9,8 +9,8 @@ call:
     from donkey_kit.integrations.agent_framework import chat_client
     client = chat_client("gpt-4o")
 
-Honest status (§0.3/§8): the proxy *contract* (base URL, client_id/secret
-auth, attribution headers) is live-verified, but the exact chat-client class
+Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* (base URL,
+client_id/secret auth, attribution headers) is live-verified, but the exact chat-client class
 name/path (``agent_framework.openai.OpenAIChatClient``) and its base-URL
 kwarg (``model_id``) are UNVERIFIED — Agent Framework is young and has
 renamed classes recently. The factory raises ``NotImplementedError`` with a
@@ -65,7 +65,7 @@ def main() -> None:
     print(
         "Construction is the SDK's verified surface; drive this object with "
         "Agent Framework's own Agent API (see this example's README) — that "
-        "runtime call is UNVERIFIED here and deliberately not guessed (§0.3)."
+        "runtime call is UNVERIFIED here and deliberately not guessed (verification discipline)."
     )
 
 

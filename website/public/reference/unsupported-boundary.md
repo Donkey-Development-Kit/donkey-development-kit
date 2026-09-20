@@ -14,15 +14,15 @@ Every platform API the SDK calls is classified:
 | **Documented, no SLA for third-party use** | May break; we'll fix. |
 | **Undocumented** | Should be empty. Anything here needs a written justification and an owner. |
 
-## Support statement (§0.4)
+## Support statement (the trademark/support boundary)
 
   **Before any public release**, the maintainer and support expectations must be
-  stated (README §0.4). If this project is **not** published with MuleSoft's
+  stated (README, the trademark/support boundary). If this project is **not** published with MuleSoft's
   endorsement, it must ship under a distinct, org-scoped distribution name so it
   doesn't read as a first-party, official-status SDK. "Agent Fabric",
   "Anypoint", and "Omni Gateway" are Salesforce trademarks.
 
-## Why this matters (§0.3)
+## Why this matters (verification discipline)
 
 The SDK's rule against inventing endpoints exists to keep this boundary honest: a
 call the SDK makes is either against a classified, known API or it doesn't happen

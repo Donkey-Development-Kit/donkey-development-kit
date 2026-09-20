@@ -1,0 +1,51 @@
+export default {
+  index: 'Introduction',
+  quickstart: 'Quickstart',
+  'feature-overview': 'Feature overview',
+  'use-with-your-agent': 'Use with your agent',
+  roadmap: 'Roadmap',
+  '-- live': {
+    type: 'separator',
+    title: 'Live today',
+  },
+  frameworks: 'Model access',
+  errors: 'Typed refusals',
+  '-- six-piece': {
+    type: 'separator',
+    title: 'Phase 1 — the six-piece minimum',
+  },
+  budget: 'Budget & pacing',
+  simulator: 'Local simulator',
+  testing: 'Testing & conformance',
+  telemetry: 'Telemetry & cost',
+  cli: 'CLI & decorators',
+  '-- scenarios': {
+    type: 'separator',
+    title: 'Scenarios — the pieces together',
+  },
+  scenarios: 'Scenarios',
+  '-- phase-2': {
+    type: 'separator',
+    title: 'Phase 2 — differentiate',
+  },
+  'tool-access': 'Tool access',
+  a2a: 'A2A agents',
+  identity: 'Identity',
+  hitl: 'Human-in-the-loop',
+  publishing: 'Scan & publish',
+  '-- phase-3': {
+    type: 'separator',
+    title: 'Phase 3 — platform',
+  },
+  policies: 'Policy handshake',
+  '-- concepts': {
+    type: 'separator',
+    title: 'Concepts',
+  },
+  concepts: 'Concepts',
+  '-- reference': {
+    type: 'separator',
+    title: 'Reference',
+  },
+  reference: 'Reference',
+}

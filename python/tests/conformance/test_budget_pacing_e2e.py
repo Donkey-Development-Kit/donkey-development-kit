@@ -1,4 +1,4 @@
-"""End-to-end budget pacing against the local gateway simulator (§1.3, #295).
+"""End-to-end budget pacing against the local gateway simulator (BG §1.3, #295).
 
 ``local_gateway``-marked, so deselected by default and run only via
 ``pytest -m local_gateway`` (with the ``[local]`` + ``[llm]`` extras installed).

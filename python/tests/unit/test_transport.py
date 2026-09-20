@@ -1,5 +1,5 @@
 """Transport: header injection, retry policy, no-retry-on-policy-rejection,
-401 refresh (§2.3). Uses httpx MockTransport so no network is touched."""
+401 refresh (BG §1.1). Uses httpx MockTransport so no network is touched."""
 
 from __future__ import annotations
 
@@ -76,7 +76,8 @@ async def test_correlation_and_attribution_headers_injected() -> None:
 
     cfg = DonkeyConfig(application_name="hr-agent", business_group="finance")
     async with _client(handler, cfg) as client:
-        with pytest.warns(UnverifiedValueWarning):  # placeholder header names warn (§0.3)
+        # placeholder header names warn (verification discipline)
+        with pytest.warns(UnverifiedValueWarning):
             with run_context("run-1"):
                 await client.get("https://x/thing")
 
@@ -87,8 +88,8 @@ async def test_correlation_and_attribution_headers_injected() -> None:
 
 
 def test_proxy_auth_headers_carry_verified_client_id_secret() -> None:
-    """§2/§3 (LIVE): the direct-proxy auth is a client_id/client_secret request-
-    header pair — verified names, no warning, no bearer."""
+    """docs/verified-apis.md §2/§3 (LIVE): the direct-proxy auth is a client_id/client_secret
+    request-header pair — verified names, no warning, no bearer."""
     cfg = DonkeyConfig(
         llm_proxy_url="https://proxy",
         llm_proxy_client_id="cid",
@@ -144,7 +145,7 @@ async def test_does_not_retry_4xx_policy_rejection() -> None:
     async with _client(handler, DonkeyConfig(max_retries=3)) as client:
         resp = await client.get("https://x")
     assert resp.status_code == 400
-    assert calls["n"] == 1  # terminal — NOT retried (§2.4)
+    assert calls["n"] == 1  # terminal — NOT retried (BG §1.2)
 
 
 async def test_401_triggers_single_token_refresh() -> None:
@@ -157,7 +158,7 @@ async def test_401_triggers_single_token_refresh() -> None:
     async with _client(handler, DonkeyConfig(), StaticToken("t")) as client:
         resp = await client.get("https://x")
     assert resp.status_code == 200
-    assert calls["n"] == 2  # refreshed once, retried once (§2.2)
+    assert calls["n"] == 2  # refreshed once, retried once (BG §1.1)
 
 
 # --- blocking twin (client(sync=True)) ------------------------------------
@@ -216,7 +217,7 @@ def test_sync_requests_share_one_id_inside_a_run_context() -> None:
     assert seen == ["run-7", "run-7"]
 
 
-# --- the two ids: run correlation id vs per-call id (§2.3, #195) ------------
+# --- the two ids: run correlation id vs per-call id (BG §1.1, #195) ------------
 # X-Correlation-Id groups a run (shared); X-Donkey-Request-Id pinpoints one
 # request within it (unique, but stable across that request's own retries).
 
@@ -266,7 +267,7 @@ async def test_call_id_is_stable_across_retries() -> None:
 
 async def test_config_overrides_correlation_and_call_id_header_names() -> None:
     """A customer whose gateway reads different inbound names points the SDK at
-    them via config; the override is used verbatim (§0.3 escape hatch, #195)."""
+    them via config; the override is used verbatim (verification discipline escape hatch, #195)."""
     seen: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -338,7 +339,7 @@ async def test_default_header_names_survive_classify_round_trip() -> None:
 
 
 async def test_classify_round_trip_emits_no_unverified_warning() -> None:
-    """#363 AC4 / §0.3: read-back must never emit an ``UnverifiedValueWarning`` —
+    """#363 AC4 / verification discipline: read-back must never emit an ``UnverifiedValueWarning`` —
     that warning belongs at injection time. The extensions fallback touches
     ``.placeholder``, never ``Unverified.get()``. Covers both the stamped path
     and a response with no stamp at all (a hand-built stock-client response)."""
@@ -486,7 +487,7 @@ def test_sync_does_not_retry_4xx_policy_rejection() -> None:
     with _sync_client(handler, DonkeyConfig(max_retries=3)) as client:
         resp = client.get("https://x")
     assert resp.status_code == 400
-    assert calls["n"] == 1  # terminal — NOT retried (§2.4)
+    assert calls["n"] == 1  # terminal — NOT retried (BG §1.2)
 
 
 def test_sync_401_is_terminal_because_there_is_no_token_to_refresh() -> None:
@@ -635,7 +636,7 @@ def test_sync_swap_transport_takes_effect_on_the_next_request() -> None:
         assert client.get("https://x").status_code == 200
 
 
-# --- policy refusals are terminal: no retry (#183, §2.4) -------------------
+# --- policy refusals are terminal: no retry (#183, BG §1.2) -------------------
 # classify() maps EVERY 429 to TokenBudgetExceeded (a PolicyViolation), so a 429
 # is terminal like any other policy refusal — retrying it just burns the same
 # already-exhausted budget window (Scenario B: 50k records overnight). The
@@ -648,12 +649,12 @@ async def test_does_not_retry_429_budget_refusal() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
-        return httpx.Response(429)  # empty body, no retry-after (docs §4)
+        return httpx.Response(429)  # empty body, no retry-after (docs/verified-apis.md §4)
 
     async with _client(handler, DonkeyConfig(max_retries=3)) as client:
         resp = await client.get("https://x")
     assert resp.status_code == 429
-    assert calls["n"] == 1  # terminal on the first hit — never retried (§2.4, #183)
+    assert calls["n"] == 1  # terminal on the first hit — never retried (BG §1.2, #183)
 
 
 async def test_does_not_retry_403_policy_rejection() -> None:
@@ -876,7 +877,7 @@ async def test_llm_refusal_records_refuse_decision_and_policy_type(monkeypatch) 
     exporter = _use_tracer(monkeypatch)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(429)  # empty body → TokenBudgetExceeded (docs §4)
+        return httpx.Response(429)  # empty body → TokenBudgetExceeded (docs/verified-apis.md §4)
 
     client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
     async with client:
@@ -1305,8 +1306,9 @@ def test_sync_streaming_span_closes_when_abandoned_mid_iteration(monkeypatch) ->
     assert dict(span.attributes)["gen_ai.request.model"] == "gpt-4o"
 
 
-# --- cost-attribution tags on the wire + in spans (§3, BG §1.7, #196) --------
-# All header NAMES are UNVERIFIED placeholders (docs §3); these tests set the
+# --- cost-attribution tags on the wire + in spans
+# --- (docs/verified-apis.md §3, BG §1.7, #196) --------
+# All header NAMES are UNVERIFIED placeholders (docs/verified-apis.md §3); these tests set the
 # ``cost_*_header`` config overrides so the asserted header keys are deterministic
 # and no placeholder warning is triggered. The span-attribute side carries the
 # full value regardless of the header question (AC #4).
@@ -1547,7 +1549,7 @@ def test_sync_send_forwards_capture_content_flag(monkeypatch, capture: bool) -> 
     assert seen == [capture, capture]
 
 
-# --- gateway routing & fallback: never double-retry, opt-in raise (§3, #309) --
+# --- gateway routing & fallback: never double-retry, opt-in raise (BG §1.1, #309) --
 # The gateway's Enhanced Resilience routing is the FIRST recovery layer; an SDK
 # retry stacked on a response it already failed over just multiplies latency
 # against an outage the gateway is already handling. And a silent model
@@ -1763,7 +1765,7 @@ def test_transport_error_raises_gateway_unavailable_sync(exc: httpx.TransportErr
 async def test_gateway_unavailable_carries_the_sent_ids() -> None:
     # The run correlation id and the per-call id the client stamped on the failed
     # request are carried, so an availability failure quotes the same ids a
-    # response error would — even with no response (§2.3, #195).
+    # response error would — even with no response (BG §1.1, #195).
     client = _client(_raiser(httpx.ConnectError("refused")))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UnverifiedValueWarning)

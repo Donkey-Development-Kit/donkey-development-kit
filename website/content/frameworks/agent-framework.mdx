@@ -1,0 +1,117 @@
+import { Tabs } from 'nextra/components'
+import OpenAiProxyTs from '../../components/openai-proxy-ts.mdx'
+
+# Microsoft Agent Framework — governed model access
+
+Microsoft Agent Framework gets a governed chat client at the Agent Fabric LLM
+proxy, plus first-class policy middleware for terminating a run cleanly on a
+governance rejection instead of letting the agent loop retry.
+
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** This adapter also ships the strongest
+> policy-integration story of the eight frameworks (`policy_middleware()`),
+> but its native client class is young and **UNVERIFIED** — read the callout
+> below before depending on it.
+
+## Install
+
+```bash
+pip install "donkey-kit[agent_framework]"
+```
+
+## Quickstart
+
+<Tabs items={['Python', 'TypeScript']}>
+<Tabs.Tab>
+
+```python
+from donkey_kit.integrations.agent_framework import chat_client
+
+llm = chat_client("gpt-4o")
+```
+
+`llm` is intended to be a native **`agent_framework.openai.OpenAIChatClient`**
+instance. If that import fails on your installed version, the factory raises
+`NotImplementedError("blocked on verification: ...")` rather than guessing —
+see the UNVERIFIED callout below.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+There's no first-party Agent Fabric TypeScript SDK yet, and **Microsoft Agent
+Framework has no TypeScript SDK** (it ships for .NET, Python, and Go). You can
+still make the same governed call from TypeScript via the OpenAI-compatible
+proxy with the official `openai` npm client:
+
+<OpenAiProxyTs />
+
+</Tabs.Tab>
+</Tabs>
+
+## Three ways to construct
+
+**1. Off a shared `Donkey` instance:**
+
+```python
+from donkey_kit import Donkey
+
+async with Donkey.from_env() as donkey:
+    llm = donkey.agent_framework.chat_client("gpt-4o")
+```
+
+**2. Module-level factory** (shortest):
+
+```python
+from donkey_kit.integrations.agent_framework import chat_client
+
+llm = chat_client("gpt-4o")
+```
+
+**3. Governed kwargs, native constructor:**
+
+```python
+from donkey_kit import Donkey
+from agent_framework.openai import OpenAIChatClient
+
+async with Donkey.from_env() as donkey:
+    llm = OpenAIChatClient(
+        model_id="gpt-4o",
+        **donkey.agent_framework.connection_kwargs(),
+    )
+```
+
+## The manual equivalent (eject at any time)
+
+```python
+from agent_framework.openai import OpenAIChatClient
+
+llm = OpenAIChatClient(
+    model_id=...,        # UNVERIFIED kwarg name — confirm against your install
+    base_url=...,        # from DONKEY_LLM_PROXY_URL, no /v1 suffix
+    api_key=...,
+    default_headers=...,  # client_id / client_secret header pair
+)
+```
+
+## Notes & limitations
+
+> **UNVERIFIED.** `agent_framework.openai.OpenAIChatClient` and its
+> base-URL kwarg have not been confirmed against a live install — the package
+> is young and has renamed classes recently. The `chat_client()` factory
+> guards this: if the import fails, it raises
+> `NotImplementedError("blocked on verification")` instead of silently
+> falling back to a wrong class name. Confirm the class path yourself against
+> your installed `agent-framework` version before relying on this adapter in
+> production.
+
+> Agent Framework has first-class middleware for intercepting agent actions.
+> The adapter ships `policy_middleware()`, which catches a `PolicyViolation`
+> and re-raises it so the host terminates the run cleanly rather than
+> retrying — the best policy-integration story of any of the eight
+> frameworks. The exact middleware signature Agent Framework expects is also
+> **UNVERIFIED**; the shipped middleware is a plain async wrapper pending
+> confirmation of the framework's middleware protocol.
+
+See the [error taxonomy](/errors) for the full `PolicyViolation` hierarchy
+that `policy_middleware()` catches, and the
+[verification policy](/concepts/verification) page for the current
+verification status of this adapter's constructor and middleware shape.

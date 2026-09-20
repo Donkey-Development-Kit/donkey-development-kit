@@ -1,4 +1,4 @@
-"""llm/ — governed model access, framework-free surface (§3.2, §3.4)."""
+"""llm/ — governed model access, framework-free surface (BG §1.8, BG §1.1)."""
 
 from .catalog import ModelCapabilities, ModelHandle, heuristic_capabilities
 from .client import LLMClient

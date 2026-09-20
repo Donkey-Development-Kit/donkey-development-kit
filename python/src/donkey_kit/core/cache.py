@@ -1,7 +1,8 @@
-"""In-memory TTL cache for tokens and registry lookups (§2, cache.py).
+"""In-memory TTL cache for tokens and registry lookups (the framework-free
+core, cache.py).
 
 Deliberately tiny and dependency-free. Honours the ``DONKEY_NO_CACHE=1`` escape
-hatch (§4.2). Not thread-safe across processes — it is a per-process cache for a
+hatch (BG §2.7). Not thread-safe across processes — it is a per-process cache for a
 single agent run, which is all the SDK needs.
 
 Time is injected (``clock``) so tests do not sleep and so the module stays pure.

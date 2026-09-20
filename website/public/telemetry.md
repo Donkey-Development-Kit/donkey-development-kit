@@ -205,11 +205,30 @@ function, and concurrent runs never leak into each other. It works with or
 without OpenTelemetry installed. `donkey.run(...)` is a **dual sync/async**
 context manager (plain `with` works too); nested blocks rebind then restore.
 
+### The decorator form
+
+When a whole function should be one run, `@donkey.governed` is the decorator
+equivalent of wrapping its body in `donkey.run()`:
+
+```python
+@donkey.governed(team="support")
+async def handle_ticket(ticket):
+    await triage_agent.run(ticket)
+```
+
+Each call opens its own run — a fresh run/correlation id (a "run of one") — and
+binds the optional per-run cost tags, the OTel span, and typed refusals, exactly
+the scope `donkey.run()` establishes. It wraps **both sync and async** callables
+and is usable bare (`@donkey.governed`) or parametrised. There is deliberately
+**no `id=`**: pinning one id across every call would collapse unrelated runs into
+a single correlation, so when you need a specific id, reach for `donkey.run(id=…)`
+directly.
+
   Whether the gateway **reads** an inbound `X-Correlation-Id` /
   `X-Donkey-Request-Id` is unverified — `x-correlation-id` is confirmed only as a
   gateway **response** echo. So those request-header **names** are overridable
   placeholders (`correlation_header` / `call_id_header`), not guesses
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md), §0.3).
+  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Cost-attribution tags
 

@@ -128,4 +128,4 @@ def test_missing_llm_extra_prints_pip_install_and_exits_1(
     assert result.exit_code == 1
     out = _combined(result)
     assert 'pip install "donkey-kit[llm]"' in out
-    assert "blocked on verification" not in out  # not a §0.3 gate
+    assert "blocked on verification" not in out  # not a verification-discipline gate

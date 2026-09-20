@@ -1,4 +1,4 @@
-"""Google ADK adapter (§3.3).
+"""Google ADK adapter (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -8,7 +8,7 @@ which takes LiteLLM-format model strings.
 Header injection: via LiteLLM's ``extra_headers``. We CANNOT inject our httpx
 client — LiteLLM owns the transport. Consequence: transport retries and
 correlation-ID-per-run degrade to per-client. This is a documented, asserted
-conformance exemption (§8.1 ``correlation_id_propagated``). A LiteLLM custom
+conformance exemption (the conformance kit's ``correlation_id_propagated``). A LiteLLM custom
 logger callback may later recover trace correlation.
 
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8. ADK requires
@@ -28,14 +28,14 @@ if TYPE_CHECKING:
 class ADKAdapter(Adapter):
     extra = "adk"
     # LiteLLM owns the transport, so no response reaches donkey.last_call (#362,
-    # the same reason as the §8.1 correlation_id_propagated exemption).
+    # the same reason as the conformance kit's correlation_id_propagated exemption).
     observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``LiteLlm(model="openai/<id>", **kwargs)`` you
         build yourself. LiteLLM uses ``api_base``/``extra_headers`` (not
         ``base_url``/``default_headers``) and owns its own transport, so the
-        shared http client is not injected here (§3.3 exemption §8.1)."""
+        shared http client is not injected here (BG §1.8 exemption; the conformance kit)."""
         conn = self._openai_connection()
         return {
             "api_base": conn["base_url"],
@@ -44,7 +44,7 @@ class ADKAdapter(Adapter):
         }
 
     def model(self, model: str, **kw: Any) -> LiteLlm:
-        from google.adk.models.lite_llm import LiteLlm  # verified: docs §8
+        from google.adk.models.lite_llm import LiteLlm  # verified: docs/verified-apis.md §8
 
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
         return LiteLlm(model=f"openai/{model}", **self.connection_kwargs(), **kw)

@@ -81,6 +81,45 @@ That costs nothing here — the proxy authenticates on the header pair, not a
 fetched token — but it does mean the control-plane surfaces (`registry`,
 `tools`) remain async.
 
+## One-line on-ramps: decorators
+
+Two decorators fold the run scope and the tool registry into a single line, so
+the six-piece minimum is reachable without threading anything through your
+framework.
+
+`@donkey.governed` runs a callable inside a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) scope —
+a fresh run/correlation id per call (a "run of one"), the optional per-run cost
+tags, the OTel span, and typed refusals — with nothing to wire up:
+
+```python
+@donkey.governed(team="support")
+async def handle_ticket(ticket): ...
+```
+
+It wraps **both sync and async** callables, works bare (`@donkey.governed`) or
+parametrised (`@donkey.governed(team=…, project=…, env=…, enduser_id=…)`), and
+deliberately takes **no `id=`**: each call opens its own run, and a fixed id
+pinned across calls would collapse unrelated runs into one correlation. When you
+need a specific id, use `donkey.run(id=…)` directly.
+
+`@donkey.tool` marks a callable as a governed tool **without changing how it's
+called** — it returns the same function with a `__donkey_tool__` marker and
+records a `ToolSpec` (name, qualname, signature, docstring, `is_async`) in a
+process-global registry you read with `registered_tools()`:
+
+```python
+@donkey.tool
+async def lookup_crm(customer_id: str) -> dict:
+    """Look up a customer record by id."""
+    ...
+```
+
+A tool with **no docstring is rejected at decoration time** (`ValueError`) — an
+undescribed tool is useless to a model and to the registry. That one marker is
+what the Phase 2 [scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) and the [A2A](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) agent-card generator
+will both read, so the single annotation pays off across surfaces. `ToolSpec`
+and `registered_tools` are exported from `donkey_kit`.
+
 ## A typed governed error taxonomy
 
 `classify()` maps the proxy's eight rejection shapes to typed exceptions —
@@ -110,7 +149,7 @@ The governed proxy has **no** catalog endpoint (`GET /models` → `404`, verifie
 `list_models(live=True)` raises a clear `ConfigError` explaining the absence
 rather than fabricating a path.
 
-  **Honesty note (§0.3).** The proxy *contract* the adapters target is
+  **Honesty note (verification discipline).** The proxy *contract* the adapters target is
   live-verified, but the exact framework *constructor signatures* are still being
   confirmed against installed versions. Where a
   name can't be resolved, the adapter raises `blocked on verification` rather

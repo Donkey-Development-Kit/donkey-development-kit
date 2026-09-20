@@ -1,4 +1,4 @@
-"""Anthropic SDK adapter example (§3.3).
+"""Anthropic SDK adapter example (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -8,9 +8,9 @@ at the governed Agent Fabric LLM proxy with a single factory call:
     from donkey_kit.integrations.anthropic import client
     c = client()   # the model id is a per-call argument, not a constructor one
 
-Honest status (§0.3/§8): the proxy *contract* over the OpenAI-compatible route
-(base URL, client_id/secret auth, attribution headers) is live-verified. What
-is UNVERIFIED is whether the proxy exposes an **Anthropic-native Messages API
+Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* over the
+OpenAI-compatible route (base URL, client_id/secret auth, attribution headers) is live-verified.
+What is UNVERIFIED is whether the proxy exposes an **Anthropic-native Messages API
 route** at all (an open M0 item) — so this example constructs the client and
 emits the SDK's one-time unverified-route warning, but does NOT make a live
 call. Once a real Anthropic-native route is confirmed, override ``base_url`` and
@@ -56,7 +56,8 @@ def main() -> None:
     print(f"Constructed native object: {type(c).__module__}.{type(c).__name__}")
     print(
         "Construction is the SDK's verified surface. The proxy's Anthropic-native "
-        "route is UNVERIFIED (§8) — confirm it, override base_url if needed, then "
+        "route is UNVERIFIED (docs/verified-apis.md §8) — confirm it, "
+        "override base_url if needed, then "
         "call c.messages.create(model=..., ...) per Anthropic's own docs."
     )
 

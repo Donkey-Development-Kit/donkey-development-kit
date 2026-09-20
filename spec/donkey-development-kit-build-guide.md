@@ -6,7 +6,7 @@
 
 > **Note on API names.** Every Python signature below is a *proposal* to give the team something concrete to react to. Adjust freely. What must not change is the behaviour and the acceptance criteria.
 
-> **Note on gateway contracts.** Header and body shapes quoted below (`x-token-*`, `pii_detected`, `x-injection-protection`) come from the public Omni Gateway policy docs (v1.11–v1.13). Re-verify against the current docs version before hard-coding anything — that is exactly the repo's existing §0.3 discipline, keep it.
+> **Note on gateway contracts.** Header and body shapes quoted below (`x-token-*`, `pii_detected`, `x-injection-protection`) come from the public Omni Gateway policy docs (v1.11–v1.13). Re-verify against the current docs version before hard-coding anything — that is exactly the repo's existing verification discipline, keep it.
 
 ---
 

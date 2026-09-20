@@ -8,10 +8,10 @@ An SDK for consuming **Agent Fabric** capabilities — governed model access,
 governed tool access, and provisioning-as-code — from your own agent framework,
 in your own IDE, without adopting Mule.
 
-> **Project status — alpha, pre-release.** This is `v0.1.0.dev1`
+> **Project status — alpha, pre-release.** This is `v0.1.0.dev2`
 > (`Development Status :: 3 - Alpha`). The **LLM data plane is live-verified**;
 > most other surfaces are verification-gated (see
-> [What's verified](#whats-verified-03) below). **Not yet published to PyPI** —
+> [What's verified](#whats-verified-verification-discipline) below). **Not yet published to PyPI** —
 > [install from source](#install). **Unofficial:** an independent project,
 > **not** affiliated with or endorsed by Salesforce or MuleSoft.
 
@@ -21,7 +21,7 @@ in your own IDE, without adopting Mule.
 > maps every renamed import, class, CLI, config key, and environment variable,
 > and calls out the breaking OpenTelemetry attribute-namespace change.
 
-> ### Support & trademark statement (please read — §0.4)
+> ### Support & trademark statement (please read)
 >
 > **"Agent Fabric" is a MuleSoft (Salesforce) product name, not a generic
 > term.** `MuleSoft`, `Anypoint`, `Omni Gateway`, and `Agent Fabric` are
@@ -98,7 +98,7 @@ demand evidence, one at a time (#223/#244) — never guessed up front. See the
 [framework pages](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/)
 for each.
 
-## What's verified (§0.3)
+## What's verified (verification discipline)
 
 The **LLM data plane** — governed model access through the Omni Gateway proxy —
 is live-verified against a real Anypoint sandbox, and both the framework-free
@@ -111,7 +111,7 @@ currently includes Exchange→MCP tool discovery, the provisioning control-plane
 and the exact framework adapter class names/kwargs.
 
 The discipline behind this is documented in
-[`ARCHITECTURE.md` → Verification discipline](ARCHITECTURE.md#verification-discipline-03);
+[`ARCHITECTURE.md` → Verification discipline](ARCHITECTURE.md#verification-discipline);
 the row-by-row worklist is [`docs/verified-apis.md`](docs/verified-apis.md).
 
 ## Conformance exemptions
@@ -120,7 +120,7 @@ The [conformance plugin](https://donkey-development-kit.github.io/donkey-develop
 holds the SDK to the same bar it asks of your agent. Where a framework
 legitimately cannot satisfy a scenario, the reason is asserted in code
 (`KNOWN_LIMITATIONS`) and published here as credibility — never a silent skip
-(§8.1):
+(the conformance kit):
 
 | Framework | Scenario | Why it's exempt |
 | --- | --- | --- |

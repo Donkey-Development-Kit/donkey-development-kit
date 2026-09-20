@@ -1,8 +1,10 @@
 # Donkey Development Kit — documentation site
 
-A [Nextra](https://nextra.site) (Next.js + MDX) documentation site for the
-Donkey Development Kit. Content lives in `pages/**/*.mdx`; navigation is
-declared in the `_meta.js` files next to the pages.
+A [Nextra 4](https://nextra.site) (Next.js App Router + MDX) documentation site
+for the Donkey Development Kit. Content lives in `content/**/*.mdx`; navigation
+is declared in the `_meta.js` files next to the pages. A single catch-all route,
+`app/[[...mdxPath]]/page.tsx`, renders every page, and the theme is composed in
+`app/layout.tsx` (Nextra 4 removed `theme.config.tsx`).
 
 ## Local development
 
@@ -18,6 +20,11 @@ Build the static export (what CI ships to Pages) and preview it:
 npm run build        # `output: 'export'` → writes a static site to ./out
 npm run preview:pages
 ```
+
+Search is [Pagefind](https://pagefind.app) (Nextra 4 replaced the built-in
+FlexSearch). It indexes the built HTML, so the `postbuild` hook runs
+`pagefind --site out --output-subdir _pagefind` after every `next build` — which
+means **search only works against the built export, not `npm run dev`.**
 
 To preview exactly as GitHub Pages serves it — under the project sub-path:
 
@@ -74,7 +81,7 @@ future custom domain serve at the root without the sub-path.
 ## Structure
 
 ```
-pages/
+content/
   index.mdx                 Introduction — what the SDK is
   quickstart.mdx            First governed request
   feature-overview.mdx      The three pillars at a glance
@@ -86,7 +93,7 @@ pages/
   reference/                Configuration, unsupported boundary
 ```
 
-## Editing rules (inherited from the SDK — §0.3)
+## Editing rules (inherited from the SDK — verification discipline)
 
 **Never document an endpoint, header, or class name that isn't verified.** Where
 a value is unconfirmed, say so on the page (see the "Verification policy" page).

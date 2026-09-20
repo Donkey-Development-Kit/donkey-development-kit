@@ -1,4 +1,4 @@
-"""CrewAI adapter example (§3.3).
+"""CrewAI adapter example (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -8,13 +8,13 @@ Agent Fabric LLM proxy with a single factory call:
     from donkey_kit.integrations.crewai import llm
     model = llm("gpt-4o")
 
-Honest status (§0.3/§8): the proxy *contract* (base URL, client_id/secret
-auth, attribution headers) is live-verified. ``crewai.LLM`` wraps LiteLLM, so
+Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* (base URL,
+client_id/secret auth, attribution headers) is live-verified. ``crewai.LLM`` wraps LiteLLM, so
 the OpenAI-compatible route uses the ``openai/`` model prefix and header
 injection via ``extra_headers``; LiteLLM owns the transport, so per-run
-correlation degrades (a documented conformance exemption, §8.1). No live
+correlation degrades (a documented conformance exemption). No live
 inference call is attempted here: CrewAI LLMs are driven through a ``Crew`` /
-``Agent``, and guessing that runtime call risks inventing an API (§0.3).
+``Agent``, and guessing that runtime call risks inventing an API (verification discipline).
 Construction is this example's verified surface.
 """
 
@@ -60,7 +60,7 @@ def main() -> None:
     print(
         "Construction is the SDK's verified surface; pass this object into a "
         "crewai Agent/Crew per CrewAI's own docs — that runtime call is "
-        "UNVERIFIED here and deliberately not guessed (§0.3)."
+        "UNVERIFIED here and deliberately not guessed (verification discipline)."
     )
 
 

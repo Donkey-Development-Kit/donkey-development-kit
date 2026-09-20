@@ -42,8 +42,8 @@ What Scenario A demonstrates (the #199 acceptance criteria):
   state; the run id bound with ``donkey.run(id=…)`` shows up there for free
   because LangGraph runs nodes on context-copying ``asyncio`` tasks (#195).
 
-Honest status (§0.3/§8): the proxy *contract* (base URL, client_id/secret auth,
-attribution headers) is live-verified. ``ChatOpenAI``/``StateGraph`` are the
+Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* (base URL,
+client_id/secret auth, attribution headers) is live-verified. ``ChatOpenAI``/``StateGraph`` are the
 frameworks' own classes and ``.ainvoke`` is their documented API — construction
 via the SDK factory is the verified surface; everything after is the
 frameworks' own runtime.

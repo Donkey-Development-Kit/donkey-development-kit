@@ -20,7 +20,7 @@ auth — the ``client_id`` / ``client_secret`` below are throwaway placeholders,
 never real credentials. This is a *fixture replay*, not a real gateway: every
 response it serves carries ``x-donkey-simulator: true`` (BG §1.4).
 
-The same code lives in ``website/pages/quickstart.mdx`` — the two are kept in
+The same code lives in ``website/content/quickstart.mdx`` — the two are kept in
 lockstep so the documented snippet is exactly the executed one.
 """
 

@@ -4,7 +4,7 @@ Microsoft Agent Framework gets a governed chat client at the Agent Fabric LLM
 proxy, plus first-class policy middleware for terminating a run cleanly on a
 governance rejection instead of letting the agent loop retry.
 
-> **Supported at `connection_kwargs()`.** This adapter also ships the strongest
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** This adapter also ships the strongest
 > policy-integration story of the eight frameworks (`policy_middleware()`),
 > but its native client class is young and **UNVERIFIED** — read the callout
 > below before depending on it.

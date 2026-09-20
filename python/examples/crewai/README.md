@@ -11,7 +11,7 @@ into a `crewai` `Agent`/`Crew`.
 `crewai.LLM` wraps LiteLLM, so the OpenAI-compatible route uses the `openai/`
 model prefix and headers go via `extra_headers`. LiteLLM owns the transport, so
 the SDK's per-run correlation ID degrades to per-client — a documented
-conformance exemption (§8.1), the same one ADK has.
+conformance exemption, the same one ADK has.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
@@ -34,7 +34,7 @@ python examples/crewai/main.py
 ## The manual equivalent
 
 The factory call is equivalent to building `crewai.LLM` yourself with the
-governed connection values (§3.1):
+governed connection values (BG §1.8):
 
 ```python
 from crewai import LLM

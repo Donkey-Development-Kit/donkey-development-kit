@@ -6,9 +6,9 @@ server, it swaps a fixture-returning transport onto a live ``DonkeyAsyncClient``
 branch of an agent with **no network and no server**. It replays the **same
 captured fixtures** ``core.errors.classify()`` and the simulator app are tested
 against, so the injected refusal is the real shape — and it asserts that
-round-trip at enter time ("same files, both fail together", BG §1.4/§1.5).
+round-trip at enter time ("same files, both fail together", BG §1.4 / BG §1.5).
 
-Framework isolation (§1.1): this module imports only ``httpx``, the
+Framework isolation (the layered architecture): this module imports only ``httpx``, the
 framework-free ``core.errors`` taxonomy, and the sibling fixtures loader — never
 a web framework — so it is safe on the base import path. It is a dev-only
 simulator sibling, kept out of the five production layers by the import-linter
@@ -64,7 +64,7 @@ _EXC_TO_SHAPE: dict[type[DonkeyError], str] = {
 
 
 class _SwappableClient(Protocol):
-    """The transport-swap seam both Donkey HTTP clients expose (§2.3, BG §1.1).
+    """The transport-swap seam both Donkey HTTP clients expose (BG §1.1).
     Typed loosely on purpose — the sync and async clients carry different
     ``httpx`` transport types, and :class:`_FixtureTransport` satisfies both."""
 
@@ -148,7 +148,7 @@ class _FixtureTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
 def _resolve(error: type[DonkeyError]) -> Fixture:
     """Resolve the requested exception type to the fixture that classify() maps
     back to it, asserting that round-trip. Raises ``TypeError`` for a non-error
-    type and ``ValueError`` for an unmapped one (§0.3: no silent miss)."""
+    type and ``ValueError`` for an unmapped one (verification discipline: no silent miss)."""
     if not (isinstance(error, type) and issubclass(error, DonkeyError)):
         raise TypeError(
             f"simulate() expects a DonkeyError subclass, got {error!r}. "

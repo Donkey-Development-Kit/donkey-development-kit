@@ -1,4 +1,4 @@
-# Unsupported boundary (§9.3)
+# Unsupported boundary
 
 Every platform API the SDK calls, classified. Enterprise buyers will ask; having
 this pre-written converts a two-week procurement stall into a five-minute
@@ -13,7 +13,7 @@ Classification:
 
 | API / surface | Module | Classification | Justification / owner |
 |---|---|---|---|
-| _(populate during M0/§0.3 as each surface is verified)_ | | | |
+| _(populate during M0/verification discipline as each surface is verified)_ | | | |
 
 ## Undocumented surfaces
 

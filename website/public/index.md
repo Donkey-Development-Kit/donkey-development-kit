@@ -22,7 +22,7 @@ never a wrapper you have to code around.
 
   **"Agent Fabric" is a MuleSoft (Salesforce) product name**, not a generic
   term. This project is an SDK *for* that product; it is descriptive, not a
-  first-party release. See [§0.4 in the README](https://github.com/Donkey-Development-Kit/donkey-development-kit).
+  first-party release. See [the trademark/support boundary in the README](https://github.com/Donkey-Development-Kit/donkey-development-kit).
 
 ## The one design rule
 

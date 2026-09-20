@@ -1,5 +1,5 @@
 """Budget — the token-budget window, parsed from the proxy's budget headers
-(§1.3, BG §1.3, piece 2 of the six-piece minimum).
+(BG §1.3, piece 2 of the six-piece minimum).
 
 The developer never parses a header::
 
@@ -63,7 +63,7 @@ RATELIMIT_HEADER = "x-llm-proxy-ratelimit"
 
 # Matches `… 10000 tokens remaining of 10000 limit. Reset in 56711ms.`. Requires
 # all three values: a partial or reworded sentence fails to match and is treated
-# as no signal (§0.3 — never guess at an unexpected wire shape). `search`, not
+# as no signal (verification discipline — never guess at an unexpected wire shape). `search`, not
 # `match`, so the leading `Token rate limit:` label is not load-bearing.
 _RATELIMIT_RE = re.compile(
     r"(?P<remaining>\d+)\s+tokens?\s+remaining\s+of\s+(?P<limit>\d+)\s+limit\b"
@@ -78,7 +78,7 @@ def _utcnow() -> datetime:
 
 def _parse_int(raw: str | None) -> int | None:
     """A budget header as an int, or ``None`` if absent or non-numeric. Garbage is
-    ignored rather than fatal (§0.3: never let an unexpected wire value crash the
+    ignored rather than fatal (verification discipline: never let an unexpected wire value crash the
     caller's request path)."""
     if raw is None:
         return None
@@ -92,7 +92,7 @@ def _parse_ratelimit_prose(raw: str | None) -> tuple[int | None, int | None, int
     """The prose ``x-llm-proxy-ratelimit`` header as ``(limit, remaining, reset_ms)``,
     or an all-``None`` tuple when the header is absent, partial, or reworded.
 
-    Like :func:`_parse_int` this never raises on unexpected input (§0.3): an
+    Like :func:`_parse_int` this never raises on unexpected input (verification discipline): an
     unparseable sentence is simply "no signal", never a crash on the caller's
     request path. All three values must be present in the recognised shape or the
     whole header is discarded — a half-parsed budget is worse than none."""
@@ -180,7 +180,7 @@ class Budget:
     @asynccontextmanager
     async def pace(self, *, reserve: float = 0.0) -> AsyncIterator[None]:
         """Guard a request so it is refused *before* it crosses your reserve, not
-        after a 429 comes back (§1.3, #186).
+        after a 429 comes back (BG §1.3, #186).
 
         ``reserve`` is the fraction of the window to keep in hand (``0.0``-``1.0``):
         ``reserve=0.10`` trips at 90% used, ``reserve=0.0`` (the default) only at
@@ -215,7 +215,7 @@ class Budget:
 
     async def wait_for_reset(self, *, now: datetime | None = None) -> None:
         """Sleep until :attr:`reset_at`, then return — the recovery half of pacing
-        (§1.3, #186).
+        (BG §1.3, #186).
 
         A single sleep, never a spin loop. If the window is unobserved
         (:attr:`reset_at` is ``None``) or already past, this returns immediately —

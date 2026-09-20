@@ -1,10 +1,10 @@
-"""MCP session management + the ``ToolSet`` facade (§4.3, §4.4).
+"""MCP session management + the ``ToolSet`` facade (BG §2.7).
 
 ``ToolSet`` wraps N ``McpServerHandle``s. Filtering and collision resolution are
 pure and implemented here. The per-framework binding methods return each
-framework's NATIVE tool type (§4.4) and are gated on M0 verification of the MCP
+framework's NATIVE tool type (BG §2.7) and are gated on M0 verification of the MCP
 binding class names (docs/verified-apis.md §9) — connections open on first tool
-use, never in ``discover()`` (§4.3).
+use, never in ``discover()`` (BG §2.7).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ class ToolSet:
     ) -> ToolSet:
         """Return a filtered view. Enterprise MCP servers can expose dozens of
         tools; handing 60 descriptors to a model degrades it and inflates token
-        cost (§4.3)."""
+        cost (BG §2.7)."""
 
         self._filter = ToolFilter(
             allow=frozenset(allow) if allow is not None else None,
@@ -46,7 +46,7 @@ class ToolSet:
     @property
     def name_map(self) -> dict[str, str]:
         """``exposed_name -> original_name`` so a developer can debug why the
-        model called ``hr__get_employee`` (§4.3)."""
+        model called ``hr__get_employee`` (BG §2.7)."""
         exposed, name_map = resolve_collisions(self._descriptors())
         return name_map
 
@@ -71,7 +71,8 @@ class ToolSet:
         _log.debug("ToolSet exposes %d of %d tool descriptors", len(kept), len(descs))
         return kept
 
-    # ---- per-framework binding (native types §4.4, gated on §0.3 §9) ------
+    # ---- per-framework binding (native types BG §2.7, gated on verification discipline,
+    # docs/verified-apis.md §9) ------
     def langgraph(self) -> list[object]:  # -> list[BaseTool]
         raise _verify.blocked(
             "langchain_mcp_adapters.client.MultiServerMCPClient binding "
@@ -79,22 +80,32 @@ class ToolSet:
         )
 
     def adk(self) -> list[object]:  # -> list[McpToolset]
-        raise _verify.blocked("ADK McpToolset / StreamableHTTPConnectionParams (§9).")
+        raise _verify.blocked(
+            "ADK McpToolset / StreamableHTTPConnectionParams (docs/verified-apis.md §9)."
+        )
 
     def strands(self) -> list[object]:  # -> list[MCPClient]
-        raise _verify.blocked("Strands MCPClient(streamablehttp_client(...)) (§9).")
+        raise _verify.blocked(
+            "Strands MCPClient(streamablehttp_client(...)) (docs/verified-apis.md §9)."
+        )
 
     def llamaindex(self) -> list[object]:  # -> list[FunctionTool]
-        raise _verify.blocked("LlamaIndex BasicMCPClient + McpToolSpec (§9).")
+        raise _verify.blocked("LlamaIndex BasicMCPClient + McpToolSpec (docs/verified-apis.md §9).")
 
     def openai(self) -> list[object]:  # -> list[agents.mcp.MCPServer]
-        raise _verify.blocked("OpenAI Agents SDK agents.mcp.MCPServerStreamableHttp (§9).")
+        raise _verify.blocked(
+            "OpenAI Agents SDK agents.mcp.MCPServerStreamableHttp (docs/verified-apis.md §9)."
+        )
 
     def anthropic(self) -> list[object]:  # -> list[MCP tool defs]
-        raise _verify.blocked("Anthropic SDK MCP tool / mcp_servers binding (§9).")
+        raise _verify.blocked(
+            "Anthropic SDK MCP tool / mcp_servers binding (docs/verified-apis.md §9)."
+        )
 
     def crewai(self) -> list[object]:  # -> list[crewai BaseTool]
-        raise _verify.blocked("CrewAI crewai_tools.MCPServerAdapter binding (§9).")
+        raise _verify.blocked(
+            "CrewAI crewai_tools.MCPServerAdapter binding (docs/verified-apis.md §9)."
+        )
 
     def agent_framework(self) -> list[object]:
-        raise _verify.blocked("Agent Framework MCP client/tool class (§9).")
+        raise _verify.blocked("Agent Framework MCP client/tool class (docs/verified-apis.md §9).")

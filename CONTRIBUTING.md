@@ -2,7 +2,10 @@
 
 Thanks for working on the Donkey Development Kit. This guide is the contributor-facing
 runbook for the repo: how a change moves from an issue to `main`, how the code is
-tested and linted, and the conventions that keep the package trustworthy.
+tested and linted, and the conventions that keep the package trustworthy. It
+serves both **internal** contributors (org members with push access) and
+**external** ones (contributing via a fork + PR); where the two diverge is
+spelled out in [§1](#who-can-contribute-internal-vs-external).
 
 For *how the SDK is built* — the layer boundaries, the verification discipline,
 the error taxonomy, adapter support depth — read [`ARCHITECTURE.md`](ARCHITECTURE.md)
@@ -26,6 +29,60 @@ noted. There is no Makefile — every command runs directly.
 
 ## 1. Branch, PR & release workflow
 
+### Who can contribute: internal vs external
+
+This repo is **public** and takes contributions two ways. There is only one
+workflow; what differs is *where your branch lives and who can triage and merge
+it* — not the discipline.
+
+- **Internal contributors** — members of the `Donkey-Development-Kit` org with push
+  access. You branch directly in this repo, push your `<type>/<issue#>-<slug>`
+  branch to `origin`, set your own milestone/labels/assignee, and (after review)
+  merge. The rest of this document is written from this seat.
+- **External contributors** — anyone without push access. You work from a
+  **fork** and open a PR from your fork into this repo's `develop`. Everything
+  substantive is identical — issue-first, the same branch naming, the same
+  pre-PR gate, the same docs-sync rule — with the exceptions called out as
+  **(fork)** notes throughout this section.
+
+**The fork flow, end to end.** Fork `Donkey-Development-Kit/donkey-development-kit` on
+GitHub, then clone your fork and add this repo as `upstream`:
+
+```bash
+git clone https://github.com/<you>/donkey-development-kit.git
+cd donkey-development-kit
+git remote add upstream https://github.com/Donkey-Development-Kit/donkey-development-kit.git
+```
+
+Branch from `upstream/develop` (not your fork's possibly-stale copy), keep the
+`<type>/<issue#>-<slug>` name, and push the branch to your fork (`origin`):
+
+```bash
+git fetch upstream
+git checkout -b docs/13-verified-apis-update upstream/develop
+git push -u origin docs/13-verified-apis-update
+```
+
+Open the PR from `<you>:docs/13-verified-apis-update` →
+`Donkey-Development-Kit:develop`, and **tick "Allow edits by maintainers"** so a
+maintainer can rebase or push a small fix without a round-trip. Keep your branch
+current by rebasing on `upstream/develop` (`git fetch upstream && git rebase
+upstream/develop`), the same default as an internal branch.
+
+What a fork contributor **can't** do — a maintainer does each instead, so don't
+block waiting on it:
+
+- **Triage fields.** You can file an issue, but setting its milestone, labels,
+  and assignee needs write access. File it, then say in the issue that you plan
+  to work it, so it isn't picked up by someone else.
+- **The `.claude/skills/**` shortcut** (below) — committing straight to
+  `develop` — needs push access. From a fork, even a skills-only change goes
+  through a PR.
+- **Merging and promotion** — squashing a branch into `develop` and promoting
+  `develop` → `main` are maintainer-only.
+- **Secret-gated CI and live/sandbox verification** — see
+  [the pre-PR gate](#the-pre-pr-gate) and [§2](#2-testing-strategy).
+
 ### The issue is the plan
 
 **No code change lands without a GitHub issue and a branch named after it.**
@@ -37,7 +94,8 @@ scratch files.
 The one exception: edits scoped **entirely** to `.claude/skills/**` may be
 committed directly to `develop` after a recap, since skills are agent tooling
 rather than SDK code. Anything touching `python/`, `website/`, CI, the build
-plan, or repo policy follows the full flow below.
+plan, or repo policy follows the full flow below. **(fork)** This shortcut needs
+push access — from a fork, a skills-only change still goes through a PR.
 
 ### Branch model
 
@@ -57,7 +115,9 @@ find yourself on `main` about to start work, `git checkout develop` first.
    Donkey-Development-Kit/donkey-development-kit --search "<keywords>"`); file one if none
    matches. Every issue carries exactly one **milestone** — that milestone is the
    release the branch targets. Triage is by milestone + labels; there is no
-   Projects board.
+   Projects board. **(fork)** File the issue, but leave milestone/labels/assignee
+   to a maintainer — setting them needs write access; note in the issue that you
+   plan to work it.
 2. **Cut the branch from `develop`:**
    ```bash
    git fetch origin
@@ -68,19 +128,21 @@ find yourself on `main` about to start work, `git checkout develop` first.
    mandatory. `<type>` is one of `feat` (new capability), `fix` (something that
    should have worked), `docs` (README, website, comments), or `chore`
    (tooling, deps, refactors). The slug is 2–5 kebab-case words describing *what*
-   changes, e.g. `fix/42-proxy-url-trailing-slash`.
+   changes, e.g. `fix/42-proxy-url-trailing-slash`. **(fork)** Branch from
+   `upstream/develop` and push to your fork (`origin`) instead — see the fork
+   flow above.
 3. **Re-confirm the boundaries before writing code** (see
    [`ARCHITECTURE.md`](ARCHITECTURE.md)): the change stays within the layering
    (`integrations → tools → registry → llm → core`, lower never imports higher);
    `core/` stays framework-free; and any endpoint/header/class name it depends on
    is already `VERIFIED` in [`docs/verified-apis.md`](docs/verified-apis.md) — if
    not, that is a verification question (`_verify.blocked(...)` or an
-   `Unverified(...)` placeholder), not a place to guess (§0.3).
+   `Unverified(...)` placeholder), not a place to guess (verification discipline).
 4. **Commit, push, open a PR into `develop`.** Once you're on a correctly-named
    branch, commit and push autonomously — the branch is the isolation boundary.
    Commit messages cite `§N.N` when the change implements or modifies
    spec-governed behavior, e.g. `fix(llm): correct proxy base URL handling
-   (§2.1)`.
+   (config resolution)`.
 
 **Use a worktree when there's any chance of a parallel session** (another editor
 window, a running dev server, a `pytest --looponfail` holding files): one issue =
@@ -102,11 +164,11 @@ cd python
 pytest -q          # the `test` matrix job (3.10/3.11/3.12 in CI)
 mypy               # mypy --strict, BLOCKING
 ruff check .       # E,F,I,UP,B; line-length 100
-lint-imports       # the §1.1 layered, framework-free-core contract
+lint-imports       # the layered, framework-free-core contract
 ```
 
 If the diff touches an adapter or framework wiring, also run the signature check
-(the executable form of the §8 verification step, and the nightly-matrix gate):
+(the executable form of the `docs/verified-apis.md §8` verification step, and the nightly-matrix gate):
 
 ```bash
 python scripts/verify_frameworks.py
@@ -115,6 +177,18 @@ python scripts/verify_frameworks.py
 If you added or touched an adapter, sanity-check that a bare `pip install -e
 ".[dev]"` + `python -c "import donkey_kit"` still succeeds — that's the
 `base-only` CI job catching a framework import that leaked into a lower layer.
+
+**(fork)** GitHub withholds repository secrets from pull requests opened from a
+fork, so the secret-gated jobs (the `--live` framework round-trip and anything
+reading the `DONKEY_LLM_PROXY_*` env vars) do **not** run on your PR — a
+maintainer runs them before merge. Run everything that needs no secrets locally
+so the gate is green on what CI *can* check on a fork: `pytest -q tests/unit`,
+`mypy`, `ruff check .`, `lint-imports`, and offline `python
+scripts/verify_frameworks.py` (no `--live`). The `sandbox` and `local_gateway`
+suites need creds/docker you likely don't have; they clean-skip, which is
+correct (Section 2). And **never flip a `docs/verified-apis.md` row or `verified=True`
+from a fork** — that requires a real sandbox round-trip only a maintainer can
+run (verification discipline); raise it in the issue instead.
 
 ### The PR
 
@@ -141,7 +215,8 @@ Merge method is fixed by direction — don't pick per PR:
 
 Never rebase-merge into `develop`, never squash or fast-forward `develop` into
 `main`, and never merge `main` back into `develop` (cherry-pick a hotfix onto
-`develop` instead).
+`develop` instead). **(fork)** You can't run this step — a maintainer
+squash-merges your PR and closes the linked issue with the merge SHA.
 
 After a PR merges, **close the linked issue explicitly** with the merge SHA —
 don't rely on GitHub auto-close, which can silently miss. Closing the issue is
@@ -179,7 +254,7 @@ import to a file under `tests/unit/`** — that's exactly the drift this job
 exists to catch. Error-classification changes must keep the taxonomy invariants
 provable: `PolicyViolation` stays distinct from the retryable
 `UpstreamModelError`, and every `PolicyViolation` carries a non-empty
-`remediation` (assert it directly). See [`ARCHITECTURE.md`](ARCHITECTURE.md#error-taxonomy-design-24)
+`remediation` (assert it directly). See [`ARCHITECTURE.md`](ARCHITECTURE.md#error-taxonomy-design-bg-12)
 for why.
 
 ### The conformance kit — "never a silent skip"
@@ -198,7 +273,7 @@ frameworks or it doesn't belong there.
 ### Fixture-driven tests — captures, not conveniences
 
 `tests/fixtures/anypoint/` holds **real captures** from a sandbox org, not
-hand-written JSON. The error taxonomy is fixture-derived (§8.2), not
+hand-written JSON. The error taxonomy is fixture-derived (BG §1.5), not
 assumption-derived. If you need a new response shape, capture it for real and
 document its provenance in the relevant `README` (org id, environment,
 CLI/proxy version, what produced the rejection, confirmation nothing sensitive
@@ -213,7 +288,7 @@ job via `pytest -q -m local_gateway`); `sandbox` is exercised by
 `tests/sandbox/` (#400), which calls the real provisioned proxies and is
 **never** run in CI — it is opt-in, local only.
 
-- **`@pytest.mark.local_gateway`** needs a local Omni Gateway via docker (§6.5).
+- **`@pytest.mark.local_gateway`** needs a local Omni Gateway via docker (the Verification milestone).
   Docker is a hard dependency **for this feature only** — it ships behind the
   optional `[local]` extra; the rest of the SDK works without it. The local
   harness (`Governance.simulate()`) is designed so that **port allocation is
@@ -242,13 +317,13 @@ with `pytest -q -m local_gateway` / `-m sandbox` (with the service/env in place)
 
 ### `scripts/verify_frameworks.py` — signatures, outside pytest
 
-This is the executable §0.3 verification step for adapters' native constructor
+This is the executable verification-discipline step for adapters' native constructor
 signatures (`docs/verified-apis.md` §8): does the exact class we name exist and
 accept the exact kwargs we pass, against the framework as actually installed.
 `--live` adds one real completion round-trip (needs the three
 `DONKEY_LLM_PROXY_*` env vars); `--only <fw>` restricts scope;
-`--emit-verified` prints §8 markdown rows after maintainer sign-off. A
-`_verify.blocked(...)`-guarded adapter correctly shows as `BLOCKED (§0.3)`, not a
+`--emit-verified` prints `docs/verified-apis.md §8` markdown rows after maintainer sign-off. A
+`_verify.blocked(...)`-guarded adapter correctly shows as `BLOCKED (verification discipline)`, not a
 failure — don't "fix" the script to make a genuinely-blocked adapter pass.
 
 ### Commands
@@ -284,14 +359,14 @@ build plan; the load-bearing rules:
   `import donkey_kit` succeed with no framework installed, and the `base-only`
   job enforces it. The layering (`integrations → tools → registry → llm → core`,
   lower never imports higher) is enforced by `lint-imports`. See
-  [`ARCHITECTURE.md`](ARCHITECTURE.md#layered-architecture-11).
-- **Verification guards (§0.3).** Never invent an endpoint, header, or class
+  [`ARCHITECTURE.md`](ARCHITECTURE.md#layered-architecture).
+- **Verification guards.** Never invent an endpoint, header, or class
   name. Use `core/_verify.py`: `blocked("…")` where there's no defensible
   placeholder, `Unverified(...)` for an overridable best-guess that warns once.
   Flip `verified=True` **and** the row in `docs/verified-apis.md` together, never
   one without the other. Details in
-  [`ARCHITECTURE.md`](ARCHITECTURE.md#verification-discipline-03).
-- **Extras are floors, never ceilings (§8.4).** No upper version pins in
+  [`ARCHITECTURE.md`](ARCHITECTURE.md#verification-discipline).
+- **Extras are floors, never ceilings.** No upper version pins in
   `pyproject.toml` — add `foo>=X`, never `foo<Y`. Known incompatibilities are
   documented in `docs/verified-apis.md §8.1` as dev constraints, not encoded as
   pins; the nightly matrix exists to surface breakage from newest releases early.
@@ -309,7 +384,7 @@ build plan; the load-bearing rules:
   section in the docstring/comment so reviewers and future-you can find the
   rationale. A principled deviation gets a leading comment naming the `§N.N` it
   trades against.
-- **Trademark-descriptive language (§0.4).** "Agent Fabric", "Anypoint", "Omni
+- **Trademark-descriptive language (the trademark/support boundary).** "Agent Fabric", "Anypoint", "Omni
   Gateway", and "MuleSoft" are Salesforce trademarks. Write the package as a
   descriptive, third-party SDK for *consuming* Agent Fabric, never as a
   first-party or official Salesforce product.
@@ -317,7 +392,7 @@ build plan; the load-bearing rules:
   `.env` are gitignored. The LLM proxy authenticates on a `client_id`/`client_secret`
   header pair (consumer auth), separate from any Anypoint control-plane credential.
 
-Self-review before pushing = the pre-PR gate in §1 (`mypy`, `ruff check .`,
+Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .`,
 `lint-imports`, `pytest`), plus `verify_frameworks.py` if you touched adapters.
 
 ---
@@ -379,4 +454,4 @@ page as the source of truth and reconcile the example README to it.
 
 *"Agent Fabric", "Anypoint", and "Omni Gateway" are Salesforce trademarks; this
 project is a descriptive, non-first-party SDK for consuming those capabilities
-(§0.4).*
+(the trademark/support boundary).*

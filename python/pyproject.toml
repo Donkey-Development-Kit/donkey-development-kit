@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "donkey-kit"
-version = "0.1.0.dev1"
+version = "0.1.0.dev2"
 description = "An SDK for consuming Agent Fabric capabilities (governed model access, governed tools, provisioning-as-code) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,7 +17,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# core/ has ZERO agent-framework dependencies. httpx only. (§1.1 hard rule)
+# core/ has ZERO agent-framework dependencies. httpx only. (the layered architecture hard rule)
 dependencies = [
     "httpx>=0.27",
     "pydantic>=2.6",
@@ -42,8 +42,8 @@ Changelog = "https://github.com/Donkey-Development-Kit/donkey-development-kit/re
 llm = ["openai>=1.30"]
 
 # --- Per-framework integrations (one extra each) ---
-# Floors, never ceilings (working instruction, §8.4). Class names / kwargs
-# inside the adapters are marked UNVERIFIED until §0.3 confirms them.
+# Floors, never ceilings (working instruction). Class names / kwargs
+# inside the adapters are marked UNVERIFIED until the verification discipline confirms them.
 # The deep, conformance-gated adapter (BG §1.8, #198): its extra ships the graph
 # runtime so `interrupt()` composition and the conformance harness run against a
 # real LangGraph app, not just a bare ChatOpenAI.
@@ -63,10 +63,10 @@ a2a = ["a2a-sdk>=0.1"]
 # --- Local gateway simulator (BG §1.4): `donkey mock` ---
 # Pure-Python ASGI (starlette) served by uvicorn. Plain `uvicorn`, NOT
 # `uvicorn[standard]`: uvloop/httptools are C extensions and would break BG §1.4's
-# pure-Python promise. Floors only, no upper pins (§8.4).
+# pure-Python promise. Floors only, no upper pins.
 local = ["starlette>=0.37", "uvicorn>=0.30"]
 
-# --- Telemetry (§2.5, BG §1.6) ---
+# --- Telemetry (BG §1.6) ---
 # The OTLP exporter is what makes zero-config export real (#194): with it and
 # `OTEL_EXPORTER_OTLP_ENDPOINT` set, spans flow to the customer's own sink with no
 # SDK-specific env var. We ship the http/protobuf exporter (the OTel-recommended
@@ -74,14 +74,14 @@ local = ["starlette>=0.37", "uvicorn>=0.30"]
 # would also drag in `grpcio` (a heavy C-extension wheel). grpc stays opt-in:
 # `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` is honoured only if the caller also installs
 # `opentelemetry-exporter-otlp-proto-grpc` (a one-time warning says so otherwise).
-# Floors only, no upper pins (§8.4).
+# Floors only, no upper pins.
 otel = [
     "opentelemetry-api>=1.24",
     "opentelemetry-sdk>=1.24",
     "opentelemetry-exporter-otlp-proto-http>=1.24",
 ]
 
-# --- CLI + provisioning (§5) ---
+# --- CLI + provisioning ---
 cli = ["typer>=0.12", "pyyaml>=6.0", "rich>=13.0"]
 
 # --- Conformance pytest plugin (BG §1.5): `donkey-kit[test]` ---
@@ -91,7 +91,7 @@ cli = ["typer>=0.12", "pyyaml>=6.0", "rich>=13.0"]
 # tests — and the `donkey` fixture used with `simulate()` — run under the
 # repo-standard asyncio_mode="auto". The plugin itself needs no framework and no
 # `[llm]`; it drives the agent through the customer's own Donkey. Floors only,
-# no upper pins (§8.4).
+# no upper pins.
 test = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
 # --- Everything, for convenience ---
@@ -196,7 +196,7 @@ select = ["E", "F", "I", "UP", "B"]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).
 "src/donkey_kit/provisioning/cli.py" = ["B008"]
 
-# --- import-linter: enforce the §1.1 layering rule in CI, from day one ---
+# --- import-linter: enforce the layered architecture rule in CI, from day one ---
 [tool.importlinter]
 root_package = "donkey_kit"
 
@@ -212,7 +212,7 @@ source_modules = [
 forbidden_modules = ["donkey_kit.integrations"]
 
 [[tool.importlinter.contracts]]
-name = "layered architecture (§1.1)"
+name = "layered architecture"
 type = "layers"
 # integrations (top) may use everything below; tools resolves registry handles;
 # registry/llm sit above the framework-free core (bottom). Lower never imports
@@ -223,6 +223,27 @@ layers = [
     "donkey_kit.registry",
     "donkey_kit.llm",
     "donkey_kit.core",
+]
+
+[[tool.importlinter.contracts]]
+name = "integrations are mutually independent (no cross-framework leakage, §1.1)"
+type = "independence"
+# Each adapter depends on exactly ONE agent framework. No adapter may import
+# another, directly or indirectly — a convenient cross-import would drag a
+# second framework's optional dependency onto an install that only asked for
+# the first, quietly breaking the "extras are genuinely optional" guarantee
+# (working instruction #6). The shared `_base` sibling (DonkeyConfig +
+# transport wiring) is deliberately NOT listed: every adapter importing it
+# downward is allowed and expected, and `_base` imports no adapter.
+modules = [
+    "donkey_kit.integrations.langgraph",
+    "donkey_kit.integrations.adk",
+    "donkey_kit.integrations.strands",
+    "donkey_kit.integrations.agent_framework",
+    "donkey_kit.integrations.openai_agents",
+    "donkey_kit.integrations.anthropic",
+    "donkey_kit.integrations.crewai",
+    "donkey_kit.integrations.llamaindex",
 ]
 
 [[tool.importlinter.contracts]]

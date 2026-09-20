@@ -113,8 +113,8 @@ async def test_stream_replays_the_sse_capture_with_event_stream_media_type() -> 
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/event-stream")
     # The captured SSE sample is a single, truncated `response.created` event —
-    # replayed verbatim, NOT a complete stream ending in `data: [DONE]` (§0.3: the
-    # rest is not fabricated). Assert byte-identity, not consumability.
+    # replayed verbatim, NOT a complete stream ending in `data: [DONE]` (verification discipline:
+    # the rest is not fabricated). Assert byte-identity, not consumability.
     assert resp.content == fx.load("stream").body
     assert resp.headers[SIMULATOR_HEADER] == "true"
     # A streaming call is still a happy path: it carries the same prose budget

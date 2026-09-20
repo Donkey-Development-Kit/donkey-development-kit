@@ -27,7 +27,7 @@ of the **milestone being shipped**. The milestone titles are the ground truth
 
 A milestone ships its **final** version only when it reaches **0 open issues**.
 The `Verification` and `Upstream gaps` milestones have no version and never ship
-— they are standing §0.3 gates, not releases.
+— they are standing verification discipline gates, not releases.
 
 ### The pre-release ladder
 
@@ -98,7 +98,7 @@ There are **two paths, one per destination** (#410), and they never overlap:
 
 Either trigger runs the same `build` job first — sdist + wheel, `twine check`,
 and the assertion that the built metadata carries only `>=` floors
-(floors-never-ceilings, §8.4) — then uploads via `pypa/gh-action-pypi-publish`.
+(floors-never-ceilings) — then uploads via `pypa/gh-action-pypi-publish`.
 A manual dispatch is **structurally incapable** of reaching prod: the
 `publish-pypi` job gates on `github.event_name == 'release'`, so only a published
 Release can trigger it. The workflow never creates tags or releases — it only
@@ -126,8 +126,8 @@ conformance harness) are **not** part of the contract.
 
 There is intentionally **no `CHANGELOG.md`**. The **GitHub Release is the
 changelog** (`[project.urls].Changelog` points at the Releases feed); release
-notes call out breaking changes, §0.3 verification-status flips, and §8.4 extras
-changes. For a pre-release, the notes also state plainly what is *not* yet real
+notes call out breaking changes, verification-status flips, and extras
+changes (the floors-never-ceilings rule). For a pre-release, the notes also state plainly what is *not* yet real
 (e.g. "pre-MVP: docs and scaffolding only") so a `.devN` build never reads like a
 usable SDK.
 

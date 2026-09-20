@@ -1,4 +1,4 @@
-"""OpenAI Agents SDK adapter (``donkey.openai_agents``) (§3.3).
+"""OpenAI Agents SDK adapter (``donkey.openai_agents``) (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -6,7 +6,7 @@ The OpenAI Agents SDK (pip ``openai-agents``, import ``agents``) models a
 provider as an ``OpenAIChatCompletionsModel`` wrapping an ``AsyncOpenAI`` client.
 Because we construct that client ourselves, header AND transport injection are
 both available (full injection) — the preferred pattern anywhere a framework
-accepts a pre-built OpenAI client (§3.3).
+accepts a pre-built OpenAI client (BG §1.8).
 
 Point the SDK's *model* at the proxy per-agent rather than mutating the global
 default client, so one process can mix governed and ungoverned models.
@@ -30,7 +30,7 @@ class OpenAIAgentsAdapter(Adapter):
     def _proxy_openai_client(self) -> Any:
         """A native ``AsyncOpenAI`` client bound to the proxy: our shared http
         client + the verified consumer-auth headers. One source of truth for the
-        governed connection (§3.1)."""
+        governed connection (BG §1.8)."""
         conn = self._openai_connection()
         from openai import AsyncOpenAI
 
@@ -42,19 +42,25 @@ class OpenAIAgentsAdapter(Adapter):
             api_key=conn["api_key"],
             default_headers=conn["default_headers"],
             http_client=self._http_client(),  # type: ignore[arg-type]
-            max_retries=0,  # we retry in transport (§2.3)
+            max_retries=0,  # we retry in transport (BG §1.1)
         )
+
+    def connection_kwargs(self) -> dict[str, Any]:
+        """Governed kwargs for an ``OpenAIChatCompletionsModel(model=…, **kwargs)``
+        you build yourself. Unlike the OpenAI-compatible adapters this returns a
+        single ``openai_client`` key holding a pre-built native ``AsyncOpenAI``
+        bound to the proxy — the Agents SDK takes a ready-made client, not loose
+        connection kwargs, so header AND transport injection travel as one object
+        (BG §1.8). Same client the factory uses — one source of truth for the
+        proxy connection."""
+        return {"openai_client": self._proxy_openai_client()}
 
     def model(self, model: str, **kw: Any) -> OpenAIChatCompletionsModel:
         """Return a native ``OpenAIChatCompletionsModel`` pointed at the proxy,
-        ready to pass into ``agents.Agent(model=...)`` (§3.1)."""
-        from agents import OpenAIChatCompletionsModel  # verified: docs §8
+        ready to pass into ``agents.Agent(model=...)`` (BG §1.8)."""
+        from agents import OpenAIChatCompletionsModel  # verified: docs/verified-apis.md §8
 
-        return OpenAIChatCompletionsModel(
-            model=model,
-            openai_client=self._proxy_openai_client(),
-            **kw,
-        )
+        return OpenAIChatCompletionsModel(model=model, **self.connection_kwargs(), **kw)
 
 
 def model(model: str, **kw: Any) -> OpenAIChatCompletionsModel:

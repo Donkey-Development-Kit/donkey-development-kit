@@ -8,17 +8,17 @@ consumer docs: for *using* the SDK see the Nextra site under `website/`; for
 [`../spec/`](../spec/) — the build plan (phases, invariants) and the build
 guide (feature scope, cited `BG §N.N`).
 
-Everything here serves the **verification discipline** (§0.3): *never invent an
+Everything here serves the **verification discipline**: *never invent an
 endpoint, header name, or class name.* The files track what has been proven
 against a real Anypoint sandbox versus what is still assumed or blocked.
 
 | File | What it is |
 | --- | --- |
 | [`verified-apis.md`](verified-apis.md) | **The verification ledger** — the single source of truth for every endpoint, header, and class name the SDK touches and its status (`VERIFIED (LIVE)` / `VERIFIED (CLI)` / `VERIFIED (plugin)` / `UNVERIFIED` / blocked). When a value is confirmed against a sandbox, flip its row here **and** set `verified=True` in `core/_verify.py` — the two edits move together. |
-| [`m1-completion-checklist.md`](m1-completion-checklist.md) | **The 0.1.0 milestone tracker** (build plan §9.1, "M1 — Model access"). A status-keyed checklist toward a truthful, publishable release; a box flips to ✅ only when the fact is confirmed against the installed framework / real sandbox, never just because the code that assumes it was written. |
-| [`unsupported-boundary.md`](unsupported-boundary.md) | **The §9.3 procurement doc** — classifies every platform API the SDK calls (public / no-SLA / undocumented), so enterprise-buyer questions get a five-minute answer instead of a two-week stall. Its "Undocumented surfaces" section is designed to stay empty. |
+| [`m1-completion-checklist.md`](m1-completion-checklist.md) | **The 0.1.0 milestone tracker** (build plan Phase 1, "M1 — Model access"). A status-keyed checklist toward a truthful, publishable release; a box flips to ✅ only when the fact is confirmed against the installed framework / real sandbox, never just because the code that assumes it was written. |
+| [`unsupported-boundary.md`](unsupported-boundary.md) | **The procurement doc** — classifies every platform API the SDK calls (public / no-SLA / undocumented), so enterprise-buyer questions get a five-minute answer instead of a two-week stall. Its "Undocumented surfaces" section is designed to stay empty. |
 | [`releasing.md`](releasing.md) | **How a release reaches PyPI** — the Trusted Publishing (OIDC) workflow wired as `.github/workflows/release.yml` (#206), the public API surface semver governs, and the one-time human step to register the trusted publisher. The version scheme and tagging live in the `ddk-release` skill; this is the publish half. |
 
 *"Agent Fabric", "Anypoint", and "Omni Gateway" are Salesforce trademarks; this
 project is a descriptive, non-first-party SDK for consuming those capabilities
-(§0.4).*
+(the trademark/support boundary).*

@@ -4,7 +4,7 @@ and called end-to-end on 2026-08-28. See tests/fixtures/anypoint/llm_proxy/READM
 and docs/verified-apis.md §2/§3/§4.
 
 Unlike the shape-only A2D fixtures, these are the direct Anypoint data-plane
-contract, so they may drive real SDK behavior (the §8.2 fixture-derived error
+contract, so they may drive real SDK behavior (the BG §1.5 fixture-derived error
 table). The raw→exception mapping under test lives in core/errors.classify().
 """
 
@@ -38,8 +38,8 @@ def _load(name: str) -> object:
 
 
 def test_success_response_is_openai_passthrough_with_usage() -> None:
-    """§2: proxy returns the OpenAI Responses object verbatim, incl. token usage
-    (the basis for cost attribution) — no /v1 rewriting of the body."""
+    """docs/verified-apis.md §2: proxy returns the OpenAI Responses object verbatim, incl. token
+    usage (the basis for cost attribution) — no /v1 rewriting of the body."""
     body = _load("responses.success.body.json")
     assert isinstance(body, dict)
     assert body["object"] == "response"
@@ -52,7 +52,7 @@ def test_success_response_is_openai_passthrough_with_usage() -> None:
 
 
 def test_success_headers_carry_gateway_governance_and_identity() -> None:
-    """§3: attribution/telemetry is on the response headers, not a bespoke
+    """docs/verified-apis.md §3: attribution/telemetry is on the response headers, not a bespoke
     request header the SDK must invent."""
     h = _headers("responses.success.headers.txt")
     assert h["server"] == "Anypoint Flex Gateway"
@@ -64,7 +64,7 @@ def test_success_headers_carry_gateway_governance_and_identity() -> None:
 
 
 def test_client_id_enforcement_rejection_classifies_as_auth() -> None:
-    """§4 family 1 — Anypoint policy rejection: flat string `error`, 401 +
+    """docs/verified-apis.md §4 family 1 — Anypoint policy rejection: flat string `error`, 401 +
     www-authenticate. classify() maps 401/403 → AuthError."""
     h = _headers("reject.client-id-missing.headers.txt")
     body = _load("reject.client-id-missing.body.json")
@@ -77,7 +77,7 @@ def test_client_id_enforcement_rejection_classifies_as_auth() -> None:
 
 
 def test_two_error_envelope_families_are_distinguishable() -> None:
-    """§4: the fixture-derived discriminator the §8.2 table needs.
+    """docs/verified-apis.md §4: the fixture-derived discriminator the BG §1.5 table needs.
 
     - Anypoint policy rejection → `error` is a STRING.
     - Upstream provider (OpenAI) passthrough → `error` is an OBJECT with
@@ -93,8 +93,8 @@ def test_two_error_envelope_families_are_distinguishable() -> None:
 
 
 def test_upstream_400_classifies_as_upstream_request_error() -> None:
-    """§4 discriminator (fixture-driven, §8.2): the model-not-found 400 is an
-    upstream provider passthrough (nested `error` object), so classify() returns
+    """docs/verified-apis.md §4 discriminator (fixture-driven, BG §1.5): the model-not-found 400 is
+    an upstream provider passthrough (nested `error` object), so classify() returns
     UpstreamRequestError — NOT a gateway PolicyViolation — carrying the provider
     code/type for actionability."""
     body = _load("reject.model-not-found.body.json")
@@ -108,8 +108,8 @@ def test_upstream_400_classifies_as_upstream_request_error() -> None:
 
 
 def test_pii_detection_rejection_classifies_as_pii_not_auth() -> None:
-    """§4 live capture: the PII policy rejects with 403 + a NESTED error object
-    whose type is ``pii_detected`` and NO ``www-authenticate`` header. Despite
+    """docs/verified-apis.md §4 live capture: the PII policy rejects with 403 + a NESTED error
+    object whose type is ``pii_detected`` and NO ``www-authenticate`` header. Despite
     the 403, this is NOT an auth failure — classify() must return PIIDetected and
     surface the flagged entity types parsed from the message."""
     h = _headers("reject.pii-detected.headers.txt")
@@ -127,7 +127,7 @@ def test_pii_detection_rejection_classifies_as_pii_not_auth() -> None:
 
 
 def test_token_rate_limit_rejection_is_429_with_header_only_budget() -> None:
-    """§4 live capture: the token-rate-limit policy rejects with 429 and an
+    """docs/verified-apis.md §4 live capture: the token-rate-limit policy rejects with 429 and an
     EMPTY body; the reset window is header-only (x-token-reset, in ms) with NO
     standard retry-after. classify() → TokenBudgetExceeded with retry_after
     derived from x-token-reset."""

@@ -1,4 +1,4 @@
-"""Strands Agents adapter example (§3.3).
+"""Strands Agents adapter example (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -8,12 +8,12 @@ pointed at the governed Agent Fabric LLM proxy with a single factory call:
     from donkey_kit.integrations.strands import model
     m = model("gpt-4o")
 
-Honest status (§0.3/§8): the proxy *contract* (base URL, client_id/secret
-auth, attribution headers) is live-verified, and ``OpenAIModel``/its kwargs
+Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* (base URL,
+client_id/secret auth, attribution headers) is live-verified, and ``OpenAIModel``/its kwargs
 are verified per the FACTS table. What is NOT attempted here is a live
 inference call: Strands models are normally driven through a
 ``strands.Agent`` session, not a simple one-line method on the model object,
-and guessing that call risks inventing an API (§0.3). Construction is this
+and guessing that call risks inventing an API (verification discipline). Construction is this
 example's verified surface — once you have ``m``, wrap it in your own
 ``strands.Agent`` per Strands' own docs.
 """
@@ -60,7 +60,7 @@ def main() -> None:
     print(
         "Construction is the SDK's verified surface; drive this object with "
         "Strands' own Agent API (see this example's README) — that runtime "
-        "call is UNVERIFIED here and deliberately not guessed (§0.3)."
+        "call is UNVERIFIED here and deliberately not guessed (verification discipline)."
     )
 
 

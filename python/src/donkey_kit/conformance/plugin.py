@@ -109,7 +109,7 @@ def _import_target(spec: str, *, what: str) -> tuple[Any, Any]:
 def _resolve_agent(config: pytest.Config) -> tuple[AgentFactory, dict[str, str]]:
     """Resolve the ``--agent`` factory and its known-limitations mapping, and
     validate the exemptions **now** (collection time) so a bad key or an empty
-    reason fails loudly before any scenario runs (§8.1: asserted, never silent)."""
+    reason fails loudly before any scenario runs (the conformance kit: asserted, never silent)."""
     agent_spec = config.getoption("donkey_agent")
     if not agent_spec:
         raise pytest.UsageError(
@@ -151,7 +151,7 @@ class _ScenarioItem(pytest.Item):
             raise _ConformanceFailure(f"{self._scenario.title}: {result.detail}")
         # pass and exempt both leave the item green; the asserted exemption is
         # validated at collection and shown in the summary table, so it is
-        # recorded, not silently skipped (§8.1).
+        # recorded, not silently skipped (the conformance kit).
         if result.status == "exempt":
             self.add_report_section("call", "exempt", result.detail)
 
@@ -242,3 +242,33 @@ def donkey() -> Any:
         yield fab
     finally:
         fab.close()
+
+
+@pytest.fixture
+def gateway() -> Any:
+    """A running local gateway simulator on an ephemeral port, for tests whose
+    subject does **not** import ``donkey_kit`` — a containerised agent, a Node
+    service, an A2A client, a manual ``curl`` (#278)::
+
+        async def test_agent_stops_after_refusal(gateway):
+            gateway.set_scenarios("pii_block:every=1")
+            app = deploy(env={"DONKEY_LLM_PROXY_URL": gateway.url})
+            await app.run(ticket)
+            assert gateway.requests_received == 1  # stopped, did not retry
+
+    It serves the same captured rejection fixtures ``simulate()`` and ``donkey
+    mock`` replay, on a real port bound to ``0`` (so parallel ``pytest -n`` runs
+    never collide), and records every request in a spy the test can assert on
+    (:attr:`~.gateway.Gateway.requests_received` plus per-request method, path and
+    headers with ``client_secret`` redacted). Torn down when the test exits,
+    including on failure.
+
+    Needs the ``[local]`` extra (``starlette`` + ``uvicorn``); taking the fixture
+    without it raises an :class:`ImportError` naming the exact ``pip install``."""
+    from .gateway import start_gateway
+
+    gw = start_gateway()
+    try:
+        yield gw
+    finally:
+        gw.close()

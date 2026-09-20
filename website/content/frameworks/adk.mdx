@@ -1,0 +1,111 @@
+import { Tabs } from 'nextra/components'
+import OpenAiProxyTs from '../../components/openai-proxy-ts.mdx'
+
+# Google ADK — governed model access
+
+Google's Agent Development Kit (ADK) is Gemini-first; it reaches the
+Agent Fabric LLM proxy through ADK's `LiteLlm` model wrapper, which speaks
+LiteLLM's own model-string and kwarg conventions rather than raw OpenAI ones.
+
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one documented exemption: LiteLLM
+> owns its own transport, so the SDK's shared httpx client is not injected
+> here (see below).
+
+## Install
+
+```bash
+pip install "donkey-kit[adk]"
+```
+
+## Quickstart
+
+<Tabs items={['Python', 'TypeScript']}>
+<Tabs.Tab>
+
+```python
+from donkey_kit.integrations.adk import model
+
+llm = model("gpt-4o")
+```
+
+`llm` is a real, native **`google.adk.models.lite_llm.LiteLlm`** instance. The
+model string is auto-prefixed with `openai/` before it reaches LiteLLM
+(`openai/gpt-4o`), because that's the prefix LiteLLM's OpenAI-compatible route
+expects — you don't need to add it yourself.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+There's no first-party Agent Fabric TypeScript SDK yet (it's on the
+[roadmap](/concepts/verification)). The proxy is OpenAI-compatible, so point the
+official `openai` npm client at it — the same base URL and
+`client_id`/`client_secret` headers also drop into **ADK for TypeScript**
+(`@google/adk`).
+
+<OpenAiProxyTs />
+
+</Tabs.Tab>
+</Tabs>
+
+## Three ways to construct
+
+**1. Off a shared `Donkey` instance:**
+
+```python
+from donkey_kit import Donkey
+
+async with Donkey.from_env() as donkey:
+    llm = donkey.adk.model("gpt-4o")
+```
+
+**2. Module-level factory** (shortest):
+
+```python
+from donkey_kit.integrations.adk import model
+
+llm = model("gpt-4o")
+```
+
+**3. Governed kwargs, native constructor:**
+
+```python
+from donkey_kit import Donkey
+from google.adk.models.lite_llm import LiteLlm
+
+async with Donkey.from_env() as donkey:
+    llm = LiteLlm(model="openai/gpt-4o", **donkey.adk.connection_kwargs())
+```
+
+## The manual equivalent (eject at any time)
+
+```python
+from google.adk.models.lite_llm import LiteLlm
+
+llm = LiteLlm(
+    model="openai/gpt-4o",
+    api_base=...,       # from DONKEY_LLM_PROXY_URL, no /v1 suffix
+    api_key=...,
+    extra_headers=...,  # client_id / client_secret header pair
+)
+```
+
+Note the kwarg names: LiteLLM uses `api_base` and `extra_headers`, not
+`base_url` / `default_headers` — `connection_kwargs()` already translates for
+you.
+
+## Notes & limitations
+
+> **Correlation IDs are per-client, not per-run, for this adapter.** LiteLLM
+> owns its own HTTP transport, so the SDK's shared httpx client — and the
+> per-run correlation ID it stamps on every request — cannot be injected into
+> it. This is a documented, asserted conformance exemption, not an oversight:
+> ADK is the one adapter in the set where header injection is full but
+> transport injection is not possible.
+
+> `google-adk` requires `litellm>=1.84` as a floor (not a ceiling) — pin your
+> own upper bound if you need one.
+
+See the [error taxonomy](/errors) for how proxy rejections surface through
+LiteLLM's error path, and the [verification policy](/concepts/verification)
+page for the current status of every constructor signature this adapter
+depends on.

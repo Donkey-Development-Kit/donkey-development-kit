@@ -1,8 +1,8 @@
-"""LlamaIndex adapter (§3.3).
+"""LlamaIndex adapter (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
-GOTCHA (§3.3): ``OpenAILike`` defaults ``is_chat_model=False``, which silently
+GOTCHA (BG §1.8): ``OpenAILike`` defaults ``is_chat_model=False``, which silently
 routes to the completions endpoint and fails against a chat-only proxy. We
 always set it True. This is the single most common LlamaIndex-with-a-gateway
 bug.
@@ -41,7 +41,7 @@ class LlamaIndexAdapter(Adapter):
         }
 
     def llm(self, model: str, **kw: Any) -> OpenAILike:
-        from llama_index.llms.openai_like import OpenAILike  # verified: docs §8
+        from llama_index.llms.openai_like import OpenAILike  # verified: docs/verified-apis.md §8
 
         return OpenAILike(model=model, **self.connection_kwargs(), **kw)
 

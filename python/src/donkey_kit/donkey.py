@@ -1,4 +1,4 @@
-"""The ``Donkey`` public surface (§3.2).
+"""The ``Donkey`` public surface (`BG §1.1`).
 
     from donkey_kit import Donkey
     donkey = Donkey.from_env()
@@ -8,7 +8,7 @@
 
 Per-framework adapters are lazy attributes. Accessing one whose extra is not
 installed raises :class:`ImportError` with the exact install command — never a
-bare ``ModuleNotFoundError`` (§3.2).
+bare ``ModuleNotFoundError`` (`BG §1.1`).
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def _framework_installed(probe: str) -> bool:
 
 
 class _ToolsFacade:
-    """``donkey.tools`` — discovery + lock (§4.1, §4.2)."""
+    """``donkey.tools`` — discovery + lock (BG §2.7)."""
 
     def __init__(self, registry: ExchangeRegistry) -> None:
         self._registry = registry
@@ -86,22 +86,24 @@ class _ToolsFacade:
         """Discover a governed tool catalog and return a bindable ``ToolSet``.
 
         ``governed`` defaults to ``None`` (no filtering) in v1, with a startup
-        log line stating discovery is unfiltered (§6.1.2). Flipping the default
+        log line stating discovery is unfiltered (governed-only discovery). Flipping the default
         to ``True`` is a breaking change reserved for a later major version.
 
         Blocked until Exchange search + the governed-state join are verified
-        (§0.3 / §6.7).
+        (verification discipline / the Verification milestone).
         """
 
         raise _verify.blocked(
-            "Exchange search + governed-state join (§6.1, §6.7). ToolSet filtering "
-            "and binding scaffolding exist; wire discover() once the APIs are "
-            "confirmed and use registry.explain() for the empty-result reason."
+            "Exchange search + governed-state join (governed-only discovery, the Verification "
+            "milestone). ToolSet filtering and binding scaffolding exist; wire discover() once the "
+            "APIs are confirmed and use registry.explain() for the empty-result reason."
         )
 
     def lock(self) -> None:
-        """Write a ``donkey.lock`` of resolved versions + digests (§4.2)."""
-        raise _verify.blocked("resolution API needed for the lockfile (§4.2, §6.7).")
+        """Write a ``donkey.lock`` of resolved versions + digests (BG §2.7)."""
+        raise _verify.blocked(
+            "resolution API needed for the lockfile (BG §2.7, the Verification milestone)."
+        )
 
 
 class Donkey:
@@ -134,7 +136,7 @@ class Donkey:
         # delegates here — and it is idempotent across many Donkey() instances.
         configure_otlp_export(self._cfg)
         self._auth = auth if auth is not None else self._default_auth(self._cfg)
-        # One Budget per Donkey (never global, §1.3 / #185): both transports feed
+        # One Budget per Donkey (never global, BG §1.3 / #185): both transports feed
         # it in-band from every response's x-token-* headers.
         self._budget = Budget()
         self._http: DonkeyAsyncClient = build_http_client(
@@ -159,7 +161,7 @@ class Donkey:
         on_model_substitution: OnModelSubstitution | None = None,
     ) -> Donkey:
         """Build from the environment (`BG §1.1`), optionally setting the fixed
-        cost-attribution tags once for every call (§3, BG §1.7, #196)::
+        cost-attribution tags once for every call (BG §1.7, #196)::
 
             donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
 
@@ -170,7 +172,7 @@ class Donkey:
         :class:`~donkey_kit.core.cost.CostTags`. Per-call overrides layer on via
         ``donkey.run(...)``.
 
-        ``on_model_substitution`` opts into model determinism (§3, #309): pass
+        ``on_model_substitution`` opts into model determinism (BG §1.7, #309): pass
         ``"raise"`` to have a call raise
         :class:`~donkey_kit.core.errors.ModelSubstituted` when the gateway serves
         a different model than requested (a routing fallback). Defaults to the
@@ -198,7 +200,7 @@ class Donkey:
     @property
     def budget(self) -> Budget:
         """The token-budget window for this Donkey, updated in-band from every
-        response's ``x-token-*`` headers (§1.3, #185). Unobserved (all fields
+        response's ``x-token-*`` headers (BG §1.3, #185). Unobserved (all fields
         ``None``) until the first call returns; there is no budget-query endpoint,
         so it is only as fresh as ``budget.observed_at`` (upstream gap #2)."""
         return self._budget
@@ -207,10 +209,10 @@ class Donkey:
     def last_call(self) -> LastCall:
         """The gateway's own metadata about the most recent governed model call in
         this context — its ``request_id``, ``api_instance_id`` and
-        ``environment_id`` (§3, #362); what the gateway *did* with the request —
+        ``environment_id`` (BG §1.7, #362); what the gateway *did* with the request —
         ``served_provider`` / ``served_model`` / ``routing_type`` and the
         ``fallback`` flag, with ``substituted`` true when the served model differs
-        from ``requested_model`` (§3, #309); and the per-call usage token counts
+        from ``requested_model`` (BG §1.7, #309); and the per-call usage token counts
         (``input_tokens`` / ``output_tokens`` / ``total_tokens`` and the
         cost-relevant ``cached_tokens`` / ``cache_write_tokens`` /
         ``reasoning_tokens``, #307). The success-path counterpart to the ids
@@ -237,7 +239,7 @@ class Donkey:
           LlamaIndex / MS Agent Framework), so a response can never reach the
           record. :attr:`LastCall.surface` names which. This is derived from the
           adapters actually resolved, and the conformance suite asserts the
-          exemption rather than skipping it (§8.1).
+          exemption rather than skipping it (the conformance kit).
         """
         observed = current_last_call()
         if observed is not None:
@@ -267,7 +269,7 @@ class Donkey:
         OpenAI Agents SDK. It delegates to :meth:`LLMClient.client`, returning a
         real ``openai.AsyncOpenAI`` (or ``OpenAI`` with ``sync=True``), governed
         on identical terms. The Agents SDK adapter now lives at
-        ``donkey.openai_agents`` (§3.3).
+        ``donkey.openai_agents`` (BG §1.8).
         """
         if sync:
             return self._llm.client(sync=True, **kw)
@@ -290,7 +292,7 @@ class Donkey:
         env: str | None = None,
         enduser_id: str | None = None,
     ) -> RunScope:
-        """Group one logical agent run under a shared correlation id (§2.3, #195).
+        """Group one logical agent run under a shared correlation id (BG §1.7, #195).
 
         The headline ergonomic — bind a run id once, and every governed model
         call inside the block carries it, with no threading through framework
@@ -316,7 +318,7 @@ class Donkey:
         Works with or without OpenTelemetry installed — correlation is pure
         contextvar + headers; spans only decorate when OTel is present.
 
-        Cost-attribution overrides (§3, BG §1.7, #196) bind for the block on top
+        Cost-attribution overrides (BG §1.7, #196) bind for the block on top
         of the tags set once on the Donkey: ``donkey.run(team=..., project=...,
         env=..., enduser_id=...)`` wins per field for every call inside, and the
         rest fall back to the configured tags. Like the run id, the binding rides
@@ -326,7 +328,7 @@ class Donkey:
         return run_scope(id, override if not override.is_empty else None)
 
     def run_context(self, run_id: str | None = None) -> RunScope:
-        """Back-compat alias for :meth:`run` (§2.3). Prefer ``donkey.run(id=…)``."""
+        """Back-compat alias for :meth:`run` (BG §1.7). Prefer ``donkey.run(id=…)``."""
         return self.run(run_id)
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
@@ -344,7 +346,7 @@ class Donkey:
         The one-line on-ramp to governed execution: every governed model call
         made inside the decorated function carries a fresh run/correlation id (a
         "run of one"), the optional per-run cost tags, the OTel span and typed
-        refusals — exactly the scope :meth:`run` establishes (§2.3, #195), with
+        refusals — exactly the scope :meth:`run` establishes (BG §1.7, #195), with
         nothing to thread through framework state::
 
             @donkey.governed(team="support")
@@ -405,8 +407,8 @@ class Donkey:
             @donkey.tool
             async def lookup_crm(customer_id: str) -> dict: ...
 
-        The same marker is what the Phase 2 scanner (§2.5) and the A2A agent-card
-        generator (§2.9) both read, so the one annotation pays off three times
+        The same marker is what the Phase 2 scanner (BG §2.5) and the A2A agent-card
+        generator (BG §2.9) both read, so the one annotation pays off three times
         (#200).
 
         Raises :class:`ValueError` when the callable has no docstring — an
@@ -455,7 +457,7 @@ class Donkey:
     def _sync_http_client(self) -> DonkeyClient:
         if self._sync_http is None:
             # Same Budget object as the async client, so a blocking caller updates
-            # donkey.budget on identical terms (§1.3, #185).
+            # donkey.budget on identical terms (BG §1.3, #185).
             self._sync_http = build_sync_http_client(self._cfg, budget=self._budget)
         return self._sync_http
 
@@ -508,7 +510,7 @@ class Donkey:
     @staticmethod
     def _default_auth(cfg: DonkeyConfig) -> AuthProvider | None:
         """Build control-plane auth when credentials are present. The LLM proxy
-        credential is separate and handled by the OpenAI client (§2.2)."""
+        credential is separate and handled by the OpenAI client (`BG §1.1`)."""
         if cfg.client_id and cfg.client_secret:
             return AnypointConnectedApp(
                 client_id=cfg.client_id,

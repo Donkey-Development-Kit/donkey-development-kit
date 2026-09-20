@@ -1,16 +1,16 @@
 """donkey-kit — an SDK for consuming Agent Fabric
 capabilities from your own agent framework.
 
-See the README for the maintainer + support statement and the trademark note
-(§0.4). "Agent Fabric" is a MuleSoft product name; this package is descriptive.
+See the README for the maintainer + support statement and the trademark note.
+"Agent Fabric" is a MuleSoft product name; this package is descriptive.
 
-Public surface (§3.2):
+Public surface (BG §1.8):
 
     from donkey_kit import Donkey
     donkey = Donkey.from_env()
     donkey.langgraph.chat_model("gpt-4o")   # native ChatOpenAI
 
-Working-instruction reminder (§0.3, #2): many platform endpoints/headers/class
+Working-instruction reminder (verification discipline, #2): many platform endpoints/headers/class
 names are UNVERIFIED. Those code paths raise
 ``NotImplementedError("blocked on verification: …")`` rather than guessing. See
 docs/verified-apis.md.
@@ -57,7 +57,7 @@ from .registry import (
     Publication,
 )
 
-__version__ = "0.1.0.dev1"
+__version__ = "0.1.0.dev2"
 
 __all__ = [
     "STRICT",

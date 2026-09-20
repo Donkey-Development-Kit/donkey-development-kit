@@ -1,16 +1,16 @@
-"""Declarative spec models (§5.1).
+"""Declarative spec models (provisioning-as-code).
 
 ``Governance.export()`` and ``Publication.export()`` emit fragments of exactly
 this format — the features share ONE schema, deliberately. Do not let them
-diverge (§5.1).
+diverge (provisioning-as-code).
 
 Design boundaries baked in here:
   * ``inputSchema: "auto"`` — derive from the API's published spec in Exchange
-    (§5.1). The OAS/RAML→JSON-Schema transform runs offline in CI (planner).
-  * DataWeave is a HARD boundary (§5.1): a raw ``httpMapping.dataweave`` string
+    (provisioning-as-code). The OAS/RAML→JSON-Schema transform runs offline in CI (planner).
+  * DataWeave is a HARD boundary (provisioning-as-code): a raw ``httpMapping.dataweave`` string
     passes through untouched; we never generate or parse DataWeave.
   * No secrets in the spec — reference them (``${secret:...}``), resolved at
-    apply time (§5.1).
+    apply time (provisioning-as-code).
 """
 
 from __future__ import annotations
@@ -25,13 +25,13 @@ class ToolSpec(BaseModel):
     method: str
     resource: str
     description: str
-    #: "auto" derives JSON Schema from the OAS/RAML spec in Exchange (§5.1),
+    #: "auto" derives JSON Schema from the OAS/RAML spec in Exchange (provisioning-as-code),
     #: or an explicit JSON Schema object.
     inputSchema: Literal["auto"] | dict[str, Any] = "auto"
 
 
 class HttpMapping(BaseModel):
-    """DataWeave passthrough only — never generated or parsed (§5.1)."""
+    """DataWeave passthrough only — never generated or parsed (provisioning-as-code)."""
 
     dataweave: str | None = None
 

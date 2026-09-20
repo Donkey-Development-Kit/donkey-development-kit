@@ -8,7 +8,7 @@
 // `_meta.js` tree, content + description from each `.mdx` and its frontmatter.
 // This script owns NO copy of the content — it only transforms what already
 // ships on the site, so it can never invent an endpoint/header/class name the
-// pages don't already document (§0.3). CI regenerates and fails on any diff
+// pages don't already document (verification discipline). CI regenerates and fails on any diff
 // (see .github/workflows/ci.yml), so the committed artifacts cannot drift.
 //
 // Run: `npm run generate:llms` (also runs automatically via `prebuild`).
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WEBSITE = resolve(HERE, '..')
-const PAGES = join(WEBSITE, 'pages')
+const CONTENT = join(WEBSITE, 'content')
 const PUBLIC = join(WEBSITE, 'public')
 
 // The deployed GitHub Pages URL. The site is served under the project sub-path
@@ -204,7 +204,7 @@ function truncate(s, n) {
 
 async function main() {
   const pages = []
-  await collectPages(PAGES, '', 'Getting started', pages)
+  await collectPages(CONTENT, '', 'Getting started', pages)
 
   const pageSet = new Set(pages.map((p) => p.urlPath).filter(Boolean))
 

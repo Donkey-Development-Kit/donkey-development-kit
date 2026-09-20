@@ -65,14 +65,19 @@ body {
 
 /* ------------------------------------------------------------ typography */
 
-.nextra-content h1 {
+/* Nextra 4 dropped the `.nextra-content` wrapper class that Nextra 3 put around
+   page markup, so the [[...mdxPath]] route wraps the MDX body in a `.af-prose`
+   div of our own — a stable hook these prose refinements key off. Component
+   styles (`.af-hero h1.af-hero-title` etc.) still win by specificity, exactly
+   as they did under `.nextra-content`. */
+.af-prose h1 {
   font-size: 2.4rem;
   line-height: 1.15;
   letter-spacing: -0.028em;
   font-weight: 700;
 }
 
-.nextra-content h2 {
+.af-prose h2 {
   font-size: 1.55rem;
   line-height: 1.25;
   letter-spacing: -0.02em;
@@ -81,42 +86,42 @@ body {
   border-color: var(--af-border);
 }
 
-.nextra-content h3 {
+.af-prose h3 {
   font-size: 1.2rem;
   letter-spacing: -0.015em;
   margin-top: 2.25rem;
 }
 
-.nextra-content h4 {
+.af-prose h4 {
   font-size: 1.02rem;
   margin-top: 1.75rem;
 }
 
-.nextra-content p,
-.nextra-content li {
+.af-prose p,
+.af-prose li {
   color: var(--af-fg-muted);
   line-height: 1.72;
 }
 
-.nextra-content strong {
+.af-prose strong {
   color: var(--af-fg);
   font-weight: 650;
 }
 
-.nextra-content a:not(.nextra-card):not(.af-card):not(.af-button) {
+.af-prose a:not(.nextra-card):not(.af-card):not(.af-button) {
   color: var(--af-accent);
   text-decoration-color: var(--af-accent-border);
   text-underline-offset: 3px;
   font-weight: 500;
 }
 
-.nextra-content a:not(.nextra-card):not(.af-card):not(.af-button):hover {
+.af-prose a:not(.nextra-card):not(.af-card):not(.af-button):hover {
   text-decoration-color: var(--af-accent);
 }
 
 /* Blockquotes read as "notes" throughout this content set, so give them the
    same visual weight as a callout rather than the default thin grey rule. */
-.nextra-content blockquote {
+.af-prose blockquote {
   border-left: 3px solid var(--af-accent-border);
   background: var(--af-accent-soft);
   border-radius: 0 var(--af-radius-sm) var(--af-radius-sm) 0;
@@ -126,17 +131,17 @@ body {
   color: var(--af-fg-muted);
 }
 
-.nextra-content blockquote p {
+.af-prose blockquote p {
   margin: 0;
 }
 
-.nextra-content blockquote p + p {
+.af-prose blockquote p + p {
   margin-top: 0.65rem;
 }
 
 /* ----------------------------------------------------------------- code */
 
-.nextra-content :not(pre) > code {
+.af-prose :not(pre) > code {
   background: var(--af-surface-sunken);
   border: 1px solid var(--af-border);
   border-radius: 5px;
@@ -145,7 +150,7 @@ body {
   color: var(--af-fg);
 }
 
-.nextra-content pre {
+.af-prose pre {
   border: 1px solid var(--af-border);
   border-radius: var(--af-radius);
   background: var(--af-surface-raised) !important;
@@ -153,23 +158,23 @@ body {
   line-height: 1.65;
 }
 
-.dark .nextra-content pre {
+.dark .af-prose pre {
   background: #101118 !important;
 }
 
-.nextra-content .nextra-code > pre {
+.af-prose .nextra-code > pre {
   padding-block: 1rem;
 }
 
 /* Filename tab above a code block */
-.nextra-content div[data-filename] {
+.af-prose div[data-filename] {
   border-radius: var(--af-radius) var(--af-radius) 0 0;
   border-color: var(--af-border);
 }
 
 /* ---------------------------------------------------------------- tables */
 
-.nextra-content table {
+.af-prose table {
   display: table;
   width: 100%;
   border-collapse: separate;
@@ -181,7 +186,7 @@ body {
 }
 
 @media (max-width: 767px) {
-  .nextra-content table {
+  .af-prose table {
     display: block;
     width: 100%;
     max-width: 100%;
@@ -189,7 +194,7 @@ body {
   }
 }
 
-.nextra-content th {
+.af-prose th {
   background: var(--af-surface-sunken);
   color: var(--af-fg);
   font-weight: 600;
@@ -201,7 +206,7 @@ body {
   padding: 0.7rem 0.9rem;
 }
 
-.nextra-content td {
+.af-prose td {
   border: 0;
   border-bottom: 1px solid var(--af-border);
   padding: 0.7rem 0.9rem;
@@ -209,11 +214,11 @@ body {
   vertical-align: top;
 }
 
-.nextra-content tr:last-child td {
+.af-prose tr:last-child td {
   border-bottom: 0;
 }
 
-.nextra-content tbody tr:hover td {
+.af-prose tbody tr:hover td {
   background: var(--af-surface-raised);
 }
 
@@ -231,16 +236,15 @@ body {
 
 /* --------------------------------------------------------- chrome/layout */
 
-.nextra-content main {
-  padding-top: 1.5rem;
-}
-
 .nextra-toc {
   font-size: 0.875rem;
 }
 
-.nextra-sidebar-container .nextra-menu-desktop a,
-.nextra-sidebar-container .nextra-menu-desktop button {
+/* Nextra 4 renamed the sidebar wrapper (`.nextra-sidebar-container
+   .nextra-menu-desktop` → `.nextra-sidebar`) and the menu links are now plain
+   <a>/<button> under it. */
+.nextra-sidebar a,
+.nextra-sidebar button {
   color: var(--af-fg-muted);
   font-size: 1rem;
   font-weight: 500;
@@ -249,20 +253,21 @@ body {
   padding-block: 0.5rem;
 }
 
-.nextra-sidebar-container .nextra-menu-desktop a:hover,
-.nextra-sidebar-container .nextra-menu-desktop button:hover {
+.nextra-sidebar a:hover,
+.nextra-sidebar button:hover {
   color: var(--af-fg);
 }
 
-.nextra-sidebar-container .nextra-menu-desktop li.active > a {
+.nextra-sidebar li.active > a {
   background: var(--af-accent-soft);
   color: var(--af-accent);
   font-weight: 650;
 }
 
 /* Section separators in the sidebar carry the structure of this site, so make
-   them read as labels rather than as dimmed nav items. */
-.nextra-sidebar-container .nextra-menu-desktop > li:not(:has(a, button)) {
+   them read as labels rather than as dimmed nav items. A separator is a menu
+   <li> that holds neither a link nor a folder-toggle button. */
+.nextra-sidebar li:not(:has(> a)):not(:has(> button)) {
   color: var(--af-fg);
   font-size: 0.75rem;
   font-weight: 700;
