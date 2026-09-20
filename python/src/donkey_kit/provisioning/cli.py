@@ -11,6 +11,9 @@ Commands that need no platform API (spec validation) do real work now.
 
 from __future__ import annotations
 
+import importlib.util
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,13 +27,32 @@ except ImportError:  # pragma: no cover - install-time guidance
     )
     raise SystemExit(1) from None
 
-from ..core.errors import DonkeyError
+from ..core.config import _TOML_NAME, DonkeyConfig
+from ..core.errors import ConfigError, DonkeyError
 from .spec import DonkeySpec
 
 app = typer.Typer(
     add_completion=False,
     help="SDK for Agent Fabric — governed models, tools, provisioning-as-code.",
 )
+
+
+@app.callback()
+def _global(
+    ctx: typer.Context,
+    config: Path | None = typer.Option(
+        None, "--config", metavar="PATH", help=f"Path to {_TOML_NAME} (default: cwd)."
+    ),
+    env: str | None = typer.Option(
+        None, "--env", metavar="NAME", help="Anypoint environment override (e.g. Sandbox)."
+    ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON where the command supports it."
+    ),
+) -> None:
+    """Global flags shared by every command (§5.2). Precede the subcommand:
+    ``donkey --json init``, ``donkey --config ./cfg.toml doctor``."""
+    ctx.obj = {"config": config, "env": env, "json": as_json}
 
 
 def _load_spec(file: Path) -> DonkeySpec:
@@ -51,9 +73,15 @@ def _blocked(what: str) -> None:
     raise typer.Exit(3)
 
 
-@app.command()
+@app.command(hidden=True)
 def validate(file: Path = typer.Option(..., "-f", "--file", help="donkey.yaml")) -> None:
-    """Validate a donkey.yaml against the schema (needs no platform API)."""
+    """Validate a donkey.yaml against the schema (needs no platform API).
+
+    Hidden: it operates on the ``donkey.yaml`` provisioning spec, part of the
+    provisioning control-plane surface that is cut for Phase 1 (`BG §1.8`). The
+    command still works for anyone driving that YAML, but the four supported
+    ``donkey`` commands are ``init``/``doctor``/``mock``/``test``.
+    """
     spec = _load_spec(file)
     typer.secho(
         f"OK: {spec.metadata.name} — {len(spec.mcpBridges)} MCP bridge(s), "
@@ -62,7 +90,7 @@ def validate(file: Path = typer.Option(..., "-f", "--file", help="donkey.yaml"))
     )
 
 
-@app.command()
+@app.command(hidden=True)
 def plan(file: Path = typer.Option(..., "-f", "--file"),
          dry_run: bool = typer.Option(False, "--dry-run"),
          out: Path | None = typer.Option(None, "--out", help="write plan.json for CI")) -> None:
@@ -71,7 +99,7 @@ def plan(file: Path = typer.Option(..., "-f", "--file"),
     _blocked("MCP Bridge provisioning read API (§5.2, §5)")
 
 
-@app.command()
+@app.command(hidden=True)
 def apply(file: Path = typer.Option(..., "-f", "--file"),
           auto_approve: bool = typer.Option(False, "--auto-approve")) -> None:
     """Apply the plan (CI-only, platform-controlled creds, §5.4)."""
@@ -79,14 +107,14 @@ def apply(file: Path = typer.Option(..., "-f", "--file"),
     _blocked("MCP Bridge provisioning write API (§5.2, §5.4)")
 
 
-@app.command()
+@app.command(hidden=True)
 def drift(file: Path = typer.Option(..., "-f", "--file")) -> None:
     """Compare live state against the spec; exit non-zero on drift (§5.2)."""
     _load_spec(file)
     _blocked("MCP Bridge provisioning read API (§5.2)")
 
 
-@app.command()
+@app.command(hidden=True)
 def lint(file: Path = typer.Option(..., "-f", "--file")) -> None:
     """Governance lint (§5.3). Local spec-shape checks run now; ruleset
     resolution is gated (§0.3)."""
@@ -94,7 +122,7 @@ def lint(file: Path = typer.Option(..., "-f", "--file")) -> None:
     _blocked("governance rulesets resolution API (§5.3, §0.3)")
 
 
-@app.command()
+@app.command(hidden=True)
 def generate(file: Path = typer.Option(..., "-f", "--file"),
              target: str = typer.Option("terraform", "--target")) -> None:
     """Emit Terraform from the spec — the §5.5 pivot if provisioning is UI-only."""
@@ -102,25 +130,198 @@ def generate(file: Path = typer.Option(..., "-f", "--file"),
     _blocked("Terraform provider coverage enumeration (§5.5, §0.3)")
 
 
-@app.command()
+@app.command(hidden=True)
 def status() -> None:
     """Render published / reachable / governed per asset (§7.6)."""
     _blocked("Exchange + API Manager read APIs (§7.6)")
 
 
-@app.command()
-def init() -> None:
-    """Scan the project, propose publishable assets, write .donkey-kit.toml (§7.8)."""
-    _blocked("per-framework asset detection + descriptor derivation (§7.8, §7.3)")
+# Config fields written to .donkey-kit.toml, grouped with a header comment.
+# SECRETS ARE DELIBERATELY ABSENT — see _SECRET_FIELDS. This list is
+# non-secret connection config only.
+_INIT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "Anypoint control plane (registry + provisioning)",
+        ("client_id", "org_id", "environment", "region", "base_url"),
+    ),
+    (
+        "LLM proxy (data plane) — a SEPARATE credential from the control plane",
+        ("llm_proxy_url", "llm_proxy_client_id"),
+    ),
+    (
+        "Attribution",
+        ("application_name", "business_group"),
+    ),
+)
+
+# Written NEVER — as commented placeholders only. A committed config file is
+# the wrong home for a secret (§2.1); these belong in env vars or a gitignored
+# .donkey-kit.local.toml.
+_SECRET_FIELDS: tuple[tuple[str, str], ...] = (
+    ("client_secret", "ANYPOINT_CLIENT_SECRET"),
+    ("llm_proxy_client_secret", "DONKEY_LLM_PROXY_CLIENT_SECRET"),
+    ("llm_proxy_key", "DONKEY_LLM_PROXY_KEY"),
+)
+
+
+def _toml_str(value: str) -> str:
+    """Render a TOML basic string, escaping the two characters that matter."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _collect_missing(config: DonkeyConfig) -> list[str]:
+    """Every missing required field across BOTH capabilities, in one list —
+    reusing ``DonkeyConfig.validated`` as the single source of truth for what
+    is required (§2.1), rather than duplicating the field set here."""
+    missing: list[str] = []
+    for need in ("control_plane", "llm"):
+        try:
+            config.validated(need=need)
+        except ConfigError as exc:
+            for line in str(exc).splitlines():
+                stripped = line.strip()
+                if stripped.startswith("- "):
+                    missing.append(stripped[2:])
+    return missing
+
+
+def _render_toml(config: DonkeyConfig, missing: list[str]) -> str:
+    """Hand-render a commented ``.donkey-kit.toml`` from resolved, non-secret
+    values. No dependency on a TOML *writer*; the reader (`tomllib`) is enough."""
+    lines: list[str] = [
+        f"# {_TOML_NAME} — generated by `donkey init` from your current environment.",
+        "# Review before committing. Resolution order at runtime: kwargs → env →",
+        "# this file → defaults (§2.1).",
+        "#",
+        "# SECRETS ARE NEVER WRITTEN HERE. Provide them via environment variables",
+        "# (or a gitignored .donkey-kit.local.toml):",
+    ]
+    for field, envvar in _SECRET_FIELDS:
+        lines.append(f"#   - {field:<24} → env {envvar}")
+    if missing:
+        lines += [
+            "#",
+            "# Still missing (set these before the SDK can reach the platform):",
+        ]
+        lines += [f"#   - {item}" for item in missing]
+    lines += ["", "[donkey]"]
+    for header, group_fields in _INIT_GROUPS:
+        emitted = [
+            (name, getattr(config, name))
+            for name in group_fields
+            if getattr(config, name) is not None
+        ]
+        if not emitted:
+            continue
+        lines.append(f"# {header}")
+        for name, value in emitted:
+            lines.append(f"{name} = {_toml_str(str(value))}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 @app.command()
+def init(
+    ctx: typer.Context,
+    force: bool = typer.Option(
+        False, "--force", help="Regenerate even if the file already exists."
+    ),
+) -> None:
+    """Bootstrap a commented ``.donkey-kit.toml`` from the resolved config (§2.1).
+
+    Writes every non-secret value already visible via kwargs/env/toml, and names
+    EVERY missing required field at once — reusing the same
+    ``DonkeyConfig.validated`` report the SDK uses at runtime, so ``init`` never
+    disagrees with a live call about what is required. Secrets are never written
+    (they surface as commented ``env`` pointers). Idempotent: an existing file is
+    left untouched unless ``--force`` is passed. Honors the global ``--config``
+    (write target), ``--env`` (environment override), and ``--json`` flags.
+    """
+    opts = ctx.obj or {}
+    target: Path = opts.get("config") or (Path.cwd() / _TOML_NAME)
+    as_json: bool = bool(opts.get("json"))
+
+    if target.exists() and not force:
+        msg = f"{target} already exists; leaving it untouched. Re-run with --force to regenerate."
+        if as_json:
+            typer.echo(json.dumps({"path": str(target), "written": False, "missing": []}))
+        else:
+            typer.secho(msg, fg="yellow")
+        return
+
+    config = DonkeyConfig.from_env()
+    env_override = opts.get("env")
+    if env_override:
+        config = config.with_overrides(environment=env_override)
+
+    missing = _collect_missing(config)
+    content = _render_toml(config, missing)
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    except OSError as exc:
+        typer.secho(f"Could not write {target}: {exc}", fg="red", err=True)
+        raise typer.Exit(1) from exc
+
+    if as_json:
+        typer.echo(json.dumps({"path": str(target), "written": True, "missing": missing}))
+        return
+
+    typer.secho(f"Wrote {target}.", fg="green")
+    if missing:
+        typer.echo("\nStill missing (set before the SDK can reach the platform):")
+        for item in missing:
+            typer.echo(f"  - {item}")
+    else:
+        typer.echo("All required fields resolved.")
+
+
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def test(
+    ctx: typer.Context,
+    agent: str | None = typer.Option(
+        None,
+        "--agent",
+        metavar="MODULE:FACTORY",
+        help="Import path to your agent factory, e.g. my.pkg:make_agent.",
+    ),
+) -> None:
+    """Run the conformance suite against your agent (BG §1.5).
+
+    A thin front end to ``pytest --donkey-conformance`` — it does not
+    re-implement the runner. Your ``--agent MODULE:FACTORY`` and any trailing
+    pytest arguments pass straight through, and pytest's exit code becomes
+    ``donkey test``'s own, so it drops into CI unchanged. Needs the ``[test]``
+    extra (a missing pytest is an install prompt, exit 1, not a ``blocked on
+    verification`` message).
+    """
+    if importlib.util.find_spec("pytest") is None:
+        typer.secho(
+            'donkey test needs the [test] extra. Install it with:\n'
+            '    pip install "donkey-kit[test]"',
+            fg="yellow",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    argv = [sys.executable, "-m", "pytest", "--donkey-conformance"]
+    if agent:
+        argv += ["--agent", agent]
+    argv += list(ctx.args)
+
+    completed = subprocess.run(argv, check=False)
+    raise typer.Exit(completed.returncode)
+
+
+@app.command(hidden=True)
 def publish(if_changed: bool = typer.Option(True, "--if-changed/--always")) -> None:
     """Publish code-first assets to Exchange (CI-only, §7.5/§7.7)."""
     _blocked("Exchange publication mechanism + digest metadata (§7.5, §7.9)")
 
 
-@app.command()
+@app.command(hidden=True)
 def verify() -> None:
     """Check the live server against the Exchange descriptor (§7.4)."""
     _blocked("Exchange descriptor read + live introspection (§7.4, §7.9)")
@@ -185,6 +386,7 @@ def mock(
 
 @app.command()
 def doctor(
+    ctx: typer.Context,
     model: str = typer.Option(
         "gpt-4o", "--model", help="model id to test against the proxy allow-list"
     ),
@@ -208,6 +410,10 @@ def doctor(
     from ..core.errors import DonkeyError
     from . import doctor as _doctor
 
+    # The global --json (before the subcommand) and the local --json (after it)
+    # are equivalent — either turns on machine-readable output.
+    as_json = as_json or bool((ctx.obj or {}).get("json"))
+
     try:
         checks = _doctor.run_diagnostics(model)
     except ImportError as exc:  # openai (the [llm] extra) not installed
@@ -225,8 +431,6 @@ def doctor(
         raise typer.Exit(1) from exc
 
     if as_json:
-        import json
-
         typer.echo(
             json.dumps(
                 [
