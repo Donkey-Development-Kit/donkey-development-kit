@@ -47,6 +47,10 @@ on:
         type: boolean
         default: false
 
+# Least privilege: the matrix only reads the checkout, never writes back.
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: python
