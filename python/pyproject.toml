@@ -226,6 +226,27 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "integrations are mutually independent (no cross-framework leakage, §1.1)"
+type = "independence"
+# Each adapter depends on exactly ONE agent framework. No adapter may import
+# another, directly or indirectly — a convenient cross-import would drag a
+# second framework's optional dependency onto an install that only asked for
+# the first, quietly breaking the "extras are genuinely optional" guarantee
+# (working instruction #6). The shared `_base` sibling (DonkeyConfig +
+# transport wiring) is deliberately NOT listed: every adapter importing it
+# downward is allowed and expected, and `_base` imports no adapter.
+modules = [
+    "donkey_kit.integrations.langgraph",
+    "donkey_kit.integrations.adk",
+    "donkey_kit.integrations.strands",
+    "donkey_kit.integrations.agent_framework",
+    "donkey_kit.integrations.openai_agents",
+    "donkey_kit.integrations.anthropic",
+    "donkey_kit.integrations.crewai",
+    "donkey_kit.integrations.llamaindex",
+]
+
+[[tool.importlinter.contracts]]
 name = "simulator is a dev-only sibling (BG §1.4)"
 type = "forbidden"
 # The local gateway simulator pulls in starlette/uvicorn lazily. No production
