@@ -1,5 +1,5 @@
 ---
-description: In-process refusal injection plus a pytest plugin you run against your own agent.
+description: In-process refusal injection, a pytest plugin you run against your own agent, and an out-of-process gateway fixture.
 ---
 
 import { Callout } from 'nextra/components'
@@ -7,15 +7,18 @@ import { Callout } from 'nextra/components'
 # Testing & conformance
 
 <Callout type="info">
-  **Phase 1 — both ship.** In-process refusal injection (`donkey.simulate()`)
-  and the pytest conformance plugin
-  ([#191](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/191)) are
-  both shipped. The plugin runs your agent **in process** through its own
-  `Donkey` — there is no separate server mode. See [Roadmap](/roadmap) and
+  **Phase 1 — all three ship.** In-process refusal injection
+  (`donkey.simulate()`), the pytest conformance plugin
+  ([#191](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/191)),
+  and an out-of-process `gateway` fixture
+  ([#278](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/278))
+  are all shipped. The conformance plugin runs your agent **in process** through
+  its own `Donkey`; the `gateway` fixture serves the simulator on a **real port**
+  for a subject that does not import the SDK. See [Roadmap](/roadmap) and
   [Verification policy](/concepts/verification).
 </Callout>
 
-Two test-time tools, and the second one is the more important of the pair.
+Three test-time tools, and the second one is the most important of the set.
 
 ## `simulate()` — in-process, no server
 
@@ -77,6 +80,45 @@ It asks questions you probably cannot currently answer about your own code:
 
 The output is a table of scenario → pass / fail / **exempt**.
 
+## The `gateway` fixture — an out-of-process server tests assert against
+
+`simulate()` and the conformance plugin both run your subject **in process**.
+Some subjects cannot be: a containerised agent, a Node service, an A2A client, a
+manual `curl` — none of which import `donkey_kit`. Those need a real listener on a
+real port, and they need the other half of the question `simulate()` cannot
+answer: *what did the gateway actually receive?* "Did my agent stop after the
+refusal, or retry four more times?" is answerable only from the gateway's side.
+
+The `gateway` fixture (shipped in `donkey-kit[test]`, beside `donkey`) boots the
+[local simulator](/simulator) on an **ephemeral port**, hands your test its
+`.url`, and records every request in a spy you can assert on:
+
+```python
+async def test_agent_stops_after_a_refusal(gateway):
+    gateway.set_scenarios("pii_block:every=1")
+    app = deploy(env={"DONKEY_LLM_PROXY_URL": gateway.url})
+    await app.run(ticket_with_card_number)
+    # A policy refusal is terminal — the agent must not retry it.
+    assert gateway.requests_received == 1
+```
+
+- `gateway.url` is a real `http://127.0.0.1:<port>` any process can point
+  `DONKEY_LLM_PROXY_URL` at — it does not import the SDK.
+- The port is bound to `0`, so parallel `pytest -n` runs never collide.
+- `gateway.requests_received` counts requests; `gateway.requests` exposes each
+  one's method, path and headers, with `client_secret` **redacted**.
+- `gateway.set_scenarios(...)` arms the same
+  [scenario scripting](/simulator#scenario-scripting) (`pii_block`, `injection`,
+  `budget`) **per test**, not just per process.
+- Every response carries `x-donkey-simulator: true`, so a fixture reply is never
+  mistaken for a real gateway.
+- The server is torn down when the test exits, including on failure.
+
+It serves the **same captured rejection fixtures** as `simulate()` and the
+conformance plugin, so the three cannot drift apart. Because it starts a real
+server, it needs the `[local]` extra (`starlette` + `uvicorn`); taking the
+fixture without it raises an `ImportError` naming the exact `pip install`.
+
 ## Why this is the moment the SDK earns trust
 
 A team installs the SDK and on day one gets a failing test that says *"your
@@ -97,14 +139,16 @@ them to take a claim on faith.
 
 ## How this differs from the simulator
 
-Both exist, they share fixtures, and they are not the same tool:
+They all exist, they share fixtures, and they are not the same tool:
 
-| | [Local simulator](/simulator) | `simulate()` |
-|---|---|---|
-| Shape | A **server** on a port | **In-process** context manager |
-| Use it for | Manual dev, demos, integration tests, any client | Fast unit tests |
-| Needs a network | Yes (localhost) | No |
-| Works with a stock OpenAI client | Yes | No — it hooks the `Donkey` transport |
+| | [`donkey mock`](/simulator) | `gateway` fixture | `simulate()` |
+|---|---|---|---|
+| Shape | A **server** you run | A **server** a test starts | **In-process** context manager |
+| Port | You pick it (`--port`) | Ephemeral (`0`), on `.url` | None |
+| Use it for | Manual dev, demos, any client | Testing an out-of-process subject | Fast unit tests |
+| Needs a network | Yes (localhost) | Yes (localhost) | No |
+| Works with a stock OpenAI client | Yes | Yes | No — it hooks the `Donkey` transport |
+| Asserts on what the gateway received | No | Yes (`requests_received`) | No |
 
 They read the **same rejection fixtures**, so they cannot drift apart.
 
@@ -122,9 +166,14 @@ They read the **same rejection fixtures**, so they cannot drift apart.
   your factory (or `--donkey-known-limitations=module:NAME`), validated at
   collection time so a bad key or empty reason fails the run loudly; a silent
   skip is never possible. ✅
+- The `gateway` fixture binds an ephemeral port, exposes `.url` to a process that
+  does not import `donkey_kit`, records requests with `client_secret` redacted,
+  takes scenarios per test, and tears down on exit. ✅
 
 ---
 
-**Status: Phase 1 — `simulate()` and the conformance plugin
-([#191](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/191)) are
-both shipped.**
+**Status: Phase 1 — `simulate()`, the conformance plugin
+([#191](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/191)),
+and the `gateway` fixture
+([#278](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/278))
+are all shipped.**

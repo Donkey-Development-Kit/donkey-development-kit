@@ -242,3 +242,33 @@ def donkey() -> Any:
         yield fab
     finally:
         fab.close()
+
+
+@pytest.fixture
+def gateway() -> Any:
+    """A running local gateway simulator on an ephemeral port, for tests whose
+    subject does **not** import ``donkey_kit`` — a containerised agent, a Node
+    service, an A2A client, a manual ``curl`` (#278)::
+
+        async def test_agent_stops_after_refusal(gateway):
+            gateway.set_scenarios("pii_block:every=1")
+            app = deploy(env={"DONKEY_LLM_PROXY_URL": gateway.url})
+            await app.run(ticket)
+            assert gateway.requests_received == 1  # stopped, did not retry
+
+    It serves the same captured rejection fixtures ``simulate()`` and ``donkey
+    mock`` replay, on a real port bound to ``0`` (so parallel ``pytest -n`` runs
+    never collide), and records every request in a spy the test can assert on
+    (:attr:`~.gateway.Gateway.requests_received` plus per-request method, path and
+    headers with ``client_secret`` redacted). Torn down when the test exits,
+    including on failure.
+
+    Needs the ``[local]`` extra (``starlette`` + ``uvicorn``); taking the fixture
+    without it raises an :class:`ImportError` naming the exact ``pip install``."""
+    from .gateway import start_gateway
+
+    gw = start_gateway()
+    try:
+        yield gw
+    finally:
+        gw.close()
