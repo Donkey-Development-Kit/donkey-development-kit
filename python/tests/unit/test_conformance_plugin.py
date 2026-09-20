@@ -128,6 +128,15 @@ def test_donkey_fixture_is_available(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=1)
 
 
+def test_gateway_fixture_is_registered(pytester: pytest.Pytester) -> None:
+    # The out-of-process `gateway` fixture (#278) is offered on every run, beside
+    # `donkey`. Asserted via --fixtures so it proves registration without booting
+    # a server (which would need the [local] extra); its docstring names its shape.
+    result = pytester.runpytest_subprocess("--fixtures", "-v")
+    result.stdout.fnmatch_lines(["*gateway*"])
+    result.stdout.fnmatch_lines(["*ephemeral port*"])
+
+
 def test_conformance_without_agent_is_a_usage_error(pytester: pytest.Pytester) -> None:
     # --donkey-conformance with no --agent is a misuse: a clean UsageError
     # (exit 4), not a traceback and not a silently-empty run.

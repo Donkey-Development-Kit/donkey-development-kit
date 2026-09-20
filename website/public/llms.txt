@@ -30,7 +30,7 @@
 
 - [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md): Remaining token budget as a first-class object, with pacing that slows down before it hits the wall.
 - [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md): A local server that replays real gateway rejections, so you can develop against a governed gateway without having one.
-- [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md): In-process refusal injection plus a pytest plugin you run against your own agent.
+- [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md): In-process refusal injection, a pytest plugin you run against your own agent, and an out-of-process gateway fixture.
 - [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md): OpenTelemetry GenAI spans, per-run correlation IDs, and cost-attribution tags — in the dashboard you already run.
 - [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md): Decorators and a four-command CLI so the six pieces are reachable in one line.
 
