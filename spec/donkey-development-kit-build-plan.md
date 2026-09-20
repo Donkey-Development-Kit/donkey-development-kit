@@ -93,8 +93,9 @@ needs it starts will block that phase. Started early, it resolves in time.
 ## Standing invariants
 
 These survive the strategy change unaltered and several are enforced in
-CI. They are stated here because the document that used to own them is now
-archived; the `§` anchors resolve into that archive.
+CI. Each keeps its bare `§` label as a stable historical name, and the
+headings below are now their canonical home — the `§` anchors resolve here,
+not into any archive (the v1 plan that used to own them is deleted, #266).
 
 ### Verification discipline (`§0.3`) — the most important rule
 
