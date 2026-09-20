@@ -4,7 +4,7 @@ LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM prox
 with the one flag that a chat-only gateway absolutely requires forced on for
 you.
 
-> **Supported at `connection_kwargs()`.** Full header injection; watch the
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** Full header injection; watch the
 > `is_chat_model` gotcha below if you ever build the client by hand.
 
 ## Install

@@ -66,6 +66,37 @@ DonkeyError                     # base of the whole tree
 something the gateway told the SDK; `GatewayUnavailable` is the gateway not being
 there to tell it anything.
 
+## Cookbook: every exception — discriminator, retryable, next step
+
+One row per exception you can catch, with the three facts you need to write a
+handler: **what tells it apart** (the discriminator), **whether retrying it can
+ever succeed**, and **the next step** its `.remediation` names. "Retryable" here
+means *by you* — the transport already retries the only class that is safe to
+(`UpstreamModelError`), and treats every governance refusal as terminal so it can
+never burn an exhausted budget or replay a blocked prompt.
+
+| Exception | Discriminator | Retryable? | Next step (`.remediation`) |
+|---|---|---|---|
+| `AuthError` | `401`, or `403` + `www-authenticate` | **No** — terminal. The async client refreshes its token and retries **once** on a `401`, then surfaces it. | Check the consumer `client_id` / `client_secret` pair and that the consumer is authorized in API Manager. |
+| `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
+| `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
+| `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
+| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) — *body shape pending [#253]* | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
+| `PolicyViolation` (generic) | a `4xx` matching **no** documented rejection shape | **No** — terminal; the shape is simply not yet typed. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed ([#184]/[#253]). |
+| `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
+| `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
+| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here (failover is separate); you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](/cli). |
+
+Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
+they sit outside the retry question: `BudgetReserveReached` is raised *before* a
+call by [`donkey.budget.pace()`](/budget) and is meant to be recovered from
+(`await donkey.budget.wait_for_reset()`, then continue), and `ModelSubstituted`
+reports that a call *succeeded* against a different model than requested (opt-in
+via `on_model_substitution="raise"`). `ConfigError` is raised locally, pre-flight,
+and reports every missing field at once — fix the config and re-run.
+
+[#184]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/184
+
 ## When the gateway can't be reached at all
 
 Every rejection above describes something the gateway *told* the SDK.

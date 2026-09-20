@@ -1,0 +1,114 @@
+# Nightly batch
+
+50,000 product records, enriched overnight against a governed model, budget
+window resetting every hour, no human awake. Without a budget object the script
+runs flat out, takes a `429` partway through, crashes, and someone re-runs it
+from record zero in the morning — spending the budget twice to do the same work.
+
+The fix is to make the remaining budget a [first-class object](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and pace
+against it: slow down *before* the wall, wait for the window to reset, and carry
+on. This page runs that loop end to end against the [local
+simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) in about ninety seconds, instead of "we'll find out
+tonight."
+
+## What it demonstrates
+
+- **`pace()` raises before the request that would cross your reserve**, not
+  after a `429` comes back — the distinction that is the whole feature.
+- **The window actually resets and the job resumes**, driven by the simulator's
+  `budget` [scenario](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting), which runs a *real*
+  wall-clock-windowed token counter and serves the captured `token-rate-limit`
+  **429** on exhaustion.
+- **The batch finishes unattended** — nobody re-runs anything.
+
+## Run it
+
+### Install the extras
+
+```bash
+pip install "donkey-kit[llm,local]"
+```
+
+### Boot the simulator with a one-minute budget window
+
+In one terminal, shrink the hour-long window to a minute so the whole
+pace-exhaust-reset cycle plays out in seconds:
+
+```bash
+donkey mock --port 8080 --scenario budget:limit=20000,window=60s
+```
+
+The happy-path `200` carries the live `x-llm-proxy-ratelimit` prose window
+(decreasing as you spend); once the window's 20,000 tokens are gone, calls get
+the `token-rate-limit` **429** with `x-token-remaining` / `x-token-reset`
+recomputed from the real milliseconds left, until the window rolls over.
+
+### Point the SDK at it and run the batch
+
+In a second terminal:
+
+```bash
+export DONKEY_LLM_PROXY_URL=http://localhost:8080
+export DONKEY_LLM_PROXY_CLIENT_ID=local        # simulator ignores auth
+export DONKEY_LLM_PROXY_CLIENT_SECRET=local
+python enrich.py
+```
+
+## The batch loop
+
+The pacing and resume logic is a handful of lines. `pace()` guards each batch;
+on `BudgetReserveReached` you wait for the window and continue from where you
+left off:
+
+```python
+import asyncio
+from donkey_kit import Donkey, BudgetReserveReached
+
+async def enrich_all(records, enrich):
+    async with Donkey.from_env() as donkey:
+        i = 0
+        while i < len(records):
+            batch = records[i : i + 200]
+            try:
+                async with donkey.budget.pace(reserve=0.05):
+                    await enrich(donkey, batch)
+            except BudgetReserveReached:
+                # We're within 5% of the window's limit — don't take the 429.
+                await donkey.budget.wait_for_reset()   # sleeps until reset_at
+                continue                                # retry the same batch
+            checkpoint(batch)                           # only advance on success
+            i += 200
+```
+
+  `pace(reserve=0.05)` raises `BudgetReserveReached` **before** issuing the
+  request that would cross the last 5% of the window — so you never spend the
+  request that earns the `429`. `wait_for_reset()` sleeps until
+  `donkey.budget.reset_at`, computed from the gateway's `x-token-reset` header
+  (milliseconds, converted for you). See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+
+## The honest limitation
+
+  **Budget is only visible in-band.** The gateway reports it on response
+  headers; there is **no endpoint that answers "what is my remaining budget?"**.
+  So `donkey.budget.remaining` is only as fresh as your last call, and a
+  brand-new process knows nothing until its first request completes — which is
+  why `donkey.budget.observed_at` is part of the public surface. A budget-query
+  endpoint is filed as an [upstream gap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) against the gateway.
+
+## Verification status
+
+The budget object, `pace()`, and `wait_for_reset()` are **shipped** (Phase 1).
+The windowed-counter behaviour you're pacing against here is the
+[simulator's](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — a faithful replay of the observed live contract
+(prose window on the `200`, numeric `x-token-*` trio on the `429`), never a
+header shape the gateway does not emit ([Verification
+policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The end-to-end assertion against the simulator
+is exactly what this scenario runs.
+
+## Where to go next
+
+- [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) — the full `Budget` object and its two helpers.
+- [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — the `budget` scenario and how the windowed
+  counter is computed.
+- [Internal copilot](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md) — a content-safety guardrail
+  and per-run correlation for an internal assistant.

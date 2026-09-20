@@ -4,7 +4,7 @@ Strands Agents gets a governed `OpenAIModel`, with proxy connection details
 forwarded through Strands' `client_args`, which Strands passes straight
 through to the underlying OpenAI client.
 
-> **Supported at `connection_kwargs()`.** `client_args` gives full header AND
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** `client_args` gives full header AND
 > transport injection, on par with the LangGraph adapter.
 
 ## Install

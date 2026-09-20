@@ -4,7 +4,7 @@ The Anthropic SDK gets a governed `AsyncAnthropic` client pointed at the
 Agent Fabric LLM proxy, with the SDK's shared transport and verified headers
 injected directly into the client constructor.
 
-> **Supported at `connection_kwargs()`**, with one important divergence from
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one important divergence from
 > every other adapter in this roster: this factory returns a bare **client**,
 > not a model-bound object — see below before you reach for it.
 
