@@ -65,9 +65,13 @@ do not deepen it (see "Still blocked", below).
 Each `integrations/*` adapter may depend on exactly one framework, and nothing
 in `integrations/` may be imported by `core`, `llm`, `registry`, or `tools`.
 This is enforced in CI by `import-linter` (`lint-imports`); a violating import
-fails the build. The `base-only` CI job additionally installs *only* the base
-package and imports `donkey_kit` to catch an accidental top-level framework
-import leaking into a lower layer.
+fails the build. A companion `independence` contract additionally forbids one
+adapter from importing another (directly or indirectly), so a convenient
+cross-import can never drag a second framework's optional dependency onto an
+install that asked only for the first — the shared `_base` sibling is exempt,
+since every adapter importing it downward is expected. The `base-only` CI job
+additionally installs *only* the base package and imports `donkey_kit` to catch
+an accidental top-level framework import leaking into a lower layer.
 
 Because of that rule, adapters import their framework **lazily, inside methods** —
 never at module top level — so importing the base package never drags in a
