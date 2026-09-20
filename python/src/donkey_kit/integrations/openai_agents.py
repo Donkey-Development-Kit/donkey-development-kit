@@ -45,16 +45,22 @@ class OpenAIAgentsAdapter(Adapter):
             max_retries=0,  # we retry in transport (BG §1.1)
         )
 
+    def connection_kwargs(self) -> dict[str, Any]:
+        """Governed kwargs for an ``OpenAIChatCompletionsModel(model=…, **kwargs)``
+        you build yourself. Unlike the OpenAI-compatible adapters this returns a
+        single ``openai_client`` key holding a pre-built native ``AsyncOpenAI``
+        bound to the proxy — the Agents SDK takes a ready-made client, not loose
+        connection kwargs, so header AND transport injection travel as one object
+        (BG §1.8). Same client the factory uses — one source of truth for the
+        proxy connection."""
+        return {"openai_client": self._proxy_openai_client()}
+
     def model(self, model: str, **kw: Any) -> OpenAIChatCompletionsModel:
         """Return a native ``OpenAIChatCompletionsModel`` pointed at the proxy,
         ready to pass into ``agents.Agent(model=...)`` (BG §1.8)."""
         from agents import OpenAIChatCompletionsModel  # verified: docs/verified-apis.md §8
 
-        return OpenAIChatCompletionsModel(
-            model=model,
-            openai_client=self._proxy_openai_client(),
-            **kw,
-        )
+        return OpenAIChatCompletionsModel(model=model, **self.connection_kwargs(), **kw)
 
 
 def model(model: str, **kw: Any) -> OpenAIChatCompletionsModel:
