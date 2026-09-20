@@ -1,8 +1,9 @@
 import nextra from 'nextra'
 
+// Nextra 4 is App-Router only: `theme` / `themeConfig` are gone — the docs theme
+// is composed from <Layout>/<Navbar>/<Footer> in app/layout.tsx instead. Search
+// moved from FlexSearch to Pagefind, indexed by the `postbuild` step against out/.
 const withNextra = nextra({
-  theme: 'nextra-theme-docs',
-  themeConfig: './theme.config.tsx',
   defaultShowCopyCode: true,
 })
 
