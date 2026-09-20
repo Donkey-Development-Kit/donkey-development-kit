@@ -1,4 +1,4 @@
-"""Anthropic SDK adapter (``donkey.anthropic``) (§3.3).
+"""Anthropic SDK adapter (``donkey.anthropic``) (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -6,14 +6,14 @@ Returns a native ``anthropic.AsyncAnthropic`` client bound to the proxy. Because
 we construct the client ourselves and hand it our shared http client, header AND
 transport injection are both available (full injection).
 
-Divergence, by design (§11.10 — the framework wins): Anthropic's native surface
+Divergence, by design (BG §1.8 — the framework wins): Anthropic's native surface
 is a *client*, and the model id is a per-call argument, not a constructor one.
 So this adapter exposes ``client()`` rather than the ``model(...)`` factory the
 OpenAI-compatible adapters use.
 
 UNVERIFIED DEPENDENCY (docs/verified-apis.md §8): the Omni Gateway LLM proxy is
 OpenAI-compatible; whether it also exposes an **Anthropic-native Messages API
-route** is an open M0 verification item (§0.3). If it does not, this adapter's
+route** is an open M0 verification item (verification discipline). If it does not, this adapter's
 requests will not reach a working upstream — override ``base_url`` via ``**kw``
 to point at a real Anthropic-native route once confirmed. The first ``client()``
 call emits a one-time :class:`~donkey_kit.core._verify.UnverifiedValueWarning`.
@@ -60,14 +60,14 @@ class AnthropicAdapter(Adapter):
             "api_key": conn["api_key"],
             "default_headers": conn["default_headers"],
             "http_client": self._http_client(),
-            "max_retries": 0,  # we retry in transport (§2.3)
+            "max_retries": 0,  # we retry in transport (BG §1.1)
         }
 
     def client(self, **kw: Any) -> AsyncAnthropic:
         """Return a native ``anthropic.AsyncAnthropic`` pointed at the proxy. Pass
         the model id per call (``messages.create(model=..., ...)``), per the
-        Anthropic SDK's own surface (§3.1)."""
-        from anthropic import AsyncAnthropic  # verified: docs §8
+        Anthropic SDK's own surface (BG §1.8)."""
+        from anthropic import AsyncAnthropic  # verified: docs/verified-apis.md §8
 
         return AsyncAnthropic(**self.connection_kwargs(), **kw)
 

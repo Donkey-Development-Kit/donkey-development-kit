@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live-verify the framework constructor signatures (docs/verified-apis.md §8).
 
-This is the executable form of the §0.3 verification step for Pillar 1's adapters.
+This is the executable form of the verification discipline step for Pillar 1's adapters.
 It answers one question per framework: **does the exact class we name actually
 exist, and does it accept the exact kwargs we pass?** — without inventing
 anything. Nothing here is asserted as fact until this script confirms it against
@@ -14,7 +14,7 @@ Two independent checks per framework:
      class path is wrong -> ImportError/AttributeError. If a kwarg name is wrong
      -> TypeError. Construction succeeding *is* the signature verification. The
      script then confirms the object's real ``module.ClassName`` matches the
-     value recorded in §8, so a silently-renamed class is caught too.
+     value recorded in docs/verified-apis.md §8, so a silently-renamed class is caught too.
 
   B. LIVE ROUND-TRIP (``--live``, needs the 3 DONKEY_LLM_PROXY_* env vars):
      make one real completion through the framework's *own* native call and
@@ -30,7 +30,8 @@ Usage:
     python scripts/verify_frameworks.py                # signature check, all installed
     python scripts/verify_frameworks.py --live         # + one real proxy round-trip
     python scripts/verify_frameworks.py --only langgraph strands
-    python scripts/verify_frameworks.py --emit-verified # print §8 markdown rows to paste
+    python scripts/verify_frameworks.py --emit-verified
+        # print docs/verified-apis.md §8 markdown rows to paste
     python scripts/verify_frameworks.py --json
 
 Exit code is non-zero if any *installed* framework fails its signature check, so
@@ -47,7 +48,7 @@ import sys
 import traceback
 from dataclasses import asdict, dataclass, field
 
-# --- ground truth: the exact §8 rows this script confirms --------------------
+# --- ground truth: the exact docs/verified-apis.md §8 rows this script confirms ---
 # (framework key, factory import path, factory fn, expected native module.Class)
 # This stays the FULL eight-framework roster so the offline signature check can be
 # run on demand for any of them. Only LangGraph is conformance-tested and carried
@@ -98,7 +99,7 @@ class Result:
         if not self.installed:
             return "NOT INSTALLED"
         if self.blocked:
-            return "BLOCKED (§0.3)"
+            return "BLOCKED (verification discipline)"
         if self.signature_ok and self.class_matches:
             return "VERIFIED" if self.live in ("ok", "not run") else "SIGNATURE OK / LIVE FAIL"
         if self.signature_ok and self.class_matches is False:
@@ -125,7 +126,7 @@ def _actual_class(obj: object) -> str:
 def _import_expected(path: str) -> type | None:
     """Import the class named at ``path`` (e.g. ``langchain_openai.ChatOpenAI``)
     from its *public* recorded location. Returns None if the path does not
-    resolve — which is itself a signature failure (the §8 name is wrong)."""
+    resolve — which is itself a signature failure (the docs/verified-apis.md §8 name is wrong)."""
     import importlib
 
     module_path, _, attr = path.rpartition(".")
@@ -150,9 +151,9 @@ def check_signature(res: Result, import_path: str, factory: str) -> object | Non
     fn = getattr(mod, factory)
     try:
         # Anthropic's native surface is a client; the model id is a per-call
-        # argument, so its factory takes no positional model (§3.3 divergence).
+        # argument, so its factory takes no positional model (BG §1.8 divergence).
         obj: object = fn() if res.framework == "anthropic" else fn(MODEL)
-    except NotImplementedError as exc:  # blocked on verification (§0.3)
+    except NotImplementedError as exc:  # blocked on verification
         res.installed = True
         res.blocked = True
         res.detail = str(exc).splitlines()[0]
@@ -175,20 +176,24 @@ def check_signature(res: Result, import_path: str, factory: str) -> object | Non
     res.installed = True
     res.signature_ok = True
     res.actual_class = _actual_class(obj)
-    # Verify the §8 name by importing the class from its RECORDED public path and
-    # checking the constructed object is an instance of it. This is robust to
+    # Verify the docs/verified-apis.md §8 name by importing the class from its RECORDED public
+    # path and checking the constructed object is an instance of it. This is robust to
     # re-exports (``langchain_openai.ChatOpenAI`` is defined in an internal
     # submodule but re-exported at the package top level, which is the path users
-    # import and §8 records).
+    # import and docs/verified-apis.md §8 records).
     expected_cls = _import_expected(res.expected_class)
     if expected_cls is None:
         res.class_matches = False
-        res.notes.append(f"§8 path {res.expected_class!r} does not resolve to a class — fix §8")
+        res.notes.append(
+            f"docs/verified-apis.md §8 path {res.expected_class!r} does not resolve to a class "
+            "— fix docs/verified-apis.md §8"
+        )
     else:
         res.class_matches = isinstance(obj, expected_cls)
         if not res.class_matches:
             res.notes.append(
-                f"object is {res.actual_class!r}, not a {res.expected_class!r} — update §8"
+                f"object is {res.actual_class!r}, not a {res.expected_class!r} "
+                "— update docs/verified-apis.md §8"
             )
     return obj
 
@@ -197,8 +202,8 @@ async def check_live(res: Result, obj: object) -> None:
     """Check B — one real completion through the framework's native call.
 
     Only LangGraph's runtime call is verified here. For the rest, the framework's
-    agent-loop API is itself unverified (§0.3), so we do not guess a method — the
-    proxy path they share is already live-verified via the raw client (docs §2).
+    agent-loop API is itself unverified (verification discipline), so we do not guess a method — the
+    proxy path they share is already live-verified via the raw client (docs/verified-apis.md §2).
     """
     if res.framework == "langgraph":
         try:
@@ -210,8 +215,8 @@ async def check_live(res: Result, obj: object) -> None:
             res.live = f"fail: {type(exc).__name__}: {exc}"
         return
     res.live = (
-        "skipped: framework runtime call API not verified (§8/§9); "
-        "shared proxy path verified via raw client (§2)"
+        "skipped: framework runtime call API not verified (docs/verified-apis.md §8/§9); "
+        "shared proxy path verified via raw client (docs/verified-apis.md §2)"
     )
 
 
@@ -238,7 +243,7 @@ def print_table(results: list[Result]) -> None:
     w = max((len(r.framework) for r in results), default=9)
     header = (
         f"\n{'framework':<{w}}  {'installed':<9}  {'signature':<9}  "
-        f"{'class §8':<8}  {'live':<6}  verdict"
+        f"{'expected':<8}  {'live':<6}  verdict"
     )
     print(header)
     print("-" * (w + 55))
@@ -257,8 +262,8 @@ def print_table(results: list[Result]) -> None:
 
 
 def emit_verified_rows(results: list[Result]) -> None:
-    """Print §8 markdown rows for frameworks whose signature is now confirmed, so
-    a maintainer can paste them into docs/verified-apis.md after sign-off."""
+    """Print docs/verified-apis.md §8 markdown rows for frameworks whose signature is now confirmed,
+    so a maintainer can paste them into docs/verified-apis.md after sign-off."""
     from datetime import date  # local import; only used for this opt-in report
 
     today = date.today().isoformat()
@@ -279,7 +284,7 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a table")
     ap.add_argument(
         "--emit-verified", action="store_true",
-        help="print §8 markdown rows for confirmed frameworks",
+        help="print docs/verified-apis.md §8 markdown rows for confirmed frameworks",
     )
     args = ap.parse_args()
 

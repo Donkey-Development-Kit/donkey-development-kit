@@ -8,7 +8,7 @@ our real ``pytest11`` plugin exactly as a customer's ``pytest --donkey-conforman
   options + an unused fixture);
 - a clean ``UsageError`` (exit code 4, no traceback) when ``--agent`` is missing
   or a ``KNOWN_LIMITATIONS`` entry is invalid — validated at collection, never a
-  silent skip (§8.1);
+  silent skip (the conformance kit);
 - a green run + printed scenario table for a well-behaved agent, and a red run
   naming the tripped scenario for a broken one.
 
@@ -138,7 +138,7 @@ def test_conformance_without_agent_is_a_usage_error(pytester: pytest.Pytester) -
 
 def test_invalid_known_limitations_is_a_usage_error(pytester: pytest.Pytester) -> None:
     # A KNOWN_LIMITATIONS key that names no scenario is rejected at collection
-    # time (§8.1: asserted, never silent) — a UsageError before any scenario runs.
+    # time (the conformance kit: asserted, never silent) — a UsageError before any scenario runs.
     pytester.makepyfile(brokenagent=_BAD_KNOWN_LIMITATIONS_AGENT)
     result = pytester.runpytest_subprocess(
         "--donkey-conformance", "--agent=brokenagent:build"

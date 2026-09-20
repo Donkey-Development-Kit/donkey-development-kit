@@ -39,7 +39,7 @@ def test_mock_missing_local_extra_prints_pip_install_and_exits_1(
     assert result.exit_code == 1  # install prompt, NOT the exit-3 verification block
     out = _combined(result)
     assert 'pip install "donkey-kit[local]"' in out
-    assert "blocked on verification" not in out  # this is not a §0.3 gate
+    assert "blocked on verification" not in out  # this is not a verification-discipline gate
 
 
 def test_mock_wires_host_and_port_through_to_serve(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,11 +1,11 @@
-"""Apply (§5.2).
+"""Apply (provisioning-as-code).
 
-Partial-failure handling (§5.2): apply resources in dependency order, stop on
+Partial-failure handling (provisioning-as-code): apply resources in dependency order, stop on
 first failure, report exactly what was applied and what was not. Do NOT attempt
 automatic rollback — report state and let the operator re-plan. Silent partial
 rollback in a control plane is worse than a clear stop.
 
-Policy ownership (§5.4): apply runs in CI under a platform-controlled connected
+Policy ownership (provisioning-as-code): apply runs in CI under a platform-controlled connected
 app, and may only reference policy assets enumerated in a platform-owned
 allow-list (``policy-catalog.yaml``). The allow-list mechanism ships in v1 even
 if nobody asks — its absence gets the SDK banned in security review.
@@ -22,7 +22,7 @@ from .planner import Plan
 
 @dataclass(frozen=True)
 class PolicyAllowList:
-    """Platform-owned allow-list of referenceable policy assets (§5.4)."""
+    """Platform-owned allow-list of referenceable policy assets (provisioning-as-code)."""
 
     allowed_asset_ids: frozenset[str]
 
@@ -50,7 +50,7 @@ async def apply(
     plan: Plan, donkey: object, *, allow_list: PolicyAllowList | None = None
 ) -> ApplyResult:
     raise _verify.blocked(
-        "MCP Bridge provisioning write API for apply (§5.2, §5, §0.3). "
+        "MCP Bridge provisioning write API for apply (provisioning-as-code). "
         "Read-before-write + stop-on-first-failure semantics are specified; wire "
-        "them once the API is confirmed, or emit Terraform (§5.5)."
+        "them once the API is confirmed, or emit Terraform (provisioning-as-code)."
     )

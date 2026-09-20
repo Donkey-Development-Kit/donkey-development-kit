@@ -7,7 +7,7 @@ Agent Framework OpenAI-compatible chat client pointed at the governed
 Agent Fabric LLM proxy. The proxy *contract* (base URL, `client_id`/
 `client_secret` header auth, attribution headers) is live-verified. The
 chat-client class name/path itself — `agent_framework.openai.OpenAIChatClient`
-— and its base-URL kwarg (`model_id`) are **UNVERIFIED** (§8): Agent
+— and its base-URL kwarg (`model_id`) are **UNVERIFIED** (docs/verified-apis.md §8): Agent
 Framework is a young package that has renamed classes recently. If the
 import fails, the factory raises a `NotImplementedError` ("blocked on
 verification") rather than guessing further; this example catches that and
@@ -37,11 +37,11 @@ python examples/agent_framework/main.py
 ## The manual equivalent
 
 The factory call is equivalent to attempting to build the chat client
-yourself with the governed connection values (§3.3) — **class name and
-kwarg UNVERIFIED (§8), confirm against your installed version**:
+yourself with the governed connection values (BG §1.8) — **class name and
+kwarg UNVERIFIED (docs/verified-apis.md §8), confirm against your installed version**:
 
 ```python
-# CLASS NAME/PATH AND KWARG NAMES UNVERIFIED (§8) — confirm before relying on this
+# CLASS NAME/PATH AND KWARG NAMES UNVERIFIED (docs/verified-apis.md §8) — confirm before relying on this
 from agent_framework.openai import OpenAIChatClient
 
 client = OpenAIChatClient(

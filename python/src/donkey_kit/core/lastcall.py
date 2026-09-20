@@ -1,5 +1,5 @@
 """LastCall — the gateway's own metadata about the most recent governed model
-call, read from the response (§2.3, #362, BG §1.1).
+call, read from the response (#362, BG §1.1).
 
 On a refusal, :class:`~donkey_kit.core.errors.DonkeyError` already hands the
 developer the gateway's ids (``request_id`` and the two client-sent
@@ -9,7 +9,7 @@ into an OTel span attribute that needs a backend to read, or dropped. So
 "which gateway instance served this, and what id do I quote in a ticket?" was
 answerable after a failure and unanswerable after a success. This record closes
 that asymmetry — one named container, populated on every governed model call
-from the LIVE-VERIFIED §3 response headers, reachable at ``donkey.last_call``.
+from the LIVE-VERIFIED docs/verified-apis.md §3 response headers, reachable at ``donkey.last_call``.
 
 **One container, defined once (#362).** #307 (cached/reasoning token counts) and
 #309 (gateway routing + fallback) each sketched a *different* accessor for the
@@ -40,7 +40,7 @@ is the SDK never saw the response at all. So the record carries a
 :class:`LastCallStatus`: ``OBSERVED`` (a governed response populated it),
 ``UNOBSERVED`` (no governed model call has returned in this context yet), and
 ``UNAVAILABLE`` (this surface structurally cannot be observed). The conformance
-suite asserts the exemption rather than skipping it (§8.1).
+suite asserts the exemption rather than skipping it.
 
 **The gateway correlation id is deliberately absent (hazard #1).** The response
 ``x-correlation-id`` is the gateway's own value; per #300 it is NOT confirmed to
@@ -50,11 +50,11 @@ it ``correlation_id`` here would collide with the run id on ``DonkeyError`` and
 bake that ambiguity into the public API, so the field is not added until #300
 lands and settles the semantics under an unambiguous name.
 
-Every field traces to the LIVE-VERIFIED §3 "Gateway identity on response" row
+Every field traces to the LIVE-VERIFIED docs/verified-apis.md §3 "Gateway identity on response" row
 (``responses.success.headers.txt``, 2026-08-28), so this is a consumption task,
 not a verification one: no ``_verify.Unverified(...)`` guard, no
 ``UnverifiedValueWarning``. Unparseable or absent headers leave a field ``None``
-and never raise on the caller's request path (§0.3).
+and never raise on the caller's request path (verification discipline).
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 # and the routing strategy. All four are consumed here on the success path
 # (#309) — a substitution the developer did not choose is otherwise invisible.
 # ``LLM_PROVIDER_HEADER`` is also the SOLE source of ``gen_ai.system`` on the
-# span, so ``core/transport.py`` imports it from here (one definition, §0.3).
+# span, so ``core/transport.py`` imports it from here (one definition, verification discipline).
 ROUTING_TYPE_HEADER = "x-llm-proxy-routing-type"
 ROUTING_FALLBACK_HEADER = "x-llm-proxy-routing-fallback"
 LLM_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
@@ -93,7 +93,7 @@ LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 # ``api-instance-21133858.3e6ce455-e3e8-4402-b830-9fcf07d9207b.svc`` → instance
 # ``21133858`` + environment ``3e6ce455-…`` (a UUID; it carries dashes but no
 # dots, so a plain three-way split on ``.`` is unambiguous). An unrecognised
-# shape matches nothing and yields ``(None, None)`` — never a guess (§0.3).
+# shape matches nothing and yields ``(None, None)`` — never a guess (verification discipline).
 _DECORATOR_RE = re.compile(r"^api-instance-(?P<instance>[^.]+)\.(?P<env>[^.]+)\.svc$")
 
 
@@ -119,7 +119,7 @@ class LastCallStatus(str, Enum):
 def _parse_decorator_operation(raw: str | None) -> tuple[str | None, str | None]:
     """``(api_instance_id, environment_id)`` from ``x-envoy-decorator-operation``,
     or ``(None, None)`` when the header is absent or not in the verified
-    ``api-instance-<id>.<env>.svc`` shape. Never raises (§0.3)."""
+    ``api-instance-<id>.<env>.svc`` shape. Never raises (verification discipline)."""
     if raw is None:
         return None, None
     m = _DECORATOR_RE.match(raw.strip())
@@ -134,7 +134,7 @@ def _parse_fallback(raw: str | None) -> bool | None:
     unrecognised value. VERIFIED values are the literal strings ``"true"`` /
     ``"false"``; anything else is treated as unknown (``None``) rather than
     guessed, so a bare ``None`` never masquerades as a definitive ``False``
-    (§0.3)."""
+    (verification discipline)."""
     if raw is None:
         return None
     token = raw.strip().lower()
@@ -193,7 +193,7 @@ _USAGE_FIELDS = (
 
 def _first_int(mapping: dict[str, object], *keys: str) -> int | None:
     """The first key present as an ``int`` (``bool`` excluded — it subclasses
-    ``int``), else ``None``. Absent/garbage is ``None``, never ``0`` (§0.3)."""
+    ``int``), else ``None``. Absent/garbage is ``None``, never ``0`` (verification discipline)."""
     for key in keys:
         value = mapping.get(key)
         if isinstance(value, int) and not isinstance(value, bool):
@@ -221,7 +221,7 @@ def parse_usage(usage: object) -> dict[str, int | None]:
     ``prompt_tokens_details`` / ``completion_tokens_details``) shapes. A non-dict
     ``usage`` (absent, ``None``, wrong type) yields all-``None`` — an absent count
     is ``None``, never ``0`` (the same honesty rule ``Budget`` applies to an
-    unobserved window). Never raises (§0.3)."""
+    unobserved window). Never raises (verification discipline)."""
     if not isinstance(usage, dict):
         return {
             "input_tokens": None,
@@ -261,7 +261,7 @@ def usage_mapping(obj: object) -> dict[str, object] | None:
 def usage_from_response(response: httpx.Response) -> dict[str, int | None]:
     """The six usage counts from a buffered 2xx JSON body's ``usage`` object, or
     all-``None`` when the response is non-2xx, streaming/unread, non-JSON, or
-    carries no ``usage``. Never raises on the caller's request path (§0.3) — a
+    carries no ``usage``. Never raises on the caller's request path (verification discipline) — a
     streaming body's ``.json()`` raises ``ResponseNotRead``, which is caught and
     treated as "no usage here" (it arrives later via :func:`observe_usage`)."""
     if response.status_code // 100 != 2:
@@ -277,7 +277,8 @@ def usage_from_response(response: httpx.Response) -> dict[str, int | None]:
 
 @dataclass(frozen=True)
 class LastCall:
-    """What the gateway said about the most recent governed model call (§3, #362).
+    """What the gateway said about the most recent governed model call
+    (docs/verified-apis.md §3, #362).
 
     Reached at ``donkey.last_call``. Immutable: each governed response replaces
     the context's record wholesale rather than mutating in place, so a reader
@@ -298,7 +299,7 @@ class LastCall:
     observed_at: datetime | None = None
     #: For UNAVAILABLE, the adapter surface(s) that cannot observe; else ``None``.
     surface: str | None = None
-    # --- gateway routing & fallback (§3, #309) -----------------------------
+    # --- gateway routing & fallback (docs/verified-apis.md §3, #309) -------
     #: The model the caller ASKED for (from the request body). The reference
     #: point for :attr:`substituted`; ``None`` when the request carried none.
     requested_model: str | None = None
@@ -363,7 +364,7 @@ class LastCall:
         requested_model: str | None = None,
         now: datetime | None = None,
     ) -> LastCall:
-        """Build an ``OBSERVED`` record from a governed response's §3 headers.
+        """Build an ``OBSERVED`` record from a governed response's docs/verified-apis.md §3 headers.
 
         Always ``OBSERVED`` — the SDK saw a response — even if the gateway
         carried no identity headers (each field then stays ``None``): "we saw the
@@ -429,7 +430,7 @@ def observe_last_call(
     now: datetime | None = None,
 ) -> LastCall:
     """Record the gateway identity, routing and fallback from a governed model
-    response into this context (§2.3, #362/#309). Called from the transport's
+    response into this context (BG §1.1, #362/#309). Called from the transport's
     ``_on_response`` beside :meth:`Budget.observe`, which passes the requested
     model it already parsed from the request body. Returns the record it set, for
     tests. ``now`` is injectable; production uses the wall clock (UTC)."""

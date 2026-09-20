@@ -69,7 +69,7 @@ const footer = (
     <span>
       Donkey Development Kit — an SDK <em>for</em> Agent Fabric. “Agent Fabric”,
       “Anypoint”, and “Omni Gateway” are Salesforce trademarks; this project is
-      descriptive (§0.4).
+      descriptive (the trademark/support boundary).
     </span>
   </Footer>
 )

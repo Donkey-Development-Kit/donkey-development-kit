@@ -14,7 +14,7 @@ Anypoint sandbox / an installed framework**, or it is **not used** — the code
 path that would need it raises `NotImplementedError("blocked on verification: …")`
 or a clear `ConfigError` instead of guessing. How each value is confirmed — and
 how a blocked value flips to verified — is documented for contributors in
-[ARCHITECTURE.md → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline-03).
+[ARCHITECTURE.md → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline).
 
 ## What is verified today
 
@@ -31,7 +31,7 @@ how a blocked value flips to verified — is documented for contributors in
 
 | Area | Status | What the SDK does about it |
 |---|---|---|
-| Framework **constructor signatures** (§8) | Unverified per framework | Adapters target recorded class names; a mismatch surfaces via the verification harness / nightly matrix rather than silently misbehaving. Agent Framework's client raises `blocked on verification` today. |
+| Framework **constructor signatures** (docs/verified-apis.md §8) | Unverified per framework | Adapters target recorded class names; a mismatch surfaces via the verification harness / nightly matrix rather than silently misbehaving. Agent Framework's client raises `blocked on verification` today. |
 | MCP tool discovery + binding ([Phase 2](/tool-access)) | Unverified | `donkey.tools.discover` and the binding classes raise `blocked on verification`. |
 | Exchange publish API ([Phase 2](/publishing)) | Unverified | `donkey publish` is blocked; whether Exchange exposes first-class MCP/agent asset types is unconfirmed. |
 | Token-exchange endpoint for [on-behalf-of](/identity) (Phase 2) | Unverified | The exact endpoint and header the gateway expects are not guessed. |
@@ -49,4 +49,4 @@ hasn't confirmed raises `blocked on verification` rather than guessing, so a
 governed call either works against the verified contract or fails loudly — it
 never silently reaches an unconfirmed endpoint. The mechanism behind that and
 the full verified-versus-blocked ledger are documented for contributors in
-[ARCHITECTURE.md → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline-03).
+[ARCHITECTURE.md → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline).

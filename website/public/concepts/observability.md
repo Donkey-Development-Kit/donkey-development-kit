@@ -70,8 +70,7 @@ The proxy routes to several providers (OpenAI, Azure OpenAI, Gemini, Bedrock,
 Anthropic), so `gen_ai.system` is taken **only** from the verified
 `x-llm-proxy-llm-provider` response header. If that header is absent on a given
 response, the attribute is omitted rather than defaulted — a wrong provider
-label is worse than a missing one ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md),
-§0.3).
+label is worse than a missing one ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Grouping a run: the run id on the span, the call id on the error
 
@@ -109,7 +108,7 @@ present.
   the join key is not yet confirmed, so those request-header **names** are
   overridable placeholders — set `correlation_header` / `call_id_header` in
   config if your gateway expects different names
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md), §0.3).
+  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Streaming, refusals, and exceptions
 
@@ -136,7 +135,7 @@ takes, it produces **exactly one span**, and that span closes:
   event.** For OpenAI-style Chat Completions that means requesting it with
   `stream_options={"include_usage": true}`; without it the provider emits no
   usage event, so the counts are omitted rather than guessed
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md), §0.3).
+  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## What this piece does *not* do yet
 

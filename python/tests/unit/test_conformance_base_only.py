@@ -1,4 +1,4 @@
-"""The base-only guarantee for the conformance kit (§1.1, BG §1.5).
+"""The base-only guarantee for the conformance kit (the layered architecture, BG §1.5).
 
 The pytest11 entry point auto-loads ``donkey_kit.conformance.plugin`` on EVERY
 pytest run once ``donkey-kit`` is installed — including this base-only job,

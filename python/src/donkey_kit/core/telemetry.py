@@ -1,4 +1,4 @@
-"""Telemetry (§2.5, BG §1.6) and the run-scoped correlation ID (§2.3).
+"""Telemetry (BG §1.6) and the run-scoped correlation ID (BG §1.1).
 
 OpenTelemetry is an optional dependency (the ``[otel]`` extra). Telemetry is
 **on by default** (``DonkeyConfig.telemetry``), but the export pipeline is
@@ -13,7 +13,7 @@ Opt out of telemetry entirely with the single flag ``DONKEY_TELEMETRY=false``.
 The correlation ID lives in a ``contextvar`` so a single agent run's fan-out of
 model calls and tool calls shares one trace ID end to end — letting a developer
 correlate their local trace with what the platform team sees in Omni Gateway's
-observability view (a headline feature, §2.5).
+observability view (a headline feature, BG §1.6).
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ _correlation_id: ContextVar[str | None] = ContextVar("donkey_correlation_id", de
 # which copy the current context — with no threading through framework state.
 _cost_tags: ContextVar[CostTags | None] = ContextVar("donkey_cost_tags", default=None)
 
-# Span name constants (§2.5).
+# Span name constants (BG §1.6).
 SPAN_LLM_CHAT = "donkey.llm.chat"
 SPAN_REGISTRY_RESOLVE = "donkey.registry.resolve"
 SPAN_TOOL_CALL = "donkey.tool.call"
@@ -103,15 +103,17 @@ DONKEY_CORRELATION_ID = "donkey.correlation_id"
 DONKEY_POLICY_DECISION = "donkey.policy.decision"
 DONKEY_POLICY_TYPE = "donkey.policy.type"
 DONKEY_BUDGET_REMAINING = "donkey.budget.remaining"
-# Cost-attribution dimensions (§3, BG §1.7, #196). One donkey.cost.* attribute
-# per fixed dimension; ``enduser.id`` keeps its dotted external name. These
-# carry the full value on the span even while the request-header names are
-# UNVERIFIED (docs §3), so per-dimension spend attribution works end to end.
+# Cost-attribution dimensions (docs/verified-apis.md §3, BG §1.7, #196). One
+# donkey.cost.* attribute per fixed dimension; ``enduser.id`` keeps its dotted
+# external name. These carry the full value on the span even while the
+# request-header names are UNVERIFIED (docs/verified-apis.md §3), so
+# per-dimension spend attribution works end to end.
 DONKEY_COST_TEAM = "donkey.cost.team"
 DONKEY_COST_PROJECT = "donkey.cost.project"
 DONKEY_COST_ENV = "donkey.cost.env"
 DONKEY_COST_ENDUSER = "donkey.cost.enduser.id"
-# Gateway routing & resilience (§3, #309). The served provider already lands on
+# Gateway routing & resilience (docs/verified-apis.md §3, #309). The served
+# provider already lands on
 # ``gen_ai.system`` and the served model on ``gen_ai.response.model``; these two
 # carry the gateway-specific routing facts the semconv has no key for. Emitted
 # even when ``fallback`` is ``False`` — "we routed normally" is a signal an
@@ -171,7 +173,7 @@ def new_correlation_id() -> str:
 
 
 def new_call_id() -> str:
-    """A fresh per-request **call id** (§2.3, #195).
+    """A fresh per-request **call id** (BG §1.1, #195).
 
     Unlike the run/correlation id — which is contextvar-bound and shared across
     every request in a :func:`run_context` / ``donkey.run()`` block — this is
@@ -211,7 +213,7 @@ def run_context(run_id: str | None = None) -> Iterator[str]:
 
 class RunScope:
     """A **dual sync/async** context manager that binds the run correlation id
-    to :data:`_correlation_id` for the block (§2.3, #195).
+    to :data:`_correlation_id` for the block (BG §1.1, #195).
 
     This is what ``donkey.run(id=...)`` returns, so the same object works under
     both ``with donkey.run(...)`` and ``async with donkey.run(...)`` — binding a
@@ -274,7 +276,7 @@ class RunScope:
 
 def run_scope(run_id: str | None = None, cost: CostTags | None = None) -> RunScope:
     """Build a :class:`RunScope` — the dual sync/async run correlation binding
-    behind ``donkey.run(id=...)`` (§2.3, #195), optionally carrying per-run
+    behind ``donkey.run(id=...)`` (BG §1.1, #195), optionally carrying per-run
     cost-tag overrides (#196)."""
     return RunScope(run_id, cost)
 

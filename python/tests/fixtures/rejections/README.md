@@ -1,4 +1,4 @@
-# Rejection contracts — the eight documented shapes (#181, #289, docs §4)
+# Rejection contracts — the eight documented shapes (#181, #289, docs/verified-apis.md §4)
 
 The canonical index of the gateway rejection shapes `core/errors.classify()`
 discriminates, one row per shape. These fixtures are **shared with the local
@@ -7,14 +7,14 @@ files, so contract drift fails `classify()` and the simulator at once. Keep them
 byte-faithful and parser-compatible (see `../anypoint/llm_proxy/README.md` for
 the `.headers.txt` / `.body.json` / `.body.empty` convention).
 
-## Provenance & verification status (§0.3)
+## Provenance & verification status (verification discipline)
 
 The build guide describes these contracts as "public in Omni Gateway
 v1.11–v1.13", but **no public docs URL for the rejection contracts is recorded
 anywhere in this repo**, and `v1.11–v1.13` has no concrete in-repo source (the
-only live `v1.13` is the Flex Gateway *runtime* v1.13.2; docs §4 cites policy
+only live `v1.13` is the Flex Gateway *runtime* v1.13.2; docs/verified-apis.md §4 cites policy
 *asset* versions). Writing a docs URL or a "docs version" into these fixtures
-would be inventing an endpoint, which §0.3 forbids. So each row below records
+would be inventing an endpoint, which the verification discipline forbids. So each row below records
 only what is **defensible**, and the "cite the public docs URL + version"
 portion of the #181 acceptance criteria is left open under **#253** (`verify:
 re-confirm the v1.11-v1.13 rejection contracts against current docs and a

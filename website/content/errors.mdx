@@ -213,5 +213,5 @@ exact bodies are tracked in [#253]. `classify()` therefore types them from the
 header/field discriminator only, and no verification row flips to `verified`
 until a live round-trip confirms the shape. Any *other* content-moderation /
 federated-guardrail shape still falls through to a generic `PolicyViolation`
-rather than an invented type — this is deliberate (§0.3): we don't invent a
+rather than an invented type — this is deliberate (verification discipline): we don't invent a
 discriminator we haven't observed. See [Verification policy](/concepts/verification).

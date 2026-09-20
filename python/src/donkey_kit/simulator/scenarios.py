@@ -15,14 +15,14 @@ demand. A scenario is a small, stateful fault-injection rule applied to every
   live counter and the real milliseconds left in the window — until the window
   rolls over and the budget resets.
 
-**Verification discipline (§0.3, #352/#353/#354).** The live happy-path ``200``
+**Verification discipline (#352/#353/#354).** The live happy-path ``200``
 carries the budget window as the prose ``x-llm-proxy-ratelimit`` header, *not*
 the numeric ``x-token-*`` trio (those appear only on the ``429``). So the
 ``budget`` scenario emits the prose header on the ``200`` (rendered from its live
 counter) and the numeric ``x-token-*`` only on the ``429`` boundary. It never
 fabricates a header shape the gateway does not emit.
 
-Framework isolation (§1.1): this module imports only the stdlib and the
+Framework isolation (the layered architecture): this module imports only the stdlib and the
 framework-free sibling :mod:`~donkey_kit.simulator.fixtures` — never a web
 framework — so ``import donkey_kit.simulator.scenarios`` stays green under the
 base-only CI job.
@@ -171,7 +171,7 @@ class PiiBlockScenario:
 
 def _default_cost() -> int:
     """Per-call token cost, defaulting to the happy-path fixture's own reported
-    ``total_tokens`` — an honest number, not a fabricated one (§0.3)."""
+    ``total_tokens`` — an honest number, not a fabricated one (verification discipline)."""
     try:
         body = json.loads(load("success").body)
         total = int(body.get("usage", {}).get("total_tokens", 0))

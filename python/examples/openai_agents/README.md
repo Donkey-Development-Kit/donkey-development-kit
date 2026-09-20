@@ -32,7 +32,7 @@ python examples/openai_agents/main.py
 ## The manual equivalent
 
 The factory call is equivalent to building the model yourself with the governed
-connection values (§3.1):
+connection values (BG §1.8):
 
 ```python
 import httpx

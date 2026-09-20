@@ -1,4 +1,4 @@
-"""OpenAI Agents SDK adapter example (§3.3).
+"""OpenAI Agents SDK adapter example (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -8,12 +8,12 @@ at the governed Agent Fabric LLM proxy with a single factory call:
     from donkey_kit.integrations.openai_agents import model
     m = model("gpt-4o")
 
-Honest status (§0.3/§8): the proxy *contract* (base URL, client_id/secret
-auth, attribution headers) is live-verified. Because the adapter builds the
+Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* (base URL,
+client_id/secret auth, attribution headers) is live-verified. Because the adapter builds the
 underlying ``AsyncOpenAI`` client itself, header AND transport injection are
 both available (full injection). No live inference call is attempted here: the
 Agents SDK runs models through an ``agents.Agent`` + ``Runner``, and guessing
-that runtime call risks inventing an API (§0.3). Construction is this example's
+that runtime call risks inventing an API (verification discipline). Construction is this example's
 verified surface — pass ``m`` into ``agents.Agent(model=m)`` per the SDK's docs.
 """
 
@@ -60,7 +60,7 @@ def main() -> None:
         "Construction is the SDK's verified surface; pass this object into "
         "agents.Agent(model=...) and drive it with Runner per the SDK's own "
         "docs — that runtime call is UNVERIFIED here and deliberately not "
-        "guessed (§0.3)."
+        "guessed (verification discipline)."
     )
 
 

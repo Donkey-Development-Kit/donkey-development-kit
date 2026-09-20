@@ -30,7 +30,7 @@ against). `main()` then runs the full Scenario A:
 
 It is timed in CI (the `langgraph-demo` job) so this first-run experience can
 never silently rot. On startup you'll see two `UnverifiedValueWarning` lines
-about the correlation header names — that is the SDK's honest §0.3 signal that
+about the correlation header names — that is the SDK's honest verification discipline signal that
 those header names aren't yet confirmed against a live proxy, not an error.
 
 The model itself is a *native* `langchain_openai.ChatOpenAI` pointed at the
@@ -88,7 +88,7 @@ pytest --donkey-conformance --agent=examples.langgraph.main:build
 ## The manual equivalent
 
 The factory call is equivalent to building `ChatOpenAI` yourself with the
-governed connection values (§3.1):
+governed connection values (BG §1.8):
 
 ```python
 import httpx

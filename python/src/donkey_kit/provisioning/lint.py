@@ -1,11 +1,11 @@
-"""Governance lint (§5.3).
+"""Governance lint (provisioning-as-code).
 
 Small, cheap, uncontroversial, and the fastest way to get a platform team to say
 yes to the SDK — built in M1 even though the rest of provisioning is M3/M4.
 
 Validates API specs against project and centralized rulesets BEFORE anything is
 published, and fails the PR on ``error`` severity. Ruleset RESOLUTION against the
-platform is gated (§0.3 — is a rulesets API exposed?), but local spec-shape
+platform is gated (verification discipline — is a rulesets API exposed?), but local spec-shape
 validation and per-rule severity handling are implemented here.
 """
 
@@ -35,7 +35,7 @@ class LintResult:
 
     @property
     def failed(self) -> bool:
-        """True if any ``error``-severity finding exists — fail the PR (§5.3)."""
+        """True if any ``error``-severity finding exists — fail the PR (provisioning-as-code)."""
         return any(f.severity is Severity.ERROR for f in self.findings)
 
     def render(self) -> str:

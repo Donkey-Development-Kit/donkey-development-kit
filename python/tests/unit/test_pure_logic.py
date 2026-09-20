@@ -69,5 +69,5 @@ def test_governance_unknown_check_respects_allow_unknown() -> None:
     lenient = evaluate(checks, GovernanceCriteria(allow_unknown=True))
     assert strict.governed is False
     assert lenient.governed is True
-    # Reason is retained either way (§6.1.2).
+    # Reason is retained either way (the governed-state check API).
     assert any("ruleset" in r for r in strict.reasons_failed())

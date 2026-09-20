@@ -1,11 +1,11 @@
-"""Cost-attribution tags (§3, BG §1.7, #196).
+"""Cost-attribution tags (docs/verified-apis.md §3, BG §1.7, #196).
 
 A small, FIXED set of dimensions — ``team``, ``project``, ``env``,
 ``enduser.id`` — set once on the :class:`~donkey_kit.core.config.DonkeyConfig`
 (and optionally overridden per run via ``donkey.run(...)``), then emitted on
 every governed model call two ways:
 
-  * as request **headers**, under UNVERIFIED placeholder names (§0.3 — the
+  * as request **headers**, under UNVERIFIED placeholder names (verification discipline — the
     gateway-side cost-attribution header name is the single highest-priority
     unknown, ``docs/verified-apis.md`` §3); and
   * as ``donkey.cost.*`` **span attributes**, which carry the full value
@@ -66,7 +66,7 @@ def _validate(field: str, value: str) -> None:
 
 @dataclass(frozen=True)
 class CostTags:
-    """The fixed four-dimension cost-attribution set (§3, #196).
+    """The fixed four-dimension cost-attribution set (docs/verified-apis.md §3, #196).
 
     Every field is optional and defaults to ``None`` (unset — omitted from both
     headers and span attributes). Construction validates every set value, so an

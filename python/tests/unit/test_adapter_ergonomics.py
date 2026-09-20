@@ -1,4 +1,4 @@
-"""The two additive adapter ergonomics (§3.1/§3.3), alongside the existing
+"""The two additive adapter ergonomics (BG §1.8), alongside the existing
 ``donkey.<framework>.<factory>()`` methods:
 
   1. ``connection_kwargs()`` — governed kwargs you spread into the framework's
@@ -44,7 +44,8 @@ def test_connection_kwargs_carry_governed_values() -> None:
     assert "client_secret" in kw["default_headers"]
     assert kw["max_retries"] == 0  # we retry in transport, not the framework
     assert kw["http_async_client"] is not None  # our shared, hooked client
-    assert kw["use_responses_api"] is True  # verified /responses endpoint (docs §4)
+    # verified /responses endpoint (docs/verified-apis.md §4)
+    assert kw["use_responses_api"] is True
     # No model id — the caller supplies that: ChatOpenAI(model=…, **kw)
     assert "model" not in kw
 
@@ -133,21 +134,21 @@ def test_anthropic_connection_kwargs_carry_proxy_and_shared_client() -> None:
     from donkey_kit.integrations.anthropic import AnthropicAdapter
 
     with warnings.catch_warnings():
-        # The Anthropic-native proxy route is an open verification item (§0.3);
+        # The Anthropic-native proxy route is an open verification item (verification discipline);
         # connection_kwargs() warns once about it. Not what this test asserts.
         warnings.simplefilter("ignore")
         kw = AnthropicAdapter(_cfg(), _http()).connection_kwargs()
     assert kw["base_url"] == "https://proxy"
     assert "client_id" in kw["default_headers"]
     assert kw["http_client"] is not None
-    assert kw["max_retries"] == 0  # we retry in transport (§2.3)
+    assert kw["max_retries"] == 0  # we retry in transport (BG §1.1)
 
 
 def test_crewai_connection_kwargs_use_litellm_extra_headers() -> None:
     from donkey_kit.integrations.crewai import CrewAIAdapter
 
     # crewai.LLM forwards to LiteLLM, which uses extra_headers and owns its own
-    # transport, so no shared http client is injected (§3.3 exemption §8.1).
+    # transport, so no shared http client is injected (BG §1.8 exemption; the conformance kit).
     kw = CrewAIAdapter(_cfg(), _http()).connection_kwargs()
     assert kw["base_url"] == "https://proxy"
     assert "client_id" in kw["extra_headers"]
@@ -178,7 +179,7 @@ def test_openai_agents_governed_client_carries_proxy_config() -> None:
     assert isinstance(client, openai.AsyncOpenAI)
     assert str(client.base_url) == "https://proxy"
     assert client.default_headers["client_id"] == "cid"
-    assert client.max_retries == 0  # we retry in transport (§2.3)
+    assert client.max_retries == 0  # we retry in transport (BG §1.1)
 
 
 def test_only_langgraph_is_conformance_tested() -> None:

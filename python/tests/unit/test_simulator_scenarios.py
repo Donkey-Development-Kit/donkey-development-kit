@@ -157,7 +157,7 @@ def test_budget_happy_path_header_reflects_counter() -> None:
 
 def test_budget_default_cost_is_fixture_usage() -> None:
     # The default per-call cost is the happy-path fixture's own total_tokens (68),
-    # not a fabricated number (§0.3).
+    # not a fabricated number (verification discipline).
     s = BudgetScenario(limit=1000, window_ms=60_000)
     s.on_call("hi")
     assert "932 tokens remaining of 1000 limit" in s.happy_path_headers()[RATELIMIT_HEADER]

@@ -6,7 +6,7 @@ Rows 1/2/5 alias the live captures under ``anypoint/llm_proxy/`` (referenced, no
 moved); rows 3/4/6 (injection, content-moderation, upstream-5xx) and rows 7/8
 (regex-prompt-guard, content-safety — #289) live in ``rejections/``. The #289
 shapes are documented (pinned from the policy pages) but not yet live-captured;
-their live capture is blocked on #253 (see ``rejections/README.md`` and docs §4).
+their live capture is blocked on #253 (see ``rejections/README.md`` and docs/verified-apis.md §4).
 The discriminator is the error ``type`` + specific headers, NEVER the status code
 alone — which is exactly why rows 7/8 (both 403) must not be swallowed by the
 401/403 → auth rule.

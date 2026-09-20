@@ -75,7 +75,7 @@ asyncio.run(...)   # DONKEY_LLM_PROXY_URL=http://localhost:8080, throwaway creds
 
 A production internal copilot wants more than a content-safety branch. Three of
 those pieces are **not yet buildable** because they depend on surfaces still
-blocked on verification (§0.3) — this page shows the *shape* without inventing
+blocked on verification — this page shows the *shape* without inventing
 an endpoint:
 
   **Governed access to internal tools** — reaching company systems through

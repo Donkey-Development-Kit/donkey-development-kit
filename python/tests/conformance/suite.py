@@ -1,16 +1,16 @@
-"""The adapter conformance kit — the most important test asset (§8.1).
+"""The adapter conformance kit — the most important test asset.
 
 ONE suite, defined once. Its blocking scope is the conformance-tested roster
 (BG §1.8, #197): LangGraph and the raw client. A framework is "supported" only
 when it passes all of it, or records a documented, asserted exemption in
-``KNOWN_LIMITATIONS`` (§8.1) — never a silent skip. The other seven frameworks
+``KNOWN_LIMITATIONS`` (the conformance kit) — never a silent skip. The other seven frameworks
 are supported at ``connection_kwargs()`` only and are not run here; a demoted
 framework rejoins with its own conformance run when demand promotes it
 (#223/#244). The customer-facing pytest plugin (``donkey_kit.conformance``, #191)
 is the shipped deliverable this internal matrix backstops.
 
-The scenario bodies are wired in M1+ against captured contract fixtures (§8.2)
-and the local gateway (§8.3). This module fixes the scenario list and the
+The scenario bodies are wired in M1+ against captured contract fixtures (BG §1.5)
+and the local gateway (BG §1.4). This module fixes the scenario list and the
 exemption table now so the kit exists before the second adapter is built
 (working instruction #5).
 """
@@ -38,17 +38,17 @@ CONFORMANCE_SCENARIOS = [
     "asset_type_detection",
     # After a governed 200, donkey.last_call carries the gateway's own identity
     # (request_id / api_instance_id / environment_id) for the call just made
-    # (§3, #362). Mirrors correlation_id_propagated: the adapters that route
+    # (BG §1.1, #362). Mirrors correlation_id_propagated: the adapters that route
     # outside our transport cannot observe it and record an asserted exemption
     # below rather than a bare None.
     "gateway_identity_observed",
 ]
 
-# Documented, ASSERTED exemptions — published in the README (§8.1). A framework
+# Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
 # that cannot satisfy a scenario records WHY here rather than skipping silently.
 _LITELLM_TRANSPORT_EXEMPTION = (
     "LiteLLM owns the transport; we cannot inject our httpx client, so the "
-    "correlation ID is per-client, not per-run (§3.3). A LiteLLM custom "
+    "correlation ID is per-client, not per-run (BG §1.8). A LiteLLM custom "
     "logger callback may later recover trace correlation."
 )
 
@@ -61,7 +61,7 @@ _LITELLM_TRANSPORT_EXEMPTION = (
 _LITELLM_LAST_CALL_EXEMPTION = (
     "LiteLLM owns the transport; no response reaches our _on_response, so "
     "donkey.last_call cannot observe the gateway identity of the call and "
-    "reports UNAVAILABLE (#362, same cause as correlation_id_propagated §3.3)."
+    "reports UNAVAILABLE (#362, same cause as correlation_id_propagated BG §1.8)."
 )
 _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
     "The adapter is handed only default_headers, never our httpx client, so no "
@@ -70,7 +70,7 @@ _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
 )
 
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
-    # ADK and CrewAI both reach models through LiteLLM (§3.3).
+    # ADK and CrewAI both reach models through LiteLLM (BG §1.8).
     "adk": {
         "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
@@ -80,7 +80,7 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
     },
     # LlamaIndex and MS Agent Framework get only default_headers, no httpx client
-    # (§3.3), so they cannot observe last_call either — but they CAN propagate the
+    # (BG §1.8), so they cannot observe last_call either — but they CAN propagate the
     # correlation id through those headers, so that scenario is not exempt for them.
     "llamaindex": {"gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION},
     "agent_framework": {

@@ -1,12 +1,12 @@
-"""integrations/ — one optional extra per framework (§1.1).
+"""integrations/ — one optional extra per framework (the layered architecture).
 
-Each adapter returns NATIVE framework objects (§3.1). Modules are imported
+Each adapter returns NATIVE framework objects (BG §1.8). Modules are imported
 lazily by :class:`donkey_kit.donkey.Donkey` so an uninstalled framework never
 breaks ``import donkey_kit``.
 
 The registry below maps the attribute name used on ``Donkey`` to the adapter's
 module + class + pip extra, so ``Donkey.__getattr__`` can raise a curated
-ImportError with the exact install command (§3.2).
+ImportError with the exact install command (BG §1.8).
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class AdapterSpec:
     conformance_tested: bool
     #: A representative top-level module of the framework, probed with
     #: ``importlib.util.find_spec`` so ``Donkey.__getattr__`` can raise the
-    #: curated ImportError at ACCESS time (§3.2). The adapters import their
+    #: curated ImportError at ACCESS time (BG §1.8). The adapters import their
     #: framework lazily inside methods, so importing the adapter module alone
     #: never fails — this probe is what makes access-time detection work.
     probe: str

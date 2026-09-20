@@ -93,7 +93,7 @@ content/
   reference/                Configuration, unsupported boundary
 ```
 
-## Editing rules (inherited from the SDK — §0.3)
+## Editing rules (inherited from the SDK — verification discipline)
 
 **Never document an endpoint, header, or class name that isn't verified.** Where
 a value is unconfirmed, say so on the page (see the "Verification policy" page).

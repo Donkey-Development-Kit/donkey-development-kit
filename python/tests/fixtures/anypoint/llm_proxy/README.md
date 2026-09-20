@@ -1,4 +1,4 @@
-# LLM proxy — LIVE captures from a real governed ingress proxy (M0, §2/§3/§4)
+# LLM proxy — LIVE captures from a real governed ingress proxy (M0, docs/verified-apis.md §2/§3/§4)
 
 Captured 2026-08-28 from a real deployed Agent Network LLM proxy in the sandbox
 org `82a0453b-22e6-430d-bbf4-35b989d043dc`, env **Sandbox**
@@ -7,7 +7,7 @@ API Manager instance `21133858`, deployed to the `agent-network-ingress-gw` Flex
 Gateway (v1.13.2), upstream `https://api.openai.com/v1/`.
 
 These are the **direct data-plane contract** the SDK's Pillar-1 model access
-targets — the first live confirmation of §§2–4 (previously UNVERIFIED). See
+targets — the first live confirmation of docs/verified-apis.md §§2–4 (previously UNVERIFIED). See
 `docs/verified-apis.md` §2/§3/§4/§6.
 
 ## Files
@@ -58,7 +58,7 @@ Both policies above were applied to instance `21133858` only to capture these
 rejection contracts and were removed afterward.
 - `responses.stream.sample.sse` / `responses.stream.headers.txt` — `stream:true`
   → HTTP 200, `content-type: text/event-stream`, chunked SSE (`event:
-  response.created`, `response.in_progress`, …). Confirms §2 streaming.
+  response.created`, `response.in_progress`, …). Confirms docs/verified-apis.md §2 streaming.
 - `models.notfound.headers.txt` — `GET /openai-sdk/models` → HTTP 404
   (`Request passed through without model-based routing`). The proxy exposes **no
   catalog endpoint**; it only routes requests carrying a `model` in the body.

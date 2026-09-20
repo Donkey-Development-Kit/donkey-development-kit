@@ -1,6 +1,7 @@
 """``donkey init`` (#201): writes a commented ``.donkey-kit.toml`` from the
-resolved config, names EVERY missing required field at once (reusing the §2.1
-all-at-once ``DonkeyConfig.validated`` report), never writes a secret into the
+resolved config, names EVERY missing required field at once (reusing the
+config-resolution all-at-once ``DonkeyConfig.validated`` report), never writes a
+secret into the
 committed file, and is idempotent — a bare re-run does not clobber an existing
 file (``--force`` regenerates).
 
@@ -121,7 +122,7 @@ def test_init_lists_all_missing_required_fields_at_once(
     monkeypatch: pytest.MonkeyPatch, clean_env: None
 ) -> None:
     # Nothing configured: init still bootstraps a file (exit 0) but names every
-    # missing required field, not just the first (§2.1 all-at-once report).
+    # missing required field, not just the first (config-resolution all-at-once report).
     result = runner.invoke(app, ["init"])
     assert result.exit_code == 0, _combined(result)
 

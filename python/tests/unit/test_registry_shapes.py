@@ -3,10 +3,10 @@
 The fixtures under ``tests/fixtures/a2d/`` are faithful captures from the A2D
 platform's MCP tools (see that directory's README). These tests prove the SDK's
 ``McpServerHandle`` / ``ToolDescriptor`` / ``AssetRef`` types can represent
-real-world shapes (§8.2) — WITHOUT wiring the (still-blocked) ``ExchangeRegistry``
+real-world shapes (BG §1.5) — WITHOUT wiring the (still-blocked) ``ExchangeRegistry``
 to any live endpoint. The raw→domain mapping lives here in the test, not in the
 SDK, precisely because the direct Anypoint REST contract is still UNVERIFIED
-(§0.3); only the shapes are confirmed.
+(verification discipline); only the shapes are confirmed.
 """
 
 from __future__ import annotations

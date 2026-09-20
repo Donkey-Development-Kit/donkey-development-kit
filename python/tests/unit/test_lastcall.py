@@ -1,10 +1,10 @@
 """LastCall — the gateway's own metadata about the most recent governed call
-(§3, #362). Base-only surface (Surface 1): httpx + fixtures, no framework.
+(BG §1.1, #362). Base-only surface (Surface 1): httpx + fixtures, no framework.
 
 Covers the issue's acceptance criteria:
-  * one named record, parsed from the LIVE-VERIFIED §3 headers (request_id,
+  * one named record, parsed from the LIVE-VERIFIED BG §1.1 headers (request_id,
     api_instance_id, environment_id) on a 200;
-  * absent/unparseable headers leave fields None, never raise (§0.3);
+  * absent/unparseable headers leave fields None, never raise (verification discipline);
   * populated IDENTICALLY by the async and blocking transports;
   * contextvar concurrency scope — a fan-out does not clobber (hazard #2);
   * three honest states OBSERVED / UNOBSERVED / UNAVAILABLE (hazard #3);
@@ -41,7 +41,7 @@ from donkey_kit.core.lastcall import (
 from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient
 from donkey_kit.simulator.fixtures import load, replay_headers
 
-# The LIVE-VERIFIED §3 identity headers (responses.success.headers.txt, 2026-08-28).
+# The LIVE-VERIFIED BG §1.1 identity headers (responses.success.headers.txt, 2026-08-28).
 _REQUEST_ID = "req_f85003861d5348c9a1d152c276082b07"
 _DECORATOR = "api-instance-21133858.3e6ce455-e3e8-4402-b830-9fcf07d9207b.svc"
 _API_INSTANCE_ID = "21133858"
@@ -51,7 +51,7 @@ _IDENTITY_HEADERS = {
     "x-request-id": _REQUEST_ID,
     "x-envoy-decorator-operation": _DECORATOR,
 }
-# The LIVE-VERIFIED §3 routing headers (responses.success.headers.txt, #309).
+# The LIVE-VERIFIED BG §1.1 routing headers (responses.success.headers.txt, #309).
 _ROUTING_HEADERS = {
     "x-llm-proxy-routing-type": "ModelBased",
     "x-llm-proxy-routing-fallback": "false",
@@ -73,7 +73,7 @@ def _reset_last_call():
         lastcall._last_call.reset(token)
 
 
-# --- parsing the decorator-operation header (never raises, §0.3) ------------
+# --- parsing the decorator-operation header (never raises, verification discipline) ------------
 
 
 @pytest.mark.parametrize(
@@ -415,7 +415,8 @@ def test_parse_usage_absent_detail_fields_are_none_not_zero() -> None:
     [None, {}, "usage", 17, {"input_tokens": "x"}, {"input_tokens": True}],
 )
 def test_parse_usage_non_dict_or_garbage_is_all_none(bad) -> None:
-    # Never raises, never a fabricated 0; a bool is not accepted as an int (§0.3).
+    # Never raises, never a fabricated 0; a bool is not accepted as an int (verification
+    # discipline).
     assert set(parse_usage(bad).values()) == {None}
 
 
@@ -450,7 +451,8 @@ def test_usage_from_response_non_2xx_is_all_none() -> None:
 
 
 def test_usage_from_response_unread_or_empty_body_never_raises() -> None:
-    # An SSE / bodyless response's .json() raises; it is caught → all None (§0.3).
+    # An SSE / bodyless response's .json() raises; it is caught → all None (verification
+    # discipline).
     resp = httpx.Response(200, headers={"content-type": "text/event-stream"})
     assert set(usage_from_response(resp).values()) == {None}
 
@@ -559,12 +561,12 @@ def test_no_unverified_warning_on_the_read_path() -> None:
         LastCall.from_response(httpx.Response(200, headers=_IDENTITY_HEADERS))
         observe_last_call(httpx.Response(200, headers=_IDENTITY_HEADERS))
         _ = current_last_call()
-        # The usage path traces to the same verified §3 row — no warning either.
+        # The usage path traces to the same verified BG §1.1 row — no warning either.
         parse_usage(_RESPONSES_USAGE)
         usage_from_response(_json_response(200, _RESPONSES_USAGE))
 
 
-# --- gateway routing & fallback (§3, #309) ----------------------------------
+# --- gateway routing & fallback (BG §1.1, #309) ----------------------------------
 
 
 @pytest.mark.parametrize(
@@ -577,7 +579,7 @@ def test_no_unverified_warning_on_the_read_path() -> None:
         ("  true  ", True),  # whitespace tolerated
         (None, None),  # header absent — a non-proxy / simulated response
         ("", None),  # empty is not a guess
-        ("maybe", None),  # unrecognised is unknown, never a default False (§0.3)
+        ("maybe", None),  # unrecognised is unknown, never a default False (verification discipline)
     ],
 )
 def test_parse_fallback_shapes(raw, expected) -> None:
@@ -619,7 +621,7 @@ def test_from_response_parses_all_five_routing_fields_from_the_live_fixture() ->
 
 def test_missing_routing_headers_report_none_and_do_not_crash() -> None:
     # AC2: a non-proxy or simulated response with none of the routing headers must
-    # leave every field None/None and never raise (§0.3).
+    # leave every field None/None and never raise (verification discipline).
     record = LastCall.from_response(httpx.Response(200))
     assert record.served_provider is None
     assert record.served_model is None

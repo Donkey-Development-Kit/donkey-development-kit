@@ -1,4 +1,4 @@
-"""Cost-attribution tags (§3, BG §1.7, #196).
+"""Cost-attribution tags (docs/verified-apis.md §3, BG §1.7, #196).
 
 ``CostTags`` is the pure, framework-free carrier for the FIXED four-dimension
 attribution set. These tests pin the two guarantees the acceptance criteria

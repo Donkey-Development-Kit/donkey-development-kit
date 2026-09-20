@@ -1,4 +1,4 @@
-"""Transport — the single place headers get injected (§2.3).
+"""Transport — the single place headers get injected (BG §1.1).
 
 This is the most important piece of engineering in the SDK. Every framework has
 a different mechanism for setting request headers, and several have none. The
@@ -7,27 +7,27 @@ solution is one shared HTTP client that every adapter is handed.
 The client:
   * injects, via a request event hook, on every outbound request:
       - the run correlation ID (uuid4 per logical agent run, from a contextvar,
-        §2.5) — shared by every request in a ``donkey.run()`` block, the
+        BG §1.6) — shared by every request in a ``donkey.run()`` block, the
         client↔gateway join key
       - attribution headers (application, business group) — header NAMES are
         UNVERIFIED (docs/verified-apis.md §3), emitted via loud placeholders
       - bearer token, refreshed lazily
   * pins a per-call ID ONCE, before the retry loop, so it is unique per logical
-    request yet stable across that request's retries and 401 refresh (§2.3,
+    request yet stable across that request's retries and 401 refresh (BG §1.1,
     #195). Two ids, two headers: the run id (``X-Correlation-Id``) groups a run;
     the call id (``X-Donkey-Request-Id``) pinpoints one request within it. Both
-    header NAMES are UNVERIFIED placeholders (docs §3), overridable via config.
+    header NAMES are UNVERIFIED placeholders (docs/verified-apis.md §3), overridable via config.
   * retries transient upstream/gateway failures (502/503/504) with exponential
     backoff + jitter, honouring Retry-After
-  * does NOT retry 4xx — gateway policy rejections are terminal (§2.4). This
+  * does NOT retry 4xx — gateway policy rejections are terminal (BG §1.2). This
     includes 429: on this proxy a 429 is a token-budget refusal
     (TokenBudgetExceeded), and retrying it only burns the same exhausted window
-    (§2.4, #183). retry_after is still surfaced for wait_for_reset() (#186).
-  * refreshes the token and retries exactly once on 401 (§2.2)
+    (BG §1.2, #183). retry_after is still surfaced for wait_for_reset() (#186).
+  * refreshes the token and retries exactly once on 401 (BG §1.1)
 
 For frameworks that only accept a ``default_headers`` dict (not a client), pass
 :func:`attribution_headers` — a snapshot — and accept that the correlation ID is
-per-client rather than per-run. Document that degradation per adapter (§3.3).
+per-client rather than per-run. Document that degradation per adapter (BG §1.8).
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ from .telemetry import (
     start_genai_span,
 )
 
-# Default request-header NAMES for the two correlation ids (§2.3, #195). Both are
+# Default request-header NAMES for the two correlation ids (BG §1.1, #195). Both are
 # UNVERIFIED placeholders: the gateway ECHOES ``x-correlation-id`` on RESPONSES
 # (verified), but whether it READS an inbound correlation/call-id header — and
 # under what name — is not. A customer overrides them per-Donkey via config
@@ -85,20 +85,20 @@ CORRELATION_HEADER = _verify.CORRELATION_ID_HEADER.placeholder
 CALL_ID_HEADER = _verify.CALL_ID_HEADER.placeholder
 # The OpenAI-compatible SDKs reject an empty ``api_key``. The governed proxy
 # authenticates on the client_id/client_secret headers (client-id-enforcement,
-# §2/§3) and ignores the bearer, so we fill the slot with a harmless sentinel
+# docs/verified-apis.md §2/§3) and ignores the bearer, so we fill the slot with a harmless sentinel
 # whenever no explicit key is configured.
 PROXY_API_KEY_SENTINEL = "client-id-enforced"
 # 429 is deliberately NOT here: on this proxy every 429 is a token-budget
 # refusal that classify() maps to TokenBudgetExceeded (a PolicyViolation), and a
 # PolicyViolation is terminal — retrying it only burns the same exhausted budget
-# window (§2.4, #183). Only genuinely transient upstream/gateway failures retry.
+# window (BG §1.2, #183). Only genuinely transient upstream/gateway failures retry.
 _RETRYABLE_STATUS = frozenset({502, 503, 504})
 _BACKOFF_BASE_S = 0.5
 _BACKOFF_CAP_S = 30.0
 
 
 # The four cost dimensions → the config field that overrides that header name →
-# the UNVERIFIED placeholder used when there is no override (§3, #196). The
+# the UNVERIFIED placeholder used when there is no override (docs/verified-apis.md §3, #196). The
 # gateway-side names are the highest-priority unknown, so each is a loud,
 # overridable placeholder resolved here.
 _COST_HEADER_SOURCES: tuple[tuple[str, str, _verify.Unverified], ...] = (
@@ -110,12 +110,14 @@ _COST_HEADER_SOURCES: tuple[tuple[str, str, _verify.Unverified], ...] = (
 
 
 def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
-    """The request headers for the SET dimensions of ``tags`` (§3, BG §1.7, #196).
+    """The request headers for the SET dimensions of ``tags``
+    (docs/verified-apis.md §3, BG §1.7, #196).
 
     Each header NAME is the config override (``cost_*_header``) if set, else the
     UNVERIFIED placeholder from ``core/_verify`` — the gateway-side cost header
-    name is the single highest-priority unknown (docs §3), so an un-overridden
-    name emits the one-time §0.3 warning. Values are pre-validated by
+    name is the single highest-priority unknown (docs/verified-apis.md §3), so
+    an un-overridden name emits the one-time verification-discipline warning.
+    Values are pre-validated by
     :class:`CostTags`, so they are always header-safe."""
     override = {
         field: getattr(cfg, attr) for field, attr, _placeholder in _COST_HEADER_SOURCES
@@ -141,16 +143,18 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
     ``default_headers`` dict. Does NOT include the correlation ID (which must be
     per-run) or the bearer token (which must be refreshed lazily).
 
-    Header NAMES are UNVERIFIED (§0.3 / §3): the live direct-proxy path did NOT
-    surface application/business-group as request headers (docs §3), so these
+    Header NAMES are UNVERIFIED (verification discipline / docs/verified-apis.md §3):
+    the live direct-proxy path did NOT
+    surface application/business-group as request headers (docs/verified-apis.md §3), so these
     remain loud, overridable placeholders. The verified per-agent attribution
     unit is the ``client_id`` credential — see :func:`proxy_auth_headers`.
 
-    Includes the CONFIG-LEVEL cost tags (§3, #196). A static ``default_headers``
+    Includes the CONFIG-LEVEL cost tags (docs/verified-apis.md §3, #196). A static
+    ``default_headers``
     snapshot cannot see a later ``donkey.run(...)`` override — that binding is a
     contextvar the live client reads per send — so the snapshot path carries the
     set-once tags only, a documented degradation (like the per-run correlation
-    ID, §3.3)."""
+    ID, BG §1.8)."""
 
     headers: dict[str, str] = {}
     if cfg.application_name:
@@ -162,7 +166,7 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
 
 
 def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
-    """The LLM-proxy consumer-auth request headers, LIVE-VERIFIED (docs §2/§3):
+    """The LLM-proxy consumer-auth request headers, LIVE-VERIFIED (docs/verified-apis.md §2/§3):
     a ``client_id`` + ``client_secret`` pair enforced by ``client-id-enforcement``.
     This pair IS the per-agent attribution identity, NOT a bearer token.
 
@@ -188,7 +192,7 @@ def proxy_api_key(cfg: DonkeyConfig) -> str:
 
 
 def _resolve_header_names(cfg: DonkeyConfig) -> tuple[str, str]:
-    """The ``(correlation, call_id)`` request-header NAMES for this config (§2.3,
+    """The ``(correlation, call_id)`` request-header NAMES for this config (BG §1.1,
     #195): each is the config override if set, else the UNVERIFIED placeholder
     from ``core/_verify``. Called ONCE per client at construction, so the
     one-time unverified warning for an un-overridden name fires there, not on
@@ -232,7 +236,7 @@ def _apply_base_headers(
 
 def _apply_call_id_header(request: httpx.Request, call_id_header: str) -> None:
     """Pin a FRESH per-call ID on the request, ONCE, before the retry loop
-    (§2.3, #195).
+    (BG §1.1, #195).
 
     The run/correlation id is deterministic per run (a contextvar), so the
     per-send event hook can safely re-set it on every retry. The call id is
@@ -297,7 +301,7 @@ def _gateway_unavailable(
 # two clients. The response header carrying the resolved upstream provider is
 # VERIFIED (LIVE) — docs/verified-apis.md §2 "Model routing" and §3 "Gateway
 # identity on response" — and is the SOLE source of gen_ai.system; absent → the
-# attribute is omitted, never guessed (§0.3), because the proxy routes to
+# attribute is omitted, never guessed (verification discipline), because the proxy routes to
 # several providers and defaulting one would misattribute the call. The header
 # NAME is defined once in ``lastcall`` (which also parses it onto ``last_call``)
 # and imported here as ``LLM_PROVIDER_HEADER`` so there is a single source (#309).
@@ -359,13 +363,14 @@ def _record_response(
     wire — the sync and async transports source that id differently, and reading
     the header makes the recorded value correct for both. The per-call id is
     intentionally not a span attribute: the span already correlates one call, and
-    the run id is the cross-call join key (§2.3, #195)."""
+    the run id is the cross-call join key (BG §1.1, #195)."""
     try:
         decision, policy_type = _span_decision(response)
         usage = usage_from_response(response)
         gspan.record(
             system=response.headers.get(LLM_PROVIDER_HEADER),
-            # Served model + routing facts (§3, #309): request≠response model on
+            # Served model + routing facts (docs/verified-apis.md §3, #309):
+            # request≠response model on
             # the span is the fastest read that a gateway failover happened, and
             # the fallback flag is emitted even when False.
             response_model=response.headers.get(LLM_MODEL_HEADER),
@@ -399,13 +404,14 @@ def _substitution_error(
 ) -> ModelSubstituted | None:
     """The :class:`ModelSubstituted` to raise for this response, or ``None``.
 
-    Off unless ``on_model_substitution="raise"`` (§3, #309): the default surfaces
+    Off unless ``on_model_substitution="raise"`` (docs/verified-apis.md §3, #309):
+    the default surfaces
     a substitution passively on ``donkey.last_call.substituted`` and the span.
     Only a **2xx** is checked — a refusal or upstream error is classified on its
     own terms elsewhere and is not a "silent substitution". A substitution
     requires both the requested model (from the body) and the served model (the
     gateway header) to be known and to differ; a missing either side is never a
-    guess (§0.3). Never raises here — it returns the error for the caller path to
+    guess (verification discipline). Never raises here — it returns the error for the caller path to
     raise once telemetry has been recorded."""
     if cfg.on_model_substitution != "raise":
         return None
@@ -583,13 +589,14 @@ class DonkeyAsyncClient(httpx.AsyncClient):
     ) -> None:
         self._cfg = cfg
         # The two correlation request-header NAMES, resolved once (config override
-        # → UNVERIFIED placeholder). The one-time §0.3 warning for an un-overridden
-        # name fires here, at construction, not per request (§2.3, #195).
+        # → UNVERIFIED placeholder). The one-time verification-discipline warning
+        # for an un-overridden
+        # name fires here, at construction, not per request (BG §1.1, #195).
         self._correlation_header, self._call_id_header = _resolve_header_names(cfg)
         # NB: httpx.AsyncClient uses ``self._auth`` internally, so we must NOT
         # store our token provider there — super().__init__() would clobber it.
         self._token_provider = auth
-        # Optional in-band budget collaborator (§1.3, #185). When attached, the
+        # Optional in-band budget collaborator (BG §1.3, #185). When attached, the
         # response hook feeds it; when None the hook stays a byte-identical no-op,
         # so the control-plane token-fetch client tracks no budget.
         self._budget = budget
@@ -609,7 +616,8 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         if self._token_provider is not None:
             token = await self._token_provider.token()
             # Control plane uses OAuth2 client_credentials → ``Authorization:
-            # Bearer`` (VERIFIED §12.1). The LLM proxy (data plane) instead uses
+            # Bearer`` (VERIFIED docs/verified-apis.md §12.1). The LLM proxy (data
+            # plane) instead uses
             # client_id/client_secret headers and gets NO token provider, so it
             # never reaches here; ``setdefault`` also yields to the OpenAI SDK's
             # own Authorization if one was set at the call site.
@@ -712,7 +720,7 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         2xx gets its span-closing stream wrapper while a buffered response keeps
         the context-manager lifecycle."""
         # Pin the per-call id ONCE, before the loop, so it is stable across
-        # retries and the 401 refresh (§2.3, #195). The run correlation id is set
+        # retries and the 401 refresh (BG §1.1, #195). The run correlation id is set
         # per-send by the event hook (deterministic, so idempotent).
         _apply_call_id_header(request, self._call_id_header)
         await self._on_request(request)
@@ -749,7 +757,7 @@ class DonkeyAsyncClient(httpx.AsyncClient):
                 await response.aclose()
                 await provider.invalidate()
                 # A 401 refresh is an auth re-send, not a rate-limit backoff, so it
-                # does NOT consume the retry budget (§2.2: "retry exactly once on
+                # does NOT consume the retry budget (BG §1.1: "retry exactly once on
                 # 401"): re-send once with the fresh token regardless of `attempt`,
                 # so the retry still happens on the final attempt / max_retries=0.
                 # Event hooks re-run on send() → fresh token.
@@ -759,7 +767,8 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             # retried, even on a retryable status: the gateway's Enhanced
             # Resilience routing is the first recovery layer, and an SDK retry on
             # top multiplies latency against an outage the gateway is already
-            # handling (§3, #309, #183). ``is_fallback`` is definitive-True-only,
+            # handling (docs/verified-apis.md §3, #309, #183). ``is_fallback`` is
+            # definitive-True-only,
             # so a non-proxy 5xx with no routing header still retries as before.
             if (
                 response.status_code in _RETRYABLE_STATUS
@@ -822,7 +831,8 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         )
         # After telemetry (so the substituted call is still on the span), a
         # caller who opted into ``on_model_substitution="raise"`` gets a hard
-        # error instead of the response (§3, #309). Raising here propagates out
+        # error instead of the response (docs/verified-apis.md §3, #309). Raising
+        # here propagates out
         # through the span context manager (buffered) or the detached-span guard
         # in ``send()`` (streaming), so the span still closes. The response is
         # closed first so an aborted stream leaks no connection.
@@ -852,17 +862,18 @@ class DonkeyClient(httpx.Client):
     It takes **no** :class:`AuthProvider`: that protocol is async-only
     (``async def token()``), and there is no correct way to await it from here.
     That costs nothing on the LLM data plane, which authenticates with the
-    ``client_id``/``client_secret`` header pair (LIVE-VERIFIED §2/§3) rather than
+    ``client_id``/``client_secret`` header pair (LIVE-VERIFIED
+    docs/verified-apis.md §2/§3) rather than
     a fetched token. It does mean the control-plane surfaces — ``registry`` and
-    ``tools`` — stay async-only; see §2.2 for why the two credentials are
+    ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.
     """
 
     def __init__(self, cfg: DonkeyConfig, *, budget: Budget | None = None, **kw: object) -> None:
         self._cfg = cfg
-        # Resolved once; see DonkeyAsyncClient.__init__ (§2.3, #195).
+        # Resolved once; see DonkeyAsyncClient.__init__ (BG §1.1, #195).
         self._correlation_header, self._call_id_header = _resolve_header_names(cfg)
-        self._budget = budget  # see DonkeyAsyncClient.__init__ (§1.3, #185)
+        self._budget = budget  # see DonkeyAsyncClient.__init__ (BG §1.3, #185)
         super().__init__(
             timeout=cfg.timeout_s,
             event_hooks={"request": [self._inject_headers]},
@@ -961,7 +972,7 @@ class DonkeyClient(httpx.Client):
             # No 401-refresh branch: with no token provider there is nothing to
             # refresh, so a 401 here is a real credential failure and terminal.
             # A routing-fallback response is not double-retried — see the async
-            # twin (§3, #309, #183).
+            # twin (docs/verified-apis.md §3, #309, #183).
             if (
                 response.status_code in _RETRYABLE_STATUS
                 and not is_fallback(response)
@@ -1000,7 +1011,7 @@ class DonkeyClient(httpx.Client):
             cost_tags=effective_cost_tags(self._cfg),
         )
         # After telemetry, raise for an opted-in substitution — see the async
-        # twin (§3, #309).
+        # twin (docs/verified-apis.md §3, #309).
         substitution = _substitution_error(self._cfg, request, response)
         if substitution is not None:
             response.close()
@@ -1021,14 +1032,14 @@ def build_http_client(
     *,
     budget: Budget | None = None,
 ) -> DonkeyAsyncClient:
-    """Factory for the shared client (§2.3). Pass ``budget`` to track the in-band
-    token window on every response (§1.3, #185); omit it for the control-plane
+    """Factory for the shared client (BG §1.1). Pass ``budget`` to track the in-band
+    token window on every response (BG §1.3, #185); omit it for the control-plane
     token-fetch client, which observes no budget."""
     return DonkeyAsyncClient(cfg, auth, budget=budget)
 
 
 def build_sync_http_client(cfg: DonkeyConfig, *, budget: Budget | None = None) -> DonkeyClient:
-    """Factory for the shared blocking client (§2.3). See :class:`DonkeyClient`
+    """Factory for the shared blocking client (BG §1.1). See :class:`DonkeyClient`
     for why it takes no :class:`AuthProvider`. Pass ``budget`` to share one budget
-    object with the async client (§1.3, #185)."""
+    object with the async client (BG §1.3, #185)."""
     return DonkeyClient(cfg, budget=budget)

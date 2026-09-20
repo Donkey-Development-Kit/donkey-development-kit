@@ -1,14 +1,14 @@
-"""Publication — registering code-first assets into Exchange (§7).
+"""Publication — registering code-first assets into Exchange (BG §2.5).
 
-Symmetric with §6: one declarative object, three verbs, "declare in code, apply
-in CI, verify at runtime". The symmetry breaks at runtime (§7.4): there is NO
+Symmetric with governed-only discovery: one declarative object, three verbs, "declare in code, apply
+in CI, verify at runtime". The symmetry breaks at runtime (BG §2.5): there is NO
 runtime ``publish()`` — it would be actively harmful (immutable versions, catalog
 reflecting process starts, privilege escalation, no review). The runtime verb is
 :meth:`verify` (read-only drift check), the genuine mirror of ``resolve()``.
 
-Verbs (§7.4):
+Verbs (BG §2.5):
   * ``preview()`` — laptop. Renders the entry as it would appear. Writes nothing.
-  * ``export()``  — laptop. Compiles into donkey.yaml (§5.1). CI publishes on merge.
+  * ``export()``  — laptop. Compiles into donkey.yaml (provisioning-as-code). CI publishes on merge.
   * ``verify()``  — runtime, READ-ONLY. Fetches the published descriptor,
     introspects the live server, compares. Raises PublicationDrift on mismatch.
 """
@@ -69,28 +69,31 @@ class Publication:
 
     # ---- verb: preview (laptop) -------------------------------------------
     async def preview(self, donkey: Any) -> str:
-        """Render the Exchange entry as it would appear (§7.4). Blocked until
-        descriptor derivation + Exchange render shape are verified (§7.9)."""
+        """Render the Exchange entry as it would appear (BG §2.5). Blocked until
+        descriptor derivation + Exchange render shape are verified (BG §2.5)."""
         raise _verify.blocked(
-            "descriptor derivation (§7.3) + Exchange entry render (§7.9). The "
+            "descriptor derivation (BG §2.5) + Exchange entry render (BG §2.5). The "
             "description-quality report (check_description_quality) is implemented "
-            "and should run here (§7.3.3)."
+            "and should run here (BG §2.5)."
         )
 
     # ---- verb: export (laptop) --------------------------------------------
     def export(self, path: str | Path | None = None) -> str:
-        """Compile into the donkey.yaml spec (§5.1). Lands with M4 (§9.1)."""
-        raise _verify.blocked("Publication.export() emits the M4 spec (§5.1, §9.1).")
+        """Compile into the donkey.yaml spec (provisioning-as-code). Lands with M4 (the build plan
+        phases)."""
+        raise _verify.blocked(
+            "Publication.export() emits the M4 spec (provisioning-as-code, the build plan phases)."
+        )
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------
     async def verify(self, donkey: Any, *, raise_on_drift: bool = False) -> None:
         """Compare the live server against the published descriptor; raise
-        :class:`~donkey_kit.core.errors.PublicationDrift` on mismatch (§7.4).
+        :class:`~donkey_kit.core.errors.PublicationDrift` on mismatch (BG §2.5).
         Defaults to warn-and-continue — a drifted catalog must be loud but must
         not take down production traffic. Blocked until Exchange read +
-        introspection are verified (§7.9)."""
+        introspection are verified (BG §2.5)."""
         raise _verify.blocked(
-            "Exchange descriptor read + live introspection for verify() (§7.4, §7.9)."
+            "Exchange descriptor read + live introspection for verify() (BG §2.5)."
         )
 
 
@@ -100,7 +103,7 @@ _NORMALISE = re.compile(r"[_\W]+")
 def check_description_quality(
     tools: list[tuple[str, str | None]], *, min_len: int = 12
 ) -> list[DescriptionIssue]:
-    """Fail-worthy description problems (§7.3.3). Pure, implemented now.
+    """Fail-worthy description problems (BG §2.5). Pure, implemented now.
 
     A description missing, or equal to the identifier (after normalising
     underscores/case), or shorter than ``min_len`` is a FAILURE, not a warning —

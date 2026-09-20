@@ -1,4 +1,4 @@
-"""Google ADK adapter example (§3.3).
+"""Google ADK adapter example (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
@@ -8,12 +8,12 @@ pointed at the governed Agent Fabric LLM proxy with a single factory call:
     from donkey_kit.integrations.adk import model
     m = model("gpt-4o")  # sent to LiteLLM as "openai/gpt-4o"
 
-Honest status (§0.3/§8): the proxy *contract* (base URL, client_id/secret
-auth, attribution headers) is live-verified, and ``LiteLlm``/its kwargs are
+Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* (base URL,
+client_id/secret auth, attribution headers) is live-verified, and ``LiteLlm``/its kwargs are
 verified per the FACTS table. What is NOT attempted here is a live
 inference call: ADK drives models through its own ``Runner``/``Agent``
 session machinery, not a simple one-line method on the model object, and
-guessing that call risks inventing an API (§0.3). Construction is this
+guessing that call risks inventing an API (verification discipline). Construction is this
 example's verified surface — once you have ``m``, wire it into your own ADK
 ``Agent``/``Runner`` per ADK's own docs.
 """
@@ -60,7 +60,7 @@ def main() -> None:
     print(
         "Construction is the SDK's verified surface; drive this object with "
         "ADK's own Agent/Runner API (see this example's README) — that "
-        "runtime call is UNVERIFIED here and deliberately not guessed (§0.3)."
+        "runtime call is UNVERIFIED here and deliberately not guessed (verification discipline)."
     )
 
 

@@ -8,12 +8,12 @@ proxy — `client_id`/`client_secret` header auth (not bearer), attribution
 headers, and the SDK's shared transport (retry/telemetry hooks). The returned
 object is Anthropic's own client, not a wrapper.
 
-**Divergence, by design (§11.10).** Anthropic's native surface is a *client*,
+**Divergence, by design — the framework wins (BG §1.8).** Anthropic's native surface is a *client*,
 and the model id is a per-call argument (`c.messages.create(model=..., ...)`),
 not a constructor one. So this adapter exposes `client()` rather than the
 `model(...)` factory the OpenAI-compatible adapters use.
 
-**Unverified dependency (§8).** The Omni Gateway LLM proxy is verified
+**Unverified dependency (docs/verified-apis.md §8).** The Omni Gateway LLM proxy is verified
 OpenAI-compatible; whether it also exposes an **Anthropic-native Messages API
 route** is an open M0 verification item. Until confirmed, `client()` emits a
 one-time warning and no live call is made. Once a real route is confirmed,
@@ -40,7 +40,7 @@ python examples/anthropic/main.py
 ## The manual equivalent
 
 The factory call is equivalent to building `AsyncAnthropic` yourself with the
-governed connection values (§3.1):
+governed connection values (BG §1.8):
 
 ```python
 import httpx

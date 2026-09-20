@@ -27,5 +27,5 @@ nightly-batch and internal-copilot walkthroughs run their **governed-call and
 refusal-handling** paths against the simulator now; where a step depends on a
 surface that is still [blocked on verification](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) — MCP
 tool access, agent identity, the kill switch — the page says so in the reader's
-terms and shows the shape without inventing an endpoint (§0.3). A "blocked"
+terms and shows the shape without inventing an endpoint (verification discipline). A "blocked"
 note here means *known, deliberate, and tracked*, never *guessed*.

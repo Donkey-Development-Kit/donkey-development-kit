@@ -1,4 +1,4 @@
-"""Config resolution + all-at-once validation (§2.1)."""
+"""Config resolution + all-at-once validation."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def test_validated_reports_all_missing_control_plane_fields_at_once() -> None:
     with pytest.raises(ConfigError) as exc:
         cfg.validated(need="control_plane")
     msg = str(exc.value)
-    # All three must appear in ONE error (§2.1), not one-per-run.
+    # All three must appear in ONE error (config resolution), not one-per-run.
     assert "client_id" in msg
     assert "client_secret" in msg
     assert "org_id" in msg
@@ -26,15 +26,15 @@ def test_validated_llm_is_independent_of_control_plane() -> None:
         llm_proxy_client_id="cid",
         llm_proxy_client_secret="csecret",
     )
-    # LLM creds present, control-plane absent: llm validation passes (§2.2).
+    # LLM creds present, control-plane absent: llm validation passes (BG §1.1).
     assert cfg.validated(need="llm") is cfg
     with pytest.raises(ConfigError):
         cfg.validated(need="control_plane")
 
 
 def test_validated_llm_requires_client_id_and_secret_not_bearer() -> None:
-    # Verified auth (§2/§3) is a client_id/secret pair — a bare url + api-key is
-    # NOT sufficient, and the error names BOTH missing header credentials at once.
+    # Verified auth (docs/verified-apis.md §2/§3) is a client_id/secret pair — a bare url + api-key
+    # is NOT sufficient, and the error names BOTH missing header credentials at once.
     cfg = DonkeyConfig(llm_proxy_url="https://proxy", llm_proxy_key="k")
     with pytest.raises(ConfigError) as exc:
         cfg.validated(need="llm")
@@ -84,7 +84,7 @@ def test_capture_content_env_overrides_toml(tmp_path, monkeypatch: pytest.Monkey
     assert DonkeyConfig.from_env().telemetry_capture_content is True  # env wins
 
 
-# --- on_model_substitution resolution + validation (§3, #309) ---------------
+# --- on_model_substitution resolution + validation (BG §1.1, #309) ---------------
 # Off by default: a routing substitution is surfaced passively on last_call
 # unless the developer opts into a hard error, through the normal precedence.
 
@@ -124,7 +124,7 @@ def test_unknown_on_model_substitution_is_a_config_error(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A typo like "error" must fail loudly at resolve time — a silent fall-back to
-    # "off" would leave a caller believing they had opted into strictness (§309).
+    # "off" would leave a caller believing they had opted into strictness (#309).
     _isolate_toml(tmp_path, monkeypatch)
     monkeypatch.setenv("DONKEY_ON_MODEL_SUBSTITUTION", "error")
     with pytest.raises(ConfigError) as exc:
@@ -132,7 +132,7 @@ def test_unknown_on_model_substitution_is_a_config_error(
     assert "error" in str(exc.value)
 
 
-# --- cost-attribution tag resolution (§3, BG §1.7, #196) --------------------
+# --- cost-attribution tag resolution (docs/verified-apis.md §3, BG §1.7, #196) --------------------
 
 
 def _isolate_toml(tmp_path, monkeypatch: pytest.MonkeyPatch, body: str | None = None) -> None:

@@ -3,7 +3,7 @@
 These JSON files are **faithful, trimmed captures** of real responses from the
 `mcp-a2d` MCP server (host `www.a2d-ai.com`), taken 2026-08-28. They exist so the
 registry value types (`McpServerHandle`, `ToolDescriptor`, `AssetRef`) can be
-validated against real-world shapes without a live call (§8.2, fixture-driven).
+validated against real-world shapes without a live call (BG §1.5, fixture-driven).
 
 ## What these are — and are NOT
 
