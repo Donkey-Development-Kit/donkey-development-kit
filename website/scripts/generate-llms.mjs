@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WEBSITE = resolve(HERE, '..')
-const PAGES = join(WEBSITE, 'pages')
+const CONTENT = join(WEBSITE, 'content')
 const PUBLIC = join(WEBSITE, 'public')
 
 // The deployed GitHub Pages URL. The site is served under the project sub-path
@@ -204,7 +204,7 @@ function truncate(s, n) {
 
 async function main() {
   const pages = []
-  await collectPages(PAGES, '', 'Getting started', pages)
+  await collectPages(CONTENT, '', 'Getting started', pages)
 
   const pageSet = new Set(pages.map((p) => p.urlPath).filter(Boolean))
 
