@@ -1,4 +1,4 @@
-"""Registry value types (§4.2)."""
+"""Registry value types (BG §2.7)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ AssetType = Literal["mcp", "a2a-agent", "agent", "api"]
 
 @dataclass(frozen=True)
 class AssetRef:
-    """``group_id/asset_id/version`` plus discovery metadata (§4.2).
+    """``group_id/asset_id/version`` plus discovery metadata (BG §2.7).
 
     Accept a shorthand string form (``"com.acme/vendor-shipment-mcp/1.0.0"``)
     everywhere a ref is taken, via :meth:`parse`.
@@ -46,7 +46,7 @@ class AssetRef:
 @dataclass(frozen=True)
 class McpServerHandle:
     """A resolved MCP server. Carries connection info; does NOT open a
-    connection (§4.3 — connect on first tool use)."""
+    connection (BG §2.7 — connect on first tool use)."""
 
     ref: AssetRef
     endpoint_url: str
@@ -58,7 +58,7 @@ class McpServerHandle:
 
 @dataclass(frozen=True)
 class AgentHandle:
-    """A resolved A2A-compliant agent (§4.5)."""
+    """A resolved A2A-compliant agent (BG §2.9)."""
 
     ref: AssetRef
     endpoint_url: str

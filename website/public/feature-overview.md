@@ -149,7 +149,7 @@ The governed proxy has **no** catalog endpoint (`GET /models` → `404`, verifie
 `list_models(live=True)` raises a clear `ConfigError` explaining the absence
 rather than fabricating a path.
 
-  **Honesty note (§0.3).** The proxy *contract* the adapters target is
+  **Honesty note (verification discipline).** The proxy *contract* the adapters target is
   live-verified, but the exact framework *constructor signatures* are still being
   confirmed against installed versions. Where a
   name can't be resolved, the adapter raises `blocked on verification` rather

@@ -15,7 +15,7 @@ difference from ``simulate()``'s transport: this one counts *every* wire send
 rather than deduping retries, because counting re-sends is exactly how the retry
 scenario is observed.
 
-Framework isolation (§1.1): imports only ``httpx``, the framework-free
+Framework isolation (the layered architecture): imports only ``httpx``, the framework-free
 ``core``/``donkey`` surface, and the sibling simulator loader — never a web
 framework and never ``openai`` at module top. It is a dev-only simulator-style
 sibling, kept out of the five production layers by an import-linter contract.

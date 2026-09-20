@@ -1,5 +1,5 @@
 """Budget: the first-class object parsed from the LLM proxy's budget headers —
-the numeric ``x-token-*`` trio (§1.3 / BG §1.3, #185) and the prose
+the numeric ``x-token-*`` trio (BG §1.3, #185) and the prose
 ``x-llm-proxy-ratelimit`` fallback that is the only budget signal on a live 200
 (#352). No network is touched — headers are attached to constructed
 ``httpx.Response`` objects, and the transport wiring is exercised via
@@ -45,7 +45,7 @@ def test_budget_starts_unobserved() -> None:
 
 
 def test_reset_ms_converts_to_reset_at_to_the_second() -> None:
-    """AC: x-token-reset is milliseconds *to* reset (a delta, docs §4), so
+    """AC: x-token-reset is milliseconds *to* reset (a delta, docs/verified-apis.md §4), so
     reset_at = observed_at + that delta. Injected clock makes it exact."""
     b = Budget()
     b.observe(
@@ -170,7 +170,7 @@ def test_prose_fills_only_fields_the_numeric_trio_leaves_unset() -> None:
 
 
 def test_unparseable_prose_is_a_noop_and_never_raises() -> None:
-    """AC: an unparseable sentence is a no-op, per §0.3 — never a crash, never a
+    """AC: an unparseable sentence is a no-op, per verification discipline — never a crash, never a
     half-populated budget."""
     b = Budget()
     b.observe(_resp(200, **{"x-llm-proxy-ratelimit": "rate limited, try later"}), now=_FIXED_NOW)

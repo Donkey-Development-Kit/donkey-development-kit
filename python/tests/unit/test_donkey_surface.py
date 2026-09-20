@@ -22,7 +22,7 @@ def test_uninstalled_adapter_raises_curated_import_error(
     # Force "framework not installed" regardless of what happens to be present in
     # the dev env, so the assertion is deterministic: access must raise
     # ImportError with the exact install command, never a bare
-    # ModuleNotFoundError (§3.2).
+    # ModuleNotFoundError (BG §1.8).
     monkeypatch.setattr("donkey_kit.donkey._framework_installed", lambda _probe: False)
     fab = Donkey(_cfg())
     with pytest.raises(ImportError) as exc:
@@ -125,7 +125,7 @@ def test_run_without_id_generates_a_run_of_one() -> None:
     assert current_correlation_id() is None
 
 
-# --- cost-attribution tags on the public surface (§3, BG §1.7, #196) --------
+# --- cost-attribution tags on the public surface (docs/verified-apis.md §3, BG §1.7, #196) --------
 
 
 def test_from_env_sets_config_level_cost_tags(
@@ -162,7 +162,7 @@ def test_from_env_kwargs_merge_over_env_tags(
     assert fab.config.cost == CostTags(team="kwarg-team", env="prod")
 
 
-# --- on_model_substitution override on the public surface (§3, #309) --------
+# --- on_model_substitution override on the public surface (BG §1.1, #309) --------
 
 
 def test_from_env_sets_on_model_substitution(
@@ -181,7 +181,7 @@ def test_from_env_sets_on_model_substitution(
 
 def test_model_substituted_is_a_public_export() -> None:
     # The typed error the "raise" mode surfaces must be importable from the
-    # top-level package so a caller can `except ModelSubstituted` (§3, #309).
+    # top-level package so a caller can `except ModelSubstituted` (BG §1.1, #309).
     from donkey_kit import ModelSubstituted
     from donkey_kit.core.errors import DonkeyError
 
@@ -237,7 +237,7 @@ def test_client_returns_async_by_default_and_blocking_on_request() -> None:
 
 def test_both_clients_carry_the_same_governed_configuration() -> None:
     """The blocking client is a transport swap, not a different contract: same
-    base URL and same verified client_id/client_secret headers (§2/§3)."""
+    base URL and same verified client_id/client_secret headers (docs/verified-apis.md §2/§3)."""
     pytest.importorskip("openai")
 
     with Donkey(_cfg()) as fab:
@@ -248,7 +248,7 @@ def test_both_clients_carry_the_same_governed_configuration() -> None:
         assert str(built.base_url) == "https://proxy"
         assert built.default_headers["client_id"] == "cid"
         assert built.default_headers["client_secret"] == "csecret"
-        assert built.max_retries == 0  # retries belong to the transport (§2.3)
+        assert built.max_retries == 0  # retries belong to the transport (BG §1.1)
 
 
 def test_blocking_transport_is_lazy_shared_and_closed_by_the_context_manager() -> None:

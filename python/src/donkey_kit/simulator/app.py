@@ -12,7 +12,7 @@ traffic. It is a separate process serving static fixtures. Every response
 carries ``x-donkey-simulator: true`` so it can never be mistaken for a real
 gateway (BG §1.4, non-negotiable).
 
-Framework isolation (§1.1): ``starlette`` is imported **lazily inside**
+Framework isolation (the layered architecture): ``starlette`` is imported **lazily inside**
 :func:`build_app`, never at module top, so ``import donkey_kit.simulator``
 stays green under the base-only CI job (``[dev]`` only, no ``[local]`` extra).
 The public return type is a framework-free ASGI ``Protocol`` so no ``starlette``
@@ -53,7 +53,7 @@ _SIMULATOR_HEADER_BYTES = SIMULATOR_HEADER.encode("latin-1")
 # The ONE fixed, documented, simulator-owned rejection-selection trigger (the
 # configurable --scenario engine is a linked follow-up, not #187). A request
 # whose model id is "donkey-sim/<shape>" is served that rejection shape. This is
-# a simulator control surface only — NEVER a real Omni Gateway behaviour (§0.3).
+# a simulator control surface only — NEVER a real Omni Gateway behaviour (verification discipline).
 SIM_MODEL_PREFIX = "donkey-sim/"
 
 # The budget window the live proxy emits on a happy-path `200` (with the
@@ -168,7 +168,7 @@ class _Simulator:
             return await self._responses(request)
         if request.method == "GET" and path.endswith("/models"):
             # No catalog endpoint is verified; mirror the captured 404 rather
-            # than fabricate a model list (§0.3).
+            # than fabricate a model list (verification discipline).
             return self._response(load("models-notfound"))
         # Unknown route: an honest, honesty-stamped 404.
         return self._response(load("models-notfound"))
@@ -213,7 +213,7 @@ class _Simulator:
             # The captured stream sample is a single, truncated `response.created`
             # event — a real capture, NOT a complete SSE stream ending in
             # `data: [DONE]`. It is replayed verbatim rather than fabricating the
-            # remaining events (§0.3: never invent gateway output); a complete
+            # remaining events (verification discipline: never invent gateway output); a complete
             # SSE capture is a follow-up. It still carries the budget window prose
             # header, like any happy path.
             return self._response(load("stream"), extra=ratelimit_header)

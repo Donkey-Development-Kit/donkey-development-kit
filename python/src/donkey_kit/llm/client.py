@@ -1,4 +1,4 @@
-"""Raw, framework-free LLM client + model listing (§3.2, §3.4).
+"""Raw, framework-free LLM client + model listing (BG §1.8, BG §1.1).
 
 ``donkey.llm.client()`` returns an ``AsyncOpenAI`` pointed at the proxy, sharing
 the SDK's shared httpx client so attribution/correlation/auth headers and the
@@ -90,16 +90,19 @@ class LLMClient:
 
         assert self._cfg.llm_proxy_url is not None  # validated() guarantees this
         shared: dict[str, Any] = {
-            "base_url": self._cfg.llm_proxy_url,  # no /v1 at ingress (§2) — verbatim
+            # no /v1 at ingress (docs/verified-apis.md §2) — verbatim
+            "base_url": self._cfg.llm_proxy_url,
             "api_key": proxy_api_key(self._cfg),
-            "default_headers": proxy_auth_headers(self._cfg),  # client_id/secret (§2/§3)
-            "max_retries": 0,  # we retry in transport (§2.3)
+            # client_id/secret (docs/verified-apis.md §2/§3)
+            "default_headers": proxy_auth_headers(self._cfg),
+            "max_retries": 0,  # we retry in transport (BG §1.1)
             **kw,
         }
         # openai 3.x retyped http_client to httpx2.AsyncClient (a distinct class from
         # a separate distribution); our DonkeyClient/DonkeyAsyncClient are httpx
         # subclasses, duck-typed fine at runtime. Typecheck-only mismatch — see
-        # docs/verified-apis.md (openai >=3.0 row); no upper pin, by design (§8.4).
+        # docs/verified-apis.md (openai >=3.0 row); no upper pin, by design (the
+        # floors-never-ceilings rule).
         if sync:
             return OpenAI(http_client=self._sync_http(), **shared)  # type: ignore[arg-type]
         return AsyncOpenAI(http_client=self._http, **shared)  # type: ignore[arg-type]
@@ -108,28 +111,28 @@ class LLMClient:
         """List logical models the proxy exposes.
 
         The governed proxy has **no** catalog endpoint — ``GET /models`` returns
-        ``404`` (LIVE-VERIFIED, §2): model-based-routing only routes requests
+        ``404`` (LIVE-VERIFIED, docs/verified-apis.md §2): model-based-routing only routes requests
         that carry ``model`` in the body. So ``live=True`` cannot be satisfied,
         and we say so plainly rather than guess a path. Use :meth:`resolve` for a
         heuristic :class:`ModelHandle` from a known model id, or source the
-        catalog from Exchange / provider config (§3.4).
+        catalog from Exchange / provider config (BG §1.1).
         """
 
         if live:
             raise ConfigError(
-                "The governed LLM proxy exposes no /models endpoint (GET /models "
-                "→ 404, verified §2): it only routes requests carrying `model` in "
-                "the body. Live model listing is not available from the proxy. Use "
-                "resolve(model_id) or source the catalog from Exchange/provider config."
+                "The governed LLM proxy exposes no /models endpoint (GET /models → 404, verified "
+                "docs/verified-apis.md §2): it only routes requests carrying `model` in the body. "
+                "Live model listing is not available from the proxy. Use resolve(model_id) or "
+                "source the catalog from Exchange/provider config."
             )
         raise ConfigError(
-            "list_models() has no offline source of truth yet, and the proxy has "
-            "no /models endpoint to enumerate (verified §2). Use resolve(model_id) "
-            "to get a heuristic ModelHandle, or source models from Exchange (§3.4)."
+            "list_models() has no offline source of truth yet, and the proxy has no /models "
+            "endpoint to enumerate (verified docs/verified-apis.md §2). Use resolve(model_id) to "
+            "get a heuristic ModelHandle, or source models from Exchange (BG §1.1)."
         )
 
     def resolve(self, model_id: str, *, provider: str | None = None) -> ModelHandle:
-        """A heuristic :class:`ModelHandle` for a known model id (§3.4)."""
+        """A heuristic :class:`ModelHandle` for a known model id (BG §1.1)."""
         return ModelHandle(
             id=model_id,
             provider=provider,

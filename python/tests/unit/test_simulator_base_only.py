@@ -1,4 +1,4 @@
-"""The base-only guarantee (§1.1, BG §1.4): importing the simulator package must
+"""The base-only guarantee (the layered architecture, BG §1.4): importing the simulator package must
 NOT require the ``[local]`` extra.
 
 Unguarded on purpose — this runs in the base-only CI job under ``[dev]`` only,

@@ -6,11 +6,11 @@ trustworthy. It is a distillation, not the spec. The authoritative specs are
 [`spec/donkey-development-kit-build-plan.md`](spec/donkey-development-kit-build-plan.md)
 (phases, milestones, standing invariants) and
 [`spec/donkey-development-kit-build-guide.md`](spec/donkey-development-kit-build-guide.md)
-(feature scope, cited as `BG §N.N`). A **bare** `§N.N` reference below points
-into the archived v1 plan at
-[`spec/archive/donkey-development-kit-build-plan-v1.md`](spec/archive/donkey-development-kit-build-plan-v1.md),
-which is where most existing citations in the tree still resolve. When a rule
-here feels arbitrary, read the cited section — the constraints are deliberate.
+(feature scope, cited as `BG §N.N`). The five **standing invariants** in the
+build plan keep a bare `§` label — `§0.3`, `§1.1`, `§2.1`, `§8.1`, `§8.4` — as
+their stable historical name; every other citation is a `BG §N.N`, a named
+invariant, or a `Phase N`. When a rule here feels arbitrary, read the cited
+section — the constraints are deliberate.
 
 For *using* the SDK, see the consumer docs site (`website/`). For *working in*
 the repo — branch/PR flow, testing surfaces, coding conventions — see
@@ -38,7 +38,7 @@ owns. The gateway — not the SDK — enforces policy.
 
 ---
 
-## Layered architecture (§1.1)
+## Layered architecture
 
 The package is a strict stack. Higher layers depend on lower layers; **no lower
 layer may import a higher one.**
@@ -61,7 +61,7 @@ core/           config · auth · transport · errors · budget · telemetry · 
 endpoints are `_verify.blocked`. Treat it as legacy scaffolding: reachable, but
 do not deepen it (see "Still blocked", below).
 
-**The hard rule (§1.1):** `core/` has no dependency on any agent framework.
+**The hard rule (the layered architecture):** `core/` has no dependency on any agent framework.
 Each `integrations/*` adapter may depend on exactly one framework, and nothing
 in `integrations/` may be imported by `core`, `llm`, `registry`, or `tools`.
 This is enforced in CI by `import-linter` (`lint-imports`); a violating import
@@ -88,7 +88,7 @@ framework that may not be installed.
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
 - **Configuration** resolves in a fixed precedence — constructor kwargs → env
-  vars → `.donkey-kit.toml` → default (§2.1) — and reports every missing field
+  vars → `.donkey-kit.toml` → default — and reports every missing field
   at once rather than one failure per run. `Donkey.from_env()` is the entry point.
 - **The transport is the attachment point.** `DonkeyAsyncClient` exposes four
   internal lifecycle hooks — no-op by default, **not** public API, mirrored on the
@@ -112,12 +112,12 @@ framework that may not be installed.
   full contracts live in the `core/transport.py` docstrings.
 - **`Governance`** (`governance.py`) is a second top-level object alongside
   `Donkey`, outside the linear import stack — it depends only on `core`. It is
-  ONE object behind three verbs (§6.2–§6.4): `simulate()` (an ephemeral local
+  ONE object behind three verbs: `simulate()` (an ephemeral local
   gateway harness), `export()` (emit the governed-state manifest), and `resolve()`
   (reconcile a running `Donkey` against it, raising `GovernanceDrift` on
   mismatch); a separate platform-team-only `apply()` is the deliberate escape
   hatch. **All of these are currently `_verify.blocked`** — the `simulate()`
-  harness included — pending the §6 verification items, so today the object is the
+  harness included — pending the Verification milestone, so today the object is the
   shape, not yet the behaviour. Do not confuse it with `registry/governance.py`,
   which types governed-state *assets* one layer down.
 
@@ -127,7 +127,7 @@ module-level factory.
 
 ---
 
-## Verification discipline (§0.3)
+## Verification discipline
 
 This is the SDK's most distinctive principle and its strongest trust guarantee.
 
@@ -135,7 +135,7 @@ This is the SDK's most distinctive principle and its strongest trust guarantee.
 
 A fabricated endpoint that 404s in a customer sandbox destroys confidence in the
 whole package, so the codebase makes fabrication structurally hard. `core/_verify.py`
-is the single home for every value that §0.3 says must be confirmed against a real
+is the single home for every value that the verification discipline says must be confirmed against a real
 Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
@@ -160,11 +160,11 @@ is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streami
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
 discovery, the provisioning control plane, and the exact framework-adapter class
-names/kwargs (§8–§10).
+names/kwargs (the conformance kit and the build plan phases).
 
 ---
 
-## Error-taxonomy design (§2.4)
+## Error-taxonomy design (BG §1.2)
 
 Turning the gateway's policy rejections into catchable, actionable exceptions is
 the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
@@ -182,7 +182,7 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 
 **`classify()` is fixture-driven, not guessed.** The HTTP-response → exception
 mapping in `classify()` is populated from real rejection captures taken against a
-live governed proxy (§8.2), not hand-written assumptions. The authoritative
+live governed proxy (BG §1.5), not hand-written assumptions. The authoritative
 discriminator is the error **`type`** plus specific headers — **not the status
 code alone.** The captures established, for example, that:
 
@@ -204,7 +204,7 @@ A **prompt-injection** block is typed on its own signal: the
 is still pending live capture (#253). Only **content-moderation /
 federated-guardrail** shapes remain under-documented, and those deliberately fall
 through to a generic `PolicyViolation` whose message *says so* rather than
-pretending to a precision the captures don't yet support — the same §0.3 honesty
+pretending to a precision the captures don't yet support — the same verification-discipline honesty
 as the verification ledger. All errors subclass `DonkeyError`, which carries the
 correlation/request IDs and the raw response for inspection.
 
@@ -247,7 +247,7 @@ pytest plugin** users run against their own agent (#191).
 Two adapters carry documented conformance exemptions: CrewAI (per-run
 correlation degrades to per-client because it reaches models through LiteLLM,
 like ADK) and the Anthropic SDK (depends on the proxy exposing an
-Anthropic-native Messages API route, an open verification item, §0.3).
+Anthropic-native Messages API route, an open verification item).
 
 ---
 
@@ -257,9 +257,7 @@ Anthropic-native Messages API route, an open verification item, §0.3).
   authoritative plan: phases, milestones, label taxonomy, standing invariants.
 - [`spec/donkey-development-kit-build-guide.md`](spec/donkey-development-kit-build-guide.md) —
   feature-by-feature scope and acceptance bars; cited as `BG §N.N`.
-- [`spec/archive/donkey-development-kit-build-plan-v1.md`](spec/archive/donkey-development-kit-build-plan-v1.md) —
-  archived v1 plan, not authoritative; a bare `§N.N` resolves here.
-- [`docs/verified-apis.md`](docs/verified-apis.md) — the §0.3 verification ledger
+- [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch/PR/release flow, testing surfaces,
   coding conventions.
@@ -274,4 +272,4 @@ Anthropic-native Messages API route, an open verification item, §0.3).
 
 *"Agent Fabric", "Anypoint", and "Omni Gateway" are Salesforce trademarks; this
 project is a descriptive, non-first-party SDK for consuming those capabilities
-(§0.4).*
+(the trademark/support boundary).*

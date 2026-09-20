@@ -1,4 +1,4 @@
-# Verified APIs — output of §0.3 (M0)
+# Verified APIs — output of the verification discipline (M0)
 
 > **Status (2026-08-28): partially verified.** The **management/control-plane**
 > contract (OAuth token path, Exchange/API-Manager/gateway REST endpoints,
@@ -41,7 +41,7 @@
 >
 > Working instruction #2: *never invent an endpoint, header name, or class name.*
 > A fabricated endpoint that 404s in a customer sandbox destroys trust in the
-> whole package (§0.3).
+> whole package (verification discipline).
 
 Placeholder constants that gate behaviour live in
 `src/donkey_kit/core/_verify.py`. Each is emitted with a runtime warning until
@@ -64,7 +64,7 @@ VERIFIED with a concrete path.
 | Auth env var names | `core/config.py` | VERIFIED (CLI) | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, `ANYPOINT_ORG`, `ANYPOINT_ENV`, `ANYPOINT_BEARER` — match DonkeyConfig | 2026-08-28 | CLI flag defaults (`agent-network:*`) |
 | Auth model | `core/auth.py` | VERIFIED (CLI) | connected-app `client_id`/`client_secret` OR direct `bearer` token both accepted | 2026-08-28 | CLI flags |
 | Org / business-group as attribution unit | `core/config.py` | VERIFIED (CLI) | root BG `anypoint-cbp-1780648272` = org id (UUID); assets publish under org id as Maven groupId | 2026-08-28 | `account:business-group:list`, `api-mgr:api:describe` |
-| Environments | `core/config.py` §6.2 | VERIFIED (CLI) | `{Name, Id (UUID), Sandbox: Y/N}`; sandbox has `Design` + `Sandbox` | 2026-08-28 | `account:environment:list` |
+| Environments | `core/config.py` (environment targeting) | VERIFIED (CLI) | `{Name, Id (UUID), Sandbox: Y/N}`; sandbox has `Design` + `Sandbox` | 2026-08-28 | `account:environment:list` |
 | OAuth2 token endpoint path | `core/auth.py` | VERIFIED (plugin) | `POST /accounts/api/v2/oauth2/token`, body `{client_id, client_secret, grant_type}` → `{access_token, expires_in}` | 2026-08-28 | §12.1 (`anypoint-cli-command/lib/login.js`) |
 | Region host variants (US/EU/CA/JP Hyperforce) | `core/config.py` | UNVERIFIED | US = `anypoint.mulesoft.com` confirmed; others pending | — | — |
 | Connected-app scopes: Exchange read | `core/auth.py`, docs | UNVERIFIED | — | — | — |
@@ -89,14 +89,14 @@ request against the deployed gateway.
 | Endpoint/API surface | `llm/client.py` | VERIFIED (LIVE) | OpenAI **Responses API** works (`POST /openai-sdk/responses`, body `{model, input}`). Upstream registered as `https://api.openai.com/v1/`; `proxyUri http://0.0.0.0:8081/openai-sdk` | 2026-08-28 | `api:describe`, live probe |
 | Auth: header name / model | `core/transport.py`, `core/config.py` | VERIFIED (LIVE) | **`client_id` + `client_secret` request headers** (NOT bearer) — enforced by `client-id-enforcement` 1.3.3. A consumer **credential pair**, mapped to an Anypoint client application | 2026-08-28 | live probe + `policy:list` |
 | Auth: model-wallet ingress (alt to `client_id`/`client_secret`, #372) | `core/transport.py`, `core/config.py` — UNVERIFIED, not wired | UNVERIFIED | Wallet-backed model proxies auth via an **IdP-issued JWT + a client ID**, with **no `client_secret`**: the client ID travels as the `X-Client-Id` request header (selects the wallet) *and* as a `client_id` **JWT claim** (`#[authentication.properties.claims.client_id]`, read after the **JWT Validation** policy publishes verified claims); requires an org **IdP** (JWKS URL / signing key — "orgs without an IdP can't use model wallets"); the default **DataWeave Headers Transformation** + **Client ID Enforcement** policies are disabled. A **parallel** ingress model, NOT a replacement of the LIVE `client_id`/`client_secret` pair above. **Live-capture worklist:** confirm the exact `X-Client-Id` header name/casing, the JWT claim path, and the request auth shape against a wallet-enabled sandbox with an IdP configured — until then no `_verify.py` value is marked verified and no guard comes off (§12.8; a doc read is not a live capture). | — | `docs.mulesoft.com/general/exp-model-wallets-manage` (doc read, not a live probe) |
-| Model routing | `llm/client.py`; consumed by `core/lastcall.py` + `core/transport.py` (#309) | VERIFIED (LIVE) | `model-based-routing` 1.0.3 reads `model` from body → provider. Response headers `x-llm-proxy-routing-type: ModelBased`, `x-llm-proxy-routing-fallback: false`, `x-llm-proxy-llm-provider: openai`, `x-llm-proxy-llm-model: gpt-5.1`, `x-llm-proxy-model-based-routing-success: Request successfully matched. …`. As of #309 the SDK surfaces these at `donkey.last_call` (`served_provider`/`served_model`/`routing_type`/`fallback`, `substituted` when served≠requested), emits them as `gen_ai.response.model` / `donkey.routing.type` / `donkey.routing.fallback` span attrs, and **does not retry** a `503` a fallback header already marked failed-over (§309, must not fight #183) | 2026-08-28 | live probe (`responses.success.headers.txt`) |
+| Model routing | `llm/client.py`; consumed by `core/lastcall.py` + `core/transport.py` (#309) | VERIFIED (LIVE) | `model-based-routing` 1.0.3 reads `model` from body → provider. Response headers `x-llm-proxy-routing-type: ModelBased`, `x-llm-proxy-routing-fallback: false`, `x-llm-proxy-llm-provider: openai`, `x-llm-proxy-llm-model: gpt-5.1`, `x-llm-proxy-model-based-routing-success: Request successfully matched. …`. As of #309 the SDK surfaces these at `donkey.last_call` (`served_provider`/`served_model`/`routing_type`/`fallback`, `substituted` when served≠requested), emits them as `gen_ai.response.model` / `donkey.routing.type` / `donkey.routing.fallback` span attrs, and **does not retry** a `503` a fallback header already marked failed-over (#309, must not fight #183) | 2026-08-28 | live probe (`responses.success.headers.txt`) |
 | Token accounting (cost attribution) | `llm/*`, telemetry | VERIFIED (LIVE) | response `usage: {input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}` — the detail sub-objects carry `cached_tokens` / `cache_write_tokens` (under `input_tokens_details`) and `reasoning_tokens` (under `output_tokens_details`), surfaced per-call at `donkey.last_call` and on the span (#307, see §3); also upstream `x-ratelimit-*` headers passed through (Go-style **duration-string** resets, e.g. `0s`/`12ms` — distinct from the gateway's own `x-llm-proxy-ratelimit`/`x-token-*` window, see §4) | 2026-08-28 | `responses.success.body.json` |
 | Request fields passed through | `llm/client.py` | VERIFIED (LIVE) | OpenAI body passed through verbatim; response returned verbatim (model `gpt-5.1`→`gpt-5.1-2025-11-13`, full Responses object) | 2026-08-28 | live probe |
 | Streaming support | `llm/client.py` | VERIFIED (LIVE) | `"stream": true` → `200`, `content-type: text/event-stream`, chunked SSE (`event: response.created` / `response.in_progress` / …); same `x-llm-proxy-*` headers | 2026-08-28 | live probe (`responses.stream.*`) |
 | `/models` endpoint | `llm/catalog.py` | VERIFIED (LIVE) | **Does not exist** — `GET /openai-sdk/models` → `404`, `x-llm-proxy-model-based-routing-success: Request passed through without model-based routing`. The proxy only routes requests carrying `model` in the body; no catalog endpoint. `llm/catalog.py` must source models elsewhere | 2026-08-28 | live probe (`models.notfound.headers.txt`) |
 | Supported providers | `llm/catalog.py`, `governance.py` | VERIFIED (CLI) | openai, azureopenai, gemini, **bedrock**, **anthropic** (each a `*-llm-provider-policy-flex` in org `68ef9520…`) | 2026-08-28 | `exchange:asset:list llm` |
 
-## 3. Token attribution headers (**highest-priority unknown**, §0.3)
+## 3. Token attribution headers (**highest-priority unknown**, verification discipline)
 
 Without these the core value proposition (per-agent cost attribution) does not work.
 
@@ -135,7 +135,7 @@ happy path and surfaces them at `donkey.last_call`: `x-request-id` becomes
 `LastCall.api_instance_id` (`21133858`) and `LastCall.environment_id`
 (`3e6ce455-…`, a UUID — dashes but no dots, so a three-way split on `.` is
 unambiguous). An absent or unrecognised shape leaves both `None` and never
-raises (§0.3). The response `x-correlation-id` is **not** parsed into the record
+raises (verification discipline). The response `x-correlation-id` is **not** parsed into the record
 yet — whether it echoes the client-sent id is unconfirmed (#300).
 
 As of #307, `core/lastcall.py` also parses the per-call **usage token counts**
@@ -173,7 +173,7 @@ The two #195 rows are **request** headers the SDK *sends* (the client→gateway
 join keys behind `donkey.run()` and `DonkeyError.correlation_id`/`.call_id`).
 The verified `x-correlation-id` above is the gateway's **response** echo — a
 different direction. Until an inbound-read name is confirmed against a sandbox,
-both request-header names stay `Unverified(...)` placeholders and emit the §0.3
+both request-header names stay `Unverified(...)` placeholders and emit the verification-discipline
 one-time warning; a customer whose gateway reads different names points the SDK
 at them via config rather than the SDK guessing.
 
@@ -187,7 +187,7 @@ value regardless of the header question — so cost attribution works in tracing
 today, and flips to on-the-wire headers the moment a customer sets the
 `cost_*_header` overrides or the gateway-side names are verified here.
 
-## 4. Policy rejection response shapes (capture as fixtures, §8.2)
+## 4. Policy rejection response shapes (capture as fixtures, BG §1.5)
 
 **Four rejection shapes** are LIVE-VERIFIED (2026-08-28) from the `openai-sdk`
 proxy (client-id-enforcement, upstream passthrough, PII, token-rate-limit).
@@ -250,7 +250,7 @@ states the shape is unconfirmed and whose remediation asks the operator to file
 the observed status/headers/body so the shape can be typed (#184). This is the
 last row above; it is deliberately **not** an `AuthError`, even for a `403`, once
 the verified `www-authenticate` auth shape is excluded. Re-confirming all of these
-against current docs and a sandbox is tracked in #253 (§0.3: no invented docs URL
+against current docs and a sandbox is tracked in #253 (verification discipline: no invented docs URL
 or version is recorded for them).
 
 **Budget window emission — two forms, keyed on outcome not status class
@@ -339,35 +339,35 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | Exact REST endpoints behind the CLI | VERIFIED (plugin) | gatewaymanager / runtimefabric / apimanager / amc / proxies / exchange paths + bodies | 2026-08-28 | §12.3–§12.5 |
 | `mulesoft/anypoint` Terraform provider coverage | UNVERIFIED | not needed if CLI/Maven path adopted | — | — |
 
-## 6. Governance / local-mode (§6.7)
+## 6. Governance / local-mode (the Verification milestone)
 
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
-| Can Local Mode run the LLM Proxy? | §6.4/§6.5 | UNVERIFIED | — | — |
-| Can Local Mode run MCP Bridge? | §6.4/§6.5 | UNVERIFIED | — | — |
+| Can Local Mode run the LLM Proxy? | the Verification milestone | UNVERIFIED | — | — |
+| Can Local Mode run MCP Bridge? | the Verification milestone | UNVERIFIED | — | — |
 | Does Local Mode need a control-plane licence/registration artifact? | OSS/CI viability | UNVERIFIED | — | — |
-| Which policies are Connected-Mode-only? (portability table) | §6.4 | UNVERIFIED | — | — |
+| Which policies are Connected-Mode-only? (portability table) | the Verification milestone | UNVERIFIED | — | — |
 | Is "deployed to gateway" readable per API instance? | `require_deployed` | VERIFIED (CLI) | Yes — `api-mgr:api:list` (per env) + `:api:describe <id>` returns Endpoint URI, gateway, deployment target | 2026-08-28 |
 | Are applied policies readable per API instance? | governed-state join | VERIFIED (CLI) | Yes — `api-mgr:policy:list <id>` returns `{ID, Template ID, Asset ID, Asset Version, Label, Status, Configuration}` | 2026-08-28 |
 | Are governance ruleset results exposed via API? | `require_governance_pass` | PARTIAL | `governance:api` evaluates rulesets; `governance:profile:*` manages profiles (ruleset refs = Maven GAV). Result-read shape pending | 2026-08-28 |
-| Can applied policies be fetched in bulk per environment? | §6.1.3 perf | UNVERIFIED | per-instance confirmed; bulk endpoint pending plugin analysis | — |
-| MCP-specific + enforcement policies observed | §6.4 portability | VERIFIED (CLI) | `mcp-support` (`injectMcpNameHeaders`), `client-id-enforcement` (client_id/client_secret headers), `header-injection` (`x-gateway-token`) | 2026-08-28 |
+| Can applied policies be fetched in bulk per environment? | governed-only discovery perf | UNVERIFIED | per-instance confirmed; bulk endpoint pending plugin analysis | — |
+| MCP-specific + enforcement policies observed | the Verification milestone (portability) | VERIFIED (CLI) | `mcp-support` (`injectMcpNameHeaders`), `client-id-enforcement` (client_id/client_secret headers), `header-injection` (`x-gateway-token`) | 2026-08-28 |
 | Governed MCP endpoint URL shape | `McpServerHandle.endpoint_url` | VERIFIED (CLI) | ingress gw: `https://agent-network-ingress-gw-<id>.<region>.cloudhub.io/mcp/<name>/` | 2026-08-28 |
-| Governed **LLM proxy** policy stack (live) | governed-state join, §6.4 | VERIFIED (LIVE) | on `openai-sdk`: `cors 1.3.2`, `dataweave-headers-transformation 1.0.0`, `client-id-enforcement 1.3.3`, `llm-proxy-core 1.0.5`, `model-based-routing 1.0.3`, `openai-transcoding-policy 1.0.3` — all Enabled | 2026-08-28 |
+| Governed **LLM proxy** policy stack (live) | governed-state join, the Verification milestone | VERIFIED (LIVE) | on `openai-sdk`: `cors 1.3.2`, `dataweave-headers-transformation 1.0.0`, `client-id-enforcement 1.3.3`, `llm-proxy-core 1.0.5`, `model-based-routing 1.0.3`, `openai-transcoding-policy 1.0.3` — all Enabled | 2026-08-28 |
 
-## 7. Publication / Exchange (§7.9)
+## 7. Publication / Exchange (BG §2.5)
 
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
-| First-class Exchange asset types for MCP servers & AI agents? | §7.2 + `asset_types` filter §6.1 | VERIFIED (CLI) | Yes — Exchange assets named "… MCP Server" and "… Agent Network"/agent, managed as API Manager instances | 2026-08-28: `api-mgr:api:list` |
+| First-class Exchange asset types for MCP servers & AI agents? | BG §2.5 + `asset_types` filter (governed-only discovery) | VERIFIED (CLI) | Yes — Exchange assets named "… MCP Server" and "… Agent Network"/agent, managed as API Manager instances | 2026-08-28: `api-mgr:api:list` |
 | Publication mechanism for non-Mule assets (REST / CLI / Maven)? JVM needed? | §7 CI story | VERIFIED (CLI) | Maven + CLI: `agent-network project publish` publishes the built project to Exchange; **JVM required** (`mvnw`) | 2026-08-28: `agent-network:project:publish --help` |
-| Publication uses Maven GAV coordinates | §7.5 | VERIFIED (CLI) | group-id/asset-id/asset-version; groupId defaults to org id | 2026-08-28: `:project:create --help`, `api-mgr:api:describe` |
-| Documentation pages publishable? | §7.2 | PARTIAL | `exchange asset page` + `exchange asset resource` topics exist | 2026-08-28: `exchange:asset --help` |
-| Can arbitrary metadata/tags be attached (content digest)? | §7.5 | UNVERIFIED | Tags field exists on instances (empty here); attach mechanism pending | — |
-| Asset lifecycle states (draft/published/deprecated) via API? | `require_lifecycle`, §7.5 | PARTIAL | `Deprecated` + `Public` flags on instances; A2D showed `status: draft\|published` | 2026-08-28 |
-| Native descriptor formats (MCP manifest, A2A card) vs file attach? | §7.3 output | VERIFIED (plugin) | typed Exchange files w/ fixed classifiers (`agent-metadata`, `mcp-metadata`, `llm-metadata`, `a2a-card`, `schema`, `mule-application`) attached to `agent-network` root asset | 2026-08-28 | §12.7 |
+| Publication uses Maven GAV coordinates | BG §2.5 | VERIFIED (CLI) | group-id/asset-id/asset-version; groupId defaults to org id | 2026-08-28: `:project:create --help`, `api-mgr:api:describe` |
+| Documentation pages publishable? | BG §2.5 | PARTIAL | `exchange asset page` + `exchange asset resource` topics exist | 2026-08-28: `exchange:asset --help` |
+| Can arbitrary metadata/tags be attached (content digest)? | BG §2.5 | UNVERIFIED | Tags field exists on instances (empty here); attach mechanism pending | — |
+| Asset lifecycle states (draft/published/deprecated) via API? | `require_lifecycle`, BG §2.5 | PARTIAL | `Deprecated` + `Public` flags on instances; A2D showed `status: draft\|published` | 2026-08-28 |
+| Native descriptor formats (MCP manifest, A2A card) vs file attach? | BG §2.5 output | VERIFIED (plugin) | typed Exchange files w/ fixed classifiers (`agent-metadata`, `mcp-metadata`, `llm-metadata`, `a2a-card`, `schema`, `mule-application`) attached to `agent-network` root asset | 2026-08-28 | §12.7 |
 
-## 8. Framework APIs (§3.3) — re-verify every constructor
+## 8. Framework APIs (BG §1.8) — re-verify every constructor
 
 | Framework | Symbol / kwarg | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
@@ -380,9 +380,9 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | LlamaIndex | `llama_index.llms.openai_like.OpenAILike(is_chat_model=True)` | UNVERIFIED | — | — | — |
 | Strands | `strands.models.openai.OpenAIModel(client_args={...})` | UNVERIFIED | — | — | — |
 
-### 8.1 Known upstream incompatibilities (floors, not ceilings — §8.4)
+### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
-Per §8.4 the extras declare **floors and no ceilings**, so a fresh resolve always
+Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
 takes the newest release. That is deliberate: the nightly framework matrix exists
 to find breakage early rather than to pin it away. Recorded here so a red matrix
 run is diagnosable instead of surprising.
@@ -392,14 +392,14 @@ run is diagnosable instead of surprising.
 | `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. Calls still succeed at runtime — openai duck-types the client — so this was a typecheck failure, not a test failure. **Mitigated** with a targeted `# type: ignore[arg-type]` at the three call sites (`llm/client.py` ×2, `integrations/openai_agents.py`); `mypy --strict` passes under openai 3.x (#137). | MITIGATED | 2026-09-02 |
 
 The targeted ignores keep `mypy --strict` green against the newest `openai` a fresh
-resolve pulls (§8.4). A full fix — migrating `core/transport.py` off `httpx` onto
+resolve pulls (the floors-never-ceilings rule). A full fix — migrating `core/transport.py` off `httpx` onto
 `httpx2` — also touches every adapter that accepts `http_async_client` /
-`client_args`, so it is a core-layer change (§1.1) and out of scope for the mitigation.
+`client_args`, so it is a core-layer change (the layered architecture) and out of scope for the mitigation.
 Because the ignores are code-specific and `--strict` enables `warn_unused_ignores`, a
 pinned `openai<3` (where the mismatch does not occur) would now flag them as *unused* —
 a non-issue while the extras stay floor-only and every resolve takes openai 3.x.
 
-## 9. MCP tool binding classes (§4.4) — verify each name
+## 9. MCP tool binding classes (BG §2.7) — verify each name
 
 | Framework | Binding class | Status | Source |
 |---|---|---|---|
@@ -412,7 +412,7 @@ a non-issue while the extras stay floor-only and every resolve takes openai 3.x.
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
 | Strands | `MCPClient(lambda: streamablehttp_client(...))` | UNVERIFIED | — |
 
-## 10. Descriptor-derivation attributes (§7.3.1) — semi-public, put in nightly matrix
+## 10. Descriptor-derivation attributes (BG §2.5) — semi-public, put in nightly matrix
 
 | Framework | Attributes read | Status | Source |
 |---|---|---|---|
@@ -435,7 +435,7 @@ agent/API **design + mocking + Exchange-publishing** tool. Server specs carry
 is Anypoint-adjacent but wraps an **unknown backend REST contract**. These are
 therefore recorded as `VERIFIED-SHAPE-ONLY`: good enough to validate the SDK's
 value types against real data, **not** a license to point `ExchangeRegistry` at
-`www.a2d-ai.com` as if it were Anypoint Exchange (that stays blocked, §0.3).
+`www.a2d-ai.com` as if it were Anypoint Exchange (that stays blocked, verification discipline).
 
 | Item | Where used | Status | Verified value |
 |---|---|---|---|
@@ -444,7 +444,7 @@ value types against real data, **not** a license to point `ExchangeRegistry` at
 | MCP protocol version | registry | VERIFIED-SHAPE-ONLY | `2025-06-18` |
 | Tool-descriptor shape | `tools/filter.py` `ToolDescriptor` | VERIFIED-SHAPE-ONLY | `{name, description, inputSchema (JSON Schema)}` per tool |
 | MCP server list record | registry search | VERIFIED-SHAPE-ONLY | `{id (uuid), name, type (openapi\|mock), description, status (published\|draft), enabled, organization_id, protocol_version, created_at, updated_at}` |
-| Environment record | env targeting §6.2 | VERIFIED-SHAPE-ONLY | `{id, organization_id, asset_type (mcp_server\|agent_card\|rest_api), asset_id, name, base_url, environment_type (mocked\|pre_prod\|prod), auth_type, auth_config, extra_headers, timestamps}` |
+| Environment record | environment targeting | VERIFIED-SHAPE-ONLY | `{id, organization_id, asset_type (mcp_server\|agent_card\|rest_api), asset_id, name, base_url, environment_type (mocked\|pre_prod\|prod), auth_type, auth_config, extra_headers, timestamps}` |
 
 ### Open design questions surfaced by the probe (need a platform-team decision)
 
@@ -461,7 +461,7 @@ value types against real data, **not** a license to point `ExchangeRegistry` at
    still unconfirmed — `McpServerHandle.auth_required` default stays `True`.
 4. **Environment→version semantics.** A2D environments are
    `mocked|pre_prod|prod` per asset, orthogonal to Exchange asset versions;
-   reconcile with the plan's `environment` targeting (§6.2).
+   reconcile with the plan's `environment` targeting.
 
 ## 12. Agent-donkey CLI plugin — direct REST contract (static analysis, 2026-08-28)
 
@@ -473,7 +473,7 @@ official client that issues the real calls against the sandbox — so paths,
 header names, and bodies here are **read from the shipping client, not
 invented**. Status label **`VERIFIED (plugin)`** = the exact signature is known
 from authoritative client code; a live request has not additionally been
-replayed. Per §0.3, code guards are only removed after the owning row is
+replayed. Per the verification discipline, code guards are only removed after the owning row is
 confirmed and the maintainer signs off on scope (see "Unblocking" note below).
 
 ### 12.1 Auth (transport dependency `anypoint-cli-command/lib/`)
@@ -632,7 +632,7 @@ This resolves §7's "native descriptor formats" question: descriptors are
 **typed Exchange files with fixed classifiers**, attached to the agent-network
 root asset — not a single bespoke manifest.
 
-### 12.8 Unblocking guidance (§0.3)
+### 12.8 Unblocking guidance (verification discipline)
 
 These rows are strong enough to *design against* but a live request should
 confirm each before its `NotImplementedError("blocked on verification: …")`

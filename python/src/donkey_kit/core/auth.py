@@ -1,4 +1,4 @@
-"""Auth (§2.2).
+"""Auth (BG §1.1).
 
 ``AuthProvider`` is a tiny protocol so a customer can plug in their own vault.
 We ship three implementations: :class:`AnypointConnectedApp` (OAuth2
@@ -6,9 +6,9 @@ client_credentials), :class:`StaticToken` (CI, token injected), and
 :class:`ChainedAuth`.
 
 The control-plane credential and the LLM-proxy credential are SEPARATE and must
-not be conflated (§2.2).
+not be conflated (BG §1.1).
 
-VERIFICATION NOTE (§0.3): the token endpoint PATH and the scopes each operation
+VERIFICATION NOTE: the token endpoint PATH and the scopes each operation
 needs are UNVERIFIED. The path is a loud, overridable placeholder from
 ``_verify.OAUTH_TOKEN_PATH``; the per-operation scope table must be recorded in
 ``docs/`` once confirmed. Some operations require an *admin* connected app with
@@ -57,7 +57,7 @@ class AnypointConnectedApp(AuthProvider):
 
     Caches the token in memory with a 60s safety margin before expiry. On a 401
     from any downstream call, ``invalidate()`` then retry exactly once (the
-    retry is performed by the transport layer, §2.3).
+    retry is performed by the transport layer, BG §1.1).
     """
 
     def __init__(
@@ -119,7 +119,7 @@ class AnypointConnectedApp(AuthProvider):
         if not token:
             raise AuthError(
                 "Token endpoint returned no access_token. Response shape is "
-                "UNVERIFIED — capture it as a fixture (§8.2).",
+                "UNVERIFIED — capture it as a fixture (BG §1.5).",
                 response=resp,
             )
         expires_in = float(body.get("expires_in", 3600))

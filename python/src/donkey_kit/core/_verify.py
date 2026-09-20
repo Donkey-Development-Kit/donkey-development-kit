@@ -1,5 +1,5 @@
-"""Centralized home for every value that §0.3 says must be verified against a
-real Anypoint sandbox before it can be trusted.
+"""Centralized home for every value that the verification discipline says must
+be verified against a real Anypoint sandbox before it can be trusted.
 
 Working instruction #2: *never invent an endpoint, header name, or class name.*
 
@@ -62,13 +62,13 @@ def blocked(what: str) -> NotImplementedError:
     """Construct the standard verification-blocked error.
 
     Use for surfaces where we have no defensible placeholder at all (e.g. the
-    MCP Bridge provisioning endpoint, §0.3 / §5).
+    MCP Bridge provisioning endpoint, verification discipline / provisioning-as-code).
     """
 
     return NotImplementedError(f"blocked on verification: {what}")
 
 
-# --- Attribution headers (§3, the single most important unknown) -----------
+# --- Attribution headers (docs/verified-apis.md §3, the single most important unknown) ---
 # These names are GUESSES. The gateway may read entirely different header names.
 ATTRIBUTION_APP_HEADER = Unverified(
     key="attribution.application_header",
@@ -81,10 +81,11 @@ ATTRIBUTION_BUSINESS_GROUP_HEADER = Unverified(
     doc_ref="docs/verified-apis.md §3",
 )
 
-# --- Cost-attribution tag headers (§3, the HIGHEST-priority unknown, #196) ---
+# --- Cost-attribution tag headers (docs/verified-apis.md §3, the HIGHEST-priority
+# unknown, #196) ---
 # The fixed cost dimensions (team / project / env / enduser.id) are emitted as
 # request headers so the gateway can group spend per dimension. The gateway-side
-# header NAMES are the single most important unverified value (docs §3): the
+# header NAMES are the single most important unverified value (docs/verified-apis.md §3): the
 # direct-proxy path did NOT surface them, so these are loud, overridable
 # placeholders (config: ``cost_*_header``), and the value ALWAYS lands on the
 # ``donkey.cost.*`` span regardless (the SDK controls the span end to end, #196
@@ -111,10 +112,10 @@ COST_ENDUSER_HEADER = Unverified(
     doc_ref="docs/verified-apis.md §3",
 )
 
-# --- Correlation / call-id request headers (§2.3, #195) ---------------------
+# --- Correlation / call-id request headers (BG §1.1, #195) ------------------
 # The gateway ECHOES `x-correlation-id` on RESPONSES (VERIFIED LIVE 2026-08-28,
-# docs §3). Whether it READS an INBOUND correlation header — and under what name
-# — is UNVERIFIED, as is any per-call request-id header. Both request-header
+# docs/verified-apis.md §3). Whether it READS an INBOUND correlation header —
+# and under what name — is UNVERIFIED, as is any per-call request-id header. Both request-header
 # names are therefore placeholders, overridable per-Donkey via config
 # (``DonkeyConfig.correlation_header`` / ``.call_id_header``) so a customer can
 # point them at the real names without waiting for us. ``X-Correlation-Id`` is
@@ -130,9 +131,9 @@ CALL_ID_HEADER = Unverified(
     doc_ref="docs/verified-apis.md §3",
 )
 
-# --- Control-plane token endpoint (§1) --------------------------------------
-# Path is appended to the region base URL. VERIFIED (§12.1) from static analysis
-# of the shipping `mulesoft-anypoint-cli-agent-fabric-plugin` (+ `anypoint-cli-
+# --- Control-plane token endpoint (docs/verified-apis.md §1) ----------------
+# Path is appended to the region base URL. VERIFIED (docs/verified-apis.md §12.1) from
+# static analysis of the shipping `mulesoft-anypoint-cli-agent-fabric-plugin` (+ `anypoint-cli-
 # command`): OAuth2 client_credentials → `POST /accounts/api/v2/oauth2/token`.
 OAUTH_TOKEN_PATH = Unverified(
     key="anypoint.oauth_token_path",
@@ -141,7 +142,8 @@ OAUTH_TOKEN_PATH = Unverified(
     verified=True,
 )
 
-# --- LLM proxy consumer auth (§2/§3) — VERIFIED (LIVE 2026-08-28) ------------
+# --- LLM proxy consumer auth (docs/verified-apis.md §2/§3) — VERIFIED (LIVE
+# 2026-08-28) ------------
 # The directly-called ingress LLM proxy authenticates the caller with a
 # `client_id` + `client_secret` REQUEST-header pair (client-id-enforcement
 # 1.3.3), NOT a bearer token. This pair IS the per-agent attribution unit. These
@@ -149,7 +151,7 @@ OAUTH_TOKEN_PATH = Unverified(
 LLM_PROXY_CLIENT_ID_HEADER = "client_id"
 LLM_PROXY_CLIENT_SECRET_HEADER = "client_secret"
 
-# --- Region host map (§1) ----------------------------------------------------
+# --- Region host map (docs/verified-apis.md §1) ------------------------------
 # UNVERIFIED — Hyperforce region hosts in particular need confirmation.
 REGION_HOSTS: dict[str, str] = {
     "us": "https://anypoint.mulesoft.com",

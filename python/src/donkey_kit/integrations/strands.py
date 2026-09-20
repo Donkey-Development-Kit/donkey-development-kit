@@ -1,11 +1,11 @@
-"""Strands Agents adapter (§3.3).
+"""Strands Agents adapter (BG §1.8).
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
 ``client_args`` is forwarded to the underlying OpenAI client, so header AND
 transport injection are both available (full injection). Strands also has
 lifecycle hooks (``BeforeToolCallEvent`` and friends) — used elsewhere for the
-policy-termination pattern (§2.4, §3.3).
+policy-termination pattern (BG §1.2, BG §1.8).
 
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
@@ -36,7 +36,7 @@ class StrandsAdapter(Adapter):
         }
 
     def model(self, model: str, **kw: Any) -> OpenAIModel:
-        from strands.models.openai import OpenAIModel  # verified: docs §8
+        from strands.models.openai import OpenAIModel  # verified: docs/verified-apis.md §8
 
         return OpenAIModel(model_id=model, **self.connection_kwargs(), **kw)
 

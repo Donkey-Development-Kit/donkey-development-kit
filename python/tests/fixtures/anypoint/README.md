@@ -26,7 +26,7 @@ contracts the SDK targets.
 
 ## What these verify (see docs/verified-apis.md §5/§6/§7)
 
-- Governed-state join (§6.1.3): API Manager instances are listable per
+- Governed-state join: API Manager instances are listable per
   environment and carry deployment + policy state — no reverse-engineering
   needed. `test_governed_state_shapes.py` proves the domain models represent
   this real data.

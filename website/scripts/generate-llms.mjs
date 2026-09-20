@@ -8,7 +8,7 @@
 // `_meta.js` tree, content + description from each `.mdx` and its frontmatter.
 // This script owns NO copy of the content — it only transforms what already
 // ships on the site, so it can never invent an endpoint/header/class name the
-// pages don't already document (§0.3). CI regenerates and fails on any diff
+// pages don't already document (verification discipline). CI regenerates and fails on any diff
 // (see .github/workflows/ci.yml), so the committed artifacts cannot drift.
 //
 // Run: `npm run generate:llms` (also runs automatically via `prebuild`).

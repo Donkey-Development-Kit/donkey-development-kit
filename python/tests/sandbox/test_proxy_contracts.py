@@ -26,7 +26,7 @@ def test_openai_routing_happy_path_matches_fixture(
     open_proxy: Callable[[str], Donkey],
     model_for: Callable[[str], str],
 ) -> None:
-    """§2/§3: the live model-based-routing proxy returns the OpenAI Responses
+    """docs/verified-apis.md §2/§3: the live model-based-routing proxy returns the OpenAI Responses
     object verbatim, with the ``usage`` token block cost attribution reads — the
     same shape ``responses.success.body.json`` pins offline."""
     donkey = open_proxy("openai-model-routing")
@@ -44,8 +44,8 @@ def test_openai_routing_happy_path_matches_fixture(
     assert usage is not None
     assert usage.total_tokens == usage.input_tokens + usage.output_tokens
 
-    # §3: the gateway records what it did on this call — the success-path twin of
-    # the ids classify() reads off a rejection.
+    # docs/verified-apis.md §3: the gateway records what it did on this call — the success-path twin
+    # of the ids classify() reads off a rejection.
     assert donkey.last_call.served_model
     assert donkey.last_call.total_tokens == usage.total_tokens
 
@@ -58,8 +58,8 @@ def test_injection_guard_rejection_classifies_and_captures(
     """#253: the Regex Prompt Guard proxy is the live source for the injection
     rejection body ``classify()`` currently types on assumption.
 
-    The exact regex that trips the guard is UNVERIFIED (§0.3), so if the prompt
-    does not trip it the call succeeds and we skip with a pointer rather than
+    The exact regex that trips the guard is UNVERIFIED (verification discipline), so if the
+    prompt does not trip it the call succeeds and we skip with a pointer rather than
     assert an invented trigger. When it *does* reject, we assert the contract
     (a typed ``DonkeyError`` with non-empty remediation) and print the raw body
     + headers so a maintainer can capture them into
@@ -76,7 +76,7 @@ def test_injection_guard_rejection_classifies_and_captures(
     except openai.APIStatusError as exc:
         err = classify(exc.response)
         assert isinstance(err, DonkeyError)
-        assert err.remediation, "every PolicyViolation must carry a remediation (§2.4)"
+        assert err.remediation, "every PolicyViolation must carry a remediation (BG §1.2)"
 
         # Capture aid for #253 — surfaced with `pytest -m sandbox -s`.
         with capsys.disabled():
@@ -87,6 +87,7 @@ def test_injection_guard_rejection_classifies_and_captures(
 
     pytest.skip(
         "injection prompt did not trip the Regex Prompt Guard — the trigger regex "
-        "is unverified (§0.3, #253). Refine the prompt against the deployed policy, "
+        "is unverified (verification discipline, #253). Refine the prompt against the deployed "
+        "policy, "
         "then capture the rejection body into tests/fixtures/anypoint/llm_proxy/."
     )

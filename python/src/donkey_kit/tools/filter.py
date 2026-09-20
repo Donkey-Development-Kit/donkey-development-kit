@@ -1,4 +1,4 @@
-"""Tool filtering + name-collision resolution (§4.3).
+"""Tool filtering + name-collision resolution (BG §2.7).
 
 Pure logic, no framework or network dependency, so it is fully implemented and
 unit-testable now.
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ToolDescriptor:
     """A tool as seen before binding: which server it came from, its name, and
-    metadata used for filtering and token-cost logging (§4.3)."""
+    metadata used for filtering and token-cost logging (BG §2.7)."""
 
     server: str  # short server name
     name: str
@@ -41,11 +41,11 @@ def resolve_collisions(
     tools: list[ToolDescriptor],
 ) -> tuple[dict[str, ToolDescriptor], dict[str, str]]:
     """Resolve name collisions across servers by prefixing with the server's
-    short name (§4.3): ``hr__get_employee``.
+    short name (BG §2.7): ``hr__get_employee``.
 
     Returns ``(exposed_name -> descriptor, exposed_name -> original_name)`` so a
     developer can debug why the model called ``hr__get_employee`` via
-    ``ToolSet.name_map`` (§4.3).
+    ``ToolSet.name_map`` (BG §2.7).
     """
 
     counts: dict[str, int] = {}

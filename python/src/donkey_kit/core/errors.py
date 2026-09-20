@@ -1,4 +1,4 @@
-"""Exception taxonomy (§2.4).
+"""Exception taxonomy (BG §1.2).
 
 Mapping gateway policy rejections to catchable, actionable exceptions is the
 SDK's clearest value over raw HTTP.
@@ -11,12 +11,12 @@ Two design points that matter:
 2. ``remediation`` is a structurally-guaranteed, human-readable next step —
    worth more than a stack trace. Every :class:`PolicyViolation` carries one:
    the constructor refuses to build an instance whose remediation is empty or
-   whitespace, and every concrete subclass ships a canonical default (§2.4,
+   whitespace, and every concrete subclass ships a canonical default (BG §1.2,
    #182). That default is the single source ``donkey doctor`` (#202) reuses, so
    a diagnosis and the exception it stands for can never disagree.
 
 The concrete HTTP-response → exception mapping lives in :func:`classify`, which
-is driven by a table that MUST be populated from real captured fixtures (§8.2),
+is driven by a table that MUST be populated from real captured fixtures (BG §1.5),
 not hand-written guesses. Until fixtures exist, :func:`classify` maps only the
 status-code families it can defensibly infer and otherwise returns a generic
 :class:`DonkeyError`.
@@ -39,7 +39,7 @@ class DonkeyError(Exception):
     """Base for all SDK errors. Carries correlation/call/request IDs and the raw
     response so callers can inspect what actually happened.
 
-    Three ids, three provenances (§2.3, #195):
+    Three ids, three provenances (BG §1.1, #195):
 
     * ``correlation_id`` — the RUN id the client sent (``X-Correlation-Id``),
       shared by every request in a ``donkey.run()`` block. This is the
@@ -70,7 +70,7 @@ class DonkeyError(Exception):
 
 
 class ConfigError(DonkeyError):
-    """Configuration is missing or invalid. Reports ALL problems at once (§2.1)."""
+    """Configuration is missing or invalid. Reports ALL problems at once (config resolution)."""
 
 
 class AuthError(DonkeyError):
@@ -87,7 +87,7 @@ class AuthError(DonkeyError):
         "DONKEY_LLM_PROXY_CLIENT_ID / DONKEY_LLM_PROXY_CLIENT_SECRET are the "
         "consumer client_id/secret pair for this LLM-proxy instance — not an "
         "Anypoint control-plane credential and not a bearer token — and that the "
-        "consumer is authorized on the instance in API Manager (§2)."
+        "consumer is authorized on the instance in API Manager (docs/verified-apis.md §2)."
     )
 
 
@@ -135,7 +135,7 @@ class PolicyViolation(DonkeyError):
         if not resolved.strip():
             raise ValueError(
                 f"{type(self).__name__} requires a non-empty remediation naming the "
-                "caller's next step (§2.4, #182)."
+                "caller's next step (BG §1.2, #182)."
             )
         self.remediation = resolved
         if policy is not None:
@@ -157,7 +157,7 @@ class TokenBudgetExceeded(PolicyViolation):
 
 class BudgetReserveReached(DonkeyError):
     """Raised by :meth:`Budget.pace` *before* it lets a request through that would
-    cross the caller's reserve (§1.3, #186).
+    cross the caller's reserve (BG §1.3, #186).
 
     Deliberately NOT a :class:`PolicyViolation`: that base marks a gateway-enforced
     refusal that is terminal and never retried. This is the client-side opposite —
@@ -189,7 +189,7 @@ class BudgetReserveReached(DonkeyError):
 class ModelSubstituted(DonkeyError):
     """The gateway served a *different* model than the one requested — a routing
     fallback substituted the model, and ``on_model_substitution="raise"`` opted
-    the caller into treating that as an error (§3, #309).
+    the caller into treating that as an error (docs/verified-apis.md §3, #309).
 
     Deliberately NOT a :class:`PolicyViolation`: the request was neither refused
     nor failed — it succeeded, just against a model the developer did not choose.
@@ -390,11 +390,11 @@ class ProvisioningError(DonkeyError):
 
 
 class GovernanceDrift(DonkeyError):
-    """resolve(): a declared policy is not actually applied on the gateway (§6.3)."""
+    """resolve(): a declared policy is not actually applied on the gateway."""
 
 
 class PublicationDrift(DonkeyError):
-    """verify(): the live server no longer matches the Exchange descriptor (§7.4)."""
+    """verify(): the live server no longer matches the Exchange descriptor (BG §2.5)."""
 
 
 def classify(
@@ -406,15 +406,15 @@ def classify(
     """Map an HTTP error response to a specific exception.
 
     ``correlation_id`` (the run id) and ``call_id`` (the per-request id) are the
-    two ids the client sent (§2.3, #195). When not passed explicitly they are
+    two ids the client sent (BG §1.1, #195). When not passed explicitly they are
     read back from the response's own request headers, so a caller bridging an
     ``openai.APIStatusError`` — ``classify(err.response)`` — gets a
     :class:`DonkeyError` whose ``correlation_id`` equals the header that was sent
     with no extra wiring. An explicit argument (e.g. when the header name was
     overridden via config) always wins over the auto-derived value.
 
-    The precise policy discrimination (§2.4, working instruction #4) is driven by
-    real rejection captures from a live governed LLM proxy (docs §4,
+    The precise policy discrimination (BG §1.2, working instruction #4) is driven by
+    real rejection captures from a live governed LLM proxy (docs/verified-apis.md §4,
     ``tests/fixtures/anypoint/llm_proxy/reject.*``), NOT hand-written guesses.
     What the captures established:
 
@@ -443,13 +443,13 @@ def classify(
       checked before the auth rule.
 
     These two shapes are **documented, not yet live-captured** (same posture as
-    #181's header-based injection typing; docs §4). Exact strings are pinned from
+    #181's header-based injection typing; docs/verified-apis.md §4). Exact strings are pinned from
     the policy pages; no ``_verify.py`` row flips to ``verified=True`` until a
     live sandbox round-trip confirms them (#253). Any other content-moderation /
     federated-guardrail shape still falls through to a generic
     :class:`PolicyViolation` whose message names what was observed and says the
     shape is unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate``
-    shape (docs §4), a **403 carrying no ``www-authenticate`` header** and matching
+    shape (docs/verified-apis.md §4), a **403 carrying no ``www-authenticate`` header** and matching
     none of the policy discriminators above is treated as one of these unconfirmed
     refusals, not mis-typed as an :class:`AuthError`.
     """
@@ -459,7 +459,7 @@ def classify(
     status = response.status_code
     kw: dict[str, Any] = {
         # Explicit arg wins (e.g. a config-overridden header name); else the id
-        # the client actually sent, read back from the request (§2.3, #195).
+        # the client actually sent, read back from the request (BG §1.1, #195).
         "correlation_id": correlation_id if correlation_id is not None else sent_correlation,
         "call_id": call_id if call_id is not None else sent_call,
         "request_id": request_id,
@@ -469,7 +469,7 @@ def classify(
     # A nested ``{"error": {...}}`` object is emitted by BOTH the upstream
     # provider AND some gateway LLM policies (e.g. PII). The ``type`` field —
     # not the status code or the mere presence of a nested object — is the
-    # authoritative discriminator (docs §4). ``body`` is the top-level JSON
+    # authoritative discriminator (docs/verified-apis.md §4). ``body`` is the top-level JSON
     # object (used also to spot the Regex-Prompt-Guard ``matched_patterns`` key);
     # ``error_obj`` is its nested ``error`` object iff it is itself an object.
     body = _json_body(response)
@@ -490,7 +490,7 @@ def classify(
         )
 
     # Content-safety / guardrails policy: 403 + a vendor `...-action: reject`
-    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs §4).
+    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4).
     # Documented, pending live capture (#253). Checked before the 401/403 → auth
     # rule because a moderation block is not an auth failure. Keyed on the
     # header, not the body, so the body-less Bedrock reject is caught too.
@@ -510,7 +510,7 @@ def classify(
         )
 
     # Regex Prompt Guard policy: 403 + a top-level `matched_patterns` list
-    # (flat-string `error`, so NOT the nested upstream envelope; docs §4).
+    # (flat-string `error`, so NOT the nested upstream envelope; docs/verified-apis.md §4).
     # Documented, pending live capture (#253). Checked before the 401/403 → auth
     # rule so a deny-list block is not mis-typed as an auth failure.
     matched = body.get("matched_patterns") if body is not None else None
@@ -529,7 +529,7 @@ def classify(
         )
 
     # Injection-protection policy: discriminated by the ``x-injection-protection:
-    # blocked`` header, NOT the status code (#181, docs §4). Checked before the
+    # blocked`` header, NOT the status code (#181, docs/verified-apis.md §4). Checked before the
     # generic 4xx / nested-error branch so an injection block wins even if its
     # body happens to be shaped like an upstream error envelope. A 400 WITHOUT
     # this header is an ordinary refusal, never PromptInjectionBlocked (AC (a)).
@@ -540,7 +540,7 @@ def classify(
             **kw,
         )
 
-    # Auth is discriminated by the verified client-id-enforcement shape (docs §4):
+    # Auth is discriminated by the verified client-id-enforcement shape (docs/verified-apis.md §4):
     # a 401, or a 403 carrying a ``www-authenticate`` challenge. A 403 WITHOUT that
     # header matched none of the policy discriminators above, so it is an
     # unrecognised gateway policy refusal — not an auth failure — and falls through
@@ -616,17 +616,17 @@ def classify(
 def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     """The ``(correlation_id, call_id)`` the client sent, read back from the
     response's own request headers under the names the transport actually used
-    (§2.3, #195, #363).
+    (BG §1.1, #195, #363).
 
     The transport stamps the resolved header names onto ``request.extensions``
     at injection time (``donkey_correlation_header`` / ``donkey_call_id_header``),
     so a per-``Donkey`` header-name override (``DonkeyConfig.correlation_header``
-    / ``.call_id_header``, docs §3) is honoured here without ``core/errors``
+    / ``.call_id_header``, docs/verified-apis.md §3) is honoured here without ``core/errors``
     importing ``DonkeyConfig`` — it only reads a plain dict carried on the same
     object ``response.request`` returns. When the stamp is absent (a response not
     produced by our transport — e.g. a hand-built stock-client response), the
     placeholder names are used directly, **not** ``Unverified.get()``, so reading
-    an id back never emits the §0.3 unverified warning; that warning belongs at
+    an id back never emits the verification discipline's unverified warning; that warning belongs at
     injection time, in the transport.
 
     Returns ``(None, None)`` when the request is unavailable (httpx raises if it
@@ -650,13 +650,13 @@ def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
 def _retry_after(response: httpx.Response) -> float | None:
     """Seconds until the caller may retry. Prefers the standard ``retry-after``
     (delta-seconds) header; falls back to the LLM token-rate-limit policy's
-    ``x-token-reset`` header, which is captured in **milliseconds** (docs §4)."""
+    ``x-token-reset`` header, which is captured in **milliseconds** (docs/verified-apis.md §4)."""
     raw = response.headers.get("retry-after")
     if raw is not None:
         try:
             return float(raw)
         except ValueError:
-            pass  # HTTP-date form; left for the fixture-driven parser (§8.2)
+            pass  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
     reset_ms = response.headers.get("x-token-reset")
     if reset_ms is not None:
         try:
@@ -672,7 +672,7 @@ _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
 def _pii_entities(message: str | None) -> list[str]:
     """Best-effort extraction of the flagged PII entity types from the PII
     policy's rejection message (a JSON-ish list of ``{"pii_type": "...", ...}``
-    objects; docs §4). Returns an empty list if none can be parsed.
+    objects; docs/verified-apis.md §4). Returns an empty list if none can be parsed.
 
     Deliberately best-effort (#289): the LLM PII Detection policy documents only
     the ``{"error":{"message","type":"pii_detected"}}`` envelope, not a structured
@@ -687,7 +687,8 @@ def _pii_entities(message: str | None) -> list[str]:
 
 def _json_body(response: httpx.Response) -> dict[str, Any] | None:
     """The response's top-level JSON object, or ``None`` when the body is absent,
-    not JSON, or not an object. Never raises on the caller's request path (§0.3)."""
+    not JSON, or not an object. Never raises on the caller's request path
+    (verification discipline)."""
     try:
         body = response.json()
     except (ValueError, UnicodeDecodeError):
@@ -697,7 +698,7 @@ def _json_body(response: httpx.Response) -> dict[str, Any] | None:
 
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
-# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs §4). Pinned from the
+# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4). Pinned from the
 # Azure Content Safety and Amazon Bedrock Guardrails policy pages; documented,
 # pending live capture (#253).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (

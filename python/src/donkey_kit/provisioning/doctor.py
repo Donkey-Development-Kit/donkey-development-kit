@@ -1,6 +1,6 @@
 """``donkey doctor`` — turn "why doesn't this work" into a thirty-second answer (#202).
 
-One governed probe call, read through the §2.4 error taxonomy, tells the three
+One governed probe call, read through the BG §1.2 error taxonomy, tells the three
 failures that look identical from the outside apart:
 
 * **wrong URL / unreachable gateway** — a transport-level failure with no HTTP
@@ -17,7 +17,7 @@ wording). The budget line always states ``observed_at`` staleness — the proxy
 has no budget-query endpoint (upstream gap #2), so a budget is only ever as
 fresh as the last response, and doctor never implies otherwise (AC3).
 
-Honest scope (§0.3): the gateway's *allow-list* rejection (a model refused by
+Honest scope (verification discipline): the gateway's *allow-list* rejection (a model refused by
 API Manager policy rather than missing at the provider) has no captured 403
 shape yet, and enumerating the allowed alternatives needs the discovery
 endpoint (upstream gap #3, out of scope per #202). So the model line diagnoses
@@ -155,7 +155,7 @@ def _probe_checks(result: ProbeResult) -> list[Check]:
 
     # The LIVE-VERIFIED model rejection is the provider passthrough (400
     # model_not_found), which classify() maps to UpstreamRequestError carrying
-    # code/param. A 403 allow-list rejection has no captured shape yet (§0.3) and
+    # code/param. A 403 allow-list rejection has no captured shape yet (verification discipline) and
     # would surface as AuthError above — a known, documented limitation.
     if isinstance(err, UpstreamRequestError) and (
         err.code == "model_not_found" or err.param == "model"

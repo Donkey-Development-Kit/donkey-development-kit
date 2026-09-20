@@ -32,7 +32,7 @@ never a wrapper you have to code around.
 
   **"Agent Fabric" is a MuleSoft (Salesforce) product name**, not a generic
   term. This project is an SDK *for* that product; it is descriptive, not a
-  first-party release. See [§0.4 in the README](https://github.com/Donkey-Development-Kit/donkey-development-kit).
+  first-party release. See [the trademark/support boundary in the README](https://github.com/Donkey-Development-Kit/donkey-development-kit).
 
 ## The one design rule
 
@@ -497,7 +497,7 @@ The governed proxy has **no** catalog endpoint (`GET /models` → `404`, verifie
 `list_models(live=True)` raises a clear `ConfigError` explaining the absence
 rather than fabricating a path.
 
-  **Honesty note (§0.3).** The proxy *contract* the adapters target is
+  **Honesty note (verification discipline).** The proxy *contract* the adapters target is
   live-verified, but the exact framework *constructor signatures* are still being
   confirmed against installed versions. Where a
   name can't be resolved, the adapter raises `blocked on verification` rather
@@ -2094,7 +2094,7 @@ exact bodies are tracked in [#253]. `classify()` therefore types them from the
 header/field discriminator only, and no verification row flips to `verified`
 until a live round-trip confirms the shape. Any *other* content-moderation /
 federated-guardrail shape still falls through to a generic `PolicyViolation`
-rather than an invented type — this is deliberate (§0.3): we don't invent a
+rather than an invented type — this is deliberate (verification discipline): we don't invent a
 discriminator we haven't observed. See [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
 
 ---
@@ -2776,7 +2776,7 @@ directly.
   `X-Donkey-Request-Id` is unverified — `x-correlation-id` is confirmed only as a
   gateway **response** echo. So those request-header **names** are overridable
   placeholders (`correlation_header` / `call_id_header`), not guesses
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md), §0.3).
+  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Cost-attribution tags
 
@@ -2965,7 +2965,7 @@ nightly-batch and internal-copilot walkthroughs run their **governed-call and
 refusal-handling** paths against the simulator now; where a step depends on a
 surface that is still [blocked on verification](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) — MCP
 tool access, agent identity, the kill switch — the page says so in the reader's
-terms and shows the shape without inventing an endpoint (§0.3). A "blocked"
+terms and shows the shape without inventing an endpoint (verification discipline). A "blocked"
 note here means *known, deliberate, and tracked*, never *guessed*.
 
 ---
@@ -3283,7 +3283,7 @@ asyncio.run(...)   # DONKEY_LLM_PROXY_URL=http://localhost:8080, throwaway creds
 
 A production internal copilot wants more than a content-safety branch. Three of
 those pieces are **not yet buildable** because they depend on surfaces still
-blocked on verification (§0.3) — this page shows the *shape* without inventing
+blocked on verification — this page shows the *shape* without inventing
 an endpoint:
 
   **Governed access to internal tools** — reaching company systems through
@@ -4188,7 +4188,7 @@ Anypoint sandbox / an installed framework**, or it is **not used** — the code
 path that would need it raises `NotImplementedError("blocked on verification: …")`
 or a clear `ConfigError` instead of guessing. How each value is confirmed — and
 how a blocked value flips to verified — is documented for contributors in
-[ARCHITECTURE.md → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline-03).
+[ARCHITECTURE.md → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline).
 
 ## What is verified today
 
@@ -4205,7 +4205,7 @@ how a blocked value flips to verified — is documented for contributors in
 
 | Area | Status | What the SDK does about it |
 |---|---|---|
-| Framework **constructor signatures** (§8) | Unverified per framework | Adapters target recorded class names; a mismatch surfaces via the verification harness / nightly matrix rather than silently misbehaving. Agent Framework's client raises `blocked on verification` today. |
+| Framework **constructor signatures** (docs/verified-apis.md §8) | Unverified per framework | Adapters target recorded class names; a mismatch surfaces via the verification harness / nightly matrix rather than silently misbehaving. Agent Framework's client raises `blocked on verification` today. |
 | MCP tool discovery + binding ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md)) | Unverified | `donkey.tools.discover` and the binding classes raise `blocked on verification`. |
 | Exchange publish API ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md)) | Unverified | `donkey publish` is blocked; whether Exchange exposes first-class MCP/agent asset types is unconfirmed. |
 | Token-exchange endpoint for [on-behalf-of](https://donkey-development-kit.github.io/donkey-development-kit/identity.md) (Phase 2) | Unverified | The exact endpoint and header the gateway expects are not guessed. |
@@ -4223,7 +4223,7 @@ hasn't confirmed raises `blocked on verification` rather than guessing, so a
 governed call either works against the verified contract or fails loudly — it
 never silently reaches an unconfirmed endpoint. The mechanism behind that and
 the full verified-versus-blocked ledger are documented for contributors in
-[ARCHITECTURE.md → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline-03).
+[ARCHITECTURE.md → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline).
 
 ---
 
@@ -4634,8 +4634,7 @@ The proxy routes to several providers (OpenAI, Azure OpenAI, Gemini, Bedrock,
 Anthropic), so `gen_ai.system` is taken **only** from the verified
 `x-llm-proxy-llm-provider` response header. If that header is absent on a given
 response, the attribute is omitted rather than defaulted — a wrong provider
-label is worse than a missing one ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md),
-§0.3).
+label is worse than a missing one ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Grouping a run: the run id on the span, the call id on the error
 
@@ -4673,7 +4672,7 @@ present.
   the join key is not yet confirmed, so those request-header **names** are
   overridable placeholders — set `correlation_header` / `call_id_header` in
   config if your gateway expects different names
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md), §0.3).
+  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Streaming, refusals, and exceptions
 
@@ -4700,7 +4699,7 @@ takes, it produces **exactly one span**, and that span closes:
   event.** For OpenAI-style Chat Completions that means requesting it with
   `stream_options={"include_usage": true}`; without it the provider emits no
   usage event, so the counts are omitted rather than guessed
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md), §0.3).
+  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## What this piece does *not* do yet
 
@@ -4856,15 +4855,15 @@ Every platform API the SDK calls is classified:
 | **Documented, no SLA for third-party use** | May break; we'll fix. |
 | **Undocumented** | Should be empty. Anything here needs a written justification and an owner. |
 
-## Support statement (§0.4)
+## Support statement (the trademark/support boundary)
 
   **Before any public release**, the maintainer and support expectations must be
-  stated (README §0.4). If this project is **not** published with MuleSoft's
+  stated (README, the trademark/support boundary). If this project is **not** published with MuleSoft's
   endorsement, it must ship under a distinct, org-scoped distribution name so it
   doesn't read as a first-party, official-status SDK. "Agent Fabric",
   "Anypoint", and "Omni Gateway" are Salesforce trademarks.
 
-## Why this matters (§0.3)
+## Why this matters (verification discipline)
 
 The SDK's rule against inventing endpoints exists to keep this boundary honest: a
 call the SDK makes is either against a classified, known API or it doesn't happen

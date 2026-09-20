@@ -1,8 +1,8 @@
 """Shared base for framework adapters.
 
-Design rule (§3.1): adapters return NATIVE framework objects, never wrappers.
+Design rule (BG §1.8): adapters return NATIVE framework objects, never wrappers.
 Each adapter depends on exactly one framework. Nothing here may be imported by
-``core``/``llm``/``registry``/``tools`` (§1.1, enforced by import-linter).
+``core``/``llm``/``registry``/``tools`` (the layered architecture, enforced by import-linter).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ class Adapter:
     """Base holding the config and the shared HTTP client every adapter needs."""
 
     #: pip extra that provides this adapter's framework, for the curated
-    #: ImportError raised on access when it is not installed (§3.2).
+    #: ImportError raised on access when it is not installed (BG §1.8).
     extra: str = ""
 
     #: Whether a governed model call through this adapter reaches ``donkey.last_call``
@@ -33,7 +33,7 @@ class Adapter:
     #: (ADK, CrewAI) or adapters given only ``default_headers`` (LlamaIndex, MS
     #: Agent Framework). A ``False`` here is why ``donkey.last_call`` reports
     #: "not available on this surface" rather than a bare ``None`` (hazard #3),
-    #: and it is the fact the conformance suite asserts as an exemption (§8.1).
+    #: and it is the fact the conformance suite asserts as an exemption (the conformance kit).
     observes_last_call: bool = True
 
     def __init__(self, cfg: DonkeyConfig, http_client: DonkeyAsyncClient) -> None:
@@ -46,7 +46,7 @@ class Adapter:
     def _proxy_headers(self) -> dict[str, str]:
         """Default headers for a native OpenAI-compatible client pointed at the
         proxy: the LIVE-VERIFIED client_id/client_secret consumer-auth pair plus
-        any attribution headers (docs §2/§3)."""
+        any attribution headers (docs/verified-apis.md §2/§3)."""
         return proxy_auth_headers(self._cfg)
 
     def _proxy_api_key(self) -> str:

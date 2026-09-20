@@ -1,4 +1,4 @@
-"""LangGraph correlation-id propagation (#195, §2.3).
+"""LangGraph correlation-id propagation (#195, BG §1.1).
 
 Proves the #195 acceptance criterion "propagation reaches every LangGraph node
 via contextvar (no threading through state)": a run id bound once with

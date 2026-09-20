@@ -81,7 +81,7 @@ def test_policy_decision_values_are_the_documented_literals() -> None:
 
 def test_routing_keys_are_the_pinned_and_stable_literal_strings() -> None:
     # The served model uses the pinned semconv key; the two routing facts the
-    # semconv has no key for live under the stable donkey.* namespace (§3, #309).
+    # semconv has no key for live under the stable donkey.* namespace (BG §1.1, #309).
     # gen_ai.response.model is pinned; the donkey.routing.* pair is public API.
     assert telemetry.GEN_AI_RESPONSE_MODEL == "gen_ai.response.model"
     assert telemetry.DONKEY_ROUTING_TYPE == "donkey.routing.type"
@@ -154,7 +154,7 @@ def test_build_genai_attributes_keeps_zero_token_counts() -> None:
 
 
 def test_build_genai_attributes_emits_the_routing_facts() -> None:
-    # §3, #309: the served model, routing strategy and fallback flag land on the
+    # BG §1.1, #309: the served model, routing strategy and fallback flag land on the
     # span beside the request model.
     attrs = telemetry.build_genai_attributes(
         request_model="gpt-5.1",

@@ -1,6 +1,6 @@
-"""The ``donkey`` CLI (§5.2, §7).
+"""The ``donkey`` CLI (provisioning-as-code, BG §2.5).
 
-Telemetry is on by default (§2.5, BG §1.6), but export stays inert unless an
+Telemetry is on by default (BG §1.6), but export stays inert unless an
 OTLP endpoint is configured: set ``OTEL_EXPORTER_OTLP_ENDPOINT`` and spans flow
 to your own sink with no SDK-specific env var; opt out entirely with
 ``DONKEY_TELEMETRY=false``. Commands that need a verified
@@ -44,8 +44,8 @@ def _load_spec(file: Path) -> DonkeySpec:
 def _blocked(what: str) -> None:
     typer.secho(f"blocked on verification: {what}", fg="yellow", err=True)
     typer.secho(
-        "See docs/verified-apis.md — this command is scaffolded but not wired "
-        "until the underlying platform API is confirmed against a sandbox (§0.3).",
+        "See docs/verified-apis.md — this command is scaffolded but not wired until the underlying "
+        "platform API is confirmed against a sandbox (verification discipline).",
         err=True,
     )
     raise typer.Exit(3)
@@ -66,64 +66,64 @@ def validate(file: Path = typer.Option(..., "-f", "--file", help="donkey.yaml"))
 def plan(file: Path = typer.Option(..., "-f", "--file"),
          dry_run: bool = typer.Option(False, "--dry-run"),
          out: Path | None = typer.Option(None, "--out", help="write plan.json for CI")) -> None:
-    """Show the create/update/remove plan (read-before-write, §5.2)."""
+    """Show the create/update/remove plan (read-before-write, provisioning-as-code)."""
     _load_spec(file)
-    _blocked("MCP Bridge provisioning read API (§5.2, §5)")
+    _blocked("MCP Bridge provisioning read API (provisioning-as-code)")
 
 
 @app.command()
 def apply(file: Path = typer.Option(..., "-f", "--file"),
           auto_approve: bool = typer.Option(False, "--auto-approve")) -> None:
-    """Apply the plan (CI-only, platform-controlled creds, §5.4)."""
+    """Apply the plan (CI-only, platform-controlled creds, provisioning-as-code)."""
     _load_spec(file)
-    _blocked("MCP Bridge provisioning write API (§5.2, §5.4)")
+    _blocked("MCP Bridge provisioning write API (provisioning-as-code)")
 
 
 @app.command()
 def drift(file: Path = typer.Option(..., "-f", "--file")) -> None:
-    """Compare live state against the spec; exit non-zero on drift (§5.2)."""
+    """Compare live state against the spec; exit non-zero on drift (provisioning-as-code)."""
     _load_spec(file)
-    _blocked("MCP Bridge provisioning read API (§5.2)")
+    _blocked("MCP Bridge provisioning read API (provisioning-as-code)")
 
 
 @app.command()
 def lint(file: Path = typer.Option(..., "-f", "--file")) -> None:
-    """Governance lint (§5.3). Local spec-shape checks run now; ruleset
-    resolution is gated (§0.3)."""
+    """Governance lint (provisioning-as-code). Local spec-shape checks run now; ruleset
+    resolution is gated (verification discipline)."""
     _load_spec(file)
-    _blocked("governance rulesets resolution API (§5.3, §0.3)")
+    _blocked("governance rulesets resolution API (provisioning-as-code)")
 
 
 @app.command()
 def generate(file: Path = typer.Option(..., "-f", "--file"),
              target: str = typer.Option("terraform", "--target")) -> None:
-    """Emit Terraform from the spec — the §5.5 pivot if provisioning is UI-only."""
+    """Emit Terraform from the spec — the provisioning-as-code pivot if provisioning is UI-only."""
     _load_spec(file)
-    _blocked("Terraform provider coverage enumeration (§5.5, §0.3)")
+    _blocked("Terraform provider coverage enumeration (provisioning-as-code)")
 
 
 @app.command()
 def status() -> None:
-    """Render published / reachable / governed per asset (§7.6)."""
-    _blocked("Exchange + API Manager read APIs (§7.6)")
+    """Render published / reachable / governed per asset (BG §2.5)."""
+    _blocked("Exchange + API Manager read APIs (BG §2.5)")
 
 
 @app.command()
 def init() -> None:
-    """Scan the project, propose publishable assets, write .donkey-kit.toml (§7.8)."""
-    _blocked("per-framework asset detection + descriptor derivation (§7.8, §7.3)")
+    """Scan the project, propose publishable assets, write .donkey-kit.toml (BG §2.5)."""
+    _blocked("per-framework asset detection + descriptor derivation (BG §2.5)")
 
 
 @app.command()
 def publish(if_changed: bool = typer.Option(True, "--if-changed/--always")) -> None:
-    """Publish code-first assets to Exchange (CI-only, §7.5/§7.7)."""
-    _blocked("Exchange publication mechanism + digest metadata (§7.5, §7.9)")
+    """Publish code-first assets to Exchange (CI-only, BG §2.5)."""
+    _blocked("Exchange publication mechanism + digest metadata (BG §2.5)")
 
 
 @app.command()
 def verify() -> None:
-    """Check the live server against the Exchange descriptor (§7.4)."""
-    _blocked("Exchange descriptor read + live introspection (§7.4, §7.9)")
+    """Check the live server against the Exchange descriptor (BG §2.5)."""
+    _blocked("Exchange descriptor read + live introspection (BG §2.5)")
 
 
 @app.command()
@@ -192,7 +192,7 @@ def doctor(
 ) -> None:
     """Diagnose governed access: config, credentials, gateway, model, budget (#202).
 
-    Makes ONE real governed call and reads the result through the §2.4 error
+    Makes ONE real governed call and reads the result through the BG §1.2 error
     taxonomy to tell the three look-alike failures apart — wrong URL
     (``GatewayUnavailable``), wrong credentials (``AuthError``), and
     credentials-fine-but-model-rejected (the verified ``model_not_found``

@@ -1,5 +1,5 @@
 """Budget pacing: ``pace(reserve=)`` and ``wait_for_reset()`` — the recovery
-half of piece 2 (§1.3 / BG §1.3, #186). No wall-clock sleeping: ``asyncio.sleep``
+half of piece 2 (BG §1.3, #186). No wall-clock sleeping: ``asyncio.sleep``
 is monkeypatched to record its delay, and the clock is injected via ``now=`` the
 same way :meth:`Budget.observe` accepts it, so every assertion is deterministic."""
 

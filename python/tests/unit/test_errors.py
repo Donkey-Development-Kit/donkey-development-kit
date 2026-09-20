@@ -1,4 +1,4 @@
-"""errors.classify behaviour (§2.4). Policy rejections must be terminal."""
+"""errors.classify behaviour (BG §1.2). Policy rejections must be terminal."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def test_401_is_auth_error() -> None:
 def test_generic_4xx_is_terminal_policy_violation() -> None:
     err = classify(_resp(400))
     assert isinstance(err, PolicyViolation)
-    assert err.remediation  # required, non-empty (§2.4)
+    assert err.remediation  # required, non-empty (BG §1.2)
 
 
 def test_429_is_token_budget_with_retry_after() -> None:
@@ -48,7 +48,7 @@ def test_injection_protection_header_is_prompt_injection_blocked() -> None:
     err = classify(_resp(400, {"x-injection-protection": "blocked"}))
     assert isinstance(err, PromptInjectionBlocked)
     assert err.policy == "prompt-injection-protection"
-    assert err.remediation  # required, non-empty (§2.4)
+    assert err.remediation  # required, non-empty (BG §1.2)
 
 
 def test_400_without_injection_header_is_not_prompt_injection() -> None:
@@ -115,7 +115,7 @@ def test_content_safety_action_allow_is_not_content_safety_blocked() -> None:
 # carries no nested provider envelope must NOT be coerced into a subclass whose
 # contract we haven't verified. It is surfaced as a generic PolicyViolation that
 # names what was observed and says the shape is unconfirmed. A 403 is auth ONLY
-# when it carries the verified www-authenticate challenge (docs §4).
+# when it carries the verified www-authenticate challenge (docs/verified-apis.md §4).
 
 
 def test_unrecognised_403_falls_through_to_honest_policy_violation() -> None:
@@ -149,7 +149,7 @@ def test_unrecognised_403_names_the_observed_policy_headers() -> None:
 
 def test_403_with_www_authenticate_is_still_auth_error() -> None:
     """Regression guard for the #184 split: a 403 carrying a ``www-authenticate``
-    challenge is the verified client-id-enforcement shape (docs §4) and must
+    challenge is the verified client-id-enforcement shape (docs/verified-apis.md §4) and must
     remain an AuthError, so ``donkey doctor``'s credentials diagnosis (#202)
     stays intact."""
     err = classify(_resp(403, {"www-authenticate": 'Bearer realm="anypoint"'}))
@@ -169,11 +169,11 @@ def test_5xx_is_retryable_upstream() -> None:
 
 def test_policy_violation_is_not_a_retryable_type() -> None:
     # A PolicyViolation must never be an UpstreamModelError (which the transport
-    # would retry). Distinct branches of the taxonomy (§2.4).
+    # would retry). Distinct branches of the taxonomy (BG §1.2).
     assert not issubclass(PolicyViolation, UpstreamModelError)
 
 
-# --- correlation/call id read-back (§2.3, #195) -----------------------------
+# --- correlation/call id read-back (BG §1.1, #195) -----------------------------
 # classify() derives the run id and the per-call id from the response's own
 # request headers, so a caller bridging an openai error gets them for free.
 

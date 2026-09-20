@@ -1,4 +1,4 @@
-"""Configuration (§2.1).
+"""Configuration.
 
 Resolution order: explicit kwarg → env var → ``.donkey-kit.toml`` (cwd or
 ``$XDG_CONFIG_HOME``) → default. We never read ``.env`` implicitly — the user
@@ -6,7 +6,7 @@ calls ``load_dotenv()`` themselves.
 
 ``validated()`` reports ALL missing fields in one error, not one per run — the
 one-missing-variable-per-run loop is the most common first-five-minutes
-abandonment (§2.1).
+abandonment (config resolution).
 """
 
 from __future__ import annotations
@@ -29,8 +29,9 @@ from .errors import ConfigError
 Region = Literal["us", "eu", "ca", "jp"]
 
 # What to do when the gateway serves a different model than the one requested —
-# a routing fallback substituted the model (§3, #309). ``"off"`` (default): the
-# substitution is surfaced passively on ``donkey.last_call.substituted`` and the
+# a routing fallback substituted the model (docs/verified-apis.md §3, #309).
+# ``"off"`` (default): the substitution is surfaced passively on
+# ``donkey.last_call.substituted`` and the
 # span, but the call succeeds. ``"raise"``: the transport raises
 # :class:`~donkey_kit.core.errors.ModelSubstituted`, for callers who need model
 # determinism (e.g. an evaluation whose results are only comparable per-model).
@@ -64,17 +65,17 @@ class DonkeyConfig:
     application_name: str | None = None   # env: DONKEY_APP_NAME
     business_group: str | None = None     # env: DONKEY_BUSINESS_GROUP
 
-    # --- Correlation request-header NAME overrides (§2.3, #195) ---
+    # --- Correlation request-header NAME overrides (BG §1.1, #195) ---
     # The gateway's inbound correlation/call-id header names are UNVERIFIED
-    # (docs §3); these let a customer point them at the real names without a
+    # (docs/verified-apis.md §3); these let a customer point them at the real names without a
     # release. Unset → the loud ``Unverified`` placeholders in ``core/_verify``.
     correlation_header: str | None = None  # env: DONKEY_CORRELATION_HEADER
     call_id_header: str | None = None      # env: DONKEY_CALL_ID_HEADER
 
-    # --- Cost-attribution tags + request-header NAME overrides (§3, #196) ---
+    # --- Cost-attribution tags + request-header NAME overrides (docs/verified-apis.md §3, #196) ---
     # The fixed dimensions (team/project/env/enduser.id), set once and emitted on
     # every call. The gateway-side header names are the highest-priority unknown
-    # (docs §3); the ``cost_*_header`` overrides let a customer point them at the
+    # (docs/verified-apis.md §3); the ``cost_*_header`` overrides let a customer point them at the
     # real names — unset → the loud ``Unverified`` placeholders in ``core/_verify``.
     cost: CostTags = CostTags()            # env: DONKEY_COST_{TEAM,PROJECT,ENV,ENDUSER_ID}
     cost_team_header: str | None = None    # env: DONKEY_COST_TEAM_HEADER
@@ -93,7 +94,7 @@ class DonkeyConfig:
     # very content the platform just masked to whatever OTLP collector is wired
     # up (#306, BG §1.6). Opting in is the developer assuming that obligation.
     telemetry_capture_content: bool = False
-    # What to do when the gateway serves a different model than requested (§3,
+    # What to do when the gateway serves a different model than requested (docs/verified-apis.md §3,
     # #309). Default "off" — the substitution is surfaced passively on
     # ``donkey.last_call``; "raise" opts into a hard ``ModelSubstituted`` error.
     on_model_substitution: OnModelSubstitution = "off"
@@ -180,7 +181,7 @@ class DonkeyConfig:
         :class:`ConfigError` listing EVERY missing field at once.
 
         ``need`` is one of ``"control_plane"`` (registry/provisioning) or
-        ``"llm"`` (proxy). The two credentials are independent (§2.2): a user
+        ``"llm"`` (proxy). The two credentials are independent (BG §1.1): a user
         may legitimately have proxy access and no Exchange access.
         """
 
@@ -229,7 +230,7 @@ _COST_ENV_VARS: tuple[tuple[str, str], ...] = (
 def _resolve_cost_tags(toml_cost: object) -> CostTags:
     """Resolve the cost tags along the fixed precedence: ``[donkey.cost]`` toml
     table is the base (its keys validated against the fixed set — an unknown
-    dimension raises :class:`ConfigError`, never a silent drop, §196 AC #1), then
+    dimension raises :class:`ConfigError`, never a silent drop, #196 AC #1), then
     ``DONKEY_COST_*`` env vars override per dimension. Absent both → empty tags."""
     if toml_cost is None:
         base = CostTags()
@@ -258,8 +259,9 @@ def _as_bool(v: object) -> bool:
 
 
 def _as_substitution(v: object) -> OnModelSubstitution:
-    """Coerce and validate ``on_model_substitution`` (§3, #309). An unknown value
-    is a config mistake worth reporting up front — a silent fall-back to ``"off"``
+    """Coerce and validate ``on_model_substitution`` (docs/verified-apis.md §3, #309).
+    An unknown value is a config mistake worth reporting up front — a silent
+    fall-back to ``"off"``
     would leave a caller who typed ``"error"`` believing they had opted into
     strictness. Validated at resolve time, like ``region``."""
     token = str(v).strip().lower()

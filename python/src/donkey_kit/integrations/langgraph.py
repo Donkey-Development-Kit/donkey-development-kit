@@ -1,4 +1,4 @@
-"""LangGraph / LangChain adapter (§3.3).
+"""LangGraph / LangChain adapter (BG §1.8).
 
 The one deep, conformance-gated adapter (BG §1.8, #198). Header injection is
 FULL (``default_headers`` + our custom async http client, so every governed
@@ -9,7 +9,7 @@ Three things hang off it, in ergonomic-lockstep with the rest of the SDK:
 
 * :meth:`LangGraphAdapter.chat_model` / :func:`chat_model` / calling the adapter
   (``donkey.langgraph("gpt-4o")``) — three ways to get the **native**
-  ``langchain_openai.ChatOpenAI`` pointed at the proxy (§3.1, README §2).
+  ``langchain_openai.ChatOpenAI`` pointed at the proxy (BG §1.8, README §2).
 * :meth:`LangGraphAdapter.connection_kwargs` — the governed kwargs to spread
   into a ``ChatOpenAI`` you build yourself.
 * :func:`typed_refusals` — a context manager that turns the proxy refusal a node
@@ -20,7 +20,8 @@ Correlation IDs reach every node for free (#195): LangGraph runs nodes on
 ``donkey.run(id=…)`` is visible via ``current_correlation_id()`` inside each
 node with nothing threaded through graph state.
 
-All class names / kwargs are UNVERIFIED until §0.3 — see docs/verified-apis.md §8.
+All class names / kwargs are UNVERIFIED until verification discipline — see
+docs/verified-apis.md §8.
 """
 
 from __future__ import annotations
@@ -41,26 +42,27 @@ class LangGraphAdapter(Adapter):
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs to spread into a ``ChatOpenAI(model=…, **kwargs)`` you
-        build yourself (§3.1). Same values the factory uses — one source of
+        build yourself (BG §1.8). Same values the factory uses — one source of
         truth for the proxy connection."""
         conn = self._openai_connection()
         return {
             **conn,  # base_url, api_key, default_headers
             "http_async_client": self._http_client(),  # our client, our hooks
-            "max_retries": 0,  # we retry in transport (§2.3)
+            "max_retries": 0,  # we retry in transport (BG §1.1)
             # Target the proxy's LIVE-VERIFIED endpoint: the data plane is the
-            # OpenAI Responses API (``/responses``, docs §4) — the same route the
+            # OpenAI Responses API (``/responses``, docs/verified-apis.md §4) — the same route the
             # raw ``donkey.llm`` client uses. Left at ChatOpenAI's chat-completions
             # default, ``donkey.langgraph(...)`` would call an UNVERIFIED
-            # ``/chat/completions`` route and risk a 404 in a real sandbox (§0.3).
+            # ``/chat/completions`` route and risk a 404 in a real sandbox (verification
+            # discipline).
             # Override per call (``use_responses_api=False``) if a deployment
             # exposes chat-completions instead.
             "use_responses_api": True,
         }
 
     def chat_model(self, model: str, **kw: Any) -> ChatOpenAI:
-        """Return a native ``ChatOpenAI`` pointed at the proxy (§3.1)."""
-        from langchain_openai import ChatOpenAI  # verified name: docs §8
+        """Return a native ``ChatOpenAI`` pointed at the proxy (BG §1.8)."""
+        from langchain_openai import ChatOpenAI  # verified name: docs/verified-apis.md §8
 
         return ChatOpenAI(model=model, **self.connection_kwargs(), **kw)
 
@@ -117,7 +119,7 @@ def typed_refusals() -> Iterator[None]:
     ``APIStatusError``) are transport failures, not gateway refusals, and pass
     through untouched.
     """
-    import openai  # lazy: only the framework path needs it (§1.1)
+    import openai  # lazy: only the framework path needs it (the layered architecture)
 
     from ..core.errors import classify
 

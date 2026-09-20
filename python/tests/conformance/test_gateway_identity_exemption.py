@@ -1,4 +1,5 @@
-"""The gateway-identity conformance exemption is ASSERTED, never skipped (#362, §8.1).
+"""The gateway-identity conformance exemption is ASSERTED, never skipped (#362, the
+conformance kit).
 
 ``donkey.last_call`` is populated by the shared transport's ``_on_response``, so an
 adapter that does not route through our httpx client structurally cannot observe

@@ -8,7 +8,7 @@
 # pair per proxy with the `ddk-request-llm-proxy-access` skill, then export the
 # two env vars each entry names.
 #
-# `base_url` is the proxy ingress WITHOUT a trailing `/v1` (§2 — the ingress is
+# `base_url` is the proxy ingress WITHOUT a trailing `/v1` (docs/verified-apis.md §2 — the ingress is
 # verbatim; the OpenAI SDK appends `/responses` itself). Fill it from the real
 # host + port 8081 + base path shown for that proxy in the provisioning repo.
 # Values here are PLACEHOLDERS — replace every `REPLACE-ME` before running.

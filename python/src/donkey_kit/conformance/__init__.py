@@ -11,7 +11,7 @@ matrix (``tests/conformance/``). Install ``donkey-kit[test]`` and run::
 - :mod:`~donkey_kit.conformance.report` — the dependency-free status table.
 - :mod:`~donkey_kit.conformance.plugin` — the pytest11 plugin (auto-loaded).
 
-**Dev-only sibling of the five production layers** (§1.1): an import-linter
+**Dev-only sibling of the five production layers** (the layered architecture): an import-linter
 contract forbids ``core``/``llm``/``registry``/``tools``/``integrations`` from
 importing it. Because the pytest11 entry point auto-loads
 :mod:`~donkey_kit.conformance.plugin` on *every* pytest run where this package

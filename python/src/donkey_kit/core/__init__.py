@@ -1,6 +1,6 @@
-"""core/ — the framework-free foundation (§2).
+"""core/ — the framework-free foundation.
 
-HARD RULE (§1.1): nothing in this package may import from
+HARD RULE (the layered architecture): nothing in this package may import from
 ``donkey_kit.integrations``. Enforced by import-linter in CI.
 """
 

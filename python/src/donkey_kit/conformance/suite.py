@@ -20,7 +20,7 @@ logs* rather than the agent's internals:
 - **works without budget headers** — serving a success with no ``x-token-*``
   and asserting the run still completes.
 
-Framework isolation (§1.1): stdlib only at module top, plus the framework-free
+Framework isolation (the layered architecture): stdlib only at module top, plus the framework-free
 ``core.errors`` taxonomy. The :class:`ScenarioContext` protocol the checks call
 is defined *here*, so ``suite.py`` never imports the harness — the harness
 imports the suite, not the other way round. No web framework and no ``openai``
@@ -228,7 +228,7 @@ SCENARIO_NAMES: frozenset[str] = frozenset(s.name for s in SCENARIOS)
 def validate_known_limitations(mapping: object) -> dict[str, str]:
     """Validate an agent's ``KNOWN_LIMITATIONS`` and return it as a plain dict.
 
-    An exemption is an *asserted* claim, never a silent skip (§8.1): every key
+    An exemption is an *asserted* claim, never a silent skip (the conformance kit): every key
     must name a real scenario and every reason must be a non-empty string. A bad
     key or an empty reason raises — the plugin lets that surface at collection
     time so the run fails loudly rather than quietly excusing a scenario.

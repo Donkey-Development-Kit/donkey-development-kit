@@ -35,7 +35,7 @@ python examples/adk/main.py
 ## The manual equivalent
 
 The factory call is equivalent to building `LiteLlm` yourself with the
-governed connection values (§3.3):
+governed connection values (BG §1.8):
 
 ```python
 from google.adk.models.lite_llm import LiteLlm

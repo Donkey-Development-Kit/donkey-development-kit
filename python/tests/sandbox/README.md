@@ -35,7 +35,7 @@ minted for it. The manifest holds **no secrets** — only a `base_url`, the rout
 ```toml
 [[proxy]]
 key = "openai-model-routing"
-base_url = "https://<host>:8081/<base-path>"   # ingress WITHOUT /v1 (§2)
+base_url = "https://<host>:8081/<base-path>"   # ingress WITHOUT /v1 (docs/verified-apis.md §2)
 model = "gpt-5-mini"
 client_id_env = "DDK_SANDBOX_OPENAI_ROUTING_CLIENT_ID"
 client_secret_env = "DDK_SANDBOX_OPENAI_ROUTING_CLIENT_SECRET"

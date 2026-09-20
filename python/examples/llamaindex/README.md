@@ -36,7 +36,7 @@ python examples/llamaindex/main.py
 ## The manual equivalent
 
 The factory call is equivalent to building `OpenAILike` yourself with the
-governed connection values (§3.3):
+governed connection values (BG §1.8):
 
 ```python
 from llama_index.llms.openai_like import OpenAILike

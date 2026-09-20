@@ -228,7 +228,7 @@ directly.
   `X-Donkey-Request-Id` is unverified — `x-correlation-id` is confirmed only as a
   gateway **response** echo. So those request-header **names** are overridable
   placeholders (`correlation_header` / `call_id_header`), not guesses
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md), §0.3).
+  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Cost-attribution tags
 

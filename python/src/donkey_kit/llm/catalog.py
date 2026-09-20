@@ -1,4 +1,4 @@
-"""Model catalog (§3.4).
+"""Model catalog (BG §1.1).
 
 ``list_models()`` returns the logical model names the proxy exposes, not raw
 provider names. Prefer the proxy's own ``/models`` endpoint if it has one; fall
@@ -6,7 +6,7 @@ back to the registry, then to a bundled heuristic capability table.
 
 ``ModelHandle`` carries enough capability metadata to feed any framework that
 requires explicit capability flags and to let a developer branch on
-function-calling support (§3.4).
+function-calling support (BG §1.1).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class ModelCapabilities:
-    """Capability flags. Conservative defaults where unknown (§3.4)."""
+    """Capability flags. Conservative defaults where unknown (BG §1.1)."""
 
     function_calling: bool = True
     vision: bool = False
@@ -33,7 +33,7 @@ class ModelHandle:
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
 
 
-# Bundled heuristic capability table (§3.4), keyed by well-known model IDs.
+# Bundled heuristic capability table (BG §1.1), keyed by well-known model IDs.
 # Clearly a heuristic; users may override. NOT authoritative.
 _HEURISTIC_CAPS: dict[str, ModelCapabilities] = {
     "gpt-4o": ModelCapabilities(function_calling=True, vision=True, json_output=True),
@@ -49,7 +49,7 @@ def heuristic_capabilities(model_id: str) -> ModelCapabilities:
 
     Conservative fallback for unknown models: function calling on, vision/json
     off. Frameworks that demand explicit capability flags can seed them from
-    this (§3.4).
+    this (BG §1.1).
     """
 
     return _HEURISTIC_CAPS.get(model_id, ModelCapabilities())
