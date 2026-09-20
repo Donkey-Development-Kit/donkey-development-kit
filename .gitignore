@@ -37,6 +37,7 @@ node_modules/
 # of this public repo). Clone donkey-development-kit-claude as a sibling dir.
 /CLAUDE.md
 /.claude/skills
+/.claude/settings.json
 
 # Playwright MCP scratch output (local agent tooling)
 .playwright-mcp/
