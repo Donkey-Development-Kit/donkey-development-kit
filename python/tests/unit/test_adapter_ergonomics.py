@@ -14,13 +14,19 @@ native object ``importorskip`` the framework.
 
 from __future__ import annotations
 
+import importlib
+import sys
+import types
+import warnings
+from typing import Any, NamedTuple
+
 import pytest
 
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.transport import DonkeyAsyncClient, build_http_client
 from donkey_kit.integrations import _base
-from donkey_kit.integrations._base import default_adapter
+from donkey_kit.integrations._base import Adapter, default_adapter
 from donkey_kit.integrations.langgraph import LangGraphAdapter
 
 
@@ -167,15 +173,18 @@ def test_llamaindex_connection_kwargs_use_api_base_and_chat_flags() -> None:
     assert kw["is_function_calling_model"] is True
 
 
-def test_openai_agents_governed_client_carries_proxy_config() -> None:
-    """The OpenAI Agents SDK wants a *pre-built* client, so this adapter has no
-    connection_kwargs() — its governed surface is a native AsyncOpenAI bound to
-    the proxy. Still supported at the connection level after the roster cut."""
+def test_openai_agents_connection_kwargs_carry_governed_client() -> None:
+    """The OpenAI Agents SDK wants a *pre-built* client, so unlike the
+    OpenAI-compatible adapters this one's connection_kwargs() returns a single
+    ``openai_client`` key holding a native AsyncOpenAI bound to the proxy — header
+    AND transport injection travel as one object (BG §1.8)."""
     openai = pytest.importorskip("openai")
 
     from donkey_kit.integrations.openai_agents import OpenAIAgentsAdapter
 
-    client = OpenAIAgentsAdapter(_cfg(), _http())._proxy_openai_client()
+    kw = OpenAIAgentsAdapter(_cfg(), _http()).connection_kwargs()
+    assert set(kw) == {"openai_client"}  # not loose base_url/default_headers
+    client = kw["openai_client"]
     assert isinstance(client, openai.AsyncOpenAI)
     assert str(client.base_url) == "https://proxy"
     assert client.default_headers["client_id"] == "cid"
@@ -199,3 +208,143 @@ def test_only_langgraph_is_conformance_tested() -> None:
         "crewai",
         "llamaindex",
     }
+
+
+# --- The two paths cannot drift (issue #33 AC) ------------------------------
+#
+# Each framework exposes the SAME governed native object two ways: (a) the
+# documented "eject" path — spread ``connection_kwargs()`` into the framework's
+# own constructor yourself; (b) the module-level factory, which builds it for
+# you. If the factory ever passed the native constructor different connection
+# values than ``connection_kwargs()`` advertises, the docs' manual-equivalent
+# block would silently lie. These tests pin the two paths together per framework.
+#
+# The check is offline for all eight: we replace each framework's native class
+# with a spy that records the kwargs it is constructed with, then assert those
+# kwargs carry exactly the governed values ``connection_kwargs()`` returns — no
+# real framework install and no per-framework attribute introspection needed.
+
+
+class _F(NamedTuple):
+    module: str  # submodule under donkey_kit.integrations
+    factory: str  # module-level factory function name
+    adapter_cls: str  # adapter class name (for the shared default-adapter cache)
+    native_module: str  # dotted module the factory imports its native class from
+    native_attr: str  # native class attribute name to spy on
+    args: tuple[str, ...]  # positional args the factory takes (model id, if any)
+
+
+# Every adapter whose connection_kwargs() is a plain value dict spread straight
+# into the native constructor. openai_agents is exercised separately below
+# because its governed value is a freshly-built client object (BG §1.8).
+_FACTORIES = [
+    _F(
+        "langgraph", "chat_model", "LangGraphAdapter", "langchain_openai", "ChatOpenAI", ("gpt-4o",)
+    ),
+    _F("adk", "model", "ADKAdapter", "google.adk.models.lite_llm", "LiteLlm", ("gpt-4o",)),
+    _F("strands", "model", "StrandsAdapter", "strands.models.openai", "OpenAIModel", ("gpt-4o",)),
+    _F(
+        "agent_framework",
+        "chat_client",
+        "AgentFrameworkAdapter",
+        "agent_framework.openai",
+        "OpenAIChatClient",
+        ("gpt-4o",),
+    ),
+    _F("anthropic", "client", "AnthropicAdapter", "anthropic", "AsyncAnthropic", ()),
+    _F("crewai", "llm", "CrewAIAdapter", "crewai", "LLM", ("gpt-4o",)),
+    _F(
+        "llamaindex",
+        "llm",
+        "LlamaIndexAdapter",
+        "llama_index.llms.openai_like",
+        "OpenAILike",
+        ("gpt-4o",),
+    ),
+]
+
+
+def _install_native_stub(
+    monkeypatch: pytest.MonkeyPatch, dotted: str, attr: str
+) -> dict[str, Any]:
+    """Replace ``<dotted>.<attr>`` (the native class a factory imports lazily)
+    with a spy that records its constructor kwargs, registering stub modules for
+    any part of ``dotted`` that is not installed so the lazy ``from`` import
+    resolves offline. Returns the dict the spy populates."""
+    captured: dict[str, Any] = {}
+
+    class _Spy:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    parts = dotted.split(".")
+    for i in range(1, len(parts) + 1):
+        name = ".".join(parts[:i])
+        if name not in sys.modules:
+            monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+        if i > 1:  # link submodule onto its parent so `from a.b import c` resolves
+            parent = sys.modules[".".join(parts[: i - 1])]
+            monkeypatch.setattr(parent, parts[i - 1], sys.modules[name], raising=False)
+    monkeypatch.setattr(sys.modules[dotted], attr, _Spy, raising=False)
+    return captured
+
+
+def _set_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
+    _base._DEFAULT_ADAPTERS.clear()
+
+
+@pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)
+def test_factory_and_connection_kwargs_do_not_drift(
+    f: _F, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_proxy_env(monkeypatch)
+    mod = importlib.import_module(f"donkey_kit.integrations.{f.module}")
+    factory = getattr(mod, f.factory)
+    adapter_cls: type[Adapter] = getattr(mod, f.adapter_cls)
+
+    captured = _install_native_stub(monkeypatch, f.native_module, f.native_attr)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # anthropic warns once about its unverified route
+        factory(*f.args)
+
+    # The factory built the native object through the process-wide cached default
+    # adapter; read connection_kwargs() off that same instance, so the shared http
+    # client compares by identity and the header dicts by value.
+    adapter = default_adapter(adapter_cls)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        expected = adapter.connection_kwargs()
+
+    # Every governed kwarg the eject path documents reached the native constructor
+    # with an identical value. (captured also holds model/model_id — not governed.)
+    assert {k: captured[k] for k in expected} == expected
+
+
+def test_openai_agents_factory_and_connection_kwargs_do_not_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """openai_agents' governed value is a pre-built AsyncOpenAI, freshly made on
+    each call, so the two paths yield *distinct* client objects — assert they
+    carry identical governed values rather than object identity (BG §1.8)."""
+    pytest.importorskip("openai")  # _proxy_openai_client builds a real AsyncOpenAI
+    _set_proxy_env(monkeypatch)
+
+    captured = _install_native_stub(monkeypatch, "agents", "OpenAIChatCompletionsModel")
+    from donkey_kit.integrations.openai_agents import OpenAIAgentsAdapter, model
+
+    model("gpt-4o")
+    factory_client = captured["openai_client"]
+    accessor_client = default_adapter(OpenAIAgentsAdapter).connection_kwargs()["openai_client"]
+
+    def _governed(c: Any) -> tuple[str, str, str, int]:
+        return (
+            str(c.base_url),
+            c.default_headers["client_id"],
+            c.default_headers["client_secret"],
+            c.max_retries,
+        )
+
+    assert _governed(factory_client) == _governed(accessor_client)
