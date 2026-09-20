@@ -100,8 +100,11 @@ class LLMClient:
         }
         # openai 3.x retyped http_client to httpx2.AsyncClient (a distinct class from
         # a separate distribution); our DonkeyClient/DonkeyAsyncClient are httpx
-        # subclasses, duck-typed fine at runtime. Typecheck-only mismatch — see
-        # docs/verified-apis.md (openai >=3.0 row); no upper pin, by design (the
+        # subclasses. Typecheck-only mismatch: when an http_client is injected,
+        # openai sends every request THROUGH it, so httpx2 never touches this path.
+        # Runtime-verified end to end (async + sync) against openai 3.x by
+        # tests/unit/test_llm_client_openai3_injection.py (#18); see
+        # docs/verified-apis.md (openai >=3.0 row). No upper pin, by design (the
         # floors-never-ceilings rule).
         if sync:
             return OpenAI(http_client=self._sync_http(), **shared)  # type: ignore[arg-type]
