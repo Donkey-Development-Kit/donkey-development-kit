@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "donkey-kit"
-version = "0.1.0.dev0"
+version = "0.1.0.dev1"
 description = "An SDK for consuming Agent Fabric capabilities (governed model access, governed tools, provisioning-as-code) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
