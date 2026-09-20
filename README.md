@@ -8,7 +8,7 @@ An SDK for consuming **Agent Fabric** capabilities — governed model access,
 governed tool access, and provisioning-as-code — from your own agent framework,
 in your own IDE, without adopting Mule.
 
-> **Project status — alpha, pre-release.** This is `v0.1.0.dev1`
+> **Project status — alpha, pre-release.** This is `v0.1.0.dev2`
 > (`Development Status :: 3 - Alpha`). The **LLM data plane is live-verified**;
 > most other surfaces are verification-gated (see
 > [What's verified](#whats-verified-verification-discipline) below). **Not yet published to PyPI** —
