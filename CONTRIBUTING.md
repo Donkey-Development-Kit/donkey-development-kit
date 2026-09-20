@@ -2,7 +2,10 @@
 
 Thanks for working on the Donkey Development Kit. This guide is the contributor-facing
 runbook for the repo: how a change moves from an issue to `main`, how the code is
-tested and linted, and the conventions that keep the package trustworthy.
+tested and linted, and the conventions that keep the package trustworthy. It
+serves both **internal** contributors (org members with push access) and
+**external** ones (contributing via a fork + PR); where the two diverge is
+spelled out in [§1](#who-can-contribute-internal-vs-external).
 
 For *how the SDK is built* — the layer boundaries, the verification discipline,
 the error taxonomy, adapter support depth — read [`ARCHITECTURE.md`](ARCHITECTURE.md)
@@ -26,6 +29,60 @@ noted. There is no Makefile — every command runs directly.
 
 ## 1. Branch, PR & release workflow
 
+### Who can contribute: internal vs external
+
+This repo is **public** and takes contributions two ways. There is only one
+workflow; what differs is *where your branch lives and who can triage and merge
+it* — not the discipline.
+
+- **Internal contributors** — members of the `Donkey-Development-Kit` org with push
+  access. You branch directly in this repo, push your `<type>/<issue#>-<slug>`
+  branch to `origin`, set your own milestone/labels/assignee, and (after review)
+  merge. The rest of this document is written from this seat.
+- **External contributors** — anyone without push access. You work from a
+  **fork** and open a PR from your fork into this repo's `develop`. Everything
+  substantive is identical — issue-first, the same branch naming, the same
+  pre-PR gate, the same docs-sync rule — with the exceptions called out as
+  **(fork)** notes throughout this section.
+
+**The fork flow, end to end.** Fork `Donkey-Development-Kit/donkey-development-kit` on
+GitHub, then clone your fork and add this repo as `upstream`:
+
+```bash
+git clone https://github.com/<you>/donkey-development-kit.git
+cd donkey-development-kit
+git remote add upstream https://github.com/Donkey-Development-Kit/donkey-development-kit.git
+```
+
+Branch from `upstream/develop` (not your fork's possibly-stale copy), keep the
+`<type>/<issue#>-<slug>` name, and push the branch to your fork (`origin`):
+
+```bash
+git fetch upstream
+git checkout -b docs/13-verified-apis-update upstream/develop
+git push -u origin docs/13-verified-apis-update
+```
+
+Open the PR from `<you>:docs/13-verified-apis-update` →
+`Donkey-Development-Kit:develop`, and **tick "Allow edits by maintainers"** so a
+maintainer can rebase or push a small fix without a round-trip. Keep your branch
+current by rebasing on `upstream/develop` (`git fetch upstream && git rebase
+upstream/develop`), the same default as an internal branch.
+
+What a fork contributor **can't** do — a maintainer does each instead, so don't
+block waiting on it:
+
+- **Triage fields.** You can file an issue, but setting its milestone, labels,
+  and assignee needs write access. File it, then say in the issue that you plan
+  to work it, so it isn't picked up by someone else.
+- **The `.claude/skills/**` shortcut** (below) — committing straight to
+  `develop` — needs push access. From a fork, even a skills-only change goes
+  through a PR.
+- **Merging and promotion** — squashing a branch into `develop` and promoting
+  `develop` → `main` are maintainer-only.
+- **Secret-gated CI and live/sandbox verification** — see
+  [the pre-PR gate](#the-pre-pr-gate) and [§2](#2-testing-strategy).
+
 ### The issue is the plan
 
 **No code change lands without a GitHub issue and a branch named after it.**
@@ -37,7 +94,8 @@ scratch files.
 The one exception: edits scoped **entirely** to `.claude/skills/**` may be
 committed directly to `develop` after a recap, since skills are agent tooling
 rather than SDK code. Anything touching `python/`, `website/`, CI, the build
-plan, or repo policy follows the full flow below.
+plan, or repo policy follows the full flow below. **(fork)** This shortcut needs
+push access — from a fork, a skills-only change still goes through a PR.
 
 ### Branch model
 
@@ -57,7 +115,9 @@ find yourself on `main` about to start work, `git checkout develop` first.
    Donkey-Development-Kit/donkey-development-kit --search "<keywords>"`); file one if none
    matches. Every issue carries exactly one **milestone** — that milestone is the
    release the branch targets. Triage is by milestone + labels; there is no
-   Projects board.
+   Projects board. **(fork)** File the issue, but leave milestone/labels/assignee
+   to a maintainer — setting them needs write access; note in the issue that you
+   plan to work it.
 2. **Cut the branch from `develop`:**
    ```bash
    git fetch origin
@@ -68,7 +128,9 @@ find yourself on `main` about to start work, `git checkout develop` first.
    mandatory. `<type>` is one of `feat` (new capability), `fix` (something that
    should have worked), `docs` (README, website, comments), or `chore`
    (tooling, deps, refactors). The slug is 2–5 kebab-case words describing *what*
-   changes, e.g. `fix/42-proxy-url-trailing-slash`.
+   changes, e.g. `fix/42-proxy-url-trailing-slash`. **(fork)** Branch from
+   `upstream/develop` and push to your fork (`origin`) instead — see the fork
+   flow above.
 3. **Re-confirm the boundaries before writing code** (see
    [`ARCHITECTURE.md`](ARCHITECTURE.md)): the change stays within the layering
    (`integrations → tools → registry → llm → core`, lower never imports higher);
@@ -116,6 +178,18 @@ If you added or touched an adapter, sanity-check that a bare `pip install -e
 ".[dev]"` + `python -c "import donkey_kit"` still succeeds — that's the
 `base-only` CI job catching a framework import that leaked into a lower layer.
 
+**(fork)** GitHub withholds repository secrets from pull requests opened from a
+fork, so the secret-gated jobs (the `--live` framework round-trip and anything
+reading the `DONKEY_LLM_PROXY_*` env vars) do **not** run on your PR — a
+maintainer runs them before merge. Run everything that needs no secrets locally
+so the gate is green on what CI *can* check on a fork: `pytest -q tests/unit`,
+`mypy`, `ruff check .`, `lint-imports`, and offline `python
+scripts/verify_frameworks.py` (no `--live`). The `sandbox` and `local_gateway`
+suites need creds/docker you likely don't have; they clean-skip, which is
+correct (§2). And **never flip a `docs/verified-apis.md` row or `verified=True`
+from a fork** — that requires a real sandbox round-trip only a maintainer can
+run (§0.3); raise it in the issue instead.
+
 ### The PR
 
 The PR targets `develop` and its body includes `Closes #<issue#>`, a `## Summary`
@@ -141,7 +215,8 @@ Merge method is fixed by direction — don't pick per PR:
 
 Never rebase-merge into `develop`, never squash or fast-forward `develop` into
 `main`, and never merge `main` back into `develop` (cherry-pick a hotfix onto
-`develop` instead).
+`develop` instead). **(fork)** You can't run this step — a maintainer
+squash-merges your PR and closes the linked issue with the merge SHA.
 
 After a PR merges, **close the linked issue explicitly** with the merge SHA —
 don't rely on GitHub auto-close, which can silently miss. Closing the issue is
