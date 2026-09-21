@@ -253,8 +253,10 @@ async def test_signal_free_response_leaves_expired_window_open() -> None:
 
     b.observe(_resp(), now=later)
 
+    ran = False
     async with b.pace(reserve=0.05, now=later):
-        pass
+        ran = True
+    assert ran
 
 
 async def test_future_reset_at_rearms_expired_window() -> None:

@@ -211,8 +211,8 @@ class Budget:
         :attr:`reset_at` in the future makes the reserve guard active again. A
         response that does not supply a refreshed future :attr:`reset_at` leaves the
         stale pass-through open. Before ``reset_at`` — or when no reset time was
-        remains active. ``now`` is injectable for tests; production passes nothing
-        and the wall clock (UTC) is used.
+        observed — the reserve guard remains active. ``now`` is injectable for
+        tests; production passes nothing and the wall clock (UTC) is used.
         """
         if not 0.0 <= reserve <= 1.0:
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")
