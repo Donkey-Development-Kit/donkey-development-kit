@@ -86,12 +86,12 @@ each framework exposes:
 |---|---|---|---|
 | LangGraph | ✅ | ✅ | Best case — `default_headers` + custom async client. |
 | Strands | ✅ | ✅ | Via `client_args`. |
-| LlamaIndex | ✅ | ✅ | `is_chat_model=True` forced (avoids the completions-endpoint gotcha). |
+| LlamaIndex | ✅ | ❌ | Receives `default_headers`, not the SDK's HTTP client, so it cannot populate `donkey.last_call`. `is_chat_model=True` is forced. |
 | OpenAI Agents SDK | ✅ | ✅ | We build the `AsyncOpenAI` client ourselves. |
 | Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [divergence note](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
-| MS Agent Framework | ✅ | ✅ | Class name/kwarg **unverified**. |
-| Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport — correlation-ID is per-client, a documented exemption. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | LiteLLM-backed `LLM`; same correlation-ID exemption as Google ADK. |
+| MS Agent Framework | ✅ | ❌ | Receives `default_headers`, not the SDK's HTTP client, so it cannot populate `donkey.last_call`. Class name/kwarg **unverified**. |
+| Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; correlation is per-client and the adapter cannot populate `donkey.last_call`. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; same correlation and `donkey.last_call` exemptions as Google ADK. |
 
   The proxy contract is verified; the exact **constructor signatures** are still
   being confirmed per framework — see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).

@@ -241,18 +241,20 @@ up front. The demotion landed in #197; deepening LangGraph is tracked in #198.
 (`python/tests/conformance/suite.py`) runs identically against every adapter. A
 framework is "supported" only when it passes every scenario **or** records an
 *asserted exemption* in `KNOWN_LIMITATIONS` — never a silent skip. Those
-exemptions are published in the README as credibility (e.g. adapters that reach
-models through LiteLLM cannot propagate a per-run correlation ID, because LiteLLM
-owns the transport).
+exemptions are published in the README as credibility. ADK and CrewAI cannot
+propagate a per-run correlation ID or populate `donkey.last_call`, because
+LiteLLM owns the transport. LlamaIndex and Microsoft Agent Framework cannot
+populate `donkey.last_call`, because they receive only `default_headers`, not
+the SDK's shared HTTP client.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
 pytest plugin** users run against their own agent (#191).
 
-Two adapters carry documented conformance exemptions: CrewAI (per-run
-correlation degrades to per-client because it reaches models through LiteLLM,
-like ADK) and the Anthropic SDK (depends on the proxy exposing an
-Anthropic-native Messages API route, an open verification item).
+Four adapters carry documented conformance exemptions: ADK and CrewAI for
+per-run correlation and gateway-identity observation, plus LlamaIndex and
+Microsoft Agent Framework for gateway-identity observation. The conformance
+suite pins those exemptions to each adapter's actual transport behavior.
 
 ---
 
