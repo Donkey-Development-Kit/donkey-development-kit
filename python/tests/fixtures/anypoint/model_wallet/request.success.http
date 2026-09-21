@@ -1,0 +1,7 @@
+POST /ddk-model-wallet/chat/completions HTTP/1.1
+Host: shared-omni-gateway-qrpud8.5sc6y6-1.usa-e2.cloudhub.io
+Content-Type: application/json
+Authorization: Bearer <RS256 JWT minted by the org IdP — redacted; decoded claims in jwt.claims.json>
+X-Client-Id: ddk-model-wallet
+
+{"model":"openai/gpt-5-mini","messages":[{"role":"user","content":"Reply with exactly: PONG"}],"max_completion_tokens":256}

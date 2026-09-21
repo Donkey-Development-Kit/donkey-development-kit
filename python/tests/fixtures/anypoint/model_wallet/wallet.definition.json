@@ -1,0 +1,28 @@
+{
+  "_note": "GET https://omni.mulesoft.com/api/apim-proxy/organizations/<orgId>/environments/<envId>/model-wallet -> .data[] for name=ddk-model-wallet. The wallet object the ingress matches callers against. Org/env/user UUIDs and budget-line id redacted; clientId, predicates, and the routed modelId are the load-bearing fields.",
+  "name": "ddk-model-wallet",
+  "clientId": "ddk-model-wallet",
+  "priority": 10,
+  "status": "active",
+  "syncStatus": "synced",
+  "predicates": [
+    { "type": "jwtClaim", "claim": "group", "values": ["ddk"] },
+    { "type": "jwtClaim", "claim": "client_id", "values": ["ddk-model-wallet-client"] }
+  ],
+  "actions": {
+    "tokenRateLimits": [
+      {
+        "limit": 1000,
+        "modelId": "openai:gpt-5-mini",
+        "provider": "openai",
+        "model": "gpt-5-mini",
+        "timeWindow": "day"
+      }
+    ]
+  },
+  "scope": {
+    "consumers": ["llm-gateway"],
+    "apiInstanceIds": ["*"]
+  },
+  "budgetCount": 1
+}
