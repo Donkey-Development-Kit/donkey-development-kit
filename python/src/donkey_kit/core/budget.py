@@ -178,7 +178,9 @@ class Budget:
             self.reset_at = ts + timedelta(milliseconds=reset_ms)
 
     @asynccontextmanager
-    async def pace(self, *, reserve: float = 0.0) -> AsyncIterator[None]:
+    async def pace(
+        self, *, reserve: float = 0.0, now: datetime | None = None
+    ) -> AsyncIterator[None]:
         """Guard a request so it is refused *before* it crosses your reserve, not
         after a 429 comes back (BG §1.3, #186).
 
@@ -206,12 +208,14 @@ class Budget:
         observation whose :attr:`reset_at` has elapsed is stale for the same reason,
         so the retry passes through and its response refreshes the in-band budget.
         Before ``reset_at`` — or when no reset time was observed — the reserve guard
-        remains active.
+        remains active. ``now`` is injectable for tests; production passes nothing
+        and the wall clock (UTC) is used.
         """
         if not 0.0 <= reserve <= 1.0:
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")
         used = self.fraction_used
-        window_expired = self.reset_at is not None and _utcnow() >= self.reset_at
+        current = now if now is not None else _utcnow()
+        window_expired = self.reset_at is not None and current >= self.reset_at
         if used is not None and used >= 1.0 - reserve and not window_expired:
             raise BudgetReserveReached(
                 f"Budget reserve reached: {used:.1%} of the window used, "
