@@ -1,7 +1,9 @@
 """Regression coverage for verification-blocked SDK surfaces (§0.3).
 
 CLI ``_blocked(...)`` paths are intentionally not duplicated here: all eight
-are covered by ``test_cli_provisioning.py`` from PR #476.
+are covered by ``test_cli_provisioning.py`` from PR #476. When a surface is
+verified, remove its row here in the same change that records the VERIFIED date
+and source in ``docs/verified-apis.md``.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import Donkey, DonkeyConfig, Publication, PublicationAssetType
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.governance import GatewayTarget, Governance
 from donkey_kit.provisioning.applier import apply as apply_plan
@@ -24,6 +26,14 @@ _SPEC = DonkeySpec(
     metadata=SpecMetadata(name="blocked-spec", environment="Sandbox"),
 )
 _PLAN = Plan()
+_PUBLICATION = Publication(
+    asset_type=PublicationAssetType.MCP_SERVER,
+    group_id="com.example",
+    asset_id="blocked-asset",
+    version="1.0.0",
+    name="Blocked asset",
+    description="An asset whose publication surface remains verification-blocked.",
+)
 _CONFIG = DonkeyConfig(
     telemetry=False,
     correlation_header="X-Test-Correlation-Id",
@@ -55,7 +65,7 @@ _ASYNC_BLOCKED_SURFACES: tuple[
     ("SimulationContext.__aenter__", _enter_simulation),
     (
         "publish_if_changed",
-        lambda donkey: publish_if_changed(object(), donkey),
+        lambda donkey: publish_if_changed(_PUBLICATION, donkey),
     ),
     ("build_plan", lambda donkey: build_plan(_SPEC, donkey)),
     ("provisioning.apply", lambda donkey: apply_plan(_PLAN, donkey)),
