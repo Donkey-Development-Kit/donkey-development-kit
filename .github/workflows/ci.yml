@@ -16,7 +16,8 @@ defaults:
 jobs:
   base-only:
     # Working instruction #9: install ONLY the base package and run the base
-    # suite, to catch accidental top-level framework imports.
+    # suite to catch accidental top-level framework imports. The installed-wheel
+    # check runs afterward in its own environment.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -29,11 +30,16 @@ jobs:
       - run: pytest -q tests/unit
       - name: installed wheel resolves packaged simulator fixtures (BG §1.4)
         run: |
+          wheel_dir="$(mktemp -d)"
+          venv_dir="$(mktemp -d)"
+          trap 'rm -rf "$wheel_dir" "$venv_dir"' EXIT
           pip install build
-          python -m build --wheel
-          python -m venv .wheel-fixture-check
-          .wheel-fixture-check/bin/pip install dist/*.whl
-          .wheel-fixture-check/bin/python - <<'PY'
+          python -m build --wheel --outdir "$wheel_dir"
+          set -- "$wheel_dir"/*.whl
+          test "$#" -eq 1
+          python -m venv "$venv_dir"
+          "$venv_dir/bin/pip" install "$1"
+          "$venv_dir/bin/python" - <<'PY'
           from donkey_kit.simulator import fixtures
 
           assert not fixtures._SOURCE_ROOT.exists(), fixtures._SOURCE_ROOT
