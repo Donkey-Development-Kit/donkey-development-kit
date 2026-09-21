@@ -2,12 +2,12 @@
 
 from .exchange import ExchangeRegistry
 from .governance import STRICT, Check, GovernanceCriteria, GovernanceReport, evaluate
-from .models import AgentHandle, AssetRef, McpServerHandle
+from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
 from .publication import (
-    AssetType,
     Contact,
     DescriptionIssue,
     Publication,
+    PublicationAssetType,
     VersionStrategy,
     check_description_quality,
 )
@@ -25,6 +25,7 @@ __all__ = [
     "GovernanceReport",
     "McpServerHandle",
     "Publication",
+    "PublicationAssetType",
     "VersionStrategy",
     "check_description_quality",
     "evaluate",

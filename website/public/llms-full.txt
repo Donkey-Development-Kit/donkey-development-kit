@@ -3533,7 +3533,7 @@ tools = await donkey.tools.discover(
 | `governed_only` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
 | `domain` | `str \| None` | Catalog domain. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
-| `asset_types` | `list[AssetType] \| None` | e.g. `["mcp"]`. |
+| `asset_types` | `list[AssetType] \| None` | e.g. `["mcp"]`; exact Exchange filter tokens remain unverified. |
 | `environment` | `str \| None` | Which environment governance is computed against. |
 | `limit` | `int` | Max results (default 50). |
 
@@ -4105,10 +4105,10 @@ explicit `--allow-duplicate`, which logs at `WARNING`.
 ## The `Publication` object
 
 ```python
-from donkey_kit import Publication, AssetType, Contact
+from donkey_kit import Contact, Publication, PublicationAssetType
 
 pub = Publication(
-    asset_type=AssetType.MCP_SERVER,          # MCP_SERVER | A2A_AGENT | AGENT | API
+    asset_type=PublicationAssetType.MCP_SERVER,  # MCP_SERVER | A2A_AGENT | AGENT | API
     group_id="${ANYPOINT_ORG_ID}",
     asset_id="hr-tools-mcp",
     version="1.3.0",                          # semver
@@ -4143,12 +4143,12 @@ pub = Publication(
 | `AGENT` | agent descriptor (no A2A surface) | framework introspection, best-effort |
 | `API` | OpenAPI / AsyncAPI | user-supplied file; no generation |
 
-  **Verification gate.** Whether Exchange exposes first-class asset types for
-  MCP servers and AI agents is unverified. The Agent Registry is built on
-  Exchange, so it is likely — but if it does not, publication degrades to a
-  generic asset type carrying tags, which weakens discoverability and breaks
-  `asset_types=["mcp"]` filtering in [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md). The two
-  features share this dependency; it is verified once, recorded once.
+  **Verification gate.** Exchange exposes first-class MCP-server and AI-agent
+  asset categories, but the exact token vocabulary used by publication and
+  discovery filters is unverified. `PublicationAssetType` currently shares the
+  SDK's `mcp` / `a2a-agent` discovery values; no blocked Exchange call sends
+  those assumed values until the direct contract is captured. The two features
+  share this dependency, so it is verified once and recorded once.
 
 ## `descriptor="auto"` — deriving the spec from code
 
@@ -4307,7 +4307,7 @@ how a blocked value flips to verified — is documented for contributors in
 |---|---|---|
 | Framework **constructor signatures** (docs/verified-apis.md §8) | Unverified per framework | Adapters target recorded class names; a mismatch surfaces via the verification harness / nightly matrix rather than silently misbehaving. Agent Framework's client raises `blocked on verification` today. |
 | MCP tool discovery + binding ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md)) | Unverified | `donkey.tools.discover` and the binding classes raise `blocked on verification`. |
-| Exchange publish API ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md)) | Unverified | `donkey publish` is blocked; whether Exchange exposes first-class MCP/agent asset types is unconfirmed. |
+| Exchange publish API ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md)) | Partially verified | First-class MCP/agent asset types exist, but the exact publication and discovery token vocabulary is unverified. `donkey publish` and Exchange search remain blocked rather than sending the SDK's assumed `mcp` / `a2a-agent` values. |
 | Token-exchange endpoint for [on-behalf-of](https://donkey-development-kit.github.io/donkey-development-kit/identity.md) (Phase 2) | Unverified | The exact endpoint and header the gateway expects are not guessed. |
 | [Policy discovery](https://donkey-development-kit.github.io/donkey-development-kit/policies.md) (Phase 3) | **Missing upstream** | No such endpoint exists on the gateway today. Filed as an upstream gap — the handshake cannot be built until it ships. |
 | Budget query endpoint ([Phase 1](https://donkey-development-kit.github.io/donkey-development-kit/budget.md)) | **Missing upstream** | Budget is reported in-band on response headers only, so `remaining` is last-known-good; `observed_at` exposes the staleness. |

@@ -16,13 +16,23 @@ from pathlib import Path
 
 import pytest
 
-from donkey_kit.registry.models import AssetRef, McpServerHandle
+from donkey_kit import AssetRef, AssetType, PublicationAssetType
+from donkey_kit.registry.models import McpServerHandle
 from donkey_kit.tools.filter import ToolDescriptor, resolve_collisions
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "a2d"
 
 # Observed transport kinds → the SDK's normalized transport identifier.
 _TRANSPORT_NORMALIZATION = {"streamableHttp": "streamable_http"}
+
+
+def test_package_root_asset_types_share_discovery_literal_values() -> None:
+    discovery_type: AssetType = "mcp"
+    ref = AssetRef(group_id="com.acme", asset_id="tools", version="1.0.0", type=discovery_type)
+
+    assert ref.type == "mcp"
+    assert PublicationAssetType.MCP_SERVER.value == ref.type
+    assert PublicationAssetType.A2A_AGENT.value == "a2a-agent"
 
 
 def _load(name: str) -> dict:

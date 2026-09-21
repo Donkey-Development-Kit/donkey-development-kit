@@ -55,6 +55,7 @@ from .registry import (
     Contact,
     GovernanceCriteria,
     Publication,
+    PublicationAssetType,
 )
 
 __version__ = "0.1.0.dev2"
@@ -85,6 +86,7 @@ __all__ = [
     "PolicyViolation",
     "PromptInjectionBlocked",
     "Publication",
+    "PublicationAssetType",
     "ProvisioningError",
     "PublicationDrift",
     "Region",

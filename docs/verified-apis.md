@@ -360,6 +360,7 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
 | First-class Exchange asset types for MCP servers & AI agents? | BG §2.5 + `asset_types` filter (governed-only discovery) | VERIFIED (CLI) | Yes — Exchange assets named "… MCP Server" and "… Agent Network"/agent, managed as API Manager instances | 2026-08-28: `api-mgr:api:list` |
+| Exact publication / discovery asset-type tokens (`mcp`, `a2a-agent`, `agent`, `api`) | `PublicationAssetType`, `AssetRef.type`, `ExchangeRegistry.search(asset_types=)` | UNVERIFIED | SDK-local assumption only: publication currently reuses the discovery `AssetType` Literal values; the direct publication and search contracts remain blocked pending capture | — |
 | Publication mechanism for non-Mule assets (REST / CLI / Maven)? JVM needed? | §7 CI story | VERIFIED (CLI) | Maven + CLI: `agent-network project publish` publishes the built project to Exchange; **JVM required** (`mvnw`) | 2026-08-28: `agent-network:project:publish --help` |
 | Publication uses Maven GAV coordinates | BG §2.5 | VERIFIED (CLI) | group-id/asset-id/asset-version; groupId defaults to org id | 2026-08-28: `:project:create --help`, `api-mgr:api:describe` |
 | Documentation pages publishable? | BG §2.5 | PARTIAL | `exchange asset page` + `exchange asset resource` topics exist | 2026-08-28: `exchange:asset --help` |

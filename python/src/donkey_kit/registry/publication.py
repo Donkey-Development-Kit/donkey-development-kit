@@ -24,9 +24,11 @@ from typing import Any
 from ..core import _verify
 
 
-class AssetType(Enum):
-    MCP_SERVER = "mcp_server"
-    A2A_AGENT = "a2a_agent"
+class PublicationAssetType(Enum):
+    """SDK publication categories; exact Exchange token strings are UNVERIFIED."""
+
+    MCP_SERVER = "mcp"
+    A2A_AGENT = "a2a-agent"
     AGENT = "agent"
     API = "api"
 
@@ -52,7 +54,7 @@ class DescriptionIssue:
 
 @dataclass(frozen=True)
 class Publication:
-    asset_type: AssetType
+    asset_type: PublicationAssetType
     group_id: str
     asset_id: str
     version: str

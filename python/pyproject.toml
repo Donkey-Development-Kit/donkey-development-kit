@@ -136,10 +136,11 @@ packages = ["src/donkey_kit"]
 "tests/fixtures/anypoint/llm_proxy" = "donkey_kit/simulator/_fixtures/anypoint/llm_proxy"
 
 [tool.mypy]
-# Working instruction #8: mypy --strict, blocking in CI.
+# Working instruction #8: mypy --strict, blocking in CI. Typecheck fixtures pin
+# downstream package-root usage that source-only analysis cannot exercise.
 strict = true
 python_version = "3.10"
-files = ["src/donkey_kit"]
+files = ["src/donkey_kit", "tests/typecheck"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
