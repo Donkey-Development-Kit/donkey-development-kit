@@ -13,7 +13,7 @@ Classification:
 
 | API / surface | Module | Classification | Justification / owner |
 |---|---|---|---|
-| _(populate during M0/verification discipline as each surface is verified)_ | | | |
+| _(populate through the verification discipline as each surface is verified)_ | | | |
 
 ## Undocumented surfaces
 

@@ -9,10 +9,10 @@ framework rejoins with its own conformance run when demand promotes it
 (#223/#244). The customer-facing pytest plugin (``donkey_kit.conformance``, #191)
 is the shipped deliverable this internal matrix backstops.
 
-The scenario bodies are wired in M1+ against captured contract fixtures (BG §1.5)
-and the local gateway (BG §1.4). This module fixes the scenario list and the
-exemption table now so the kit exists before the second adapter is built
-(working instruction #5).
+The scenario bodies are wired during Phase 1 and later against captured contract
+fixtures (BG §1.5) and the local gateway (BG §1.4). This module fixes the
+scenario list and the exemption table now so the kit exists before the second
+adapter is built (working instruction #5).
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-# LLM proxy — LIVE captures from a real governed ingress proxy (M0, docs/verified-apis.md §2/§3/§4)
+# LLM proxy — LIVE captures from a real governed ingress proxy (docs/verified-apis.md §2/§3/§4)
 
 Captured 2026-08-28 from a real deployed Agent Network LLM proxy in the sandbox
 org `82a0453b-22e6-430d-bbf4-35b989d043dc`, env **Sandbox**
