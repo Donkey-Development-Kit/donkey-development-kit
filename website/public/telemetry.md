@@ -162,6 +162,9 @@ recovered from a degraded provider.
 the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
 outside that response path: ADK and CrewAI use LiteLLM's transport, while
 LlamaIndex and Microsoft Agent Framework receive only `default_headers`.
+That static snapshot deliberately excludes the correlation ID bound later by
+`donkey.run(id=...)`, so those two adapters also carry the asserted
+`correlation_id_propagated` exemption.
 
 When every adapter resolved on a `Donkey` is one of those four, a cold read
 reports the limitation explicitly. For a `Donkey` that resolved only ADK:

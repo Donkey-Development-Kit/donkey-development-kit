@@ -8,10 +8,11 @@ LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM prox
 with the one flag that a chat-only gateway absolutely requires forced on for
 you.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** Full header injection, with one
-> documented exemption: LlamaIndex receives `default_headers`, not the SDK's
-> shared httpx client, so `donkey.last_call` response observation is unavailable
-> (see below). Watch the `is_chat_model` gotcha if you build the client by hand.
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).**
+> LlamaIndex receives a static `default_headers` snapshot, not the SDK's shared
+> httpx client, so per-run correlation and `donkey.last_call` response
+> observation are documented exemptions (see below). Watch the `is_chat_model`
+> gotcha if you build the client by hand.
 
 ## Install
 
@@ -104,12 +105,15 @@ model = OpenAILike(
 > LlamaIndex uses `api_base` rather than `base_url` for its endpoint kwarg;
 > `connection_kwargs()` already translates for you.
 
-> **This adapter cannot populate `donkey.last_call`.** LlamaIndex receives
-> the governed `default_headers`, but not the SDK's httpx client, so no response
-> reaches `_on_response` and gateway identity, routing, and usage fields cannot
-> be observed. When every adapter resolved on a `Donkey` is non-observing, the
-> record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
-> and names the resolved adapters in `surface`. This is a documented, asserted
-> `gateway_identity_observed` conformance exemption.
+> **This adapter cannot propagate per-run correlation or populate
+> `donkey.last_call`.** LlamaIndex receives a static `default_headers` snapshot,
+> which deliberately excludes the correlation ID bound later by
+> `donkey.run(id=...)`, and not the SDK's httpx client. No response reaches
+> `_on_response`, so gateway identity, routing, and usage fields cannot be
+> observed either. When every adapter resolved on a `Donkey` is non-observing,
+> the record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
+> and names the resolved adapters in `surface`. These are documented, asserted
+> `correlation_id_propagated` and `gateway_identity_observed` conformance
+> exemptions.
 
 <AdapterErrorTaxonomyNote />

@@ -51,8 +51,10 @@ request additionally carries a per-call `X-Donkey-Request-Id` that surfaces on
 for the full two-id model.
 
 <Callout type="warning">
-  **Google ADK and CrewAI caveat.** LiteLLM owns their transports, so the SDK
-  can't inject its HTTP client — the correlation id is per-client, not per-run.
+  **Header-only adapter caveat.** Google ADK and CrewAI route through LiteLLM,
+  while LlamaIndex and Microsoft Agent Framework receive only a static
+  `default_headers` snapshot. None receives the SDK's HTTP client, so they
+  cannot propagate the correlation id bound by `donkey.run(id=...)` per run.
   These are documented, asserted conformance exemptions, not silent gaps.
 </Callout>
 

@@ -814,10 +814,10 @@ each framework exposes:
 |---|---|---|---|
 | LangGraph | ✅ | ✅ | Best case — `default_headers` + custom async client. |
 | Strands | ✅ | ✅ | Via `client_args`. |
-| LlamaIndex | ✅ | ❌ | Receives `default_headers`, not the SDK's HTTP client, so it cannot populate `donkey.last_call`. `is_chat_model=True` is forced. |
+| LlamaIndex | ✅ | ❌ | Receives a static `default_headers` snapshot, so per-run correlation and `donkey.last_call` are unavailable. `is_chat_model=True` is forced. |
 | OpenAI Agents SDK | ✅ | ✅ | We build the `AsyncOpenAI` client ourselves. |
 | Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [divergence note](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
-| MS Agent Framework | ✅ | ❌ | Receives `default_headers`, not the SDK's HTTP client, so it cannot populate `donkey.last_call`. Class name/kwarg **unverified**. |
+| MS Agent Framework | ✅ | ❌ | Receives a static `default_headers` snapshot, so per-run correlation and `donkey.last_call` are unavailable. Class name/kwarg **unverified**. |
 | Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; correlation is per-client and the adapter cannot populate `donkey.last_call`. |
 | CrewAI | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; same correlation and `donkey.last_call` exemptions as Google ADK. |
 
@@ -1281,10 +1281,11 @@ Microsoft Agent Framework gets a governed chat client at the Agent Fabric LLM
 proxy, plus first-class policy middleware for terminating a run cleanly on a
 governance rejection instead of letting the agent loop retry.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** This adapter has one documented
-> exemption: it receives `default_headers`, not the SDK's shared httpx client,
-> so `donkey.last_call` response observation is unavailable. It also ships the
-> strongest policy-integration story of the eight frameworks
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).**
+> This adapter receives a static `default_headers` snapshot, not the SDK's shared
+> httpx client, so per-run correlation and `donkey.last_call` response
+> observation are documented exemptions. It also ships the strongest
+> policy-integration story of the eight frameworks
 > (`policy_middleware()`), but its native client class is young and
 > **UNVERIFIED** — read the callouts below before depending on it.
 
@@ -1395,14 +1396,16 @@ llm = OpenAIChatClient(
 > **UNVERIFIED**; the shipped middleware is a plain async wrapper pending
 > confirmation of the framework's middleware protocol.
 
-> **This adapter cannot populate `donkey.last_call`.** Agent Framework
-> receives the governed `default_headers`, but not the SDK's httpx client, so no
-> response reaches `_on_response` and gateway identity, routing, and usage
-> fields cannot be observed. When every adapter resolved on a `Donkey` is
-> non-observing, the record reports `status == LastCallStatus.UNAVAILABLE`,
-> `available == False`, and names the resolved adapters in `surface`.
-> This is a documented, asserted `gateway_identity_observed` conformance
-> exemption.
+> **This adapter cannot propagate per-run correlation or populate
+> `donkey.last_call`.** Agent Framework receives a static `default_headers`
+> snapshot, which deliberately excludes the correlation ID bound later by
+> `donkey.run(id=...)`, and not the SDK's httpx client. No response reaches
+> `_on_response`, so gateway identity, routing, and usage fields cannot be
+> observed either. When every adapter resolved on a `Donkey` is non-observing,
+> the record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
+> and names the resolved adapters in `surface`. These are documented, asserted
+> `correlation_id_propagated` and `gateway_identity_observed` conformance
+> exemptions.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for the full `PolicyViolation` hierarchy
 that `policy_middleware()` catches, and the
@@ -1814,10 +1817,11 @@ LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM prox
 with the one flag that a chat-only gateway absolutely requires forced on for
 you.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** Full header injection, with one
-> documented exemption: LlamaIndex receives `default_headers`, not the SDK's
-> shared httpx client, so `donkey.last_call` response observation is unavailable
-> (see below). Watch the `is_chat_model` gotcha if you build the client by hand.
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).**
+> LlamaIndex receives a static `default_headers` snapshot, not the SDK's shared
+> httpx client, so per-run correlation and `donkey.last_call` response
+> observation are documented exemptions (see below). Watch the `is_chat_model`
+> gotcha if you build the client by hand.
 
 ## Install
 
@@ -1918,13 +1922,16 @@ model = OpenAILike(
 > LlamaIndex uses `api_base` rather than `base_url` for its endpoint kwarg;
 > `connection_kwargs()` already translates for you.
 
-> **This adapter cannot populate `donkey.last_call`.** LlamaIndex receives
-> the governed `default_headers`, but not the SDK's httpx client, so no response
-> reaches `_on_response` and gateway identity, routing, and usage fields cannot
-> be observed. When every adapter resolved on a `Donkey` is non-observing, the
-> record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
-> and names the resolved adapters in `surface`. This is a documented, asserted
-> `gateway_identity_observed` conformance exemption.
+> **This adapter cannot propagate per-run correlation or populate
+> `donkey.last_call`.** LlamaIndex receives a static `default_headers` snapshot,
+> which deliberately excludes the correlation ID bound later by
+> `donkey.run(id=...)`, and not the SDK's httpx client. No response reaches
+> `_on_response`, so gateway identity, routing, and usage fields cannot be
+> observed either. When every adapter resolved on a `Donkey` is non-observing,
+> the record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
+> and names the resolved adapters in `surface`. These are documented, asserted
+> `correlation_id_propagated` and `gateway_identity_observed` conformance
+> exemptions.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for
@@ -2838,6 +2845,9 @@ recovered from a degraded provider.
 the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
 outside that response path: ADK and CrewAI use LiteLLM's transport, while
 LlamaIndex and Microsoft Agent Framework receive only `default_headers`.
+That static snapshot deliberately excludes the correlation ID bound later by
+`donkey.run(id=...)`, so those two adapters also carry the asserted
+`correlation_id_propagated` exemption.
 
 When every adapter resolved on a `Donkey` is one of those four, a cold read
 reports the limitation explicitly. For a `Donkey` that resolved only ADK:
@@ -4763,8 +4773,10 @@ request additionally carries a per-call `X-Donkey-Request-Id` that surfaces on
 `DonkeyError.call_id`. See [Observability](https://donkey-development-kit.github.io/donkey-development-kit/concepts/observability.md#grouping-a-run-the-run-id-on-the-span-the-call-id-on-the-error)
 for the full two-id model.
 
-  **Google ADK and CrewAI caveat.** LiteLLM owns their transports, so the SDK
-  can't inject its HTTP client — the correlation id is per-client, not per-run.
+  **Header-only adapter caveat.** Google ADK and CrewAI route through LiteLLM,
+  while LlamaIndex and Microsoft Agent Framework receive only a static
+  `default_headers` snapshot. None receives the SDK's HTTP client, so they
+  cannot propagate the correlation id bound by `donkey.run(id=...)` per run.
   These are documented, asserted conformance exemptions, not silent gaps.
 
   The **agent→agent egress** attribution header (`x-anypoint-api-instance-id`) is

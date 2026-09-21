@@ -7,10 +7,11 @@ Microsoft Agent Framework gets a governed chat client at the Agent Fabric LLM
 proxy, plus first-class policy middleware for terminating a run cleanly on a
 governance rejection instead of letting the agent loop retry.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** This adapter has one documented
-> exemption: it receives `default_headers`, not the SDK's shared httpx client,
-> so `donkey.last_call` response observation is unavailable. It also ships the
-> strongest policy-integration story of the eight frameworks
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).**
+> This adapter receives a static `default_headers` snapshot, not the SDK's shared
+> httpx client, so per-run correlation and `donkey.last_call` response
+> observation are documented exemptions. It also ships the strongest
+> policy-integration story of the eight frameworks
 > (`policy_middleware()`), but its native client class is young and
 > **UNVERIFIED** — read the callouts below before depending on it.
 
@@ -113,14 +114,16 @@ llm = OpenAIChatClient(
 > **UNVERIFIED**; the shipped middleware is a plain async wrapper pending
 > confirmation of the framework's middleware protocol.
 
-> **This adapter cannot populate `donkey.last_call`.** Agent Framework
-> receives the governed `default_headers`, but not the SDK's httpx client, so no
-> response reaches `_on_response` and gateway identity, routing, and usage
-> fields cannot be observed. When every adapter resolved on a `Donkey` is
-> non-observing, the record reports `status == LastCallStatus.UNAVAILABLE`,
-> `available == False`, and names the resolved adapters in `surface`.
-> This is a documented, asserted `gateway_identity_observed` conformance
-> exemption.
+> **This adapter cannot propagate per-run correlation or populate
+> `donkey.last_call`.** Agent Framework receives a static `default_headers`
+> snapshot, which deliberately excludes the correlation ID bound later by
+> `donkey.run(id=...)`, and not the SDK's httpx client. No response reaches
+> `_on_response`, so gateway identity, routing, and usage fields cannot be
+> observed either. When every adapter resolved on a `Donkey` is non-observing,
+> the record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
+> and names the resolved adapters in `surface`. These are documented, asserted
+> `correlation_id_propagated` and `gateway_identity_observed` conformance
+> exemptions.
 
 See the [error taxonomy](/errors) for the full `PolicyViolation` hierarchy
 that `policy_middleware()` catches, and the
