@@ -175,14 +175,14 @@ taxonomy fail together, rather than the simulator quietly teaching you a
 contract that no longer exists.
 
 Because "same files, both fail together" only catches a fixture edit that
-flips something a test asserts on, a committed **integrity lock**
-(`tests/fixtures/fixtures.lock`) pins the sha256 of every fixture the
-simulator serves. A *benign* byte edit — reformatted JSON, an added field —
-fails the lock loudly instead of silently drifting the replayed bytes. A
-genuine re-capture is accepted by regenerating the lock
-(`python -m donkey_kit.simulator.fixtures --relock`) and committing it. The
-lock ships beside those fixtures, so an installed wheel can verify that its
-replayed bytes still match the committed manifest.
+flips something a test asserts on, a committed **integrity manifest** pins the
+sha256 of every fixture the simulator serves. Its source copy lives at
+`tests/fixtures/fixtures.lock`; wheel builds copy it beside the packaged
+fixtures, so an installed wheel can verify that its replayed bytes still match
+the committed manifest. A *benign* byte edit — reformatted JSON, an added field
+— fails the lock loudly instead of silently drifting the replayed bytes. A
+genuine re-capture is accepted by regenerating the source lock
+(`python -m donkey_kit.simulator.fixtures --relock`) and committing it.
 
 ### It replays; it does not evaluate
 
@@ -209,7 +209,7 @@ replayed bytes still match the committed manifest.
   ([#189](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/189)). ✅
 - The fixtures are the *same files* the `classify()` contract tests load, so
   the two fail together if the gateway contract ever drifts — and a committed
-  integrity lock fails loudly on any byte edit that the "both fail together"
+  integrity manifest fails loudly on any byte edit that the "both fail together"
   rule would otherwise miss. ✅
 - The simulator replays captured shapes; it does **not** evaluate policy
   (real policy-configuration testing needs gateway

@@ -343,7 +343,13 @@ def replay_headers(fixture: Fixture) -> dict[str, str]:
 # assertion, not fixture-capture tooling (which #189 puts out of scope).
 _SOURCE_LOCK_PATH = _SOURCE_ROOT / "fixtures.lock"
 _PACKAGED_LOCK = _PACKAGED_ROOT / "fixtures.lock"
-LOCK_PATH = Path(str(_PACKAGED_LOCK)) if _PACKAGED_LOCK.is_file() else _SOURCE_LOCK_PATH
+# ``LOCK_PATH`` is public and writable, so it must remain a concrete ``Path``.
+# Normal wheel installs are unpacked to a pathlib.Path. Zip-imported packages
+# can still read fixture bytes through Traversable, but cannot expose or rewrite
+# the lock through this Path-based public API.
+LOCK_PATH = _SOURCE_LOCK_PATH
+if not LOCK_PATH.is_file() and isinstance(_PACKAGED_LOCK, Path):
+    LOCK_PATH = _PACKAGED_LOCK
 
 
 def _served_files() -> list[tuple[str, str]]:
@@ -379,8 +385,10 @@ def write_lock() -> None:
     """Regenerate :data:`LOCK_PATH` from the current fixture bytes. Called by
     ``python -m donkey_kit.simulator.fixtures --relock`` after a re-capture.
 
-    In a source checkout this updates ``tests/fixtures/fixtures.lock``. From an
-    installed wheel it updates that environment's packaged lock.
+    A source checkout always wins when present, keeping the committed lock
+    canonical. From an installed wheel this updates that environment's packaged
+    lock; the ``--relock`` command rejects that layout because it cannot produce
+    a file to commit.
     """
     LOCK_PATH.write_text(
         json.dumps(compute_manifest(), indent=2, sort_keys=True) + "\n",
@@ -388,7 +396,8 @@ def write_lock() -> None:
     )
 
 
-if __name__ == "__main__":  # pragma: no cover - dev-only relock entrypoint
+def _main() -> None:
+    """Run the dev-only relock command."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Simulator fixture integrity lock.")
@@ -399,7 +408,16 @@ if __name__ == "__main__":  # pragma: no cover - dev-only relock entrypoint
     )
     args = parser.parse_args()
     if args.relock:
+        if not _SOURCE_LOCK_PATH.is_file():
+            parser.error(
+                "--relock must run from an editable source checkout so it updates "
+                "tests/fixtures/fixtures.lock"
+            )
         write_lock()
-        print(f"wrote {LOCK_PATH} ({len(compute_manifest())} fixtures)")
+        print(f"wrote {_SOURCE_LOCK_PATH} ({len(compute_manifest())} fixtures)")
     else:
         parser.error("nothing to do; pass --relock to regenerate the lock")
+
+
+if __name__ == "__main__":  # pragma: no cover - dev-only relock entrypoint
+    _main()
