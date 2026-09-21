@@ -10,19 +10,24 @@
 #
 # `base_url` is the proxy ingress WITHOUT a trailing `/v1` (docs/verified-apis.md §2 — the ingress is
 # verbatim; the OpenAI SDK appends `/responses` itself). Fill it from the real
-# host + port 8081 + base path shown for that proxy in the provisioning repo.
+# host + base path shown for that proxy in the provisioning repo.
+#
+# DO NOT APPEND `:8081`. That is the gateway-INTERNAL ingress port
+# (`portConfiguration.ingress.port`), which CloudHub maps to the deployment's
+# public URL on 443. A base URL carrying an explicit port will not resolve.
+#
 # Values here are PLACEHOLDERS — replace every `REPLACE-ME` before running.
 
 [[proxy]]
 key = "openai-model-routing"
-base_url = "https://REPLACE-ME-shared-omni-gateway-host:8081/REPLACE-ME-base-path"
+base_url = "https://REPLACE-ME-shared-omni-gateway-host/REPLACE-ME-base-path"
 model = "gpt-5-mini"
 client_id_env = "DDK_SANDBOX_OPENAI_ROUTING_CLIENT_ID"
 client_secret_env = "DDK_SANDBOX_OPENAI_ROUTING_CLIENT_SECRET"
 
 [[proxy]]
 key = "injection-guard"
-base_url = "https://REPLACE-ME-shared-omni-gateway-host:8081/REPLACE-ME-base-path"
+base_url = "https://REPLACE-ME-shared-omni-gateway-host/REPLACE-ME-base-path"
 model = "gpt-5-mini"
 client_id_env = "DDK_SANDBOX_INJECTION_GUARD_CLIENT_ID"
 client_secret_env = "DDK_SANDBOX_INJECTION_GUARD_CLIENT_SECRET"
@@ -32,21 +37,21 @@ client_secret_env = "DDK_SANDBOX_INJECTION_GUARD_CLIENT_SECRET"
 #
 # [[proxy]]
 # key = "multi-route-fallback"        # model-based routing + fallback → Route A
-# base_url = "https://REPLACE-ME:8081/REPLACE-ME-base-path"
+# base_url = "https://REPLACE-ME-shared-omni-gateway-host/REPLACE-ME-base-path"
 # model = "gpt-5-mini"
 # client_id_env = "DDK_SANDBOX_FALLBACK_CLIENT_ID"
 # client_secret_env = "DDK_SANDBOX_FALLBACK_CLIENT_SECRET"
 #
 # [[proxy]]
 # key = "semantic-basic-routing"      # semantic routing (Finance→OpenAI, Code→Gemini)
-# base_url = "https://REPLACE-ME:8081/REPLACE-ME-base-path"
+# base_url = "https://REPLACE-ME-shared-omni-gateway-host/REPLACE-ME-base-path"
 # model = "gpt-5-mini"
 # client_id_env = "DDK_SANDBOX_SEMANTIC_CLIENT_ID"
 # client_secret_env = "DDK_SANDBOX_SEMANTIC_CLIENT_SECRET"
 #
 # [[proxy]]
 # key = "azure-content-safety"        # content-moderation fall-through body (#253)
-# base_url = "https://REPLACE-ME-private-space-omni-gateway-host:8081/REPLACE-ME-base-path"
+# base_url = "https://REPLACE-ME-private-space-omni-gateway-host/REPLACE-ME-base-path"
 # model = "gpt-5-mini"
 # client_id_env = "DDK_SANDBOX_CONTENT_SAFETY_CLIENT_ID"
 # client_secret_env = "DDK_SANDBOX_CONTENT_SAFETY_CLIENT_SECRET"

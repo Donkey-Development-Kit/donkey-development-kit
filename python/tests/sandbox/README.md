@@ -35,14 +35,17 @@ minted for it. The manifest holds **no secrets** — only a `base_url`, the rout
 ```toml
 [[proxy]]
 key = "openai-model-routing"
-base_url = "https://<host>:8081/<base-path>"   # ingress WITHOUT /v1 (docs/verified-apis.md §2)
+base_url = "https://<host>/<base-path>"   # no port, no /v1 (docs/verified-apis.md §2)
 model = "gpt-5-mini"
 client_id_env = "DDK_SANDBOX_OPENAI_ROUTING_CLIENT_ID"
 client_secret_env = "DDK_SANDBOX_OPENAI_ROUTING_CLIENT_SECRET"
 ```
 
-Fill `base_url` from the provisioning repo's README "Current proxies" table
-(host + port `8081` + the proxy's base path). Mint the consumer credential pair
+Fill `base_url` from the provisioning repo's README "Current proxies" table:
+the gateway host plus the proxy's base path, **with no port**. Port `8081` in
+that table is the gateway-internal ingress port, which CloudHub maps to the
+deployment's public URL on 443 — a `base_url` carrying it will not resolve.
+Mint the consumer credential pair
 per proxy with the `ddk-request-llm-proxy-access` skill and export the two env
 vars each entry names — keep them in the SDK repo's gitignored `.env`, never in
 this repo and never in `proxies.toml`.
