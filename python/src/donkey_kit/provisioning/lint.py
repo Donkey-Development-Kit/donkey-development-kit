@@ -1,7 +1,7 @@
 """Governance lint (provisioning-as-code).
 
-Small, cheap, uncontroversial, and the fastest way to get a platform team to say
-yes to the SDK — built in M1 even though the rest of provisioning is M3/M4.
+Small, cheap, uncontroversial, and independent of the provisioning control plane
+excluded by the build plan's "Do not build, at any phase" boundary.
 
 Validates API specs against project and centralized rulesets BEFORE anything is
 published, and fails the PR on ``error`` severity. Ruleset RESOLUTION against the
