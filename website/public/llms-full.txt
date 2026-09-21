@@ -136,9 +136,10 @@ simulation, and refusal handlers can all attach *without you wiring each one*.
   token-budget `429`, upstream passthrough). The framework-free client and the
   adapters are wired to that verified contract.
 
-Everything else on this site carries a phase badge, and those pages say
-plainly that their API shapes are proposals. Where a platform fact is not
-confirmed, the SDK raises
+Beyond the live-verified contract above, shipped SDK capability pages say what
+is implemented and call out any remaining platform-verification caveats.
+Planned Phase 2 and Phase 3 pages carry roadmap badges and describe proposal
+API shapes. Where a platform fact is not confirmed, the SDK raises
 `NotImplementedError("blocked on verification: …")` rather than fabricate an
 endpoint, header, or class name — see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)
 for the current ledger, and the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) for what lands when.
@@ -579,16 +580,20 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/roadmap.
 
 # Roadmap
 
-This page exists so you can tell, at a glance, what you can rely on **today**
-from what is **designed but not yet shipped**. Every capability page on this
-site carries the same badge you see here.
+This page separates SDK behavior that is **shipped today**, platform contracts
+that are **verified live**, and capabilities that are **designed but not yet
+shipped**.
 
-  **How to read the badges.** Live means verified
-  against a real Anypoint sandbox and usable now.
+  **How to read the badges.** Live means the
+  platform-facing behavior is verified against a real Anypoint sandbox and
+  usable now. Shipped means the SDK capability is
+  implemented and available now; it does not imply that every platform-facing
+  contract it uses is live-verified. Those caveats remain explicit on the
+  capability page and in the [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
   Phase 2 and friends mean *designed, with an
   agreed acceptance bar, but not yet shipped* — the API shapes on those pages
   are proposals and will move. Nothing here is described as working before it
-  does; see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+  does.
 
 ## Why the SDK exists at all
 
@@ -611,6 +616,12 @@ pieces below are one release and not spread across a year.
 The bar for Phase 1 is deliberately concrete: a developer who tries the SDK
 for 15 minutes should find three things they cannot get from `base_url` plus
 headers, and one of them should save them from a production incident.
+
+Four core rejection shapes are live-verified; the remaining typed refusal paths
+are shipped with explicit verification caveats. Budget and pacing, the local
+simulator, testing and conformance, telemetry and cost, and the CLI and
+decorators are shipped SDK capabilities; their pages call out any remaining
+platform-verification caveats.
 
   
     A `403` from a PII policy is not an auth error, and a policy `429` must
@@ -706,9 +717,10 @@ platform's own capability reachable and typed, not to reproduce it:
 - The gateway inside your agent process.
 - A home-grown A2A protocol implementation — the official `a2a-sdk` is wrapped.
 
-  **API shapes on roadmap pages are proposals.** They exist so the design can
-  be argued about concretely, and they will change before they ship. What is
-  committed is the *behaviour* and the acceptance bar, not the signature.
+  **API shapes on planned Phase 2 and Phase 3 pages are proposals.** They exist
+  so the design can be argued about concretely, and they will change before
+  they ship. What is committed is the *behaviour* and the acceptance bar, not
+  the signature.
 
 ---
 
@@ -4399,7 +4411,7 @@ actually enforce on your laptop versus a shared control plane.
 ## The `Governance` object
 
 ```python
-from donkey_kit import Governance, GatewayTarget, PolicyBinding
+from donkey_kit.governance import Governance, GatewayTarget, PolicyBinding
 
 gov = Governance(
     name="hr-agent",
@@ -4958,7 +4970,11 @@ stall into a short conversation.
 
 The authoritative, maintained list lives in the repository at
 [`docs/unsupported-boundary.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/unsupported-boundary.md).
-Every platform API the SDK calls is classified:
+It is separate from the [verification ledger](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md): verification
+records how a fact was established, while this page records whether MuleSoft
+publishes the contract for third-party use.
+
+Every platform API the shipping SDK calls is classified:
 
 | Classification | Meaning |
 |---|---|
@@ -4966,13 +4982,38 @@ Every platform API the SDK calls is classified:
 | **Documented, no SLA for third-party use** | May break; we'll fix. |
 | **Undocumented** | Should be empty. Anything here needs a written justification and an owner. |
 
+## Current shipping boundary
+
+The SDK currently reaches two platform destinations. The rows below classify
+the distinct contracts it consumes at those destinations. Everything else that
+needs an unverified endpoint is blocked before network I/O.
+
+| Destination / contract | Classification | SDK use |
+|---|---|---|
+| Anypoint connected-app token endpoint | **Documented and public** | Retrieves an OAuth bearer token with client credentials. |
+| Model Proxy OpenAI-format `/responses` endpoint | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. The raw client can also call documented OpenAI-native routes such as `/chat/completions`, but this repository has live-probed only `/responses`. |
+| Live-captured Model Proxy policy refusals | **Documented and public** | Classifies Client ID Enforcement, token-rate-limit, and PII responses observed against a deployed proxy. |
+| Documentation-derived Model Proxy policy refusals | **Documented and public** | Classifies Regex Prompt Guard, Injection Protection, Azure Content Safety, and Amazon Bedrock Guardrails contracts from their official policy pages. These shapes are pending direct live capture. |
+| Upstream provider error pass-through | **Documented, no SLA for third-party use** | Classifies the live-captured nested non-`429` `4xx` provider envelope as `UpstreamRequestError`; generic `5xx` responses become `UpstreamModelError` by status only. The envelope schema belongs to the upstream provider, and MuleSoft's public Model Proxy page states no pass-through compatibility contract. |
+| `x-llm-proxy-ratelimit` success-budget sentence | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored. |
+| Gateway identity and routing extension headers | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`. |
+
+  Exchange search and resolution, API Manager governed-state reads, MCP discovery
+  and binding, and provisioning/publication are not hidden dependencies. They
+  raise `NotImplementedError("blocked on verification: ...")` before making a
+  network request. The SDK also does not call a Model Proxy `/models` endpoint,
+  because live verification established that no such catalog endpoint exists.
+
+The full ledger links each contract to its official documentation, SDK consumer,
+verification evidence, and maintenance owner. Its **Undocumented surfaces**
+section is empty.
+
 ## Support statement (the trademark/support boundary)
 
-  **Before any public release**, the maintainer and support expectations must be
-  stated (README, the trademark/support boundary). If this project is **not** published with MuleSoft's
-  endorsement, it must ship under a distinct, org-scoped distribution name so it
-  doesn't read as a first-party, official-status SDK. "Agent Fabric",
-  "Anypoint", and "Omni Gateway" are Salesforce trademarks.
+  Donkey Development Kit is an independent, community-maintained project with
+  best-effort maintainer support and no SLA. It is not affiliated with, endorsed
+  by, or supported by Salesforce or MuleSoft. "Agent Fabric", "Anypoint", and
+  "Omni Gateway" are Salesforce trademarks.
 
 ## Why this matters (verification discipline)
 

@@ -10,7 +10,7 @@ actually enforce on your laptop versus a shared control plane.
 ## The `Governance` object
 
 ```python
-from donkey_kit import Governance, GatewayTarget, PolicyBinding
+from donkey_kit.governance import Governance, GatewayTarget, PolicyBinding
 
 gov = Governance(
     name="hr-agent",

@@ -13,10 +13,11 @@ OpenAI-compatible adapters use.
 
 UNVERIFIED DEPENDENCY (docs/verified-apis.md §8): the Omni Gateway LLM proxy is
 OpenAI-compatible; whether it also exposes an **Anthropic-native Messages API
-route** is an open M0 verification item (verification discipline). If it does not, this adapter's
-requests will not reach a working upstream — override ``base_url`` via ``**kw``
-to point at a real Anthropic-native route once confirmed. The first ``client()``
-call emits a one-time :class:`~donkey_kit.core._verify.UnverifiedValueWarning`.
+route** is an open Verification-milestone item (verification discipline). If it
+does not, this adapter's requests will not reach a working upstream — override
+``base_url`` via ``**kw`` to point at a real Anthropic-native route once confirmed.
+The first ``client()`` call emits a one-time
+:class:`~donkey_kit.core._verify.UnverifiedValueWarning`.
 
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
@@ -48,8 +49,8 @@ class AnthropicAdapter(Adapter):
             warnings.warn(
                 "The Omni Gateway LLM proxy is verified OpenAI-compatible; its "
                 "Anthropic-native Messages API route is UNVERIFIED (docs/"
-                "verified-apis.md §8, an open M0 item). If the proxy does not "
-                "serve Anthropic's API, override base_url via **kw once a real "
+                "verified-apis.md §8, an open Verification-milestone item). If the proxy "
+                "does not serve Anthropic's API, override base_url via **kw once a real "
                 "route is confirmed.",
                 _verify.UnverifiedValueWarning,
                 stacklevel=3,
