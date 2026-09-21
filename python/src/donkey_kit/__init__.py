@@ -42,12 +42,6 @@ from .core.errors import (
 )
 from .core.toolspec import ToolSpec, registered_tools
 from .donkey import Donkey
-from .governance import (
-    GatewayTarget,
-    Governance,
-    PolicyBinding,
-    PolicyPortability,
-)
 from .registry import (
     STRICT,
     AssetRef,
@@ -73,15 +67,11 @@ __all__ = [
     "Donkey",
     "DonkeyConfig",
     "DonkeyError",
-    "GatewayTarget",
     "GatewayUnavailable",
-    "Governance",
     "GovernanceCriteria",
     "GovernanceDrift",
     "ModelSubstituted",
     "PIIDetected",
-    "PolicyBinding",
-    "PolicyPortability",
     "PolicyViolation",
     "PromptInjectionBlocked",
     "Publication",
