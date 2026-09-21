@@ -243,18 +243,20 @@ framework is "supported" only when it passes every scenario **or** records an
 *asserted exemption* in `KNOWN_LIMITATIONS` — never a silent skip. Those
 exemptions are published in the README as credibility. ADK and CrewAI cannot
 propagate a per-run correlation ID or populate `donkey.last_call`, because
-LiteLLM owns the transport. LlamaIndex and Microsoft Agent Framework cannot
-populate `donkey.last_call`, because they receive only `default_headers`, not
+LiteLLM owns the transport. LlamaIndex and Microsoft Agent Framework have the
+same two exemptions because they receive only a static `default_headers`
+snapshot, which deliberately excludes the per-run correlation ID, rather than
 the SDK's shared HTTP client.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
 pytest plugin** users run against their own agent (#191).
 
-Four adapters carry documented conformance exemptions: ADK and CrewAI for
-per-run correlation and gateway-identity observation, plus LlamaIndex and
-Microsoft Agent Framework for gateway-identity observation. The conformance
-suite pins those exemptions to each adapter's actual transport behavior.
+Four adapters carry documented conformance exemptions for per-run correlation
+and gateway-identity observation: ADK and CrewAI because LiteLLM owns their
+transport, plus LlamaIndex and Microsoft Agent Framework because they receive
+only static headers. The conformance suite pins those exemptions to each
+adapter's actual transport behavior.
 
 ---
 
