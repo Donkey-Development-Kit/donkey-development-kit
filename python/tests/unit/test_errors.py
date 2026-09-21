@@ -36,6 +36,8 @@ def test_auth_error_uses_data_plane_default_unless_overridden() -> None:
     assert default.remediation is AuthError.remediation
     assert "DONKEY_LLM_PROXY_CLIENT_ID" in default.remediation
     assert control_plane.remediation == "check the connected app"
+    assert AuthError.connected_app_remediation.strip()
+    assert AuthError.provider_chain_remediation.strip()
 
 
 def test_generic_4xx_is_terminal_policy_violation() -> None:

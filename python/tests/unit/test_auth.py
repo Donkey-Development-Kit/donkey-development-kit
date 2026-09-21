@@ -12,6 +12,7 @@ from donkey_kit.core.errors import AuthError
 
 
 def _assert_control_plane_remediation(error: AuthError) -> None:
+    assert error.remediation is AuthError.connected_app_remediation
     assert "ANYPOINT_CLIENT_ID" in error.remediation
     assert "ANYPOINT_CLIENT_SECRET" in error.remediation
     assert "scopes" in error.remediation
@@ -164,10 +165,12 @@ async def test_connected_app_rejects_success_response_without_access_token() -> 
     _assert_control_plane_remediation(exc_info.value)
 
 
-async def test_chained_auth_failure_uses_control_plane_remediation() -> None:
+async def test_chained_auth_failure_uses_provider_neutral_remediation() -> None:
     auth = ChainedAuth(_FailingAuth())
 
     with pytest.raises(AuthError, match="No auth provider yielded a token") as exc_info:
         await auth.token()
 
-    _assert_control_plane_remediation(exc_info.value)
+    assert exc_info.value.remediation is AuthError.provider_chain_remediation
+    assert "each provider's credentials or token source" in exc_info.value.remediation
+    assert "ANYPOINT_CLIENT_ID" not in exc_info.value.remediation

@@ -77,9 +77,9 @@ class AuthError(DonkeyError):
     """Rejected credentials on the Anypoint control plane or LLM-proxy data plane.
 
     The class-level ``remediation`` is the LLM-proxy data-plane default that
-    ``donkey doctor`` (#202) reuses. Control-plane callers override it per
-    instance so the next step names the connected-app credentials instead of
-    contradicting the error message (#484). This is not the constructor-enforced
+    ``donkey doctor`` (#202) reuses. Control-plane callers override it with one
+    of the canonical class values below, so the next step matches the auth
+    provider that failed (#484). This is not the constructor-enforced
     :class:`PolicyViolation` contract."""
 
     #: Single source of next-step wording for a rejected-credentials diagnosis.
@@ -89,6 +89,16 @@ class AuthError(DonkeyError):
         "consumer client_id/secret pair for this LLM-proxy instance — not an "
         "Anypoint control-plane credential and not a bearer token — and that the "
         "consumer is authorized on the instance in API Manager (docs/verified-apis.md §2)."
+    )
+    connected_app_remediation: str = (
+        "Check the configured Anypoint control-plane auth provider. For a connected app, "
+        "verify ANYPOINT_CLIENT_ID / ANYPOINT_CLIENT_SECRET and that the app has the scopes "
+        "the operation needs (docs/verified-apis.md §1)."
+    )
+    provider_chain_remediation: str = (
+        "Every configured Anypoint control-plane auth provider failed. Inspect the last "
+        "error and verify each provider's credentials or token source. If the chain uses "
+        "a connected app, also verify its required scopes (docs/verified-apis.md §1)."
     )
 
     def __init__(

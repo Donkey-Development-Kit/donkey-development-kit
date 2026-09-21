@@ -100,8 +100,9 @@ once — fix the config and re-run.
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
 [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) also prints. Control-plane token failures override that
-default with connected-app guidance, so the exception message and remediation
-both point to the same Anypoint credentials and scopes.
+default with canonical guidance for the provider that failed: connected-app
+errors point to the Anypoint credentials and scopes, while an exhausted
+`ChainedAuth` points to each configured provider's credential or token source.
 
 [#184]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/184
 
