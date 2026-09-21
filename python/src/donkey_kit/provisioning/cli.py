@@ -33,7 +33,7 @@ from .spec import DonkeySpec
 
 app = typer.Typer(
     add_completion=False,
-    help="SDK for Agent Fabric — governed models, tools, provisioning-as-code.",
+    help="SDK for Agent Fabric — governed model and tool access.",
 )
 
 
