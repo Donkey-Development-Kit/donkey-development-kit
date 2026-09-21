@@ -35,7 +35,8 @@ The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
 semconv has no pinned key for — cached / cache-write prompt tokens and
 reasoning-model thinking tokens. They are read from the response `usage` block's
 detail sub-objects and are **omitted, never `0`,** when the provider reports no
-detail counts. The same counts are exposed per-call on `donkey.last_call`.
+detail counts. When the response passes through the SDK's shared HTTP client,
+the same counts are exposed per-call on `donkey.last_call`.
 
 Export goes over OTLP to wherever you already send spans. **Nothing in the
 emit path is Anypoint-specific.**
@@ -129,8 +130,8 @@ that was a **fallback**. Donkey reads those signals off the shared transport, so
 you get them with **no framework required** — the raw `donkey.llm.client()` path
 benefits just as the deep adapters do.
 
-Every governed call exposes them on `donkey.last_call`, beside the usage and
-identity fields:
+Every governed call through the SDK's shared HTTP client exposes them on
+`donkey.last_call`, beside the usage and identity fields:
 
 ```python
 donkey = Donkey.from_env()
@@ -149,6 +150,29 @@ They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
 `donkey.routing.fallback`) — the single most useful thing to have on hand when
 latency spikes: it tells an operator whether a slow call was routed normally or
 recovered from a degraded provider.
+
+### When `last_call` is unavailable
+
+`donkey.last_call` is populated only when the governed response passes through
+the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
+outside that response path: ADK and CrewAI use LiteLLM's transport, while
+LlamaIndex and Microsoft Agent Framework receive only `default_headers`.
+
+When every adapter resolved on a `Donkey` is one of those four, a cold read
+reports the limitation explicitly. For a `Donkey` that resolved only ADK:
+
+```python
+r = donkey.last_call
+r.status       # LastCallStatus.UNAVAILABLE
+r.available    # False
+r.surface      # "adk", "crewai", "llamaindex", or "agent_framework"
+```
+
+This is different from `UNOBSERVED`, which means the current context has not
+yet received a governed response. On an unavailable surface the SDK cannot
+observe any response-derived `last_call` field, including gateway identity,
+routing, fallback, and usage. Each limitation is asserted as the
+`gateway_identity_observed` conformance exemption rather than silently skipped.
 
 ### Two behaviours worth knowing
 

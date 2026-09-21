@@ -4,10 +4,12 @@ Microsoft Agent Framework gets a governed chat client at the Agent Fabric LLM
 proxy, plus first-class policy middleware for terminating a run cleanly on a
 governance rejection instead of letting the agent loop retry.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** This adapter also ships the strongest
-> policy-integration story of the eight frameworks (`policy_middleware()`),
-> but its native client class is young and **UNVERIFIED** — read the callout
-> below before depending on it.
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** This adapter has one documented
+> exemption: it receives `default_headers`, not the SDK's shared httpx client,
+> so `donkey.last_call` response observation is unavailable. It also ships the
+> strongest policy-integration story of the eight frameworks
+> (`policy_middleware()`), but its native client class is young and
+> **UNVERIFIED** — read the callouts below before depending on it.
 
 ## Install
 
@@ -115,6 +117,15 @@ llm = OpenAIChatClient(
 > frameworks. The exact middleware signature Agent Framework expects is also
 > **UNVERIFIED**; the shipped middleware is a plain async wrapper pending
 > confirmation of the framework's middleware protocol.
+
+> **`donkey.last_call` is unavailable for this adapter.** Agent Framework
+> receives the governed `default_headers`, but not the SDK's httpx client, so no
+> response reaches `_on_response` and gateway identity, routing, and usage
+> fields cannot be observed. The record reports
+> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and
+> names `"agent_framework"` in `surface` rather than returning ambiguous empty fields.
+> This is a documented, asserted `gateway_identity_observed` conformance
+> exemption.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for the full `PolicyViolation` hierarchy
 that `policy_middleware()` catches, and the

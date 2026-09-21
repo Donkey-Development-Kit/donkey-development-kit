@@ -4,9 +4,10 @@ Google's Agent Development Kit (ADK) is Gemini-first; it reaches the
 Agent Fabric LLM proxy through ADK's `LiteLlm` model wrapper, which speaks
 LiteLLM's own model-string and kwarg conventions rather than raw OpenAI ones.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one documented exemption: LiteLLM
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with two documented exemptions: LiteLLM
 > owns its own transport, so the SDK's shared httpx client is not injected
-> here (see below).
+> here. Per-run correlation and `donkey.last_call` response observation are
+> unavailable as a result (see below).
 
 ## Install
 
@@ -106,6 +107,13 @@ you.
 > it. This is a documented, asserted conformance exemption, not an oversight:
 > ADK is the one adapter in the set where header injection is full but
 > transport injection is not possible.
+
+> **`donkey.last_call` is unavailable for this adapter.** The same LiteLLM-owned
+> transport means no response reaches the SDK's `_on_response` hook, so gateway
+> identity, routing, and usage fields cannot be observed. The record reports
+> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names
+> `"adk"` in `surface` rather than returning ambiguous empty fields. This is a
+> documented, asserted `gateway_identity_observed` conformance exemption.
 
 > `google-adk` requires `litellm>=1.84` as a floor (not a ceiling) — pin your
 > own upper bound if you need one.
