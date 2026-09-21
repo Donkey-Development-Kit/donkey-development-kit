@@ -81,10 +81,10 @@ class Publication:
 
     # ---- verb: export (laptop) --------------------------------------------
     def export(self, path: str | Path | None = None) -> str:
-        """Compile into the donkey.yaml spec (provisioning-as-code). Lands with M4 (the build plan
-        phases)."""
+        """Compile to a ``donkey.yaml`` fragment (provisioning-as-code)."""
         raise _verify.blocked(
-            "Publication.export() emits the M4 spec (provisioning-as-code, the build plan phases)."
+            "Publication.export() emits the donkey.yaml spec format. Schema is shared with "
+            "provisioning-as-code — do not diverge it (provisioning-as-code)."
         )
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------
