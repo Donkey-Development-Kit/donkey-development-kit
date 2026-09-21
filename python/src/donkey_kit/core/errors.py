@@ -550,9 +550,8 @@ def classify(
     if status == 401 or (status == 403 and "www-authenticate" in response.headers):
         return AuthError(
             f"Authentication/authorization failed ({status}). Check the consumer "
-            f"client_id/client_secret pair and its API Manager authorization "
-            f"for this LLM-proxy instance "
-            f"(see docs/verified-apis.md §2).",
+            "client_id/client_secret pair and its API Manager authorization "
+            "for this LLM-proxy instance (see docs/verified-apis.md §2).",
             **kw,
         )
 
