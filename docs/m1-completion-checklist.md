@@ -21,7 +21,8 @@ external verification (cannot be closed by writing code).
 exists.** Every adapter is wired to the *live-verified proxy contract* (the framework-free core), but
 `docs/verified-apis.md` §8 currently lists **all eight** framework
 constructor/kwarg signatures as `UNVERIFIED`. The adapters' inline
-`# verified: docs §8` comments are pointers to that table, **not** proof.
+`# VERIFY …: docs/verified-apis.md §8` markers identify facts that still need
+verification; they are **not** proof.
 
 ### How to verify (the procedure, made executable)
 
