@@ -6,8 +6,10 @@ from __future__ import annotations
 from donkey_kit.core.cache import TTLCache
 from donkey_kit.provisioning.publish import content_digest
 from donkey_kit.registry.governance import Check, GovernanceCriteria, evaluate
+from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.registry.publication import check_description_quality
 from donkey_kit.tools.filter import ToolDescriptor, ToolFilter, resolve_collisions
+from donkey_kit.tools.session import ToolSet
 
 
 def test_ttl_cache_expires() -> None:
@@ -40,6 +42,24 @@ def test_tool_filter_allow_deny_predicate() -> None:
     f2 = ToolFilter(allow=frozenset({"only"}))
     assert f2.accepts(ToolDescriptor("hr", "only"))
     assert not f2.accepts(ToolDescriptor("hr", "other"))
+
+
+def test_tool_set_filter_returns_independent_views() -> None:
+    server = McpServerHandle(
+        ref=AssetRef("com.acme", "hr", "1.0.0"),
+        endpoint_url="https://example.com/mcp",
+        tool_descriptors=({"name": "read"}, {"name": "write"}),
+    )
+    tools = ToolSet([server])
+
+    read_only = tools.filter(allow=["read"])
+    write_only = tools.filter(allow=["write"])
+
+    assert read_only is not tools
+    assert read_only._servers is not tools._servers
+    assert read_only.name_map == {"read": "read"}
+    assert write_only.name_map == {"write": "write"}
+    assert tools.name_map == {"read": "read", "write": "write"}
 
 
 def test_description_quality_flags_tautological_and_missing() -> None:
