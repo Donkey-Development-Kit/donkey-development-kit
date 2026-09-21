@@ -96,8 +96,10 @@ async def enrich_all(records, enrich):
   request that earns the `429`. `wait_for_reset()` sleeps until
   `donkey.budget.reset_at`, computed from the gateway's `x-token-reset` header
   (milliseconds, converted for you). Once that time has elapsed, the old
-  observation is stale, so `pace()` lets the retry through and the response
-  refreshes the in-band budget. See [Budget & pacing](/budget).
+  observation is stale, so `pace()` no longer refuses. A response carrying a
+  budget signal updates the observed fields; a fresh future `reset_at` makes
+  the guard active again. One without a budget signal leaves the stale
+  pass-through open. See [Budget & pacing](/budget).
 </Callout>
 
 ## The honest limitation

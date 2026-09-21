@@ -204,9 +204,12 @@ class Budget:
         observed there is no basis to refuse, and blocking forever on a cold start
         would be worse than one request that discovers the real headroom. An
         observation whose :attr:`reset_at` has elapsed is stale for the same reason,
-        so the retry passes through and its response refreshes the in-band budget.
-        Before ``reset_at`` — or when no reset time was observed — the reserve guard
-        remains active.
+        so :meth:`pace` no longer refuses requests. A later response carrying a
+        recognised budget signal updates the observed fields; a refreshed
+        :attr:`reset_at` in the future makes the reserve guard active again. A
+        response with no budget signal leaves the stale pass-through open. Before
+        ``reset_at`` — or when no reset time was observed — the reserve guard remains
+        active.
         """
         if not 0.0 <= reserve <= 1.0:
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")

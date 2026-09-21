@@ -60,9 +60,11 @@ for batch in chunks(records, 200):
     checkpoint(batch)
 ```
 
-Once `reset_at` has elapsed, the old observation is stale. `pace()` lets the
-retry through so its response can refresh the in-band budget. The job finishes
-unattended; nobody re-runs anything.
+Once `reset_at` has elapsed, the old observation is stale and `pace()` no longer
+refuses. A response carrying a budget signal updates the observed fields; a
+fresh future `reset_at` makes the guard active again. A response with no budget
+signal leaves the stale pass-through open. The job can continue unattended
+without a manual budget observation.
 
 ## The dashboard that prevents the outage
 
@@ -91,8 +93,10 @@ last-known-good. See [Roadmap](https://donkey-development-kit.github.io/donkey-d
   against a fixture with a known value.
 - `pace()` raises before the request that would cross the reserve, never after
   a `429`.
-- After `reset_at`, `pace()` lets the retry through so the response can refresh
-  the in-band budget; no manual observation is required.
+- After `reset_at`, `pace()` no longer refuses, so the wait-and-retry loop can
+  continue without a manual budget observation. A later response updates the
+  budget only when it carries a recognised signal, and the guard becomes active
+  again when that update supplies a future `reset_at`.
 - The budget object is per-`Donkey`, not global: two instances with different
   credentials do not share state.
 
