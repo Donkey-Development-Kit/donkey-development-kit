@@ -37,6 +37,19 @@ Region = Literal["us", "eu", "ca", "jp"]
 # determinism (e.g. an evaluation whose results are only comparable per-model).
 OnModelSubstitution = Literal["off", "raise"]
 
+# How the caller authenticates to the LLM proxy DATA plane (BG §1.1, #509).
+# ``"client-id"`` (default): the LIVE-VERIFIED ``client_id``/``client_secret``
+# request-header pair (client-id-enforcement, docs/verified-apis.md §2/§3). ``"jwt"``:
+# a wallet-backed proxy where Client ID Enforcement is disabled and the caller is
+# identified from an IdP-issued JWT validated by the JWT Validation policy, with
+# NO ``client_secret`` — the parallel ingress captured live under #372
+# (docs/verified-apis.md §2/§3). The mode is durable config even though the JWT itself is
+# not: the rotating credential enters through an ``AuthProvider`` (see
+# ``Donkey(llm_auth=...)``), never a config field. Inferring the mode from "no
+# client_id set" is deliberately NOT done — it would turn a typo into a silent
+# mode switch and make the per-mode missing-field report misleading (#509).
+LlmProxyAuth = Literal["client-id", "jwt"]
+
 _TOML_NAME = ".donkey-kit.toml"
 
 
@@ -60,6 +73,20 @@ class DonkeyConfig:
     # authenticates on the client_id/secret headers above and ignores the bearer,
     # so this is rarely needed; leave unset to use a sentinel.
     llm_proxy_key: str | None = None            # env: DONKEY_LLM_PROXY_KEY
+
+    # --- LLM proxy auth mode (BG §1.1, #509) ---
+    # Which data-plane ingress the proxy uses. Default ``"client-id"`` (the
+    # LIVE-VERIFIED CIE header pair above). ``"jwt"`` selects the model-wallet
+    # ingress: no ``client_secret``, an IdP JWT supplied dynamically via an
+    # ``AuthProvider`` (``Donkey(llm_auth=...)``), and a durable wallet-selector
+    # client ID sent as the ``X-Client-Id`` header (docs/verified-apis.md §2/§3, #372).
+    llm_proxy_auth: LlmProxyAuth = "client-id"  # env: DONKEY_LLM_PROXY_AUTH
+    # The wallet-selector client ID sent as ``X-Client-Id`` in JWT mode — the
+    # wallet's system-generated clientId (read from the omni API, see the
+    # ddk-configure-llm-proxy-model-wallet skill). Durable, not rotating, so it IS
+    # a config field (the rotating JWT is not); required in JWT mode. Ignored in
+    # client-id mode.
+    llm_proxy_wallet_client_id: str | None = None  # env: DONKEY_LLM_PROXY_WALLET_CLIENT_ID
 
     # --- Attribution (real header names: see docs/verified-apis.md §3) ---
     application_name: str | None = None   # env: DONKEY_APP_NAME
@@ -136,6 +163,12 @@ class DonkeyConfig:
                 pick("DONKEY_LLM_PROXY_CLIENT_SECRET", "llm_proxy_client_secret", None)
             ),
             llm_proxy_key=_opt(pick("DONKEY_LLM_PROXY_KEY", "llm_proxy_key", None)),
+            llm_proxy_auth=_as_llm_proxy_auth(
+                pick("DONKEY_LLM_PROXY_AUTH", "llm_proxy_auth", "client-id")
+            ),
+            llm_proxy_wallet_client_id=_opt(
+                pick("DONKEY_LLM_PROXY_WALLET_CLIENT_ID", "llm_proxy_wallet_client_id", None)
+            ),
             application_name=_opt(pick("DONKEY_APP_NAME", "application_name", None)),
             business_group=_opt(pick("DONKEY_BUSINESS_GROUP", "business_group", None)),
             correlation_header=_opt(
@@ -196,12 +229,26 @@ class DonkeyConfig:
         elif need == "llm":
             if not self.llm_proxy_url:
                 missing.append("llm_proxy_url (env DONKEY_LLM_PROXY_URL)")
-            if not self.llm_proxy_client_id:
-                missing.append("llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)")
-            if not self.llm_proxy_client_secret:
-                missing.append(
-                    "llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)"
-                )
+            if self.llm_proxy_auth == "jwt":
+                # Model-wallet ingress (#509): NO client_secret — CIE is disabled
+                # and the caller is identified from the JWT. The rotating JWT is
+                # supplied via an AuthProvider (Donkey(llm_auth=...)), not config,
+                # so it is not a "missing field" here — the provider-attached check
+                # lives where the provider is known (LLMClient.client()). What IS
+                # required here is the durable wallet-selector client ID.
+                if not self.llm_proxy_wallet_client_id:
+                    missing.append(
+                        "llm_proxy_wallet_client_id (env DONKEY_LLM_PROXY_WALLET_CLIENT_ID) "
+                        "— the wallet-selector X-Client-Id, required in jwt auth mode"
+                    )
+            else:
+                # client-id enforcement (default): the LIVE-VERIFIED CIE pair.
+                if not self.llm_proxy_client_id:
+                    missing.append("llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)")
+                if not self.llm_proxy_client_secret:
+                    missing.append(
+                        "llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)"
+                    )
         else:
             raise ConfigError(f"Unknown capability {need!r} passed to validated().")
 
@@ -270,6 +317,20 @@ def _as_substitution(v: object) -> OnModelSubstitution:
             f"Unknown on_model_substitution {v!r}. Expected 'off' or 'raise'."
         )
     return cast(OnModelSubstitution, token)
+
+
+def _as_llm_proxy_auth(v: object) -> LlmProxyAuth:
+    """Coerce and validate ``llm_proxy_auth`` (BG §1.1, #509). An unknown value is
+    a config mistake worth reporting up front — a silent fall-back to
+    ``"client-id"`` would leave a caller who typed ``"oauth"`` believing they had
+    selected the wallet ingress. Validated at resolve time, like ``region`` and
+    ``on_model_substitution``."""
+    token = str(v).strip().lower()
+    if token not in ("client-id", "jwt"):
+        raise ConfigError(
+            f"Unknown llm_proxy_auth {v!r}. Expected 'client-id' or 'jwt'."
+        )
+    return cast(LlmProxyAuth, token)
 
 
 def _load_toml() -> dict[str, object]:

@@ -80,6 +80,30 @@ class LLMClient:
         """
 
         self._cfg.validated(need="llm")
+        if self._cfg.llm_proxy_auth == "jwt":
+            # The rotating JWT enters through an AuthProvider on the shared async
+            # transport, never a config field (#509). Two things config alone
+            # cannot check, enforced here where the provider is known:
+            if sync:
+                # Proposal 6 / AC 7: jwt mode is async-only. The blocking
+                # DonkeyClient takes no AuthProvider (the protocol is async-only),
+                # so a sync client could only send a stale or absent token — never
+                # hand one back silently unauthenticated.
+                raise ConfigError(
+                    "JWT / model-wallet auth mode (llm_proxy_auth='jwt') is async-only: "
+                    "the credential is a rotating JWT fetched from an async AuthProvider, "
+                    "and the blocking client cannot await it. Use the async client — "
+                    "`donkey.llm.client()` / `donkey.openai()` without sync=True — or switch "
+                    "to client-id auth for a synchronous caller."
+                )
+            if self._http.token_provider is None:
+                # AC 1: jwt mode with no provider attached fails with actionable guidance.
+                raise ConfigError(
+                    "llm_proxy_auth='jwt' requires an AuthProvider that supplies the "
+                    "model-wallet JWT, but none is attached. Pass one when constructing "
+                    "Donkey, e.g. `Donkey(llm_auth=StaticToken(jwt))` or a custom "
+                    "AuthProvider that refreshes the token (see donkey_kit.core.auth)."
+                )
         try:
             from openai import AsyncOpenAI, OpenAI
         except ImportError as exc:  # pragma: no cover - install-time guidance
