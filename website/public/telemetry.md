@@ -1,8 +1,9 @@
 # Telemetry & cost
 
-  **Phase 1 — designed, not yet shipped.** Attribute and API shapes below are a
-  proposal; the committed part is the behaviour and the acceptance bar. See
-  [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+  **Shipped in Phase 1.** OpenTelemetry GenAI span export (#194), correlation
+  IDs (#195), cost-attribution tags (#196), and routing and resilience signals
+  (#309) are available. Platform-facing verification caveats are called out
+  below; see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
 
 Two pieces of the six-piece minimum land here, because they answer the same
 two questions: *what happened?* and *who pays for it?*
@@ -177,9 +178,8 @@ donkey = Donkey.from_env(on_model_substitution="raise")
 
 ## Correlation IDs
 
-  **Shipped in Phase 1** (#195) — unlike the cost-attribution tags below, which
-  are still designed-not-shipped. See [Observability](https://donkey-development-kit.github.io/donkey-development-kit/concepts/observability.md)
-  for the full detail.
+  **Shipped in Phase 1** (#195). See
+  [Observability](https://donkey-development-kit.github.io/donkey-development-kit/concepts/observability.md) for the full detail.
 
 Set a per-**run** id once, and every call inside the block carries it — on the
 wire, on every span, and on every exception — with nothing threaded through your
@@ -289,4 +289,6 @@ JSON blob into a header.
 
 ---
 
-**Status: Phase 1 — not yet shipped.**
+**Status: Phase 1 — OpenTelemetry GenAI spans and OTLP export, per-run
+correlation IDs, cost-attribution tags, and routing and resilience signals are
+shipped. Platform-facing verification caveats are called out above.**
