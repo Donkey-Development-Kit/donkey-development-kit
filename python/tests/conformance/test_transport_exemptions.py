@@ -105,6 +105,7 @@ async def test_header_only_correlation_exemptions_match_connection_kwargs() -> N
             await client.aclose()
 
         assert cfg.correlation_header not in headers
+        assert "run-123" not in headers.values()
         assert _CORRELATION_SCENARIO in KNOWN_LIMITATIONS[attr]
 
     exempted = {
