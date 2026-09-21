@@ -223,7 +223,7 @@ don't rely on GitHub auto-close, which can silently miss. Closing the issue is
 what advances its milestone's completed count, which is how release readiness is
 tracked. A `develop → main` promotion happens when a milestone reaches **0 open
 issues**; the release PR's title carries the milestone and version (e.g.
-`Release: M1 — Model access (0.1.0)`).
+`Release: Phase 1 — Build the MVP (0.1.0)`).
 
 ---
 

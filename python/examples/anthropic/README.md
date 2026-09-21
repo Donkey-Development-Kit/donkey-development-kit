@@ -13,11 +13,13 @@ and the model id is a per-call argument (`c.messages.create(model=..., ...)`),
 not a constructor one. So this adapter exposes `client()` rather than the
 `model(...)` factory the OpenAI-compatible adapters use.
 
-**Unverified dependency (docs/verified-apis.md §8).** The Omni Gateway LLM proxy is verified
+**Unverified dependency (docs/verified-apis.md §8).** The Omni Gateway LLM proxy is
 OpenAI-compatible; whether it also exposes an **Anthropic-native Messages API
-route** is an open M0 verification item. Until confirmed, `client()` emits a
-one-time warning and no live call is made. Once a real route is confirmed,
-override `base_url` if needed.
+route** is an open Verification-milestone item (verification discipline). If it
+does not, this adapter's requests will not reach a working upstream — override
+`base_url` via `**kw` to point at a real Anthropic-native route once confirmed.
+The first `client()` call emits a one-time unverified-route warning; this example
+does not make a live call.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:

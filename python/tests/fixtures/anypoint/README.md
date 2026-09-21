@@ -1,4 +1,4 @@
-# Captured fixtures — real Anypoint sandbox via `anypoint-cli-v4` (M0)
+# Captured fixtures — real Anypoint sandbox via `anypoint-cli-v4`
 
 Captured 2026-08-28 from the real sandbox org
 `82a0453b-22e6-430d-bbf4-35b989d043dc`, environment **Sandbox**

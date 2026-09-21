@@ -1,4 +1,4 @@
-# Verified APIs — output of the verification discipline (M0)
+# Verified APIs — output of the verification discipline
 
 > **Status (2026-08-28): partially verified.** The **management/control-plane**
 > contract (OAuth token path, Exchange/API-Manager/gateway REST endpoints,
@@ -30,7 +30,7 @@
 > data shape confirmed from an Anypoint-adjacent source (A2D), not the direct
 > contract. `UNVERIFIED` = not yet confirmed; its code guard stays in place.
 >
-> This is the deliverable of Milestone M0. For any row still `UNVERIFIED`, the
+> This is the verification ledger. For any row still `UNVERIFIED`, the
 > implementing engineer must, against a **real Anypoint sandbox**, confirm the
 > signature, then change the row's status, fill in the **Verified value**,
 > **Date**, and **Source** columns. A code guard
