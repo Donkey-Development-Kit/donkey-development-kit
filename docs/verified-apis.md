@@ -220,7 +220,8 @@ message); a top-level `matched_patterns` list → `PromptInjectionBlocked`
 header (Azure Content Safety / Amazon Bedrock Guardrails) → `ContentSafetyBlocked`
 (parses `categories` from the sibling `…-reason` header) — both of these also
 checked *before* the 401/403→auth rule so a `403` moderation block is not
-mis-typed as auth; header `x-injection-protection: blocked` →
+mis-typed as auth; header `x-injection-protection: blocked` (documented by the
+[Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection)) →
 `PromptInjectionBlocked` (the header, not the status, is the discriminator, so a
 bare `400` is unaffected); `429` → `TokenBudgetExceeded` with `retry_after`
 derived from `x-token-reset` (ms→s); non-auth 4xx with a nested `error` object →
@@ -233,14 +234,15 @@ whose message names the observed status and any `x-llm-proxy-*` policy headers a
 states the **shape is unconfirmed** (#184), rather than being mis-typed. The full
 eight-shape taxonomy is indexed in `tests/fixtures/rejections/README.md`.
 
-Two of those shapes are **DOCUMENTED, pending live capture (#253)** — typed from
-the policy pages, not from a live sandbox round-trip, so **no `_verify.py` row
-flips to `verified=True`** for them:
+The Regex Prompt Guard and content-safety/guardrail shapes below are
+**DOCUMENTED, pending live capture (#253)** — typed from the policy pages, not
+from a live sandbox round-trip, so **no `_verify.py` row flips to
+`verified=True`** for them:
 
 | Shape | HTTP | Discriminator | Maps to | Source |
 |---|---|---|---|---|
-| Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | DOCUMENTED, pending live capture (#253) |
-| Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | DOCUMENTED, pending live capture (#253) |
+| Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard); DOCUMENTED, pending live capture (#253) |
+| Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails); DOCUMENTED, pending live capture (#253) |
 | Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no known contract; capture + type via #184/#253 |
 
 The **injection body** and any **other content-moderation / federated-guardrail**
@@ -249,9 +251,9 @@ any such unrecognised refusal **honestly** — a `PolicyViolation` whose message
 states the shape is unconfirmed and whose remediation asks the operator to file
 the observed status/headers/body so the shape can be typed (#184). This is the
 last row above; it is deliberately **not** an `AuthError`, even for a `403`, once
-the verified `www-authenticate` auth shape is excluded. Re-confirming all of these
-against current docs and a sandbox is tracked in #253 (verification discipline: no invented docs URL
-or version is recorded for them).
+the verified `www-authenticate` auth shape is excluded. The official policy
+pages above establish the documented contracts; direct sandbox capture remains
+tracked in #253 and is still required before any verification status changes.
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two

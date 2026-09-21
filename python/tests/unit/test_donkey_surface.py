@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 
+import donkey_kit
 from donkey_kit import Donkey, DonkeyConfig
 from donkey_kit.core.auth import AnypointConnectedApp
 
@@ -15,6 +16,21 @@ def _cfg() -> DonkeyConfig:
         llm_proxy_client_id="cid",
         llm_proxy_client_secret="csecret",
     )
+
+
+def test_legacy_governance_scaffolding_is_not_top_level_public_api() -> None:
+    """The refused provisioning control plane remains importable from its module,
+    but its structural types are not promoted as first-class package exports."""
+    from donkey_kit.governance import Governance
+
+    assert Governance.__module__ == "donkey_kit.governance"
+    assert {
+        "GatewayTarget",
+        "Governance",
+        "PolicyBinding",
+        "PolicyPortability",
+    }.isdisjoint(donkey_kit.__all__)
+    assert not hasattr(donkey_kit, "Governance")
 
 
 def test_uninstalled_adapter_raises_curated_import_error(

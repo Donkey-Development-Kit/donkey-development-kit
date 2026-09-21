@@ -21,7 +21,7 @@ It proves the full recover-from-exhaustion arc a developer actually writes:
 2. **Pace trips.** With the window observed as fully used, :meth:`Budget.pace`
    refuses the guarded block *before* issuing a request (#186).
 3. **Recover.** :meth:`Budget.wait_for_reset` sleeps until the window rolls over.
-4. **Resume.** The next call succeeds and the budget replenishes.
+4. **Resume.** The next guarded call succeeds and the budget replenishes.
 """
 
 from __future__ import annotations
@@ -133,17 +133,20 @@ async def test_pace_then_recover_against_a_real_budget_window(
                 block_ran = True  # pragma: no cover - must never execute
         assert block_ran is False
 
-        # 3 + 4. Recover, then resume — the arc the pace() docstring prescribes:
-        #    wait_for_reset() then retry. Looped so the exact rollover instant is
-        #    never a race; bounded by the wall-clock ceiling.
+        # 3 + 4. Recover, then resume through pace() — the arc its docstring
+        #    prescribes. Looped so the exact rollover instant is never a race;
+        #    bounded by the wall-clock ceiling.
         resumed = None
         while time.monotonic() - started < _DEADLINE_S:
             await donkey.budget.wait_for_reset()
             try:
-                resumed = await client.responses.create(
-                    model=_HAPPY_MODEL, input="ping", max_output_tokens=16
-                )
+                async with donkey.budget.pace(reserve=0.0):
+                    resumed = await client.responses.create(
+                        model=_HAPPY_MODEL, input="ping", max_output_tokens=16
+                    )
                 break
+            except BudgetReserveReached:
+                continue  # local clock has not quite reached reset_at; wait again
             except openai.APIStatusError as exc:
                 assert exc.status_code == 429  # window not yet rolled; wait again
                 await asyncio.sleep(0.1)
