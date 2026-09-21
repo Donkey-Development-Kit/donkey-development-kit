@@ -139,8 +139,28 @@ async def test_pace_defaults_to_wall_clock_after_reset() -> None:
         now=observed_at,
     )
 
+    ran = False
     async with b.pace():
-        pass
+        ran = True
+    assert ran
+
+
+async def test_pace_defaults_to_wall_clock_before_reset() -> None:
+    """The real UTC clock keeps the reserve guard armed before reset_at."""
+    b = Budget()
+    b.observe(
+        _resp(
+            **{
+                "x-token-limit": "1000",
+                "x-token-remaining": "0",
+                "x-token-reset": "60000",
+            }
+        )
+    )
+
+    with pytest.raises(BudgetReserveReached):
+        async with b.pace():
+            raise AssertionError("body must not run before the window resets")
 
 
 # --- wait_for_reset(): the recovery sleep -----------------------------------
