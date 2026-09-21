@@ -76,10 +76,11 @@ class ConfigError(DonkeyError):
 class AuthError(DonkeyError):
     """Rejected credentials on the Anypoint control plane or LLM-proxy data plane.
 
-    ``remediation`` is a class attribute (like :class:`GatewayUnavailable`, not
-    the constructor-enforced :class:`PolicyViolation` contract) so ``donkey
-    doctor`` (#202) has one canonical wording to print for a credentials
-    rejection rather than a second copy."""
+    The class-level ``remediation`` is the LLM-proxy data-plane default that
+    ``donkey doctor`` (#202) reuses. Control-plane callers override it with one
+    of the canonical class values below, so the next step matches the auth
+    provider that failed (#484). This is not the constructor-enforced
+    :class:`PolicyViolation` contract."""
 
     #: Single source of next-step wording for a rejected-credentials diagnosis.
     remediation: str = (
@@ -89,6 +90,27 @@ class AuthError(DonkeyError):
         "Anypoint control-plane credential and not a bearer token — and that the "
         "consumer is authorized on the instance in API Manager (docs/verified-apis.md §2)."
     )
+    connected_app_remediation: str = (
+        "Check the configured Anypoint control-plane auth provider. For a connected app, "
+        "verify ANYPOINT_CLIENT_ID / ANYPOINT_CLIENT_SECRET and that the app has the scopes "
+        "the operation needs (docs/verified-apis.md §1)."
+    )
+    provider_chain_remediation: str = (
+        "Every configured Anypoint control-plane auth provider failed. Inspect the last "
+        "error and verify each provider's credentials or token source. If the chain uses "
+        "a connected app, also verify its required scopes (docs/verified-apis.md §1)."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        remediation: str | None = None,
+        **kw: Any,
+    ) -> None:
+        super().__init__(message, **kw)
+        if remediation is not None:
+            self.remediation = remediation
 
 
 class PolicyViolation(DonkeyError):

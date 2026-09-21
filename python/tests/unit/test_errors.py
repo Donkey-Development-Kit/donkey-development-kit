@@ -29,6 +29,17 @@ def test_401_is_auth_error() -> None:
     assert isinstance(classify(_resp(401)), AuthError)
 
 
+def test_auth_error_uses_data_plane_default_unless_overridden() -> None:
+    default = AuthError("boom")
+    control_plane = AuthError("boom", remediation="check the connected app")
+
+    assert default.remediation is AuthError.remediation
+    assert "DONKEY_LLM_PROXY_CLIENT_ID" in default.remediation
+    assert control_plane.remediation == "check the connected app"
+    assert AuthError.connected_app_remediation.strip()
+    assert AuthError.provider_chain_remediation.strip()
+
+
 def test_generic_4xx_is_terminal_policy_violation() -> None:
     err = classify(_resp(400))
     assert isinstance(err, PolicyViolation)

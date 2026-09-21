@@ -50,7 +50,7 @@ All importable from `donkey_kit`:
 ```
 DonkeyError                     # base of the whole tree
 ├─ ConfigError                  # misconfiguration (raised locally, pre-flight)
-├─ AuthError                    # 401 — bad/missing consumer credentials
+├─ AuthError                    # rejected data-plane credentials or control-plane auth
 ├─ PolicyViolation              # base for every governance rejection
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
@@ -77,7 +77,7 @@ never burn an exhausted budget or replay a blocked prompt.
 
 | Exception | Discriminator | Retryable? | Next step (`.remediation`) |
 |---|---|---|---|
-| `AuthError` | `401`, or `403` + `www-authenticate` | **No** — terminal. The async client refreshes its token and retries **once** on a `401`, then surfaces it. | Check the consumer `client_id` / `client_secret` pair and that the consumer is authorized in API Manager. |
+| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails. | **No** — terminal. The async data-plane client refreshes its token and retries **once** on a `401`, then surfaces it; control-plane token acquisition surfaces immediately. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. |
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
@@ -98,6 +98,13 @@ exception message. `ModelSubstituted` reports that a call *succeeded* against a
 different model than requested (opt-in via `on_model_substitution="raise"`).
 `ConfigError` is raised locally, pre-flight, and reports every missing field at
 once — fix the config and re-run.
+
+`AuthError.remediation` follows the plane that failed. Errors classified from
+an LLM-proxy response use the canonical consumer-credential guidance that
+[`donkey doctor`](/cli) also prints. Control-plane token failures override that
+default with canonical guidance for the provider that failed: connected-app
+errors point to the Anypoint credentials and scopes, while an exhausted
+`ChainedAuth` points to each configured provider's credential or token source.
 
 [#184]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/184
 
