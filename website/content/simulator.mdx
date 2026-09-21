@@ -180,7 +180,9 @@ flips something a test asserts on, a committed **integrity lock**
 simulator serves. A *benign* byte edit — reformatted JSON, an added field —
 fails the lock loudly instead of silently drifting the replayed bytes. A
 genuine re-capture is accepted by regenerating the lock
-(`python -m donkey_kit.simulator.fixtures --relock`) and committing it.
+(`python -m donkey_kit.simulator.fixtures --relock`) and committing it. The
+lock ships beside those fixtures, so an installed wheel can verify that its
+replayed bytes still match the committed manifest.
 
 ### It replays; it does not evaluate
 

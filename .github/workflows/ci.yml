@@ -16,7 +16,8 @@ defaults:
 jobs:
   base-only:
     # Working instruction #9: install ONLY the base package and run the base
-    # suite, to catch accidental top-level framework imports.
+    # suite to catch accidental top-level framework imports. The installed-wheel
+    # check runs afterward in its own environment.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -27,6 +28,34 @@ jobs:
       - name: import donkey_kit with no framework extras installed
         run: python -c "import donkey_kit; from donkey_kit import Donkey; print(donkey_kit.__version__)"
       - run: pytest -q tests/unit
+      - name: installed wheel resolves packaged simulator fixtures (BG §1.4)
+        run: |
+          wheel_dir="$(mktemp -d)"
+          venv_dir="$(mktemp -d)"
+          trap 'rm -rf "$wheel_dir" "$venv_dir"' EXIT
+          pip install build
+          python -m build --wheel --outdir "$wheel_dir"
+          set -- "$wheel_dir"/*.whl
+          test "$#" -eq 1
+          python -m venv "$venv_dir"
+          "$venv_dir/bin/pip" install "$1"
+          "$venv_dir/bin/python" - <<'PY'
+          from donkey_kit.simulator import fixtures
+
+          assert not fixtures._SOURCE_ROOT.exists(), fixtures._SOURCE_ROOT
+          missing = [
+              f"{directory}/{name}"
+              for directory, name in fixtures._served_files()
+              if fixtures._packaged_bytes(directory, name) is None
+          ]
+          assert not missing, f"fixtures missing from wheel: {missing}"
+          for shape in fixtures.SHAPES:
+              fixtures.load(shape)
+          assert fixtures.LOCK_PATH.exists(), fixtures.LOCK_PATH
+          assert fixtures.compute_manifest() == fixtures.read_lock()
+          fixtures.write_lock()
+          assert fixtures.compute_manifest() == fixtures.read_lock()
+          PY
 
   typecheck-and-lint:
     runs-on: ubuntu-latest

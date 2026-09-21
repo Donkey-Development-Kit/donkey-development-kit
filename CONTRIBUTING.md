@@ -258,6 +258,11 @@ provable: `PolicyViolation` stays distinct from the retryable
 `remediation` (assert it directly). See [`ARCHITECTURE.md`](ARCHITECTURE.md#error-taxonomy-design-bg-12)
 for why.
 
+That job also builds and installs the wheel into an isolated environment, then
+verifies the packaged simulator fixtures against their shipped integrity lock.
+This is the packaging-path gate; source-checkout tests alone cannot prove those
+resources landed in the wheel.
+
 ### `tests/typecheck/` — downstream static contracts
 
 `mypy` strict-checks these small, non-pytest modules alongside `src/donkey_kit`.

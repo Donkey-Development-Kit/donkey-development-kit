@@ -17,6 +17,9 @@ Resolution order for every fixture (:func:`fixture_bytes`):
    tests read from, so in a source tree the simulator and the tests read the
    byte-identical files.
 
+The fixture-integrity lock follows the same resolution order, so the public
+lock helpers work from both a source checkout and an installed wheel.
+
 Nothing here imports a web framework: this module is safe under the base-only
 CI job (``[dev]`` only, no ``[local]`` extra). It imports only the framework-free
 ``core`` layer for the verified header names (an allowed upward import).
@@ -223,16 +226,17 @@ SHAPES: dict[str, _Spec] = {
 # Derived from this module's location: fixtures.py is at
 # python/src/donkey_kit/simulator/fixtures.py, so parents[3] is python/.
 _SOURCE_ROOT = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
+_PACKAGED_ROOT = importlib.resources.files("donkey_kit.simulator") / "_fixtures"
 
 
 def _packaged_bytes(directory: str, name: str) -> bytes | None:
     """Read ``_fixtures/<directory>/<name>`` from the installed package, or
     ``None`` if it is not present (e.g. an editable/source checkout that never
     ran the wheel force-include)."""
-    res = importlib.resources.files("donkey_kit.simulator")
+    res = _PACKAGED_ROOT
     # Chain single-segment ``/`` joins for 3.10 compatibility (multi-arg
     # joinpath() only landed in 3.11).
-    for part in ("_fixtures", directory, name):
+    for part in (directory, name):
         res = res / part
     if res.is_file():
         return res.read_bytes()
@@ -337,7 +341,9 @@ def replay_headers(fixture: Fixture) -> dict[str, str]:
 # ``python -m donkey_kit.simulator.fixtures --relock`` — the deliberate,
 # reviewable "I re-captured this, I meant it" step. This is an integrity
 # assertion, not fixture-capture tooling (which #189 puts out of scope).
-LOCK_PATH = _SOURCE_ROOT / "fixtures.lock"
+_SOURCE_LOCK_PATH = _SOURCE_ROOT / "fixtures.lock"
+_PACKAGED_LOCK = _PACKAGED_ROOT / "fixtures.lock"
+LOCK_PATH = Path(str(_PACKAGED_LOCK)) if _PACKAGED_LOCK.is_file() else _SOURCE_LOCK_PATH
 
 
 def _served_files() -> list[tuple[str, str]]:
@@ -364,14 +370,18 @@ def compute_manifest() -> dict[str, str]:
 
 
 def read_lock() -> dict[str, str]:
-    """The committed manifest at :data:`LOCK_PATH`."""
+    """The committed manifest at :data:`LOCK_PATH`, from either package layout."""
     data: dict[str, str] = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
     return data
 
 
 def write_lock() -> None:
     """Regenerate :data:`LOCK_PATH` from the current fixture bytes. Called by
-    ``python -m donkey_kit.simulator.fixtures --relock`` after a re-capture."""
+    ``python -m donkey_kit.simulator.fixtures --relock`` after a re-capture.
+
+    In a source checkout this updates ``tests/fixtures/fixtures.lock``. From an
+    installed wheel it updates that environment's packaged lock.
+    """
     LOCK_PATH.write_text(
         json.dumps(compute_manifest(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

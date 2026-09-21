@@ -134,6 +134,7 @@ packages = ["src/donkey_kit"]
 # packaged copy first, falling back to the source-checkout tests/fixtures/ tree.
 "tests/fixtures/rejections" = "donkey_kit/simulator/_fixtures/rejections"
 "tests/fixtures/anypoint/llm_proxy" = "donkey_kit/simulator/_fixtures/anypoint/llm_proxy"
+"tests/fixtures/fixtures.lock" = "donkey_kit/simulator/_fixtures/fixtures.lock"
 
 [tool.mypy]
 # Working instruction #8: mypy --strict, blocking in CI. Typecheck fixtures pin
