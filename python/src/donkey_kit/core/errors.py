@@ -76,10 +76,11 @@ class ConfigError(DonkeyError):
 class AuthError(DonkeyError):
     """Rejected credentials on the Anypoint control plane or LLM-proxy data plane.
 
-    ``remediation`` is a class attribute (like :class:`GatewayUnavailable`, not
-    the constructor-enforced :class:`PolicyViolation` contract) so ``donkey
-    doctor`` (#202) has one canonical wording to print for a credentials
-    rejection rather than a second copy."""
+    The class-level ``remediation`` is the LLM-proxy data-plane default that
+    ``donkey doctor`` (#202) reuses. Control-plane callers override it per
+    instance so the next step names the connected-app credentials instead of
+    contradicting the error message (#484). This is not the constructor-enforced
+    :class:`PolicyViolation` contract."""
 
     #: Single source of next-step wording for a rejected-credentials diagnosis.
     remediation: str = (
@@ -89,6 +90,17 @@ class AuthError(DonkeyError):
         "Anypoint control-plane credential and not a bearer token — and that the "
         "consumer is authorized on the instance in API Manager (docs/verified-apis.md §2)."
     )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        remediation: str | None = None,
+        **kw: Any,
+    ) -> None:
+        super().__init__(message, **kw)
+        if remediation is not None:
+            self.remediation = remediation
 
 
 class PolicyViolation(DonkeyError):

@@ -29,6 +29,12 @@ if TYPE_CHECKING:
     import httpx
 
 _EXPIRY_SAFETY_MARGIN_S = 60.0
+_CONTROL_PLANE_AUTH_REMEDIATION = (
+    "Check the configured Anypoint control-plane auth provider. For a connected app, "
+    "verify ANYPOINT_CLIENT_ID / ANYPOINT_CLIENT_SECRET and that the app has the scopes "
+    "the operation needs "
+    "(docs/verified-apis.md §1)."
+)
 
 
 @runtime_checkable
@@ -105,6 +111,7 @@ class AnypointConnectedApp(AuthProvider):
                 "Anypoint token request rejected. Verify the connected-app "
                 "client_id/secret and that the app has the scopes the operation "
                 "needs (see docs/verified-apis.md §1).",
+                remediation=_CONTROL_PLANE_AUTH_REMEDIATION,
                 response=resp,
             )
         if resp.status_code >= 400:
@@ -113,6 +120,7 @@ class AnypointConnectedApp(AuthProvider):
                 f"{self._token_path!r}. Check that the control-plane host is reachable, "
                 "that any token_path override is correct, and that connected-app "
                 "requirements are met (see docs/verified-apis.md §1 and §12.1).",
+                remediation=_CONTROL_PLANE_AUTH_REMEDIATION,
                 response=resp,
             )
         body = resp.json()
@@ -122,6 +130,7 @@ class AnypointConnectedApp(AuthProvider):
                 "Token endpoint returned no access_token. The expected response shape "
                 "includes access_token and expires_in (see docs/verified-apis.md §1 and "
                 "§12.1); capture the unexpected response as a fixture (BG §1.5).",
+                remediation=_CONTROL_PLANE_AUTH_REMEDIATION,
                 response=resp,
             )
         expires_in = float(body.get("expires_in", 3600))
@@ -145,7 +154,10 @@ class ChainedAuth(AuthProvider):
                 return await provider.token()
             except Exception as exc:  # noqa: BLE001 - fall through to next provider
                 last = exc
-        raise AuthError(f"No auth provider yielded a token. Last error: {last}")
+        raise AuthError(
+            f"No auth provider yielded a token. Last error: {last}",
+            remediation=_CONTROL_PLANE_AUTH_REMEDIATION,
+        )
 
     async def invalidate(self) -> None:
         for provider in self._providers:

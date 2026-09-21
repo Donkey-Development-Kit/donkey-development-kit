@@ -183,7 +183,9 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 2. **Every error carries a `remediation`.** On `PolicyViolation` the human-readable
    next step is a *required* field — the concrete action to take (e.g. "the budget
    window resets in 42m; request an increase in API Manager") is worth more than a
-   stack trace.
+   stack trace. `AuthError` uses its class-level LLM-proxy guidance by default and
+   a per-instance connected-app override for control-plane token failures, so its
+   message and remediation always name the same credential plane.
 
 **`classify()` is fixture-driven, not guessed.** The HTTP-response → exception
 mapping in `classify()` is populated from real rejection captures taken against a

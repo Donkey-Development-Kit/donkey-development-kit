@@ -7,8 +7,24 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from donkey_kit.core.auth import AnypointConnectedApp
+from donkey_kit.core.auth import AnypointConnectedApp, ChainedAuth
 from donkey_kit.core.errors import AuthError
+
+
+def _assert_control_plane_remediation(error: AuthError) -> None:
+    assert "ANYPOINT_CLIENT_ID" in error.remediation
+    assert "ANYPOINT_CLIENT_SECRET" in error.remediation
+    assert "scopes" in error.remediation
+    assert "docs/verified-apis.md §1" in error.remediation
+    assert "DONKEY_LLM_PROXY_CLIENT_ID" not in error.remediation
+
+
+class _FailingAuth:
+    async def token(self) -> str:
+        raise RuntimeError("provider failed")
+
+    async def invalidate(self) -> None:
+        return None
 
 
 async def test_connected_app_posts_credentials_and_caches_until_safety_margin() -> None:
@@ -97,6 +113,7 @@ async def test_connected_app_maps_rejected_credentials_to_auth_error(status_code
             await auth.token()
 
     assert exc_info.value.response is response
+    _assert_control_plane_remediation(exc_info.value)
 
 
 async def test_connected_app_maps_other_http_errors_to_auth_error() -> None:
@@ -120,6 +137,7 @@ async def test_connected_app_maps_other_http_errors_to_auth_error() -> None:
             await auth.token()
 
     assert exc_info.value.response is response
+    _assert_control_plane_remediation(exc_info.value)
 
 
 async def test_connected_app_rejects_success_response_without_access_token() -> None:
@@ -143,3 +161,13 @@ async def test_connected_app_rejects_success_response_without_access_token() -> 
             await auth.token()
 
     assert exc_info.value.response is response
+    _assert_control_plane_remediation(exc_info.value)
+
+
+async def test_chained_auth_failure_uses_control_plane_remediation() -> None:
+    auth = ChainedAuth(_FailingAuth())
+
+    with pytest.raises(AuthError, match="No auth provider yielded a token") as exc_info:
+        await auth.token()
+
+    _assert_control_plane_remediation(exc_info.value)
