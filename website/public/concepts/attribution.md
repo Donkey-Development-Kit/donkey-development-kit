@@ -50,9 +50,7 @@ for the full two-id model.
 
   **Google ADK and CrewAI caveat.** LiteLLM owns their transports, so the SDK
   can't inject its HTTP client — the correlation id is per-client, not per-run.
-  These are documented, asserted conformance exemptions, not silent gaps. The
-  other framework adapters can propagate per-run correlation through the
-  governed headers they receive.
+  These are documented, asserted conformance exemptions, not silent gaps.
 
   The **agent→agent egress** attribution header (`x-anypoint-api-instance-id`) is
   a separate telemetry path for component-to-component traffic, not needed for

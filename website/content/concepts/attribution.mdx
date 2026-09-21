@@ -53,9 +53,7 @@ for the full two-id model.
 <Callout type="warning">
   **Google ADK and CrewAI caveat.** LiteLLM owns their transports, so the SDK
   can't inject its HTTP client — the correlation id is per-client, not per-run.
-  These are documented, asserted conformance exemptions, not silent gaps. The
-  other framework adapters can propagate per-run correlation through the
-  governed headers they receive.
+  These are documented, asserted conformance exemptions, not silent gaps.
 </Callout>
 
 <Callout type="info">
