@@ -26,7 +26,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "a2d"
 _TRANSPORT_NORMALIZATION = {"streamableHttp": "streamable_http"}
 
 
-def test_package_root_asset_types_share_canonical_values() -> None:
+def test_package_root_asset_types_share_discovery_literal_values() -> None:
     discovery_type: AssetType = "mcp"
     ref = AssetRef(group_id="com.acme", asset_id="tools", version="1.0.0", type=discovery_type)
 

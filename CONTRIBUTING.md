@@ -229,8 +229,8 @@ issues**; the release PR's title carries the milestone and version (e.g.
 
 ## 2. Testing strategy
 
-The repo has **five distinct test surfaces**, each with its own job and its own
-CI gate. Getting the surface wrong either weakens a real gate (a framework test
+The repo has **six distinct test surfaces**, each mapped to a specific CI or
+local gate. Getting the surface wrong either weakens a real gate (a framework test
 slipped into `tests/unit`) or produces a false negative (a skipped conformance
 scenario nobody reviews). Pick by what the change exercises:
 
@@ -242,8 +242,9 @@ scenario nobody reviews). Pick by what the change exercises:
 | A running local Omni Gateway (docker) | `@pytest.mark.local_gateway` (off by default) |
 | A real Anypoint sandbox | `@pytest.mark.sandbox` (off by default, gated by `DONKEY_SANDBOX_TESTS=1`) |
 | A framework's constructor signature/kwargs | `scripts/verify_frameworks.py` (not pytest) |
+| A downstream package-root import/call combination that source-only analysis cannot exercise | **`tests/typecheck/`** — checked by `mypy`, not pytest |
 
-If a change fits none of these, stop and ask — don't invent a sixth surface.
+If a change fits none of these, stop and ask — don't invent a seventh surface.
 
 ### `tests/unit/` — the framework-free gate
 
@@ -256,6 +257,15 @@ provable: `PolicyViolation` stays distinct from the retryable
 `UpstreamModelError`, and every `PolicyViolation` carries a non-empty
 `remediation` (assert it directly). See [`ARCHITECTURE.md`](ARCHITECTURE.md#error-taxonomy-design-bg-12)
 for why.
+
+### `tests/typecheck/` — downstream static contracts
+
+`mypy` strict-checks these small, non-pytest modules alongside `src/donkey_kit`.
+Use this surface when the contract depends on how a consumer combines public
+package-root imports and annotated calls — a composition source-only analysis
+cannot exercise. Keep a matching runtime assertion under `tests/unit/` when the
+contract also has runtime behavior; a typecheck fixture is not a substitute for
+a runtime test.
 
 ### The conformance kit — "never a silent skip"
 

@@ -25,6 +25,8 @@ from ..core import _verify
 
 
 class PublicationAssetType(Enum):
+    """SDK publication categories; exact Exchange token strings are UNVERIFIED."""
+
     MCP_SERVER = "mcp"
     A2A_AGENT = "a2a-agent"
     AGENT = "agent"

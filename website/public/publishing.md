@@ -87,12 +87,12 @@ pub = Publication(
 | `AGENT` | agent descriptor (no A2A surface) | framework introspection, best-effort |
 | `API` | OpenAPI / AsyncAPI | user-supplied file; no generation |
 
-  **Verification gate.** Whether Exchange exposes first-class asset types for
-  MCP servers and AI agents is unverified. The Agent Registry is built on
-  Exchange, so it is likely — but if it does not, publication degrades to a
-  generic asset type carrying tags, which weakens discoverability and breaks
-  `asset_types=["mcp"]` filtering in [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md). The two
-  features share this dependency; it is verified once, recorded once.
+  **Verification gate.** Exchange exposes first-class MCP-server and AI-agent
+  asset categories, but the exact token vocabulary used by publication and
+  discovery filters is unverified. `PublicationAssetType` currently shares the
+  SDK's `mcp` / `a2a-agent` discovery values; no blocked Exchange call sends
+  those assumed values until the direct contract is captured. The two features
+  share this dependency, so it is verified once and recorded once.
 
 ## `descriptor="auto"` — deriving the spec from code
 

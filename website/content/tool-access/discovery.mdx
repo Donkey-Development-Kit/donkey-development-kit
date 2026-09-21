@@ -41,7 +41,7 @@ tools = await donkey.tools.discover(
 | `governed_only` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
 | `domain` | `str \| None` | Catalog domain. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
-| `asset_types` | `list[AssetType] \| None` | e.g. `["mcp"]`. |
+| `asset_types` | `list[AssetType] \| None` | e.g. `["mcp"]`; exact Exchange filter tokens remain unverified. |
 | `environment` | `str \| None` | Which environment governance is computed against. |
 | `limit` | `int` | Max results (default 50). |
 
