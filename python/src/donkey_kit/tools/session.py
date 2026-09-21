@@ -20,9 +20,14 @@ _log = logging.getLogger("donkey_kit.tools")
 
 
 class ToolSet:
-    def __init__(self, servers: list[McpServerHandle]) -> None:
-        self._servers = servers
-        self._filter = ToolFilter()
+    def __init__(
+        self,
+        servers: list[McpServerHandle],
+        *,
+        _filter: ToolFilter | None = None,
+    ) -> None:
+        self._servers = list(servers)
+        self._filter = _filter if _filter is not None else ToolFilter()
 
     # ---- filtering (pure, implemented) ------------------------------------
     def filter(
@@ -36,13 +41,14 @@ class ToolSet:
         tools; handing 60 descriptors to a model degrades it and inflates token
         cost (BG §2.7)."""
 
-        filtered = ToolSet(self._servers)
-        filtered._filter = ToolFilter(
-            allow=frozenset(allow) if allow is not None else None,
-            deny=frozenset(deny or ()),
-            predicate=predicate,
+        return ToolSet(
+            self._servers,
+            _filter=ToolFilter(
+                allow=frozenset(allow) if allow is not None else None,
+                deny=frozenset(deny or ()),
+                predicate=predicate,
+            ),
         )
-        return filtered
 
     @property
     def name_map(self) -> dict[str, str]:

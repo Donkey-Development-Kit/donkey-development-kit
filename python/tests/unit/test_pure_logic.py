@@ -56,6 +56,7 @@ def test_tool_set_filter_returns_independent_views() -> None:
     write_only = tools.filter(allow=["write"])
 
     assert read_only is not tools
+    assert read_only._servers is not tools._servers
     assert read_only.name_map == {"read": "read"}
     assert write_only.name_map == {"write": "write"}
     assert tools.name_map == {"read": "read", "write": "write"}
