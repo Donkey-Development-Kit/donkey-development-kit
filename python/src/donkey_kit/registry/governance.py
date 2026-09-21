@@ -4,7 +4,7 @@
 systems, environment-scoped. The criteria and report types here are
 pure and fully implemented. The JOIN that populates a report from live API
 Manager / ruleset state lives in :mod:`donkey_kit.registry.exchange` and is
-gated on M0 verification (the Verification milestone).
+gated on the Verification milestone.
 """
 
 from __future__ import annotations
