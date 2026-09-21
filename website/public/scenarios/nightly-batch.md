@@ -87,8 +87,8 @@ async def enrich_all(records, enrich):
   (milliseconds, converted for you). Once that time has elapsed, the old
   observation is stale, so `pace()` no longer refuses. A response carrying a
   budget signal updates the observed fields; a fresh future `reset_at` makes
-  the guard active again. One without a budget signal leaves the stale
-  pass-through open. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+  the guard active again. A response that does not supply a fresh future
+  `reset_at` leaves the stale pass-through open. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
 
 ## The honest limitation
 

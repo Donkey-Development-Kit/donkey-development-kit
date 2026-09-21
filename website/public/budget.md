@@ -62,9 +62,9 @@ for batch in chunks(records, 200):
 
 Once `reset_at` has elapsed, the old observation is stale and `pace()` no longer
 refuses. A response carrying a budget signal updates the observed fields; a
-fresh future `reset_at` makes the guard active again. A response with no budget
-signal leaves the stale pass-through open. The job can continue unattended
-without a manual budget observation.
+fresh future `reset_at` makes the guard active again. A response that does not
+supply a fresh future `reset_at` leaves the stale pass-through open. The job can
+continue unattended without a manual budget observation.
 
 ## The dashboard that prevents the outage
 

@@ -211,3 +211,48 @@ async def test_pace_allows_probe_after_wait_without_manual_observe(
     async with b.pace(reserve=0.05):
         ran_probe = True
     assert ran_probe
+
+
+async def test_signal_free_response_leaves_expired_window_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BG §1.3: once reset_at has elapsed, a response with no budget signal
+    leaves the stale pass-through open rather than restoring the old refusal."""
+    b = Budget()
+    _observe(b, limit=20000, remaining=500, reset_ms=1000)  # 97.5% used
+    later = _FIXED_NOW + timedelta(seconds=2)
+    monkeypatch.setattr(budget_mod, "_utcnow", lambda: later)
+
+    b.observe(_resp(), now=later)
+
+    async with b.pace(reserve=0.05):
+        pass
+
+
+async def test_future_reset_at_rearms_expired_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BG §1.3: a recognised signal with a future reset_at makes the reserve
+    guard active again after the previous observation expired."""
+    b = Budget()
+    _observe(b, limit=20000, remaining=500, reset_ms=1000)  # 97.5% used
+    later = _FIXED_NOW + timedelta(seconds=2)
+    monkeypatch.setattr(budget_mod, "_utcnow", lambda: later)
+
+    async with b.pace(reserve=0.05):
+        pass
+
+    b.observe(
+        _resp(
+            **{
+                "x-token-limit": "20000",
+                "x-token-remaining": "500",
+                "x-token-reset": "60000",
+            }
+        ),
+        now=later,
+    )
+
+    with pytest.raises(BudgetReserveReached):
+        async with b.pace(reserve=0.05):
+            pass
