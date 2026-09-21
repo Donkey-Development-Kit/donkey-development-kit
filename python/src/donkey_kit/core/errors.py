@@ -74,7 +74,7 @@ class ConfigError(DonkeyError):
 
 
 class AuthError(DonkeyError):
-    """401/403 on the control plane.
+    """Rejected credentials on the Anypoint control plane or LLM-proxy data plane.
 
     ``remediation`` is a class attribute (like :class:`GatewayUnavailable`, not
     the constructor-enforced :class:`PolicyViolation` contract) so ``donkey
@@ -549,8 +549,9 @@ def classify(
     # wrong-credential 401 still lands here.
     if status == 401 or (status == 403 and "www-authenticate" in response.headers):
         return AuthError(
-            f"Authentication/authorization failed ({status}). Check the "
-            f"connected-app credentials and their scopes (see docs/verified-apis.md §1).",
+            f"Authentication/authorization failed ({status}). Check the consumer "
+            "client_id/client_secret pair and its API Manager authorization "
+            "for this LLM-proxy instance (see docs/verified-apis.md §2).",
             **kw,
         )
 
