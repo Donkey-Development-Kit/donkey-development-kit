@@ -173,6 +173,13 @@ class BudgetReserveReached(DonkeyError):
     ``reserve`` that was requested, and ``reset_at`` (``None`` if the reset time has
     not been observed)."""
 
+    remediation: str = (
+        "When reset_at is known, call await budget.wait_for_reset() before retrying. "
+        "When reset_at is None, waiting cannot make progress; preserve the last "
+        "checkpoint and handle or propagate this exception instead of retrying "
+        "immediately."
+    )
+
     def __init__(
         self,
         message: str,

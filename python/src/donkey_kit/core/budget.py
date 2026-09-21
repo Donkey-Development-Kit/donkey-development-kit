@@ -208,25 +208,18 @@ class Budget:
         observation whose :attr:`reset_at` has elapsed is stale for the same reason,
         so the retry passes through and its response refreshes the in-band budget.
         Before ``reset_at`` — or when no reset time was observed — the reserve guard
-        remains active.
+        remains active. The no-reset state does not age out on its own: there is no
+        known safe time to release the guard, so the caller must handle or propagate
+        :class:`BudgetReserveReached` rather than retrying through :meth:`pace`.
         """
         if not 0.0 <= reserve <= 1.0:
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")
         used = self.fraction_used
         window_expired = self.reset_at is not None and _utcnow() >= self.reset_at
         if used is not None and used >= 1.0 - reserve and not window_expired:
-            reset_guidance = (
-                ""
-                if self.reset_at is not None
-                else (
-                    " No reset time was observed, so wait_for_reset() cannot wait for "
-                    "the window; handle this exception instead of retrying immediately."
-                )
-            )
             raise BudgetReserveReached(
                 f"Budget reserve reached: {used:.1%} of the window used, "
-                f"reserve is {reserve:.1%} (trips at {1.0 - reserve:.1%})."
-                f"{reset_guidance}",
+                f"reserve is {reserve:.1%} (trips at {1.0 - reserve:.1%}).",
                 fraction_used=used,
                 reserve=reserve,
                 reset_at=self.reset_at,

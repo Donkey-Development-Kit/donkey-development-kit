@@ -222,7 +222,7 @@ async def test_documented_retry_loop_raises_when_reset_time_is_unknown(
     _observe(b, limit=20000, remaining=500)  # 97.5% used, reset_at unknown
     attempts = 0
 
-    with pytest.raises(BudgetReserveReached, match="cannot wait for the window") as exc:
+    with pytest.raises(BudgetReserveReached) as exc:
         while True:
             try:
                 attempts += 1
@@ -236,5 +236,6 @@ async def test_documented_retry_loop_raises_when_reset_time_is_unknown(
             break
 
     assert exc.value.reset_at is None
+    assert exc.value.remediation is BudgetReserveReached.remediation
     assert attempts == 1
     assert recorded_sleeps == []

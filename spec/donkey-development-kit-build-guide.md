@@ -419,7 +419,7 @@ for batch in chunks(records, 200):
 
 **Why it matters — Scenario A.** Twelve LangGraph nodes call the model. Without handlers, each node needs the same PII try/except. With handlers, it is defined once and applied at the transport.
 
-**Rule to enforce.** Handlers *react*; they never *decide policy*. A handler cannot un-refuse a request. If someone proposes `donkey.on(PIIDetected).ignore()`, that is client-side enforcement by another name — reject it in review.
+**Rule to enforce.** Handlers *react*; they never *decide policy*. A handler cannot un-refuse a request. If someone proposes `donkey.on(PIIDetected).ignore()`, that is client-side enforcement by another name — reject it in review. Every wait-and-retry handler must also prove it can wait: if the refusal carries no reset time, re-raise it rather than calling a no-op wait and retrying at zero delay. `max_times` and `max_wait` remain mandatory outer bounds even when a reset time is present.
 
 **Effort:** M.
 
