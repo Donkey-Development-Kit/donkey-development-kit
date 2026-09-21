@@ -4,7 +4,7 @@ The public signatures are fixed here so callers and tests can be written now.
 Every method that requires a real Anypoint endpoint is gated behind a
 verification-blocked error (verification discipline, working instruction #2) rather than a
 fabricated request path. The N+1-avoiding index design is documented in
-:meth:`warm` for the implementer who fills it in after M0.
+:meth:`warm` for the implementer who fills it in after the Verification milestone.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ class ExchangeRegistry:
     async def warm(self, *, environment: str | None = None) -> None:
         """Build the in-memory governance index at startup.
 
-        Design (fill in after M0):
+        Design (fill in after the Verification milestone):
           1. ONE call to list all API Manager instances for (org, environment);
              index by (groupId, assetId, version) AND (groupId, assetId).
           2. Bulk policies call if one exists (verify the Verification milestone), else

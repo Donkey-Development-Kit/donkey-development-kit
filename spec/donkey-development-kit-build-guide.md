@@ -156,13 +156,15 @@ for batch in chunks(records, 200):
     checkpoint(batch)
 ```
 
-After `reset_at`, the old observation is stale, so `pace()` lets the retry
-through and its response refreshes the in-band budget. The job finishes by
-itself, overnight, with no human. If a partial observation reaches the reserve
-without a `reset_at`, the loop re-raises `BudgetReserveReached` instead of calling
-`wait_for_reset()` and spinning at zero delay. The caller can then preserve its
-last checkpoint and escalate the incomplete budget signal without crossing its
-reserve.
+After `reset_at`, the old observation is stale, so `pace()` no longer refuses.
+A response carrying a budget signal updates the observed fields; a fresh future
+`reset_at` makes the guard active again. A response that does not supply a fresh
+future `reset_at` leaves the stale pass-through open. The job can therefore
+continue overnight without a manual budget observation. If a partial observation
+reaches the reserve without a `reset_at`, the loop re-raises
+`BudgetReserveReached` instead of calling `wait_for_reset()` and spinning at zero
+delay. The caller can preserve its last checkpoint and escalate the incomplete
+budget signal without crossing its reserve.
 
 **Why it matters — Scenario A.** A dashboard shows `fraction_used` per agent. The support agent's owner sees it climbing at 14:00 and requests an increase before the 16:00 peak instead of after the outage.
 
@@ -171,7 +173,7 @@ reserve.
 **Acceptance.**
 - `x-token-reset` in milliseconds is converted correctly (fixture with a known value; assert `reset_at` to the second).
 - `pace()` raises before the request that would cross the reserve, not after a 429.
-- After `reset_at`, `pace()` lets one retry through so its response can refresh the in-band budget; the documented `pace()` → `wait_for_reset()` → retry loop makes progress without a manual observation.
+- After `reset_at`, `pace()` no longer refuses; the documented `pace()` → `wait_for_reset()` → retry loop makes progress without a manual budget observation. A later response updates the budget only when it carries a recognised signal, and the guard becomes active again when that update supplies a future `reset_at`.
 - When the reserve is reached but `reset_at` is unknown, the documented loop re-raises `BudgetReserveReached` after one attempt instead of retrying at zero delay.
 - Budget object is per-`Donkey`, not global; two `Donkey` instances with different credentials do not share state.
 

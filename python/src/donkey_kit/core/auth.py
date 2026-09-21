@@ -8,12 +8,12 @@ client_credentials), :class:`StaticToken` (CI, token injected), and
 The control-plane credential and the LLM-proxy credential are SEPARATE and must
 not be conflated (BG §1.1).
 
-VERIFICATION NOTE: the token endpoint PATH and the scopes each operation
-needs are UNVERIFIED. The path is a loud, overridable placeholder from
-``_verify.OAUTH_TOKEN_PATH``; the per-operation scope table must be recorded in
-``docs/`` once confirmed. Some operations require an *admin* connected app with
-user context rather than pure client credentials — that path is not yet
-implemented and raises a verification-blocked error where it is needed.
+VERIFICATION NOTE: the default token endpoint path from
+``_verify.OAUTH_TOKEN_PATH`` is VERIFIED (plugin); see
+``docs/verified-apis.md`` §1 and §12.1. The scopes each operation needs and the
+operations that require an *admin* connected app with user context remain
+UNVERIFIED. The latter path is not yet implemented and raises a
+verification-blocked error where it is needed.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ class AnypointConnectedApp(AuthProvider):
         self._client_secret = client_secret
         self._base = control_plane_url.rstrip("/")
         self._http = http_client
-        # UNVERIFIED placeholder unless the caller supplies a confirmed path.
+        # The default is VERIFIED (plugin); callers may override it for their environment.
         self._token_path = token_path or _verify.OAUTH_TOKEN_PATH.get()
         self._clock = clock
         self._cached: str | None = None
@@ -109,17 +109,19 @@ class AnypointConnectedApp(AuthProvider):
             )
         if resp.status_code >= 400:
             raise AuthError(
-                f"Anypoint token endpoint returned {resp.status_code}. The token "
-                f"path is UNVERIFIED ({self._token_path!r}) — confirm it against a "
-                f"sandbox and record it in docs/verified-apis.md §1.",
+                f"Anypoint token endpoint returned {resp.status_code} for "
+                f"{self._token_path!r}. Check that the control-plane host is reachable, "
+                "that any token_path override is correct, and that connected-app "
+                "requirements are met (see docs/verified-apis.md §1 and §12.1).",
                 response=resp,
             )
         body = resp.json()
         token: str | None = body.get("access_token")
         if not token:
             raise AuthError(
-                "Token endpoint returned no access_token. Response shape is "
-                "UNVERIFIED — capture it as a fixture (BG §1.5).",
+                "Token endpoint returned no access_token. The expected response shape "
+                "includes access_token and expires_in (see docs/verified-apis.md §1 and "
+                "§12.1); capture the unexpected response as a fixture (BG §1.5).",
                 response=resp,
             )
         expires_in = float(body.get("expires_in", 3600))

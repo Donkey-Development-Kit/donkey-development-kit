@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "donkey-kit"
-version = "0.1.0.dev2"
-description = "An SDK for consuming Agent Fabric capabilities (governed model access, governed tools, provisioning-as-code) from your own agent framework."
+version = "0.1.0.dev3"
+description = "An SDK for consuming Agent Fabric capabilities (governed model and tool access) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -134,6 +134,7 @@ packages = ["src/donkey_kit"]
 # packaged copy first, falling back to the source-checkout tests/fixtures/ tree.
 "tests/fixtures/rejections" = "donkey_kit/simulator/_fixtures/rejections"
 "tests/fixtures/anypoint/llm_proxy" = "donkey_kit/simulator/_fixtures/anypoint/llm_proxy"
+"tests/fixtures/fixtures.lock" = "donkey_kit/simulator/_fixtures/fixtures.lock"
 
 [tool.mypy]
 # Working instruction #8: mypy --strict, blocking in CI. Typecheck fixtures pin

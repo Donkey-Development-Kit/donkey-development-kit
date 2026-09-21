@@ -2181,13 +2181,15 @@ for batch in chunks(records, 200):
     checkpoint(batch)
 ```
 
-Once `reset_at` has elapsed, the old observation is stale. `pace()` lets the
-retry through so its response can refresh the in-band budget. The job finishes
-unattended; nobody re-runs anything. A partial observation can report usage
-without reporting `reset_at`; in that defensive case the loop re-raises
-`BudgetReserveReached` after one attempt instead of calling `wait_for_reset()`
-and spinning at zero delay. Preserve the last checkpoint and escalate the
-incomplete signal rather than crossing the reserve.
+Once `reset_at` has elapsed, the old observation is stale and `pace()` no longer
+refuses. A response carrying a budget signal updates the observed fields; a
+fresh future `reset_at` makes the guard active again. A response that does not
+supply a fresh future `reset_at` leaves the stale pass-through open. The job can
+continue unattended without a manual budget observation. A partial observation
+can report usage without reporting `reset_at`; in that defensive case the loop
+re-raises `BudgetReserveReached` after one attempt instead of calling
+`wait_for_reset()` and spinning at zero delay. Preserve the last checkpoint and
+escalate the incomplete signal rather than crossing the reserve.
 
 ## The dashboard that prevents the outage
 
@@ -2216,8 +2218,10 @@ last-known-good. See [Roadmap](https://donkey-development-kit.github.io/donkey-d
   against a fixture with a known value.
 - `pace()` raises before the request that would cross the reserve, never after
   a `429`.
-- After `reset_at`, `pace()` lets the retry through so the response can refresh
-  the in-band budget; no manual observation is required.
+- After `reset_at`, `pace()` no longer refuses, so the wait-and-retry loop can
+  continue without a manual budget observation. A later response updates the
+  budget only when it carries a recognised signal, and the guard becomes active
+  again when that update supplies a future `reset_at`.
 - If the reserve is reached without a known `reset_at`, the retry loop raises
   once instead of spinning at zero delay.
 - The budget object is per-`Donkey`, not global: two instances with different
@@ -2394,11 +2398,13 @@ taxonomy fail together, rather than the simulator quietly teaching you a
 contract that no longer exists.
 
 Because "same files, both fail together" only catches a fixture edit that
-flips something a test asserts on, a committed **integrity lock**
-(`tests/fixtures/fixtures.lock`) pins the sha256 of every fixture the
-simulator serves. A *benign* byte edit — reformatted JSON, an added field —
-fails the lock loudly instead of silently drifting the replayed bytes. A
-genuine re-capture is accepted by regenerating the lock
+flips something a test asserts on, a committed **integrity manifest** pins the
+sha256 of every fixture the simulator serves. Its source copy lives at
+`tests/fixtures/fixtures.lock`; wheel builds copy it beside the packaged
+fixtures, so an installed wheel can verify that its replayed bytes still match
+the committed manifest. A *benign* byte edit — reformatted JSON, an added field
+— fails the lock loudly instead of silently drifting the replayed bytes. A
+genuine re-capture is accepted by regenerating the source lock
 (`python -m donkey_kit.simulator.fixtures --relock`) and committing it.
 
 ### It replays; it does not evaluate
@@ -2424,7 +2430,7 @@ genuine re-capture is accepted by regenerating the lock
   ([#189](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/189)). ✅
 - The fixtures are the *same files* the `classify()` contract tests load, so
   the two fail together if the gateway contract ever drifts — and a committed
-  integrity lock fails loudly on any byte edit that the "both fail together"
+  integrity manifest fails loudly on any byte edit that the "both fail together"
   rule would otherwise miss. ✅
 - The simulator replays captured shapes; it does **not** evaluate policy
   (real policy-configuration testing needs gateway
@@ -3304,10 +3310,12 @@ async def enrich_all(records, enrich):
   request that earns the `429`. `wait_for_reset()` sleeps until
   `donkey.budget.reset_at`, computed from the gateway's `x-token-reset` header
   (milliseconds, converted for you). Once that time has elapsed, the old
-  observation is stale, so `pace()` lets the retry through and the response
-  refreshes the in-band budget. If a partial observation reaches the reserve
-  without a `reset_at`, the loop re-raises after one attempt instead of spinning
-  at zero delay. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+  observation is stale, so `pace()` no longer refuses. A response carrying a
+  budget signal updates the observed fields; a fresh future `reset_at` makes
+  the guard active again. A response that does not supply a fresh future
+  `reset_at` leaves the stale pass-through open. If a partial observation reaches
+  the reserve without a `reset_at`, the loop re-raises after one attempt instead
+  of spinning at zero delay. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
 
 ## The honest limitation
 
@@ -4422,7 +4430,7 @@ actually enforce on your laptop versus a shared control plane.
 ## The `Governance` object
 
 ```python
-from donkey_kit import Governance, GatewayTarget, PolicyBinding
+from donkey_kit.governance import Governance, GatewayTarget, PolicyBinding
 
 gov = Governance(
     name="hr-agent",
@@ -4981,7 +4989,11 @@ stall into a short conversation.
 
 The authoritative, maintained list lives in the repository at
 [`docs/unsupported-boundary.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/unsupported-boundary.md).
-Every platform API the SDK calls is classified:
+It is separate from the [verification ledger](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md): verification
+records how a fact was established, while this page records whether MuleSoft
+publishes the contract for third-party use.
+
+Every platform API the shipping SDK calls is classified:
 
 | Classification | Meaning |
 |---|---|
@@ -4989,13 +5001,38 @@ Every platform API the SDK calls is classified:
 | **Documented, no SLA for third-party use** | May break; we'll fix. |
 | **Undocumented** | Should be empty. Anything here needs a written justification and an owner. |
 
+## Current shipping boundary
+
+The SDK currently reaches two platform destinations. The rows below classify
+the distinct contracts it consumes at those destinations. Everything else that
+needs an unverified endpoint is blocked before network I/O.
+
+| Destination / contract | Classification | SDK use |
+|---|---|---|
+| Anypoint connected-app token endpoint | **Documented and public** | Retrieves an OAuth bearer token with client credentials. |
+| Model Proxy OpenAI-format `/responses` endpoint | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. The raw client can also call documented OpenAI-native routes such as `/chat/completions`, but this repository has live-probed only `/responses`. |
+| Live-captured Model Proxy policy refusals | **Documented and public** | Classifies Client ID Enforcement, token-rate-limit, and PII responses observed against a deployed proxy. |
+| Documentation-derived Model Proxy policy refusals | **Documented and public** | Classifies Regex Prompt Guard, Injection Protection, Azure Content Safety, and Amazon Bedrock Guardrails contracts from their official policy pages. These shapes are pending direct live capture. |
+| Upstream provider error pass-through | **Documented, no SLA for third-party use** | Classifies the live-captured nested non-`429` `4xx` provider envelope as `UpstreamRequestError`; generic `5xx` responses become `UpstreamModelError` by status only. The envelope schema belongs to the upstream provider, and MuleSoft's public Model Proxy page states no pass-through compatibility contract. |
+| `x-llm-proxy-ratelimit` success-budget sentence | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored. |
+| Gateway identity and routing extension headers | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`. |
+
+  Exchange search and resolution, API Manager governed-state reads, MCP discovery
+  and binding, and provisioning/publication are not hidden dependencies. They
+  raise `NotImplementedError("blocked on verification: ...")` before making a
+  network request. The SDK also does not call a Model Proxy `/models` endpoint,
+  because live verification established that no such catalog endpoint exists.
+
+The full ledger links each contract to its official documentation, SDK consumer,
+verification evidence, and maintenance owner. Its **Undocumented surfaces**
+section is empty.
+
 ## Support statement (the trademark/support boundary)
 
-  **Before any public release**, the maintainer and support expectations must be
-  stated (README, the trademark/support boundary). If this project is **not** published with MuleSoft's
-  endorsement, it must ship under a distinct, org-scoped distribution name so it
-  doesn't read as a first-party, official-status SDK. "Agent Fabric",
-  "Anypoint", and "Omni Gateway" are Salesforce trademarks.
+  Donkey Development Kit is an independent, community-maintained project with
+  best-effort maintainer support and no SLA. It is not affiliated with, endorsed
+  by, or supported by Salesforce or MuleSoft. "Agent Fabric", "Anypoint", and
+  "Omni Gateway" are Salesforce trademarks.
 
 ## Why this matters (verification discipline)
 

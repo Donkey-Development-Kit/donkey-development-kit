@@ -223,7 +223,7 @@ don't rely on GitHub auto-close, which can silently miss. Closing the issue is
 what advances its milestone's completed count, which is how release readiness is
 tracked. A `develop → main` promotion happens when a milestone reaches **0 open
 issues**; the release PR's title carries the milestone and version (e.g.
-`Release: M1 — Model access (0.1.0)`).
+`Release: Phase 1 — Build the MVP (0.1.0)`).
 
 ---
 
@@ -257,6 +257,11 @@ provable: `PolicyViolation` stays distinct from the retryable
 `UpstreamModelError`, and every `PolicyViolation` carries a non-empty
 `remediation` (assert it directly). See [`ARCHITECTURE.md`](ARCHITECTURE.md#error-taxonomy-design-bg-12)
 for why.
+
+That job also builds and installs the wheel into an isolated environment, then
+verifies the packaged simulator fixtures against their shipped integrity lock.
+This is the packaging-path gate; source-checkout tests alone cannot prove those
+resources landed in the wheel.
 
 ### `tests/typecheck/` — downstream static contracts
 

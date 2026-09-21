@@ -81,10 +81,14 @@ class Publication:
 
     # ---- verb: export (laptop) --------------------------------------------
     def export(self, path: str | Path | None = None) -> str:
-        """Compile into the donkey.yaml spec (provisioning-as-code). Lands with M4 (the build plan
-        phases)."""
+        """Compile to a ``donkey.yaml`` fragment (provisioning-as-code)."""
         raise _verify.blocked(
-            "Publication.export() emits the M4 spec (provisioning-as-code, the build plan phases)."
+            "Publication.export() emits the shared donkey.yaml spec format; keep it identical "
+            "to donkey_kit.provisioning.spec and do not diverge it. The export mapping remains "
+            "unresolved: docs/verified-apis.md §5 confirms an Agent Network Maven-project + CLI "
+            "flow but not whether export() wraps that toolchain or emits its project layout "
+            "(the Verification milestone). This surface does not add a provisioning control "
+            "plane competing with API Manager or Terraform."
         )
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------

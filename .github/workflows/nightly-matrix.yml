@@ -22,10 +22,9 @@
 #   3. pytest                            — the unit + ergonomics suites.
 #
 # NOTE (known constraint): the extras carry no `openai` upper bound ("floors,
-# never ceilings"), so a fresh resolve may pull openai 3.x / vendored httpx2,
-# which breaks the httpx transport injection the SDK is verified against (openai
-# 1.x). If a framework job fails on that, it is EXPECTED signal, not a flake —
-# see the pending openai-version decision in docs/m1-completion-checklist.md §3.
+# never ceilings"). OpenAI 3.x retyped its injected client to vendored httpx2,
+# but runtime injection is re-verified and test-pinned; see
+# docs/verified-apis.md §8.1.
 #
 # Live verification (a real proxy round-trip) is intentionally NOT in the nightly
 # run: it needs sandbox credentials. Trigger it manually via workflow_dispatch

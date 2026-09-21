@@ -1,4 +1,4 @@
-# Captured fixtures — A2D platform MCP tools (M0 shape verification)
+# Captured fixtures — A2D platform MCP tools (shape verification)
 
 These JSON files are **faithful, trimmed captures** of real responses from the
 `mcp-a2d` MCP server (host `www.a2d-ai.com`), taken 2026-08-28. They exist so the

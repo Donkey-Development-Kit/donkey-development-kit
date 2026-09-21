@@ -2,7 +2,7 @@
 
 ``ToolSet`` wraps N ``McpServerHandle``s. Filtering and collision resolution are
 pure and implemented here. The per-framework binding methods return each
-framework's NATIVE tool type (BG §2.7) and are gated on M0 verification of the MCP
+framework's NATIVE tool type (BG §2.7) and are gated on verification of the MCP
 binding class names (docs/verified-apis.md §9) — connections open on first tool
 use, never in ``discover()`` (BG §2.7).
 """
