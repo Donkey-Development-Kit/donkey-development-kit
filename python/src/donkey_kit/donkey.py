@@ -484,8 +484,12 @@ class Donkey:
         await self.aclose()
 
     def close(self) -> None:
-        """Close the blocking transport. ``aclose()`` calls this too, so an async
-        caller who also used ``client(sync=True)`` still closes both."""
+        """Close the blocking transport.
+
+        This sync method cannot close either async transport. A sync-only caller
+        never opens them; mixed or async callers must use :meth:`aclose`, which
+        closes both async transports and calls this method for the blocking one.
+        """
         if self._sync_http is not None:
             self._sync_http.close()
             self._sync_http = None

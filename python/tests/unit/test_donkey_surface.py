@@ -302,7 +302,15 @@ async def test_aclose_leaves_injected_auth_provider_resources_open() -> None:
             http_client=auth_http,
             token_path="/token",
         )
-        fab = Donkey(_cfg(), auth=auth)
+        cfg = DonkeyConfig(
+            client_id="default-control-id",
+            client_secret="default-control-secret",
+            llm_proxy_url="https://proxy",
+            llm_proxy_client_id="cid",
+            llm_proxy_client_secret="csecret",
+        )
+        fab = Donkey(cfg, auth=auth)
+        assert fab._owned_auth_http is None
 
         await fab.aclose()
 
