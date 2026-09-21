@@ -96,6 +96,20 @@ request against the deployed gateway.
 | `/models` endpoint | `llm/catalog.py` | VERIFIED (LIVE) | **Does not exist** — `GET /openai-sdk/models` → `404`, `x-llm-proxy-model-based-routing-success: Request passed through without model-based routing`. The proxy only routes requests carrying `model` in the body; no catalog endpoint. `llm/catalog.py` must source models elsewhere | 2026-08-28 | live probe (`models.notfound.headers.txt`) |
 | Supported providers | `llm/catalog.py`, `governance.py` | VERIFIED (CLI) | openai, azureopenai, gemini, **bedrock**, **anthropic** (each a `*-llm-provider-policy-flex` in org `68ef9520…`) | 2026-08-28 | `exchange:asset:list llm` |
 
+**Note — single-header apikey/bearer convenience (no-op for DDK).** The default
+proxy's `dataweave-headers-transformation` policy (the §6 policy-stack row) is a
+gateway convenience for thin clients that carry only one auth field: it accepts a
+**colon-joined credential in a single header** — `authorization: Bearer
+<client_id>:<client_secret>` or `apikey: <client_id>:<client_secret>` — and splits
+it back into the `client_id` / `client_secret` pair, but **only** when neither
+header is already present. DDK always emits the two-header pair (LIVE-verified
+above), so the request lands in the policy's pass-through branch and the
+transformation is a **no-op** for DDK traffic — the `Authorization` bearer DDK
+sends (an `llm_proxy_key` or the inert sentinel filling the OpenAI SDK's mandatory
+`api_key` slot) is never read as a credential. DDK deliberately does **not** add
+an apikey/bearer emit mode; the two-header pair is the single auth path in
+client-id mode (`client_id` is also the §3 attribution unit).
+
 ## 3. Token attribution headers (**highest-priority unknown**, verification discipline)
 
 Without these the core value proposition (per-agent cost attribution) does not work.

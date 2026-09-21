@@ -17,6 +17,18 @@ The three required values for the LLM proxy:
   a bearer token, and separate from any Anypoint control-plane credential. The
   OpenAI SDK still requires a non-empty `api_key` slot, which the proxy ignores.
 
+  The stock gateway also accepts a **single** colon-joined header —
+  `authorization: Bearer <client_id>:<client_secret>` or
+  `apikey: <client_id>:<client_secret>` — which its
+  `dataweave-headers-transformation` policy splits back into the pair (see
+  [Governance](https://donkey-development-kit.github.io/donkey-development-kit/concepts/governance.md)). That is a convenience for thin clients
+  with one auth field; **DDK does not use it and will not add an apikey/bearer
+  emit mode**. DDK always sends the two-header pair because `client_id` is the
+  per-agent [attribution](https://donkey-development-kit.github.io/donkey-development-kit/concepts/attribution.md) unit, and a colon-joined value
+  is **not** an alternate auth: the policy ignores it once a `client_id` header
+  is present, and `validated(need="llm")` hard-requires the pair in client-id
+  mode.
+
 Missing required fields are reported **all at once** with their env-var names, so
 you fix configuration in a single pass rather than one error per run.
 
