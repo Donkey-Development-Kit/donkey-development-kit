@@ -67,7 +67,7 @@ class AnthropicAdapter(Adapter):
         """Return a native ``anthropic.AsyncAnthropic`` pointed at the proxy. Pass
         the model id per call (``messages.create(model=..., ...)``), per the
         Anthropic SDK's own surface (BG §1.8)."""
-        from anthropic import AsyncAnthropic  # verified: docs/verified-apis.md §8
+        from anthropic import AsyncAnthropic  # VERIFY name/path: docs/verified-apis.md §8
 
         return AsyncAnthropic(**self.connection_kwargs(), **kw)
 

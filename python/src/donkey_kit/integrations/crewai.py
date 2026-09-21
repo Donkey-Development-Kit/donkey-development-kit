@@ -44,7 +44,7 @@ class CrewAIAdapter(Adapter):
 
     def llm(self, model: str, **kw: Any) -> LLM:
         """Return a native ``crewai.LLM`` pointed at the proxy (BG §1.8)."""
-        from crewai import LLM  # verified: docs/verified-apis.md §8
+        from crewai import LLM  # VERIFY name/path: docs/verified-apis.md §8
 
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
         return LLM(model=f"openai/{model}", **self.connection_kwargs(), **kw)

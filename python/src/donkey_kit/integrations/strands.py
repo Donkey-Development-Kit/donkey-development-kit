@@ -36,7 +36,7 @@ class StrandsAdapter(Adapter):
         }
 
     def model(self, model: str, **kw: Any) -> OpenAIModel:
-        from strands.models.openai import OpenAIModel  # verified: docs/verified-apis.md §8
+        from strands.models.openai import OpenAIModel  # VERIFY name/path: docs/verified-apis.md §8
 
         return OpenAIModel(model_id=model, **self.connection_kwargs(), **kw)
 

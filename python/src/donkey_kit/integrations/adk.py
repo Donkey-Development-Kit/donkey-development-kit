@@ -44,7 +44,7 @@ class ADKAdapter(Adapter):
         }
 
     def model(self, model: str, **kw: Any) -> LiteLlm:
-        from google.adk.models.lite_llm import LiteLlm  # verified: docs/verified-apis.md §8
+        from google.adk.models.lite_llm import LiteLlm  # VERIFY name/path: docs/verified-apis.md §8
 
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
         return LiteLlm(model=f"openai/{model}", **self.connection_kwargs(), **kw)
