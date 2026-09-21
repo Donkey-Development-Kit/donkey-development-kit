@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit.core.auth import AnypointConnectedApp
 
 
 def _cfg() -> DonkeyConfig:
@@ -275,3 +276,42 @@ async def test_aclose_also_closes_a_blocking_transport() -> None:
     assert transport is not None
     await fab.aclose()
     assert transport.is_closed
+
+
+async def test_aclose_closes_default_auth_transport() -> None:
+    """The token-fetch client is owned by Donkey and shares its lifecycle (BG §1.1)."""
+    fab = Donkey(DonkeyConfig(client_id="control-id", client_secret="control-secret"))
+    auth_http = fab._owned_auth_http
+    assert auth_http is not None
+
+    await fab.aclose()
+
+    assert auth_http.is_closed
+    assert fab._owned_auth_http is None
+
+
+async def test_aclose_leaves_injected_auth_provider_resources_open() -> None:
+    """A caller-supplied auth provider remains caller-owned."""
+    import httpx
+
+    async with httpx.AsyncClient() as auth_http:
+        auth = AnypointConnectedApp(
+            client_id="control-id",
+            client_secret="control-secret",
+            control_plane_url="https://anypoint.example",
+            http_client=auth_http,
+            token_path="/token",
+        )
+        cfg = DonkeyConfig(
+            client_id="default-control-id",
+            client_secret="default-control-secret",
+            llm_proxy_url="https://proxy",
+            llm_proxy_client_id="cid",
+            llm_proxy_client_secret="csecret",
+        )
+        fab = Donkey(cfg, auth=auth)
+        assert fab._owned_auth_http is None
+
+        await fab.aclose()
+
+        assert not auth_http.is_closed
