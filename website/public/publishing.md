@@ -49,10 +49,10 @@ explicit `--allow-duplicate`, which logs at `WARNING`.
 ## The `Publication` object
 
 ```python
-from donkey_kit import Publication, AssetType, Contact
+from donkey_kit import Contact, Publication, PublicationAssetType
 
 pub = Publication(
-    asset_type=AssetType.MCP_SERVER,          # MCP_SERVER | A2A_AGENT | AGENT | API
+    asset_type=PublicationAssetType.MCP_SERVER,  # MCP_SERVER | A2A_AGENT | AGENT | API
     group_id="${ANYPOINT_ORG_ID}",
     asset_id="hr-tools-mcp",
     version="1.3.0",                          # semver

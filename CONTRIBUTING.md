@@ -345,13 +345,14 @@ python scripts/verify_frameworks.py [--live] [--only <fw>] [--emit-verified]
 The full pre-write checklist lives in the `ddk-coding-conventions` skill and the
 build plan; the load-bearing rules:
 
-- **`mypy --strict`, blocking.** The whole `src/donkey_kit` tree is
-  strict-checked. Annotate every public signature; no untyped defs, no implicit
-  `Any`. Prefer `X | None` over `Optional[X]` (ruff `UP` rewrites the old form),
-  and put `from __future__ import annotations` at the top of every module (house
-  style). Don't silence a real signature mismatch with an unexplained
-  `# type: ignore` — the single `[[tool.mypy.overrides]]` block already handles
-  optional/absent framework deps.
+- **`mypy --strict`, blocking.** The whole `src/donkey_kit` tree and the
+  downstream public-API contracts under `tests/typecheck/` are strict-checked.
+  Annotate every public signature; no untyped defs, no implicit `Any`. Prefer
+  `X | None` over `Optional[X]` (ruff `UP` rewrites the old form), and put
+  `from __future__ import annotations` at the top of every module (house style).
+  Don't silence a real signature mismatch with an unexplained `# type: ignore`
+  — the single `[[tool.mypy.overrides]]` block already handles optional/absent
+  framework deps.
 - **Framework-free core & lazy imports.** `core/` depends on **httpx + pydantic
   only** — no agent framework, ever. Adapters import their framework **lazily,
   inside the method that uses it**, never at module top level; import the
