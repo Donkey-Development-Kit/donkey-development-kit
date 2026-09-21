@@ -114,9 +114,10 @@ framework that may not be installed.
   — span consumers must close in a `finally`, never relying on the response hook.
   A hookless client behaves exactly as it did before the hooks were added. The
   full contracts live in the `core/transport.py` docstrings.
-- **`Governance`** (`governance.py`) is a second top-level object alongside
-  `Donkey`, outside the linear import stack — it depends only on `core`. It is
-  ONE object behind three verbs: `simulate()` (an ephemeral local
+- **`Governance`** (`governance.py`) is legacy scaffolding outside the linear
+  import stack — it depends only on `core` and remains reachable from its module,
+  but it is not exported as first-class `donkey_kit` API. It is ONE object behind
+  three verbs: `simulate()` (an ephemeral local
   gateway harness), `export()` (emit the governed-state manifest), and `resolve()`
   (reconcile a running `Donkey` against it, raising `GovernanceDrift` on
   mismatch); a separate platform-team-only `apply()` is the deliberate escape
