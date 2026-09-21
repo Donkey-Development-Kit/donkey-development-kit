@@ -194,7 +194,9 @@ class Budget:
                 try:
                     async with donkey.budget.pace(reserve=0.05):
                         await enrich(batch)
-                except BudgetReserveReached:
+                except BudgetReserveReached as exc:
+                    if exc.reset_at is None:
+                        raise  # no reset time means wait_for_reset() cannot make progress
                     await donkey.budget.wait_for_reset()
                     continue
                 break
@@ -213,9 +215,18 @@ class Budget:
         used = self.fraction_used
         window_expired = self.reset_at is not None and _utcnow() >= self.reset_at
         if used is not None and used >= 1.0 - reserve and not window_expired:
+            reset_guidance = (
+                ""
+                if self.reset_at is not None
+                else (
+                    " No reset time was observed, so wait_for_reset() cannot wait for "
+                    "the window; handle this exception instead of retrying immediately."
+                )
+            )
             raise BudgetReserveReached(
                 f"Budget reserve reached: {used:.1%} of the window used, "
-                f"reserve is {reserve:.1%} (trips at {1.0 - reserve:.1%}).",
+                f"reserve is {reserve:.1%} (trips at {1.0 - reserve:.1%})."
+                f"{reset_guidance}",
                 fraction_used=used,
                 reserve=reserve,
                 reset_at=self.reset_at,
@@ -226,10 +237,13 @@ class Budget:
         """Sleep until :attr:`reset_at`, then return — the recovery half of pacing
         (BG §1.3, #186).
 
-        A single sleep, never a spin loop. If the window is unobserved
+        A single sleep, never a spin loop. If the reset time is unobserved
         (:attr:`reset_at` is ``None``) or already past, this returns immediately —
-        there is nothing to wait for. ``now`` is injectable for tests; production
-        passes nothing and the wall clock (UTC) is used.
+        there is nothing to wait for. Callers retrying guarded work must propagate
+        :class:`BudgetReserveReached` when its ``reset_at`` is ``None``; otherwise
+        an unconditional wait-and-retry loop cannot make progress. ``now`` is
+        injectable for tests; production passes nothing and the wall clock (UTC)
+        is used.
         """
         if self.reset_at is None:
             return

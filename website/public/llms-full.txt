@@ -1985,10 +1985,12 @@ never burn an exhausted budget or replay a blocked prompt.
 Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
 they sit outside the retry question: `BudgetReserveReached` is raised *before* a
 call by [`donkey.budget.pace()`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and is meant to be recovered from
-(`await donkey.budget.wait_for_reset()`, then continue), and `ModelSubstituted`
-reports that a call *succeeded* against a different model than requested (opt-in
-via `on_model_substitution="raise"`). `ConfigError` is raised locally, pre-flight,
-and reports every missing field at once — fix the config and re-run.
+(`await donkey.budget.wait_for_reset()`, then continue) when its `.reset_at` is
+known. If `.reset_at` is `None`, propagate or handle it instead — waiting returns
+immediately and an unconditional retry would spin. `ModelSubstituted` reports
+that a call *succeeded* against a different model than requested (opt-in via
+`on_model_substitution="raise"`). `ConfigError` is raised locally, pre-flight, and
+reports every missing field at once — fix the config and re-run.
 
 [#184]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/184
 
@@ -2168,7 +2170,9 @@ for batch in chunks(records, 200):
         try:
             async with donkey.budget.pace(reserve=0.05):
                 await enrich(batch)
-        except BudgetReserveReached:
+        except BudgetReserveReached as exc:
+            if exc.reset_at is None:
+                raise  # waiting cannot make progress without a reset time
             await donkey.budget.wait_for_reset()
             continue
         break
@@ -2177,7 +2181,11 @@ for batch in chunks(records, 200):
 
 Once `reset_at` has elapsed, the old observation is stale. `pace()` lets the
 retry through so its response can refresh the in-band budget. The job finishes
-unattended; nobody re-runs anything.
+unattended; nobody re-runs anything. A partial observation can report usage
+without reporting `reset_at`; in that defensive case the loop re-raises
+`BudgetReserveReached` after one attempt instead of calling `wait_for_reset()`
+and spinning at zero delay. Preserve the last checkpoint and escalate the
+incomplete signal rather than crossing the reserve.
 
 ## The dashboard that prevents the outage
 
@@ -2208,6 +2216,8 @@ last-known-good. See [Roadmap](https://donkey-development-kit.github.io/donkey-d
   a `429`.
 - After `reset_at`, `pace()` lets the retry through so the response can refresh
   the in-band budget; no manual observation is required.
+- If the reserve is reached without a known `reset_at`, the retry loop raises
+  once instead of spinning at zero delay.
 - The budget object is per-`Donkey`, not global: two instances with different
   credentials do not share state.
 
@@ -3262,7 +3272,8 @@ python enrich.py
 
 The pacing and resume logic is a handful of lines. `pace()` guards each batch;
 on `BudgetReserveReached` you wait for the window and continue from where you
-left off:
+left off when `.reset_at` is known. If it is unknown, propagate the signal
+instead of retrying at zero delay:
 
 ```python
 import asyncio
@@ -3276,8 +3287,10 @@ async def enrich_all(records, enrich):
             try:
                 async with donkey.budget.pace(reserve=0.05):
                     await enrich(donkey, batch)
-            except BudgetReserveReached:
+            except BudgetReserveReached as exc:
                 # We're within 5% of the window's limit — don't take the 429.
+                if exc.reset_at is None:
+                    raise  # waiting cannot make progress without a reset time
                 await donkey.budget.wait_for_reset()   # sleeps until reset_at
                 continue                                # retry the same batch
             checkpoint(batch)                           # only advance on success
@@ -3290,7 +3303,9 @@ async def enrich_all(records, enrich):
   `donkey.budget.reset_at`, computed from the gateway's `x-token-reset` header
   (milliseconds, converted for you). Once that time has elapsed, the old
   observation is stale, so `pace()` lets the retry through and the response
-  refreshes the in-band budget. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+  refreshes the in-band budget. If a partial observation reaches the reserve
+  without a `reset_at`, the loop re-raises after one attempt instead of spinning
+  at zero delay. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
 
 ## The honest limitation
 

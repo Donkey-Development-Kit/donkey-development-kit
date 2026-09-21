@@ -211,3 +211,30 @@ async def test_pace_allows_probe_after_wait_without_manual_observe(
     async with b.pace(reserve=0.05):
         ran_probe = True
     assert ran_probe
+
+
+async def test_documented_retry_loop_raises_when_reset_time_is_unknown(
+    recorded_sleeps: list[float],
+) -> None:
+    """Regression #487: partial budget state cannot hot-spin when there is no
+    reset time for ``wait_for_reset()`` to wait on."""
+    b = Budget()
+    _observe(b, limit=20000, remaining=500)  # 97.5% used, reset_at unknown
+    attempts = 0
+
+    with pytest.raises(BudgetReserveReached, match="cannot wait for the window") as exc:
+        while True:
+            try:
+                attempts += 1
+                async with b.pace(reserve=0.05):
+                    raise AssertionError("body must not run once the reserve is reached")
+            except BudgetReserveReached as error:
+                if error.reset_at is None:
+                    raise
+                await b.wait_for_reset()
+                continue
+            break
+
+    assert exc.value.reset_at is None
+    assert attempts == 1
+    assert recorded_sleeps == []

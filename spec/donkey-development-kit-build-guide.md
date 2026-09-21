@@ -147,7 +147,9 @@ for batch in chunks(records, 200):
         try:
             async with donkey.budget.pace(reserve=0.05):
                 await enrich(batch)
-        except BudgetReserveReached:
+        except BudgetReserveReached as exc:
+            if exc.reset_at is None:
+                raise  # no reset time means waiting cannot make progress
             await donkey.budget.wait_for_reset()
             continue
         break
@@ -156,7 +158,11 @@ for batch in chunks(records, 200):
 
 After `reset_at`, the old observation is stale, so `pace()` lets the retry
 through and its response refreshes the in-band budget. The job finishes by
-itself, overnight, with no human.
+itself, overnight, with no human. If a partial observation reaches the reserve
+without a `reset_at`, the loop re-raises `BudgetReserveReached` instead of calling
+`wait_for_reset()` and spinning at zero delay. The caller can then preserve its
+last checkpoint and escalate the incomplete budget signal without crossing its
+reserve.
 
 **Why it matters — Scenario A.** A dashboard shows `fraction_used` per agent. The support agent's owner sees it climbing at 14:00 and requests an increase before the 16:00 peak instead of after the outage.
 
@@ -166,6 +172,7 @@ itself, overnight, with no human.
 - `x-token-reset` in milliseconds is converted correctly (fixture with a known value; assert `reset_at` to the second).
 - `pace()` raises before the request that would cross the reserve, not after a 429.
 - After `reset_at`, `pace()` lets one retry through so its response can refresh the in-band budget; the documented `pace()` → `wait_for_reset()` → retry loop makes progress without a manual observation.
+- When the reserve is reached but `reset_at` is unknown, the documented loop re-raises `BudgetReserveReached` after one attempt instead of retrying at zero delay.
 - Budget object is per-`Donkey`, not global; two `Donkey` instances with different credentials do not share state.
 
 **Effort:** S.
@@ -388,11 +395,17 @@ donkey.on(PolicyViolation).escalate(to=hitl_queue)     # catch-all
 ```python
 # BEFORE — 1.3: recovery written inside every loop that touches the model
 for batch in chunks(records, 200):
-    try:
-        async with donkey.budget.pace(reserve=0.05):
-            await enrich(batch); checkpoint(batch)
-    except BudgetReserveReached:
-        await donkey.budget.wait_for_reset(); continue
+    while True:
+        try:
+            async with donkey.budget.pace(reserve=0.05):
+                await enrich(batch)
+        except BudgetReserveReached as exc:
+            if exc.reset_at is None:
+                raise
+            await donkey.budget.wait_for_reset()
+            continue
+        break
+    checkpoint(batch)
 
 # AFTER — 2.1: recovery declared once, runs at the transport
 donkey.on(TokenBudgetExceeded).wait_for_reset()
