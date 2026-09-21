@@ -278,7 +278,7 @@ def test_agent_framework_chat_client_blocks_unverified_import(
     monkeypatch.setattr(builtins, "__import__", fail_openai_import)
     adapter = AgentFrameworkAdapter(_cfg(), _http())
 
-    with pytest.raises(NotImplementedError, match="blocked on verification") as exc_info:
+    with pytest.raises(NotImplementedError, match=r"^blocked on verification:") as exc_info:
         adapter.chat_client("gpt-4o")
 
     assert exc_info.value.__cause__ is import_error
