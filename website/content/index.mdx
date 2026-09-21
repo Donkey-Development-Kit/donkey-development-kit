@@ -154,8 +154,8 @@ simulation, and refusal handlers can all attach *without you wiring each one*.
     title="The six-piece minimum"
     href="/roadmap"
     icon="◈"
-    badge="Phase 1"
-    badgeTone="roadmap"
+    badge="Shipped"
+    badgeTone="accent"
   >
     Typed refusals, budget pacing, a local simulator, a conformance plugin,
     OTel GenAI spans, and correlation IDs — one release, because the skeleton
@@ -184,9 +184,10 @@ simulation, and refusal handlers can all attach *without you wiring each one*.
   adapters are wired to that verified contract.
 </Callout>
 
-Everything else on this site carries a phase badge, and those pages say
-plainly that their API shapes are proposals. Where a platform fact is not
-confirmed, the SDK raises
+Beyond the live-verified contract above, shipped SDK capability pages say what
+is implemented and call out any remaining platform-verification caveats.
+Planned Phase 2 and Phase 3 pages carry roadmap badges and describe proposal
+API shapes. Where a platform fact is not confirmed, the SDK raises
 `NotImplementedError("blocked on verification: …")` rather than fabricate an
 endpoint, header, or class name — see [Verification policy](/concepts/verification)
 for the current ledger, and the [Roadmap](/roadmap) for what lands when.

@@ -126,9 +126,10 @@ simulation, and refusal handlers can all attach *without you wiring each one*.
   token-budget `429`, upstream passthrough). The framework-free client and the
   adapters are wired to that verified contract.
 
-Everything else on this site carries a phase badge, and those pages say
-plainly that their API shapes are proposals. Where a platform fact is not
-confirmed, the SDK raises
+Beyond the live-verified contract above, shipped SDK capability pages say what
+is implemented and call out any remaining platform-verification caveats.
+Planned Phase 2 and Phase 3 pages carry roadmap badges and describe proposal
+API shapes. Where a platform fact is not confirmed, the SDK raises
 `NotImplementedError("blocked on verification: …")` rather than fabricate an
 endpoint, header, or class name — see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)
 for the current ledger, and the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) for what lands when.
