@@ -19,10 +19,63 @@ The three required values for the LLM proxy:
   Auth is a `client_id` / `client_secret` **header pair** (consumer auth), **not**
   a bearer token, and separate from any Anypoint control-plane credential. The
   OpenAI SDK still requires a non-empty `api_key` slot, which the proxy ignores.
+
+  The stock gateway also accepts a **single** colon-joined header —
+  `authorization: Bearer <client_id>:<client_secret>` or
+  `apikey: <client_id>:<client_secret>` — which its
+  `dataweave-headers-transformation` policy splits back into the pair (see
+  [Governance](/concepts/governance)). That is a convenience for thin clients
+  with one auth field; **DDK does not use it and will not add an apikey/bearer
+  emit mode**. DDK always sends the two-header pair because `client_id` is the
+  per-agent [attribution](/concepts/attribution) unit, and a colon-joined value
+  is **not** an alternate auth: the policy ignores it once a `client_id` header
+  is present, and `validated(need="llm")` hard-requires the pair in client-id
+  mode.
 </Callout>
 
 Missing required fields are reported **all at once** with their env-var names, so
 you fix configuration in a single pass rather than one error per run.
+
+## JWT / model-wallet auth mode
+
+A **model-wallet** proxy identifies the caller from an IdP-issued **JWT** plus a
+durable wallet-selector client id, with Client ID Enforcement disabled and **no
+`client_secret`**. Select it with `DONKEY_LLM_PROXY_AUTH=jwt`:
+
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `DONKEY_LLM_PROXY_AUTH` | `llm_proxy_auth` | Data-plane auth mode: `client-id` (default) or `jwt`. |
+| `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` | `llm_proxy_wallet_client_id` | The wallet's system-generated client id, sent as the `X-Client-Id` header. Required in `jwt` mode. |
+
+In `jwt` mode the required fields are `llm_proxy_url` **and**
+`llm_proxy_wallet_client_id` — **not** `client_id` / `client_secret`. The
+rotating JWT is **not** a config value: it is supplied through an
+[`AuthProvider`](/identity) passed as `Donkey(llm_auth=…)`, so the SDK can
+re-fetch it as it rotates and refresh it once on a `401`:
+
+```python
+from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit.core.auth import StaticToken  # or your own rotating AuthProvider
+
+donkey = Donkey(
+    DonkeyConfig(
+        llm_proxy_url="https://<ingress-gw>/<instance>/",
+        llm_proxy_auth="jwt",
+        llm_proxy_wallet_client_id="<wallet-client-id>",
+    ),
+    llm_auth=StaticToken("<jwt>"),  # rides as Authorization: Bearer <jwt>
+)
+```
+
+<Callout type="warning">
+  `jwt` mode is **async-only** — the rotating credential is fetched from an
+  async `AuthProvider`, so the blocking client (`sync=True`) is refused with an
+  actionable error. Use client-id auth for a synchronous caller. It also works
+  only for adapters routed through the SDK's shared HTTP client (the raw client
+  and LangGraph): frameworks handed a one-time `default_headers` snapshot (ADK,
+  CrewAI, LlamaIndex, MS Agent Framework) pin the token at construction and
+  cannot refresh it — an [asserted conformance exemption](/testing).
+</Callout>
 
 ## Optional attribution
 

@@ -132,6 +132,77 @@ def test_unknown_on_model_substitution_is_a_config_error(
     assert "error" in str(exc.value)
 
 
+# --- llm_proxy_auth mode resolution + validation (BG §1.1, #509) ------------------
+# client-id by default (the LIVE-VERIFIED CIE pair); "jwt" selects the
+# model-wallet ingress, which requires NO client_secret but DOES require the
+# durable wallet-selector client id. An unknown mode fails loudly at resolve time.
+
+
+def test_llm_proxy_auth_defaults_to_client_id(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    assert DonkeyConfig().llm_proxy_auth == "client-id"  # dataclass default
+    assert DonkeyConfig.from_env().llm_proxy_auth == "client-id"  # resolved default
+
+
+def test_llm_proxy_auth_from_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_AUTH", "jwt")
+    assert DonkeyConfig.from_env().llm_proxy_auth == "jwt"
+
+
+def test_llm_proxy_auth_is_case_insensitive(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_AUTH", "JWT")
+    assert DonkeyConfig.from_env().llm_proxy_auth == "jwt"
+
+
+def test_unknown_llm_proxy_auth_is_a_config_error(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A typo like "oauth" must fail loudly at resolve time — a silent fall-back to
+    # "client-id" would leave a caller believing they had selected the wallet
+    # ingress (#509), mirroring on_model_substitution.
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_AUTH", "oauth")
+    with pytest.raises(ConfigError) as exc:
+        DonkeyConfig.from_env()
+    assert "oauth" in str(exc.value)
+
+
+def test_wallet_client_id_from_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_WALLET_CLIENT_ID", "wallet-42")
+    assert DonkeyConfig.from_env().llm_proxy_wallet_client_id == "wallet-42"
+
+
+def test_validated_jwt_requires_url_and_wallet_client_id_not_secret() -> None:
+    # jwt mode: CIE is disabled, so NO client_secret is required — the missing
+    # field is the durable wallet-selector client id, and the error names it (not
+    # client_secret). The rotating JWT is not a config field (it rides an
+    # AuthProvider), so its absence is checked in LLMClient, not here (#509).
+    cfg = DonkeyConfig(llm_proxy_auth="jwt")
+    with pytest.raises(ConfigError) as exc:
+        cfg.validated(need="llm")
+    msg = str(exc.value)
+    assert "llm_proxy_url" in msg
+    assert "llm_proxy_wallet_client_id" in msg
+    assert "client_secret" not in msg
+
+
+def test_validated_jwt_passes_with_url_and_wallet_client_id() -> None:
+    cfg = DonkeyConfig(
+        llm_proxy_auth="jwt",
+        llm_proxy_url="https://proxy",
+        llm_proxy_wallet_client_id="wallet-42",
+    )
+    # No client_id/client_secret needed in jwt mode (BG §1.1).
+    assert cfg.validated(need="llm") is cfg
+
+
 # --- cost-attribution tag resolution (docs/verified-apis.md §3, BG §1.7, #196) --------------------
 
 

@@ -105,6 +105,116 @@ def test_proxy_auth_headers_omit_absent_credentials() -> None:
     assert proxy_auth_headers(DonkeyConfig(llm_proxy_url="https://proxy")) == {}
 
 
+# --- jwt / model-wallet auth mode (BG §1.1, #372/#509) ----------------------
+# The wallet ingress disables Client ID Enforcement: no client_id/client_secret
+# pair, a durable wallet-selector X-Client-Id, and a rotating JWT injected
+# per-send from the attached AuthProvider (never a config field).
+
+
+class _RotatingToken:
+    """An AuthProvider that hands out a fresh token on every ``token()`` call, so
+    a test can assert the transport reads it per-send rather than pinning once."""
+
+    def __init__(self) -> None:
+        self.n = 0
+
+    async def token(self) -> str:
+        self.n += 1
+        return f"jwt-{self.n}"
+
+    async def invalidate(self) -> None:
+        self.n += 1  # a refresh advances the token, like a real IdP rotation
+
+
+def _jwt_cfg(**kw) -> DonkeyConfig:
+    return DonkeyConfig(
+        llm_proxy_auth="jwt",
+        llm_proxy_url="https://proxy",
+        llm_proxy_wallet_client_id="wallet-42",
+        **kw,
+    )
+
+
+def test_proxy_auth_headers_jwt_mode_carries_wallet_selector_not_cie() -> None:
+    """jwt mode (#509): the snapshot carries only the durable X-Client-Id
+    wallet selector — never the CIE pair (Client ID Enforcement is disabled),
+    and never the rotating JWT (that is injected per-send, not snapshotted)."""
+    headers = proxy_auth_headers(_jwt_cfg())
+    assert headers["X-Client-Id"] == "wallet-42"
+    assert "client_id" not in headers
+    assert "client_secret" not in headers
+    assert "Authorization" not in headers
+
+
+async def test_jwt_mode_injects_fresh_bearer_overriding_preset() -> None:
+    """The OpenAI SDK pre-sets Authorization from its mandatory api_key slot; a
+    wallet proxy READS that header as the JWT, so the transport must OVERRIDE the
+    preset with the fresh per-send token, and stamp the wallet selector too."""
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.headers)
+        return httpx.Response(200)
+
+    async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
+        # Simulate the OpenAI SDK's pre-set sentinel bearer on the request.
+        await client.get("https://x", headers={"Authorization": "Bearer sentinel"})
+
+    assert seen["authorization"] == "Bearer jwt-1"  # overridden, not the sentinel
+    assert seen["x-client-id"] == "wallet-42"
+
+
+async def test_jwt_token_refreshed_per_send() -> None:
+    """A rotating JWT is read from the provider on every send, so a second
+    request carries the next token — the refresh the wallet ingress needs."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["authorization"])
+        return httpx.Response(200)
+
+    async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
+        await client.get("https://x")
+        await client.get("https://x")
+
+    assert seen == ["Bearer jwt-1", "Bearer jwt-2"]
+
+
+async def test_jwt_401_refreshes_and_retries_once() -> None:
+    """A 401 invalidates the provider and re-sends once with the refreshed token
+    (BG §1.1) — the same loop the CIE path uses, now carrying the wallet JWT."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["authorization"])
+        return httpx.Response(401) if len(seen) == 1 else httpx.Response(200)
+
+    async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
+        resp = await client.get("https://x")
+
+    assert resp.status_code == 200
+    # First send jwt-1 (401) → invalidate advances → re-send with a fresh token.
+    assert seen[0] == "Bearer jwt-1"
+    assert seen[1] != seen[0]
+
+
+async def test_client_id_mode_authorization_setdefault_preserves_preset() -> None:
+    """In the DEFAULT client-id mode the CIE proxy ignores Authorization, so the
+    transport must NOT clobber a caller-set bearer — setdefault, not override.
+    (The override behaviour above is jwt-mode-only.)"""
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.headers)
+        return httpx.Response(200)
+
+    # Default client-id mode, but a token provider is attached (control-plane).
+    async with _client(handler, DonkeyConfig(), StaticToken("cp-token")) as client:
+        await client.get("https://x", headers={"Authorization": "Bearer preset"})
+
+    assert seen["authorization"] == "Bearer preset"  # preserved, not overridden
+
+
 async def test_retries_on_503_then_succeeds() -> None:
     calls = {"n": 0}
 

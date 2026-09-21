@@ -128,6 +128,7 @@ class Donkey:
         config: DonkeyConfig | None = None,
         *,
         auth: AuthProvider | None = None,
+        llm_auth: AuthProvider | None = None,
     ) -> None:
         self._cfg = config or DonkeyConfig.from_env()
         # Zero-config OTLP export (BG §1.6, #194): installs an exporter when an
@@ -140,11 +141,19 @@ class Donkey:
             self._auth, self._owned_auth_http = self._default_auth(self._cfg)
         else:
             self._auth = auth
+        # The data-plane (LLM proxy) credential is SEPARATE from the control-plane
+        # one (BG §1.1). In jwt/model-wallet mode (#509) the rotating JWT enters
+        # through this caller-supplied AuthProvider and drives the shared data-plane
+        # client; in the default client-id mode nothing changes — the control-plane
+        # provider (or None) rides the client exactly as before, and the CIE proxy
+        # ignores its bearer. So an existing client-id config is byte-identical.
+        self._llm_auth = llm_auth
+        data_plane_auth = llm_auth if self._cfg.llm_proxy_auth == "jwt" else self._auth
         # One Budget per Donkey (never global, BG §1.3 / #185): both transports feed
         # it in-band from every response's x-token-* headers.
         self._budget = Budget()
         self._http: DonkeyAsyncClient = build_http_client(
-            self._cfg, self._auth, budget=self._budget
+            self._cfg, data_plane_auth, budget=self._budget
         )
         # Built only if someone asks for a blocking client, so the common async
         # path never opens a connection pool it will not use.

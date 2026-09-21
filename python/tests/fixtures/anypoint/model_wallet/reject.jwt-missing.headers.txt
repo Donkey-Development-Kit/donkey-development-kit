@@ -1,0 +1,9 @@
+HTTP/1.1 400 Bad Request
+www-authenticate: Bearer
+content-type: application/json; charset=UTF-8
+content-length: 34
+date: Mon, 21 Sep 2026 17:35:00 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: a70859ff-21a9-487a-a65b-ab1c4eb11a6b
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Keep-Alive
