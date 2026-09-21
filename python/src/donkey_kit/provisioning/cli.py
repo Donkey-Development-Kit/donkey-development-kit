@@ -78,9 +78,10 @@ def validate(file: Path = typer.Option(..., "-f", "--file", help="donkey.yaml"))
     """Validate a donkey.yaml against the schema (needs no platform API).
 
     Hidden: it operates on the ``donkey.yaml`` provisioning spec, part of the
-    provisioning control-plane surface that is cut for Phase 1 (`BG §1.8`). The
-    command still works for anyone driving that YAML, but the four supported
-    ``donkey`` commands are ``init``/``doctor``/``mock``/``test``.
+    provisioning control-plane surface excluded by the build plan's "Do not build,
+    at any phase" boundary. The command still works for anyone driving that YAML,
+    but the four supported ``donkey`` commands are
+    ``init``/``doctor``/``mock``/``test``.
     """
     spec = _load_spec(file)
     typer.secho(
