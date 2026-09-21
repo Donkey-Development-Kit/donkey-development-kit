@@ -14,6 +14,7 @@ native object ``importorskip`` the framework.
 
 from __future__ import annotations
 
+import builtins
 import importlib
 import sys
 import types
@@ -208,6 +209,79 @@ def test_only_langgraph_is_conformance_tested() -> None:
         "crewai",
         "llamaindex",
     }
+
+
+# --- Agent Framework behavior (BG §1.2) -------------------------------------
+
+
+async def test_agent_framework_policy_middleware_passes_through_result() -> None:
+    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
+
+    context = object()
+    result = object()
+
+    async def next_(received: object) -> object:
+        assert received is context
+        return result
+
+    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
+
+    assert await middleware(context, next_) is result
+
+
+async def test_agent_framework_policy_middleware_preserves_policy_violation() -> None:
+    from donkey_kit.core.errors import PolicyViolation
+    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
+
+    violation = PolicyViolation("gateway refused the request")
+
+    async def next_(_context: object) -> None:
+        raise violation
+
+    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
+
+    with pytest.raises(PolicyViolation) as exc_info:
+        await middleware(object(), next_)
+
+    assert exc_info.value is violation
+
+
+async def test_agent_framework_policy_middleware_preserves_unrelated_error() -> None:
+    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
+
+    error = RuntimeError("agent failed")
+
+    async def next_(_context: object) -> None:
+        raise error
+
+    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await middleware(object(), next_)
+
+    assert exc_info.value is error
+
+
+def test_agent_framework_chat_client_blocks_unverified_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
+
+    import_error = ImportError("OpenAIChatClient is unavailable")
+    original_import = builtins.__import__
+
+    def fail_openai_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "agent_framework.openai":
+            raise import_error
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fail_openai_import)
+    adapter = AgentFrameworkAdapter(_cfg(), _http())
+
+    with pytest.raises(NotImplementedError, match="blocked on verification") as exc_info:
+        adapter.chat_client("gpt-4o")
+
+    assert exc_info.value.__cause__ is import_error
 
 
 # --- The two paths cannot drift (issue #33 AC) ------------------------------
