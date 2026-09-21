@@ -110,17 +110,18 @@ class AnypointConnectedApp(AuthProvider):
         if resp.status_code >= 400:
             raise AuthError(
                 f"Anypoint token endpoint returned {resp.status_code} for "
-                f"{self._token_path!r}. The SDK default path is VERIFIED (plugin); "
-                "check endpoint availability, any token_path override, and connected-app "
-                "requirements (see docs/verified-apis.md §1 and §12.1).",
+                f"{self._token_path!r}. Check that the control-plane host is reachable, "
+                "that any token_path override is correct, and that connected-app "
+                "requirements are met (see docs/verified-apis.md §1 and §12.1).",
                 response=resp,
             )
         body = resp.json()
         token: str | None = body.get("access_token")
         if not token:
             raise AuthError(
-                "Token endpoint returned no access_token. Response shape is "
-                "UNVERIFIED — capture it as a fixture (BG §1.5).",
+                "Token endpoint returned no access_token. The expected response shape "
+                "includes access_token and expires_in (see docs/verified-apis.md §1 and "
+                "§12.1); capture the unexpected response as a fixture (BG §1.5).",
                 response=resp,
             )
         expires_in = float(body.get("expires_in", 3600))
