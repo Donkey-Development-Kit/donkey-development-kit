@@ -14,8 +14,13 @@ The live-verified `openai-sdk` proxy carried this policy stack, all enabled:
   required; this is also the per-agent identity (see [Attribution](/concepts/attribution)).
 - **model-based-routing** — routes on the `model` field in the request body to a
   provider; response carries `x-llm-proxy-*` routing headers.
-- **llm-proxy-core**, **cors**, **dataweave-headers-transformation**,
-  **openai-transcoding-policy**.
+- **dataweave-headers-transformation** — a gateway convenience that splits a
+  colon-joined credential in a single `authorization: Bearer <id>:<secret>` or
+  `apikey: <id>:<secret>` header into the `client_id` / `client_secret` pair, but
+  **only** when neither header is already present. DDK always emits the two-header
+  pair itself, so this policy is a **no-op** for DDK traffic (see
+  [Configuration](/reference/configuration)).
+- **llm-proxy-core**, **cors**, **openai-transcoding-policy**.
 - Optionally applied for capture: **llm-token-rate-limit** and
   **llm-pii-detection** — these produce the `429` and `403` rejection shapes in
   the [Error taxonomy](/errors).
