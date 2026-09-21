@@ -83,8 +83,9 @@ class Publication:
     def export(self, path: str | Path | None = None) -> str:
         """Compile to a ``donkey.yaml`` fragment (provisioning-as-code)."""
         raise _verify.blocked(
-            "Publication.export() emits the donkey.yaml spec format. Schema is shared with "
-            "provisioning-as-code — do not diverge it (provisioning-as-code)."
+            "Publication.export() emits the shared donkey.yaml spec format. It remains "
+            "verification-gated because the build plan excludes a provisioning control plane "
+            "competing with API Manager or Terraform."
         )
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------

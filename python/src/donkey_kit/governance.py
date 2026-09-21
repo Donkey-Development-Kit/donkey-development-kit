@@ -115,8 +115,9 @@ class Governance:
     def export(self, path: str | Path | None = None) -> str:
         """Compile to a ``donkey.yaml`` fragment (provisioning-as-code)."""
         raise _verify.blocked(
-            "Governance.export() emits the donkey.yaml spec format. Schema is shared with "
-            "provisioning-as-code — do not diverge it (provisioning-as-code)."
+            "Governance.export() emits the shared donkey.yaml spec format. It remains "
+            "verification-gated because the build plan excludes a provisioning control plane "
+            "competing with API Manager or Terraform."
         )
 
     # ---- verb 3: resolve (runtime, READ-ONLY) -----------------------------
