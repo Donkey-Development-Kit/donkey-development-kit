@@ -4955,14 +4955,16 @@ Every platform API the shipping SDK calls is classified:
 
 ## Current shipping boundary
 
-The SDK currently reaches two platform destinations. Everything else that needs
-an unverified endpoint is blocked before network I/O.
+The SDK currently reaches two platform destinations. The rows below classify
+the distinct contracts it consumes at those destinations. Everything else that
+needs an unverified endpoint is blocked before network I/O.
 
 | Destination / contract | Classification | SDK use |
 |---|---|---|
 | Anypoint connected-app token endpoint | **Documented and public** | Retrieves an OAuth bearer token with client credentials. |
-| Model Proxy OpenAI-format `/responses` endpoint | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. |
-| Model Proxy policy refusals | **Documented and public** | Classifies Client ID Enforcement, token-rate-limit, PII, prompt-guard, injection-protection, Azure Content Safety, and Amazon Bedrock Guardrails responses. |
+| Model Proxy OpenAI-format `/responses` endpoint | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. The raw client can also call documented OpenAI-native routes such as `/chat/completions`, but this repository has live-probed only `/responses`. |
+| Live-captured Model Proxy policy refusals | **Documented and public** | Classifies Client ID Enforcement, token-rate-limit, and PII responses observed against a deployed proxy. |
+| Documentation-derived Model Proxy policy refusals | **Documented and public** | Classifies Regex Prompt Guard, Injection Protection, Azure Content Safety, and Amazon Bedrock Guardrails contracts from their official policy pages. These shapes are pending direct live capture. |
 | `x-llm-proxy-ratelimit` success-budget sentence | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored. |
 | Gateway identity and routing extension headers | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`. |
 
