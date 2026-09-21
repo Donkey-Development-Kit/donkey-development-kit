@@ -1,0 +1,18 @@
+{
+  "_note": "Decoded payload of the RS256 access token minted by the DDK reference Keycloak IdP (realm master) for the wallet round-trip. The raw JWT is never stored. Opaque per-session identifiers (jti/sub/sid) redacted; the test user's profile claims are synthetic (RFC 2606 .invalid). The claims that MATTER to wallet ingress are client_id and group (the wallet predicates) and aud (the JWT Validation audience boundary).",
+  "iss": "https://keycloak-idp-fdb7079d9b71.herokuapp.com/realms/master",
+  "aud": ["ddk-model-wallet", "account"],
+  "azp": "ddk-model-wallet-client",
+  "typ": "Bearer",
+  "scope": "openid email profile",
+  "exp": "<epoch — token expiry (60-300s window)>",
+  "iat": "<epoch — issued-at>",
+  "jti": "<redacted>",
+  "sub": "<redacted>",
+  "sid": "<redacted>",
+  "preferred_username": "ddk-test-user",
+  "email": "ddk-test-user@example.invalid",
+  "email_verified": true,
+  "client_id": "ddk-model-wallet-client",
+  "group": "ddk"
+}

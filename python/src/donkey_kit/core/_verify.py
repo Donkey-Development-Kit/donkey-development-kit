@@ -151,6 +151,28 @@ OAUTH_TOKEN_PATH = Unverified(
 LLM_PROXY_CLIENT_ID_HEADER = "client_id"
 LLM_PROXY_CLIENT_SECRET_HEADER = "client_secret"
 
+# --- LLM proxy model-wallet ingress (docs/verified-apis.md §2/§3, #372) —
+# VERIFIED (LIVE 2026-09-21) ------------
+# The PARALLEL ingress model on a wallet-backed proxy: the caller is identified
+# by an IdP-issued JWT + a client ID, with NO `client_secret`. The default
+# DataWeave Headers Transformation + Client ID Enforcement policies are disabled;
+# JWT Validation identifies the caller instead. These are confirmed names, not
+# placeholders — captured live against `ddk-model-wallet` (instance 21186246,
+# Sandbox), fixtures in tests/fixtures/anypoint/model_wallet/. The SDK does not
+# yet emit this path (transport still sends only the CIE pair); wiring is #509.
+#   * the wallet-selector REQUEST header (value = the wallet's generated clientId);
+LLM_PROXY_WALLET_CLIENT_ID_HEADER = "X-Client-Id"
+#   * the JWT rides as `Authorization: Bearer <JWT>` (jwtOrigin
+#     httpBearerAuthenticationHeader); Bearer was an assumption in the doc read,
+#     confirmed live;
+LLM_PROXY_WALLET_JWT_HEADER = "Authorization"
+LLM_PROXY_WALLET_JWT_SCHEME = "Bearer"
+#   * the JWT claim the LLM Proxy Core Policy reads as the caller id, published by
+#     JWT Validation and read via `#[authentication.properties.claims.client_id]`;
+LLM_PROXY_WALLET_JWT_CLIENT_ID_CLAIM = "client_id"
+#   * the response header the gateway echoes naming the matched wallet.
+LLM_PROXY_WALLET_SELECTED_HEADER = "x-model-wallet-selected"
+
 # --- Region host map (docs/verified-apis.md §1) ------------------------------
 # UNVERIFIED — Hyperforce region hosts in particular need confirmation.
 REGION_HOSTS: dict[str, str] = {
