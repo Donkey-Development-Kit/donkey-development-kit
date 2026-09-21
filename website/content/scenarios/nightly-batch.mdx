@@ -68,7 +68,8 @@ python enrich.py
 
 The pacing and resume logic is a handful of lines. `pace()` guards each batch;
 on `BudgetReserveReached` you wait for the window and continue from where you
-left off:
+left off when `.reset_at` is known. If it is unknown, propagate the signal
+instead of retrying at zero delay:
 
 ```python
 import asyncio
@@ -82,8 +83,10 @@ async def enrich_all(records, enrich):
             try:
                 async with donkey.budget.pace(reserve=0.05):
                     await enrich(donkey, batch)
-            except BudgetReserveReached:
+            except BudgetReserveReached as exc:
                 # We're within 5% of the window's limit — don't take the 429.
+                if exc.reset_at is None:
+                    raise  # waiting cannot make progress without a reset time
                 await donkey.budget.wait_for_reset()   # sleeps until reset_at
                 continue                                # retry the same batch
             checkpoint(batch)                           # only advance on success
@@ -95,7 +98,13 @@ async def enrich_all(records, enrich):
   request that would cross the last 5% of the window — so you never spend the
   request that earns the `429`. `wait_for_reset()` sleeps until
   `donkey.budget.reset_at`, computed from the gateway's `x-token-reset` header
-  (milliseconds, converted for you). See [Budget & pacing](/budget).
+  (milliseconds, converted for you). Once that time has elapsed, the old
+  observation is stale, so `pace()` no longer refuses. A response carrying a
+  budget signal updates the observed fields; a fresh future `reset_at` makes
+  the guard active again. A response that does not supply a fresh future
+  `reset_at` leaves the stale pass-through open. If a partial observation reaches
+  the reserve without a `reset_at`, the loop re-raises after one attempt instead
+  of spinning at zero delay. See [Budget & pacing](/budget).
 </Callout>
 
 ## The honest limitation

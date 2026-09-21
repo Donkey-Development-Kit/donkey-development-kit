@@ -7,8 +7,8 @@ Requirements the implementer must honour when this is wired to a real API:
   * ``--dry-run`` / ``--out plan.json`` for CI gating.
 
 GATE (provisioning-as-code, verification discipline): whether a usable MCP Bridge provisioning API
-exists is an M0 finding. If UI-only, this whole module is cut and we emit Terraform instead
-(provisioning-as-code). Until confirmed, planning against live state is blocked.
+exists is an open Verification-milestone question. If UI-only, this whole module is cut and we emit
+Terraform instead (provisioning-as-code). Until confirmed, planning against live state is blocked.
 """
 
 from __future__ import annotations
@@ -47,6 +47,6 @@ class Plan:
 async def build_plan(spec: DonkeySpec, donkey: object) -> Plan:
     raise _verify.blocked(
         "MCP Bridge provisioning read API for read-before-write planning "
-        "(provisioning-as-code). If M0 finds it UI-only, pivot to Terraform generation "
+        "(provisioning-as-code). If verification finds it UI-only, pivot to Terraform generation "
         "(provisioning-as-code) — do NOT reverse-engineer internal endpoints."
     )

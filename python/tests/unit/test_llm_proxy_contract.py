@@ -74,6 +74,9 @@ def test_client_id_enforcement_rejection_classifies_as_auth() -> None:
     resp = httpx.Response(401, headers=h, json=body)
     err = classify(resp)
     assert isinstance(err, AuthError)
+    assert "consumer client_id/client_secret pair" in str(err)
+    assert "docs/verified-apis.md §2" in str(err)
+    assert "connected-app" not in str(err)
 
 
 def test_two_error_envelope_families_are_distinguishable() -> None:

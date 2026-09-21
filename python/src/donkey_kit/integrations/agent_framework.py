@@ -42,7 +42,7 @@ class AgentFrameworkAdapter(Adapter):
         self._require_proxy()
         try:
             from agent_framework.openai import (
-                OpenAIChatClient,  # VERIFY name/path docs/verified-apis.md §8
+                OpenAIChatClient,  # VERIFY name/path: docs/verified-apis.md §8
             )
         except ImportError as exc:
             raise _verify.blocked(
@@ -53,7 +53,7 @@ class AgentFrameworkAdapter(Adapter):
             ) from exc
 
         return OpenAIChatClient(
-            model_id=model,  # VERIFY kwarg name docs/verified-apis.md §8
+            model_id=model,  # VERIFY kwarg name: docs/verified-apis.md §8
             **self.connection_kwargs(),
             **kw,
         )

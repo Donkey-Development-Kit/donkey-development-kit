@@ -4,11 +4,10 @@
 
 # Donkey Development Kit
 
-An SDK for consuming **Agent Fabric** capabilities — governed model access,
-governed tool access, and provisioning-as-code — from your own agent framework,
-in your own IDE, without adopting Mule.
+An SDK for consuming **Agent Fabric** capabilities — governed model and tool
+access — from your own agent framework, in your own IDE, without adopting Mule.
 
-> **Project status — alpha, pre-release.** This is `v0.1.0.dev2`
+> **Project status — alpha, pre-release.** This is `v0.1.0.dev3`
 > (`Development Status :: 3 - Alpha`). The **LLM data plane is live-verified**;
 > most other surfaces are verification-gated (see
 > [What's verified](#whats-verified-verification-discipline) below). **Not yet published to PyPI** —
@@ -125,3 +124,6 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 | Framework | Scenario | Why it's exempt |
 | --- | --- | --- |
 | ADK, CrewAI | correlation ID propagated | LiteLLM owns the transport, so the SDK's `httpx` client cannot be injected — the correlation ID ends up per-client, not per-run. A LiteLLM logger callback may recover trace correlation later. |
+| LlamaIndex, Microsoft Agent Framework | correlation ID propagated | These adapters receive a static `default_headers` snapshot, which deliberately excludes the per-run correlation ID. Without the SDK's `httpx` client, `donkey.run(id=...)` cannot update their request headers. |
+| ADK, CrewAI | gateway identity observed | LiteLLM owns the transport, so no response reaches the SDK's `_on_response` hook. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
+| LlamaIndex, Microsoft Agent Framework | gateway identity observed | These adapters receive `default_headers`, not the SDK's `httpx` client, so no response reaches `_on_response`. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |

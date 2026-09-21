@@ -4,8 +4,11 @@ LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM prox
 with the one flag that a chat-only gateway absolutely requires forced on for
 you.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** Full header injection; watch the
-> `is_chat_model` gotcha below if you ever build the client by hand.
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).**
+> LlamaIndex receives a static `default_headers` snapshot, not the SDK's shared
+> httpx client, so per-run correlation and `donkey.last_call` response
+> observation are documented exemptions (see below). Watch the `is_chat_model`
+> gotcha if you build the client by hand.
 
 ## Install
 
@@ -105,6 +108,17 @@ model = OpenAILike(
 
 > LlamaIndex uses `api_base` rather than `base_url` for its endpoint kwarg;
 > `connection_kwargs()` already translates for you.
+
+> **This adapter cannot propagate per-run correlation or populate
+> `donkey.last_call`.** LlamaIndex receives a static `default_headers` snapshot,
+> which deliberately excludes the correlation ID bound later by
+> `donkey.run(id=...)`, and not the SDK's httpx client. No response reaches
+> `_on_response`, so gateway identity, routing, and usage fields cannot be
+> observed either. When every adapter resolved on a `Donkey` is non-observing,
+> the record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
+> and names the resolved adapters in `surface`. These are documented, asserted
+> `correlation_id_propagated` and `gateway_identity_observed` conformance
+> exemptions.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for

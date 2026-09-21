@@ -7,9 +7,11 @@ import { Callout } from 'nextra/components'
 # Telemetry & cost
 
 <Callout type="info">
-  **Phase 1 — designed, not yet shipped.** Attribute and API shapes below are a
-  proposal; the committed part is the behaviour and the acceptance bar. See
-  [Roadmap](/roadmap) and [Verification policy](/concepts/verification).
+  **Shipped in Phase 1.** OpenTelemetry GenAI span export (#194), correlation
+  IDs (#195), cost-attribution tags (#196), and routing and resilience signals
+  (#309) are available. Platform-facing verification caveats are called out
+  below; see [Roadmap](/roadmap) and
+  [Verification policy](/concepts/verification).
 </Callout>
 
 Two pieces of the six-piece minimum land here, because they answer the same
@@ -43,7 +45,8 @@ The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
 semconv has no pinned key for — cached / cache-write prompt tokens and
 reasoning-model thinking tokens. They are read from the response `usage` block's
 detail sub-objects and are **omitted, never `0`,** when the provider reports no
-detail counts. The same counts are exposed per-call on `donkey.last_call`.
+detail counts. When the response passes through the SDK's shared HTTP client,
+the same counts are exposed per-call on `donkey.last_call`.
 
 Export goes over OTLP to wherever you already send spans. **Nothing in the
 emit path is Anypoint-specific.**
@@ -136,6 +139,11 @@ path for message text to leak.
 
 ## Routing & resilience
 
+<Callout type="info">
+  **Shipped in Phase 1** (#309). Routing, fallback, and served-model signals
+  are available through the shared transport and on OpenTelemetry spans.
+</Callout>
+
 The gateway can fail over between providers when one degrades ("Enhanced
 Resilience for Intelligent Routing"). It reports what it *did* with each request
 on the response — which provider and model served it, how it routed, and whether
@@ -143,8 +151,8 @@ that was a **fallback**. Donkey reads those signals off the shared transport, so
 you get them with **no framework required** — the raw `donkey.llm.client()` path
 benefits just as the deep adapters do.
 
-Every governed call exposes them on `donkey.last_call`, beside the usage and
-identity fields:
+Every governed call through the SDK's shared HTTP client exposes them on
+`donkey.last_call`, beside the usage and identity fields:
 
 ```python
 donkey = Donkey.from_env()
@@ -163,6 +171,33 @@ They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
 `donkey.routing.fallback`) — the single most useful thing to have on hand when
 latency spikes: it tells an operator whether a slow call was routed normally or
 recovered from a degraded provider.
+
+### When `last_call` is unavailable
+
+`donkey.last_call` is populated only when the governed response passes through
+the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
+outside that response path: ADK and CrewAI use LiteLLM's transport, while
+LlamaIndex and Microsoft Agent Framework receive only `default_headers`.
+That static snapshot deliberately excludes the correlation ID bound later by
+`donkey.run(id=...)`, so those two adapters also carry the asserted
+`correlation_id_propagated` exemption.
+
+When every adapter resolved on a `Donkey` is one of those four, a cold read
+reports the limitation explicitly. For a `Donkey` that resolved only ADK:
+
+```python
+r = donkey.last_call
+r.status       # LastCallStatus.UNAVAILABLE
+r.available    # False
+r.surface      # "adk"
+```
+
+This is different from `UNOBSERVED`, which means the current context has not
+yet received a governed response. On an unavailable surface the SDK cannot
+observe any response-derived `last_call` field, including gateway identity,
+routing, fallback, and usage. If multiple non-observing adapters were resolved,
+`surface` lists their names. Each limitation is asserted as the
+`gateway_identity_observed` conformance exemption rather than silently skipped.
 
 ### Two behaviours worth knowing
 
@@ -194,9 +229,8 @@ donkey = Donkey.from_env(on_model_substitution="raise")
 ## Correlation IDs
 
 <Callout type="info">
-  **Shipped in Phase 1** (#195) — unlike the cost-attribution tags below, which
-  are still designed-not-shipped. See [Observability](/concepts/observability)
-  for the full detail.
+  **Shipped in Phase 1** (#195). See
+  [Observability](/concepts/observability) for the full detail.
 </Callout>
 
 Set a per-**run** id once, and every call inside the block carries it — on the
@@ -313,4 +347,6 @@ JSON blob into a header.
 
 ---
 
-**Status: Phase 1 — not yet shipped.**
+**Status: Phase 1 — OpenTelemetry GenAI spans and OTLP export, per-run
+correlation IDs, cost-attribution tags, and routing and resilience signals are
+shipped. Platform-facing verification caveats are called out above.**

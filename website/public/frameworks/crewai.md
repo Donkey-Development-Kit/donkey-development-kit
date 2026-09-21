@@ -4,10 +4,11 @@ CrewAI gets a governed `LLM`, backed by LiteLLM under the hood, pointed at
 the Agent Fabric LLM proxy through LiteLLM's own model-string and kwarg
 conventions rather than raw OpenAI ones.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one documented exemption: LiteLLM
+> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with two documented exemptions: LiteLLM
 > owns its own transport, so the SDK's shared httpx client is not injected
-> here (see below) — the same exemption as the [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md)
-> adapter.
+> here. Per-run correlation and `donkey.last_call` response observation are
+> unavailable as a result (see below) — the same exemptions as the
+> [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md) adapter.
 
 ## Install
 
@@ -106,6 +107,14 @@ you.
 > it. This is a documented, asserted conformance exemption, not an oversight:
 > header injection is full, but transport injection is not possible, exactly
 > as with Google ADK.
+
+> **This adapter cannot populate `donkey.last_call`.** The same LiteLLM-owned
+> transport means no response reaches the SDK's `_on_response` hook, so gateway
+> identity, routing, and usage fields cannot be observed. When every adapter
+> resolved on a `Donkey` is non-observing, the record reports
+> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names the
+> resolved adapters in `surface`. This is a
+> documented, asserted `gateway_identity_observed` conformance exemption.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface through
 LiteLLM's error path, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)

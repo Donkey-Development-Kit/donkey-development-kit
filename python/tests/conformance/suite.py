@@ -9,10 +9,10 @@ framework rejoins with its own conformance run when demand promotes it
 (#223/#244). The customer-facing pytest plugin (``donkey_kit.conformance``, #191)
 is the shipped deliverable this internal matrix backstops.
 
-The scenario bodies are wired in M1+ against captured contract fixtures (BG §1.5)
-and the local gateway (BG §1.4). This module fixes the scenario list and the
-exemption table now so the kit exists before the second adapter is built
-(working instruction #5).
+The scenario bodies are wired against captured contract fixtures (BG §1.5) and
+the local gateway (BG §1.4) as their gating features land (#444). This module
+fixes the scenario list and the exemption table now so the kit exists before
+the second adapter is built (working instruction #5).
 """
 
 from __future__ import annotations
@@ -51,6 +51,11 @@ _LITELLM_TRANSPORT_EXEMPTION = (
     "correlation ID is per-client, not per-run (BG §1.8). A LiteLLM custom "
     "logger callback may later recover trace correlation."
 )
+_DEFAULT_HEADERS_CORRELATION_EXEMPTION = (
+    "The adapter is handed only a static default_headers snapshot, which "
+    "deliberately excludes the per-run correlation ID; without our httpx "
+    "client, donkey.run(id=...) cannot update the request headers (BG §1.8)."
+)
 
 # gateway_identity_observed has the SAME structural cause as the correlation-id
 # exemption, stated for last_call (#362): the record is populated by our
@@ -79,11 +84,15 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
     },
-    # LlamaIndex and MS Agent Framework get only default_headers, no httpx client
-    # (BG §1.8), so they cannot observe last_call either — but they CAN propagate the
-    # correlation id through those headers, so that scenario is not exempt for them.
-    "llamaindex": {"gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION},
+    # LlamaIndex and MS Agent Framework get only a static default_headers snapshot,
+    # no httpx client (BG §1.8). The snapshot deliberately excludes the per-run
+    # correlation ID and cannot observe last_call responses.
+    "llamaindex": {
+        "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
+        "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,
+    },
     "agent_framework": {
-        "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION
+        "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
+        "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,
     },
 }

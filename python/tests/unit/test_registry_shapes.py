@@ -11,18 +11,75 @@ SDK, precisely because the direct Anypoint REST contract is still UNVERIFIED
 
 from __future__ import annotations
 
+import inspect
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 
-from donkey_kit.registry.models import AssetRef, McpServerHandle
+from donkey_kit import AssetRef, AssetType, Publication, PublicationAssetType
+from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.transport import DonkeyAsyncClient
+from donkey_kit.registry.exchange import ExchangeRegistry
+from donkey_kit.registry.governance import GovernanceCriteria
+from donkey_kit.registry.introspect import derive_descriptor
+from donkey_kit.registry.models import McpServerHandle
 from donkey_kit.tools.filter import ToolDescriptor, resolve_collisions
+from donkey_kit.tools.session import ToolSet
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "a2d"
 
 # Observed transport kinds → the SDK's normalized transport identifier.
 _TRANSPORT_NORMALIZATION = {"streamableHttp": "streamable_http"}
+
+_REF = AssetRef(group_id="com.example", asset_id="blocked-asset", version="1.0.0")
+_REGISTRY = ExchangeRegistry(
+    DonkeyConfig(client_id="client", client_secret="secret", org_id="org"),
+    cast(DonkeyAsyncClient, object()),
+)
+_TOOL_SET = ToolSet([McpServerHandle(ref=_REF, endpoint_url="https://example.test/mcp")])
+_PUBLICATION = Publication(
+    asset_type=PublicationAssetType.MCP_SERVER,
+    group_id=_REF.group_id,
+    asset_id=_REF.asset_id,
+    version=_REF.version,
+    name="Blocked asset",
+    description="An asset whose publication surfaces remain verification-blocked.",
+)
+
+_BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
+    ("registry.search", lambda: _REGISTRY.search()),
+    ("registry.resolve_mcp", lambda: _REGISTRY.resolve_mcp(_REF)),
+    ("registry.resolve_agent", lambda: _REGISTRY.resolve_agent(_REF)),
+    (
+        "registry.explain",
+        lambda: _REGISTRY.explain(_REF, criteria=GovernanceCriteria()),
+    ),
+    ("registry.warm", lambda: _REGISTRY.warm()),
+    ("tools.langgraph", _TOOL_SET.langgraph),
+    ("tools.adk", _TOOL_SET.adk),
+    ("tools.strands", _TOOL_SET.strands),
+    ("tools.llamaindex", _TOOL_SET.llamaindex),
+    ("tools.openai", _TOOL_SET.openai),
+    ("tools.anthropic", _TOOL_SET.anthropic),
+    ("tools.crewai", _TOOL_SET.crewai),
+    ("tools.agent_framework", _TOOL_SET.agent_framework),
+    ("publication.preview", lambda: _PUBLICATION.preview(object())),
+    ("publication.export", _PUBLICATION.export),
+    ("publication.verify", lambda: _PUBLICATION.verify(object())),
+    ("registry.derive_descriptor", lambda: derive_descriptor("example:asset")),
+)
+
+
+def test_package_root_asset_types_share_discovery_literal_values() -> None:
+    discovery_type: AssetType = "mcp"
+    ref = AssetRef(group_id="com.acme", asset_id="tools", version="1.0.0", type=discovery_type)
+
+    assert ref.type == "mcp"
+    assert PublicationAssetType.MCP_SERVER.value == ref.type
+    assert PublicationAssetType.A2A_AGENT.value == "a2a-agent"
 
 
 def _load(name: str) -> dict:
@@ -38,6 +95,27 @@ def _endpoint_for(environments: list[dict], asset_id: str, env_type: str) -> str
         ):
             return env["base_url"]
     raise LookupError(f"no mcp_server env for {asset_id} / {env_type}")
+
+
+@pytest.mark.parametrize(
+    ("surface", "invoke"),
+    _BLOCKED_SURFACES,
+    ids=[surface for surface, _ in _BLOCKED_SURFACES],
+)
+async def test_unverified_registry_and_tool_surfaces_remain_blocked(
+    surface: str, invoke: Callable[[], object]
+) -> None:
+    """Protect verification guards from guessed implementations (§0.3).
+
+    The Publication methods currently raise before inspecting their placeholder
+    ``donkey`` arguments; unlike the registry cases, those rows assert only the
+    guard. When a surface is verified, remove its row here in the same change
+    that records the VERIFIED date and source in ``docs/verified-apis.md``.
+    """
+    with pytest.raises(NotImplementedError, match=r"^blocked on verification:"):
+        result = invoke()
+        if inspect.isawaitable(result):
+            await result
 
 
 def test_mcp_server_spec_maps_to_handle() -> None:

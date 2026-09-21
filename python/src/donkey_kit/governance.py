@@ -113,12 +113,14 @@ class Governance:
 
     # ---- verb 2: export (sandbox/prod, laptop) ----------------------------
     def export(self, path: str | Path | None = None) -> str:
-        """Compile to a ``donkey.yaml`` fragment (provisioning-as-code). Lands with M4 (the build
-        plan phases)."""
+        """Compile to a ``donkey.yaml`` fragment (provisioning-as-code)."""
         raise _verify.blocked(
-            "Governance.export() emits the M4 donkey.yaml spec format; it ships "
-            "with provisioning (M4, the build plan phases). Schema is shared with "
-            "provisioning-as-code — do not diverge it (provisioning-as-code)."
+            "Governance.export() emits the shared donkey.yaml spec format; keep it identical "
+            "to donkey_kit.provisioning.spec and do not diverge it. The export mapping remains "
+            "unresolved: docs/verified-apis.md §5 confirms an Agent Network Maven-project + CLI "
+            "flow but not whether export() wraps that toolchain or emits its project layout "
+            "(the Verification milestone). This surface does not add a provisioning control "
+            "plane competing with API Manager or Terraform."
         )
 
     # ---- verb 3: resolve (runtime, READ-ONLY) -----------------------------
@@ -175,7 +177,7 @@ class SimulationContext:
             "local Omni Gateway docker harness + Local-Mode LLM-Proxy/MCP-Bridge "
             "availability (BG §1.4, the Verification milestone). The [local] extra and the loud "
             "skipped-policy report (skipped_policies()) are scaffolded; the docker "
-            "orchestration is M2.5 and gated on the M0 local-mode findings."
+            "orchestration is gated on the Verification milestone's local-mode findings."
         )
 
     async def __aexit__(self, *exc: object) -> None:

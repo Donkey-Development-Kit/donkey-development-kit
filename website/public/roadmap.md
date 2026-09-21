@@ -1,15 +1,19 @@
 # Roadmap
 
-This page exists so you can tell, at a glance, what you can rely on **today**
-from what is **designed but not yet shipped**. Every capability page on this
-site carries the same badge you see here.
+This page separates SDK behavior that is **shipped today**, platform contracts
+that are **verified live**, and capabilities that are **designed but not yet
+shipped**.
 
-  **How to read the badges.** Live means verified
-  against a real Anypoint sandbox and usable now.
+  **How to read the badges.** Live means the
+  platform-facing behavior is verified against a real Anypoint sandbox and
+  usable now. Shipped means the SDK capability is
+  implemented and available now; it does not imply that every platform-facing
+  contract it uses is live-verified. Those caveats remain explicit on the
+  capability page and in the [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
   Phase 2 and friends mean *designed, with an
   agreed acceptance bar, but not yet shipped* — the API shapes on those pages
   are proposals and will move. Nothing here is described as working before it
-  does; see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+  does.
 
 ## Why the SDK exists at all
 
@@ -32,6 +36,12 @@ pieces below are one release and not spread across a year.
 The bar for Phase 1 is deliberately concrete: a developer who tries the SDK
 for 15 minutes should find three things they cannot get from `base_url` plus
 headers, and one of them should save them from a production incident.
+
+Four core rejection shapes are live-verified; the remaining typed refusal paths
+are shipped with explicit verification caveats. Budget and pacing, the local
+simulator, testing and conformance, telemetry and cost, and the CLI and
+decorators are shipped SDK capabilities; their pages call out any remaining
+platform-verification caveats.
 
   
     A `403` from a PII policy is not an auth error, and a policy `429` must
@@ -127,6 +137,7 @@ platform's own capability reachable and typed, not to reproduce it:
 - The gateway inside your agent process.
 - A home-grown A2A protocol implementation — the official `a2a-sdk` is wrapped.
 
-  **API shapes on roadmap pages are proposals.** They exist so the design can
-  be argued about concretely, and they will change before they ship. What is
-  committed is the *behaviour* and the acceptance bar, not the signature.
+  **API shapes on planned Phase 2 and Phase 3 pages are proposals.** They exist
+  so the design can be argued about concretely, and they will change before
+  they ship. What is committed is the *behaviour* and the acceptance bar, not
+  the signature.

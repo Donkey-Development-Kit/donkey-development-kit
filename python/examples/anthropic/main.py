@@ -8,13 +8,13 @@ at the governed Agent Fabric LLM proxy with a single factory call:
     from donkey_kit.integrations.anthropic import client
     c = client()   # the model id is a per-call argument, not a constructor one
 
-Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* over the
-OpenAI-compatible route (base URL, client_id/secret auth, attribution headers) is live-verified.
-What is UNVERIFIED is whether the proxy exposes an **Anthropic-native Messages API
-route** at all (an open M0 item) — so this example constructs the client and
-emits the SDK's one-time unverified-route warning, but does NOT make a live
-call. Once a real Anthropic-native route is confirmed, override ``base_url`` and
-drive ``c.messages.create(model=..., ...)`` per Anthropic's own docs.
+UNVERIFIED DEPENDENCY (docs/verified-apis.md §8): the Omni Gateway LLM proxy is
+OpenAI-compatible; whether it also exposes an **Anthropic-native Messages API
+route** is an open Verification-milestone item (verification discipline). If it
+does not, this adapter's requests will not reach a working upstream — override
+``base_url`` via ``**kw`` to point at a real Anthropic-native route once confirmed.
+The first ``client()`` call emits a one-time unverified-route warning. This
+example constructs the client but does NOT make a live call.
 """
 
 from __future__ import annotations

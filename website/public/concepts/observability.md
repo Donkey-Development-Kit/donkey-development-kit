@@ -129,7 +129,9 @@ takes, it produces **exactly one span**, and that span closes:
   span stays open until the stream finishes and is closed **exactly once**,
   whether you drain it fully, abandon it mid-iteration, or it raises partway
   through. `gen_ai.usage.*` and the `donkey.usage.*` detail counts are populated
-  from that terminal event (and merged onto `donkey.last_call` at the same time).
+  from that terminal event (and merged onto `donkey.last_call` at the same time
+  when the response passes through the SDK's shared HTTP client; see
+  [when `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable)).
 
   Streaming token counts appear **only if the stream actually carries a usage
   event.** For OpenAI-style Chat Completions that means requesting it with

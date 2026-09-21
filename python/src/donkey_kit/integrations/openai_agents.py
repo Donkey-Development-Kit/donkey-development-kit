@@ -58,7 +58,7 @@ class OpenAIAgentsAdapter(Adapter):
     def model(self, model: str, **kw: Any) -> OpenAIChatCompletionsModel:
         """Return a native ``OpenAIChatCompletionsModel`` pointed at the proxy,
         ready to pass into ``agents.Agent(model=...)`` (BG §1.8)."""
-        from agents import OpenAIChatCompletionsModel  # verified: docs/verified-apis.md §8
+        from agents import OpenAIChatCompletionsModel  # VERIFY name/path: docs/verified-apis.md §8
 
         return OpenAIChatCompletionsModel(model=model, **self.connection_kwargs(), **kw)
 

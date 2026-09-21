@@ -178,7 +178,9 @@ class Budget:
             self.reset_at = ts + timedelta(milliseconds=reset_ms)
 
     @asynccontextmanager
-    async def pace(self, *, reserve: float = 0.0) -> AsyncIterator[None]:
+    async def pace(
+        self, *, reserve: float = 0.0, now: datetime | None = None
+    ) -> AsyncIterator[None]:
         """Guard a request so it is refused *before* it crosses your reserve, not
         after a 429 comes back (BG §1.3, #186).
 
@@ -187,23 +189,42 @@ class Budget:
         full exhaustion. On entry, if the observed :attr:`fraction_used` has reached
         ``1.0 - reserve``, :class:`~donkey_kit.core.errors.BudgetReserveReached` is
         raised and the guarded block never runs — so the request that would cross
-        the reserve is never issued. Recover with :meth:`wait_for_reset` and retry::
+        the reserve is never issued. Recover with :meth:`wait_for_reset` and retry
+        the same work::
 
-            try:
-                async with donkey.budget.pace(reserve=0.05):
-                    await enrich(batch)
-            except BudgetReserveReached:
-                await donkey.budget.wait_for_reset()
+            while True:
+                try:
+                    async with donkey.budget.pace(reserve=0.05):
+                        await enrich(batch)
+                except BudgetReserveReached as exc:
+                    if exc.reset_at is None:
+                        raise  # no reset time means wait_for_reset() cannot make progress
+                    await donkey.budget.wait_for_reset()
+                    continue
+                break
 
         An **unobserved** budget (no call has returned yet, so
         :attr:`fraction_used` is ``None``) lets the block through: with nothing
         observed there is no basis to refuse, and blocking forever on a cold start
-        would be worse than one request that discovers the real headroom.
+        would be worse than one request that discovers the real headroom. An
+        observation whose :attr:`reset_at` has elapsed is stale for the same reason,
+        so :meth:`pace` no longer refuses requests. A later response carrying a
+        recognised budget signal updates the observed fields; a refreshed
+        :attr:`reset_at` in the future makes the reserve guard active again. A
+        response that does not supply a refreshed future :attr:`reset_at` leaves the
+        stale pass-through open. Before ``reset_at`` — or when no reset time was
+        observed — the reserve guard remains active. The no-reset state does not age
+        out on its own: there is no known safe time to release the guard, so the
+        caller must handle or propagate :class:`BudgetReserveReached` rather than
+        retrying through :meth:`pace`. ``now`` is injectable for tests; production
+        passes nothing and the wall clock (UTC) is used.
         """
         if not 0.0 <= reserve <= 1.0:
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")
         used = self.fraction_used
-        if used is not None and used >= 1.0 - reserve:
+        current = now if now is not None else _utcnow()
+        window_expired = self.reset_at is not None and current >= self.reset_at
+        if used is not None and used >= 1.0 - reserve and not window_expired:
             raise BudgetReserveReached(
                 f"Budget reserve reached: {used:.1%} of the window used, "
                 f"reserve is {reserve:.1%} (trips at {1.0 - reserve:.1%}).",
@@ -217,10 +238,13 @@ class Budget:
         """Sleep until :attr:`reset_at`, then return — the recovery half of pacing
         (BG §1.3, #186).
 
-        A single sleep, never a spin loop. If the window is unobserved
+        A single sleep, never a spin loop. If the reset time is unobserved
         (:attr:`reset_at` is ``None``) or already past, this returns immediately —
-        there is nothing to wait for. ``now`` is injectable for tests; production
-        passes nothing and the wall clock (UTC) is used.
+        there is nothing to wait for. Callers retrying guarded work must propagate
+        :class:`BudgetReserveReached` when its ``reset_at`` is ``None``; otherwise
+        an unconditional wait-and-retry loop cannot make progress. ``now`` is
+        injectable for tests; production passes nothing and the wall clock (UTC)
+        is used.
         """
         if self.reset_at is None:
             return

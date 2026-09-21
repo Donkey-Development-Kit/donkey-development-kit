@@ -24,9 +24,11 @@ from typing import Any
 from ..core import _verify
 
 
-class AssetType(Enum):
-    MCP_SERVER = "mcp_server"
-    A2A_AGENT = "a2a_agent"
+class PublicationAssetType(Enum):
+    """SDK publication categories; exact Exchange token strings are UNVERIFIED."""
+
+    MCP_SERVER = "mcp"
+    A2A_AGENT = "a2a-agent"
     AGENT = "agent"
     API = "api"
 
@@ -52,7 +54,7 @@ class DescriptionIssue:
 
 @dataclass(frozen=True)
 class Publication:
-    asset_type: AssetType
+    asset_type: PublicationAssetType
     group_id: str
     asset_id: str
     version: str
@@ -79,10 +81,14 @@ class Publication:
 
     # ---- verb: export (laptop) --------------------------------------------
     def export(self, path: str | Path | None = None) -> str:
-        """Compile into the donkey.yaml spec (provisioning-as-code). Lands with M4 (the build plan
-        phases)."""
+        """Compile to a ``donkey.yaml`` fragment (provisioning-as-code)."""
         raise _verify.blocked(
-            "Publication.export() emits the M4 spec (provisioning-as-code, the build plan phases)."
+            "Publication.export() emits the shared donkey.yaml spec format; keep it identical "
+            "to donkey_kit.provisioning.spec and do not diverge it. The export mapping remains "
+            "unresolved: docs/verified-apis.md §5 confirms an Agent Network Maven-project + CLI "
+            "flow but not whether export() wraps that toolchain or emits its project layout "
+            "(the Verification milestone). This surface does not add a provisioning control "
+            "plane competing with API Manager or Terraform."
         )
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------

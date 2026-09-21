@@ -114,9 +114,10 @@ framework that may not be installed.
   — span consumers must close in a `finally`, never relying on the response hook.
   A hookless client behaves exactly as it did before the hooks were added. The
   full contracts live in the `core/transport.py` docstrings.
-- **`Governance`** (`governance.py`) is a second top-level object alongside
-  `Donkey`, outside the linear import stack — it depends only on `core`. It is
-  ONE object behind three verbs: `simulate()` (an ephemeral local
+- **`Governance`** (`governance.py`) is legacy scaffolding outside the linear
+  import stack — it depends only on `core` and remains reachable from its module,
+  but it is not exported as first-class `donkey_kit` API. It is ONE object behind
+  three verbs: `simulate()` (an ephemeral local
   gateway harness), `export()` (emit the governed-state manifest), and `resolve()`
   (reconcile a running `Donkey` against it, raising `GovernanceDrift` on
   mismatch); a separate platform-team-only `apply()` is the deliberate escape
@@ -182,7 +183,10 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 2. **Every error carries a `remediation`.** On `PolicyViolation` the human-readable
    next step is a *required* field — the concrete action to take (e.g. "the budget
    window resets in 42m; request an increase in API Manager") is worth more than a
-   stack trace.
+   stack trace. `AuthError` uses its class-level LLM-proxy guidance by default and
+   canonical class-level overrides for connected-app and provider-chain failures,
+   so its message and remediation always name the same credential plane and auth
+   provider.
 
 **`classify()` is fixture-driven, not guessed.** The HTTP-response → exception
 mapping in `classify()` is populated from real rejection captures taken against a
@@ -240,18 +244,22 @@ up front. The demotion landed in #197; deepening LangGraph is tracked in #198.
 (`python/tests/conformance/suite.py`) runs identically against every adapter. A
 framework is "supported" only when it passes every scenario **or** records an
 *asserted exemption* in `KNOWN_LIMITATIONS` — never a silent skip. Those
-exemptions are published in the README as credibility (e.g. adapters that reach
-models through LiteLLM cannot propagate a per-run correlation ID, because LiteLLM
-owns the transport).
+exemptions are published in the README as credibility. ADK and CrewAI cannot
+propagate a per-run correlation ID or populate `donkey.last_call`, because
+LiteLLM owns the transport. LlamaIndex and Microsoft Agent Framework have the
+same two exemptions because they receive only a static `default_headers`
+snapshot, which deliberately excludes the per-run correlation ID, rather than
+the SDK's shared HTTP client.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
 pytest plugin** users run against their own agent (#191).
 
-Two adapters carry documented conformance exemptions: CrewAI (per-run
-correlation degrades to per-client because it reaches models through LiteLLM,
-like ADK) and the Anthropic SDK (depends on the proxy exposing an
-Anthropic-native Messages API route, an open verification item).
+Four adapters carry documented conformance exemptions for per-run correlation
+and gateway-identity observation: ADK and CrewAI because LiteLLM owns their
+transport, plus LlamaIndex and Microsoft Agent Framework because they receive
+only static headers. The conformance suite pins those exemptions to each
+adapter's actual transport behavior.
 
 ---
 

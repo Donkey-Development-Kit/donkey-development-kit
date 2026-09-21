@@ -78,7 +78,7 @@ async def test_pace_raises_before_the_body_when_reserve_crossed() -> None:
     _observe(b, limit=1000, remaining=50, reset_ms=60000)  # 95% used
     ran = False
     with pytest.raises(BudgetReserveReached) as exc:
-        async with b.pace(reserve=0.10):  # threshold 90%
+        async with b.pace(reserve=0.10, now=_FIXED_NOW):  # threshold 90%
             ran = True
     assert ran is False  # the body never executed → no request was issued
     assert exc.value.fraction_used == pytest.approx(0.95)
@@ -122,6 +122,45 @@ async def test_pace_default_reserve_only_fires_at_full_exhaustion() -> None:
     with pytest.raises(BudgetReserveReached):
         async with b.pace():
             pass
+
+
+async def test_pace_defaults_to_wall_clock_after_reset() -> None:
+    """Omitting now= uses the real UTC clock, as production callers do."""
+    b = Budget()
+    observed_at = datetime.now(timezone.utc) - timedelta(seconds=2)
+    b.observe(
+        _resp(
+            **{
+                "x-token-limit": "1000",
+                "x-token-remaining": "0",
+                "x-token-reset": "1000",
+            }
+        ),
+        now=observed_at,
+    )
+
+    ran = False
+    async with b.pace():
+        ran = True
+    assert ran
+
+
+async def test_pace_defaults_to_wall_clock_before_reset() -> None:
+    """The real UTC clock keeps the reserve guard armed before reset_at."""
+    b = Budget()
+    b.observe(
+        _resp(
+            **{
+                "x-token-limit": "1000",
+                "x-token-remaining": "0",
+                "x-token-reset": "60000",
+            }
+        )
+    )
+
+    with pytest.raises(BudgetReserveReached):
+        async with b.pace():
+            raise AssertionError("body must not run before the window resets")
 
 
 # --- wait_for_reset(): the recovery sleep -----------------------------------
@@ -171,7 +210,7 @@ async def test_pace_then_wait_then_resume_cycle(recorded_sleeps: list[float]) ->
     # 2) window nearly exhausted → the next batch is refused before it runs
     _observe(b, limit=20000, remaining=500, reset_ms=60000)  # 97.5% used
     with pytest.raises(BudgetReserveReached):
-        async with b.pace(reserve=0.05):  # threshold 95%
+        async with b.pace(reserve=0.05, now=_FIXED_NOW):  # threshold 95%
             raise AssertionError("body must not run once the reserve is reached")
 
     # 3) wait for the window, then a fresh window lets work resume
@@ -179,6 +218,96 @@ async def test_pace_then_wait_then_resume_cycle(recorded_sleeps: list[float]) ->
     assert recorded_sleeps == [pytest.approx(60.0)]
     _observe(b, limit=20000, remaining=20000, reset_ms=60000)  # reset happened
     ran_after = False
-    async with b.pace(reserve=0.05):
+    async with b.pace(reserve=0.05, now=_FIXED_NOW + timedelta(seconds=60)):
         ran_after = True
     assert ran_after
+
+
+async def test_pace_allows_probe_after_wait_without_manual_observe(
+    recorded_sleeps: list[float],
+) -> None:
+    """Regression #452: the documented wait-and-retry loop must make progress
+    without injecting the fresh observation that only the guarded request can produce."""
+    b = Budget()
+    _observe(b, limit=20000, remaining=500, reset_ms=60000)  # 97.5% used
+
+    with pytest.raises(BudgetReserveReached):
+        async with b.pace(reserve=0.05, now=_FIXED_NOW):
+            raise AssertionError("body must not run before the window resets")
+
+    await b.wait_for_reset(now=_FIXED_NOW)
+    assert recorded_sleeps == [pytest.approx(60.0)]
+
+    ran_probe = False
+    async with b.pace(reserve=0.05, now=_FIXED_NOW + timedelta(seconds=60)):
+        ran_probe = True
+    assert ran_probe
+
+
+async def test_documented_retry_loop_raises_when_reset_time_is_unknown(
+    recorded_sleeps: list[float],
+) -> None:
+    """Regression #487: partial budget state cannot hot-spin when there is no
+    reset time for ``wait_for_reset()`` to wait on."""
+    b = Budget()
+    _observe(b, limit=20000, remaining=500)  # 97.5% used, reset_at unknown
+    attempts = 0
+
+    with pytest.raises(BudgetReserveReached) as exc:
+        while True:
+            try:
+                attempts += 1
+                async with b.pace(reserve=0.05, now=_FIXED_NOW):
+                    raise AssertionError("body must not run once the reserve is reached")
+            except BudgetReserveReached as error:
+                if error.reset_at is None:
+                    raise
+                await b.wait_for_reset()
+                continue
+            break
+
+    assert exc.value.reset_at is None
+    assert exc.value.remediation is BudgetReserveReached.remediation
+    assert attempts == 1
+    assert recorded_sleeps == []
+
+
+async def test_signal_free_response_leaves_expired_window_open() -> None:
+    """BG §1.3: once reset_at has elapsed, a response with no budget signal
+    leaves the stale pass-through open rather than restoring the old refusal."""
+    b = Budget()
+    _observe(b, limit=20000, remaining=500, reset_ms=1000)  # 97.5% used
+    later = _FIXED_NOW + timedelta(seconds=2)
+
+    b.observe(_resp(), now=later)
+
+    ran = False
+    async with b.pace(reserve=0.05, now=later):
+        ran = True
+    assert ran
+
+
+async def test_future_reset_at_rearms_expired_window() -> None:
+    """BG §1.3: a recognised signal with a future reset_at makes the reserve
+    guard active again after the previous observation expired."""
+    b = Budget()
+    _observe(b, limit=20000, remaining=500, reset_ms=1000)  # 97.5% used
+    later = _FIXED_NOW + timedelta(seconds=2)
+
+    async with b.pace(reserve=0.05, now=later):
+        pass
+
+    b.observe(
+        _resp(
+            **{
+                "x-token-limit": "20000",
+                "x-token-remaining": "500",
+                "x-token-reset": "60000",
+            }
+        ),
+        now=later,
+    )
+
+    with pytest.raises(BudgetReserveReached):
+        async with b.pace(reserve=0.05, now=later):
+            pass

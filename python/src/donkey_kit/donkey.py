@@ -135,7 +135,11 @@ class Donkey:
         # never an error) otherwise. This is the single funnel — from_env()
         # delegates here — and it is idempotent across many Donkey() instances.
         configure_otlp_export(self._cfg)
-        self._auth = auth if auth is not None else self._default_auth(self._cfg)
+        self._owned_auth_http: DonkeyAsyncClient | None = None
+        if auth is None:
+            self._auth, self._owned_auth_http = self._default_auth(self._cfg)
+        else:
+            self._auth = auth
         # One Budget per Donkey (never global, BG §1.3 / #185): both transports feed
         # it in-band from every response's x-token-* headers.
         self._budget = Budget()
@@ -462,8 +466,16 @@ class Donkey:
         return self._sync_http
 
     async def aclose(self) -> None:
-        await self._http.aclose()
-        self.close()
+        auth_http = self._owned_auth_http
+        self._owned_auth_http = None
+        try:
+            await self._http.aclose()
+        finally:
+            try:
+                if auth_http is not None:
+                    await auth_http.aclose()
+            finally:
+                self.close()
 
     async def __aenter__(self) -> Donkey:
         return self
@@ -472,8 +484,12 @@ class Donkey:
         await self.aclose()
 
     def close(self) -> None:
-        """Close the blocking transport. ``aclose()`` calls this too, so an async
-        caller who also used ``client(sync=True)`` still closes both."""
+        """Close the blocking transport.
+
+        This sync method cannot close either async transport. A sync-only caller
+        never opens them; mixed or async callers must use :meth:`aclose`, which
+        closes both async transports and calls this method for the blocking one.
+        """
         if self._sync_http is not None:
             self._sync_http.close()
             self._sync_http = None
@@ -508,14 +524,18 @@ class Donkey:
         return adapter
 
     @staticmethod
-    def _default_auth(cfg: DonkeyConfig) -> AuthProvider | None:
+    def _default_auth(
+        cfg: DonkeyConfig,
+    ) -> tuple[AuthProvider | None, DonkeyAsyncClient | None]:
         """Build control-plane auth when credentials are present. The LLM proxy
         credential is separate and handled by the OpenAI client (`BG §1.1`)."""
         if cfg.client_id and cfg.client_secret:
-            return AnypointConnectedApp(
+            http_client = build_http_client(cfg, None)  # token fetches need no auth
+            auth = AnypointConnectedApp(
                 client_id=cfg.client_id,
                 client_secret=cfg.client_secret,
                 control_plane_url=cfg.control_plane_url,
-                http_client=build_http_client(cfg, None),  # token fetches need no auth
+                http_client=http_client,
             )
-        return None
+            return auth, http_client
+        return None, None

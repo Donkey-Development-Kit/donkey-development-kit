@@ -74,12 +74,13 @@ class ConfigError(DonkeyError):
 
 
 class AuthError(DonkeyError):
-    """401/403 on the control plane.
+    """Rejected credentials on the Anypoint control plane or LLM-proxy data plane.
 
-    ``remediation`` is a class attribute (like :class:`GatewayUnavailable`, not
-    the constructor-enforced :class:`PolicyViolation` contract) so ``donkey
-    doctor`` (#202) has one canonical wording to print for a credentials
-    rejection rather than a second copy."""
+    The class-level ``remediation`` is the LLM-proxy data-plane default that
+    ``donkey doctor`` (#202) reuses. Control-plane callers override it with one
+    of the canonical class values below, so the next step matches the auth
+    provider that failed (#484). This is not the constructor-enforced
+    :class:`PolicyViolation` contract."""
 
     #: Single source of next-step wording for a rejected-credentials diagnosis.
     remediation: str = (
@@ -89,6 +90,27 @@ class AuthError(DonkeyError):
         "Anypoint control-plane credential and not a bearer token — and that the "
         "consumer is authorized on the instance in API Manager (docs/verified-apis.md §2)."
     )
+    connected_app_remediation: str = (
+        "Check the configured Anypoint control-plane auth provider. For a connected app, "
+        "verify ANYPOINT_CLIENT_ID / ANYPOINT_CLIENT_SECRET and that the app has the scopes "
+        "the operation needs (docs/verified-apis.md §1)."
+    )
+    provider_chain_remediation: str = (
+        "Every configured Anypoint control-plane auth provider failed. Inspect the last "
+        "error and verify each provider's credentials or token source. If the chain uses "
+        "a connected app, also verify its required scopes (docs/verified-apis.md §1)."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        remediation: str | None = None,
+        **kw: Any,
+    ) -> None:
+        super().__init__(message, **kw)
+        if remediation is not None:
+            self.remediation = remediation
 
 
 class PolicyViolation(DonkeyError):
@@ -162,14 +184,23 @@ class BudgetReserveReached(DonkeyError):
     Deliberately NOT a :class:`PolicyViolation`: that base marks a gateway-enforced
     refusal that is terminal and never retried. This is the client-side opposite —
     a pre-emptive signal, raised locally from observed budget headers before any
-    request is sent, that the caller is *expected* to recover from (typically
-    ``await budget.wait_for_reset()`` then continue). Classifying it as a refusal
-    would misrepresent it at the framework boundary.
+    request is sent. When :attr:`reset_at` is known, the caller can recover with
+    ``await budget.wait_for_reset()`` then continue. When it is ``None``, waiting
+    cannot make progress, so the caller must handle or propagate the signal instead
+    of retrying immediately. Classifying it as a refusal would misrepresent it at
+    the framework boundary.
 
     Carries the observed budget state at the moment pacing tripped so a handler can
     decide without re-reading the object: ``fraction_used`` (0.0-1.0), the
-    ``reserve`` that was requested, and ``reset_at`` (``None`` if the window has not
-    been observed yet)."""
+    ``reserve`` that was requested, and ``reset_at`` (``None`` if the reset time has
+    not been observed)."""
+
+    remediation: str = (
+        "When reset_at is known, call await budget.wait_for_reset() before retrying. "
+        "When reset_at is None, waiting cannot make progress; preserve the last "
+        "checkpoint and handle or propagate this exception instead of retrying "
+        "immediately."
+    )
 
     def __init__(
         self,
@@ -549,8 +580,9 @@ def classify(
     # wrong-credential 401 still lands here.
     if status == 401 or (status == 403 and "www-authenticate" in response.headers):
         return AuthError(
-            f"Authentication/authorization failed ({status}). Check the "
-            f"connected-app credentials and their scopes (see docs/verified-apis.md §1).",
+            f"Authentication/authorization failed ({status}). Check the consumer "
+            "client_id/client_secret pair and its API Manager authorization "
+            "for this LLM-proxy instance (see docs/verified-apis.md §2).",
             **kw,
         )
 
