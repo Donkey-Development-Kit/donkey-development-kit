@@ -36,12 +36,13 @@ class ToolSet:
         tools; handing 60 descriptors to a model degrades it and inflates token
         cost (BG §2.7)."""
 
-        self._filter = ToolFilter(
+        filtered = ToolSet(self._servers)
+        filtered._filter = ToolFilter(
             allow=frozenset(allow) if allow is not None else None,
             deny=frozenset(deny or ()),
             predicate=predicate,
         )
-        return self
+        return filtered
 
     @property
     def name_map(self) -> dict[str, str]:
