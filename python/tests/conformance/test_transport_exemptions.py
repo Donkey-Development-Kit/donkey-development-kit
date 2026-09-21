@@ -39,6 +39,7 @@ from donkey_kit.integrations._base import Adapter
 
 _GATEWAY_SCENARIO = "gateway_identity_observed"
 _CORRELATION_SCENARIO = "correlation_id_propagated"
+_JWT_SCENARIO = "jwt_token_refreshed"
 _HEADER_ONLY_ADAPTERS = {"llamaindex", "agent_framework"}
 
 
@@ -50,7 +51,24 @@ def _adapter_class(attr: str) -> type[Adapter]:
 
 
 def test_scenario_is_registered() -> None:
-    assert {_GATEWAY_SCENARIO, _CORRELATION_SCENARIO} <= set(CONFORMANCE_SCENARIOS)
+    assert {_GATEWAY_SCENARIO, _CORRELATION_SCENARIO, _JWT_SCENARIO} <= set(
+        CONFORMANCE_SCENARIOS
+    )
+
+
+def test_jwt_exemption_recorded_for_transport_detached_adapters() -> None:
+    # A rotating model-wallet JWT can only be refreshed per-send by our transport
+    # (#509). The adapters that own their transport (LiteLLM) or take only a
+    # one-time default_headers snapshot pin the token at construction, so jwt auth
+    # mode is unsupported on them — asserted here, exactly like the last_call and
+    # correlation-id exemptions, never a silent skip. That is the SAME set of four
+    # non-transport-routed adapters.
+    exempted = {
+        adapter
+        for adapter, limits in KNOWN_LIMITATIONS.items()
+        if _JWT_SCENARIO in limits
+    }
+    assert exempted == {"adk", "crewai", "llamaindex", "agent_framework"}
 
 
 def test_every_known_limitation_names_a_real_scenario() -> None:

@@ -42,6 +42,13 @@ CONFORMANCE_SCENARIOS = [
     # outside our transport cannot observe it and record an asserted exemption
     # below rather than a bare None.
     "gateway_identity_observed",
+    # In jwt / model-wallet auth mode (#509) the rotating JWT is injected per-send
+    # from the attached AuthProvider, so an expired token is refreshed on the next
+    # request (and on a 401, via the transport's invalidate→retry-once loop).
+    # Holds only for adapters routed through our httpx client; the frameworks that
+    # build their own transport from a one-time default_headers snapshot pin the
+    # token at construction and record an asserted exemption below (BG §1.8).
+    "jwt_token_refreshed",
 ]
 
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
@@ -74,25 +81,47 @@ _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
     "gateway identity and reports UNAVAILABLE (#362)."
 )
 
+# jwt_token_refreshed has the SAME structural cause as the correlation-id and
+# last-call exemptions (#509): a rotating model-wallet JWT can only be refreshed
+# per-send by our transport. A framework that owns its transport (LiteLLM) or is
+# handed only a one-time default_headers snapshot pins whatever token existed at
+# construction and starts 401-ing after it expires — so jwt auth mode is
+# unsupported on those adapters, asserted here rather than silently skipped.
+_LITELLM_JWT_EXEMPTION = (
+    "LiteLLM owns the transport; we cannot inject our httpx client, so a rotating "
+    "model-wallet JWT cannot be refreshed per-send and would expire. Use client-id "
+    "auth with this adapter, or route the raw/LangGraph client for jwt mode (#509)."
+)
+_DEFAULT_HEADERS_JWT_EXEMPTION = (
+    "The adapter is handed only a static default_headers snapshot, which pins the "
+    "JWT at construction; without our httpx client the token cannot be refreshed "
+    "and 401s after expiry. jwt auth mode is async-only through our transport (#509)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # ADK and CrewAI both reach models through LiteLLM (BG §1.8).
     "adk": {
         "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
+        "jwt_token_refreshed": _LITELLM_JWT_EXEMPTION,
     },
     "crewai": {
         "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
+        "jwt_token_refreshed": _LITELLM_JWT_EXEMPTION,
     },
     # LlamaIndex and MS Agent Framework get only a static default_headers snapshot,
     # no httpx client (BG §1.8). The snapshot deliberately excludes the per-run
-    # correlation ID and cannot observe last_call responses.
+    # correlation ID, cannot observe last_call responses, and cannot carry a
+    # rotating JWT (it pins the token at construction).
     "llamaindex": {
         "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
         "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,
+        "jwt_token_refreshed": _DEFAULT_HEADERS_JWT_EXEMPTION,
     },
     "agent_framework": {
         "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
         "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,
+        "jwt_token_refreshed": _DEFAULT_HEADERS_JWT_EXEMPTION,
     },
 }

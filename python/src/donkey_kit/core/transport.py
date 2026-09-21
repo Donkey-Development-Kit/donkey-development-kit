@@ -166,17 +166,28 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
 
 
 def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
-    """The LLM-proxy consumer-auth request headers, LIVE-VERIFIED (docs/verified-apis.md §2/§3):
-    a ``client_id`` + ``client_secret`` pair enforced by ``client-id-enforcement``.
-    This pair IS the per-agent attribution identity, NOT a bearer token.
+    """The LLM-proxy consumer-auth request headers for the current auth mode
+    (BG §1.1), combined with :func:`attribution_headers` so a single
+    ``default_headers`` snapshot carries both when handed to a native framework
+    client. Missing credentials are simply omitted — :meth:`DonkeyConfig.validated`
+    is where the absence is reported with actionable guidance.
 
-    Combined here with :func:`attribution_headers` so a single ``default_headers``
-    snapshot carries both when handed to a native framework client. Missing
-    credentials are simply omitted — :meth:`DonkeyConfig.validated` is where the
-    absence is reported with actionable guidance.
+    * ``client-id`` mode (default): the LIVE-VERIFIED ``client_id`` +
+      ``client_secret`` pair enforced by ``client-id-enforcement``
+      (docs/verified-apis.md §2/§3). This pair IS the per-agent attribution identity.
+    * ``jwt`` mode (model-wallet ingress, #372/#509): the durable wallet-selector
+      ``X-Client-Id`` only — and NEVER the CIE pair (Client ID Enforcement is
+      disabled on a wallet proxy). The rotating JWT is NOT in this snapshot: it is
+      injected per-send by :meth:`DonkeyAsyncClient._inject_headers` from the
+      attached ``AuthProvider``, because a static snapshot cannot carry a
+      credential that rotates.
     """
 
     headers = attribution_headers(cfg)
+    if cfg.llm_proxy_auth == "jwt":
+        if cfg.llm_proxy_wallet_client_id:
+            headers[_verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER] = cfg.llm_proxy_wallet_client_id
+        return headers
     if cfg.llm_proxy_client_id:
         headers[_verify.LLM_PROXY_CLIENT_ID_HEADER] = cfg.llm_proxy_client_id
     if cfg.llm_proxy_client_secret:
@@ -606,6 +617,13 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             **kw,  # type: ignore[arg-type]
         )
 
+    @property
+    def token_provider(self) -> AuthProvider | None:
+        """The attached :class:`AuthProvider`, if any. Read by ``LLMClient`` to
+        tell an attached JWT provider from a missing one in ``jwt`` auth mode
+        (#509) — the provider lives on the transport, not on ``DonkeyConfig``."""
+        return self._token_provider
+
     async def _inject_headers(self, request: httpx.Request) -> None:
         _apply_base_headers(
             self._cfg,
@@ -613,15 +631,36 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             ensure_correlation_id(),
             correlation_header=self._correlation_header,
         )
+        # jwt auth mode (model-wallet ingress, #509/#372): stamp the durable
+        # wallet-selector ``X-Client-Id`` on every data-plane send (not just the
+        # default_headers snapshot), so adapters routed through this shared client
+        # carry it too. The name is VERIFIED (docs/verified-apis.md §2/§3).
+        if self._cfg.llm_proxy_auth == "jwt" and self._cfg.llm_proxy_wallet_client_id:
+            request.headers.setdefault(
+                _verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER,
+                self._cfg.llm_proxy_wallet_client_id,
+            )
         if self._token_provider is not None:
             token = await self._token_provider.token()
-            # Control plane uses OAuth2 client_credentials → ``Authorization:
-            # Bearer`` (VERIFIED docs/verified-apis.md §12.1). The LLM proxy (data
-            # plane) instead uses
-            # client_id/client_secret headers and gets NO token provider, so it
-            # never reaches here; ``setdefault`` also yields to the OpenAI SDK's
-            # own Authorization if one was set at the call site.
-            request.headers.setdefault("Authorization", f"Bearer {token}")
+            # Two token-bearing ingresses ride here, both as ``Authorization:
+            # Bearer`` (VERIFIED): the control-plane OAuth2 client_credentials token
+            # (docs/verified-apis.md §12.1) and — when jwt auth mode is selected — the
+            # data-plane model-wallet JWT (docs/verified-apis.md §2/§3, #372). The header
+            # name/scheme come from the verified wallet constants so there is one
+            # source; the control-plane token happens to use the identical shape.
+            header = _verify.LLM_PROXY_WALLET_JWT_HEADER
+            value = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
+            if self._cfg.llm_proxy_auth == "jwt":
+                # The OpenAI SDK pre-sets ``Authorization: Bearer <api_key>`` from
+                # its mandatory key slot; a wallet proxy READS this header as the
+                # JWT, so we must OVERRIDE that sentinel with the fresh per-send
+                # token. ``setdefault`` would yield to the sentinel and 401.
+                request.headers[header] = value
+            else:
+                # Control plane: the OpenAI SDK is not in this path, and on a CIE
+                # data-plane call the proxy ignores Authorization — so yield to any
+                # call-site Authorization rather than clobber it.
+                request.headers.setdefault(header, value)
 
     # --- lifecycle hooks (the skeleton's attachment points, BG §1.1) --------
     # These are the *logical* per-``send()`` seams the Phase 1 six-piece minimum
