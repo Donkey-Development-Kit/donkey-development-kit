@@ -147,7 +147,9 @@ for batch in chunks(records, 200):
         try:
             async with donkey.budget.pace(reserve=0.05):
                 await enrich(batch)
-        except BudgetReserveReached:
+        except BudgetReserveReached as exc:
+            if exc.reset_at is None:
+                raise  # no reset time means waiting cannot make progress
             await donkey.budget.wait_for_reset()
             continue
         break
@@ -158,7 +160,11 @@ After `reset_at`, the old observation is stale, so `pace()` no longer refuses.
 A response carrying a budget signal updates the observed fields; a fresh future
 `reset_at` makes the guard active again. A response that does not supply a fresh
 future `reset_at` leaves the stale pass-through open. The job can therefore
-continue overnight without a manual budget observation.
+continue overnight without a manual budget observation. If a partial observation
+reaches the reserve without a `reset_at`, the loop re-raises
+`BudgetReserveReached` instead of calling `wait_for_reset()` and spinning at zero
+delay. The caller can preserve its last checkpoint and escalate the incomplete
+budget signal without crossing its reserve.
 
 **Why it matters — Scenario A.** A dashboard shows `fraction_used` per agent. The support agent's owner sees it climbing at 14:00 and requests an increase before the 16:00 peak instead of after the outage.
 
@@ -168,6 +174,7 @@ continue overnight without a manual budget observation.
 - `x-token-reset` in milliseconds is converted correctly (fixture with a known value; assert `reset_at` to the second).
 - `pace()` raises before the request that would cross the reserve, not after a 429.
 - After `reset_at`, `pace()` no longer refuses; the documented `pace()` → `wait_for_reset()` → retry loop makes progress without a manual budget observation. A later response updates the budget only when it carries a recognised signal, and the guard becomes active again when that update supplies a future `reset_at`.
+- When the reserve is reached but `reset_at` is unknown, the documented loop re-raises `BudgetReserveReached` after one attempt instead of retrying at zero delay.
 - Budget object is per-`Donkey`, not global; two `Donkey` instances with different credentials do not share state.
 
 **Effort:** S.
@@ -390,11 +397,17 @@ donkey.on(PolicyViolation).escalate(to=hitl_queue)     # catch-all
 ```python
 # BEFORE — 1.3: recovery written inside every loop that touches the model
 for batch in chunks(records, 200):
-    try:
-        async with donkey.budget.pace(reserve=0.05):
-            await enrich(batch); checkpoint(batch)
-    except BudgetReserveReached:
-        await donkey.budget.wait_for_reset(); continue
+    while True:
+        try:
+            async with donkey.budget.pace(reserve=0.05):
+                await enrich(batch)
+        except BudgetReserveReached as exc:
+            if exc.reset_at is None:
+                raise
+            await donkey.budget.wait_for_reset()
+            continue
+        break
+    checkpoint(batch)
 
 # AFTER — 2.1: recovery declared once, runs at the transport
 donkey.on(TokenBudgetExceeded).wait_for_reset()
@@ -408,7 +421,7 @@ for batch in chunks(records, 200):
 
 **Why it matters — Scenario A.** Twelve LangGraph nodes call the model. Without handlers, each node needs the same PII try/except. With handlers, it is defined once and applied at the transport.
 
-**Rule to enforce.** Handlers *react*; they never *decide policy*. A handler cannot un-refuse a request. If someone proposes `donkey.on(PIIDetected).ignore()`, that is client-side enforcement by another name — reject it in review.
+**Rule to enforce.** Handlers *react*; they never *decide policy*. A handler cannot un-refuse a request. If someone proposes `donkey.on(PIIDetected).ignore()`, that is client-side enforcement by another name — reject it in review. Every wait-and-retry handler must also prove it can wait: if the refusal carries no reset time, re-raise it rather than calling a no-op wait and retrying at zero delay. `max_times` and `max_wait` remain mandatory outer bounds even when a reset time is present.
 
 **Effort:** M.
 

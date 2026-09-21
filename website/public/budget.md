@@ -53,7 +53,9 @@ for batch in chunks(records, 200):
         try:
             async with donkey.budget.pace(reserve=0.05):
                 await enrich(batch)
-        except BudgetReserveReached:
+        except BudgetReserveReached as exc:
+            if exc.reset_at is None:
+                raise  # waiting cannot make progress without a reset time
             await donkey.budget.wait_for_reset()
             continue
         break
@@ -64,7 +66,11 @@ Once `reset_at` has elapsed, the old observation is stale and `pace()` no longer
 refuses. A response carrying a budget signal updates the observed fields; a
 fresh future `reset_at` makes the guard active again. A response that does not
 supply a fresh future `reset_at` leaves the stale pass-through open. The job can
-continue unattended without a manual budget observation.
+continue unattended without a manual budget observation. A partial observation
+can report usage without reporting `reset_at`; in that defensive case the loop
+re-raises `BudgetReserveReached` after one attempt instead of calling
+`wait_for_reset()` and spinning at zero delay. Preserve the last checkpoint and
+escalate the incomplete signal rather than crossing the reserve.
 
 ## The dashboard that prevents the outage
 
@@ -97,6 +103,8 @@ last-known-good. See [Roadmap](https://donkey-development-kit.github.io/donkey-d
   continue without a manual budget observation. A later response updates the
   budget only when it carries a recognised signal, and the guard becomes active
   again when that update supplies a future `reset_at`.
+- If the reserve is reached without a known `reset_at`, the retry loop raises
+  once instead of spinning at zero delay.
 - The budget object is per-`Donkey`, not global: two instances with different
   credentials do not share state.
 

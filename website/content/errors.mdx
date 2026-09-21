@@ -90,10 +90,14 @@ never burn an exhausted budget or replay a blocked prompt.
 Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
 they sit outside the retry question: `BudgetReserveReached` is raised *before* a
 call by [`donkey.budget.pace()`](/budget) and is meant to be recovered from
-(`await donkey.budget.wait_for_reset()`, then continue), and `ModelSubstituted`
-reports that a call *succeeded* against a different model than requested (opt-in
-via `on_model_substitution="raise"`). `ConfigError` is raised locally, pre-flight,
-and reports every missing field at once — fix the config and re-run.
+(`await donkey.budget.wait_for_reset()`, then continue) when its `.reset_at` is
+known. If `.reset_at` is `None`, propagate or handle it instead — waiting returns
+immediately and an unconditional retry would spin. Its `.remediation` carries
+that branch as an inspectable next step, rather than requiring you to parse the
+exception message. `ModelSubstituted` reports that a call *succeeded* against a
+different model than requested (opt-in via `on_model_substitution="raise"`).
+`ConfigError` is raised locally, pre-flight, and reports every missing field at
+once — fix the config and re-run.
 
 [#184]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/184
 
