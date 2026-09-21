@@ -49,19 +49,20 @@ spending the budget twice to do the same work.
 
 ```python
 for batch in chunks(records, 200):
-    async with donkey.budget.pace(reserve=0.05):
-        await enrich(batch)
+    while True:
+        try:
+            async with donkey.budget.pace(reserve=0.05):
+                await enrich(batch)
+        except BudgetReserveReached:
+            await donkey.budget.wait_for_reset()
+            continue
+        break
     checkpoint(batch)
 ```
 
-On `BudgetReserveReached`, wait for the window and carry on:
-
-```python
-await donkey.budget.wait_for_reset()
-continue
-```
-
-The job finishes unattended. Nobody re-runs anything.
+Once `reset_at` has elapsed, the old observation is stale. `pace()` lets the
+retry through so its response can refresh the in-band budget. The job finishes
+unattended; nobody re-runs anything.
 
 ## The dashboard that prevents the outage
 
@@ -90,6 +91,8 @@ last-known-good. See [Roadmap](https://donkey-development-kit.github.io/donkey-d
   against a fixture with a known value.
 - `pace()` raises before the request that would cross the reserve, never after
   a `429`.
+- After `reset_at`, `pace()` lets the retry through so the response can refresh
+  the in-band budget; no manual observation is required.
 - The budget object is per-`Donkey`, not global: two instances with different
   credentials do not share state.
 

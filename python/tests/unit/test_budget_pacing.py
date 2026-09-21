@@ -27,6 +27,12 @@ def _observe(b: Budget, *, limit: int, remaining: int, reset_ms: int | None = No
     b.observe(_resp(**headers), now=_FIXED_NOW)
 
 
+@pytest.fixture(autouse=True)
+def fixed_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep pace() on the same deterministic clock as the injected observations."""
+    monkeypatch.setattr(budget_mod, "_utcnow", lambda: _FIXED_NOW)
+
+
 @pytest.fixture
 def recorded_sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     """Replace ``asyncio.sleep`` inside budget.py with a recorder so tests never
@@ -182,3 +188,26 @@ async def test_pace_then_wait_then_resume_cycle(recorded_sleeps: list[float]) ->
     async with b.pace(reserve=0.05):
         ran_after = True
     assert ran_after
+
+
+async def test_pace_allows_probe_after_wait_without_manual_observe(
+    monkeypatch: pytest.MonkeyPatch,
+    recorded_sleeps: list[float],
+) -> None:
+    """Regression #452: the documented wait-and-retry loop must make progress
+    without injecting the fresh observation that only the guarded request can produce."""
+    b = Budget()
+    _observe(b, limit=20000, remaining=500, reset_ms=60000)  # 97.5% used
+
+    with pytest.raises(BudgetReserveReached):
+        async with b.pace(reserve=0.05):
+            raise AssertionError("body must not run before the window resets")
+
+    await b.wait_for_reset(now=_FIXED_NOW)
+    assert recorded_sleeps == [pytest.approx(60.0)]
+
+    monkeypatch.setattr(budget_mod, "_utcnow", lambda: _FIXED_NOW + timedelta(seconds=60))
+    ran_probe = False
+    async with b.pace(reserve=0.05):
+        ran_probe = True
+    assert ran_probe
