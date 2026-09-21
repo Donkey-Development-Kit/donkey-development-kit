@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from donkey_kit.provisioning.cli import app
@@ -64,21 +65,10 @@ def test_validate_rejects_invalid_specs(content: str, tmp_path: Path) -> None:
 
 
 def test_provisioning_commands_stay_hidden() -> None:
-    result = runner.invoke(app, ["--help"])
+    commands = typer.main.get_command(app).commands
+    visible = {name for name, command in commands.items() if not command.hidden}
 
-    assert result.exit_code == 0, result.output
-    for command in (
-        "validate",
-        "plan",
-        "apply",
-        "drift",
-        "lint",
-        "generate",
-        "status",
-        "publish",
-        "verify",
-    ):
-        assert command not in result.output
+    assert visible == {"init", "doctor", "mock", "test"}
 
 
 @pytest.mark.parametrize(
