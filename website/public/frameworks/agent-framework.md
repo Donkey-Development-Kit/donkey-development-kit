@@ -118,12 +118,12 @@ llm = OpenAIChatClient(
 > **UNVERIFIED**; the shipped middleware is a plain async wrapper pending
 > confirmation of the framework's middleware protocol.
 
-> **`donkey.last_call` is unavailable for this adapter.** Agent Framework
+> **This adapter cannot populate `donkey.last_call`.** Agent Framework
 > receives the governed `default_headers`, but not the SDK's httpx client, so no
 > response reaches `_on_response` and gateway identity, routing, and usage
-> fields cannot be observed. The record reports
-> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and
-> names `"agent_framework"` in `surface` rather than returning ambiguous empty fields.
+> fields cannot be observed. When every adapter resolved on a `Donkey` is
+> non-observing, the record reports `status == LastCallStatus.UNAVAILABLE`,
+> `available == False`, and names the resolved adapters in `surface`.
 > This is a documented, asserted `gateway_identity_observed` conformance
 > exemption.
 

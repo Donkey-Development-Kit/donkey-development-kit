@@ -19,7 +19,9 @@ bespoke header the SDK invents.
 - **Token usage** for cost attribution comes from the response `usage` block
   (`input_tokens`, `output_tokens`, `total_tokens`, plus the detail counts
   `cached_tokens` / `cache_write_tokens` / `reasoning_tokens`), passed through
-  verbatim from the provider and surfaced per-call on `donkey.last_call`.
+  verbatim from the provider and surfaced per-call on `donkey.last_call` when
+  the response passes through the SDK's shared HTTP client. See
+  [when `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
 
 ## Optional attribution metadata
 
@@ -46,10 +48,11 @@ request additionally carries a per-call `X-Donkey-Request-Id` that surfaces on
 `DonkeyError.call_id`. See [Observability](https://donkey-development-kit.github.io/donkey-development-kit/concepts/observability.md#grouping-a-run-the-run-id-on-the-span-the-call-id-on-the-error)
 for the full two-id model.
 
-  **Google ADK caveat.** LiteLLM owns ADK's transport, so the SDK can't inject
-  its HTTP client there — the correlation id is per-client, not per-run. This is
-  a documented, asserted conformance exemption, not a silent gap. Every other
-  framework gets per-run correlation.
+  **Google ADK and CrewAI caveat.** LiteLLM owns their transports, so the SDK
+  can't inject its HTTP client — the correlation id is per-client, not per-run.
+  These are documented, asserted conformance exemptions, not silent gaps. The
+  other framework adapters can propagate per-run correlation through the
+  governed headers they receive.
 
   The **agent→agent egress** attribution header (`x-anypoint-api-instance-id`) is
   a separate telemetry path for component-to-component traffic, not needed for

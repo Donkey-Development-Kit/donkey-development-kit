@@ -802,11 +802,11 @@ each framework exposes:
 |---|---|---|---|
 | LangGraph | ✅ | ✅ | Best case — `default_headers` + custom async client. |
 | Strands | ✅ | ✅ | Via `client_args`. |
-| LlamaIndex | ✅ | ❌ | Receives `default_headers`, not the SDK's HTTP client; `donkey.last_call` is unavailable. `is_chat_model=True` is forced. |
+| LlamaIndex | ✅ | ❌ | Receives `default_headers`, not the SDK's HTTP client, so it cannot populate `donkey.last_call`. `is_chat_model=True` is forced. |
 | OpenAI Agents SDK | ✅ | ✅ | We build the `AsyncOpenAI` client ourselves. |
 | Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [divergence note](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
-| MS Agent Framework | ✅ | ❌ | Receives `default_headers`, not the SDK's HTTP client; `donkey.last_call` is unavailable. Class name/kwarg **unverified**. |
-| Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; correlation is per-client and `donkey.last_call` is unavailable. |
+| MS Agent Framework | ✅ | ❌ | Receives `default_headers`, not the SDK's HTTP client, so it cannot populate `donkey.last_call`. Class name/kwarg **unverified**. |
+| Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; correlation is per-client and the adapter cannot populate `donkey.last_call`. |
 | CrewAI | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; same correlation and `donkey.last_call` exemptions as Google ADK. |
 
   The proxy contract is verified; the exact **constructor signatures** are still
@@ -1124,11 +1124,12 @@ you.
 > ADK is the one adapter in the set where header injection is full but
 > transport injection is not possible.
 
-> **`donkey.last_call` is unavailable for this adapter.** The same LiteLLM-owned
+> **This adapter cannot populate `donkey.last_call`.** The same LiteLLM-owned
 > transport means no response reaches the SDK's `_on_response` hook, so gateway
-> identity, routing, and usage fields cannot be observed. The record reports
-> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names
-> `"adk"` in `surface` rather than returning ambiguous empty fields. This is a
+> identity, routing, and usage fields cannot be observed. When every adapter
+> resolved on a `Donkey` is non-observing, the record reports
+> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names the
+> resolved adapters in `surface`. This is a
 > documented, asserted `gateway_identity_observed` conformance exemption.
 
 > `google-adk` requires `litellm>=1.84` as a floor (not a ceiling) — pin your
@@ -1382,12 +1383,12 @@ llm = OpenAIChatClient(
 > **UNVERIFIED**; the shipped middleware is a plain async wrapper pending
 > confirmation of the framework's middleware protocol.
 
-> **`donkey.last_call` is unavailable for this adapter.** Agent Framework
+> **This adapter cannot populate `donkey.last_call`.** Agent Framework
 > receives the governed `default_headers`, but not the SDK's httpx client, so no
 > response reaches `_on_response` and gateway identity, routing, and usage
-> fields cannot be observed. The record reports
-> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and
-> names `"agent_framework"` in `surface` rather than returning ambiguous empty fields.
+> fields cannot be observed. When every adapter resolved on a `Donkey` is
+> non-observing, the record reports `status == LastCallStatus.UNAVAILABLE`,
+> `available == False`, and names the resolved adapters in `surface`.
 > This is a documented, asserted `gateway_identity_observed` conformance
 > exemption.
 
@@ -1778,11 +1779,12 @@ you.
 > header injection is full, but transport injection is not possible, exactly
 > as with Google ADK.
 
-> **`donkey.last_call` is unavailable for this adapter.** The same LiteLLM-owned
+> **This adapter cannot populate `donkey.last_call`.** The same LiteLLM-owned
 > transport means no response reaches the SDK's `_on_response` hook, so gateway
-> identity, routing, and usage fields cannot be observed. The record reports
-> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names
-> `"crewai"` in `surface` rather than returning ambiguous empty fields. This is a
+> identity, routing, and usage fields cannot be observed. When every adapter
+> resolved on a `Donkey` is non-observing, the record reports
+> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names the
+> resolved adapters in `surface`. This is a
 > documented, asserted `gateway_identity_observed` conformance exemption.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface through
@@ -1904,12 +1906,12 @@ model = OpenAILike(
 > LlamaIndex uses `api_base` rather than `base_url` for its endpoint kwarg;
 > `connection_kwargs()` already translates for you.
 
-> **`donkey.last_call` is unavailable for this adapter.** LlamaIndex receives
+> **This adapter cannot populate `donkey.last_call`.** LlamaIndex receives
 > the governed `default_headers`, but not the SDK's httpx client, so no response
 > reaches `_on_response` and gateway identity, routing, and usage fields cannot
-> be observed. The record reports `status == LastCallStatus.UNAVAILABLE`,
-> `available == False`, and names `"llamaindex"` in `surface` rather than returning
-> ambiguous empty fields. This is a documented, asserted
+> be observed. When every adapter resolved on a `Donkey` is non-observing, the
+> record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
+> and names the resolved adapters in `surface`. This is a documented, asserted
 > `gateway_identity_observed` conformance exemption.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
@@ -2799,13 +2801,14 @@ reports the limitation explicitly. For a `Donkey` that resolved only ADK:
 r = donkey.last_call
 r.status       # LastCallStatus.UNAVAILABLE
 r.available    # False
-r.surface      # "adk", "crewai", "llamaindex", or "agent_framework"
+r.surface      # "adk"
 ```
 
 This is different from `UNOBSERVED`, which means the current context has not
 yet received a governed response. On an unavailable surface the SDK cannot
 observe any response-derived `last_call` field, including gateway identity,
-routing, fallback, and usage. Each limitation is asserted as the
+routing, fallback, and usage. If multiple non-observing adapters were resolved,
+`surface` lists their names. Each limitation is asserted as the
 `gateway_identity_observed` conformance exemption rather than silently skipped.
 
 ### Two behaviours worth knowing
@@ -4676,7 +4679,9 @@ bespoke header the SDK invents.
 - **Token usage** for cost attribution comes from the response `usage` block
   (`input_tokens`, `output_tokens`, `total_tokens`, plus the detail counts
   `cached_tokens` / `cache_write_tokens` / `reasoning_tokens`), passed through
-  verbatim from the provider and surfaced per-call on `donkey.last_call`.
+  verbatim from the provider and surfaced per-call on `donkey.last_call` when
+  the response passes through the SDK's shared HTTP client. See
+  [when `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
 
 ## Optional attribution metadata
 
@@ -4703,10 +4708,11 @@ request additionally carries a per-call `X-Donkey-Request-Id` that surfaces on
 `DonkeyError.call_id`. See [Observability](https://donkey-development-kit.github.io/donkey-development-kit/concepts/observability.md#grouping-a-run-the-run-id-on-the-span-the-call-id-on-the-error)
 for the full two-id model.
 
-  **Google ADK caveat.** LiteLLM owns ADK's transport, so the SDK can't inject
-  its HTTP client there — the correlation id is per-client, not per-run. This is
-  a documented, asserted conformance exemption, not a silent gap. Every other
-  framework gets per-run correlation.
+  **Google ADK and CrewAI caveat.** LiteLLM owns their transports, so the SDK
+  can't inject its HTTP client — the correlation id is per-client, not per-run.
+  These are documented, asserted conformance exemptions, not silent gaps. The
+  other framework adapters can propagate per-run correlation through the
+  governed headers they receive.
 
   The **agent→agent egress** attribution header (`x-anypoint-api-instance-id`) is
   a separate telemetry path for component-to-component traffic, not needed for
@@ -4848,7 +4854,9 @@ takes, it produces **exactly one span**, and that span closes:
   span stays open until the stream finishes and is closed **exactly once**,
   whether you drain it fully, abandon it mid-iteration, or it raises partway
   through. `gen_ai.usage.*` and the `donkey.usage.*` detail counts are populated
-  from that terminal event (and merged onto `donkey.last_call` at the same time).
+  from that terminal event (and merged onto `donkey.last_call` at the same time
+  when the response passes through the SDK's shared HTTP client; see
+  [when `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable)).
 
   Streaming token counts appear **only if the stream actually carries a usage
   event.** For OpenAI-style Chat Completions that means requesting it with

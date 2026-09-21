@@ -125,5 +125,5 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 | Framework | Scenario | Why it's exempt |
 | --- | --- | --- |
 | ADK, CrewAI | correlation ID propagated | LiteLLM owns the transport, so the SDK's `httpx` client cannot be injected — the correlation ID ends up per-client, not per-run. A LiteLLM logger callback may recover trace correlation later. |
-| ADK, CrewAI | gateway identity observed | LiteLLM owns the transport, so no response reaches the SDK's `_on_response` hook. `donkey.last_call` therefore reports `UNAVAILABLE` and names the adapter in `surface`. |
-| LlamaIndex, Microsoft Agent Framework | gateway identity observed | These adapters receive `default_headers`, not the SDK's `httpx` client, so no response reaches `_on_response`. `donkey.last_call` therefore reports `UNAVAILABLE` and names the adapter in `surface`. |
+| ADK, CrewAI | gateway identity observed | LiteLLM owns the transport, so no response reaches the SDK's `_on_response` hook. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
+| LlamaIndex, Microsoft Agent Framework | gateway identity observed | These adapters receive `default_headers`, not the SDK's `httpx` client, so no response reaches `_on_response`. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |

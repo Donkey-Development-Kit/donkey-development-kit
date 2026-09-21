@@ -103,11 +103,12 @@ you.
 > header injection is full, but transport injection is not possible, exactly
 > as with Google ADK.
 
-> **`donkey.last_call` is unavailable for this adapter.** The same LiteLLM-owned
+> **This adapter cannot populate `donkey.last_call`.** The same LiteLLM-owned
 > transport means no response reaches the SDK's `_on_response` hook, so gateway
-> identity, routing, and usage fields cannot be observed. The record reports
-> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names
-> `"crewai"` in `surface` rather than returning ambiguous empty fields. This is a
+> identity, routing, and usage fields cannot be observed. When every adapter
+> resolved on a `Donkey` is non-observing, the record reports
+> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names the
+> resolved adapters in `surface`. This is a
 > documented, asserted `gateway_identity_observed` conformance exemption.
 
 See the [error taxonomy](/errors) for how proxy rejections surface through

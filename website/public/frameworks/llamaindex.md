@@ -108,12 +108,12 @@ model = OpenAILike(
 > LlamaIndex uses `api_base` rather than `base_url` for its endpoint kwarg;
 > `connection_kwargs()` already translates for you.
 
-> **`donkey.last_call` is unavailable for this adapter.** LlamaIndex receives
+> **This adapter cannot populate `donkey.last_call`.** LlamaIndex receives
 > the governed `default_headers`, but not the SDK's httpx client, so no response
 > reaches `_on_response` and gateway identity, routing, and usage fields cannot
-> be observed. The record reports `status == LastCallStatus.UNAVAILABLE`,
-> `available == False`, and names `"llamaindex"` in `surface` rather than returning
-> ambiguous empty fields. This is a documented, asserted
+> be observed. When every adapter resolved on a `Donkey` is non-observing, the
+> record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
+> and names the resolved adapters in `surface`. This is a documented, asserted
 > `gateway_identity_observed` conformance exemption.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed

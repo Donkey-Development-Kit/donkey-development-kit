@@ -165,13 +165,14 @@ reports the limitation explicitly. For a `Donkey` that resolved only ADK:
 r = donkey.last_call
 r.status       # LastCallStatus.UNAVAILABLE
 r.available    # False
-r.surface      # "adk", "crewai", "llamaindex", or "agent_framework"
+r.surface      # "adk"
 ```
 
 This is different from `UNOBSERVED`, which means the current context has not
 yet received a governed response. On an unavailable surface the SDK cannot
 observe any response-derived `last_call` field, including gateway identity,
-routing, fallback, and usage. Each limitation is asserted as the
+routing, fallback, and usage. If multiple non-observing adapters were resolved,
+`surface` lists their names. Each limitation is asserted as the
 `gateway_identity_observed` conformance exemption rather than silently skipped.
 
 ### Two behaviours worth knowing
