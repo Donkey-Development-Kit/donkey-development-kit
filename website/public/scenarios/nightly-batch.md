@@ -84,7 +84,9 @@ async def enrich_all(records, enrich):
   request that would cross the last 5% of the window — so you never spend the
   request that earns the `429`. `wait_for_reset()` sleeps until
   `donkey.budget.reset_at`, computed from the gateway's `x-token-reset` header
-  (milliseconds, converted for you). See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+  (milliseconds, converted for you). Once that time has elapsed, the old
+  observation is stale, so `pace()` lets the retry through and the response
+  refreshes the in-band budget. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
 
 ## The honest limitation
 

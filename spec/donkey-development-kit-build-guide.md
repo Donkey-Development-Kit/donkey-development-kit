@@ -143,14 +143,20 @@ async with donkey.budget.pace(reserve=0.10):  # raises BudgetReserveReached at 9
 
 ```python
 for batch in chunks(records, 200):
-    async with donkey.budget.pace(reserve=0.05):
-        await enrich(batch)
+    while True:
+        try:
+            async with donkey.budget.pace(reserve=0.05):
+                await enrich(batch)
+        except BudgetReserveReached:
+            await donkey.budget.wait_for_reset()
+            continue
+        break
     checkpoint(batch)
-# on BudgetReserveReached:
-await donkey.budget.wait_for_reset(); continue
 ```
 
-The job finishes by itself, overnight, with no human.
+After `reset_at`, the old observation is stale, so `pace()` lets the retry
+through and its response refreshes the in-band budget. The job finishes by
+itself, overnight, with no human.
 
 **Why it matters — Scenario A.** A dashboard shows `fraction_used` per agent. The support agent's owner sees it climbing at 14:00 and requests an increase before the 16:00 peak instead of after the outage.
 
@@ -159,6 +165,7 @@ The job finishes by itself, overnight, with no human.
 **Acceptance.**
 - `x-token-reset` in milliseconds is converted correctly (fixture with a known value; assert `reset_at` to the second).
 - `pace()` raises before the request that would cross the reserve, not after a 429.
+- After `reset_at`, `pace()` lets one retry through so its response can refresh the in-band budget; the documented `pace()` → `wait_for_reset()` → retry loop makes progress without a manual observation.
 - Budget object is per-`Donkey`, not global; two `Donkey` instances with different credentials do not share state.
 
 **Effort:** S.
