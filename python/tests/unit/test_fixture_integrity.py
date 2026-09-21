@@ -7,17 +7,21 @@ fixture edit that flips a discriminator — but a *benign* byte edit (reformatte
 JSON, an added field, a whitespace tweak) leaves every assertion green while
 silently drifting the bytes the simulator replays away from the captured shape.
 
-This lock closes that gap. ``tests/fixtures/fixtures.lock`` pins the sha256 of
-every fixture file the simulator serves; this test fails loudly the moment any
-of those bytes change. A legitimate re-capture is accepted by regenerating the
-lock (``python -m donkey_kit.simulator.fixtures --relock``) and committing it —
-the deliberate, reviewable "I meant this" step. It is an integrity assertion,
-not fixture-capture tooling (which #189 puts out of scope).
+This lock closes that gap. :data:`donkey_kit.simulator.fixtures.LOCK_PATH` pins
+the sha256 of every fixture file the simulator serves; in a source checkout it
+is ``tests/fixtures/fixtures.lock``, while a wheel resolves its packaged copy.
+This test fails loudly the moment any of those bytes change. A legitimate
+re-capture is accepted by regenerating the source lock
+(``python -m donkey_kit.simulator.fixtures --relock``) and committing it — the
+deliberate, reviewable "I meant this" step. It is an integrity assertion, not
+fixture-capture tooling (which #189 puts out of scope).
 
 Base-only safe: imports only the framework-free ``simulator.fixtures`` module.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from donkey_kit.simulator import fixtures
 
@@ -31,7 +35,7 @@ def test_served_fixtures_match_the_committed_lock() -> None:
     locked = fixtures.read_lock()
 
     assert current == locked, (
-        "A simulator fixture's bytes changed but tests/fixtures/fixtures.lock "
+        f"A simulator fixture's bytes changed but {fixtures.LOCK_PATH} "
         "was not updated. If you re-captured a shape from a real gateway, run\n"
         "    python -m donkey_kit.simulator.fixtures --relock\n"
         "and commit the updated lock. If you did NOT intend to change a "
@@ -40,6 +44,25 @@ def test_served_fixtures_match_the_committed_lock() -> None:
         f"  changed/added: {sorted(k for k in current if current.get(k) != locked.get(k))}\n"
         f"  removed:       {sorted(k for k in locked if k not in current)}"
     )
+
+
+def test_source_checkout_uses_the_committed_lock() -> None:
+    """Repository tests must compare the source fixtures with the source lock."""
+    assert fixtures.LOCK_PATH == fixtures._SOURCE_ROOT / "fixtures.lock"
+
+
+def test_relock_cli_requires_a_source_checkout(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The dev-only command cannot silently rewrite an installed wheel."""
+    monkeypatch.setattr(fixtures, "_SOURCE_LOCK_PATH", fixtures._SOURCE_ROOT / "missing.lock")
+    monkeypatch.setattr("sys.argv", ["fixtures", "--relock"])
+
+    with pytest.raises(SystemExit, match="2"):
+        fixtures._main()
+
+    assert "--relock must run from an editable source checkout" in capsys.readouterr().err
 
 
 def test_lock_covers_exactly_the_served_files() -> None:
