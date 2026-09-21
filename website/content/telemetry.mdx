@@ -10,7 +10,8 @@ import { Callout } from 'nextra/components'
   **Shipped in Phase 1.** OpenTelemetry GenAI span export (#194), correlation
   IDs (#195), cost-attribution tags (#196), and routing and resilience signals
   (#309) are available. Platform-facing verification caveats are called out
-  below; see [Verification policy](/concepts/verification).
+  below; see [Roadmap](/roadmap) and
+  [Verification policy](/concepts/verification).
 </Callout>
 
 Two pieces of the six-piece minimum land here, because they answer the same
@@ -136,6 +137,11 @@ drops any content-shaped attribute a call site hands it, so there is no accident
 path for message text to leak.
 
 ## Routing & resilience
+
+<Callout type="info">
+  **Shipped in Phase 1** (#309). Routing, fallback, and served-model signals
+  are available through the shared transport and on OpenTelemetry spans.
+</Callout>
 
 The gateway can fail over between providers when one degrades ("Enhanced
 Resilience for Intelligent Routing"). It reports what it *did* with each request

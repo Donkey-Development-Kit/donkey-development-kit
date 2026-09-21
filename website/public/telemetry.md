@@ -3,7 +3,8 @@
   **Shipped in Phase 1.** OpenTelemetry GenAI span export (#194), correlation
   IDs (#195), cost-attribution tags (#196), and routing and resilience signals
   (#309) are available. Platform-facing verification caveats are called out
-  below; see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+  below; see [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and
+  [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
 
 Two pieces of the six-piece minimum land here, because they answer the same
 two questions: *what happened?* and *who pays for it?*
@@ -122,6 +123,9 @@ drops any content-shaped attribute a call site hands it, so there is no accident
 path for message text to leak.
 
 ## Routing & resilience
+
+  **Shipped in Phase 1** (#309). Routing, fallback, and served-model signals
+  are available through the shared transport and on OpenTelemetry spans.
 
 The gateway can fail over between providers when one degrades ("Enhanced
 Resilience for Intelligent Routing"). It reports what it *did* with each request
