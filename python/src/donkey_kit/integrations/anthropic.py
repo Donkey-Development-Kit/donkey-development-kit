@@ -50,8 +50,7 @@ class AnthropicAdapter(Adapter):
                 "The Omni Gateway LLM proxy is verified OpenAI-compatible; its "
                 "Anthropic-native Messages API route is UNVERIFIED (docs/"
                 "verified-apis.md §8, an open Verification-milestone item). If the proxy "
-                "does not "
-                "serve Anthropic's API, override base_url via **kw once a real "
+                "does not serve Anthropic's API, override base_url via **kw once a real "
                 "route is confirmed.",
                 _verify.UnverifiedValueWarning,
                 stacklevel=3,
