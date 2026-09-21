@@ -46,14 +46,39 @@ def test_validate_accepts_a_valid_spec(tmp_path: Path) -> None:
     assert "env Sandbox" in result.output
 
 
-def test_validate_rejects_malformed_yaml(tmp_path: Path) -> None:
-    spec = _write_spec(tmp_path, "metadata: [")
+@pytest.mark.parametrize(
+    "content",
+    [
+        "metadata: [",
+        "apiVersion: donkey/v1\nkind: DonkeySpec\n",
+    ],
+)
+def test_validate_rejects_invalid_specs(content: str, tmp_path: Path) -> None:
+    spec = _write_spec(tmp_path, content)
 
     result = runner.invoke(app, ["validate", "--file", str(spec)])
 
     assert result.exit_code == 2
     assert f"Invalid spec {spec}:" in result.output
     assert "blocked on verification" not in result.output
+
+
+def test_provisioning_commands_stay_hidden() -> None:
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0, result.output
+    for command in (
+        "validate",
+        "plan",
+        "apply",
+        "drift",
+        "lint",
+        "generate",
+        "status",
+        "publish",
+        "verify",
+    ):
+        assert command not in result.output
 
 
 @pytest.mark.parametrize(
