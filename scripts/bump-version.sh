@@ -69,7 +69,10 @@ cd "$ROOT" || die "cannot cd to repo root: $ROOT"
 # --- Preconditions ------------------------------------------------------------
 command -v gh >/dev/null 2>&1 || die "the GitHub CLI (gh) is required; install it and 'gh auth login'"
 if [ "$DRY_RUN" -eq 0 ]; then
-  gh auth status >/dev/null 2>&1 || die "not authenticated with gh; run 'gh auth login'"
+  # Scope to github.com: `gh auth status` (no host) checks every configured
+  # host and exits non-zero if any unrelated one has a stale token.
+  gh auth status --hostname github.com >/dev/null 2>&1 \
+    || die "not authenticated to github.com; run 'gh auth login' (a stale token on another host does not count)"
 fi
 
 if [ -n "$(git status --porcelain)" ]; then
