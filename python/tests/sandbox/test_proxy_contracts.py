@@ -12,14 +12,43 @@ otherwise.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 
 import pytest
 
+from donkey_kit.core._verify import UnverifiedValueWarning
 from donkey_kit.core.errors import DonkeyError, classify
 from donkey_kit.donkey import Donkey
 
 pytestmark = pytest.mark.sandbox
+
+
+def test_run_scope_attribution_is_warning_free(
+    open_proxy: Callable[[str], Donkey],
+    model_for: Callable[[str], str],
+) -> None:
+    """#522: the six inbound correlation / cost / per-call-id request-header names
+    are live-verified (``X-Correlation-Id`` is read + echoed by the gateway; the
+    cost and per-call-id names are a confirmed non-contract the gateway ignores),
+    so a default call under ``donkey.run(team=…)`` — every cost dimension set, no
+    header-name overrides, no application/business-group attribution — emits NONE
+    of the ``UnverifiedValueWarning``s that used to fire on this path. Escalate
+    that warning to an error so the quiet path is pinned against a REAL proxy, not
+    just a unit mock (the live twin of the group-1 acceptance assertion)."""
+    donkey = open_proxy("openai-model-routing")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        client = donkey.llm.client(sync=True)
+        with donkey.run(
+            id="ddk522-live", team="acceptance", project="ddk", env="sandbox", enduser_id="u-1"
+        ):
+            resp = client.responses.create(
+                model=model_for("openai-model-routing"),
+                input="Reply with the single word: hello.",
+            )
+
+    assert resp.status == "completed"
 
 
 def test_openai_routing_happy_path_matches_fixture(

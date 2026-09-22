@@ -76,7 +76,9 @@ async def test_correlation_and_attribution_headers_injected() -> None:
 
     cfg = DonkeyConfig(application_name="hr-agent", business_group="finance")
     async with _client(handler, cfg) as client:
-        # placeholder header names warn (verification discipline)
+        # The correlation header name is VERIFIED as of #522, so the warning here
+        # comes from the still-UNVERIFIED application/business-group attribution
+        # placeholder names (verification discipline).
         with pytest.warns(UnverifiedValueWarning):
             with run_context("run-1"):
                 await client.get("https://x/thing")
@@ -1519,14 +1521,69 @@ def test_attribution_headers_snapshot_carries_config_cost() -> None:
     assert headers["x-cost-project"] == "triage-v2"
 
 
-def test_cost_headers_uses_placeholder_name_when_unoverridden() -> None:
-    # With no config override, the header NAME is the loud UNVERIFIED placeholder.
+def test_cost_headers_use_placeholder_name_without_warning() -> None:
+    # #522: the gateway-side cost header names are a VERIFIED-NEGATIVE result — the
+    # deployed proxy has no inbound cost-tag ingestion, so the name is a
+    # forward-looking convention, not an open unknown. With no config override the
+    # header NAME is the placeholder AND the quiet default path emits NO
+    # UnverifiedValueWarning (verified=True). Escalate the warning to an error so a
+    # regression that re-arms it is caught here.
     from donkey_kit.core import _verify
 
     cfg = DonkeyConfig(cost=CostTags(team="support"))
-    with pytest.warns(UnverifiedValueWarning):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
         headers = cost_headers(cfg, cfg.cost)
     assert headers[_verify.COST_TEAM_HEADER.placeholder] == "support"
+
+
+def test_verified_inbound_attribution_headers_are_quiet() -> None:
+    """#522: the six inbound correlation / cost / per-call-id request-header names
+    are live-verified — ``X-Correlation-Id`` is read by the gateway, and the cost
+    + per-call-id names are confirmed as a client-side / non-contract shape (the
+    gateway ingests no such header). All six placeholders are ``verified=True``, so
+    reading any of them emits NO ``UnverifiedValueWarning``. Pins the quiet path so
+    a regression that re-arms the warning is caught in CI."""
+    from donkey_kit.core import _verify
+
+    quiet = (
+        _verify.CORRELATION_ID_HEADER,
+        _verify.CALL_ID_HEADER,
+        _verify.COST_TEAM_HEADER,
+        _verify.COST_PROJECT_HEADER,
+        _verify.COST_ENV_HEADER,
+        _verify.COST_ENDUSER_HEADER,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        for placeholder in quiet:
+            assert placeholder.verified is True
+            assert placeholder.get()  # reading it must not warn/raise
+
+
+async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
+    """#522 AC: a default call under ``donkey.run(team=…)`` — cost tags set, no
+    header-name overrides, no application/business-group attribution — emits NONE of
+    the six ``UnverifiedValueWarning``s that used to fire (``X-Correlation-Id`` /
+    ``X-Donkey-Request-Id`` / ``X-Anypoint-Cost-*``). Unit-level mirror of the
+    acceptance group-1 quiet-path assertion."""
+    from donkey_kit.core import _verify
+
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.headers)
+        return httpx.Response(200)
+
+    cfg = DonkeyConfig(cost=CostTags(team="support", project="triage", env="prod"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        async with _client(handler, cfg) as client:
+            with run_context("run-522"):
+                await client.get("https://x/thing")
+
+    assert seen[CORRELATION_HEADER.lower()] == "run-522"
+    assert seen[_verify.COST_TEAM_HEADER.placeholder.lower()] == "support"
 
 
 def test_effective_cost_tags_merges_run_over_config() -> None:

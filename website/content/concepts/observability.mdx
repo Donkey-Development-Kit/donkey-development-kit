@@ -114,12 +114,13 @@ ids are pure headers and contextvars; the span only decorates when OTel is
 present.
 
 <Callout type="info">
-  The gateway echoes a `x-correlation-id` on its **response**, which is verified.
-  Whether it *reads* an inbound `X-Correlation-Id` (and `X-Donkey-Request-Id`) as
-  the join key is not yet confirmed, so those request-header **names** are
-  overridable placeholders — set `correlation_header` / `call_id_header` in
-  config if your gateway expects different names
-  ([Verification policy](/concepts/verification)).
+  **Verified (#522).** The gateway echoes `x-correlation-id` on its **response**
+  *and* reads the inbound `X-Correlation-Id` — a probe confirmed the response
+  echoes the client-sent value verbatim, so it is the real join key.
+  `X-Donkey-Request-Id` is a client-owned per-call id the gateway does not read
+  (it lives on `DonkeyError.call_id`). Both names stay overridable
+  (`correlation_header` / `call_id_header`) if your gateway expects different
+  names ([Verification policy](/concepts/verification)).
 </Callout>
 
 ## Streaming, refusals, and exceptions
