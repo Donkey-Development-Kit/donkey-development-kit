@@ -284,6 +284,49 @@ def test_agent_framework_chat_client_blocks_unverified_import(
     assert exc_info.value.__cause__ is import_error
 
 
+def test_agent_framework_chat_client_constructs_with_package_present() -> None:
+    """The mirror of the blocks-on-import test (#520): with agent-framework
+    actually installed, the factory returns a real ``OpenAIChatClient`` built
+    with the VERIFIED ``model=`` kwarg — the path the acceptance harness hit
+    that the package-absent test never exercised. VERIFIED: agent-framework
+    1.19.0 (docs/verified-apis.md §8)."""
+    pytest.importorskip("agent_framework")
+    from agent_framework.openai import OpenAIChatClient
+
+    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
+
+    client = AgentFrameworkAdapter(_cfg(), _http()).chat_client("gpt-4o")
+    assert isinstance(client, OpenAIChatClient)
+
+
+def test_agent_framework_chat_client_blocks_on_constructor_rename(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A future upstream kwarg rename must surface as a ``_verify.blocked(...)``
+    refusal, not the raw ``TypeError`` that reached callers in 0.1.0.dev4 (#520,
+    §0.3). Stub ``OpenAIChatClient`` with a constructor that rejects ``model=``
+    (as a rename would); the widened guard turns the resulting ``TypeError``
+    into a verification-blocked error. Runs without the package installed."""
+    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
+
+    class _RenamedChatClient:
+        def __init__(self, *, renamed_model: str, **_kw: Any) -> None:  # no ``model``
+            self.renamed_model = renamed_model
+
+    for name in ("agent_framework", "agent_framework.openai"):
+        if name not in sys.modules:
+            monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    pkg, openai_mod = sys.modules["agent_framework"], sys.modules["agent_framework.openai"]
+    monkeypatch.setattr(pkg, "openai", openai_mod, raising=False)
+    monkeypatch.setattr(openai_mod, "OpenAIChatClient", _RenamedChatClient, raising=False)
+
+    adapter = AgentFrameworkAdapter(_cfg(), _http())
+    with pytest.raises(NotImplementedError, match=r"^blocked on verification:") as exc_info:
+        adapter.chat_client("gpt-4o")
+
+    assert isinstance(exc_info.value.__cause__, TypeError)
+
+
 # --- The two paths cannot drift (issue #33 AC) ------------------------------
 #
 # Each framework exposes the SAME governed native object two ways: (a) the
