@@ -77,7 +77,7 @@ from agent_framework.openai import OpenAIChatClient
 
 async with Donkey.from_env() as donkey:
     llm = OpenAIChatClient(
-        model_id="gpt-4o",
+        model="gpt-4o",
         **donkey.agent_framework.connection_kwargs(),
     )
 ```
@@ -88,7 +88,7 @@ async with Donkey.from_env() as donkey:
 from agent_framework.openai import OpenAIChatClient
 
 llm = OpenAIChatClient(
-    model_id=...,        # UNVERIFIED kwarg name — confirm against your install
+    model=...,           # verified against agent-framework 1.19.0
     base_url=...,        # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,  # client_id / client_secret header pair
@@ -97,14 +97,14 @@ llm = OpenAIChatClient(
 
 ## Notes & limitations
 
-> **UNVERIFIED.** `agent_framework.openai.OpenAIChatClient` and its
-> base-URL kwarg have not been confirmed against a live install — the package
-> is young and has renamed classes recently. The `chat_client()` factory
-> guards this: if the import fails, it raises
-> `NotImplementedError("blocked on verification")` instead of silently
-> falling back to a wrong class name. Confirm the class path yourself against
-> your installed `agent-framework` version before relying on this adapter in
-> production.
+> **VERIFIED** against agent-framework 1.19.0.
+> `agent_framework.openai.OpenAIChatClient` takes `model`, `base_url`,
+> `api_key` and `default_headers` (`model_id` is **not** accepted). The
+> `chat_client()` factory stays guarded on both ends: if the import fails or
+> the constructor signature changes upstream, it raises
+> `NotImplementedError("blocked on verification")` instead of leaking a raw
+> `ImportError`/`TypeError` — so a future upstream rename surfaces as a clear
+> verification refusal rather than a cryptic error.
 
 > Agent Framework has first-class middleware for intercepting agent actions.
 > The adapter ships `policy_middleware()`, which catches a `PolicyViolation`
