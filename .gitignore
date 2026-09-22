@@ -38,6 +38,7 @@ node_modules/
 /CLAUDE.md
 /.claude/skills
 /.claude/settings.json
+/.claude/workflows
 
 # Playwright MCP scratch output (local agent tooling)
 .playwright-mcp/
