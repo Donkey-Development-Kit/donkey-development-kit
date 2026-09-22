@@ -14,9 +14,14 @@
 > (§2) and the token-rate-limit (`429`, empty body, header-only budget) + PII
 > (`403`, `type:pii_detected`) rejection contracts (§4) are now also
 > `VERIFIED (LIVE)` — both policies were applied to `openai-sdk` for capture and
-> removed. Still `UNVERIFIED`: prompt-injection / regex-prompt-guard /
-> content-safety rejection bodies (§4, typed from the policy pages, pending live
-> capture #253) and the **framework constructor/binding names** (§§8–10). §11
+> removed. The regex-prompt-guard (`403` +
+> `matched_patterns`) and Azure content-safety (`403` + `…-action: reject`)
+> rejection shapes were also `VERIFIED (LIVE)` on 2026-09-22 against the deployed
+> `ddk-injection-guard` / `ddk-azure-content-safety` proxies (#253). Still
+> `UNVERIFIED`: the Injection Protection body (`x-injection-protection: blocked`,
+> a distinct policy — no proxy deployed) and any other content-moderation /
+> Bedrock-guardrail shape (§4, pending live capture #253), and the **framework
+> constructor/binding names** (§§8–10). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
 > code path was wired to them.
@@ -208,9 +213,14 @@ point the SDK at it via the `cost_*_header` overrides.
 
 ## 4. Policy rejection response shapes (capture as fixtures, BG §1.5)
 
-**Four rejection shapes** are LIVE-VERIFIED (2026-08-28) from the `openai-sdk`
-proxy (client-id-enforcement, upstream passthrough, PII, token-rate-limit).
-Fixtures in `tests/fixtures/anypoint/llm_proxy/reject.*`. The critical lesson:
+**Six rejection shapes** are now LIVE-VERIFIED: four from the `openai-sdk` proxy
+(client-id-enforcement, upstream passthrough, PII, token-rate-limit; 2026-08-28),
+plus **Regex Prompt Guard** and **Azure Content Safety** — both `403` policy
+blocks confirmed 2026-09-22 against the deployed provisioning proxies
+`ddk-injection-guard` (instance 21179713) and `ddk-azure-content-safety`
+(instance 21180957), rows added to the policy table below (#253).
+Fixtures in `tests/fixtures/anypoint/llm_proxy/reject.*` and
+`tests/fixtures/rejections/reject.*`. The critical lesson:
 **neither the status code nor the mere shape of the `error` value is a
 sufficient discriminator** — the same nested-object envelope is emitted by both
 the upstream provider AND a gateway policy (PII), and a policy block can be a
@@ -253,26 +263,32 @@ whose message names the observed status and any `x-llm-proxy-*` policy headers a
 states the **shape is unconfirmed** (#184), rather than being mis-typed. The full
 eight-shape taxonomy is indexed in `tests/fixtures/rejections/README.md`.
 
-The Regex Prompt Guard and content-safety/guardrail shapes below are
-**DOCUMENTED, pending live capture (#253)** — typed from the policy pages, not
-from a live sandbox round-trip, so **no `_verify.py` row flips to
-`verified=True`** for them:
+The Regex Prompt Guard and content-safety/guardrail shapes below are now
+**VERIFIED (LIVE), 2026-09-22 (#253)** — confirmed against the deployed
+provisioning proxies (`ddk-injection-guard`, `ddk-azure-content-safety`), not
+only typed from the policy pages. They have **no `_verify.py` constant** —
+`classify()` reads them straight from the response — so the verification record
+is these rows, not an `Unverified(...)` flip:
 
 | Shape | HTTP | Discriminator | Maps to | Source |
 |---|---|---|---|---|
-| Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard); DOCUMENTED, pending live capture (#253) |
-| Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails); DOCUMENTED, pending live capture (#253) |
+| Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4); VERIFIED (LIVE) 2026-09-22 on `ddk-injection-guard` (instance 21179713) |
+| Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); VERIFIED (LIVE) 2026-09-22 on `ddk-azure-content-safety` (instance 21180957, Azure verified; Bedrock still documented-only) |
 | Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no known contract; capture + type via #184/#253 |
 
-The **injection body** and any **other content-moderation / federated-guardrail**
-shape remain uncaptured. Rather than guess a type for them, `classify()` surfaces
-any such unrecognised refusal **honestly** — a `PolicyViolation` whose message
-states the shape is unconfirmed and whose remediation asks the operator to file
-the observed status/headers/body so the shape can be typed (#184). This is the
-last row above; it is deliberately **not** an `AuthError`, even for a `403`, once
-the verified `www-authenticate` auth shape is excluded. The official policy
-pages above establish the documented contracts; direct sandbox capture remains
-tracked in #253 and is still required before any verification status changes.
+The Regex Prompt Guard (row 7) and Azure Content Safety (row 8) shapes are now
+LIVE-captured (2026-09-22, #253). Still **uncaptured**: the **Injection
+Protection** body (`x-injection-protection: blocked`, a policy *distinct* from
+Regex Prompt Guard — no proxy running it is deployed) and any **other
+content-moderation / federated-guardrail** shape (e.g. Bedrock Guardrails).
+Rather than guess a type for them, `classify()` surfaces any such unrecognised
+refusal **honestly** — a `PolicyViolation` whose message states the shape is
+unconfirmed and whose remediation asks the operator to file the observed
+status/headers/body so the shape can be typed (#184). This is the last row
+above; it is deliberately **not** an `AuthError`, even for a `403`, once the
+verified `www-authenticate` auth shape is excluded. Closing these last shapes
+needs an Injection Protection (and a Bedrock Guardrails) proxy deployed to
+capture against; that residual keeps #253 open.
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two
@@ -326,6 +342,8 @@ the prose parser from #352) now populates identically from a simulated or a live
 | LLM proxy core | `llm-proxy-core` `1.0.5` | applied VERIFIED (LIVE) | on `openai-sdk`; rejection body not yet triggered | 2026-08-28 | `policy:list` |
 | Token rate limiting | interface `llm-token-rate-limit` `1.0.2` (impl `-policy-flex` `1.0.4`) | VERIFIED (LIVE) | Two emission forms: `429` limit-exceeded → **empty body**, numeric trio `x-token-limit`/`x-token-remaining`/`x-token-reset`(ms), no `retry-after`; `200`/`403` under the same policy → the window as prose in a single `x-llm-proxy-ratelimit` header (ms reset). See "Budget window emission" above. | 2026-08-28 | applied + live probe |
 | PII detection | interface `llm-pii-detection-policy` `1.0.0` (impl `-flex` `1.0.2`) | VERIFIED (LIVE) | `403`, nested `{"error":{message,type:"pii_detected"}}`, no `www-authenticate` | 2026-08-28 | applied + live probe |
+| Regex Prompt Guard | `regex-prompt-guard-policy` `1.0.0` | VERIFIED (LIVE) | `403`, flat-string `error` + top-level `matched_patterns` list; body matched the committed fixture byte-for-byte | 2026-09-22 | live probe, `ddk-injection-guard` instance 21179713 |
+| Azure Content Safety | `azure-content-safety-policy` `1.0.0` | VERIFIED (LIVE) | `403`, `x-llm-proxy-azure-content-safety-action: reject` + `-phase` + `-reason` headers; body `{"error":…,"categories":[…]}` (categories prompt-dependent, e.g. `severity_hate,severity_violence`, `prompt_shield`) | 2026-09-22 | live probe, `ddk-azure-content-safety` instance 21180957 (private-space gateway) |
 
 **Apply note (verified):** these LLM policies apply against the schema-bearing
 **interface** asset id/version (`llm-token-rate-limit` `1.0.2`,

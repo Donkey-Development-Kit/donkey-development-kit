@@ -122,8 +122,9 @@ simulation, and refusal handlers can all attach *without you wiring each one*.
   **Governed model access is live-verified** against a real Anypoint sandbox:
   the proxy base-URL shape (`https://<ingress>/<instance>/`, no `/v1`), the
   `client_id` + `client_secret` consumer-auth header pair, the attribution
-  headers, and the four policy rejection shapes (auth `401`, PII `403`,
-  token-budget `429`, upstream passthrough). The framework-free client and the
+  headers, and six policy rejection shapes (auth `401`, PII `403`,
+  token-budget `429`, upstream passthrough, plus the regex prompt-guard and
+  Azure content-safety `403` blocks). The framework-free client and the
   adapters are wired to that verified contract.
 
 Beyond the live-verified contract above, shipped SDK capability pages say what

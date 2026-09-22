@@ -4,9 +4,14 @@ replay the identical files and any contract drift fails both at once (AC #4).
 
 Rows 1/2/5 alias the live captures under ``anypoint/llm_proxy/`` (referenced, not
 moved); rows 3/4/6 (injection, content-moderation, upstream-5xx) and rows 7/8
-(regex-prompt-guard, content-safety — #289) live in ``rejections/``. The #289
-shapes are documented (pinned from the policy pages) but not yet live-captured;
-their live capture is blocked on #253 (see ``rejections/README.md`` and docs/verified-apis.md §4).
+(regex-prompt-guard, content-safety — #289) live in ``rejections/``. Rows 7/8 are
+now LIVE-VERIFIED (2026-09-22, #253): the regex-prompt-guard body matched the
+committed fixture byte-for-byte against ``ddk-injection-guard`` (instance
+21179713), and the content-safety discriminator headers + body shape were
+confirmed against ``ddk-azure-content-safety`` (instance 21180957) — see
+``rejections/README.md`` and docs/verified-apis.md §4. Rows 3 (injection-protection
+``x-injection-protection: blocked``) and 4 (fall-through) stay documented-only:
+no Injection Protection policy proxy is deployed to capture them (#253).
 The discriminator is the error ``type`` + specific headers, NEVER the status code
 alone — which is exactly why rows 7/8 (both 403) must not be swallowed by the
 401/403 → auth rule.
@@ -109,6 +114,8 @@ def test_row8_content_safety_is_content_safety_blocked_not_auth() -> None:
     err = classify(_response(REJECTIONS, "content-safety", 403))
     assert isinstance(err, ContentSafetyBlocked)
     assert err.policy == "content-safety"
-    # Flagged reasons are parsed from the sibling `...-reason` header.
-    assert err.categories == ["severity_hate", "blocklist"]
+    # Flagged reasons are parsed from the sibling `...-reason` header. The values
+    # are the live-captured set (Azure returned severity_hate,severity_violence
+    # on a hate-speech probe against ddk-azure-content-safety, #253).
+    assert err.categories == ["severity_hate", "severity_violence"]
     assert err.remediation  # required, non-empty

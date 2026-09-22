@@ -20,8 +20,10 @@ how a blocked value flips to verified — is documented for contributors in
   and the absence of a `/models` endpoint (`404`).
 - **Attribution** (live-verified): the `client_id` credential is the per-agent
   attribution unit; the gateway emits identity/telemetry on the response.
-- **The four policy rejection shapes** (live-verified): auth `401`, PII `403`,
-  token-budget `429`, upstream passthrough. See [Error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+- **Six policy rejection shapes** (live-verified): auth `401`, PII `403`,
+  token-budget `429`, upstream passthrough, plus the **regex prompt-guard** and
+  **Azure content-safety** `403` blocks (the last two confirmed 2026-09-22
+  against the deployed provisioning proxies, #253). See [Error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
 
 ## What is still blocked — and why that's a feature
 
@@ -35,7 +37,7 @@ how a blocked value flips to verified — is documented for contributors in
 | Budget query endpoint ([Phase 1](https://donkey-development-kit.github.io/donkey-development-kit/budget.md)) | **Missing upstream** | Budget is reported in-band on response headers only, so `remaining` is last-known-good; `observed_at` exposes the staleness. |
 | Whether Anypoint Monitoring ingests OTLP GenAI spans ([Phase 1](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)) | Unverified | The SDK promises "exports OTLP" and lets the sink be your choice. |
 | A provisioning control plane | **Cut** | Not built. It would compete with API Manager and Terraform — see [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md). |
-| Prompt-injection / regex-guard / content-safety bodies | Not captured | Injection is typed by the `x-injection-protection: blocked` header, regex prompt-guard by a top-level `matched_patterns` list (both → `PromptInjectionBlocked`), and content-safety by the Azure Content Safety / Bedrock Guardrails `…-action: reject` header (→ `ContentSafetyBlocked`) — all pinned from the policy pages, but their **bodies** are uncaptured and no verification row flips until a live round-trip confirms them. Any other moderation shape still falls through to a generic `PolicyViolation`. No invented discriminator — bodies tracked in #253. |
+| Injection-protection / Bedrock-guardrails / fall-through bodies | Not captured | The **regex prompt-guard** (`matched_patterns` list) and **Azure content-safety** (`…-action: reject` header) bodies are now **live-captured** (2026-09-22, #253). Still uncaptured: the distinct **Injection Protection** policy's body (typed by the `x-injection-protection: blocked` header; no such proxy is deployed), the **Bedrock Guardrails** sibling of content-safety, and the undiscriminated content-moderation fall-through to a generic `PolicyViolation` — all pinned from the policy pages, and no verification row flips until a live round-trip confirms them. No invented discriminator — tracked in #253. |
 | First-party **TypeScript SDK** | Planned | TypeScript examples reach the proxy over its OpenAI-compatible API via the `openai` / `@anthropic-ai/sdk` clients; no first-party TS package is implied until it ships. |
 
 ## What this means for you
