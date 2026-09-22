@@ -246,11 +246,11 @@ body {
 .nextra-sidebar a,
 .nextra-sidebar button {
   color: var(--af-fg-muted);
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 500;
   line-height: 1.5;
   letter-spacing: -0.006em;
-  padding-block: 0.5rem;
+  padding-block: 0.2rem;
 }
 
 .nextra-sidebar a:hover,
@@ -317,7 +317,7 @@ body {
 
 .af-hero-tagline {
   margin-top: 1.05rem;
-  font-size: 1.12rem;
+  font-size: 1rem;
   line-height: 1.6;
   color: var(--af-fg-muted);
   max-width: 44rem;
