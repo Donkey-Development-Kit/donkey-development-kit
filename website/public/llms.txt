@@ -22,12 +22,9 @@
 - [CrewAI](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md): CrewAI gets a governed `LLM`, backed by LiteLLM under the hood, pointed at the Agent Fabric LLM proxy through LiteLLM's own model-string and kwarg conventions rather than raw OpenAI ones.
 - [LlamaIndex](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/llamaindex.md): LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM proxy, with the one flag that a chat-only gateway absolutely requires forced on for you.
 
-## Live today
-
-- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md): The proxy doesn't just pass model calls through — it enforces policy. When it rejects a call, the SDK turns the response into a **typed exception** so you branch on the governance outcome instead of…
-
 ## Phase 1 — the six-piece minimum
 
+- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md): The proxy doesn't just pass model calls through — it enforces policy. When it rejects a call, the SDK turns the response into a **typed exception** so you branch on the governance outcome instead of…
 - [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md): Remaining token budget as a first-class object, with pacing that slows down before it hits the wall.
 - [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md): A local server that replays real gateway rejections, so you can develop against a governed gateway without having one.
 - [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md): In-process refusal injection, a pytest plugin you run against your own agent, and an out-of-process gateway fixture.
