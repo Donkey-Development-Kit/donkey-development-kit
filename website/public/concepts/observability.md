@@ -103,12 +103,13 @@ generated "run of one". Correlation works with or without OpenTelemetry — the
 ids are pure headers and contextvars; the span only decorates when OTel is
 present.
 
-  The gateway echoes a `x-correlation-id` on its **response**, which is verified.
-  Whether it *reads* an inbound `X-Correlation-Id` (and `X-Donkey-Request-Id`) as
-  the join key is not yet confirmed, so those request-header **names** are
-  overridable placeholders — set `correlation_header` / `call_id_header` in
-  config if your gateway expects different names
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
+  **Verified (#522).** The gateway echoes `x-correlation-id` on its **response**
+  *and* reads the inbound `X-Correlation-Id` — a probe confirmed the response
+  echoes the client-sent value verbatim, so it is the real join key.
+  `X-Donkey-Request-Id` is a client-owned per-call id the gateway does not read
+  (it lives on `DonkeyError.call_id`). Both names stay overridable
+  (`correlation_header` / `call_id_header`) if your gateway expects different
+  names ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Streaming, refusals, and exceptions
 

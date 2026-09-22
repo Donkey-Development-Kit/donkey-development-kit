@@ -1359,7 +1359,7 @@ from agent_framework.openai import OpenAIChatClient
 
 async with Donkey.from_env() as donkey:
     llm = OpenAIChatClient(
-        model_id="gpt-4o",
+        model="gpt-4o",
         **donkey.agent_framework.connection_kwargs(),
     )
 ```
@@ -1370,7 +1370,7 @@ async with Donkey.from_env() as donkey:
 from agent_framework.openai import OpenAIChatClient
 
 llm = OpenAIChatClient(
-    model_id=...,        # UNVERIFIED kwarg name — confirm against your install
+    model=...,           # verified against agent-framework 1.19.0
     base_url=...,        # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,  # client_id / client_secret header pair
@@ -1379,14 +1379,14 @@ llm = OpenAIChatClient(
 
 ## Notes & limitations
 
-> **UNVERIFIED.** `agent_framework.openai.OpenAIChatClient` and its
-> base-URL kwarg have not been confirmed against a live install — the package
-> is young and has renamed classes recently. The `chat_client()` factory
-> guards this: if the import fails, it raises
-> `NotImplementedError("blocked on verification")` instead of silently
-> falling back to a wrong class name. Confirm the class path yourself against
-> your installed `agent-framework` version before relying on this adapter in
-> production.
+> **VERIFIED** against agent-framework 1.19.0.
+> `agent_framework.openai.OpenAIChatClient` takes `model`, `base_url`,
+> `api_key` and `default_headers` (`model_id` is **not** accepted). The
+> `chat_client()` factory stays guarded on both ends: if the import fails or
+> the constructor signature changes upstream, it raises
+> `NotImplementedError("blocked on verification")` instead of leaking a raw
+> `ImportError`/`TypeError` — so a future upstream rename surfaces as a clear
+> verification refusal rather than a cryptic error.
 
 > Agent Framework has first-class middleware for intercepting agent actions.
 > The adapter ships `policy_middleware()`, which catches a `PolicyViolation`
@@ -2939,11 +2939,13 @@ and is usable bare (`@donkey.governed`) or parametrised. There is deliberately
 a single correlation, so when you need a specific id, reach for `donkey.run(id=…)`
 directly.
 
-  Whether the gateway **reads** an inbound `X-Correlation-Id` /
-  `X-Donkey-Request-Id` is unverified — `x-correlation-id` is confirmed only as a
-  gateway **response** echo. So those request-header **names** are overridable
-  placeholders (`correlation_header` / `call_id_header`), not guesses
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
+  **Verified (#522).** The gateway **reads** the inbound `X-Correlation-Id` and
+  echoes it verbatim on the response, so the request and response
+  `x-correlation-id` are the same value — the client→gateway join key is real.
+  `X-Donkey-Request-Id` is a **client-owned** per-call id the gateway does not
+  consume; it lives on `DonkeyError.call_id`. Both names stay overridable
+  (`correlation_header` / `call_id_header`) for a gateway that expects different
+  ones ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Cost-attribution tags
 
@@ -2981,10 +2983,13 @@ to the gateway record, and the span carries `enduser.id` and
 `donkey.policy.type`. That is what an EU AI Act Article 12 log request looks
 like in practice — one query, not an investigation.
 
-  **Which header names the gateway reads for attribution is unverified.** Until
-  it is confirmed, those names live behind an overridable placeholder rather
-  than a guess. The tags still carry full value in the OTel spans, which this
-  SDK controls end to end.
+  **Verified negative (#522).** The Anypoint LLM Gateway has no inbound cost-tag
+  ingestion — it meters cost from token usage per API instance and consuming
+  client application, not from a client header. So the `X-Anypoint-Cost-*`
+  request-header names are a forward-looking convention (harmless — nothing reads
+  them); the **authoritative** carrier is the `donkey.cost.*` OTel span attribute,
+  which this SDK controls end to end. The names stay overridable (`cost_*_header`)
+  for a gateway that does read one.
 
 The tags are **validated** — fixed keys, bounded length — so nobody stuffs a
 JSON blob into a header.
@@ -4898,12 +4903,13 @@ generated "run of one". Correlation works with or without OpenTelemetry — the
 ids are pure headers and contextvars; the span only decorates when OTel is
 present.
 
-  The gateway echoes a `x-correlation-id` on its **response**, which is verified.
-  Whether it *reads* an inbound `X-Correlation-Id` (and `X-Donkey-Request-Id`) as
-  the join key is not yet confirmed, so those request-header **names** are
-  overridable placeholders — set `correlation_header` / `call_id_header` in
-  config if your gateway expects different names
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
+  **Verified (#522).** The gateway echoes `x-correlation-id` on its **response**
+  *and* reads the inbound `X-Correlation-Id` — a probe confirmed the response
+  echoes the client-sent value verbatim, so it is the real join key.
+  `X-Donkey-Request-Id` is a client-owned per-call id the gateway does not read
+  (it lives on `DonkeyError.call_id`). Both names stay overridable
+  (`correlation_header` / `call_id_header`) if your gateway expects different
+  names ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Streaming, refusals, and exceptions
 

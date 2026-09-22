@@ -4,8 +4,12 @@ Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
 Current Python surface is ``from agent_framework import Agent`` with
 ``Agent(client=<ChatClient>, name=..., instructions=...)``. The
-OpenAI-compatible chat client class name and its base-URL kwarg MUST be verified
-— this package is young and renamed classes recently (docs/verified-apis.md §8).
+OpenAI-compatible chat client class path and its constructor kwargs are
+VERIFIED against agent-framework 1.19.0 (docs/verified-apis.md §8):
+``agent_framework.openai.OpenAIChatClient`` takes ``model``, ``base_url``,
+``api_key`` and ``default_headers``. Both the import and the construction stay
+guarded so a future upstream rename surfaces as a ``_verify.blocked(...)``
+refusal, never a raw ``ImportError``/``TypeError`` reaching the caller.
 
 Agent Framework has first-class middleware for intercepting agent actions. We
 ship :meth:`policy_middleware` that catches :class:`PolicyViolation` and
@@ -32,31 +36,44 @@ class AgentFrameworkAdapter(Adapter):
     observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
-        """Governed kwargs for an ``OpenAIChatClient(model_id=…, **kwargs)`` you
-        build yourself. NOTE (docs/verified-apis.md §8): the class name/path and its base-URL kwarg
-        are UNVERIFIED — confirm against the installed version before relying on constructing the
-        client by hand."""
+        """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` you
+        build yourself. VERIFIED against agent-framework 1.19.0
+        (docs/verified-apis.md §8): ``base_url``/``api_key``/``default_headers``
+        are all accepted by the constructor."""
         return self._openai_connection()  # base_url, api_key, default_headers
 
     def chat_client(self, model: str, **kw: Any) -> Any:
         self._require_proxy()
         try:
             from agent_framework.openai import (
-                OpenAIChatClient,  # VERIFY name/path: docs/verified-apis.md §8
+                OpenAIChatClient,  # verified: docs/verified-apis.md §8 (1.19.0)
             )
         except ImportError as exc:
             raise _verify.blocked(
-                "agent_framework OpenAI chat client class name/path "
-                "(docs/verified-apis.md §8). The package renamed classes recently; "
-                "confirm 'agent_framework.openai.OpenAIChatClient' and its base-URL "
-                "kwarg against the installed version before relying on this adapter."
+                "agent_framework.openai.OpenAIChatClient import "
+                "(docs/verified-apis.md §8). The class path is VERIFIED against "
+                "agent-framework 1.19.0; an ImportError here means the package is "
+                "absent or has renamed the class again. Install 'agent-framework' "
+                "or confirm the class path against your installed version."
             ) from exc
 
-        return OpenAIChatClient(
-            model_id=model,  # VERIFY kwarg name: docs/verified-apis.md §8
-            **self.connection_kwargs(),
-            **kw,
-        )
+        try:
+            return OpenAIChatClient(
+                model=model,  # verified: docs/verified-apis.md §8 (1.19.0)
+                **self.connection_kwargs(),
+                **kw,
+            )
+        except TypeError as exc:
+            # A TypeError from the constructor means a kwarg this adapter relies on
+            # was renamed upstream. Surface it as a verification refusal, not a raw
+            # TypeError leaking out of the SDK (§0.3, BG §1.8).
+            raise _verify.blocked(
+                "agent_framework.openai.OpenAIChatClient constructor signature "
+                "(docs/verified-apis.md §8). Verified against agent-framework 1.19.0 "
+                "(model=, base_url=, api_key=, default_headers=); a TypeError here "
+                "means the installed version renamed a kwarg. Confirm the signature "
+                "against your installed version and update the adapter."
+            ) from exc
 
     def policy_middleware(self) -> Callable[..., Any]:
         """Middleware that converts a :class:`PolicyViolation` into a clean,
