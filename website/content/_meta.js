@@ -9,11 +9,11 @@ export default {
     title: 'Live today',
   },
   frameworks: 'Model access',
-  errors: 'Typed refusals',
   '-- six-piece': {
     type: 'separator',
     title: 'Phase 1 — the six-piece minimum',
   },
+  errors: 'Typed refusals',
   budget: 'Budget & pacing',
   simulator: 'Local simulator',
   testing: 'Testing & conformance',

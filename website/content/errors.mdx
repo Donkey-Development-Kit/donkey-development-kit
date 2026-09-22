@@ -8,12 +8,13 @@ branch on the governance outcome instead of parsing bodies.
 
 ## The rejection shapes `classify()` types
 
-`classify()` types eight rejection shapes. **Four are live-verified** against the
-sandbox proxy (auth, PII, token rate limit, upstream); **injection** is typed by
-its header discriminator but its body is pending live capture; and three more —
-**regex prompt guard**, **content safety / guardrails**, and the
-**undiscriminated content-moderation** fall-through — are typed from the policy
-pages, pending sandbox confirmation, all tracked in [#253]. The critical lesson:
+`classify()` types eight rejection shapes. **Six are live-verified** against the
+sandbox proxies (auth, PII, token rate limit, upstream, **regex prompt guard**,
+and **Azure content safety** — the last two confirmed 2026-09-22, [#253]).
+Still pending live capture: **injection protection** (typed by its header
+discriminator, body uncaptured — a distinct policy from regex prompt guard, with
+no proxy deployed), Amazon **Bedrock guardrails**, and the **undiscriminated
+content-moderation** fall-through — all tracked in [#253]. The critical lesson:
 **neither the status code nor the shape of the `error` value alone is a
 sufficient discriminator** — a `403` can be PII, a regex-guard block, a
 content-safety block (all policy blocks) *or* auth, and the same nested-object
@@ -25,8 +26,8 @@ authoritative discriminator is the error **`type`** plus specific headers.
 | Client-ID enforcement (auth) | `401` | flat `{"error":"…"}` + `www-authenticate: Client-ID-Enforcement` | `AuthError` | live |
 | PII detected | `403` | nested `{"error":{type:"pii_detected"}}`, **no** `www-authenticate` | `PIIDetected` (parses `entities`) | live |
 | Injection protection | `400` | header `x-injection-protection: blocked` (**not** the status) | `PromptInjectionBlocked` | pending (#253) |
-| Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | pending (#253) |
-| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) | pending (#253) |
+| Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | live (#253) |
+| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) | live — Azure; Bedrock pending (#253) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) | live |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` | pending (#253) |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` | `UpstreamRequestError` | live |
@@ -216,13 +217,15 @@ surfaces immediately as `AuthError`.
 
 ## Documented-but-not-live-captured shapes
 
-Four discriminators — the `x-injection-protection` header, the regex
-`matched_patterns` list, and the Azure Content Safety / Bedrock Guardrails
-`…-action: reject` headers — are **pinned from the policy pages** and typed by
-`classify()`, but have **not yet been confirmed against a live sandbox**; their
-exact bodies are tracked in [#253]. `classify()` therefore types them from the
-header/field discriminator only, and no verification row flips to `verified`
-until a live round-trip confirms the shape. Any *other* content-moderation /
+The regex `matched_patterns` list and the **Azure Content Safety**
+`…-action: reject` header are now **live-captured** (2026-09-22, [#253]) against
+the deployed provisioning proxies. Two documented discriminators remain pinned
+from the policy pages but **not yet confirmed against a live sandbox**: the
+`x-injection-protection` header of the distinct **Injection Protection** policy
+(no such proxy is deployed to capture it) and the **Bedrock Guardrails** sibling
+of the content-safety header. `classify()` types those from the header
+discriminator only, and no verification row flips to `verified` until a live
+round-trip confirms the shape. Any *other* content-moderation /
 federated-guardrail shape still falls through to a generic `PolicyViolation`
 rather than an invented type — this is deliberate (verification discipline): we don't invent a
 discriminator we haven't observed. See [Verification policy](/concepts/verification).

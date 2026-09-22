@@ -144,10 +144,11 @@ and `registered_tools` are exported from `donkey_kit`.
 header; parses `categories`), a generic `PolicyViolation` fall-through for
 undiscriminated content-moderation, `UpstreamRequestError` (4xx) and
 `UpstreamModelError` (5xx), plus `AuthError` (401) for the separate consumer-auth
-case — so you branch on governance outcomes instead of parsing bodies. Four are
-live-verified; the injection, regex-prompt-guard, content-safety and
-content-moderation bodies are pinned from the policy pages, pending sandbox
-capture (#253). See [Error taxonomy](/errors).
+case — so you branch on governance outcomes instead of parsing bodies. Six are
+live-verified (including the regex-prompt-guard and Azure content-safety `403`
+blocks, confirmed 2026-09-22); the injection-protection, Bedrock-guardrails and
+content-moderation fall-through bodies are pinned from the policy pages, pending
+sandbox capture (#253). See [Error taxonomy](/errors).
 
 Those exception types are the client-side mirror of the policies the gateway
 enforces. The **LLM** lane below is the one this SDK targets today; the same
