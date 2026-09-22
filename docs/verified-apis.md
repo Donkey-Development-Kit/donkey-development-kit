@@ -176,30 +176,35 @@ no `UnverifiedValueWarning`.
 | Gateway identity on response | `core/transport.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192); `core/lastcall.py` **parses** `x-envoy-decorator-operation` and `x-request-id` (#362) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.3e6ce455-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type` | 2026-08-28 | `responses.success.headers.txt` |
 | Agent→agent egress attribution header | `core/_verify.py` → transport | VERIFIED (build) | `x-anypoint-api-instance-id` → `agent-connection-telemetry` policy `sourceAgentId`; `tracing` labels `mulesoft.api.instance.id`, `mulesoft.api.type=llm` | 2026-08-28 | built `connection.json` (§12.6) |
 | Business-group attribution header name | `core/_verify.py` → transport | UNVERIFIED | not surfaced as a request header in the direct-proxy path | — | — |
-| Run correlation id **request** header (`X-Correlation-Id`, #195) | `core/_verify.py` `CORRELATION_ID_HEADER` → transport | UNVERIFIED | `x-correlation-id` is verified as a **response echo** (row above); that the gateway **reads** an inbound `X-Correlation-Id` as the run/trace join key is NOT confirmed. Placeholder, overridable via `correlation_header` / `DONKEY_CORRELATION_HEADER`. | — | — |
-| Per-call id **request** header (`X-Donkey-Request-Id`, #195) | `core/_verify.py` `CALL_ID_HEADER` → transport | UNVERIFIED | client-generated per logical request, stable across that request's retries; no evidence the gateway reads this name yet. Placeholder, overridable via `call_id_header` / `DONKEY_CALL_ID_HEADER`. | — | — |
-| Cost tag: team **request** header (`X-Anypoint-Cost-Team`, #196) | `core/_verify.py` `COST_TEAM_HEADER` → transport | UNVERIFIED | the gateway-side cost-attribution header name is the highest-priority unknown; placeholder, overridable via `cost_team_header` / `DONKEY_COST_TEAM_HEADER`. Value always carried on the `donkey.cost.team` span attribute regardless (SDK owns the span). | — | — |
-| Cost tag: project **request** header (`X-Anypoint-Cost-Project`, #196) | `core/_verify.py` `COST_PROJECT_HEADER` → transport | UNVERIFIED | placeholder, overridable via `cost_project_header` / `DONKEY_COST_PROJECT_HEADER`; full value on `donkey.cost.project` span attribute. | — | — |
-| Cost tag: env **request** header (`X-Anypoint-Cost-Env`, #196) | `core/_verify.py` `COST_ENV_HEADER` → transport | UNVERIFIED | placeholder, overridable via `cost_env_header` / `DONKEY_COST_ENV_HEADER`; full value on `donkey.cost.env` span attribute. | — | — |
-| Cost tag: enduser id **request** header (`X-Anypoint-Cost-Enduser-Id`, #196) | `core/_verify.py` `COST_ENDUSER_HEADER` → transport | UNVERIFIED | placeholder, overridable via `cost_enduser_header` / `DONKEY_COST_ENDUSER_HEADER`; full value on `donkey.cost.enduser.id` span attribute. | — | — |
+| Run correlation id **request** header (`X-Correlation-Id`, #195, #522) | `core/_verify.py` `CORRELATION_ID_HEADER` → transport | VERIFIED (LIVE) | the gateway **reads** the inbound `X-Correlation-Id` and echoes it **verbatim** on the response `x-correlation-id` — a probe sending `X-Correlation-Id: ddk522-corr` got `ddk522-corr` back on both the 200 and 400 paths. So this IS the client→gateway run/trace join key. Overridable via `correlation_header` / `DONKEY_CORRELATION_HEADER`. | 2026-09-22 | live probe against `ddk-multi-route-fallback` (instance 21179672, DDK/Sandbox) |
+| Per-call id **request** header (`X-Donkey-Request-Id`, #195, #522) | `core/_verify.py` `CALL_ID_HEADER` → transport | VERIFIED (LIVE) | **negative** — the gateway consumes NO inbound per-call-id header (not echoed; absent from all 10 applied system policies). It is a **client-owned** id surfaced on `DonkeyError.call_id`, stable across a request's retries; the gateway need not read it. Name is the SDK's own convention, overridable via `call_id_header` / `DONKEY_CALL_ID_HEADER`. | 2026-09-22 | live probe + `view_api_instance_policies` (instance 21179672) |
+| Cost tag: team **request** header (`X-Anypoint-Cost-Team`, #196, #522) | `core/_verify.py` `COST_TEAM_HEADER` → transport | VERIFIED (LIVE) | **negative** — the LLM Gateway has NO inbound cost-tag ingestion: the name is not echoed and appears in none of the 10 applied system policies. Cost/usage is collected by the `llm-proxy-core` policy from token usage and attributed by API instance + consuming client application, never by a client header. The authoritative carrier is the `donkey.cost.team` span attribute (SDK owns the span). The `X-Anypoint-Cost-Team` name is a forward-looking, overridable (`cost_team_header` / `DONKEY_COST_TEAM_HEADER`) convention. | 2026-09-22 | live probe + `view_api_instance_policies` (instance 21179672) + `ddk-create-llm-proxy-*` system-policy set |
+| Cost tag: project **request** header (`X-Anypoint-Cost-Project`, #196, #522) | `core/_verify.py` `COST_PROJECT_HEADER` → transport | VERIFIED (LIVE) | **negative** — same finding as the team row: no gateway ingestion; carrier is the `donkey.cost.project` span attribute. Overridable via `cost_project_header` / `DONKEY_COST_PROJECT_HEADER`. | 2026-09-22 | live probe + `view_api_instance_policies` (instance 21179672) |
+| Cost tag: env **request** header (`X-Anypoint-Cost-Env`, #196, #522) | `core/_verify.py` `COST_ENV_HEADER` → transport | VERIFIED (LIVE) | **negative** — same finding: no gateway ingestion; carrier is the `donkey.cost.env` span attribute. Overridable via `cost_env_header` / `DONKEY_COST_ENV_HEADER`. | 2026-09-22 | live probe + `view_api_instance_policies` (instance 21179672) |
+| Cost tag: enduser id **request** header (`X-Anypoint-Cost-Enduser-Id`, #196, #522) | `core/_verify.py` `COST_ENDUSER_HEADER` → transport | VERIFIED (LIVE) | **negative** — same finding: no gateway ingestion; carrier is the `donkey.cost.enduser.id` span attribute. Overridable via `cost_enduser_header` / `DONKEY_COST_ENDUSER_HEADER`. | 2026-09-22 | live probe + `view_api_instance_policies` (instance 21179672) |
 
 The two #195 rows are **request** headers the SDK *sends* (the client→gateway
-join keys behind `donkey.run()` and `DonkeyError.correlation_id`/`.call_id`).
-The verified `x-correlation-id` above is the gateway's **response** echo — a
-different direction. Until an inbound-read name is confirmed against a sandbox,
-both request-header names stay `Unverified(...)` placeholders and emit the verification-discipline
-one-time warning; a customer whose gateway reads different names points the SDK
-at them via config rather than the SDK guessing.
+join keys behind `donkey.run()` and `DonkeyError.correlation_id`/`.call_id`). As
+of #522 both are verified against the live gateway: the gateway **reads** the
+inbound `X-Correlation-Id` and echoes it verbatim, so the request and response
+`x-correlation-id` are the same value and a client-side log line joins to the
+gateway's own record; `X-Donkey-Request-Id` is confirmed to be a **client-owned**
+per-call id the gateway does not consume (it lives on `DonkeyError.call_id`).
+Both names are still overridable via config for a gateway that expects different
+ones, but neither is a guess and neither emits a warning.
 
-The four #196 cost-tag rows follow the same discipline: the fixed dimensions
-(`team` / `project` / `env` / `enduser.id`, set once via
-`Donkey.from_env(team=…)` / `[donkey.cost]` / `DONKEY_COST_*`, overridable per
-run via `donkey.run(team=…)`) are emitted as `X-Anypoint-Cost-*` placeholder
-**request** headers *and* as `donkey.cost.*` **span** attributes. Because the
-SDK controls the span end to end, the span attribute always carries the full
-value regardless of the header question — so cost attribution works in tracing
-today, and flips to on-the-wire headers the moment a customer sets the
-`cost_*_header` overrides or the gateway-side names are verified here.
+The four #196 cost-tag rows are verified **negative** as of #522: the LLM Gateway
+has no inbound cost-tag ingestion, so the `X-Anypoint-Cost-*` request-header names
+are a NON-CONTRACT — the deployed proxy's applied system policies do not read
+them, and cost/usage is metered by the `llm-proxy-core` policy from token usage,
+attributed by API instance + consuming client application. The fixed dimensions
+(`team` / `project` / `env` / `enduser.id`, set once via `Donkey.from_env(team=…)`
+/ `[donkey.cost]` / `DONKEY_COST_*`, overridable per run via `donkey.run(team=…)`)
+are still emitted as `X-Anypoint-Cost-*` request headers (harmless — nothing reads
+them) *and*, authoritatively, as `donkey.cost.*` **span** attributes. Because the
+SDK controls the span end to end, cost attribution works in tracing regardless of
+the header question; a customer whose own gateway *does* read a cost header can
+point the SDK at it via the `cost_*_header` overrides.
 
 ## 4. Policy rejection response shapes (capture as fixtures, BG §1.5)
 

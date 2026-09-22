@@ -114,10 +114,11 @@ def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
     (docs/verified-apis.md §3, BG §1.7, #196).
 
     Each header NAME is the config override (``cost_*_header``) if set, else the
-    UNVERIFIED placeholder from ``core/_verify`` — the gateway-side cost header
-    name is the single highest-priority unknown (docs/verified-apis.md §3), so
-    an un-overridden name emits the one-time verification-discipline warning.
-    Values are pre-validated by
+    placeholder from ``core/_verify``. As of #522 the gateway-side cost header
+    names are a VERIFIED-NEGATIVE result (docs/verified-apis.md §3): the LLM
+    Gateway ingests no cost-tag header, so the name is a forward-looking
+    convention and reading the placeholder emits no warning — the authoritative
+    carrier is the ``donkey.cost.*`` span attribute. Values are pre-validated by
     :class:`CostTags`, so they are always header-safe."""
     override = {
         field: getattr(cfg, attr) for field, attr, _placeholder in _COST_HEADER_SOURCES
@@ -204,10 +205,12 @@ def proxy_api_key(cfg: DonkeyConfig) -> str:
 
 def _resolve_header_names(cfg: DonkeyConfig) -> tuple[str, str]:
     """The ``(correlation, call_id)`` request-header NAMES for this config (BG §1.1,
-    #195): each is the config override if set, else the UNVERIFIED placeholder
-    from ``core/_verify``. Called ONCE per client at construction, so the
-    one-time unverified warning for an un-overridden name fires there, not on
-    every request."""
+    #195): each is the config override if set, else the placeholder from
+    ``core/_verify``. As of #522 both are verified (docs/verified-apis.md §3): the
+    gateway reads the inbound ``X-Correlation-Id`` (echoed verbatim), and
+    ``X-Donkey-Request-Id`` is a confirmed client-owned per-call id the gateway
+    does not consume — so neither placeholder warns. Called ONCE per client at
+    construction, not on every request."""
     correlation = cfg.correlation_header or _verify.CORRELATION_ID_HEADER.get()
     call_id = cfg.call_id_header or _verify.CALL_ID_HEADER.get()
     return correlation, call_id

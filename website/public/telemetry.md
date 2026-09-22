@@ -256,11 +256,13 @@ and is usable bare (`@donkey.governed`) or parametrised. There is deliberately
 a single correlation, so when you need a specific id, reach for `donkey.run(id=…)`
 directly.
 
-  Whether the gateway **reads** an inbound `X-Correlation-Id` /
-  `X-Donkey-Request-Id` is unverified — `x-correlation-id` is confirmed only as a
-  gateway **response** echo. So those request-header **names** are overridable
-  placeholders (`correlation_header` / `call_id_header`), not guesses
-  ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
+  **Verified (#522).** The gateway **reads** the inbound `X-Correlation-Id` and
+  echoes it verbatim on the response, so the request and response
+  `x-correlation-id` are the same value — the client→gateway join key is real.
+  `X-Donkey-Request-Id` is a **client-owned** per-call id the gateway does not
+  consume; it lives on `DonkeyError.call_id`. Both names stay overridable
+  (`correlation_header` / `call_id_header`) for a gateway that expects different
+  ones ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)).
 
 ## Cost-attribution tags
 
@@ -298,10 +300,13 @@ to the gateway record, and the span carries `enduser.id` and
 `donkey.policy.type`. That is what an EU AI Act Article 12 log request looks
 like in practice — one query, not an investigation.
 
-  **Which header names the gateway reads for attribution is unverified.** Until
-  it is confirmed, those names live behind an overridable placeholder rather
-  than a guess. The tags still carry full value in the OTel spans, which this
-  SDK controls end to end.
+  **Verified negative (#522).** The Anypoint LLM Gateway has no inbound cost-tag
+  ingestion — it meters cost from token usage per API instance and consuming
+  client application, not from a client header. So the `X-Anypoint-Cost-*`
+  request-header names are a forward-looking convention (harmless — nothing reads
+  them); the **authoritative** carrier is the `donkey.cost.*` OTel span attribute,
+  which this SDK controls end to end. The names stay overridable (`cost_*_header`)
+  for a gateway that does read one.
 
 The tags are **validated** — fixed keys, bounded length — so nobody stuffs a
 JSON blob into a header.

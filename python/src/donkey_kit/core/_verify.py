@@ -81,54 +81,81 @@ ATTRIBUTION_BUSINESS_GROUP_HEADER = Unverified(
     doc_ref="docs/verified-apis.md §3",
 )
 
-# --- Cost-attribution tag headers (docs/verified-apis.md §3, the HIGHEST-priority
-# unknown, #196) ---
+# --- Cost-attribution tag headers (docs/verified-apis.md §3, #196) ---
 # The fixed cost dimensions (team / project / env / enduser.id) are emitted as
-# request headers so the gateway can group spend per dimension. The gateway-side
-# header NAMES are the single most important unverified value (docs/verified-apis.md §3): the
-# direct-proxy path did NOT surface them, so these are loud, overridable
-# placeholders (config: ``cost_*_header``), and the value ALWAYS lands on the
-# ``donkey.cost.*`` span regardless (the SDK controls the span end to end, #196
-# AC #4). The ``X-Anypoint-Cost-*`` shape mirrors the attribution placeholders
-# above; it is a guess, not a confirmed name.
+# request headers AND as ``donkey.cost.*`` span attributes (the SDK controls the
+# span end to end, #196 AC #4).
+#
+# NEGATIVE result — VERIFIED (LIVE 2026-09-22, #522): the deployed Omni Gateway
+# LLM proxy has NO inbound cost-tag ingestion. A live probe sending
+# ``X-Anypoint-Cost-Team/Project/Env/Enduser-Id`` saw none of them echoed, and
+# none of the names appears in ANY of the 10 platform-managed system policies
+# applied to the proxy (checked via ``view_api_instance_policies`` on instance
+# 21179672, DDK / Sandbox, and against the ``ddk-create-llm-proxy-*`` provisioning
+# skills' system-policy set). Cost/usage is collected by the ``llm-proxy-core``
+# system policy from token usage (the ``x-llm-proxy-*-tokens-cost-per-1m``
+# response headers) and attributed by API instance + consuming client application
+# — never by a client-sent header. So the gateway-side names are confirmed to be
+# a NON-CONTRACT; the authoritative carrier is the ``donkey.cost.*`` span
+# attribute. The SDK still emits these ``X-Anypoint-Cost-*`` names as a
+# forward-looking, overridable (``cost_*_header``) convention — harmless because
+# nothing reads them — so each is ``verified=True``: there is nothing left to
+# discover, and leaving the warning on would lie by silence.
 COST_TEAM_HEADER = Unverified(
     key="cost.team_header",
     placeholder="X-Anypoint-Cost-Team",
     doc_ref="docs/verified-apis.md §3",
+    verified=True,
 )
 COST_PROJECT_HEADER = Unverified(
     key="cost.project_header",
     placeholder="X-Anypoint-Cost-Project",
     doc_ref="docs/verified-apis.md §3",
+    verified=True,
 )
 COST_ENV_HEADER = Unverified(
     key="cost.env_header",
     placeholder="X-Anypoint-Cost-Env",
     doc_ref="docs/verified-apis.md §3",
+    verified=True,
 )
 COST_ENDUSER_HEADER = Unverified(
     key="cost.enduser_header",
     placeholder="X-Anypoint-Cost-Enduser-Id",
     doc_ref="docs/verified-apis.md §3",
+    verified=True,
 )
 
 # --- Correlation / call-id request headers (BG §1.1, #195) ------------------
-# The gateway ECHOES `x-correlation-id` on RESPONSES (VERIFIED LIVE 2026-08-28,
-# docs/verified-apis.md §3). Whether it READS an INBOUND correlation header —
-# and under what name — is UNVERIFIED, as is any per-call request-id header. Both request-header
-# names are therefore placeholders, overridable per-Donkey via config
-# (``DonkeyConfig.correlation_header`` / ``.call_id_header``) so a customer can
-# point them at the real names without waiting for us. ``X-Correlation-Id`` is
-# the best guess precisely because it mirrors the verified response echo.
+# VERIFIED (LIVE 2026-09-22, #522) against the deployed Omni Gateway proxy
+# ``ddk-multi-route-fallback`` (API instance 21179672, DDK / Sandbox):
+#   * X-Correlation-Id (request) — POSITIVE: the gateway READS the inbound value
+#     and echoes it verbatim on the response ``x-correlation-id`` (probe sent
+#     ``X-Correlation-Id: ddk522-corr``; the response echoed ``ddk522-corr`` on
+#     both the 200 and the 400 paths). This is the client→gateway run/trace join
+#     key the SDK sends, so the name is confirmed — not a guess. It matches the
+#     already-verified response echo (docs/verified-apis.md §3, 2026-08-28).
+#   * X-Donkey-Request-Id (request) — NEGATIVE: no gateway policy reads a per-call
+#     id header (not echoed; absent from all 10 applied system policies). It is a
+#     CLIENT-OWNED per-call id surfaced on ``DonkeyError.call_id``, stable across a
+#     request's retries; the gateway does not need to consume it. The name is the
+#     SDK's own convention.
+# Both are overridable per-Donkey via config (``DonkeyConfig.correlation_header``
+# / ``.call_id_header``) and both are ``verified=True``: the correlation name is
+# confirmed read by the gateway, and the call-id name is confirmed to be a
+# client-side construct the gateway ignores — neither is an open worklist item,
+# and leaving the warning on would lie by silence. See docs/verified-apis.md §3.
 CORRELATION_ID_HEADER = Unverified(
     key="correlation.request_header",
     placeholder="X-Correlation-Id",
     doc_ref="docs/verified-apis.md §3",
+    verified=True,
 )
 CALL_ID_HEADER = Unverified(
     key="correlation.call_id_header",
     placeholder="X-Donkey-Request-Id",
     doc_ref="docs/verified-apis.md §3",
+    verified=True,
 )
 
 # --- Control-plane token endpoint (docs/verified-apis.md §1) ----------------
