@@ -138,7 +138,8 @@ control-plane credential.
 
   - **[Create the model proxy](https://docs.mulesoft.com/general/model-proxy-create-model-proxy)**
     on the Omni Gateway — its consumer endpoint is your `DONKEY_LLM_PROXY_URL`
-    (with **no `/v1`**).
+    (with **no `/v1`**). Choose **Format=OpenAI**: that's the verified
+    data-plane path the SDK targets ([why](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#which-wire-format-does-your-proxy-speak)).
   - **[Request access](https://docs.mulesoft.com/exchange/to-request-access)** in
     Exchange — the proxy is protected by a client-ID enforcement policy, so
     requesting access registers a client application and mints the pair that
