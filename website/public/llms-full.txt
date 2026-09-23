@@ -2011,7 +2011,7 @@ authoritative discriminator is the error **`type`** plus specific headers.
 | Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) | live — Azure; Bedrock pending (#253) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) | live |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` | pending (#253) |
-| Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` | `UpstreamRequestError` | live |
+| Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`, #548) | `UpstreamRequestError` | live |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) | live |
 
 `PIIDetected`, the regex-prompt-guard check, and the content-safety check are all
@@ -2065,7 +2065,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) — *body shape pending [#253]* | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** documented rejection shape | **No** — terminal; the shape is simply not yet typed. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed ([#184]/[#253]). |
-| `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
+| `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope, [#548]) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here (failover is separate); you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md). |
 
@@ -2089,6 +2089,7 @@ errors point to the Anypoint credentials and scopes, while an exhausted
 `ChainedAuth` points to each configured provider's credential or token source.
 
 [#184]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/184
+[#548]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/548
 
 ## When the gateway can't be reached at all
 

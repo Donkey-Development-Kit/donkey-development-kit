@@ -512,13 +512,21 @@ def classify(
     # provider AND some gateway LLM policies (e.g. PII). The ``type`` field —
     # not the status code or the mere presence of a nested object — is the
     # authoritative discriminator (docs/verified-apis.md §4). ``body`` is the top-level JSON
-    # object (used also to spot the Regex-Prompt-Guard ``matched_patterns`` key);
-    # ``error_obj`` is its nested ``error`` object iff it is itself an object.
+    # object (used also to spot the Regex-Prompt-Guard ``matched_patterns`` key),
+    # ``None`` when the body is not a JSON object — e.g. Gemini's LIST-shaped
+    # error envelope (#548), whose nested error object ``_nested_error`` still
+    # recovers below. ``error_obj`` is the nested ``error`` object from either
+    # envelope shape, iff it is itself an object.
     body = _json_body(response)
-    error_obj = body.get("error") if body is not None else None
-    if not isinstance(error_obj, dict):
-        error_obj = None
-    error_type = _str_or_none(error_obj.get("type")) if error_obj is not None else None
+    error_obj = _nested_error(response)
+    # ``type`` is the OpenAI-format discriminator (``pii_detected``,
+    # ``invalid_request_error`` …); Gemini has no ``type`` but a string
+    # ``status`` (``INVALID_ARGUMENT``), which stands in for it (#548).
+    error_type = (
+        _str_or_none(error_obj.get("type") or error_obj.get("status"))
+        if error_obj is not None
+        else None
+    )
 
     # Gateway PII policy: 403 + nested object, type == "pii_detected". Checked
     # BEFORE the 401/403 → auth rule because a PII block is not an auth failure.
@@ -617,7 +625,9 @@ def classify(
             return UpstreamRequestError(
                 f"The upstream model provider rejected the request ({status}): "
                 f"{error_obj.get('message') or 'see .response'}",
-                code=_str_or_none(error_obj.get("code")),
+                # OpenAI sends a string ``code`` (``model_not_found``); Gemini a
+                # numeric one (400). Carry both, stringified (#548).
+                code=_code_str(error_obj.get("code")),
                 error_type=error_type,
                 param=_str_or_none(error_obj.get("param")),
                 **kw,
@@ -730,15 +740,59 @@ def _pii_entities(message: str | None) -> list[str]:
     return _PII_TYPE_RE.findall(message)
 
 
-def _json_body(response: httpx.Response) -> dict[str, Any] | None:
-    """The response's top-level JSON object, or ``None`` when the body is absent,
-    not JSON, or not an object. Never raises on the caller's request path
-    (verification discipline)."""
+def _parse_json(response: httpx.Response) -> Any:
+    """The response's parsed JSON body (of any shape — object, list, scalar), or
+    ``None`` when the body is absent or not JSON. Never raises on the caller's
+    request path (verification discipline)."""
     try:
-        body = response.json()
+        return response.json()
     except (ValueError, UnicodeDecodeError):
         return None
+
+
+def _json_body(response: httpx.Response) -> dict[str, Any] | None:
+    """The response's top-level JSON *object*, or ``None`` when the body is
+    absent, not JSON, or not an object. Fail-open: a list-shaped body (e.g.
+    Gemini's error envelope, #548) returns ``None`` here — its nested error is
+    recovered separately by :func:`_nested_error`."""
+    body = _parse_json(response)
     return body if isinstance(body, dict) else None
+
+
+def _nested_error(response: httpx.Response) -> dict[str, Any] | None:
+    """The provider's nested ``error`` object, or ``None``.
+
+    Two envelope shapes are seen live (docs/verified-apis.md §4):
+
+    * an OBJECT envelope ``{"error": {...}}`` — OpenAI-format proxies and
+      gateway LLM policies (e.g. PII);
+    * a LIST envelope ``[{"error": {...}}]`` — Gemini's native error shape,
+      whose first element is the object envelope (#548).
+
+    Fail-open (BG §1.5): any other shape — a bare list, a list whose first
+    element carries no nested ``error`` object, a scalar — returns ``None`` so an
+    unrecognised body still falls through to the honest generic refusal rather
+    than a guess."""
+    parsed = _parse_json(response)
+    if isinstance(parsed, list):
+        parsed = parsed[0] if parsed and isinstance(parsed[0], dict) else None
+    if not isinstance(parsed, dict):
+        return None
+    error_obj = parsed.get("error")
+    return error_obj if isinstance(error_obj, dict) else None
+
+
+def _code_str(value: Any) -> str | None:
+    """The provider's error ``code`` as a string. OpenAI sends a string
+    (``model_not_found``); Gemini sends a number (400, #548). Both are carried;
+    any other type (``bool`` included) is dropped."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        return str(value)
+    return None
 
 
 # Content-safety / guardrails policies report their verdict in a pair of vendor

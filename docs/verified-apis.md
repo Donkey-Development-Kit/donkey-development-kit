@@ -250,6 +250,14 @@ headers.
    verbatim. Example (bad model, valid creds): `400`,
    `{"error":{"message":"…does not exist.","type":"invalid_request_error","param":"model","code":"model_not_found"}}`.
    Nested `error` object **with** `x-llm-proxy-*` routing headers present.
+   **Gemini** (native ingress, `ddk-gemini-inbound`) wraps the same object in a
+   **JSON list** — `[{"error":{"code":400,"message":"…","status":"INVALID_ARGUMENT"}}]` —
+   with a numeric `code` and a string `status` (no OpenAI `type`/`param`), and a
+   `x-llm-proxy-model-based-routing-success: Request passed through…` header
+   confirming the *upstream*, not the gateway, rejected it. `classify()` unwraps
+   the first list element, maps `status`→`error_type` and `code`→`code`, and
+   types it as `UpstreamRequestError` (VERIFIED LIVE 2026-09-23, #548) — not the
+   `PolicyViolation` fall-through it previously landed in.
 3. **PII detection** — `403` **but NOT auth**: nested object
    `{"error":{"message":"Request contains PII data: […]","type":"pii_detected"}}`,
    **no** `code`/`param`, and crucially **no** `www-authenticate` header. The
@@ -270,8 +278,10 @@ mis-typed as auth; header `x-injection-protection: blocked` (documented by the
 [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection)) →
 `PromptInjectionBlocked` (the header, not the status, is the discriminator, so a
 bare `400` is unaffected); `429` → `TokenBudgetExceeded` with `retry_after`
-derived from `x-token-reset` (ms→s); non-auth 4xx with a nested `error` object →
-`UpstreamRequestError` (carries provider `code`/`type`/`param`); `5xx` →
+derived from `x-token-reset` (ms→s); non-auth 4xx with a nested `error` object —
+in either an OpenAI-style object envelope or a Gemini-style **list** envelope
+(`[{"error":{…}}]`, #548) — → `UpstreamRequestError` (carries provider
+`code`/`type`/`param`, with Gemini's `status` standing in for `type`); `5xx` →
 `UpstreamModelError`. Auth is then the verified client-id-enforcement shape: a
 `401`, **or** a `403` carrying a `www-authenticate` header → `AuthError`. A `403`
 **without** `www-authenticate` that matched none of the discriminators above is
