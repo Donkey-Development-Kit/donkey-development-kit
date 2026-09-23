@@ -13,13 +13,16 @@ and the model id is a per-call argument (`c.messages.create(model=..., ...)`),
 not a constructor one. So this adapter exposes `client()` rather than the
 `model(...)` factory the OpenAI-compatible adapters use.
 
-**Unverified dependency (docs/verified-apis.md §8).** The Omni Gateway LLM proxy is
-OpenAI-compatible; whether it also exposes an **Anthropic-native Messages API
-route** is an open Verification-milestone item (verification discipline). If it
-does not, this adapter's requests will not reach a working upstream — override
-`base_url` via `**kw` to point at a real Anthropic-native route once confirmed.
-The first `client()` call emits a one-time unverified-route warning; this example
-does not make a live call.
+**Unverified dependency (docs/verified-apis.md §2, #304).** MuleSoft Model Proxy
+offers a native **Anthropic** ingress Format — one of three selectable Formats
+(OpenAI / Gemini / Anthropic) fixed at proxy creation — so the Anthropic-native
+route is a real product capability. But every DDK proxy is `Format=OpenAI`, so
+this client pointed at them reaches Claude only as an *upstream provider*, not
+natively; and the exact Anthropic ingress path (likely `/v1/messages`) + live
+behavior are not yet captured against a `Format=Anthropic` proxy. Override
+`base_url` via `**kw` to point at a `Format=Anthropic` proxy to use the native
+surface. The first `client()` call emits a one-time unverified-route warning;
+this example does not make a live call.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
@@ -49,7 +52,7 @@ import httpx
 from anthropic import AsyncAnthropic
 
 c = AsyncAnthropic(
-    base_url=DONKEY_LLM_PROXY_URL,   # UNVERIFIED: needs an Anthropic-native route
+    base_url=DONKEY_LLM_PROXY_URL,   # UNVERIFIED path/behavior: use a Format=Anthropic proxy
     api_key="unused",                  # proxy enforces client_id/client_secret headers
     default_headers={
         "client_id": DONKEY_LLM_PROXY_CLIENT_ID,

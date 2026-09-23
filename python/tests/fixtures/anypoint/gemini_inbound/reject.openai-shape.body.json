@@ -1,0 +1,9 @@
+[
+  {
+    "error": {
+      "code": 400,
+      "message": "Missing or invalid Authorization header.",
+      "status": "INVALID_ARGUMENT"
+    }
+  }
+]

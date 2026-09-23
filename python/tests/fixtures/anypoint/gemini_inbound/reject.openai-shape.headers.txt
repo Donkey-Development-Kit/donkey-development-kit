@@ -1,0 +1,17 @@
+HTTP/1.1 400 Bad Request
+vary: X-Origin,Referer,Origin,Accept-Encoding
+content-type: application/json; charset=UTF-8
+date: Wed, 23 Sep 2026 20:55:39 GMT
+server: Anypoint Flex Gateway
+x-xss-protection: 0
+x-frame-options: SAMEORIGIN
+x-content-type-options: nosniff
+server-timing: gfet4t7; dur=26
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+accept-ranges: none
+x-llm-proxy-model-based-routing-success: Request passed through without model-based routing.
+x-envoy-decorator-operation: api-instance-21193369.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
+transfer-encoding: chunked
+x-correlation-id: 0641c450-6c08-4595-b1c6-638028884c1b
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Close

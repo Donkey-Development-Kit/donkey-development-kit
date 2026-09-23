@@ -15,6 +15,7 @@ from donkey_kit.core.errors import (
     PromptInjectionBlocked,
     TokenBudgetExceeded,
     UpstreamModelError,
+    UpstreamRequestError,
     classify,
     gateway_unavailable,
 )
@@ -356,3 +357,74 @@ def test_classify_token_budget_falls_back_to_the_class_default_remediation() -> 
     err = classify(_resp(429))
     assert isinstance(err, TokenBudgetExceeded)
     assert err.remediation is TokenBudgetExceeded.remediation
+
+
+# --- upstream request error, both envelope shapes (#548) --------------------
+# A non-429 4xx carrying the provider's own nested error object is a request
+# mistake passed through the gateway — an UpstreamRequestError, NOT a gateway
+# PolicyViolation. OpenAI-format proxies emit an OBJECT envelope
+# ({"error": {...}}); Gemini's native error shape is a LIST envelope
+# ([{"error": {...}}]) whose first element is that object. Both must type the
+# same, so a Gemini upstream rejection is not mis-typed as a gateway refusal.
+
+
+def _json_list_resp(
+    status: int, body: list, headers: dict[str, str] | None = None
+) -> httpx.Response:
+    return httpx.Response(
+        status, headers=headers or {}, json=body, request=httpx.Request("POST", "https://x")
+    )
+
+
+def test_openai_object_envelope_4xx_is_upstream_request_error() -> None:
+    """The OpenAI-format object envelope ({"error": {...}}) with code/type/param
+    is a passed-through request mistake, not a gateway refusal."""
+    err = classify(
+        _json_resp(
+            400,
+            {"error": {"message": "no such model", "type": "invalid_request_error",
+                       "code": "model_not_found", "param": "model"}},
+        )
+    )
+    assert isinstance(err, UpstreamRequestError)
+    assert not isinstance(err, PolicyViolation)
+    assert err.code == "model_not_found"
+    assert err.error_type == "invalid_request_error"
+    assert err.param == "model"
+    assert "no such model" in str(err)
+
+
+def test_gemini_list_envelope_400_is_upstream_request_error_not_policy_violation() -> None:
+    """#548: Gemini returns its error envelope as a JSON *list*, not an object.
+    The upstream rejected the request; the gateway passed it through (the
+    passthrough header confirms it acted on nothing). It must classify as an
+    UpstreamRequestError carrying Gemini's own message — never the catch-all
+    'shape unconfirmed' PolicyViolation that tells the user to file an issue."""
+    err = classify(
+        _json_list_resp(
+            400,
+            [{"error": {"code": 400, "message": "Missing or invalid Authorization header.",
+                        "status": "INVALID_ARGUMENT"}}],
+            {"x-llm-proxy-model-based-routing-success":
+             "Request passed through without model-based routing."},
+        )
+    )
+    assert isinstance(err, UpstreamRequestError)
+    assert not isinstance(err, PolicyViolation)
+    assert "Missing or invalid Authorization header." in str(err)
+    # Gemini's fields mapped: code -> code, status -> error_type.
+    assert err.code == "400"
+    assert err.error_type == "INVALID_ARGUMENT"
+    assert err.param is None
+
+
+def test_bare_list_body_still_falls_through_to_policy_violation() -> None:
+    """Fail-open (#548): a list body that is NOT the {"error": {...}} envelope
+    shape — a bare list, or a list whose first element carries no nested error
+    object — matches no documented contract, so it stays an honest generic
+    PolicyViolation rather than being coerced into an UpstreamRequestError."""
+    for body in ([{"not_an_error": 1}], ["just a string"], [], [[1, 2]]):
+        err = classify(_json_list_resp(400, body))
+        assert isinstance(err, PolicyViolation), body
+        assert not isinstance(err, UpstreamRequestError), body
+        assert "shape unconfirmed" in str(err)

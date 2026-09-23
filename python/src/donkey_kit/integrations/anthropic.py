@@ -11,11 +11,17 @@ is a *client*, and the model id is a per-call argument, not a constructor one.
 So this adapter exposes ``client()`` rather than the ``model(...)`` factory the
 OpenAI-compatible adapters use.
 
-UNVERIFIED DEPENDENCY (docs/verified-apis.md §8): the Omni Gateway LLM proxy is
-OpenAI-compatible; whether it also exposes an **Anthropic-native Messages API
-route** is an open Verification-milestone item (verification discipline). If it
-does not, this adapter's requests will not reach a working upstream — override
-``base_url`` via ``**kw`` to point at a real Anthropic-native route once confirmed.
+UNVERIFIED DEPENDENCY (docs/verified-apis.md §2, #304): MuleSoft Model Proxy
+*does* offer a native **Anthropic** ingress Format — it is one of three
+selectable ingress Formats (OpenAI / Gemini / Anthropic), fixed at proxy
+creation (docs.mulesoft.com/general/model-proxy). So the Anthropic-native route
+is a real product capability, **but** two things keep it UNVERIFIED for this
+adapter: (1) it must be *provisioned* that way — every DDK proxy is
+``Format=OpenAI``, so pointing this client at them reaches Claude only as an
+*upstream provider*, not via Anthropic's native surface; (2) the exact ingress
+path (likely ``/v1/messages``) and its live behavior have not been captured
+against a real ``Format=Anthropic`` proxy. Until that capture lands, point
+``base_url`` (via ``**kw``) at a proxy provisioned with ``Format=Anthropic``.
 The first ``client()`` call emits a one-time
 :class:`~donkey_kit.core._verify.UnverifiedValueWarning`.
 
@@ -47,11 +53,11 @@ class AnthropicAdapter(Adapter):
         if _ROUTE_KEY not in _verify._warned:
             _verify._warned.add(_ROUTE_KEY)
             warnings.warn(
-                "The Omni Gateway LLM proxy is verified OpenAI-compatible; its "
-                "Anthropic-native Messages API route is UNVERIFIED (docs/"
-                "verified-apis.md §8, an open Verification-milestone item). If the proxy "
-                "does not serve Anthropic's API, override base_url via **kw once a real "
-                "route is confirmed.",
+                "MuleSoft Model Proxy offers a native Anthropic ingress Format, but every "
+                "DDK proxy is provisioned Format=OpenAI, and the Anthropic ingress path + "
+                "live behavior are UNVERIFIED (docs/verified-apis.md §2, #304). Pointed at a "
+                "Format=OpenAI proxy this reaches Claude only as an upstream provider, not "
+                "natively; override base_url via **kw to target a Format=Anthropic proxy.",
                 _verify.UnverifiedValueWarning,
                 stacklevel=3,
             )

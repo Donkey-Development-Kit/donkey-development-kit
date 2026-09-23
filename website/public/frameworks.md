@@ -74,8 +74,8 @@ adapter to the proxy, not the other way round.
 | Proxy ingress **Format** | Point it at | Status |
 |---|---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter | **VERIFIED (LIVE)** — the SDK's verified data-plane path |
-| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **UNVERIFIED** — the Anthropic-native Messages route is not confirmed; the factory warns on first use |
-| **Gemini** | *Not supported as an ingress format* | Reach Gemini as an **upstream provider** behind an OpenAI-format ingress instead — see below |
+| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **DOCUMENTED, path unverified** — MuleSoft docs confirm an Anthropic ingress Format exists, but the exact route path + live behavior are pending a capture against a `Format=Anthropic` proxy (every DDK proxy is `Format=OpenAI`); the factory warns on first use (#304) |
+| **Gemini** | *No SDK adapter* — point a native `google-genai` client at `…/models/<model>:generateContent` yourself | **VERIFIED (LIVE)** — a `Format=Gemini` proxy serves a native Gemini `:generateContent` passthrough (#540). The SDK ships **no** `donkey.gemini` adapter (demand-driven, #244); reach Gemini as an **upstream provider** behind an OpenAI-format ingress instead — see below |
 
   **Ingress Format is not upstream provider routing.** "Anthropic" and "Gemini"
   appear in two different places and mean different things:
