@@ -73,6 +73,40 @@ or how well a framework works:
   </Card>
 </CardGrid>
 
+## Which wire format does your proxy speak?
+
+Every adapter on this page — and the raw `donkey.llm.client()` — speaks the
+**OpenAI wire format**. Whether that matches your gateway depends on the
+**Format** (OpenAI / Anthropic / Gemini) you chose when the proxy was
+provisioned, which fixes the wire protocol the proxy's *ingress* accepts.
+
+The wire format is a property of the **provisioned proxy**, not an SDK
+setting — there is no `llm_proxy_format` config field, by design. You match the
+adapter to the proxy, not the other way round.
+
+| Proxy ingress **Format** | Point it at | Status |
+|---|---|---|
+| **OpenAI** | `donkey.llm.client()` or any framework adapter | **VERIFIED (LIVE)** — the SDK's verified data-plane path |
+| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **UNVERIFIED** — the Anthropic-native Messages route is not confirmed; the factory warns on first use |
+| **Gemini** | *Not supported as an ingress format* | Reach Gemini as an **upstream provider** behind an OpenAI-format ingress instead — see below |
+
+<Callout type="warning">
+  **Ingress Format is not upstream provider routing.** "Anthropic" and "Gemini"
+  appear in two different places and mean different things:
+
+  - **Ingress Format** — the wire protocol *your request* speaks to the proxy.
+    The verified path is OpenAI.
+  - **Upstream provider** — which model the proxy routes *to* after accepting
+    your request. A model-based-routing proxy with an OpenAI ingress already
+    fans out to OpenAI, Gemini, Azure OpenAI, Bedrock Anthropic, and NVIDIA
+    upstreams today, selected by the `model` value in your request body — no
+    new SDK code needed.
+
+  So to *use* Gemini or Claude models you don't need a Gemini- or
+  Anthropic-format ingress at all: send an OpenAI-format request naming that
+  model to an OpenAI-format proxy. See [Verification policy](/concepts/verification).
+</Callout>
+
 ## The shape is the same everywhere
 
 ```bash

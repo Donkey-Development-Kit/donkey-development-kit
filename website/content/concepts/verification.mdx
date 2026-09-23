@@ -18,10 +18,13 @@ how a blocked value flips to verified — is documented for contributors in
 
 ## What is verified today
 
-- **LLM proxy data plane** (live-verified): base-URL shape
-  (`https://<ingress>/<instance>/`, no `/v1`), the `client_id` + `client_secret`
-  consumer-auth header pair, model-based routing, streaming, token accounting,
-  and the absence of a `/models` endpoint (`404`).
+- **LLM proxy data plane** (live-verified): the **OpenAI-format ingress** —
+  base-URL shape (`https://<ingress>/<instance>/`, no `/v1`), the `client_id` +
+  `client_secret` consumer-auth header pair, model-based routing, streaming,
+  token accounting, and the absence of a `/models` endpoint (`404`). The proxy's
+  ingress **Format** (OpenAI / Anthropic / Gemini) is chosen at provisioning
+  time; OpenAI is the verified path — see the blocked row below and
+  [Which wire format does your proxy speak?](/frameworks#which-wire-format-does-your-proxy-speak).
 - **Attribution** (live-verified): the `client_id` credential is the per-agent
   attribution unit; the gateway emits identity/telemetry on the response.
 - **Six policy rejection shapes** (live-verified): auth `401`, PII `403`,
@@ -33,6 +36,7 @@ how a blocked value flips to verified — is documented for contributors in
 
 | Area | Status | What the SDK does about it |
 |---|---|---|
+| Non-OpenAI proxy **ingress Format** (Anthropic / Gemini) | Anthropic route Unverified (#304); no Gemini-native ingress (#540) | The verified data-plane path is **Format=OpenAI**. `donkey.anthropic.client()` points `AsyncAnthropic` at an Anthropic-native Messages route that is **UNVERIFIED** and warns on first use; there is no Gemini-native ingress adapter. Gemini and Claude models are still reachable as **upstream providers** behind an OpenAI-format ingress via model-based routing — that path works today. Ingress Format is a property of the provisioned proxy, not an SDK setting (no `llm_proxy_format` field). See [Which wire format does your proxy speak?](/frameworks#which-wire-format-does-your-proxy-speak). |
 | Framework **constructor signatures** (docs/verified-apis.md §8) | Unverified per framework | Adapters target recorded class names; a mismatch surfaces via the verification harness / nightly matrix rather than silently misbehaving. Agent Framework's client raises `blocked on verification` today. |
 | MCP tool discovery + binding ([Phase 2](/tool-access)) | Unverified | `donkey.tools.discover` and the binding classes raise `blocked on verification`. |
 | Exchange publish API ([Phase 2](/publishing)) | Partially verified | First-class MCP/agent asset types exist, but the exact publication and discovery token vocabulary is unverified. `donkey publish` and Exchange search remain blocked rather than sending the SDK's assumed `mcp` / `a2a-agent` values. |
