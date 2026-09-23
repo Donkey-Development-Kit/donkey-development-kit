@@ -74,7 +74,7 @@ adapter to the proxy, not the other way round.
 | Proxy ingress **Format** | Point it at | Status |
 |---|---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter | **VERIFIED (LIVE)** — the SDK's verified data-plane path |
-| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **UNVERIFIED** — the Anthropic-native Messages route is not confirmed; the factory warns on first use |
+| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **DOCUMENTED, path unverified** — MuleSoft docs confirm an Anthropic ingress Format exists, but the exact route path + live behavior are pending a capture against a `Format=Anthropic` proxy (every DDK proxy is `Format=OpenAI`); the factory warns on first use (#304) |
 | **Gemini** | *Not supported as an ingress format* | Reach Gemini as an **upstream provider** behind an OpenAI-format ingress instead — see below |
 
   **Ingress Format is not upstream provider routing.** "Anthropic" and "Gemini"

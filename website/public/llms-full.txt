@@ -805,7 +805,7 @@ adapter to the proxy, not the other way round.
 | Proxy ingress **Format** | Point it at | Status |
 |---|---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter | **VERIFIED (LIVE)** — the SDK's verified data-plane path |
-| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **UNVERIFIED** — the Anthropic-native Messages route is not confirmed; the factory warns on first use |
+| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **DOCUMENTED, path unverified** — MuleSoft docs confirm an Anthropic ingress Format exists, but the exact route path + live behavior are pending a capture against a `Format=Anthropic` proxy (every DDK proxy is `Format=OpenAI`); the factory warns on first use (#304) |
 | **Gemini** | *Not supported as an ingress format* | Reach Gemini as an **upstream provider** behind an OpenAI-format ingress instead — see below |
 
   **Ingress Format is not upstream provider routing.** "Anthropic" and "Gemini"
@@ -1621,16 +1621,17 @@ reply = await llm.messages.create(
 There's no first-party Agent Fabric TypeScript SDK yet (it's on the
 [roadmap](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The native match here is the official
 **`@anthropic-ai/sdk`** client pointed at the proxy — same `client_id` /
-`client_secret` header pair, model id passed per call. **Caveat (unverified):**
-the proxy is verified OpenAI-compatible; whether it exposes an Anthropic-native
-Messages route is still an open item, so confirm it and override `baseURL` if
-needed before relying on this path.
+`client_secret` header pair, model id passed per call. **Caveat (unverified
+path):** MuleSoft Model Proxy offers a native Anthropic ingress Format, but every
+DDK proxy is provisioned `Format=OpenAI` and the Anthropic ingress path/behavior
+are not yet captured — point `baseURL` at a `Format=Anthropic` proxy before
+relying on this path (#304).
 
 ```typescript
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
-  baseURL: process.env.DONKEY_LLM_PROXY_URL,   // UNVERIFIED: needs an Anthropic-native route
+  baseURL: process.env.DONKEY_LLM_PROXY_URL,   // UNVERIFIED path/behavior: use a Format=Anthropic proxy
   apiKey: "unused",                              // required slot; proxy uses the headers below
   defaultHeaders: {
     client_id: process.env.DONKEY_LLM_PROXY_CLIENT_ID!,
@@ -1701,15 +1702,19 @@ you can always drop the factory and construct `AsyncAnthropic` by hand.
 > therefore takes no model argument at all; you supply the model id yourself
 > on every call.
 
-> **UNVERIFIED: the proxy's Anthropic-native Messages route.**
-> The governed proxy's contract has been live-verified for its
-> OpenAI-compatible `chat/completions` surface (see the
-> [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)); pointing `AsyncAnthropic` at
-> the same proxy exercises Anthropic's own native `/v1/messages` route
-> instead, and that route has **not** been confirmed against a live proxy.
-> `client()` emits a one-time runtime warning the first time it's called,
-> flagging this gap rather than silently assuming the route works. Confirm
-> this against your own sandbox before depending on it in production.
+> **UNVERIFIED path: the proxy's Anthropic-native ingress.**
+> MuleSoft Model Proxy offers a **native Anthropic ingress Format** — one of
+> three selectable Formats (OpenAI / Gemini / Anthropic) fixed at proxy creation
+> ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)) — so the
+> Anthropic-native route is a real product capability. Two gaps keep it
+> unverified: (1) it must be *provisioned* that way, and every DDK proxy is
+> `Format=OpenAI`, so pointing `AsyncAnthropic` at them reaches Claude only as an
+> *upstream provider*, not natively; (2) the exact Anthropic ingress path (likely
+> `/v1/messages`) and its live behavior have **not** been captured against a real
+> `Format=Anthropic` proxy. `client()` emits a one-time runtime warning flagging
+> this rather than silently assuming the route works — point `base_url` at a
+> `Format=Anthropic` proxy and confirm against your own sandbox before depending
+> on it (#304).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for
@@ -4476,7 +4481,7 @@ how a blocked value flips to verified — is documented for contributors in
 
 | Area | Status | What the SDK does about it |
 |---|---|---|
-| Non-OpenAI proxy **ingress Format** (Anthropic / Gemini) | Anthropic route Unverified (#304); no Gemini-native ingress (#540) | The verified data-plane path is **Format=OpenAI**. `donkey.anthropic.client()` points `AsyncAnthropic` at an Anthropic-native Messages route that is **UNVERIFIED** and warns on first use; there is no Gemini-native ingress adapter. Gemini and Claude models are still reachable as **upstream providers** behind an OpenAI-format ingress via model-based routing — that path works today. Ingress Format is a property of the provisioned proxy, not an SDK setting (no `llm_proxy_format` field). See [Which wire format does your proxy speak?](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#which-wire-format-does-your-proxy-speak). |
+| Non-OpenAI proxy **ingress Format** (Anthropic / Gemini) | Anthropic Format documented, route path/behavior unverified (#304); no Gemini-native ingress (#540) | The verified data-plane path is **Format=OpenAI**. MuleSoft Model Proxy [documents](https://docs.mulesoft.com/general/model-proxy) three selectable ingress Formats (OpenAI / Anthropic / Gemini) fixed at proxy creation, so the Anthropic-native Messages route is a real product capability — but every DDK proxy is `Format=OpenAI`, and the exact Anthropic route path + live behavior have not been captured against a `Format=Anthropic` proxy. `donkey.anthropic.client()` points `AsyncAnthropic` at that **UNVERIFIED** route and warns on first use; there is no Gemini-native ingress adapter. Gemini and Claude models are still reachable as **upstream providers** behind an OpenAI-format ingress via model-based routing — that path works today. Ingress Format is a property of the provisioned proxy, not an SDK setting (no `llm_proxy_format` field). See [Which wire format does your proxy speak?](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#which-wire-format-does-your-proxy-speak). |
 | Framework **constructor signatures** (docs/verified-apis.md §8) | Unverified per framework | Adapters target recorded class names; a mismatch surfaces via the verification harness / nightly matrix rather than silently misbehaving. Agent Framework's client raises `blocked on verification` today. |
 | MCP tool discovery + binding ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md)) | Unverified | `donkey.tools.discover` and the binding classes raise `blocked on verification`. |
 | Exchange publish API ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md)) | Partially verified | First-class MCP/agent asset types exist, but the exact publication and discovery token vocabulary is unverified. `donkey publish` and Exchange search remain blocked rather than sending the SDK's assumed `mcp` / `a2a-agent` values. |
