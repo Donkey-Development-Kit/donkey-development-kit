@@ -141,8 +141,8 @@ def test_anthropic_connection_kwargs_carry_proxy_and_shared_client() -> None:
     from donkey_kit.integrations.anthropic import AnthropicAdapter
 
     with warnings.catch_warnings():
-        # The Anthropic-native proxy route is an open verification item (verification discipline);
-        # connection_kwargs() warns once about it. Not what this test asserts.
+        # The Anthropic ingress Format is documented but its exact path + live behavior
+        # are unverified (#304); connection_kwargs() warns once. Not what this test asserts.
         warnings.simplefilter("ignore")
         kw = AnthropicAdapter(_cfg(), _http()).connection_kwargs()
     assert kw["base_url"] == "https://proxy"
