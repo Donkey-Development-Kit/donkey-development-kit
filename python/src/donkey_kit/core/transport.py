@@ -49,12 +49,12 @@ from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unav
 from .lastcall import (
     LLM_MODEL_HEADER,
     LLM_PROVIDER_HEADER,
-    REQUEST_ID_HEADER,
     ROUTING_TYPE_HEADER,
     is_fallback,
     observe_last_call,
     observe_usage,
     parse_usage,
+    request_id,
     routing_fallback,
     usage_from_response,
     usage_mapping,
@@ -297,8 +297,8 @@ def _gateway_unavailable(
     The origin that failed is put on the exception (the request URL is the
     truthful target, honouring any proxy/base-url override). The run/call ids the
     client already stamped on the request are carried so an availability failure
-    quotes the same ids a response error would — even though the gateway's own
-    ``request_id`` is necessarily absent."""
+    quotes the same ids a response error would — even though the upstream
+    provider's ``request_id`` (read from a response) is necessarily absent."""
     url = request.url
     host = url.host if url.port is None else f"{url.host}:{url.port}"
     return gateway_unavailable(
@@ -441,7 +441,7 @@ def _substitution_error(
         requested_model=requested,
         served_model=served,
         served_provider=response.headers.get(LLM_PROVIDER_HEADER),
-        request_id=response.headers.get(REQUEST_ID_HEADER),
+        request_id=request_id(response),
         response=response,
     )
 
