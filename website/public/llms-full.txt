@@ -2068,7 +2068,7 @@ only *names* the failure; failover is separate. It carries:
 
 - `.base_url` — the origin that failed, on the exception, not only in the message.
 - `.cause` — the underlying `httpx` exception (also chained via `raise … from`).
-- `.request_id` — always `None`; there was no response to read the gateway's own id from.
+- `.request_id` — always `None`; there was no response to read the upstream provider's id from.
 - `.correlation_id` / `.call_id` — the run and per-call ids the client sent, carried
   even though no response came back, so the failure joins your logs like any other.
 
@@ -2106,7 +2106,7 @@ logs and to the gateway's own record — **three ids, three provenances**:
 | --- | --- | --- |
 | `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/concepts/observability.md#grouping-a-run-the-run-id-on-the-span-the-call-id-on-the-error) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
 | `.call_id` | The **per-call** id, unique per logical request and stable across that request's retries | The `X-Donkey-Request-Id` request header the client sent. Present **even when the request fails before any response** (a transport error). |
-| `.request_id` | The **gateway's own** id | Read back from the `x-request-id` **response** header. Absent on a transport error, since there is no response. |
+| `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
 `classify(response)` fills `.correlation_id` and `.call_id` from the response's
 own request, so bridging an `openai` error (below) needs no extra wiring — the

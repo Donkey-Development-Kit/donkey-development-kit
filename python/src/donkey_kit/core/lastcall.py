@@ -2,8 +2,8 @@
 call, read from the response (#362, BG §1.1).
 
 On a refusal, :class:`~donkey_kit.core.errors.DonkeyError` already hands the
-developer the gateway's ids (``request_id`` and the two client-sent
-correlation/call ids). On a ``200`` the same information was thrown on the
+developer these ids (the upstream provider's ``request_id`` and the two
+client-sent correlation/call ids). On a ``200`` the same information was thrown on the
 floor: consumed internally by :class:`~donkey_kit.core.budget.Budget`, turned
 into an OTel span attribute that needs a backend to read, or dropped. So
 "which gateway instance served this, and what id do I quote in a ticket?" was
@@ -69,12 +69,27 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import httpx
 
-# VERIFIED (LIVE, docs/verified-apis.md §3, 2026-08-28). ``x-request-id`` is the
-# gateway's own per-response id — the SAME header ``classify()`` surfaces as
-# ``DonkeyError.request_id`` on a refusal, so the success path now reports it on
-# identical terms. ``x-envoy-decorator-operation`` encodes the API-instance id
-# and environment id as ``api-instance-<instanceId>.<environmentId>.svc``.
+# VERIFIED (LIVE, docs/verified-apis.md §3, 2026-08-28 / 2026-09-23). The request
+# id is the UPSTREAM PROVIDER's own id, passed through by the gateway unchanged —
+# NOT a value the gateway mints, so the header NAME differs by provider and there
+# is no single header that is present on every route (#542):
+#   * ``x-request-id``     — OpenAI's own id (Azure OpenAI also sends it);
+#   * ``x-amzn-requestid`` — Amazon Bedrock (which sends NO ``x-request-id``);
+#   * ``apim-request-id``  — Azure OpenAI's APIM-side id.
+# So it is resolved from an ordered fallback list, failing open to ``None`` when
+# none is present (verification discipline). This is the id a provider's support
+# team needs; the gateway-side join key is instead ``x-correlation-id`` (the id
+# the client sent, echoed back — see ``core.telemetry``). It is the SAME value
+# ``classify()`` surfaces as ``DonkeyError.request_id`` on a refusal, so the
+# success and refusal paths report it on identical terms.
+# ``x-envoy-decorator-operation`` encodes the API-instance id and environment id
+# as ``api-instance-<instanceId>.<environmentId>.svc``.
 REQUEST_ID_HEADER = "x-request-id"
+REQUEST_ID_HEADERS: tuple[str, ...] = (
+    REQUEST_ID_HEADER,
+    "x-amzn-requestid",
+    "apim-request-id",
+)
 DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 
 # VERIFIED (LIVE, docs/verified-apis.md §3 "Gateway identity on response",
@@ -142,6 +157,25 @@ def _parse_fallback(raw: str | None) -> bool | None:
         return True
     if token == "false":
         return False
+    return None
+
+
+def request_id(response: httpx.Response) -> str | None:
+    """The upstream provider's request id for a response, resolved from the first
+    present of :data:`REQUEST_ID_HEADERS` (``x-request-id``, then
+    ``x-amzn-requestid``, then ``apim-request-id``), or ``None`` when the gateway
+    passed none through (#542).
+
+    The gateway does not mint its own per-response id; it forwards the upstream
+    provider's, and the header name differs by provider — Bedrock sends only
+    ``x-amzn-requestid``, so a bare ``x-request-id`` read is ``None`` on those
+    routes. This single resolver is shared by :meth:`LastCall.from_response` and
+    :func:`donkey_kit.core.errors.classify` so the success and refusal paths agree.
+    Never raises (verification discipline)."""
+    for name in REQUEST_ID_HEADERS:
+        value: str | None = response.headers.get(name)
+        if value is not None:
+            return value
     return None
 
 
@@ -288,8 +322,11 @@ class LastCall:
     """
 
     status: LastCallStatus
-    #: The gateway's own per-response id (``x-request-id``) — quote it in a
-    #: support ticket. Mirrors :attr:`DonkeyError.request_id` on the refusal path.
+    #: The upstream provider's own request id, passed through by the gateway
+    #: (``x-request-id`` / ``x-amzn-requestid`` / ``apim-request-id``, #542) —
+    #: quote it to the provider's support team. ``None`` when the gateway forwarded
+    #: none. Mirrors :attr:`DonkeyError.request_id` on the refusal path; the
+    #: gateway-side join key is instead the run ``correlation_id``.
     request_id: str | None = None
     #: The API Manager instance id that served the call (from the decorator op).
     api_instance_id: str | None = None
@@ -378,7 +415,7 @@ class LastCall:
         usage = usage_from_response(response)
         return cls(
             status=LastCallStatus.OBSERVED,
-            request_id=response.headers.get(REQUEST_ID_HEADER),
+            request_id=request_id(response),
             api_instance_id=api_instance_id,
             environment_id=environment_id,
             observed_at=now if now is not None else _utcnow(),

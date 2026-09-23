@@ -147,8 +147,8 @@ attribution comes from the response `usage` block (§2). The
 agent→agent egress-telemetry path, not needed for direct LLM proxy calls.
 
 As of #362, `core/lastcall.py` **parses** two of these response headers on the
-happy path and surfaces them at `donkey.last_call`: `x-request-id` becomes
-`LastCall.request_id` (the same value `classify()` surfaces as
+happy path and surfaces them at `donkey.last_call`: the upstream provider's
+request id becomes `LastCall.request_id` (the same value `classify()` surfaces as
 `DonkeyError.request_id` on a refusal), and `x-envoy-decorator-operation`
 (`api-instance-<instanceId>.<environmentId>.svc`) is split into
 `LastCall.api_instance_id` (`21133858`) and `LastCall.environment_id`
@@ -156,6 +156,20 @@ happy path and surfaces them at `donkey.last_call`: `x-request-id` becomes
 unambiguous). An absent or unrecognised shape leaves both `None` and never
 raises (verification discipline). The response `x-correlation-id` is **not** parsed into the record
 yet — whether it echoes the client-sent id is unconfirmed (#300).
+
+As of #542, `request_id` is understood as the **upstream provider's own** id,
+passed through by the gateway unchanged — **not** an id the gateway mints. The
+gateway never adds one of its own, so the header **name differs by provider** and
+there is no single header present on every route (live probe, 2026-09-23,
+DDK/Sandbox): `openai-model-routing` returns `x-request-id` (OpenAI's own
+`req_…` format); `azure-openai-model-routing` returns `x-request-id` (a UUID)
+plus `apim-request-id`; `bedrock-anthropic-model-routing` returns **no
+`x-request-id` at all** (0/5 calls) and only `x-amzn-requestid`. So both
+`LastCall.from_response` and `classify()` resolve `request_id` from an ordered
+list — `x-request-id`, then `x-amzn-requestid`, then `apim-request-id` — via one
+shared `core/lastcall.py:request_id` helper, failing open to `None`. This is the
+id a provider's support team needs; the gateway-side join key is instead
+`x-correlation-id` / `correlation_id`.
 
 As of #307, `core/lastcall.py` also parses the per-call **usage token counts**
 from the response *body* (the already-VERIFIED `usage` block, §2) and surfaces
@@ -178,7 +192,8 @@ no `UnverifiedValueWarning`.
 |---|---|---|---|---|---|
 | Per-agent attribution unit (direct proxy) | `core/config.py`, transport | VERIFIED (LIVE) | the `client_id`/`client_secret` credential pair = the agent identity; issued per client application | 2026-08-28 | live probe + `policy:list` |
 | Per-agent attribution unit (model-wallet ingress, #372) | `core/config.py`, transport — SDK wiring landed in #509 | VERIFIED (LIVE) | under a **model wallet**, the caller is identified by the JWT `client_id` claim (`ddk-model-wallet-client`) **and** the wallet's `X-Client-Id` request header (`ddk-model-wallet`), matched against the wallet's `predicates` (`group=ddk` AND `client_id=…`) — not the `client_id`/`client_secret` pair. Requires an org IdP. Budget counts against the matched wallet's `modelId` (`openai:gpt-5-mini`); see the §2 "model-wallet ingress" row for the full auth shape. | 2026-09-21 | live probe — `tests/fixtures/anypoint/model_wallet/` (`wallet.definition.json`, `jwt.claims.json`, `responses.success.headers.txt` → `x-model-wallet-selected`) |
-| Gateway identity on response | `core/transport.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192); `core/lastcall.py` **parses** `x-envoy-decorator-operation` and `x-request-id` (#362) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.3e6ce455-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type` | 2026-08-28 | `responses.success.headers.txt` |
+| Gateway identity on response | `core/transport.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192); `core/lastcall.py` **parses** `x-envoy-decorator-operation` and the upstream request id (#362) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.3e6ce455-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type` | 2026-08-28 | `responses.success.headers.txt` |
+| Upstream request id on response (per provider, #542) | `core/lastcall.py:request_id` (shared by `LastCall` + `classify()`) | VERIFIED (LIVE) | provider's own id, passed through — header name varies: OpenAI `x-request-id` (`req_…`); Azure OpenAI `x-request-id` (UUID) + `apim-request-id`; Bedrock **only** `x-amzn-requestid` (no `x-request-id`). Resolved in that order, failing open to `None`. | 2026-09-23 | live probe (DDK/Sandbox): `openai-`/`azure-openai-`/`bedrock-anthropic-model-routing` |
 | Agent→agent egress attribution header | `core/_verify.py` → transport | VERIFIED (build) | `x-anypoint-api-instance-id` → `agent-connection-telemetry` policy `sourceAgentId`; `tracing` labels `mulesoft.api.instance.id`, `mulesoft.api.type=llm` | 2026-08-28 | built `connection.json` (§12.6) |
 | Business-group attribution header name | `core/_verify.py` → transport | UNVERIFIED | not surfaced as a request header in the direct-proxy path | — | — |
 | Run correlation id **request** header (`X-Correlation-Id`, #195, #522) | `core/_verify.py` `CORRELATION_ID_HEADER` → transport | VERIFIED (LIVE) | the gateway **reads** the inbound `X-Correlation-Id` and echoes it **verbatim** on the response `x-correlation-id` — a probe sending `X-Correlation-Id: ddk522-corr` got `ddk522-corr` back on both the 200 and 400 paths. So this IS the client→gateway run/trace join key. Overridable via `correlation_header` / `DONKEY_CORRELATION_HEADER`. | 2026-09-22 | live probe against `ddk-multi-route-fallback` (instance 21179672, DDK/Sandbox) |

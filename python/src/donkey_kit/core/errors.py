@@ -28,6 +28,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from . import _verify
+from .lastcall import request_id as read_request_id
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -48,9 +49,12 @@ class DonkeyError(Exception):
       unique per logical request, stable across its retries. It pinpoints one
       request within a run and exists even when the request fails before any
       response.
-    * ``request_id`` — the gateway's OWN id, read back from the ``x-request-id``
-      RESPONSE header. Absent on a transport error (no response), unlike the two
-      client-sent ids above.
+    * ``request_id`` — the UPSTREAM PROVIDER's own id, passed through by the
+      gateway and read back from a RESPONSE header whose name varies by provider
+      (``x-request-id`` / ``x-amzn-requestid`` / ``apim-request-id``, #542). Quote
+      it to the provider's support team. Absent on a transport error (no response)
+      — and on any route where the provider forwarded none — unlike the two
+      client-sent ids above. The gateway-side join key is ``correlation_id``.
     """
 
     def __init__(
@@ -490,7 +494,6 @@ def classify(
     refusals, not mis-typed as an :class:`AuthError`.
     """
 
-    request_id = response.headers.get("x-request-id")
     sent_correlation, sent_call = _sent_ids(response)
     status = response.status_code
     kw: dict[str, Any] = {
@@ -498,7 +501,10 @@ def classify(
         # the client actually sent, read back from the request (BG §1.1, #195).
         "correlation_id": correlation_id if correlation_id is not None else sent_correlation,
         "call_id": call_id if call_id is not None else sent_call,
-        "request_id": request_id,
+        # The upstream provider's request id — resolved from the per-provider
+        # header list, so a Bedrock refusal (x-amzn-requestid, no x-request-id) is
+        # not silently None. Same resolver LastCall uses (#542).
+        "request_id": read_request_id(response),
         "response": response,
     }
 

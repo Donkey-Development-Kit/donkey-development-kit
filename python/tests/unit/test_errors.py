@@ -226,7 +226,24 @@ def test_classify_without_a_request_yields_no_ids() -> None:
     err = classify(resp)
     assert err.correlation_id is None
     assert err.call_id is None
-    assert err.request_id == "gw-1"  # gateway's own id, from the response header
+    assert err.request_id == "gw-1"  # upstream provider's id, from the response header
+
+
+def test_classify_request_id_from_bedrock_header_on_a_refusal() -> None:
+    """A Bedrock-backed route sends x-amzn-requestid and NO x-request-id, so a
+    refusal there must still carry request_id, not silently None (#542)."""
+    err = classify(_resp(403, {"x-amzn-requestid": "amzn-req-1"}))
+    assert err.request_id == "amzn-req-1"
+
+
+def test_classify_request_id_from_azure_apim_header_on_a_refusal() -> None:
+    err = classify(_resp(400, {"apim-request-id": "apim-req-2"}))
+    assert err.request_id == "apim-req-2"
+
+
+def test_classify_request_id_prefers_x_request_id() -> None:
+    err = classify(_resp(500, {"x-request-id": "gw-1", "x-amzn-requestid": "amzn-2"}))
+    assert err.request_id == "gw-1"
 
 
 def test_gateway_unavailable_is_a_donkey_error_not_a_policy_violation() -> None:

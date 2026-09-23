@@ -135,6 +135,41 @@ def test_from_response_never_raises_on_unparseable_decorator() -> None:
     assert record.request_id is None
 
 
+# --- request id is the upstream provider's, resolved per provider (#542) -----
+
+
+def test_request_id_from_bedrock_header_only() -> None:
+    # Bedrock sends NO x-request-id, only x-amzn-requestid. The resolver must not
+    # report None on that route (the bug #542 fixed).
+    resp = httpx.Response(200, headers={"x-amzn-requestid": "amzn-abc123"})
+    assert lastcall.request_id(resp) == "amzn-abc123"
+    assert LastCall.from_response(resp).request_id == "amzn-abc123"
+
+
+def test_request_id_from_azure_apim_header() -> None:
+    resp = httpx.Response(200, headers={"apim-request-id": "apim-xyz789"})
+    assert lastcall.request_id(resp) == "apim-xyz789"
+    assert LastCall.from_response(resp).request_id == "apim-xyz789"
+
+
+def test_request_id_prefers_x_request_id_over_provider_fallbacks() -> None:
+    # OpenAI's own header wins the ordered resolution even when a provider-specific
+    # id is also present, so behaviour on OpenAI/Azure routes is unchanged.
+    resp = httpx.Response(
+        200,
+        headers={
+            "x-request-id": _REQUEST_ID,
+            "x-amzn-requestid": "amzn-abc",
+            "apim-request-id": "apim-xyz",
+        },
+    )
+    assert lastcall.request_id(resp) == _REQUEST_ID
+
+
+def test_request_id_absent_is_none() -> None:
+    assert lastcall.request_id(httpx.Response(200)) is None
+
+
 # --- the three honest states ------------------------------------------------
 
 
