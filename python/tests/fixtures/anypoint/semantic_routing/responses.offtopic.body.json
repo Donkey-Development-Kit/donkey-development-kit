@@ -1,0 +1,35 @@
+{
+  "id": "chatcmpl-ERd4x9soCUGxQuMDFcKmhDISaFFIB",
+  "object": "chat.completion",
+  "created": 1790253783,
+  "model": "gpt-5-mini-2025-08-07",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Ah — the classic. Which swallow do you mean: African or European?\n\n- European swallow (barn swallow, Hirundo rustica): roughly 11 m/s ≈ 40 km/h ≈ 25 mph (typical cruising speed cited by ornithological estimates).\n- \"African swallow\" covers several species with different sizes and speeds, so it’s species-dependent; many small swallows have similar cruising speeds.\n\nNote: \"airspeed velocity\" means speed through the air (not groundspeed). And yes — \"unladen\" means not carrying a coconut.",
+        "refusal": null,
+        "annotations": []
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 18,
+    "completion_tokens": 763,
+    "total_tokens": 781,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 640,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": null
+}
