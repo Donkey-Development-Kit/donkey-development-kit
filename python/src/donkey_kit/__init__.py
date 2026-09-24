@@ -19,6 +19,7 @@ docs/verified-apis.md.
 from __future__ import annotations
 
 from .core.budget import Budget
+from .core.cachecontrol import CacheControls
 from .core.config import DonkeyConfig, Region
 from .core.cost import CostTags
 from .core.errors import (
@@ -61,6 +62,7 @@ __all__ = [
     "AuthError",
     "Budget",
     "BudgetReserveReached",
+    "CacheControls",
     "ConfigError",
     "Contact",
     "ContentSafetyBlocked",

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 from .core import _verify
 from .core.auth import AnypointConnectedApp, AuthProvider
 from .core.budget import Budget
+from .core.cachecontrol import CacheControls, CacheScope, cache_scope
 from .core.config import DonkeyConfig, OnModelSubstitution
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
@@ -343,6 +344,61 @@ class Donkey:
     def run_context(self, run_id: str | None = None) -> RunScope:
         """Back-compat alias for :meth:`run` (BG §1.7). Prefer ``donkey.run(id=…)``."""
         return self.run(run_id)
+
+    def cache(
+        self,
+        *,
+        skip: bool | None = None,
+        no_store: bool | None = None,
+        ttl: int | None = None,
+        threshold: float | None = None,
+        principal_id: str | None = None,
+    ) -> CacheScope:
+        """Steer the gateway's **semantic cache** for every governed model call in
+        the block (docs/verified-apis.md §2, #587).
+
+        When the proxy is fronted by the Anypoint semantic-caching policy, this
+        binds the ``x-cache-*`` steering headers for the block — the same
+        contextvar-bound ergonomic as :meth:`run`, so the controls reach every call
+        inside (including calls on framework-spawned ``asyncio`` tasks) with no
+        threading through framework state::
+
+            with donkey.cache(skip=True):
+                await agent.run(task)          # bypass the cache for this block
+
+            async with donkey.cache(ttl=60, threshold=0.9):
+                ...                            # tighter match, shorter-lived entries
+
+        The returned :class:`~donkey_kit.core.cachecontrol.CacheScope` is a **dual
+        sync/async** context manager, so plain ``with`` works too. The controls:
+
+        * ``skip`` — bypass the cache policy entirely (passthrough).
+        * ``no_store`` — look up, but do not write the result on a miss.
+        * ``ttl`` — override the entry time-to-live, in seconds (positive int).
+        * ``threshold`` — override the similarity threshold, a float in ``[0.0, 1.0]``.
+        * ``principal_id`` — override the id the similarity filter partitions on.
+
+        The **outcome** of each call is surfaced on ``donkey.last_call.cache_status``
+        / ``.cache_score`` (and the ``donkey.cache.*`` span attributes), and a cache
+        ``hit`` never advances the token budget (a verbatim replay is no fresh
+        spend, #587). This is not client-side caching — the SDK caches nothing and
+        computes no embeddings; it steers and surfaces the *gateway's* cache.
+
+        The same documented degradation as :meth:`run` applies (BG §1.8): a
+        ``connection_kwargs()`` / LiteLLM-backed adapter that does not route through
+        the shared transport does not see the contextvar, so its calls are not
+        steered. Invalid controls raise :class:`~donkey_kit.core.errors.ConfigError`
+        at the call site, not on the first request.
+        """
+        return cache_scope(
+            CacheControls(
+                skip=skip,
+                no_store=no_store,
+                ttl=ttl,
+                threshold=threshold,
+                principal_id=principal_id,
+            )
+        )
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
     def governed(

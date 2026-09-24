@@ -158,6 +158,59 @@ CALL_ID_HEADER = Unverified(
     verified=True,
 )
 
+# --- Semantic caching (docs/verified-apis.md §2 "Semantic caching", #587/#588) —
+# VERIFIED (LIVE 2026-09-24) ------------
+# Captured against ``ddk-semantic-cache`` (API instance 21195392, DDK / Sandbox),
+# fixtures in tests/fixtures/anypoint/semantic_cache/. The gateway's
+# semantic-caching policy takes five REQUEST steering headers and reports its
+# outcome on the RESPONSE. The SDK caches nothing and computes no embeddings — it
+# STEERS and SURFACES the gateway's own cache (not the client-side semantic cache
+# on the "Do not build" list).
+#
+# The five ``x-cache-*`` steering headers were sent LOWERCASE and honored, so the
+# transport injects them lowercase as written. Overridable via config/env like
+# the attribution headers above; ``verified=True`` because the names are confirmed
+# live and there is nothing left to discover — leaving the warning on would lie by
+# silence.
+CACHE_SKIP_HEADER = Unverified(
+    key="cache.skip_header",
+    placeholder="x-cache-skip",
+    doc_ref="docs/verified-apis.md §2",
+    verified=True,
+)
+CACHE_NO_STORE_HEADER = Unverified(
+    key="cache.no_store_header",
+    placeholder="x-cache-no-store",
+    doc_ref="docs/verified-apis.md §2",
+    verified=True,
+)
+CACHE_TTL_HEADER = Unverified(
+    key="cache.ttl_header",
+    placeholder="x-cache-ttl",
+    doc_ref="docs/verified-apis.md §2",
+    verified=True,
+)
+CACHE_THRESHOLD_HEADER = Unverified(
+    key="cache.threshold_header",
+    placeholder="x-cache-threshold",
+    doc_ref="docs/verified-apis.md §2",
+    verified=True,
+)
+CACHE_PRINCIPAL_ID_HEADER = Unverified(
+    key="cache.principal_id_header",
+    placeholder="x-cache-principal-id",
+    doc_ref="docs/verified-apis.md §2",
+    verified=True,
+)
+# The two RESPONSE signal headers the gateway states its outcome on: the status
+# (``hit`` / ``miss`` / ``bypass`` / ``no-store``, present on every cached route)
+# and, on a ``hit`` only, the similarity score (four-dp string, e.g. ``0.9518``).
+# Parsed onto ``donkey.last_call`` — plain confirmed names, the lastcall
+# response-header style (not sent, so not overridable), living here beside the
+# request names so the whole caching header contract has one home (#587).
+SEMANTIC_CACHE_STATUS_HEADER = "x-semantic-cache-status"
+SEMANTIC_CACHE_SCORE_HEADER = "x-semantic-cache-score"
+
 # --- Control-plane token endpoint (docs/verified-apis.md §1) ----------------
 # Path is appended to the region base URL. VERIFIED (docs/verified-apis.md §12.1) from
 # static analysis of the shipping `mulesoft-anypoint-cli-agent-fabric-plugin` (+ `anypoint-cli-

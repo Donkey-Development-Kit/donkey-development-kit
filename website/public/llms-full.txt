@@ -2220,6 +2220,49 @@ This is why `observed_at` is part of the public surface: a dashboard reading
 A budget-query endpoint on the gateway would make this object live rather than
 last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
 
+## Semantic cache steering
+
+Live
+
+When the proxy is fronted by the Anypoint **semantic-caching** policy, the
+gateway can answer a request from a stored completion when a semantically
+similar prompt was seen before — no provider round-trip, no fresh token spend.
+DDK caches nothing and computes no embeddings itself (that stays on the
+[do-not-build](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) list); it lets you **steer** the gateway's cache per
+block and **surfaces** the outcome.
+
+```python
+# Skip the cache for a block where a fresh answer matters:
+with donkey.cache(skip=True):
+    await agent.run(task)
+
+# Or tighten the match and shorten entry lifetime:
+async with donkey.cache(threshold=0.9, ttl=60):
+    ...
+```
+
+`donkey.cache(...)` is a dual sync/async context manager — like
+[`donkey.run(...)`](https://donkey-development-kit.github.io/donkey-development-kit/identity.md), the controls bind to a context variable, so they
+reach every governed call in the block (including calls on framework-spawned
+`asyncio` tasks) with no threading through framework state. The five controls:
+
+| Control | Type | Effect |
+|---|---|---|
+| `skip` | `bool` | Bypass the cache policy entirely (passthrough to the provider). |
+| `no_store` | `bool` | Look up, but do not write the result on a miss. |
+| `ttl` | `int` | Override the entry time-to-live, in seconds (a positive int). |
+| `threshold` | `float` | Override the similarity threshold, in `[0.0, 1.0]`. |
+| `principal_id` | `str` | Override the id the similarity filter partitions on. |
+
+An invalid control (a negative `ttl`, a `threshold` outside `[0.0, 1.0]`, a
+`principal_id` with a control character) raises `ConfigError` **at the call
+site**, not on the first request. The **outcome** of each call is on
+[`donkey.last_call.cache_status`](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#semantic-cache) /
+`.cache_score` and the OTel span. The same
+[degradation](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) as `donkey.run(...)` applies: a `connection_kwargs()`
+/ LiteLLM-backed adapter that does not route through the shared transport does
+not see the context variable, so its calls are not steered.
+
 ## Behaviour guarantees
 
 - The reset value (milliseconds *until* reset, in both `x-token-reset` and the
@@ -2231,6 +2274,8 @@ last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donke
   continue without a manual budget observation.
 - If the reserve is reached without a known `reset_at`, the retry loop raises
   once instead of spinning at zero delay.
+- A semantic-cache **hit** is a verbatim replay with no provider round-trip, so
+  it never advances the budget window — the replayed `usage` is not fresh spend.
 - Budget state is per-`Donkey` instance.
 
 ---
@@ -2434,6 +2479,8 @@ donkey.cost.enduser.id      = user-42
 donkey.routing.type         = ModelBased          # how the gateway routed
 donkey.routing.fallback     = false               # did it fail over?
 gen_ai.response.model       = gpt-5.1             # the model that actually served
+donkey.cache.status         = hit                 # semantic-cache outcome (on a cached proxy)
+donkey.cache.score          = 0.9518              # similarity score, hit only
 donkey.usage.cached_tokens        = 512   # omitted when the provider reports none
 donkey.usage.cache_write_tokens   = 128
 donkey.usage.reasoning_tokens     = 96
@@ -2814,19 +2861,24 @@ donkey = Donkey.from_env(on_model_substitution="raise")
   `last_call.fallback` to detect a real failover, and leave
   `on_model_substitution` at `"off"` on model-based proxies.
 
-### Semantic caching & semantic routing Roadmap
+### Semantic caching & semantic routing Live
 
 Omni Gateway can answer a request from its **semantic cache** (a similar
 prompt was answered before, so no provider round-trip and no token cost) and
 can **route semantically** (pick the model by matching the prompt to a
-topic). Both happen at the gateway. DDK will not cache anything or compute
-embeddings itself; it will let you steer the gateway's cache per request, for
-example to skip it, not store a response, or override the TTL or similarity
-threshold, and report what happened:
+topic). Both happen at the gateway. DDK caches nothing and computes no
+embeddings itself; it lets you steer the gateway's cache per request — skip it,
+not store a response, or override the TTL or similarity threshold via
+[`donkey.cache(...)`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md#semantic-cache-steering) — and reports what
+happened:
 
 - the cache outcome (`hit`, `miss`, `bypass`, `no-store`) and similarity score
-  on `donkey.last_call` and the span;
+  on `donkey.last_call.cache_status` / `.cache_score` and the span
+  (`donkey.cache.status` / `donkey.cache.score`);
 - the matched routing topic and its score, beside the routing fields above.
+
+A cache `hit` is a verbatim replay with no provider round-trip, so it never
+advances the [token budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) — the replayed `usage` is not fresh spend.
 
 ### TypeScript parity Roadmap
 
@@ -7197,13 +7249,31 @@ Each is `None` (never `0`) when unobserved or absent.
 | `cache_write_tokens` | `int \| None` | Input tokens written into the prompt cache this call. |
 | `reasoning_tokens` | `int \| None` | Output tokens spent on model reasoning the developer never sees. |
 
+## Semantic cache
+
+When the proxy is fronted by the Anypoint **semantic-caching** policy, the
+gateway reports what it did with each request. Steer it per block with
+[`donkey.cache(...)`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md#semantic-cache-steering); read the outcome here.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `cache_status` | `str \| None` | What the caching policy did (`x-semantic-cache-status`): `"hit"` / `"miss"` / `"bypass"` / `"no-store"`. `None` on a proxy with no caching policy (the header is absent) or a simulated response. |
+| `cache_score` | `float \| None` | On a cache **hit**, the similarity score of the matched entry (`x-semantic-cache-score`). `None` on miss/bypass/no-store (the header is hit-only) or when the score did not parse. |
+| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) (a replay is no fresh spend). |
+
+  A cache **hit** replays a stored completion byte-for-byte, including its
+  original `usage` block — so the token counts above describe the *cached*
+  call, not fresh spend. `cache_hit` is the signal that they should not be
+  counted again.
+
 ## On the span
 
-The routing and usage fields also land on the OpenTelemetry GenAI span for each
-governed call, under the pinned `gen_ai.*` keys and the stable `donkey.*`
-namespace: `gen_ai.response.model`, `donkey.routing.type`,
-`donkey.routing.fallback`, and — on a semantic route —
-`donkey.routing.matched_topic` / `donkey.routing.score`, alongside the usage
+The routing, usage, and cache fields also land on the OpenTelemetry GenAI span
+for each governed call, under the pinned `gen_ai.*` keys and the stable
+`donkey.*` namespace: `gen_ai.response.model`, `donkey.routing.type`,
+`donkey.routing.fallback`, — on a semantic route —
+`donkey.routing.matched_topic` / `donkey.routing.score`, and — on a cached
+proxy — `donkey.cache.status` / `donkey.cache.score`, alongside the usage
 counts. A field that is `None` is omitted from the span entirely. See
 [Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) for the full attribute list.
 

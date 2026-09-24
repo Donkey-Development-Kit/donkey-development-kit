@@ -126,6 +126,14 @@ DONKEY_ROUTING_FALLBACK = "donkey.routing.fallback"
 # routing decision the bare ``donkey.routing.type`` leaves opaque.
 DONKEY_ROUTING_MATCHED_TOPIC = "donkey.routing.matched_topic"
 DONKEY_ROUTING_SCORE = "donkey.routing.score"
+# Semantic-cache outcome (docs/verified-apis.md §2, #587). Populated only when the
+# proxy is fronted by the semantic-caching policy (the ``x-semantic-cache-*``
+# headers are present); absent — and so dropped from the span — otherwise. The
+# status makes cache effectiveness observable on a trace, and ``hit`` is the
+# signal a cost rollup (#317) reads to exclude a verbatim-replay's tokens from
+# fresh spend. Stable public API, same as the other donkey.* keys.
+DONKEY_CACHE_STATUS = "donkey.cache.status"
+DONKEY_CACHE_SCORE = "donkey.cache.score"
 # Per-call usage token counts the semconv has no pinned key for (#307). Stable
 # public API, same as the other donkey.* keys — renaming one is a breaking change.
 DONKEY_USAGE_CACHED_TOKENS = "donkey.usage.cached_tokens"
@@ -172,6 +180,8 @@ _ALLOWED_SPAN_ATTRIBUTES = frozenset(
         DONKEY_ROUTING_FALLBACK,
         DONKEY_ROUTING_MATCHED_TOPIC,
         DONKEY_ROUTING_SCORE,
+        DONKEY_CACHE_STATUS,
+        DONKEY_CACHE_SCORE,
     }
 )
 
@@ -539,6 +549,8 @@ def build_genai_attributes(
     fallback: bool | None = None,
     matched_topic: str | None = None,
     routing_score: float | None = None,
+    cache_status: str | None = None,
+    cache_score: float | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
     cached_tokens: int | None = None,
@@ -588,6 +600,12 @@ def build_genai_attributes(
         attrs[DONKEY_ROUTING_MATCHED_TOPIC] = matched_topic
     if routing_score is not None:
         attrs[DONKEY_ROUTING_SCORE] = routing_score
+    # Semantic-cache outcome: present only when the caching policy fronts the
+    # proxy, dropped (``None``) otherwise — same omit-when-unobserved rule (#587).
+    if cache_status is not None:
+        attrs[DONKEY_CACHE_STATUS] = cache_status
+    if cache_score is not None:
+        attrs[DONKEY_CACHE_SCORE] = cache_score
     if input_tokens is not None:
         attrs[GEN_AI_USAGE_INPUT_TOKENS] = input_tokens
     if output_tokens is not None:

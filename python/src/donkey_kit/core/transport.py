@@ -43,6 +43,7 @@ import httpx
 from . import _verify
 from .auth import AuthProvider
 from .budget import Budget
+from .cachecontrol import current_cache_controls
 from .config import DonkeyConfig
 from .cost import CostTags
 from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
@@ -56,6 +57,7 @@ from .lastcall import (
     parse_usage,
     request_id,
     routing_fallback,
+    semantic_cache,
     semantic_routing,
     usage_from_response,
     usage_mapping,
@@ -247,6 +249,15 @@ def _apply_base_headers(
     if run is not None:
         for name, value in cost_headers(cfg, run).items():
             request.headers[name] = value
+    # Per-request semantic-cache steering bound by ``donkey.cache(...)`` (#587).
+    # Contextvar-read per send, exactly like the run-scope cost tags above, so a
+    # steered block reaches framework-spawned asyncio tasks with no threading. The
+    # VERIFIED lowercase ``x-cache-*`` names ride the same single injection seam as
+    # every other governance header (BG §1.1); absent controls inject nothing.
+    controls = current_cache_controls()
+    if controls is not None:
+        for name, value in controls.headers():
+            request.headers[name] = value
 
 
 def _apply_call_id_header(request: httpx.Request, call_id_header: str) -> None:
@@ -383,6 +394,7 @@ def _record_response(
         decision, policy_type = _span_decision(response)
         usage = usage_from_response(response)
         matched_topic, routing_score = semantic_routing(response)
+        cache_status, cache_score = semantic_cache(response)
         gspan.record(
             system=response.headers.get(LLM_PROVIDER_HEADER),
             # Served model + routing facts (docs/verified-apis.md §3, #309):
@@ -397,6 +409,10 @@ def _record_response(
             # §3, #590).
             matched_topic=matched_topic,
             routing_score=routing_score,
+            # Semantic-cache outcome — both None on a proxy with no caching policy
+            # / non-proxy response, and the span omits any None field (§2, #587).
+            cache_status=cache_status,
+            cache_score=cache_score,
             input_tokens=usage["input_tokens"],
             output_tokens=usage["output_tokens"],
             cached_tokens=usage["cached_tokens"],
