@@ -1,0 +1,18 @@
+# Live semantic-routing request (consumer creds redacted).
+# Same OpenAI /chat/completions wire shape as ../llm_proxy/ — the routing
+# decision is made by prompt SEMANTICS, not the body `model` field (which is a
+# placeholder here). The topic each prompt matched is echoed in the
+# `x-llm-proxy-semantic-routing-success` response header (see responses.*.headers.txt).
+
+POST /ddk-semantic-advanced-routing/chat/completions HTTP/1.1
+Host: private-space-omni-gateway-qrpud8.wxdmnv.usa-e2.cloudhub.io
+Content-Type: application/json
+client_id: <redacted>
+client_secret: <redacted>
+
+{"model": "any-placeholder", "messages": [{"role": "user", "content": "How do I calculate compound interest?"}]}
+
+# Prompt → matched topic (captured 2026-09-24):
+#   "How do I calculate compound interest?"            → Finance (openai/gpt-5-mini,        score 0.62)  → responses.finance.*
+#   "Write a Python function to sort a list."          → Code    (gemini/gemini-2.5-flash,  score 0.62)  → responses.code.*
+#   "What is the airspeed velocity of an unladen swallow?" → Finance (openai/gpt-5-mini,    score 0.51)  → responses.offtopic.*
