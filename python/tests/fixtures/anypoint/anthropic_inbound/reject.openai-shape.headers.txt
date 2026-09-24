@@ -1,0 +1,19 @@
+HTTP/1.1 404 Not Found
+date: Thu, 24 Sep 2026 06:19:45 GMT
+vary: Accept-Encoding
+server: Anypoint Flex Gateway
+x-robots-tag: none
+content-security-policy: default-src 'none'; frame-ancestors 'none'
+cf-cache-status: DYNAMIC
+cf-ray: a3ffade81afdcf3f-CMH
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: anthropic
+x-llm-proxy-llm-model: claude-haiku-4-5-20251001
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: anthropic, Model: claude-haiku-4-5-20251001.
+x-envoy-decorator-operation: api-instance-21194086.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
+transfer-encoding: chunked
+x-correlation-id: f502f86e-1581-4692-9d9a-9fa0d2ca2110
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Keep-Alive
+

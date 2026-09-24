@@ -1,0 +1,10 @@
+HTTP/1.1 401 Unauthorized
+www-authenticate: Client-ID-Enforcement
+content-type: application/json
+content-length: 36
+date: Thu, 24 Sep 2026 06:19:45 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: a2343d2d-8082-4ab5-9fe8-920ceba27b0d
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Keep-Alive
+

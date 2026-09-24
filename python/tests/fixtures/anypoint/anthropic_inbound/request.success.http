@@ -1,0 +1,8 @@
+POST /ddk-anthropic-inbound/v1/messages HTTP/1.1
+Host: shared-omni-gateway-qrpud8.5sc6y6-1.usa-e2.cloudhub.io
+Content-Type: application/json
+anthropic-version: 2023-06-01
+client_id: <consumer client id — redacted>
+client_secret: <consumer client secret — redacted>
+
+{"model":"claude-haiku-4-5-20251001","max_tokens":16,"messages":[{"role":"user","content":"Reply with the single word PONG."}]}
