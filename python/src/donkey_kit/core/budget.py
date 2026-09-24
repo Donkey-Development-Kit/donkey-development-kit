@@ -48,6 +48,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from .errors import BudgetReserveReached
+from .lastcall import is_cache_hit
 
 # The three numeric budget headers, VERIFIED (LIVE) against the token-rate-limit
 # policy (docs/verified-apis.md §4, row `Token rate limiting`) — present on the
@@ -148,7 +149,16 @@ class Budget:
 
         ``now`` is injectable for tests; production passes nothing and the wall
         clock (UTC) is used.
+
+        A semantic-cache **hit** is a verbatim replay with no provider round-trip
+        and no fresh spend (docs/verified-apis.md §2, #587) — so it never advances
+        the window, derived from ``x-semantic-cache-status == hit`` (there is no
+        ``total_cost`` body field to key on, #588). A hit carries no budget headers
+        of its own anyway, but short-circuiting on the status keeps the intent
+        explicit and robust to a future hit that echoed a stale window.
         """
+        if is_cache_hit(response):
+            return  # cache hit: verbatim replay, no fresh spend to observe
         headers = response.headers
         limit = _parse_int(headers.get(LIMIT_HEADER))
         remaining = _parse_int(headers.get(REMAINING_HEADER))

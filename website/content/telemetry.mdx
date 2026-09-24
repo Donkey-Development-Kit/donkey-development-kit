@@ -32,6 +32,8 @@ donkey.cost.enduser.id      = user-42
 donkey.routing.type         = ModelBased          # how the gateway routed
 donkey.routing.fallback     = false               # did it fail over?
 gen_ai.response.model       = gpt-5.1             # the model that actually served
+donkey.cache.status         = hit                 # semantic-cache outcome (on a cached proxy)
+donkey.cache.score          = 0.9518              # similarity score, hit only
 donkey.usage.cached_tokens        = 512   # omitted when the provider reports none
 donkey.usage.cache_write_tokens   = 128
 donkey.usage.reasoning_tokens     = 96
@@ -448,19 +450,24 @@ donkey = Donkey.from_env(on_model_substitution="raise")
   `on_model_substitution` at `"off"` on model-based proxies.
 </Callout>
 
-### Semantic caching & semantic routing <Badge tone="roadmap">Roadmap</Badge>
+### Semantic caching & semantic routing <Badge tone="live">Live</Badge>
 
 Omni Gateway can answer a request from its **semantic cache** (a similar
 prompt was answered before, so no provider round-trip and no token cost) and
 can **route semantically** (pick the model by matching the prompt to a
-topic). Both happen at the gateway. DDK will not cache anything or compute
-embeddings itself; it will let you steer the gateway's cache per request, for
-example to skip it, not store a response, or override the TTL or similarity
-threshold, and report what happened:
+topic). Both happen at the gateway. DDK caches nothing and computes no
+embeddings itself; it lets you steer the gateway's cache per request — skip it,
+not store a response, or override the TTL or similarity threshold via
+[`donkey.cache(...)`](/budget#semantic-cache-steering) — and reports what
+happened:
 
 - the cache outcome (`hit`, `miss`, `bypass`, `no-store`) and similarity score
-  on `donkey.last_call` and the span;
+  on `donkey.last_call.cache_status` / `.cache_score` and the span
+  (`donkey.cache.status` / `donkey.cache.score`);
 - the matched routing topic and its score, beside the routing fields above.
+
+A cache `hit` is a verbatim replay with no provider round-trip, so it never
+advances the [token budget](/budget) — the replayed `usage` is not fresh spend.
 
 ### TypeScript parity <Badge tone="roadmap">Roadmap</Badge>
 

@@ -66,6 +66,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from ._verify import SEMANTIC_CACHE_SCORE_HEADER, SEMANTIC_CACHE_STATUS_HEADER
+
 if TYPE_CHECKING:
     import httpx
 
@@ -119,6 +121,19 @@ LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 # the prose is tolerated with two independent patterns so a drift in the
 # provider/model portion never loses the topic or the score (verification discipline).
 SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
+
+# VERIFIED (LIVE, docs/verified-apis.md §2 "Semantic caching", 2026-09-24,
+# ``python/tests/fixtures/anypoint/semantic_cache/``, #587/#588). A proxy fronted
+# by the semantic-caching policy states its outcome on every response: the STATUS
+# — one of ``hit`` / ``miss`` / ``bypass`` / ``no-store`` — and, on a ``hit``
+# ONLY, the similarity SCORE (a four-dp string, e.g. ``0.9518``; absent on
+# miss/bypass/no-store). A ``hit`` is a byte-identical verbatim replay with NO
+# provider round-trip, so the status is also the SDK's zero-spend signal (there is
+# no ``total_cost`` body field — #588). The header names are defined in
+# ``core/_verify`` (the whole caching header contract has one home) and parsed
+# onto :attr:`LastCall.cache_status` / :attr:`LastCall.cache_score`, each failing
+# open to ``None`` on an absent/garbage value (verification discipline).
+_CACHE_STATUSES = frozenset({"hit", "miss", "bypass", "no-store"})
 
 # ``api-instance-21133858.3e6ce455-e3e8-4402-b830-9fcf07d9207b.svc`` → instance
 # ``21133858`` + environment ``3e6ce455-…`` (a UUID; it carries dashes but no
@@ -206,6 +221,31 @@ def _parse_semantic_routing(raw: str | None) -> tuple[str | None, float | None]:
     return topic, score
 
 
+def _parse_cache_status(raw: str | None) -> str | None:
+    """The semantic-cache status from ``x-semantic-cache-status``, normalised to
+    one of :data:`_CACHE_STATUSES` (``hit`` / ``miss`` / ``bypass`` / ``no-store``),
+    or ``None`` when the header is absent (a non-cached / non-proxy / simulated
+    response) or carries an unrecognised value. Matched case-insensitively on the
+    trimmed token; an unknown value is treated as no signal rather than guessed
+    (verification discipline). Never raises."""
+    if raw is None:
+        return None
+    token = raw.strip().lower()
+    return token if token in _CACHE_STATUSES else None
+
+
+def _parse_cache_score(raw: str | None) -> float | None:
+    """The similarity score from ``x-semantic-cache-score`` as a float, or ``None``
+    when the header is absent (present on a ``hit`` only) or not a valid float.
+    Never raises (verification discipline)."""
+    if raw is None:
+        return None
+    try:
+        return float(raw.strip())
+    except ValueError:
+        return None
+
+
 def request_id(response: httpx.Response) -> str | None:
     """The upstream provider's request id for a response, resolved from the first
     present of :data:`REQUEST_ID_HEADERS` (``x-request-id``, then
@@ -242,6 +282,29 @@ def semantic_routing(response: httpx.Response) -> tuple[str | None, float | None
     span. Shared by :meth:`LastCall.from_response` and ``core/transport.py`` so the
     record and the span read the header identically (one definition, #590)."""
     return _parse_semantic_routing(response.headers.get(SEMANTIC_ROUTING_SUCCESS_HEADER))
+
+
+def semantic_cache(response: httpx.Response) -> tuple[str | None, float | None]:
+    """The ``(cache_status, cache_score)`` a semantic-caching proxy stated for this
+    response (``x-semantic-cache-status`` / ``x-semantic-cache-score``), or
+    ``(None, None)`` on a non-cached / non-proxy / simulated response. These are
+    the values that land on :attr:`LastCall.cache_status` / :attr:`LastCall.cache_score`
+    and the span. Shared by :meth:`LastCall.from_response` and ``core/transport.py``
+    so the record and the span read the headers identically (one definition, #587)."""
+    return (
+        _parse_cache_status(response.headers.get(SEMANTIC_CACHE_STATUS_HEADER)),
+        _parse_cache_score(response.headers.get(SEMANTIC_CACHE_SCORE_HEADER)),
+    )
+
+
+def is_cache_hit(response: httpx.Response) -> bool:
+    """True iff the gateway definitively marked this response as a semantic-cache
+    ``hit`` (``x-semantic-cache-status: hit``). A hit is a verbatim replay with no
+    provider round-trip, so :class:`~donkey_kit.core.budget.Budget` uses this to
+    keep a hit from advancing the token-rate window — the zero-spend-on-hit signal
+    derived from the status, since a hit carries no ``total_cost`` body field
+    (#587/#588). An absent or unrecognised status is *not* a hit."""
+    return _parse_cache_status(response.headers.get(SEMANTIC_CACHE_STATUS_HEADER)) == "hit"
 
 
 def is_fallback(response: httpx.Response) -> bool:
@@ -431,6 +494,16 @@ class LastCall:
     cache_write_tokens: int | None = None
     #: Output tokens spent on model reasoning the developer never sees.
     reasoning_tokens: int | None = None
+    # --- semantic-cache outcome (docs/verified-apis.md §2, #587) ------------
+    #: What the gateway's semantic-caching policy did with this request
+    #: (``x-semantic-cache-status``): ``"hit"`` / ``"miss"`` / ``"bypass"`` /
+    #: ``"no-store"``. ``None`` on a proxy with no caching policy (the header is
+    #: absent) or a simulated response — distinct from any of the four states.
+    cache_status: str | None = None
+    #: On a cache ``hit``, the similarity score of the matched entry
+    #: (``x-semantic-cache-score``, a float). ``None`` on miss/bypass/no-store
+    #: (the header is hit-only) or when the score did not parse — never guessed.
+    cache_score: float | None = None
 
     @property
     def observed(self) -> bool:
@@ -449,6 +522,15 @@ class LastCall:
             and self.served_model is not None
             and self.requested_model != self.served_model
         )
+
+    @property
+    def cache_hit(self) -> bool:
+        """True iff the gateway served this call from its semantic cache
+        (:attr:`cache_status` == ``"hit"``) — a verbatim replay with no provider
+        round-trip. The zero-spend read a cost rollup uses to exclude a hit's
+        replayed ``usage`` from fresh spend (#587). ``False`` for every other
+        status and for an unobserved / non-cached response."""
+        return self.cache_status == "hit"
 
     @property
     def available(self) -> bool:
@@ -480,6 +562,8 @@ class LastCall:
         matched_topic, routing_score = _parse_semantic_routing(
             response.headers.get(SEMANTIC_ROUTING_SUCCESS_HEADER)
         )
+        cache_status = _parse_cache_status(response.headers.get(SEMANTIC_CACHE_STATUS_HEADER))
+        cache_score = _parse_cache_score(response.headers.get(SEMANTIC_CACHE_SCORE_HEADER))
         return cls(
             status=LastCallStatus.OBSERVED,
             request_id=request_id(response),
@@ -499,6 +583,8 @@ class LastCall:
             cached_tokens=usage["cached_tokens"],
             cache_write_tokens=usage["cache_write_tokens"],
             reasoning_tokens=usage["reasoning_tokens"],
+            cache_status=cache_status,
+            cache_score=cache_score,
         )
 
 
