@@ -210,6 +210,18 @@ SHAPES: dict[str, _Spec] = {
         "responses.success.body.json",
         200,
     ),
+    # A SEMANTIC-routing 200 (LIVE, docs/verified-apis.md §3 semantic-routing row,
+    # #589/#590). The 'Finance' topic capture (openai/gpt-5-mini, score 0.62):
+    # routing_type Semantic plus the semantic-only
+    # ``x-llm-proxy-semantic-routing-success`` prose that ``LastCall`` parses for
+    # ``matched_topic`` + ``routing_score`` (#601). Its own capture directory,
+    # force-included into the wheel alongside the other served dirs.
+    "success-semantic": _Spec(
+        "anypoint/semantic_routing",
+        "responses.finance.headers.txt",
+        "responses.finance.body.json",
+        200,
+    ),
     "stream": _Spec(
         "anypoint/llm_proxy",
         "responses.stream.headers.txt",

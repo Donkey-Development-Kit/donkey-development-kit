@@ -212,6 +212,45 @@ except Exception as err:
   10. That is the fixture, not a live failover — and it is exactly the
   mismatch `last_call` exists to surface.
 
+## Semantic routing: the matched topic and score
+
+The call above went through a **model-based** proxy, where `routing_type` reads
+`ModelBased`. A **semantic-routing** proxy instead classifies each prompt by
+meaning and routes it to the matched topic's provider and model — there
+`routing_type` reads `Semantic`, and `last_call` carries two more fields the
+model-based path leaves `None`:
+
+- `matched_topic` — which topic the prompt matched (e.g. `Finance`).
+- `routing_score` — how close that match was, a bare `0.xx` similarity score.
+
+Both come from the live-verified, semantic-only
+`x-llm-proxy-semantic-routing-success` response header. The four routing fields
+you already read (`routing_type`, `fallback`, `served_provider`, `served_model`)
+are emitted identically to the model-based case, so the rest of the record reads
+the same way — only these two are added.
+
+You can exercise this branch offline: point the simulator at the captured
+`Semantic` response by requesting the `donkey-sim/success-semantic` model id
+(the same sentinel mechanism the [simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) uses to force a
+refusal shape, here forcing a happy-path variant).
+
+```python
+client = donkey.openai(sync=True)
+client.responses.create(
+    model="donkey-sim/success-semantic",
+    input="How does compound interest work?",
+)
+
+last = donkey.last_call
+print("routing_type ", last.routing_type)   # Semantic
+print("matched_topic", last.matched_topic)  # Finance
+print("routing_score", last.routing_score)  # 0.62
+```
+
+  `matched_topic` and `routing_score` are `None` on a model-based proxy — the
+  `x-llm-proxy-semantic-routing-success` header is semantic-only. An unparseable
+  message leaves each field `None` rather than guessing a value.
+
 **Learn more:** [Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md) · [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)
 
 **Source:**
