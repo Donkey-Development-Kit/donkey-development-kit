@@ -1,9 +1,11 @@
 # Use these docs with your agent
 
+Live
+
 You probably ask your coding assistant before you open a docs site. These docs
 are published in the [llms.txt convention](https://llmstxt.org) so an assistant
-can read them directly and write **correct, governed** code — the verified base
-URL with no `/v1`, the `client_id` / `client_secret` header pair, the typed
+can read them directly and write **correct, governed** code — the base URL with
+no `/v1`, the `client_id` / `client_secret` header pair, the typed
 refusal taxonomy — instead of guessing.
 
 ## What's published
@@ -57,8 +59,7 @@ page's `.md`, so the tool fetches only the pages it needs:
 https://donkey-development-kit.github.io/donkey-development-kit/llms.txt
 ```
 
-  These docs describe both live-verified surfaces and design-stage ones. The
-  artifacts reproduce the pages verbatim, including each page's verification
-  status — so an assistant sees the same "blocked on verification" notes you do.
-  Sanity-check generated code against the [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)
-  before running it against a real gateway.
+  These docs cover both live capabilities and ones on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+  Roadmap pages show the planned API, which is not callable yet. When you ask an
+  assistant to write code, tell it to use only capabilities marked **Live**, and
+  review generated code before running it against a real gateway.

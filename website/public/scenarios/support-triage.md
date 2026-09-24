@@ -95,7 +95,7 @@ async with donkey.run(id=f"ticket-{i}"):
 The proxy *contract* the demo depends on — the base URL shape (no `/v1`), the
 `client_id`/`client_secret` header pair, the attribution headers, and the four
 live-verified rejection shapes including PII — is **live-verified**
-([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). `ChatOpenAI` / `StateGraph` are
+(see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md)). `ChatOpenAI` / `StateGraph` are
 the frameworks' own classes and `.ainvoke` is their documented API:
 construction via the SDK factory is the verified surface, and everything after
 is the framework's own runtime.

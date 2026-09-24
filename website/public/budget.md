@@ -1,20 +1,13 @@
 # Budget & pacing
 
-  **Phase 1 — the `Budget` object and its pacing helpers ship.** The object
-  below (`limit` / `remaining` / `reset_at` / `observed_at` / `fraction_used`),
-  updated in-band from every response, and the two pacing helpers — `pace()` and
-  `wait_for_reset()` — are implemented. The one deferred piece is the *end-to-end
-  test against the local gateway simulator* (`donkey mock`), which lands with the
-  simulator itself. See [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and
-  [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+Live
 
-The governed proxy tells you about your token budget on **every response**, in
-`x-token-*` headers. Today you would parse those yourself, in every call site,
-and most people don't — so the first time budget matters is the moment it runs
-out.
+The governed proxy reports your token budget on **every response**, in
+`x-token-*` headers. Parsing those yourself in every call site is tedious, and
+most code skips it — so the first time budget matters is the moment it runs out.
 
-The point of this piece: **you never parse a header.** Every response updates a
-`Budget` object on the `Donkey` instance.
+With DDK **you never parse a header.** Every response updates a `Budget` object
+on the `Donkey` instance.
 
 ## The object
 
@@ -36,16 +29,19 @@ async with donkey.budget.pace(reserve=0.10):  # raises BudgetReserveReached at 9
 ```
 
 `pace()` raises **before** issuing the request that would cross your reserve —
-not after a `429` comes back. That distinction is the whole feature.
+not after a `429` comes back.
 
-## The batch job that finishes by itself
+The budget object is per-`Donkey`, not global: two instances with different
+credentials do not share state.
+
+## Example: a batch job that finishes by itself
 
 50,000 product records, enriched overnight against a governed model, budget
 window resetting every hour, no human awake.
 
 Without a budget object, the script runs flat out, takes a `429` at record
 31,000, crashes, and someone re-runs it from record 0 in the morning —
-spending the budget twice to do the same work.
+spending the budget twice to do the same work. With `pace()`:
 
 ```python
 for batch in chunks(records, 200):
@@ -63,51 +59,41 @@ for batch in chunks(records, 200):
 ```
 
 Once `reset_at` has elapsed, the old observation is stale and `pace()` no longer
-refuses. A response carrying a budget signal updates the observed fields; a
-fresh future `reset_at` makes the guard active again. A response that does not
-supply a fresh future `reset_at` leaves the stale pass-through open. The job can
-continue unattended without a manual budget observation. A partial observation
-can report usage without reporting `reset_at`; in that defensive case the loop
+refuses, so the job continues unattended without a manual budget observation. A
+later response updates the observed fields only when it carries a recognised
+budget signal, and a fresh future `reset_at` makes the guard active again.
+
+If a partial observation reports usage without a `reset_at`, the loop above
 re-raises `BudgetReserveReached` after one attempt instead of calling
 `wait_for_reset()` and spinning at zero delay. Preserve the last checkpoint and
-escalate the incomplete signal rather than crossing the reserve.
+escalate rather than crossing the reserve.
 
-## The dashboard that prevents the outage
+## Example: a dashboard that prevents the outage
 
 `fraction_used` is per-agent, so it can be graphed. The owner of a support
 agent sees it climbing at 14:00 and asks for an increase before the 16:00
 peak — rather than explaining an outage afterwards.
 
-## The honest limitation
+## Budget is observed in-band
 
-  **Budget is only visible in-band.** The gateway reports it on response
-  headers; there is **no endpoint that answers "what is my remaining
-  budget?"**. So `remaining` is only as fresh as your last call, and a
-  brand-new process knows nothing at all until its first request completes.
+  The gateway reports budget on response headers; there is **no endpoint that
+  answers "what is my remaining budget?"**. So `remaining` is only as fresh as
+  your last call, and a brand-new process knows nothing until its first request
+  completes.
 
-This is why `observed_at` exists and is part of the public surface: so nobody
-mistakes stale data for live data. A dashboard reading `remaining` without
-checking `observed_at` is reporting history, not state.
+This is why `observed_at` is part of the public surface: a dashboard reading
+`remaining` without checking `observed_at` is reporting history, not state.
+A budget-query endpoint on the gateway would make this object live rather than
+last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
 
-It is also filed as an upstream gap against the gateway — a budget-query
-endpoint is the thing that would make this object live rather than
-last-known-good. See [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+## Behaviour guarantees
 
-## Acceptance bar
-
-- `x-token-reset` in milliseconds converts correctly — asserted to the second
-  against a fixture with a known value.
+- `x-token-reset` (milliseconds) is converted to a `datetime`, accurate to the
+  second.
 - `pace()` raises before the request that would cross the reserve, never after
   a `429`.
-- After `reset_at`, `pace()` no longer refuses, so the wait-and-retry loop can
-  continue without a manual budget observation. A later response updates the
-  budget only when it carries a recognised signal, and the guard becomes active
-  again when that update supplies a future `reset_at`.
+- After `reset_at`, `pace()` no longer refuses, so a wait-and-retry loop can
+  continue without a manual budget observation.
 - If the reserve is reached without a known `reset_at`, the retry loop raises
   once instead of spinning at zero delay.
-- The budget object is per-`Donkey`, not global: two instances with different
-  credentials do not share state.
-
----
-
-**Status: Phase 1 — the `Budget` object, `pace()`, and `wait_for_reset()` are shipped. The end-to-end simulator test is deferred to the local gateway simulator (`donkey mock`).**
+- Budget state is per-`Donkey` instance.

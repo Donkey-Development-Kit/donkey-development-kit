@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Play } from 'next/font/google'
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
@@ -8,17 +8,18 @@ import '../styles/globals.css'
 
 const SITE_NAME = 'Donkey Development Kit'
 const SITE_DESCRIPTION =
-  'An SDK for Agent Fabric — governed model access from your own agent framework, with budget, refusals, telemetry and simulation on one skeleton.'
+  'Governed by the gateway, understood by your code. An open-source SDK that brings Agent Fabric and Omni Gateway awareness into your agent framework.'
 
 // next/image's unoptimized loader does not prefix basePath for /public assets,
 // so reference the served copy under website/public/img/ with the base path
 // applied manually — same convention as components/index.tsx.
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
 
-const inter = Inter({
+const play = Play({
   subsets: ['latin'],
+  weight: ['400', '700'],
   display: 'swap',
-  variable: '--font-inter',
+  variable: '--font-play',
 })
 
 // Replaces theme.config.tsx `head()`: the Metadata API builds the same
@@ -61,15 +62,38 @@ const navbar = (
       </span>
     }
     projectLink="https://github.com/Donkey-Development-Kit/donkey-development-kit"
-  />
+  >
+    <a
+      href="https://www.mulesoft.com/"
+      target="_blank"
+      rel="noreferrer"
+      className="af-nav-link"
+      aria-label="MuleSoft"
+      title="MuleSoft"
+    >
+      <img
+        src={`${BASE_PATH}/img/mulesoft-logo.png`}
+        alt="MuleSoft"
+        width={24}
+        height={24}
+        className="af-nav-logo"
+      />
+    </a>
+  </Navbar>
 )
 
 const footer = (
   <Footer>
     <span>
-      Donkey Development Kit — an SDK <em>for</em> Agent Fabric. “Agent Fabric”,
-      “Anypoint”, and “Omni Gateway” are Salesforce trademarks; this project is
-      descriptive (the trademark/support boundary).
+      Donkey Development Kit is an open-source, community-driven project
+      (Apache-2.0). It is not an official Salesforce or MuleSoft product and is
+      not supported by Salesforce. “Agent Fabric”, “Anypoint”, “MuleSoft” and
+      “Omni Gateway” are trademarks of Salesforce, Inc., used here only to
+      describe the platform DDK connects to. Learn more about the platform at{' '}
+      <a href="https://www.mulesoft.com/" target="_blank" rel="noreferrer">
+        mulesoft.com
+      </a>
+      .
     </span>
   </Footer>
 )
@@ -85,16 +109,16 @@ export default async function RootLayout({
       lang="en"
       dir="ltr"
       suppressHydrationWarning
-      className={`${inter.variable} ${inter.className}`}
+      className={`${play.variable} ${play.className}`}
     >
-      {/* Violet accent, close to the reference docs look (was theme.config `color`). */}
-      <Head color={{ hue: 262, saturation: 90 }} />
+      {/* #00B4FF accent, matching --af-accent in styles/globals.css. */}
+      <Head color={{ hue: 198, saturation: 100, lightness: { light: 50, dark: 50 } }} />
       <body>
         <Layout
           navbar={navbar}
           footer={footer}
           pageMap={pageMap}
-          docsRepositoryBase="https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/website/content"
+          docsRepositoryBase="https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/website/content"
           sidebar={{ defaultMenuCollapseLevel: 1, toggleButton: true }}
           toc={{ backToTop: 'Scroll to top' }}
         >

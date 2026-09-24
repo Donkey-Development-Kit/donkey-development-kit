@@ -1,39 +1,33 @@
 ---
-description: A local server that replays real gateway rejections, so you can develop against a governed gateway without having one.
+description: Run a local server that replays real gateway rejections, so you can build and test failure handling without a governed gateway.
 ---
 
 import { Callout } from 'nextra/components'
+import { Badge } from '../components'
 
 # Local simulator
 
-<Callout type="info">
-  **Phase 1 — the replay server ships, with scenario scripting.** `donkey mock`
-  boots a local server that replays the captured rejection fixtures,
-  honesty-stamps every response, and synthesises a budget window on the happy
-  path. The repeatable `--scenario` flag scripts a specific failure on demand —
-  frequency-based PII blocks, a shrinking budget window, injection matching.
-  See [Roadmap](/roadmap) and [Verification policy](/concepts/verification).
-</Callout>
+<Badge tone="live">Live</Badge>
 
-Nobody can make the production gateway emit a PII block on cue. Which means
-the branch of your agent that handles `PIIDetected` has **never executed**
-before the day it executes on a real customer's data.
+Nobody can make the production gateway emit a PII block on cue, so the branch
+of your agent that handles `PIIDetected` usually runs for the first time on a
+real customer's data.
 
-`donkey mock` is a local HTTP server that behaves like the governed proxy
-*for the failure paths*. It replays captured rejection fixtures on demand and
-replays a captured happy-path completion for everything else.
+`donkey mock` fixes that. It is a local HTTP server that behaves like the
+governed LLM proxy *for the failure paths*: it replays captured rejection
+fixtures on demand and a captured happy-path completion for everything else.
 
 ```bash
-pip install "donkey-kit[local]"
+pip install "donkey-kit[cli,local]"
 donkey mock --port 8080        # --host defaults to 127.0.0.1
 ```
 
-Then point **any** client at `http://localhost:8080` — the SDK, a stock OpenAI
+Point **any** client at `http://localhost:8080` — the SDK, a stock OpenAI
 client, or cURL. To trigger a specific rejection, set the request's **`model`**
 to the sentinel `donkey-sim/<shape>`:
 
 ```bash
-# note: no /v1 segment — the governed proxy (and the simulator) has none
+# no /v1 segment — the governed proxy (and the simulator) has none
 curl -s http://localhost:8080/responses \
   -H 'content-type: application/json' \
   -d '{"model": "donkey-sim/pii-detected"}' -i | head -1
@@ -44,17 +38,27 @@ The selectable shapes are `token-rate-limit`, `pii-detected`,
 `injection-protection`, `regex-prompt-guard`, `content-safety`,
 `content-moderation`, `model-not-found`, `upstream-5xx`, and `client-id-missing`
 — the eight documented rejections plus the consumer-auth `401`. Any other
-`model` value gets the happy path. The `donkey-sim/` prefix is
-a simulator-only control surface; the real gateway never interprets it.
+`model` value gets the happy path. The `donkey-sim/` prefix is a simulator-only
+control surface; the real gateway never interprets it.
+
+Because each body is the *same fixture* the SDK's error classifier is tested
+against, a sentinel request surfaces in your agent as the typed exception — a
+[`PIIDetected`](/errors), not a raw `403`.
+
+## Budget windows on the happy path
+
+Happy-path `200` responses carry a synthesised `x-llm-proxy-ratelimit` budget
+window that decrements on every call, so the pacing logic from
+[Budget & pacing](/budget) runs end-to-end against the simulator. For a real
+windowed counter that resets and emits the `429` on exhaustion, use the
+[`budget` scenario](#scenario-scripting).
 
 ## Scenario scripting
 
-The sentinel makes *you* decide which call fails. A **scenario** makes the
-simulator decide, on a rule you script once at boot — so a failure fires on its
-own, deterministically, across a whole run. Pass `--scenario` once per rule
-(repeatable); the grammar is `<name>:<key=value,key=value>`.
-
-Three scenarios ship, each mapping to a worked example below:
+The sentinel lets *you* decide which call fails. A **scenario** lets the
+simulator decide, on a rule you set once at boot, so failures fire on their own
+and deterministically across a whole run. Pass `--scenario` once per rule; the
+grammar is `<name>:<key=value,key=value>`.
 
 ```bash
 donkey mock --port 8080 \
@@ -64,169 +68,92 @@ donkey mock --port 8080 \
 ```
 
 When more than one is set, they are evaluated `injection` → `pii_block` →
-`budget`, and the first that fires wins. The `donkey-sim/<shape>` sentinel still
-takes precedence over all of them — it's an explicit "force this exact shape"
+`budget`, and the first that fires wins. The `donkey-sim/<shape>` sentinel
+takes precedence over all of them — it is an explicit "force this exact shape"
 override.
 
-### Scenario A — `pii_block:every=N`
+<Callout type="info">
+  The sentinel is for one-off failures; a scenario runs across a whole session.
+  Use both together to cover specific calls and background failure rates.
+</Callout>
 
-Nobody can make the production gateway emit a PII block on cue, so the branch of
-your agent that handles `PIIDetected` may never have run. `pii_block:every=5`
-serves the captured `pii-detected` **403** on every fifth `POST /responses`,
-deterministically — the other four get the happy path.
+### `pii_block:every=N`
+
+Serves the captured `pii-detected` **403** on every Nth `POST /responses`; the
+other calls get the happy path.
 
 ```bash
 donkey mock --scenario pii_block:every=5
 ```
 
-Because the body is the *same fixture* `donkey_kit.core.errors.classify()` is
-tested against, call five lights up as a typed
-[`PIIDetected`](/errors), not a raw `403`, and your masking logic runs in your
-own terminal before the PR is opened.
+Every fifth call raises a typed [`PIIDetected`](/errors) in your agent, so your
+masking logic runs in your own terminal before the pull request is opened.
 
-### Scenario B — `budget:limit=<tokens>,window=<duration>`
+### `budget:limit=<tokens>,window=<duration>`
 
-`budget:limit=20000,window=60s` shrinks an hour-long budget window to one
-minute, so the pacing and resume logic from [Budget & pacing](/budget) is tested
-end-to-end in ninety seconds instead of "we'll find out tonight."
+Runs a **real, wall-clock-windowed token counter**. Shrink an hour-long window
+to a minute and your [pacing and resume logic](/budget) is exercised in ninety
+seconds.
 
 ```bash
 donkey mock --scenario budget:limit=20000,window=60s
 ```
 
-It runs a **real, wall-clock-windowed token counter**. Each call deducts the
-happy-path completion's own reported token usage (override with `cost=<tokens>`).
-While budget remains, the happy-path `200` carries the live
-`x-llm-proxy-ratelimit` prose header the real gateway emits, decreasing as you
-spend. Once the window's budget is spent, calls are served the captured
-`token-rate-limit` **429** — with `x-token-remaining` and `x-token-reset`
-recomputed from the counter and the real milliseconds left in the window — until
-the window rolls over and the budget resets. `duration` accepts `ms`, `s`, `m`
-(a bare number is seconds).
+Each call deducts the happy-path completion's reported token usage (override
+with `cost=<tokens>`). While budget remains, the `200` carries the
+`x-llm-proxy-ratelimit` prose header, decreasing as you spend. Once the window
+is spent, calls receive the captured `token-rate-limit` **429**, with
+`x-token-remaining` and `x-token-reset` recomputed from the counter and the
+milliseconds left in the window, until the window rolls over. `duration`
+accepts `ms`, `s`, or `m` (a bare number is seconds).
 
 <Callout type="info">
-  The numeric `x-token-*` trio appears on the `429`, and the prose
-  `x-llm-proxy-ratelimit` header on the `200` — matching the observed live
-  contract, where the happy-path `200` carries the window as prose and the
-  numeric headers appear only on the `429`. The simulator never emits a header
-  shape the gateway does not
-  ([Verification policy](/concepts/verification)).
+  The numeric `x-token-*` headers appear only on the `429`, and the prose
+  `x-llm-proxy-ratelimit` header only on the `200` — matching the real gateway.
+  The simulator never emits a header shape the gateway does not.
 </Callout>
 
-### Scenario C — `injection:on-pattern=<substring>`
+### `injection:on-pattern=<substring>`
 
-`injection:on-pattern="ignore previous"` serves the `injection-protection`
-**400** on any request whose text contains the substring (case-insensitive),
-matched against the request's `input` / `messages` / `instructions` content.
+Serves the `injection-protection` **400** on any request whose `input`,
+`messages`, or `instructions` text contains the substring (case-insensitive).
 
 ```bash
 donkey mock --scenario injection:on-pattern="ignore previous"
 ```
 
-A request carrying a prompt-injection attempt lights up as a typed
-[`PromptInjectionBlocked`](/errors) (via the `x-injection-protection: blocked`
-discriminator), so the "I can't help with that" branch of a guardrailed bot is
-exercised before it faces a real attack.
+The request surfaces as a typed [`PromptInjectionBlocked`](/errors) (via the
+`x-injection-protection: blocked` discriminator), so the refusal branch of a
+guardrailed bot is exercised before it faces a real attack.
 
-## Why this is the one feature `base_url` cannot give you
-
-Everything else the SDK does happens on the client side, so a determined
-developer could hand-roll it. This cannot be hand-rolled, because **the value
-is on the server side.** "Develop against a governed gateway without having a
-gateway" is not an ergonomics improvement; it is a capability you otherwise do
-not have.
-
-## Testing the branch that has never run
-
-Point your agent at the simulator and send `model: "donkey-sim/pii-detected"`
-on the calls you want to fail. Your masking logic runs in your own terminal,
-before the pull request is opened, instead of in production — and because the
-body is the *same fixture* `classify()` is tested against, it lights up as a
-typed `PIIDetected`, not a raw `403`.
-
-The happy path carries a synthesised `x-llm-proxy-ratelimit` budget window that
-decrements on every call, so the pacing and resume logic from
-[Budget & pacing](/budget) runs end-to-end against the simulator instead of
-"we'll find out tonight." For a *real* windowed counter that resets and emits
-the `429` on exhaustion, use the [`budget` scenario](#scenario-scripting).
-
-<Callout type="info">
-  Deciding *which* calls fail by hand (send the `donkey-sim/<shape>` sentinel)
-  and scripting a rule so failures fire on their own
-  ([`--scenario`](#scenario-scripting)) are complementary — the sentinel is a
-  one-off, a scenario runs across a whole session.
-</Callout>
-
-## The honesty guarantee
-
-A simulator that could be mistaken for a real gateway would be worse than no
-simulator, so three rules are non-negotiable:
+## How the simulator works
 
 <Callout type="warning">
-  **Every simulator response carries `x-donkey-simulator: true`.** It can
-  never be confused for a real gateway in a log, a trace, or a screenshot —
-  and the same holds for the framework-generated `405`/`500` responses, not
-  just the ones the simulator hand-builds.
+  **Every simulator response carries `x-donkey-simulator: true`** — including
+  framework-generated `405`/`500` responses — so a simulated response is never
+  confused with a real gateway in a log, a trace, or a screenshot.
 </Callout>
 
-And the fixtures are the **same files** used by the `classify()` tests. One
-source of truth: if the gateway contract drifts, the simulator and the error
-taxonomy fail together, rather than the simulator quietly teaching you a
-contract that no longer exists.
+- **It replays; it does not evaluate policy.** The simulator tests how your
+  agent handles a refusal, never *which* prompts get refused. You choose the
+  refusal (the `donkey-sim/<shape>` sentinel or a `--scenario` rule); the
+  simulator never inspects a prompt and decides it violates a policy, and it
+  ignores authentication. Testing whether a prompt would be blocked by your
+  deployed policy configuration requires the real gateway.
+- **It works with any client.** A stock, non-SDK client — plain `httpx` or
+  `openai.OpenAI(base_url="http://localhost:8080", …)` — receives the
+  byte-identical rejection bodies and exact discriminator headers.
+- **Its fixtures are the SDK's test fixtures.** The simulator serves the same
+  files the error classifier is tested against, so the simulator and the
+  [error taxonomy](/errors) cannot drift apart. The wheel ships a sha256
+  integrity manifest of every fixture, so a changed byte fails loudly rather
+  than silently altering what the simulator replays.
+- **It is pure Python.** `pip install "donkey-kit[local]"` adds Starlette and
+  Uvicorn; no Docker required.
 
-Because "same files, both fail together" only catches a fixture edit that
-flips something a test asserts on, a committed **integrity manifest** pins the
-sha256 of every fixture the simulator serves. Its source copy lives at
-`tests/fixtures/fixtures.lock`; wheel builds copy it beside the packaged
-fixtures, so an installed wheel can verify that its replayed bytes still match
-the committed manifest. A *benign* byte edit — reformatted JSON, an added field
-— fails the lock loudly instead of silently drifting the replayed bytes. A
-genuine re-capture is accepted by regenerating the source lock
-(`python -m donkey_kit.simulator.fixtures --relock`) and committing it.
+## Related
 
-### It replays; it does not evaluate
-
-<Callout type="warning">
-  **The simulator replays captured shapes — it does not evaluate policy.** It
-  tests how your agent handles a refusal, never *which* prompts get refused.
-  *You* choose the refusal (the `donkey-sim/<shape>` sentinel, or a
-  `--scenario` rule); the simulator never inspects a prompt and decides it
-  violates a policy, because the real gateway's policy logic does not live on
-  your laptop. Testing against a real policy *configuration* — "would this
-  exact prompt be blocked by the rules we deployed?" — needs gateway-side
-  dry-run mode, tracked in
-  [#250](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/250).
-</Callout>
-
-## Acceptance bar
-
-- A **stock non-SDK client** receives byte-identical rejection bodies and the
-  exact discriminator headers — proof the simulator is honest rather than
-  merely convenient. Asserted against both plain `httpx` and a stock
-  `openai.OpenAI(base_url="http://localhost:8080", …)` client, comparing the
-  status, body bytes and headers the client actually received (not the SDK's
-  parsed view)
-  ([#189](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/189)). ✅
-- The fixtures are the *same files* the `classify()` contract tests load, so
-  the two fail together if the gateway contract ever drifts — and a committed
-  integrity manifest fails loudly on any byte edit that the "both fail together"
-  rule would otherwise miss. ✅
-- The simulator replays captured shapes; it does **not** evaluate policy
-  (real policy-configuration testing needs gateway
-  [dry-run mode, #250](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/250)). ✅
-- Every response carries `x-donkey-simulator: true`, including the
-  framework-generated `405`/`500`. ✅
-- Ships as `pip install "donkey-kit[local]"`, pure-Python, no Docker. ✅
-- Happy-path responses emit a synthesised `x-llm-proxy-ratelimit` prose window
-  so budget pacing works against it — matching the observed live contract, where
-  the `200` carries the window as prose and the numeric `x-token-*` trio appears
-  only on the `429`
-  (recorded in [`docs/verified-apis.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)). ✅
-- Declarative scenario scripting with three worked examples (Scenarios A, B, C).
-  `pii_block:every=N` fails every Nth call, `budget:limit=,window=` runs a real
-  windowed counter, `injection:on-pattern=` matches request text. ✅
-
----
-
-**Status: Phase 1 — the fixture-replay server (`donkey mock`) and `--scenario`
-scripting are shipped.**
+- [Testing & conformance](/testing) — `simulate()` for in-process unit tests,
+  and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
+- [Error taxonomy](/errors) — the typed exceptions each shape maps to.
+- [CLI](/cli) — the full `donkey` command reference.

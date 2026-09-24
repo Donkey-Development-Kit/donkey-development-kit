@@ -1,0 +1,210 @@
+---
+description: Run the refusal branch of your agent without a gateway — donkey.simulate() in-process, and donkey mock --scenario for a stock client.
+---
+
+import { Callout } from 'nextra/components'
+import { Output } from '../../components'
+
+# Simulating refusals
+
+Every agent has an `except PIIDetected:` branch that has never executed.
+Getting a real gateway to refuse on demand means finding a prompt that trips a
+live policy — slow, flaky, and not something you can put in CI.
+`donkey.simulate()` swaps a fixture-returning transport onto the client for the
+next N calls, so the branch runs against the same captured refusal a real
+gateway sent, with no network. For a client that does not use the SDK at all,
+`donkey mock --scenario` scripts the running simulator the same way.
+
+| Example | Shows | Needs |
+| --- | --- | --- |
+| Narrative demo 04 | `simulate()` for each refusal, `times=`, what it refuses to fake, the same injection through LangChain's `ChatOpenAI`, and `donkey mock --scenario` parsing | Nothing; the LangChain act runs only if `[langgraph]` is installed |
+| OpenAI script 03 | A `simulate()` loop over five refusal types, including `ContentSafetyBlocked` | Proxy credentials in the environment (no network calls) |
+
+## Run it
+
+```bash
+make demo N=04
+```
+
+<Output>
+```text
+════════════════════════════════════════════════════════════════════════════════════════
+Demo 04 — simulating refusals in-process
+Run the except branch that has never executed. No network, no server, no credentials.
+════════════════════════════════════════════════════════════════════════════════════════
+
+Run context
+───────────
+  target                 mock
+  proxy base_url         http://127.0.0.1:8080/
+  output masking         on
+  credentials            fake — the simulator enforces no auth
+
+[1] Normally, the happy path is all you ever exercise
+  agent returned         A sleepy unicorn named Luma painted soft silver stars across the night sky with her glowing horn, then curled up on a moonbeam so all the children below could fall asleep beneath her gentle, sparkling light.
+  refusal branch ran     False
+
+[2] One context manager, and the branch runs
+
+    with donkey.simulate(PIIDetected):
+        await agent.run("...")     # fails as a real PIIDetected
+
+  agent returned         redacted ['Email'] and asked the user to rephrase
+  handled                ['PIIDetected']
+  PASS  The branch executed against the real captured 403 body.
+
+[3] Every refusal you need to handle, one line each
+  TokenBudgetExceeded    queued for retry after 42s — did NOT retry now
+  PIIDetected            redacted ['Email'] and asked the user to rephrase
+  ContentSafetyBlocked   revised ['severity_hate', 'severity_violence'] and did not retry
+
+[4] `times` counts calls, and normal service resumes after
+
+    with donkey.simulate(TokenBudgetExceeded, times=2):
+        await agent.run("a")   # refused
+        await agent.run("b")   # refused
+        await agent.run("c")   # succeeds — the injection is spent
+
+  call 1                 queued for retry after 42s — did NOT retry now
+  call 2                 queued for retry after 42s — did NOT retry now
+  call 3                 A sleepy unicorn named Luma painted soft silver stars across the night sky with her glowing horn, then curled up on a moonbeam so all the children below could fall asleep beneath her gentle, sparkling light.
+
+[5] It will inject a documented shape, and refuse to invent the rest
+
+    with donkey.simulate(ContentSafetyBlocked):
+        await agent.run("...")     # a real ContentSafetyBlocked
+
+  ContentSafetyBlocked   revised ['severity_hate', 'severity_violence'] and did not retry
+  PASS  The documented content-safety fixture classifies and injects.
+
+
+    with donkey.simulate(ToolInvocationError):
+        ...
+
+  PASS  ValueError — no captured fixture maps back to it
+  message                simulate() cannot inject ToolInvocationError: no captured fixture maps back to it via classify(). Supported: AuthError, ContentSafetyBlocked, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
+
+
+    with donkey.simulate(GatewayUnavailable):
+        ...
+
+  PASS  ValueError — a transport failure has no captured body to inject
+  message                simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AuthError, ContentSafetyBlocked, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
+
+  Tool invocation, registry, and provisioning errors are not gateway refusals, and they
+  have no captured wire shape. GatewayUnavailable is the same kind of gap for a
+  different reason: there is no HTTP response at all, so there is nothing to replay.
+  Injecting a plausible body would let you write a handler against a body that does not
+  exist — so simulate() refuses instead. Provoke it by pointing at a dead origin (demo
+  02 act 5).
+
+[6] It works through a framework too, because it is on the transport
+
+    model = donkey.langgraph.chat_model("gpt-4o")   # a real ChatOpenAI
+    with donkey.simulate(PIIDetected):
+        await model.ainvoke("...")
+
+  LangChain raised       OpenAIPermissionDeniedError
+  classifies as          PIIDetected
+  PASS  Same fixture, same taxonomy, through the framework's own object.
+
+[7] The same idea, as a running simulator a stock client can hit
+  simulate() swaps the transport on a Donkey you already own — that is the unit-test
+  form. When the client is a stock OpenAI SDK pointed at donkey mock, you script the
+  server instead:
+
+    donkey mock --scenario pii_block:every=2 \
+                --scenario 'injection:on-pattern=ignore previous' \
+                --scenario budget:limit=200,window=5s,cost=80
+
+  pii_block:every=2      ['pass', 'pii-detected', 'pass', 'pii-detected']
+  injection('hello')     pass
+  injection('ignore previous') injection-protection
+  budget spec            BudgetScenario
+
+  PASS  Three specs, three stateful rules — the same captured fixtures classify() is tested against.
+  pii_block fails every Nth call. injection matches request text. budget is a real wall-
+  clock window: passing 200s carry the prose x-llm-proxy-ratelimit header; exhaustion
+  serves the token-rate-limit 429 with live x-token-* until the window rolls over. A
+  stock client pointed at that mock sees the refusal with no SDK in the process — which
+  is how you test an agent that does not use this SDK at all.
+
+
+The point
+─────────
+  This needs no gateway, so it belongs in your unit tests. Demo 05 is the same idea
+  turned into a suite someone else can run against your agent without reading your code.
+
+────────────────────────────────────────────────────────────────────────────────────────
+```
+</Output>
+
+```bash
+python "demos/human-made/openai/03 - typed-refusals-simulated.py"
+```
+
+## Key code
+
+One context manager, and the branch runs; `times=` counts calls and normal
+service resumes after (narrative demo 04):
+
+```python
+with donkey.simulate(PIIDetected):
+    await agent.run("...")     # fails as a real PIIDetected
+
+with donkey.simulate(TokenBudgetExceeded, times=2):
+    await agent.run("a")   # refused
+    await agent.run("b")   # refused
+    await agent.run("c")   # succeeds — the injection is spent
+```
+
+Looping over refusal types on a plain OpenAI client (OpenAI script 03):
+
+```python
+async with Donkey.from_env() as donkey:
+    client = donkey.openai()
+
+    for refusal in REFUSALS:
+        async with donkey.run(id=f"typed-refusals-{refusal.__name__}"):
+            # simulate() replays the captured gateway fixture in-process, so
+            # the refusal branch runs with no network and nothing to provoke.
+            with donkey.simulate(refusal):
+                try:
+                    await client.responses.create(
+                        model="gpt-4o",
+                        input="Say hello in exactly three words.",
+                    )
+                except openai.APIStatusError as err:
+                    report(classify(err.response))
+```
+
+Scripting the running simulator instead, for a stock client (narrative demo 04,
+act 7):
+
+```bash
+donkey mock --scenario pii_block:every=2 \
+            --scenario 'injection:on-pattern=ignore previous' \
+            --scenario budget:limit=200,window=5s,cost=80
+```
+
+`pii_block` fails every Nth call, `injection` matches request text, and
+`budget` is a real wall-clock window that serves the token-rate-limit 429 on
+exhaustion until the window rolls over.
+
+<Callout type="info">
+  `simulate()` only injects shapes that have a captured wire body.
+  `simulate(ToolInvocationError)` and `simulate(GatewayUnavailable)` raise
+  `ValueError` instead of inventing one — a transport failure has no HTTP
+  response to replay. To provoke `GatewayUnavailable`, point at a dead origin
+  (see [Typed refusals](/examples/typed-refusals)).
+</Callout>
+
+Because the injection sits on the transport, it also reaches framework objects
+the SDK does not wrap — demo 04 drives `donkey.langgraph.chat_model("gpt-4o")`
+through `simulate(PIIDetected)` and gets the same taxonomy back.
+
+**Learn more:** [Local simulator](/simulator) · [Testing & conformance](/testing)
+
+**Source:**
+[narrative demo 04](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/04_simulate_refusals) ·
+[script 03](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/03%20-%20typed-refusals-simulated.py)

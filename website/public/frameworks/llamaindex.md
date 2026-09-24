@@ -1,14 +1,15 @@
-# LlamaIndex — governed model access
+# LlamaIndex
 
-LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM proxy,
-with the one flag that a chat-only gateway absolutely requires forced on for
-you.
+LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM
+proxy, with the chat-model flag a chat-only gateway requires already set.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).**
-> LlamaIndex receives a static `default_headers` snapshot, not the SDK's shared
-> httpx client, so per-run correlation and `donkey.last_call` response
-> observation are documented exemptions (see below). Watch the `is_chat_model`
-> gotcha if you build the client by hand.
+**What you get**
+
+- A native `llama_index.llms.openai_like.OpenAILike`.
+- `is_chat_model=True` and `is_function_calling_model=True` set for you.
+- Supported at `connection_kwargs()`. The client receives a static
+  `default_headers` snapshot, so per-run correlation and `donkey.last_call` are
+  not available (see [Notes](#notes)).
 
 ## Install
 
@@ -24,13 +25,12 @@ from donkey_kit.integrations.llamaindex import llm
 model = llm("gpt-4o")
 ```
 
-`model` is a real, native **`llama_index.llms.openai_like.OpenAILike`**
-instance, ready to hand to any LlamaIndex query engine, chat engine, or agent.
+`model` is a real `llama_index.llms.openai_like.OpenAILike` instance, ready to
+hand to any LlamaIndex query engine, chat engine, or agent.
 
-There's no first-party Agent Fabric TypeScript SDK yet (it's on the
-[roadmap](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The proxy is OpenAI-compatible, so point the
-official `openai` npm client at it — the same base URL and
-`client_id`/`client_secret` headers also drop into **LlamaIndex.TS**.
+Call the proxy's OpenAI-compatible API with the official `openai` npm client.
+The same base URL and `client_id`/`client_secret` headers also work with
+**LlamaIndex.TS**.
 
 ```typescript
 import OpenAI from "openai";
@@ -80,7 +80,7 @@ async with Donkey.from_env() as donkey:
     model = OpenAILike(model="gpt-4o", **donkey.llamaindex.connection_kwargs())
 ```
 
-## The manual equivalent (eject at any time)
+## Manual equivalent
 
 ```python
 from llama_index.llms.openai_like import OpenAILike
@@ -90,36 +90,31 @@ model = OpenAILike(
     api_base=...,                     # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,              # client_id / client_secret header pair
-    is_chat_model=True,               # see gotcha below — never omit this
+    is_chat_model=True,               # required — see below
     is_function_calling_model=True,
 )
 ```
 
-## Notes & limitations
+LlamaIndex uses `api_base` rather than `base_url`; `connection_kwargs()`
+already translates for you.
 
-> **Gotcha: `OpenAILike` defaults `is_chat_model=False`.** Left at its
-> default, `OpenAILike` silently routes requests to the completions endpoint
-> instead of the chat endpoint — which fails against a chat-only proxy like
-> the Agent Fabric LLM proxy. This is the single most common LlamaIndex-with-a-
-> gateway bug. The adapter's `connection_kwargs()` always forces
-> `is_chat_model=True` (and `is_function_calling_model=True`) so you don't
-> have to remember to set it — but if you ever construct `OpenAILike`
-> yourself outside the adapter, set it explicitly.
+## Notes
 
-> LlamaIndex uses `api_base` rather than `base_url` for its endpoint kwarg;
-> `connection_kwargs()` already translates for you.
-
-> **This adapter cannot propagate per-run correlation or populate
-> `donkey.last_call`.** LlamaIndex receives a static `default_headers` snapshot,
-> which deliberately excludes the correlation ID bound later by
-> `donkey.run(id=...)`, and not the SDK's httpx client. No response reaches
-> `_on_response`, so gateway identity, routing, and usage fields cannot be
-> observed either. When every adapter resolved on a `Donkey` is non-observing,
-> the record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
-> and names the resolved adapters in `surface`. These are documented, asserted
-> `correlation_id_propagated` and `gateway_identity_observed` conformance
-> exemptions.
+- **Always set `is_chat_model=True`.** `OpenAILike` defaults to
+  `is_chat_model=False`, which routes requests to the completions endpoint
+  instead of chat — and that fails against a chat-only proxy like the Omni
+  Gateway LLM proxy. `connection_kwargs()` always sets it (and
+  `is_function_calling_model=True`); set it yourself if you construct
+  `OpenAILike` outside the adapter.
+- **No per-run correlation or `donkey.last_call`.** The client receives a
+  static `default_headers` snapshot, which excludes the correlation ID bound
+  later by `donkey.run(id=...)`, and the SDK's httpx client is not used. No
+  response reaches the SDK, so gateway identity, routing, and usage fields
+  can't be observed. When every adapter resolved on a `Donkey` is like this
+  one, `donkey.last_call` reports `status == LastCallStatus.UNAVAILABLE` and
+  `available == False`, and names the resolved adapters in `surface`. The
+  conformance suite asserts both as documented exemptions.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

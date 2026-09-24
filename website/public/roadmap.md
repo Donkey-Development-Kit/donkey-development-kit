@@ -1,143 +1,91 @@
 # Roadmap
 
-This page separates SDK behavior that is **shipped today**, platform contracts
-that are **verified live**, and capabilities that are **designed but not yet
-shipped**.
+DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
+goal; the progress bars and issue lists below come straight from those
+milestones. 
 
-  **How to read the badges.** Live means the
-  platform-facing behavior is verified against a real Anypoint sandbox and
-  usable now. Shipped means the SDK capability is
-  implemented and available now; it does not imply that every platform-facing
-  contract it uses is live-verified. Those caveats remain explicit on the
-  capability page and in the [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
-  Phase 2 and friends mean *designed, with an
-  agreed acceptance bar, but not yet shipped* — the API shapes on those pages
-  are proposals and will move. Nothing here is described as working before it
-  does.
+  Complete every issue in the milestone is closed ·{' '}
+  In progress work has landed and more is open ·{' '}
+  Planned designed, not started. Want to help
+  move a phase forward? See [Contribute](https://donkey-development-kit.github.io/donkey-development-kit/community/contribute.md).
 
-## Why the SDK exists at all
+## Phase 1 — Build the MVP
 
-The honest framing, because it determines everything below:
+  **Version 0.1.0 · Goal:** a developer who tries DDK for fifteen minutes
+  finds three things they cannot get from a `base_url` and two headers — and
+  one of them saves them from a production incident.
 
-> A stock OpenAI client with a `base_url` and two headers can reach the
-> governed proxy. The SDK is not selling you that.
+  The shared governed transport and the capabilities that hang off it: typed
+  refusals, budget & pacing, the local simulator, `simulate()` and the
+  conformance suite, OpenTelemetry GenAI spans, correlation IDs and cost tags.
+  Plus a deep LangGraph adapter, `connection_kwargs()` for seven more
+  frameworks, the decorators and CLI, the documentation site, and the PyPI
+  release.
 
-What it sells is the **skeleton**: one place in your process where every
-request enters and every response leaves. That is the only place where budget
-headers, error classification, correlation IDs, cost tags, OTel spans,
-simulation, and refusal handlers can all attach *without you wiring each one*.
+## Phase 2 — Differentiate, go beyond
 
-The consequence, and the reason the roadmap is shaped the way it is: **the
-skeleton is worth exactly the sum of what hangs on it.** Which is why the six
-pieces below are one release and not spread across a year.
+  **Version 0.2.0 · Goal:** capabilities no generic LLM client offers,
+  because they depend on the platform behind the gateway.
 
-## Phase 1 — the six-piece minimum
+  Governed tool access (MCP discovery and binding), A2A `serve` / `expose` /
+  `dev`, on-behalf-of identity, human-in-the-loop, scan & publish to the
+  registry with a GitHub Action, declarative refusal handlers and a
+  classification registry for custom policies, kill-switch awareness, and a
+  second deep framework adapter chosen by demand.
 
-The bar for Phase 1 is deliberately concrete: a developer who tries the SDK
-for 15 minutes should find three things they cannot get from `base_url` plus
-headers, and one of them should save them from a production incident.
+## Phase 3 — Platform capabilities
 
-Four core rejection shapes are live-verified; the remaining typed refusal paths
-are shipped with explicit verification caveats. Budget and pacing, the local
-simulator, testing and conformance, telemetry and cost, and the CLI and
-decorators are shipped SDK capabilities; their pages call out any remaining
-platform-verification caveats.
+  **Version 0.3.0 · Goal:** agents that know the rules before they call, not
+  only after they are refused.
 
-  
-    A `403` from a PII policy is not an auth error, and a policy `429` must
-    never be retried. Branch on governance outcomes instead of parsing bodies.
-  
-  
-    Remaining token budget as a first-class object, so an overnight batch
-    paces itself instead of dying at 2am.
-  
-  
-    A local server that replays real rejection fixtures, so you can test your
-    PII branch without a gateway.
-  
-  
-    `simulate()` for in-process refusal injection, plus a pytest plugin you
-    run against *your own* agent.
-  
-  
-    OpenTelemetry GenAI spans, per-run correlation IDs, and validated
-    cost-attribution tags.
-  
-  
-    `donkey doctor` tells wrong credentials from wrong URL from
-    model-not-allowed, instead of one opaque failure.
-  
+  The policy handshake (read the in-force policy set, advisory only),
+  policy updates pushed to the code at run boundaries, a governed
+  structured-output path, evaluation hooks on the run span, monetary spend and
+  wallet warnings, and run-level cost rollups. Much of this phase depends on
+  new gateway endpoints tracked under Upstream gaps.
 
-Alongside those: [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) is live today, LangGraph becomes
-the one deep, conformance-gated adapter, and the other seven frameworks are
-supported at the `connection_kwargs()` level.
+## Phase 4 — Enterprise readiness
 
-## Phase 2 — differentiate
+  **Version 0.4.0 · Goal:** everything a security, compliance and platform
+  team asks for before rolling DDK out broadly.
 
-  
-    Discover governed MCP tools and bind them as native framework tools, with
-    allow/deny filtering.
-  
-  
-    `serve`, `expose`, and `dev` — make your agent callable by other agents,
-    wrapping the official `a2a-sdk`.
-  
-  
-    On-behalf-of token exchange, so per-user policy reaches the gateway and
-    never silently falls back to the service identity.
-  
-  
-    One vocabulary for pause-and-ask-a-human, mapped onto each framework's
-    native interrupt.
-  
-  
-    Derive a manifest and agent card from your code, then register them —
-    from CI, not by hand.
-  
+  Independent security review and supply-chain hardening, a latency and
+  overhead budget enforced in CI, a full pass over every error message, the
+  public API contract and deprecation policy, compliance evidence mapping (EU
+  AI Act Art. 12, ISO 42001, OWASP LLM Top 10), log shipping, data residency,
+  workload identity, air-gapped operation and gateway failover.
 
-Also in Phase 2: declarative refusal-reaction handlers, a classification
-registry so custom gateway policies become typed exceptions, and kill-switch
-awareness.
+## Phase 5 — Complete rollout
 
-## Phase 3 — platform capabilities
+  **Version 1.0.0 · Goal:** a stable, multi-language SDK with guarantees.
 
-  
-    Read the in-force policy set and stop wasting calls that will be refused —
-    advisory only, the gateway always wins.
-  
+  A TypeScript port of the core capabilities with conformance scenarios shared
+  across Python and TypeScript, the remaining framework adapters brought to the
+  full bar by demand, framework-docs partnerships and launch channels, and the
+  1.0 release with stability guarantees.
 
-Most of this phase is gated on the platform, not on effort: it needs a
-policy-discovery endpoint that does not exist yet. Structured output on the
-`.parse()` path and evaluation hooks are the parts that are not blocked.
+## Cross-cutting tracks
 
-## Phases 4 and 5
+These milestones run alongside every phase.
 
-**Phase 4 — enterprise readiness.** Independent security review and
-supply-chain hardening, a latency and overhead budget enforced in CI, a full
-pass over every remediation string, the public API contract and deprecation
-policy, and compliance evidence mapping.
+  Every endpoint, header, class name and constructor argument DDK relies on is
+  checked against the real platform and the installed framework packages
+  before features are built on it.
 
-**Phase 5 — complete rollout.** A TypeScript port of the six pieces, remaining
-framework adapters brought back one at a time by demand, and 1.0 with
-stability guarantees. The TypeScript gate is deliberate: Python
-product-market fit first, because starting earlier means fixing every gateway
-change twice.
+  Requests to the Omni Gateway team for platform capabilities DDK needs — such
+  as a budget-query endpoint, policy discovery, a dry-run mode and richer
+  guardrail verdicts. They land whenever the gateway ships them.
 
-## What this SDK will not build
+## What DDK will not build
 
-Refusals, not backlog. At each of these boundaries the job is to make the
-platform's own capability reachable and typed, not to reproduce it:
+At each of these boundaries the job is to make the platform's own capability
+reachable and typed, not to reproduce it:
 
 - Client-side policy enforcement — the gateway is the enforcement point.
 - Client-side semantic caching.
 - A provisioning control plane competing with API Manager or Terraform.
-- Re-implementations of Agent Scanners, Kill Switch, or Trusted Agent Identity.
+- Re-implementations of Agent Scanners, Kill Switch or Trusted Agent Identity.
 - An approval UI or queue.
 - An evaluation framework.
 - The gateway inside your agent process.
-- A home-grown A2A protocol implementation — the official `a2a-sdk` is wrapped.
-
-  **API shapes on planned Phase 2 and Phase 3 pages are proposals.** They exist
-  so the design can be argued about concretely, and they will change before
-  they ship. What is committed is the *behaviour* and the acceptance bar, not
-  the signature.
+- A home-grown A2A protocol implementation — the official `a2a-sdk` is used.

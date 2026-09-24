@@ -1,11 +1,16 @@
-# LangGraph — governed model access
+# LangGraph
 
 LangGraph (and LangChain more broadly) gets a governed `ChatOpenAI` pointed at
-the Agent Fabric LLM proxy, with full header and transport injection.
+your Agent Fabric LLM proxy. LangGraph is the **deep adapter**: every proxy
+header and the SDK's shared async transport reach the native client, and the
+adapter runs the full conformance suite in CI.
 
-> **Deep adapter — conformance-gated in blocking CI.** This is the best-case adapter: every
-> proxy header and the shared async transport are injected into the native
-> client.
+**What you get**
+
+- A native `langchain_openai.ChatOpenAI` — nothing LangGraph-specific wraps it.
+- Per-run correlation IDs that reach every graph node.
+- Typed gateway refusals (`PIIDetected`, `TokenBudgetExceeded`, …) inside nodes.
+- A conformance suite you can run against your own graph.
 
 ## Install
 
@@ -21,14 +26,13 @@ from donkey_kit.integrations.langgraph import chat_model
 llm = chat_model("gpt-4o")
 ```
 
-`llm` is a real, native **`langchain_openai.ChatOpenAI`** instance — nothing
-LangGraph-specific wraps it. Drop it straight into your graph nodes or chains.
+`llm` is a real `langchain_openai.ChatOpenAI` instance. Drop it straight into
+your graph nodes or chains.
 
-There's no first-party Agent Fabric TypeScript SDK yet (it's on the
-[roadmap](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The proxy is OpenAI-compatible, so point the
-official `openai` npm client at it — the same base URL and
-`client_id`/`client_secret` headers also drop straight into **LangChain.js**
-(`ChatOpenAI`, via its `configuration.baseURL` + `defaultHeaders`).
+Call the proxy's OpenAI-compatible API with the official `openai` npm client.
+The same base URL and `client_id`/`client_secret` headers also work with
+**LangChain.js** (`ChatOpenAI`, via `configuration.baseURL` +
+`defaultHeaders`).
 
 ```typescript
 import OpenAI from "openai";
@@ -51,8 +55,8 @@ console.log(reply.choices[0].message.content);
 
 ## Three ways to construct
 
-**1. Off a shared `Donkey` instance** (reuses one HTTP client + lifecycle
-across every adapter you touch in a run):
+**1. Off a shared `Donkey` instance** (reuses one HTTP client and lifecycle
+across every adapter you use in a run):
 
 ```python
 from donkey_kit import Donkey
@@ -61,8 +65,11 @@ async with Donkey.from_env() as donkey:
     llm = donkey.langgraph.chat_model("gpt-4o")
 ```
 
+The adapter is also callable: `donkey.langgraph("gpt-4o")` is the same as
+`donkey.langgraph.chat_model("gpt-4o")`.
+
 **2. Module-level factory** (shortest — uses a cached, env-configured default
-`Donkey` under the hood):
+`Donkey`):
 
 ```python
 from donkey_kit.integrations.langgraph import chat_model
@@ -80,13 +87,9 @@ async with Donkey.from_env() as donkey:
     llm = ChatOpenAI(model="gpt-4o", **donkey.langgraph.connection_kwargs())
 ```
 
-The adapter is also **callable** as the shortest form of option 1 —
-`donkey.langgraph("gpt-4o")` is exactly `donkey.langgraph.chat_model("gpt-4o")`,
-returning the same native `ChatOpenAI`.
+## Manual equivalent
 
-## The manual equivalent (eject at any time)
-
-Everything above is sugar over this native constructor call:
+The factories make this native constructor call for you:
 
 ```python
 from langchain_openai import ChatOpenAI
@@ -98,28 +101,23 @@ llm = ChatOpenAI(
     default_headers=...,      # client_id / client_secret header pair, not bearer
     http_async_client=...,    # the SDK's shared httpx async client
     max_retries=0,            # the SDK retries in its own transport layer
-    use_responses_api=True,   # the proxy's live-verified data plane is /responses
+    use_responses_api=True,   # the proxy's data plane is /responses
 )
 ```
 
-Nothing here is hidden — `connection_kwargs()` returns exactly these keys, so
-you can always drop the factory and construct `ChatOpenAI` by hand. Pass
-`use_responses_api=False` to `chat_model(...)` (or omit it from your own
-constructor) only if a deployment exposes chat-completions instead — the
-Responses API (`/responses`) is the endpoint verified against a live proxy.
+`connection_kwargs()` returns exactly these keys, so you can drop the factory
+and construct `ChatOpenAI` by hand at any time. Pass `use_responses_api=False`
+to `chat_model(...)` only if your deployment exposes chat-completions instead
+of the Responses API (`/responses`).
 
-## What "deep adapter" buys you
+## Graph-level features
 
-LangGraph is the one adapter held to the conformance bar, so three graph-level
-guarantees are tested end to end against a real compiled `StateGraph`, not just
-a bare model call.
+### Correlation IDs reach every node
 
-### Correlation IDs reach every node — for free
-
-Bind a run id once with `donkey.run(id=…)` and every node sees it via
-`current_correlation_id()`, with nothing threaded through graph state. LangGraph
-runs nodes on `asyncio` tasks that copy the current context, so the id
-propagates on its own:
+Bind a run ID once with `donkey.run(id=…)` and every node sees it via
+`current_correlation_id()`, with nothing threaded through graph state.
+LangGraph runs nodes on `asyncio` tasks that copy the current context, so the
+ID propagates on its own:
 
 ```python
 from donkey_kit.core.telemetry import current_correlation_id
@@ -134,10 +132,10 @@ async with donkey.run(id=ticket.id):
 
 ### Typed refusals inside a node
 
-A node that calls the model directly gets whatever LangChain raises on a proxy
-refusal — a framework-wrapped `OpenAIPermissionDeniedError`, not the SDK's typed
-exception. Wrap the call in `typed_refusals()` and a gateway refusal comes back
-through the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) instead:
+On a proxy refusal, LangChain raises its own wrapped
+`OpenAIPermissionDeniedError`, not the SDK's typed exception. Wrap the model
+call in `typed_refusals()` and a gateway refusal comes back through the
+[error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) instead:
 
 ```python
 from donkey_kit.integrations.langgraph import typed_refusals
@@ -148,46 +146,42 @@ async def call_model(state):
     return {"messages": [reply]}
 ```
 
-A PII block now propagates out of `graph.ainvoke(...)` as `PIIDetected`, a budget
-block as `TokenBudgetExceeded`, etc. — each carrying the correlation/call ids the
-client sent. This is a helper plus a documented pattern, not a transport change:
-transport-level errors with no HTTP response (connection/timeout) pass through
-untouched.
+A PII block now propagates out of `graph.ainvoke(...)` as `PIIDetected`, a
+budget block as `TokenBudgetExceeded`, and so on — each carrying the
+correlation and call IDs the client sent. Transport-level errors with no HTTP
+response (connection failures, timeouts) pass through unchanged.
 
 ### `interrupt()` composes with typed refusals
 
-A human-in-the-loop `interrupt()` and a typed refusal don't swallow each other:
-the graph pauses cleanly at the interrupt (no refusal fires mid-pause), and on
-resume a refusal in a downstream model node still surfaces as its typed
-exception.
+A human-in-the-loop `interrupt()` and a typed refusal don't interfere: the
+graph pauses cleanly at the interrupt, and on resume a refusal in a downstream
+model node still surfaces as its typed exception.
 
 ### Run the conformance suite against your own graph
 
-The same suite that gates this adapter is a customer-facing pytest plugin you
-can point at your own agent:
+The suite that tests this adapter is also a pytest plugin you can point at
+your own agent:
 
 ```bash
 pytest --donkey-conformance --agent=my_app:build
 ```
 
-`build` returns an object with an awaitable `run(text)`; the suite checks it
-retries no budget refusal, surfaces `PIIDetected` typed, carries the correlation
-id into its logs, and tolerates a response with no budget headers. The shipped
-[`examples/langgraph`](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/langgraph)
-factory is exactly this shape.
+`build` returns an object with an awaitable `run(text)`. The suite checks that
+it doesn't retry a budget refusal, surfaces `PIIDetected` typed, carries the
+correlation ID into its logs, and tolerates a response with no budget headers.
+The [`examples/langgraph`](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/langgraph)
+factory has exactly this shape. See [Testing](https://donkey-development-kit.github.io/donkey-development-kit/testing.md).
 
-## Notes & limitations
+## Notes
 
-> LangGraph is the reference adapter: `base_url`, `api_key`, `default_headers`,
-> and a custom `http_async_client` are all forwarded, so proxy auth headers and
-> the SDK's transport (retries, correlation IDs) both reach every request.
+- `base_url`, `api_key`, `default_headers`, and a custom `http_async_client`
+  are all forwarded, so proxy auth headers and the SDK's transport (retries,
+  correlation IDs) reach every request.
+- `max_retries=0` is intentional: retries live in the SDK's transport layer,
+  so the SDK and the OpenAI client don't both retry.
+- The proxy is OpenAI-compatible but not the full OpenAI API: the base URL has
+  no `/v1` prefix, there is no `/models` endpoint, and auth is a
+  `client_id`/`client_secret` header pair rather than a bearer token.
 
-> `max_retries=0` is intentional — retry logic lives in the SDK's transport
-> layer, not in the OpenAI client, so the two don't double-retry.
-
-The proxy is OpenAI-compatible but is **not** a full OpenAI API surface: there
-is no `/v1` prefix on the base URL and no `/models` endpoint, and auth is a
-`client_id`/`client_secret` header pair rather than a bearer token. See the
-[error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for
-the current status of every constructor signature this adapter depends on.
+See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+exceptions.
