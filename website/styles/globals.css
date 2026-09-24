@@ -150,26 +150,161 @@ body {
   color: var(--af-fg);
 }
 
-.af-prose pre {
-  border: 1px solid var(--af-border);
-  border-radius: var(--af-radius);
-  background: var(--af-surface-raised) !important;
-  font-size: 0.87rem;
-  line-height: 1.65;
+/* Code blocks are dark in both site themes, matching the Dark+ Shiki palette
+   configured in next.config.mjs. */
+.af-prose {
+  --af-code-bg: #1e1e1e;
+  --af-code-border: #2d2d30;
+  --af-code-fg: #d4d4d4;
+  --af-code-muted: #858585;
+  --af-output-bg: #161617;
 }
 
-.dark .af-prose pre {
-  background: #101118 !important;
+.af-prose pre {
+  border: 1px solid var(--af-code-border);
+  border-radius: var(--af-radius);
+  background: var(--af-code-bg) !important;
+  box-shadow: none;
+  --tw-ring-color: transparent;
+  color: var(--af-code-fg);
+  font-size: 0.8rem;
+  line-height: 1.7;
 }
 
 .af-prose .nextra-code > pre {
   padding-block: 1rem;
 }
 
-/* Filename tab above a code block */
-.af-prose div[data-filename] {
+.af-prose pre code.nextra-code > span {
+  padding-inline: 1.1rem;
+}
+
+/* Number every multi-line block; single commands stay unnumbered. */
+.af-prose pre code.nextra-code:has(> span:nth-child(2)) > span {
+  padding-left: 0.4rem;
+}
+
+.af-prose pre code.nextra-code:has(> span:nth-child(2)) > span::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 1.6rem;
+  margin-right: 1.1rem;
+  padding: 0;
+  text-align: right;
+  color: var(--af-code-muted);
+  user-select: none;
+}
+
+/* Copy / word-wrap buttons sit on the dark panel in both themes. */
+.af-prose pre button {
+  color: #c5c5c5;
+  background: #2a2a2d;
+  border-color: #3c3c40 !important;
+}
+
+.af-prose pre button:hover {
+  color: #ffffff;
+  background: #37373b;
+}
+
+/* Filename tab above a code block (```python filename="…") */
+.af-prose .nextra-code > div:has(+ pre) {
+  height: 2.5rem;
   border-radius: var(--af-radius) var(--af-radius) 0 0;
-  border-color: var(--af-border);
+  border: 1px solid var(--af-code-border);
+  border-bottom: 1px solid var(--af-code-border);
+  background: #252526;
+  color: #cccccc;
+  font-size: 0.75rem;
+}
+
+.af-prose .nextra-code > div:has(+ pre) button {
+  color: #c5c5c5;
+  background: #2a2a2d;
+  border-color: #3c3c40 !important;
+}
+
+.af-prose .nextra-code > div + pre {
+  border-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* "Expected output" panel attached under the code block that produces it. */
+.af-prose .nextra-code:has(+ .af-output) > pre {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.af-prose .af-output {
+  margin-top: 0 !important;
+  border: 1px solid var(--af-code-border);
+  border-top: 0;
+  border-radius: 0 0 var(--af-radius) var(--af-radius);
+  background: var(--af-output-bg);
+  overflow: hidden;
+}
+
+.af-prose :not(.nextra-code) + .af-output,
+.af-prose .af-output:first-child {
+  margin-top: 1.25em !important;
+  border-top: 1px solid var(--af-code-border);
+  border-radius: var(--af-radius);
+}
+
+.af-prose .af-output-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1.1rem;
+  border-bottom: 1px solid var(--af-code-border);
+  color: var(--af-code-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.af-prose .af-output-label::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #4ec9b0;
+}
+
+.af-prose .af-output .nextra-code {
+  margin-top: 0 !important;
+}
+
+.af-prose .af-output pre {
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.af-prose .af-output pre code.nextra-code > span {
+  min-height: 1.7em;
+}
+
+.af-prose .af-output-wrap pre code.nextra-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.af-prose .af-output pre code.nextra-code > span {
+  padding-left: 1.1rem !important;
+}
+
+.af-prose .af-output pre code.nextra-code > span::before {
+  content: none !important;
+}
+
+.af-prose .af-output pre code.nextra-code span {
+  color: #bcbcbc !important;
 }
 
 /* ---------------------------------------------------------------- tables */

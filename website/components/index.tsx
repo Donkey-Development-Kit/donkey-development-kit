@@ -118,6 +118,23 @@ export function Card({
   )
 }
 
+export function Output({
+  children,
+  label = 'Expected output',
+  wrap = false,
+}: {
+  children: React.ReactNode
+  label?: string
+  wrap?: boolean
+}) {
+  return (
+    <div className={wrap ? 'af-output af-output-wrap' : 'af-output'}>
+      <div className="af-output-label">{label}</div>
+      {children}
+    </div>
+  )
+}
+
 export function Figure({
   src,
   alt,

@@ -19,6 +19,85 @@ until the window rolls over.
 make demo N=03
 ```
 
+```text
+════════════════════════════════════════════════════════════════════════════════════════
+Demo 03 — budget and pacing
+The token window as an object, and refusing to cross it before the gateway does.
+════════════════════════════════════════════════════════════════════════════════════════
+
+Run context
+───────────
+  target                 mock
+  proxy base_url         http://127.0.0.1:8080/
+  output masking         on
+  credentials            fake — the simulator enforces no auth
+
+[1] A new process knows nothing until its first call returns
+  before any call        remaining=None  limit=None  used=unobserved
+  Every field is None rather than zero. An unobserved budget reports 'I don't know',
+  because reporting 0 remaining would be a lie that stops an agent that could have run.
+
+[2] Each response updates the window, with no code from you
+
+    await client.responses.create(model=..., input=...)
+    donkey.budget.remaining      # already up to date
+
+  after call 1           remaining=97500  limit=100000  used=2.5%
+  after call 2           remaining=97000  limit=100000  used=3.0%
+  after call 3           remaining=96500  limit=100000  used=3.5%
+  observed_at            2026-09-24 09:27:23.806252+00:00
+  reset_at               2026-09-24 09:28:23.806252+00:00
+
+  A live 200 carries this window as the prose header x-llm-proxy-ratelimit — that
+  sentence is live-verified. The numeric x-token-* trio is verified on the 429. The
+  simulator synthesises a decreasing window in the same prose shape, so the numbers
+  above are illustrative; the parse path is not.
+
+[3] pace(reserve=…) refuses before the request goes out
+  Rather than issue the 200 calls it would take to drain the simulator's window, we let
+  the budget observe a response that says we are already at 96% — the same code path a
+  real near-exhausted window takes.
+
+    async with donkey.budget.pace(reserve=0.05):
+        await enrich(batch)            # never runs if the reserve is crossed
+
+  observed               remaining=4000  limit=100000  used=96.0%
+  reset_at               2026-09-24 09:27:24.806704+00:00
+
+  PASS  BudgetReserveReached — the request was never issued
+  fraction_used          96.0%
+  reserve                5.0%
+  reset_at               2026-09-24 09:27:24.806704+00:00
+
+  BudgetReserveReached is deliberately NOT a PolicyViolation. A refusal is the gateway
+  saying no and is terminal; this is your own client-side signal, raised locally, that
+  you are expected to recover from.
+
+    try:
+        async with donkey.budget.pace(reserve=0.05):
+            await enrich(batch)
+    except BudgetReserveReached:
+        await donkey.budget.wait_for_reset()   # one sleep, never a spin loop
+
+  after wait_for_reset   remaining=4000  limit=100000  used=96.0%
+
+  PASS  wait_for_reset() slept until reset_at — one sleep, never a spin loop
+  The local object is still the last observation. Waiting does not invent a fresh
+  window; the next call is what refreshes remaining / limit / reset_at. That is the same
+  in-band rule as act 1.
+
+[4] And if you do cross it, the 429 is terminal
+  classified as          TokenBudgetExceeded
+  retry_after            41.728
+  PASS  The transport never retried it — retrying only burns the same window.
+
+  This is the scenario the conformance suite checks other people's agents for, because
+  retrying a budget refusal is the single most common way an agent turns one refusal
+  into a rate-limit spiral. See demo 05.
+
+────────────────────────────────────────────────────────────────────────────────────────
+```
+
 ```bash
 python "demos/human-made/openai/05 - budget_and_pacing.py"   # needs proxy credentials
 ```

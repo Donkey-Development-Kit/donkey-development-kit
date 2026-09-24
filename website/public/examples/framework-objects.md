@@ -22,6 +22,149 @@ make demo N=07
 make demo N=08
 ```
 
+```text
+════════════════════════════════════════════════════════════════════════════════════════
+Demo 07 — model handles and honest gaps
+What the SDK does when the platform has no endpoint for what you asked.
+════════════════════════════════════════════════════════════════════════════════════════
+
+Run context
+───────────
+  target                 offline — no gateway, no simulator, no credentials
+  output masking         on
+
+[1] resolve() — a local capability handle for a known model id
+
+    handle = donkey.llm.resolve("gpt-4o")
+    handle.capabilities
+
+  gpt-4o                 ModelCapabilities(function_calling=True, vision=True, json_output=True, is_heuristic=True)
+  gpt-4o-mini            ModelCapabilities(function_calling=True, vision=True, json_output=True, is_heuristic=True)
+  o3                     ModelCapabilities(function_calling=True, vision=False, json_output=False, is_heuristic=True)
+  claude-3-5-sonnet      ModelCapabilities(function_calling=True, vision=False, json_output=False, is_heuristic=True)
+  something-unknown-9    ModelCapabilities(function_calling=True, vision=False, json_output=False, is_heuristic=True)
+
+  These are heuristics derived from the model id, and the SDK says so rather than
+  implying it asked the gateway. They are useful for routing decisions in your own code;
+  they are not a governed catalog.
+
+[2] list_models(live=True) — the honest failure
+
+    await donkey.llm.list_models(live=True)
+
+  raised                 ConfigError
+
+  The governed LLM proxy exposes no /models endpoint (GET /models → 404, verified
+  docs/verified-apis.md §2): it only routes requests carrying `model` in the body. Live
+  model listing is not available from the proxy. Use resolve(model_id) or source the
+  catalog from Exchange/provider config.
+
+  PASS  It names the verified absence and points at the alternative, instead of guessing a /models path that would 404 in your sandbox.
+
+[3] The same discipline applied to configuration
+  The most common reason someone abandons an SDK in the first five minutes is the one-
+  missing-variable-per-run loop: fix a variable, re-run, discover the next one. So
+  validation reports everything at once.
+
+    DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
+
+    Configuration for 'llm' is incomplete. Missing:
+      - llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)
+      - llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)
+    Set them via kwargs, environment variables, or .donkey-kit.toml.
+
+  Two missing fields, one error, each naming the environment variable that sets it. And
+  note the LLM proxy credential is validated separately from the Anypoint control-plane
+  one — a developer may legitimately have proxy access and no Exchange access.
+
+  When the failure is live rather than a missing variable — wrong URL, wrong
+  credentials, or a model the allow-list does not include — `donkey doctor` is the CLI
+  that distinguishes those three. It reuses the same remediation strings the typed
+  errors carry (demo 02).
+
+────────────────────────────────────────────────────────────────────────────────────────
+```
+
+```text
+════════════════════════════════════════════════════════════════════════════════════════
+Demo 08 — native framework objects
+One deep adapter, seven at connection_kwargs(), and no wrappers anywhere.
+════════════════════════════════════════════════════════════════════════════════════════
+
+Run context
+───────────
+  target                 offline — no gateway, no simulator, no credentials
+  output masking         on
+
+[1] One call per framework, and what came back
+
+  langgraph        deep — the conformance-gated adapter
+    donkey.langgraph.chat_model(…)
+  PASS  returned langchain_openai.chat_models.base.ChatOpenAI
+
+  adk              connection_kwargs()
+    donkey.adk.model(…)
+    not installed: pip install "donkey-kit[adk]"
+
+  strands          connection_kwargs()
+    donkey.strands.model(…)
+    not installed: pip install "donkey-kit[strands]"
+
+  agent_framework  connection_kwargs()
+    donkey.agent_framework.chat_client(…)
+    not installed: pip install "donkey-kit[agent_framework]"
+
+  openai_agents    no connection_kwargs() — builds its own client
+    donkey.openai_agents.model(…)
+    not installed: pip install "donkey-kit[openai-agents]"
+
+  anthropic        connection_kwargs()
+    donkey.anthropic.client()
+    not installed: pip install "donkey-kit[anthropic]"
+
+  crewai           connection_kwargs()
+    donkey.crewai.llm(…)
+    not installed: pip install "donkey-kit[crewai]"
+
+  llamaindex       connection_kwargs()
+    donkey.llamaindex.llm(…)
+    not installed: pip install "donkey-kit[llamaindex]"
+
+[2] connection_kwargs() — the surface that actually carries the roster
+
+    kwargs = donkey.strands.connection_kwargs()
+    SomeFrameworkModel(model="gpt-4o", **kwargs)
+
+  langgraph.connection_kwargs() 
+    base_url                       https://demo-gateway.example.invalid/openai-sdk/
+    api_key                        client-id-enforced
+    default_headers.client_id      <redacted> (36 chars)
+    default_headers.client_secret  <redacted> (40 chars)
+    http_async_client              <donkey_kit.core.transport.DonkeyAsyncClient object at 0x10aac2a50>
+    max_retries                    0
+    use_responses_api              True
+
+  Same base URL, same verified client_id / client_secret pair, handed to the framework's
+  own constructor. Bringing a framework up to the deep bar is demand-driven and happens
+  one at a time, so this is not a stepping stone that everything is queued behind — it
+  is the supported surface.
+  LangGraph is the only adapter held to the conformance bar, and it sets
+  use_responses_api=True so ChatOpenAI calls the live-verified /responses route rather
+  than the unverified /chat/completions default.
+
+What is and is not verified here
+────────────────────────────────
+  The proxy contract these objects are configured against is live-verified: the base URL
+  shape, the credential header pair, the rejection shapes. The exact framework class
+  names and constructor kwargs are not — they are checked against installed packages by
+  a nightly matrix rather than asserted from documentation.
+  Where a class name cannot be confirmed, the adapter raises 'blocked on verification'
+  rather than guessing. A guessed class name that fails on a developer's first import
+  costs more than the missing adapter.
+
+────────────────────────────────────────────────────────────────────────────────────────
+```
+
 Narrative demo 08 uses obviously-fake config, so it needs no credentials.
 Frameworks that are not installed are reported with their exact `pip install`
 line.

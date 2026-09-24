@@ -113,6 +113,18 @@ carries, so the fix is in the output rather than in a runbook. The budget line
 states how old the reading is, since the proxy has no budget endpoint.
 
 ```bash
+donkey doctor
+```
+
+```text
+[ok] config       env (3 fields)
+[ok] gateway      reachable, responded
+[ok] credentials  client_id accepted
+[ok] model        accepted by the proxy
+[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+```
+
+```bash
 donkey doctor --model gpt-4o     # model to test against the allow-list (default gpt-4o)
 donkey doctor --json             # machine-readable checks
 ```

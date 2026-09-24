@@ -1,13 +1,13 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-09-24T08:33:37.682Z",
+  "generatedAt": "2026-09-24T09:35:41.948Z",
   "milestones": [
     {
       "number": 11,
       "title": "Phase 1 — Build the MVP (0.1.0)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/11",
-      "open": 14,
+      "open": 15,
       "closed": 113,
       "issues": [
         {
@@ -897,6 +897,13 @@
           "title": "docs(site): open-source disclaimer footer, metadata and optimised images",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/566",
+          "epic": false
+        },
+        {
+          "number": 568,
+          "title": "errors: flip Amazon Bedrock Guardrails refusal from documented-only to VERIFIED (LIVE) after the acceptance capture",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/568",
           "epic": false
         }
       ]

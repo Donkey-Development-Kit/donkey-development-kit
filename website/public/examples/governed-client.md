@@ -24,6 +24,139 @@ make demo N=01                        # offline, against the local simulator
 make demo N=01 ARGS="--target live"   # against your gateway
 ```
 
+```text
+════════════════════════════════════════════════════════════════════════════════════════
+Demo 01 — the governed client
+Reaching the gateway is easy. Everything that hangs off the client is the product.
+════════════════════════════════════════════════════════════════════════════════════════
+
+Run context
+───────────
+  target                 mock
+  proxy base_url         http://127.0.0.1:8080/
+  output masking         on
+  credentials            fake — the simulator enforces no auth
+
+[1] donkey.openai() returns a real OpenAI client, already governed
+
+    donkey = Donkey.from_env()
+    client = donkey.openai()          # -> openai.AsyncOpenAI
+    blocking = donkey.openai(sync=True)  # -> openai.OpenAI, same governance
+
+  type                   openai.AsyncOpenAI
+  sync=True              openai.OpenAI
+  base_url               http://127.0.0.1:8080/
+
+  headers the SDK injects:
+    Accept               application/json
+    Content-Type         application/json
+    User-Agent           AsyncOpenAI/Python 3.19.2
+    client_id            <redacted> (41 chars)
+    client_secret        <redacted> (45 chars)
+    OpenAI-Organization  <redacted>
+    OpenAI-Project       <redacted>
+
+  Note the base URL has no /v1 — the ingress is https://<host>/<instance>/ and the
+  OpenAI SDK appends /responses itself. Auth is the client_id / client_secret header
+  pair, not a bearer token. sync=True is the same client without asyncio — useful for a
+  straight-line script.
+
+[2] One call. Nothing new to learn — it is the OpenAI SDK.
+
+    response = await client.responses.create(
+        model='gpt-4o',
+        input='Say hello in exactly three words.',
+    )
+
+  WARN  The simulator replays a captured success response, so the reply below answers the prompt that was recorded, not the one just sent. Run with --target live for a real completion.
+  reply                  A sleepy unicorn named Luma painted soft silver stars across the night sky with her glowing horn, then curled up on a moonbeam so all the children below could fall asleep beneath her gentle, sparkling light.
+  input tokens           17
+  output tokens          51
+
+  That call also did these things nobody asked for, because every request leaves through
+  one client:
+  budget.remaining       98000
+  budget.limit           100000
+  budget.fraction_used   2.0%
+  budget.observed_at     2026-09-24 09:27:22.710265+00:00
+  last_call.status       observed
+  last_call.served_model gpt-5.1
+  last_call.total_tokens 68
+  • a correlation id went out on the request
+  • a gen_ai.* span opened and closed around it (demo 06)
+  donkey.last_call is the success-path counterpart to a typed refusal: who served this,
+  what they actually routed to, and what the call cost. Demo 10 walks the whole record —
+  routing, fallback, cached/reasoning tokens, and the opt-in ModelSubstituted error.
+
+[3] The same refusal, through both clients
+  The simulator serves a real captured PII rejection when the model id is the sentinel
+  below. This is the byte-identical body a live gateway sent.
+
+    # A: stock OpenAI client, no SDK — just base_url + headers
+    raw = openai.AsyncOpenAI(base_url=..., api_key=..., default_headers=...)
+    await raw.responses.create(model='donkey-sim/pii-detected', input='My email is a@b.com')
+
+  A: raised              openai.PermissionDeniedError
+  A: status              403
+  A: you get             a JSON body to parse, and a status code to guess from
+
+    # B: the same request, through the governed client
+    try:
+        await client.responses.create(model=..., input="...")
+    except openai.APIStatusError as exc:
+        raise classify(exc.response) from exc
+
+  B: raised              PIIDetected
+  B: policy              pii-detection
+  B: entities            ['Email']
+  B: remediation         The PII-detection policy blocked this request because the prompt (or completion) contained personally identifiable information. Remove or redact the flagged values, or relax the policy's entity list / action in API Manager.
+
+  PASS  A 403 that is a policy refusal, not an auth failure — and it says so.
+  classify() is the bridge, because the raw client raises openai.* errors and the SDK
+  does not silently re-map them. Demo 02 walks the full taxonomy.
+
+[4] @donkey.governed and @donkey.tool — the one-line on-ramps
+
+    @donkey.governed(team="support")
+    async def handle_ticket(ticket):
+        ...  # every model call inside shares one run id
+
+  There is deliberately no id= on the decorator: a fixed id pinned across every call
+  would collapse unrelated tickets into one correlation. When you need to pin a business
+  id, use donkey.run(id=...) directly (demo 06).
+  run id inside          7512d15e0ea94fe4b6f321aae903a781
+  cost tags              team=support project=triage
+  run id inside          491f95bfc2cc4d88b7b0ae1f200de6b5
+  cost tags              team=support project=triage
+  PASS  each invocation opened a fresh run
+  run id after           235d9e98804b480092a2738f58fd7997
+  PASS  restored to the enclosing context — nested run() rebinds, then restores
+
+    @donkey.tool
+    def lookup_sku(sku: str) -> str:
+        """Return stock for a product SKU."""
+        ...
+
+  registered             lookup_sku
+  signature              (sku: 'str') -> 'str'
+  docstring              Return stock for a product SKU.
+  PASS  same function object — the decorator records it, it does not wrap it
+  PASS  ValueError — an undescribed tool is rejected at decoration time
+  The same marker is what a Phase 2 scanner and an A2A agent-card generator will both
+  read. Neither consumer is built yet; this is the annotation they will look for, not a
+  wrapper around the tool.
+
+The point
+─────────
+  The wrapper is not sold as a way to reach the gateway. It is the one place every
+  request enters and every response leaves — which is why budget, last_call, typed
+  refusals, correlation ids, spans and simulation can all attach without the developer
+  wiring each one. @donkey.governed is that attachment as a function decorator;
+  @donkey.tool is the marker a scanner can find without executing it.
+
+────────────────────────────────────────────────────────────────────────────────────────
+```
+
 ```bash
 python "demos/human-made/openai/01 - basic-responses-no-gw.py"   # needs OPENAI_API_KEY
 python "demos/human-made/openai/02 - basic-responses-gw.py"      # needs proxy credentials

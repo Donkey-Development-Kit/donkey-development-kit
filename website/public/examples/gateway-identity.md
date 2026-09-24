@@ -20,6 +20,127 @@ turns a swap into a hard `ModelSubstituted` error.
 make demo N=10
 ```
 
+```text
+════════════════════════════════════════════════════════════════════════════════════════
+Demo 10 — last_call, routing, and per-call usage
+The success-path counterpart to a typed refusal: who served this, what they served, and
+what it cost.
+════════════════════════════════════════════════════════════════════════════════════════
+
+Run context
+───────────
+  target                 mock
+  proxy base_url         http://127.0.0.1:8080/
+  output masking         on
+  credentials            fake — the simulator enforces no auth
+
+[1] A new process has not observed a call yet — and it says so
+  status                 unobserved
+  observed               False
+  available              True
+  request_id             None
+
+  PASS  UNOBSERVED — not None, not 0, not 'unknown'. A cold read is a named state.
+  A bare None would be a lie of omission: you could not tell 'the gateway sent no id'
+  from 'we never saw a response'. Budget uses the same honesty rule for an unobserved
+  window (demo 03). UNAVAILABLE is the third state, for adapters that never route
+  through our transport — LiteLLM-backed ADK and CrewAI, or default_headers-only
+  LlamaIndex. Those surfaces report UNAVAILABLE by name rather than looking like a cold
+  read.
+
+[2] One governed call, and the record is the success-path counterpart
+
+    await client.responses.create(model=..., input=...)
+    donkey.last_call.served_model
+    donkey.last_call.total_tokens
+    donkey.last_call.substituted
+
+  status                 observed
+    observed             True
+    request_id           req_f85003861d5348c9a1d152c276082b07
+    requested_model      gpt-4o
+    served_model         gpt-5.1
+    served_provider      openai
+    routing_type         ModelBased
+    fallback             False
+    substituted          True
+    input_tokens         17
+    output_tokens        51
+    total_tokens         68
+    cached_tokens        0
+    cache_write_tokens   0
+    reasoning_tokens     0
+
+  PASS  OBSERVED — the SDK saw the response, even if some fields stayed None
+  request_id is the gateway's own id (x-request-id) — quote it in a ticket. It is the
+  same field classify() puts on a DonkeyError after a refusal, now present on the 200 as
+  well. api_instance_id and environment_id are parsed from x-envoy-decorator-operation;
+  they are masked in this output.
+
+[3] Routing, fallback, and the cost-relevant token counts
+
+What the gateway did with the request
+─────────────────────────────────────
+  requested              gpt-4o
+  served                 openai/gpt-5.1
+  routing_type           ModelBased
+  fallback               False
+  substituted            True
+
+  PASS  substituted — asked for gpt-4o, gateway served gpt-5.1
+  Against the simulator this is the captured happy-path fixture talking: it was recorded
+  against gpt-5.1, and we asked for a different id. That is not a live failover — and it
+  is exactly the mismatch last_call is for. A silent substitution is otherwise invisible
+  to your cost model, your eval, and your latency dashboard.
+
+What this call cost
+───────────────────
+  input / output / total 17 / 51 / 68
+  cached_tokens          0
+  cache_write_tokens     0
+  reasoning_tokens       0
+
+  cached_tokens are billed at the cached rate; reasoning_tokens are output the developer
+  never sees. Reading only total_tokens draws the wrong conclusion about both cost and
+  latency. An absent count is None, never 0 — 0 here means the gateway reported zero,
+  which is a different statement. These are per-call; donkey.budget is the shared window
+  (demo 03).
+  The SDK never double-retries a fallback. It retries 502/503/504 with backoff, but a
+  503 the gateway already marked as a failover is left alone — a second recovery layer
+  stacked on a working first one just multiplies latency against an outage the gateway
+  already handled.
+
+[4] Opt in, and a substitution is a hard error instead of a flag
+
+    donkey = Donkey.from_env(on_model_substitution="raise")
+    # raises ModelSubstituted when served_model != requested_model
+
+  Off by default: the call succeeds and last_call.substituted is True. Raise is for
+  callers whose eval, cost model and token assumptions are pinned to one model.
+  ModelSubstituted is deliberately not a PolicyViolation — the request was neither
+  refused nor failed, it succeeded against a model you did not choose. Same shape as
+  BudgetReserveReached: a client-side signal you opted into.
+
+  PASS  ModelSubstituted — the 200 never reached the caller
+  requested_model        gpt-4o
+  served_model           gpt-5.1
+  served_provider        openai
+  request_id             req_f85003861d5348c9a1d152c276082b07
+  last_call.substituted  True
+  The record still populated — observe happens before the raise — so a handler that
+  decides to accept the served completion can read last_call the same way. The exception
+  also carries the response.
+
+The point
+─────────
+  The refusal path already told you which gateway said no. The success path now tells
+  you which gateway said yes, what it actually served, and what that call cost — without
+  a span backend, without parsing headers, and without a second accessor for routing or
+  usage.
+
+────────────────────────────────────────────────────────────────────────────────────────
+```
+
 ```bash
 python "demos/human-made/openai/08 - last-call.py"   # needs proxy credentials
 ```

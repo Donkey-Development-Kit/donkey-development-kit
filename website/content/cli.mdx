@@ -3,7 +3,7 @@ description: The @donkey.governed and @donkey.tool decorators, and the donkey CL
 ---
 
 import { Callout } from 'nextra/components'
-import { Badge } from '../components'
+import { Badge, Output } from '../components'
 
 # CLI & decorators
 
@@ -118,6 +118,20 @@ outside. `doctor` makes one real governed call and tells them apart:
 Each verdict prints the same remediation string the matching typed exception
 carries, so the fix is in the output rather than in a runbook. The budget line
 states how old the reading is, since the proxy has no budget endpoint.
+
+```bash
+donkey doctor
+```
+
+<Output>
+```text
+[ok] config       env (3 fields)
+[ok] gateway      reachable, responded
+[ok] credentials  client_id accepted
+[ok] model        accepted by the proxy
+[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+```
+</Output>
 
 ```bash
 donkey doctor --model gpt-4o     # model to test against the allow-list (default gpt-4o)

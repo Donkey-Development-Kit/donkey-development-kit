@@ -64,14 +64,24 @@ from donkey_kit import Donkey
 
 with Donkey.from_env() as donkey:
     client = donkey.llm.client(sync=True)      # a real openai.OpenAI, governed
-    reply = client.responses.create(model="gpt-5.1", input="Say hi in three words.")
+    reply = client.responses.create(
+        model="gpt-5.1",
+        input="Tell me a one-sentence bedtime story about a unicorn.",
+    )
     print(reply.output_text)
     print("budget remaining:", donkey.budget.remaining, "tokens")
 ```
 
+```text
+A sleepy unicorn named Luma painted soft silver stars across the night sky with her glowing horn, then curled up on a moonbeam so all the children below could fall asleep beneath her gentle, sparkling light.
+budget remaining: 99500 tokens
+```
+
 `donkey.llm.client()` returns the OpenAI SDK's own client, routed through
 DDK — so credentials, correlation and attribution headers are injected, and
-`donkey.budget` is updated from the gateway's response.
+`donkey.budget` is updated from the gateway's response. The simulator replays
+a response captured from a real gateway, so you get this story whatever you
+ask; against your Omni Gateway the model answers your actual prompt.
 
   Prefer one command? Run `python -m examples.quickstart.main` from the
   `python/` directory of the
@@ -92,12 +102,16 @@ from donkey_kit.core.errors import classify
 try:
     client.responses.create(
         model="donkey-sim/pii-detected",
-        input="My SSN is 123-45-6789, please store it.",
+        input="Email the report to jane.doe@example.com.",
     )
 except openai.APIStatusError as exc:
     governed = classify(exc.response)
     if isinstance(governed, PIIDetected):
         print("blocked, entities:", governed.entities)
+```
+
+```text
+blocked, entities: ['Email']
 ```
 
 A PII block is not an auth error, and a policy `429` must never be retried —
@@ -137,6 +151,41 @@ from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProces
 provider = TracerProvider()
 provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
 trace.set_tracer_provider(provider)   # set before the first call
+```
+
+Put these lines at the top of `hello.py` and run it again. Alongside the
+story, the console prints the span:
+
+```text
+{
+    "name": "donkey.llm.chat",
+    "context": {
+        "trace_id": "0x604e2f805df7f12cfdc402f83a66c8f4",
+        "span_id": "0x212735c846ec8f18",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "gen_ai.request.model": "gpt-5.1",
+        "gen_ai.system": "openai",
+        "gen_ai.response.model": "gpt-5.1",
+        "donkey.routing.type": "ModelBased",
+        "donkey.routing.fallback": false,
+        "gen_ai.usage.input_tokens": 17,
+        "gen_ai.usage.output_tokens": 51,
+        "donkey.usage.cached_tokens": 0,
+        "donkey.usage.cache_write_tokens": 0,
+        "donkey.usage.reasoning_tokens": 0,
+        "donkey.policy.decision": "allow",
+        "donkey.budget.remaining": 99000,
+        "donkey.correlation_id": "e2fec0b686694055846da9446fa24c96"
+    },
+    ...
+}
 ```
 
 Each `donkey.llm.chat` span carries `gen_ai.usage.*` token counts,
@@ -202,6 +251,14 @@ Then check the setup:
 
 ```bash
 donkey doctor
+```
+
+```text
+[ok] config       env (3 fields)
+[ok] gateway      reachable, responded
+[ok] credentials  client_id accepted
+[ok] model        accepted by the proxy
+[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
 ```
 
 `donkey doctor` tells a wrong URL from wrong credentials from a model that is
