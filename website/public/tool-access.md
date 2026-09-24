@@ -39,8 +39,7 @@ tools = await donkey.tools.discover(
 ```
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
-Exchange — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md) and
-[Environments & governance](https://donkey-development-kit.github.io/donkey-development-kit/concepts/environments.md).
+Exchange — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md).
 
 ## In this section
 

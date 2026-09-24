@@ -93,4 +93,4 @@ npm run generate:llms
   **Verification discipline.** DDK never documents or codes against an
   endpoint, header or class name that has not been confirmed against the real
   platform. If you can't confirm one, say so in the issue rather than guessing
-  — see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md).

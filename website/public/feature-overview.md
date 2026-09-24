@@ -140,4 +140,4 @@ DDK makes the platform's capabilities reachable and typed; it does not
 reproduce them. Policy enforcement, semantic caching, provisioning, agent
 scanners, kill switch, trusted agent identity, approval UIs and evaluation all
 stay with Agent Fabric and Omni Gateway. See the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md#what-ddk-will-not-build)
-for the full list, and [Concepts](https://donkey-development-kit.github.io/donkey-development-kit/concepts/governance.md) for how the pieces fit.
+for the full list.

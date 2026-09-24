@@ -6,7 +6,6 @@ export default {
   index: 'Introduction',
   quickstart: 'Quickstart',
   'feature-overview': 'Feature overview',
-  concepts: 'Concepts',
   '-- model-access': {
     type: 'separator',
     title: 'Model access',

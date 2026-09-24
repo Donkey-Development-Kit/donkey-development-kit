@@ -20,10 +20,9 @@ The three required values for the LLM proxy:
   The stock gateway also accepts a **single** colon-joined header —
   `authorization: Bearer <client_id>:<client_secret>` or
   `apikey: <client_id>:<client_secret>` — which its
-  `dataweave-headers-transformation` policy splits back into the pair (see
-  [Governance](https://donkey-development-kit.github.io/donkey-development-kit/concepts/governance.md)). DDK doesn't use that form: it always
+  `dataweave-headers-transformation` policy splits back into the pair. DDK doesn't use that form: it always
   sends the two-header pair, because `client_id` is the per-agent
-  [attribution](https://donkey-development-kit.github.io/donkey-development-kit/concepts/attribution.md) unit. The colon-joined value is not an
+  [attribution](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) unit. The colon-joined value is not an
   alternative once a `client_id` header is present — the policy ignores it.
 
 Missing required fields are reported **all at once** with their env-var names,
@@ -106,7 +105,7 @@ published, so the SDK uses placeholder names you can override to match your
 gateway: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
 `DONKEY_COST_ENV_HEADER`, `DONKEY_COST_ENDUSER_HEADER` (or the matching
 `cost_*_header` config keys). The `donkey.cost.*` span attributes carry the
-full value regardless. See [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+full value regardless.
 
 ## Telemetry
 

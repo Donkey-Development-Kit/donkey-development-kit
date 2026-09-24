@@ -87,7 +87,7 @@ breaks a link.
 ```
 content/
   index.mdx, quickstart.mdx,
-  feature-overview.mdx, concepts/     Get started
+  feature-overview.mdx               Get started
   frameworks/                         Model access — one page per framework
   errors, budget, identity,
   hitl, policies                      Governance

@@ -110,5 +110,5 @@ HTTP client is also used, which adds per-run correlation IDs and
 | Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport: correlation is per-client and `donkey.last_call` is unavailable. |
 | CrewAI | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport: same limits as Google ADK. |
 
-See [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) for how each constructor
+See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.

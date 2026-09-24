@@ -8,14 +8,6 @@
 - [Quickstart](https://donkey-development-kit.github.io/donkey-development-kit/quickstart.md): From pip install to a governed model call, a typed refusal, a budget and an OpenTelemetry span — locally, with no gateway and no credentials.
 - [Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md): Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by pillar.
 
-## Concepts
-
-- [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md): This is the most important thing to understand about the SDK's trustworthiness.
-- [Governance](https://donkey-development-kit.github.io/donkey-development-kit/concepts/governance.md): "Governance" is what the Omni Gateway proxy adds on top of a plain model call: authentication, attribution, routing, and policy enforcement — applied at the gateway, not in your code.
-- [Governance & environments](https://donkey-development-kit.github.io/donkey-development-kit/concepts/environments.md): **Planned design.** This documents SDK behaviour as designed in the build plan; platform contracts it depends on are being live-verified, and unverified paths raise `NotImplementedError("blocked on v…
-- [Attribution & cost](https://donkey-development-kit.github.io/donkey-development-kit/concepts/attribution.md): The core value of governed model access is **per-agent attribution**: knowing which agent/app spent which tokens, without every team rolling their own bookkeeping.
-- [Observability](https://donkey-development-kit.github.io/donkey-development-kit/concepts/observability.md): OTel GenAI spans at a pinned semconv version, dual-emitted with a stable donkey.* namespace.
-
 ## Frameworks
 
 - [Overview](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md): Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.

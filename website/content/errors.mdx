@@ -160,7 +160,7 @@ logs and to the gateway's own record:
 
 | Attribute | What it is | Provenance |
 | --- | --- | --- |
-| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](/concepts/observability#grouping-a-run-the-run-id-on-the-span-the-call-id-on-the-error) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
+| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](/telemetry#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
 | `.call_id` | The **per-call** id, unique per logical request and stable across that request's retries | The `X-Donkey-Request-Id` request header the client sent. Present **even when the request fails before any response** (a transport error). |
 | `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 

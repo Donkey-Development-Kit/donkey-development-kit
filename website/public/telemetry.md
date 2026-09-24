@@ -206,8 +206,7 @@ in the TypeScript SDK.
 
 Set a per-**run** id once, and every call inside the block carries it — on the
 wire, on every span, and on every exception — with nothing threaded through your
-framework state. See [Observability](https://donkey-development-kit.github.io/donkey-development-kit/concepts/observability.md) for the full
-detail.
+framework state.
 
 ```python
 async with donkey.run(id=ticket.id):

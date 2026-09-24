@@ -128,5 +128,3 @@ message points you to `explain()`.
 
 - [Framework binding](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md) — turn a `ToolSet` into native tools.
 - [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md) — pin resolved versions for production.
-- [Environments & governance](https://donkey-development-kit.github.io/donkey-development-kit/concepts/environments.md) — the `Governance` object
-  you can pass as `governance=` to scope discovery to a target.
