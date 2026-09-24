@@ -204,3 +204,40 @@ async def test_unknown_sentinel_suffix_falls_through_to_happy_path() -> None:
         )
     assert resp.status_code == 200
     assert resp.content == fx.load("success").body
+
+
+async def test_semantic_success_sentinel_replays_the_semantic_routing_200() -> None:
+    # The happy-path sentinel forces the Semantic-routing 200 (#601): a byte-faithful
+    # replay of the live 'Finance' capture, honesty-stamped, carrying routing_type
+    # Semantic and the semantic-only success prose that populates matched_topic/score.
+    async with _client() as client:
+        resp = await client.post(
+            "/v1/responses", json={"model": SIM_MODEL_PREFIX + "success-semantic"}
+        )
+    assert resp.status_code == 200
+    assert resp.content == fx.load("success-semantic").body  # byte-identical passthrough
+    assert resp.headers[SIMULATOR_HEADER] == "true"
+    assert resp.headers["x-llm-proxy-routing-type"] == "Semantic"
+    assert resp.headers["x-llm-proxy-semantic-routing-success"].startswith(
+        "Request successfully matched 'Finance' topic"
+    )
+    # No synthesised budget window is layered onto a sentinel-forced shape, so the
+    # replay stays exactly the captured bytes (unlike the default happy path).
+    assert RATELIMIT_HEADER not in resp.headers
+
+
+async def test_semantic_success_sentinel_populates_matched_topic_and_score() -> None:
+    # The whole point of the shape: last_call.matched_topic / routing_score light up
+    # from the simulated Semantic 200 exactly as they would from a live semantic proxy.
+    from donkey_kit.core.lastcall import LastCall, LastCallStatus
+
+    async with _client() as client:
+        resp = await client.post(
+            "/v1/responses", json={"model": SIM_MODEL_PREFIX + "success-semantic"}
+        )
+    record = LastCall.from_response(resp, requested_model="donkey-sim/success-semantic")
+    assert record.status is LastCallStatus.OBSERVED
+    assert record.routing_type == "Semantic"
+    assert record.matched_topic == "Finance"
+    assert record.routing_score == 0.62
+    assert record.fallback is False
