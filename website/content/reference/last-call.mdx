@@ -1,0 +1,130 @@
+---
+description: Every field on donkey.last_call — the observability status, the gateway identity, the routing and fallback signals, the per-call token usage, and the semantic-cache outcome the gateway reported about the most recent governed model call.
+---
+
+import { Callout } from 'nextra/components'
+
+# `last_call` field reference
+
+`donkey.last_call` is what the gateway said about the **most recent governed
+model call** in the current context. It is an immutable snapshot: every governed
+response replaces the record wholesale rather than mutating it, so a reader
+always sees one internally-consistent call. It is contextvar-scoped, so a
+fan-out of concurrent calls each reads its own record.
+
+```python
+donkey = Donkey.from_env()
+await donkey.openai().responses.create(model="gpt-5.1", input="…")
+
+r = donkey.last_call
+r.status          # LastCallStatus.OBSERVED
+r.served_provider # "openai"
+r.total_tokens    # 1730
+```
+
+Every response-derived field defaults to `None`. `None` always means **not
+observed** — never `0`, and never a fabricated value. A count of `0` is a real
+observation (an empty completion) and is distinct from `None` (no usage was
+reported at all). See [Verification discipline](/concepts/verification) for why
+the SDK never guesses a value it did not see on the wire.
+
+## Observability status
+
+Whether — and from where — the call was observed. These are always meaningful,
+even on a cold read.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `status` | `LastCallStatus` | `OBSERVED` (a governed response populated this record), `UNOBSERVED` (no governed model call has returned in this context yet), or `UNAVAILABLE` (this surface structurally cannot be observed). |
+| `observed` | `bool` | `True` iff a governed response actually populated the record (`status is OBSERVED`). |
+| `available` | `bool` | `False` only when the current surface structurally cannot be observed; a plain cold read is still `available` — it just has not observed anything yet. |
+| `observed_at` | `datetime \| None` | When the record was observed (UTC), for freshness. `None` unless `OBSERVED`. |
+| `surface` | `str \| None` | For `UNAVAILABLE`, the adapter surface(s) that cannot observe (e.g. `"adk"`); else `None`. |
+
+<Callout type="info">
+  `donkey.last_call` is populated only when the governed response passes through
+  the SDK's shared httpx client. Adapters that route outside that response path
+  (LiteLLM-backed, or `default_headers`-only) report `UNAVAILABLE` with the
+  surface named. See [When `last_call` is
+  unavailable](/telemetry#when-last_call-is-unavailable).
+</Callout>
+
+## Gateway identity
+
+Who served the call — for correlating a request with the platform's own logs and
+for quoting to a provider's support team.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id`). `None` when the gateway forwarded none. |
+| `api_instance_id` | `str \| None` | The API Manager instance id that served the call. |
+| `environment_id` | `str \| None` | The Anypoint environment id that served the call. |
+
+## Routing & fallback
+
+What the gateway *did* with the request — which provider and model served it, how
+it routed, and whether that was a failover. Read live off the shared transport,
+so the raw `donkey.llm.client()` path gets them with no framework required. See
+[Routing & resilience](/telemetry#routing--resilience) for the operational story.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `requested_model` | `str \| None` | The model the caller **asked for** (from the request body). The reference point for `substituted`. |
+| `served_provider` | `str \| None` | The provider the gateway actually routed to (`x-llm-proxy-llm-provider`). |
+| `served_model` | `str \| None` | The model the gateway actually served (`x-llm-proxy-llm-model`). May differ from `requested_model` after a fallback. |
+| `routing_type` | `str \| None` | The routing strategy the gateway applied (`x-llm-proxy-routing-type`), e.g. `"ModelBased"` or `"Semantic"`. |
+| `fallback` | `bool \| None` | Whether the gateway performed a routing **fallback**. `None` when the header is absent (non-proxy / simulated response) — distinct from a definitive `False` ("no fallback occurred"). |
+| `substituted` | `bool` | `True` iff the gateway served a *different* model than requested — a silent substitution your cost model and evals are otherwise blind to. Requires both models known; a missing either side is not a substitution claim. |
+| `matched_topic` | `str \| None` | On a **semantic-routing** proxy, the topic the prompt matched (`x-llm-proxy-semantic-routing-success`). `None` on a model-based proxy (the header is semantic-only) or when the message did not parse. |
+| `routing_score` | `float \| None` | On a **semantic-routing** proxy, the similarity score of the matched topic (a bare `0.xx` float). `None` on a model-based proxy or when the score did not parse. |
+
+<Callout type="info">
+  `matched_topic` and `routing_score` are populated **only** on a semantic-routing
+  proxy (`routing_type == "Semantic"`), which reports *why* it picked a provider.
+  A model-based proxy emits no semantic header, so both stay `None`.
+</Callout>
+
+## Token usage
+
+The per-call token counts from the response body's `usage` object. On a streamed
+response these land once the terminal SSE event is scanned, not at record time.
+Each is `None` (never `0`) when unobserved or absent.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call. |
+| `output_tokens` | `int \| None` | Completion/output tokens produced (includes `reasoning_tokens`). |
+| `total_tokens` | `int \| None` | Total tokens the gateway attributed to this call. |
+| `cached_tokens` | `int \| None` | Input tokens served from the prompt cache (billed at the cached rate). |
+| `cache_write_tokens` | `int \| None` | Input tokens written into the prompt cache this call. |
+| `reasoning_tokens` | `int \| None` | Output tokens spent on model reasoning the developer never sees. |
+
+## Semantic cache
+
+When the proxy is fronted by the Anypoint **semantic-caching** policy, the
+gateway reports what it did with each request. Steer it per block with
+[`donkey.cache(...)`](/budget#semantic-cache-steering); read the outcome here.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `cache_status` | `str \| None` | What the caching policy did (`x-semantic-cache-status`): `"hit"` / `"miss"` / `"bypass"` / `"no-store"`. `None` on a proxy with no caching policy (the header is absent) or a simulated response. |
+| `cache_score` | `float \| None` | On a cache **hit**, the similarity score of the matched entry (`x-semantic-cache-score`). `None` on miss/bypass/no-store (the header is hit-only) or when the score did not parse. |
+| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](/budget) (a replay is no fresh spend). |
+
+<Callout type="info">
+  A cache **hit** replays a stored completion byte-for-byte, including its
+  original `usage` block — so the token counts above describe the *cached*
+  call, not fresh spend. `cache_hit` is the signal that they should not be
+  counted again.
+</Callout>
+
+## On the span
+
+The routing, usage, and cache fields also land on the OpenTelemetry GenAI span
+for each governed call, under the pinned `gen_ai.*` keys and the stable
+`donkey.*` namespace: `gen_ai.response.model`, `donkey.routing.type`,
+`donkey.routing.fallback`, — on a semantic route —
+`donkey.routing.matched_topic` / `donkey.routing.score`, and — on a cached
+proxy — `donkey.cache.status` / `donkey.cache.score`, alongside the usage
+counts. A field that is `None` is omitted from the span entirely. See
+[Telemetry](/telemetry) for the full attribute list.

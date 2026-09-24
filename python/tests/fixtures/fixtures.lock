@@ -10,6 +10,8 @@
   "anypoint/llm_proxy/responses.stream.sample.sse": "sha256:ab00aae222cd5c5d900bc57cd6a9a7a7ca5dcb177904ac9794df7f4fc7856ac5",
   "anypoint/llm_proxy/responses.success.body.json": "sha256:c47727c6ffb0d2dec80ed37d182825d5707de043517a890999fefa4e407dc90e",
   "anypoint/llm_proxy/responses.success.headers.txt": "sha256:263ce673cad339d8cc06e095924fb5ff1310f84d47f591f18eb1a8c90fb8027b",
+  "anypoint/semantic_routing/responses.finance.body.json": "sha256:c913879adfae69f1e2c9c9c3d6aaea9522b4bdce737cafbd1e63ecf3ff53feb9",
+  "anypoint/semantic_routing/responses.finance.headers.txt": "sha256:d72c9e362f3e098b34c175ed499d8595d2384fdf2fcaac8e900ad900f6227c53",
   "rejections/reject.content-moderation.headers.txt": "sha256:5df6a849d1ea245db54617e66f1d380566270f23102ca0cb8046a1c8b990cbda",
   "rejections/reject.content-safety.body.json": "sha256:678a01904e36159a5089f4e0784fc3a61b9fcdeefda04e6a16c07b8e81fea267",
   "rejections/reject.content-safety.headers.txt": "sha256:d991dbc094133c574968b5f735d000398fb556bbae5c65139fba11ce7e3bfdec",

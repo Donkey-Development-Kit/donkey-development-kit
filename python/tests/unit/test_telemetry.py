@@ -175,6 +175,31 @@ def test_build_genai_attributes_emits_fallback_false_but_drops_none() -> None:
     assert telemetry.build_genai_attributes(fallback=None) == {}
 
 
+def test_semantic_routing_keys_are_pinned_and_allowlisted() -> None:
+    # #590: the matched topic + similarity score live under the stable donkey.*
+    # namespace (semconv has no key for them) and must be emittable.
+    assert telemetry.DONKEY_ROUTING_MATCHED_TOPIC == "donkey.routing.matched_topic"
+    assert telemetry.DONKEY_ROUTING_SCORE == "donkey.routing.score"
+    assert telemetry.DONKEY_ROUTING_MATCHED_TOPIC in telemetry._ALLOWED_SPAN_ATTRIBUTES
+    assert telemetry.DONKEY_ROUTING_SCORE in telemetry._ALLOWED_SPAN_ATTRIBUTES
+
+
+def test_build_genai_attributes_emits_the_semantic_match() -> None:
+    # #590: on a semantic-routing response the matched topic + score land beside
+    # the shared routing facts.
+    attrs = telemetry.build_genai_attributes(matched_topic="Finance", routing_score=0.62)
+    assert attrs["donkey.routing.matched_topic"] == "Finance"
+    assert attrs["donkey.routing.score"] == 0.62
+
+
+def test_build_genai_attributes_drops_the_semantic_match_when_absent() -> None:
+    # A model-based / non-proxy response has neither — both fields are omitted,
+    # not emitted as a null/placeholder (verification discipline).
+    assert telemetry.build_genai_attributes(matched_topic=None, routing_score=None) == {}
+    # A zero score is a real observation and must survive the None-omit rule.
+    assert telemetry.build_genai_attributes(routing_score=0.0) == {"donkey.routing.score": 0.0}
+
+
 def test_build_genai_attributes_omits_none_usage_details_keeps_zero() -> None:
     # cached/reasoning follow the same rule (#307): a present 0 is emitted (an
     # uncached prompt / a non-reasoning model), an absent one is omitted entirely.

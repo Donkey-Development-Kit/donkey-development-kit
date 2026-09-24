@@ -1,0 +1,38 @@
+HTTP/1.1 200 OK
+date: Thu, 24 Sep 2026 15:30:51 GMT
+content-type: application/json
+cf-cache-status: DYNAMIC
+server: Anypoint Flex Gateway
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+x-content-type-options: nosniff
+access-control-expose-headers: X-Request-ID,CF-Ray,CF-Ray
+openai-organization: user-9c8mvuhcimhkzwlcpxtztz7a
+openai-processing-ms: 4908
+openai-project: proj_UpRmBxcPjQR5y8Tap22ULwcw
+openai-version: 2020-10-01
+x-openai-proxy-wasm: v0.1
+x-ratelimit-limit-requests: 500
+x-ratelimit-limit-tokens: 500000
+x-ratelimit-remaining-requests: 499
+x-ratelimit-remaining-tokens: 499977
+x-ratelimit-reset-requests: 120ms
+x-ratelimit-reset-tokens: 2ms
+x-request-id: req_a54eaa49bef041619aef60eb6aad5fef
+alt-svc: h3=":443"; ma=86400
+x-semantic-cache-status: miss
+x-semantic-cache-threshold: 0.7500
+x-semantic-cache-ttl: 604800
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: openai
+x-llm-proxy-llm-model: gpt-5-mini
+x-llm-proxy-input-tokens-cost-per-1m: 0.25
+x-llm-proxy-output-tokens-cost-per-1m: 2
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: openai, Model: gpt-5-mini.
+x-llm-proxy-request-success: Request completed successfully. Provider: openai, Model: gpt-5-mini.
+x-envoy-decorator-operation: api-instance-21195392.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
+transfer-encoding: chunked
+x-correlation-id: da7510d8-2343-480f-b009-3ffb633e9ede
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Keep-Alive
+

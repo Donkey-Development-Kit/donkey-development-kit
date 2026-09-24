@@ -80,6 +80,16 @@ _REJECTION_SHAPES = frozenset(
     }
 )
 
+# Happy-path (2xx) shapes ALSO selectable via the model-id sentinel: the
+# SEMANTIC-routing 200, so a developer can drive the ``matched_topic`` /
+# ``routing_score`` branch of ``donkey.last_call`` offline (#601). Kept apart from
+# the rejections because these are 200s; both are served as-is from the captured
+# fixture (no synthesised budget window), so the replay stays byte-faithful.
+_HAPPY_SHAPES = frozenset({"success-semantic"})
+
+# Every shape the model-id sentinel can force to a specific captured fixture.
+_SENTINEL_SHAPES = _REJECTION_SHAPES | _HAPPY_SHAPES
+
 class ASGIApp(Protocol):
     """The framework-free ASGI callable :func:`build_app` returns — so callers
     (``httpx.ASGITransport``, ``uvicorn.run``) and ``mypy`` never see a
@@ -181,9 +191,12 @@ class _Simulator:
         model = payload.get("model") if isinstance(payload, dict) else None
         if isinstance(model, str) and model.startswith(SIM_MODEL_PREFIX):
             shape = model[len(SIM_MODEL_PREFIX) :]
-            if shape in _REJECTION_SHAPES:
+            if shape in _SENTINEL_SHAPES:
                 # The model-id sentinel is an explicit "force this exact shape"
-                # override and wins over ambient scenario fault-injection.
+                # override and wins over ambient scenario fault-injection. It
+                # selects a rejection shape or a happy-path variant (the
+                # Semantic-routing 200, #601); both are served as-is from the
+                # captured fixture.
                 return self._response(load(shape))
             # Unknown sentinel suffix falls through to the scenario/happy path.
 

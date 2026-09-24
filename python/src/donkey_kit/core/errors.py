@@ -139,11 +139,12 @@ class PolicyViolation(DonkeyError):
     #: cannot pin more precisely); every concrete subclass overrides it.
     remediation: str = (
         "A gateway policy refused this request. This is terminal and was NOT "
-        "retried. PII (403), token-budget (429) and prompt-injection "
-        "(x-injection-protection) rejections are identified specifically; "
-        "content-moderation / federated-guardrail shapes are still "
-        "under-documented (#253) and fall through to here. Inspect "
-        ".response for the raw body."
+        "retried. PII (403), token-budget (429), prompt-injection (the "
+        "x-injection-protection header or the regex prompt guard's "
+        "matched_patterns) and content-safety (Azure Content Safety, Amazon "
+        "Bedrock Guardrails) rejections are identified specifically; only "
+        "federated-guardrail verdicts and otherwise-unrecognised shapes fall "
+        "through to here. Inspect .response for the raw body."
     )
 
     def __init__(

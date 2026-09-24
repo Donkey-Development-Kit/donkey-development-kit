@@ -134,6 +134,7 @@ packages = ["src/donkey_kit"]
 # packaged copy first, falling back to the source-checkout tests/fixtures/ tree.
 "tests/fixtures/rejections" = "donkey_kit/simulator/_fixtures/rejections"
 "tests/fixtures/anypoint/llm_proxy" = "donkey_kit/simulator/_fixtures/anypoint/llm_proxy"
+"tests/fixtures/anypoint/semantic_routing" = "donkey_kit/simulator/_fixtures/anypoint/semantic_routing"
 "tests/fixtures/fixtures.lock" = "donkey_kit/simulator/_fixtures/fixtures.lock"
 
 [tool.mypy]

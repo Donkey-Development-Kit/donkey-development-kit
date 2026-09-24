@@ -1,0 +1,22 @@
+HTTP/1.1 200 OK
+content-type: application/json
+x-semantic-cache-status: hit
+x-semantic-cache-score: 1.0000
+x-semantic-cache-ttl: 604800
+x-semantic-cache-threshold: 0.7500
+content-length: 890
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: openai
+x-llm-proxy-llm-model: gpt-5-mini
+x-llm-proxy-input-tokens-cost-per-1m: 0.25
+x-llm-proxy-output-tokens-cost-per-1m: 2
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: openai, Model: gpt-5-mini.
+x-llm-proxy-request-success: Request completed successfully. Provider: openai, Model: gpt-5-mini.
+date: Thu, 24 Sep 2026 15:30:56 GMT
+server: Anypoint Flex Gateway
+x-envoy-decorator-operation: api-instance-21195392.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
+x-correlation-id: 0054416f-13fa-409e-a30e-65760e0bea95
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Keep-Alive
+

@@ -29,6 +29,7 @@ _CONTRACT_STATUS = {
     "upstream-5xx": 503,
     "client-id-missing": 401,
     "success": 200,
+    "success-semantic": 200,
     "stream": 200,
     "models-notfound": 404,
 }
