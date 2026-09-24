@@ -375,6 +375,30 @@ donkey = Donkey.from_env(on_model_substitution="raise")
 `DONKEY_ON_MODEL_SUBSTITUTION` → `.donkey-kit.toml` → default) and **defaults to
 `"off"`**.
 
+  **Known limitation with `provider/model` names.** On a model-based routing
+  proxy you address models as `provider/model` (for example
+  `openai/gpt-5-mini`), but the gateway reports the served model without the
+  provider prefix (`gpt-5-mini`). DDK currently compares the two verbatim, so
+  `last_call.substituted` reads `True` on every such call, and
+  `on_model_substitution="raise"` raises `ModelSubstituted` even when
+  `last_call.fallback` is `False`. Until this is fixed, check
+  `last_call.fallback` to detect a real failover, and leave
+  `on_model_substitution` at `"off"` on model-based proxies.
+
+### Semantic caching & semantic routing Roadmap
+
+Omni Gateway can answer a request from its **semantic cache** (a similar
+prompt was answered before, so no provider round-trip and no token cost) and
+can **route semantically** (pick the model by matching the prompt to a
+topic). Both happen at the gateway. DDK will not cache anything or compute
+embeddings itself; it will let you steer the gateway's cache per request, for
+example to skip it, not store a response, or override the TTL or similarity
+threshold, and report what happened:
+
+- the cache outcome (`hit`, `miss`, `bypass`, `no-store`) and similarity score
+  on `donkey.last_call` and the span;
+- the matched routing topic and its score, beside the routing fields above.
+
 ### TypeScript parity Roadmap
 
 The same signals will surface as `donkey.lastRouting.servedModel` / `.fallback`
