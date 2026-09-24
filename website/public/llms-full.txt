@@ -1957,7 +1957,11 @@ DonkeyError                     # base of the whole tree
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
-└─ UpstreamModelError           # upstream 5xx — provider error, retryable
+├─ UpstreamModelError           # upstream 5xx — provider error, retryable
+├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
+├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
+└─ ToolInvocationError, RegistryError, PublicationDrift
+                                # tool access, registry and publishing (Roadmap surfaces)
 ```
 
 `GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one
@@ -2123,19 +2127,28 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/budget.m
 
 Live
 
-The governed proxy reports your token budget on **every response**, in
-`x-token-*` headers. Parsing those yourself in every call site is tedious, and
-most code skips it — so the first time budget matters is the moment it runs out.
+Once a token-rate-limit policy is applied, the governed proxy reports your
+token budget on its responses, in **two shapes** depending on the response:
 
-With DDK **you never parse a header.** Every response updates a `Budget` object
-on the `Donkey` instance.
+| Response | Header | Example |
+|---|---|---|
+| Success `200` (and a `403` refusal) | `x-llm-proxy-ratelimit`, as prose | `Token rate limit: 10000 tokens remaining of 10000 limit. Reset in 56711ms.` |
+| Budget refusal `429` | `x-token-limit`, `x-token-remaining`, `x-token-reset` | numeric values |
+
+Parsing those yourself in every call site is tedious, and most code skips
+it — so the first time budget matters is the moment it runs out.
+
+With DDK **you never parse a header.** Every response that carries either shape
+updates a `Budget` object on the `Donkey` instance. Where both are present the
+numeric values win, and the prose header fills any field they leave unset.
+Until the first such response, every field is `None`, never a misleading zero.
 
 ## The object
 
 ```python
 donkey.budget.limit          # int, tokens per window
 donkey.budget.remaining      # int, from the last response
-donkey.budget.reset_at       # datetime, converted from x-token-reset (ms) — not raw
+donkey.budget.reset_at       # datetime, converted from the ms-to-reset value — not raw
 donkey.budget.observed_at    # when headers were last seen (staleness)
 donkey.budget.fraction_used  # 0.0–1.0
 ```
@@ -2209,8 +2222,9 @@ last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donke
 
 ## Behaviour guarantees
 
-- `x-token-reset` (milliseconds) is converted to a `datetime`, accurate to the
-  second.
+- The reset value (milliseconds *until* reset, in both `x-token-reset` and the
+  prose `Reset in …ms`) is converted to a `datetime` anchored to
+  `observed_at`, accurate to the second.
 - `pace()` raises before the request that would cross the reserve, never after
   a `429`.
 - After `reset_at`, `pace()` no longer refuses, so a wait-and-retry loop can
@@ -2721,6 +2735,12 @@ They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
 `donkey.routing.fallback`) — the most useful thing to have on hand when latency
 spikes: it tells an operator whether a slow call was routed normally or
 recovered from a degraded provider.
+
+The same record also carries the call's identity and usage: `request_id` (the
+upstream provider's id), `api_instance_id` and `environment_id` (which gateway
+instance served it), and the token counts including cached and reasoning
+tokens. The [gateway identity example](https://donkey-development-kit.github.io/donkey-development-kit/examples/gateway-identity.md) walks
+through every field.
 
 ### When `last_call` is unavailable
 
@@ -6842,6 +6862,10 @@ The three required values for the LLM proxy:
 Missing required fields are reported **all at once** with their env-var names,
 so you can fix configuration in a single pass.
 
+| Optional env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `DONKEY_LLM_PROXY_KEY` | `llm_proxy_key` | Fills the OpenAI SDK's mandatory `api_key` slot. The proxy ignores it, so leave it unset unless a tool insists on a real-looking value. |
+
 ## JWT / model-wallet auth mode
 
 A **model-wallet** proxy identifies the caller from an IdP-issued **JWT** plus a
@@ -6856,7 +6880,7 @@ durable wallet-selector client ID, with Client ID Enforcement disabled and **no
 In `jwt` mode the required fields are `llm_proxy_url` **and**
 `llm_proxy_wallet_client_id` — **not** `client_id` / `client_secret`. The
 rotating JWT is **not** a config value: supply it through an
-[`AuthProvider`](https://donkey-development-kit.github.io/donkey-development-kit/identity.md) passed as `Donkey(llm_auth=…)`, so the SDK can
+[`AuthProvider`](#auth-providers) passed as `Donkey(llm_auth=…)`, so the SDK can
 re-fetch it as it rotates and refresh it once on a `401`:
 
 ```python
@@ -6881,12 +6905,41 @@ donkey = Donkey(
   CrewAI, LlamaIndex, MS Agent Framework) pin the token at construction and
   can't refresh it — see [Testing](https://donkey-development-kit.github.io/donkey-development-kit/testing.md).
 
+### Auth providers
+
+An `AuthProvider` (in `donkey_kit.core.auth`) is any object with two async
+methods: `token()` returns the current credential and `invalidate()` drops a
+cached one. The transport calls `invalidate()` and retries exactly once when a
+downstream call returns `401`.
+
+| Provider | Use it for |
+|---|---|
+| `StaticToken(token)` | A token injected out-of-band, for example from CI. Never refreshes. |
+| `AnypointConnectedApp(client_id=…, client_secret=…, control_plane_url=…, http_client=…)` | OAuth2 client credentials against the Anypoint token endpoint. Caches the token in memory and refreshes it 60 seconds before expiry. |
+| `ChainedAuth(*providers)` | Tries providers in order; the first that yields a token wins. |
+
+For a rotating JWT from your IdP, implement the two methods yourself and pass
+the object as `llm_auth`.
+
 ## Optional attribution
 
 | Env var | Meaning |
 |---|---|
 | `DONKEY_APP_NAME` | Human-readable app name, surfaced on telemetry. |
 | `DONKEY_BUSINESS_GROUP` | Business group for attribution. |
+
+## Correlation headers
+
+Per-call and per-run correlation IDs ride on request headers. The gateway's
+inbound header names aren't published, so the SDK uses placeholder names you
+can override to match your gateway. The IDs also appear on spans and
+exceptions regardless of the header names. See
+[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids).
+
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `DONKEY_CORRELATION_HEADER` | `correlation_header` | Request header that carries the per-run correlation ID. |
+| `DONKEY_CALL_ID_HEADER` | `call_id_header` | Request header that carries the per-call ID. |
 
 ## Cost-attribution tags
 
@@ -6932,6 +6985,16 @@ full value regardless.
 inside your process, **upstream of the gateway's PII masking**, so capturing
 content re-exports the very text the platform masks. Enable it only for a
 trusted collector. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
+
+## Behaviour
+
+| Env var | `DonkeyConfig` field | Default | Meaning |
+|---|---|---|---|
+| `DONKEY_TIMEOUT_S` | `timeout_s` | `60.0` | HTTP timeout for governed calls, in seconds. |
+| `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. Policy refusals are never retried, and a gateway fallback is never retried twice. |
+| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing). |
+| `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md)) are cached in memory, in seconds. |
+| `DONKEY_NO_CACHE` | — | unset | Set to `1`, `true` or `yes` to bypass that in-memory registry cache. |
 
 ## Anypoint control plane
 

@@ -54,7 +54,11 @@ DonkeyError                     # base of the whole tree
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
-└─ UpstreamModelError           # upstream 5xx — provider error, retryable
+├─ UpstreamModelError           # upstream 5xx — provider error, retryable
+├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
+├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
+└─ ToolInvocationError, RegistryError, PublicationDrift
+                                # tool access, registry and publishing (Roadmap surfaces)
 ```
 
 `GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one

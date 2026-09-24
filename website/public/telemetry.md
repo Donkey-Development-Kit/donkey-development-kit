@@ -327,6 +327,12 @@ They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
 spikes: it tells an operator whether a slow call was routed normally or
 recovered from a degraded provider.
 
+The same record also carries the call's identity and usage: `request_id` (the
+upstream provider's id), `api_instance_id` and `environment_id` (which gateway
+instance served it), and the token counts including cached and reasoning
+tokens. The [gateway identity example](https://donkey-development-kit.github.io/donkey-development-kit/examples/gateway-identity.md) walks
+through every field.
+
 ### When `last_call` is unavailable
 
 `donkey.last_call` is populated only when the governed response passes through
