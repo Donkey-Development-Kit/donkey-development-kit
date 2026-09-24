@@ -8,11 +8,12 @@ branch on the governance outcome instead of parsing bodies.
 
 `classify()` types eight rejection shapes. **Six are live-verified** against the
 sandbox proxies (auth, PII, token rate limit, upstream, **regex prompt guard**,
-and **Azure content safety** — the last two confirmed 2026-09-22, [#253]).
+and **content safety** — the last two confirmed 2026-09-22, [#253], with content
+safety's **Bedrock Guardrails** vendor added 2026-09-24, [#568]).
 Still pending live capture: **injection protection** (typed by its header
 discriminator, body uncaptured — a distinct policy from regex prompt guard, with
-no proxy deployed), Amazon **Bedrock guardrails**, and the **undiscriminated
-content-moderation** fall-through — all tracked in [#253]. The critical lesson:
+no proxy deployed) and the **undiscriminated content-moderation** fall-through —
+both tracked in [#253]. The critical lesson:
 **neither the status code nor the shape of the `error` value alone is a
 sufficient discriminator** — a `403` can be PII, a regex-guard block, a
 content-safety block (all policy blocks) *or* auth, and the same nested-object
@@ -25,7 +26,7 @@ authoritative discriminator is the error **`type`** plus specific headers.
 | PII detected | `403` | nested `{"error":{type:"pii_detected"}}`, **no** `www-authenticate` | `PIIDetected` (parses `entities`) | live |
 | Injection protection | `400` | header `x-injection-protection: blocked` (**not** the status) | `PromptInjectionBlocked` | pending (#253) |
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | live (#253) |
-| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) | live — Azure; Bedrock pending (#253) |
+| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) | live — Azure (#253) + Bedrock (#568) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) | live |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` | pending (#253) |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`, #548) | `UpstreamRequestError` | live |
@@ -41,6 +42,7 @@ Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the eight
 policy-rejection rows.
 
 [#253]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/253
+[#568]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/568
 
 ## The exception tree
 
@@ -54,7 +56,7 @@ DonkeyError                     # base of the whole tree
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns (pending #253)
-│  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories (pending #253)
+│  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 └─ UpstreamModelError           # upstream 5xx — provider error, retryable
@@ -80,7 +82,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
-| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) — *body shape pending [#253]* | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
+| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) — *live-verified [#253]/[#568]* | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** documented rejection shape | **No** — terminal; the shape is simply not yet typed. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed ([#184]/[#253]). |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope, [#548]) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
