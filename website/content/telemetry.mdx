@@ -2,7 +2,7 @@
 description: OpenTelemetry GenAI spans, per-run correlation IDs, and cost-attribution tags — in the dashboard you already run.
 ---
 
-import { Callout } from 'nextra/components'
+import { Callout, Tabs } from 'nextra/components'
 import { Badge } from '../components'
 
 # Telemetry & cost
@@ -49,9 +49,10 @@ and `otel.status_code=ERROR`. A streaming response produces **exactly one** span
 with token counts filled in at stream end.
 
 Export goes over OTLP to wherever you already send spans. **Nothing in the
-emit path is Anypoint-specific**, so if your team already runs Langfuse, Datadog,
-or Phoenix, "policy refusals per hour by type" and "tokens per ticket" show up in
-the dashboard you already have.
+emit path is Anypoint-specific**, so if your team already runs Grafana, Elastic,
+Honeycomb, New Relic, Datadog, Dynatrace, Langfuse or Phoenix, "policy refusals
+per hour by type" and "tokens per ticket" show up in the dashboard you already
+have. See [Send spans to your observability backend](#send-spans-to-your-observability-backend).
 
 ### Zero-config export
 
@@ -84,6 +85,213 @@ Opt out of telemetry entirely with a single flag:
 ```bash
 export DONKEY_TELEMETRY=false      # or telemetry = false in .donkey-kit.toml
 ```
+
+### Send spans to your observability backend
+
+Any backend that accepts OTLP works with the same three standard variables:
+`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` for the vendor's
+credentials, and `OTEL_SERVICE_NAME`. There is no DDK-specific setting and no
+code change between backends. Pick yours:
+
+<Tabs items={['Grafana Cloud', 'Elastic (Kibana)', 'Honeycomb', 'New Relic', 'Datadog', 'Dynatrace', 'Langfuse', 'Arize Phoenix', 'Jaeger (local)']}>
+<Tabs.Tab>
+
+Grafana Cloud stores traces in **Tempo**. In the Grafana Cloud portal, open your
+stack and choose **Configure** on the **OpenTelemetry** tile. It generates the
+endpoint for your region and a token, already base64-encoded as
+`instanceID:token`.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://otlp-gateway-prod-<region>.grafana.net/otlp"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic%20<base64 instanceID:token>"
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+Grafana's own note for Python: write the space after `Basic` as `%20`. Find the
+spans in **Explore → Tempo** or in **Application Observability**. For
+production, Grafana recommends sending through **Grafana Alloy** (its
+OpenTelemetry Collector) rather than straight from the app.
+
+Docs: [Send data to the Grafana Cloud OTLP endpoint](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/)
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+On Elastic Cloud Hosted or Serverless, copy the **Managed OTLP endpoint** from
+Kibana (**Add data → Applications → OpenTelemetry**), which also generates an
+API key. Prefix the key with `ApiKey` yourself; Kibana gives you the bare key.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://<motlp-endpoint>"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey%20<api-key>"
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+Spans appear in Kibana under **Observability → Applications**, grouped by
+service. Self-managed Elasticsearch exposes the same protocol at
+`<es-endpoint>/_otlp`; its API key needs `create_doc` and `auto_configure`
+privileges.
+
+Docs: [Send OTLP data to Elastic](https://www.elastic.co/docs/solutions/observability/get-started/quickstart-elastic-cloud-otel-endpoint) ·
+[Elasticsearch OTLP/HTTP endpoint](https://www.elastic.co/docs/manage-data/ingest/otlp-endpoint)
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Create an ingest API key in your Honeycomb environment settings.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://api.honeycomb.io"   # EU: https://api.eu1.honeycomb.io
+export OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=<api-key>"
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+Honeycomb creates a dataset named after `OTEL_SERVICE_NAME`. Query
+`donkey.policy.decision`, `donkey.cost.team` or `gen_ai.usage.output_tokens` like
+any other field; for example, a `COUNT` where `donkey.policy.decision = refuse`,
+grouped by `donkey.policy.type`, gives you refusals by type.
+
+Docs: [Using the Honeycomb OpenTelemetry endpoint](https://docs.honeycomb.io/send-data/opentelemetry/)
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Authenticate with your account's **license key** in an `api-key` header.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://otlp.nr-data.net"   # EU: https://otlp.eu01.nr-data.net
+export OTEL_EXPORTER_OTLP_HEADERS="api-key=<license-key>"
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+New Relic recommends `http/protobuf`, which is DDK's default. The service shows
+up under **APM & Services**, and span attributes are queryable with NRQL, for
+example `SELECT count(*) FROM Span WHERE donkey.policy.decision = 'refuse' FACET donkey.policy.type`.
+
+Docs: [New Relic OTLP endpoint](https://docs.newrelic.com/docs/opentelemetry/best-practices/opentelemetry-otlp/)
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+The simplest route is the **Datadog Agent**, which accepts OTLP once its receiver
+is enabled. Start the Agent with
+`DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT=0.0.0.0:4318` and expose port
+`4318`, then point DDK at it. No credentials are needed in the app; the Agent
+holds the API key.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"   # the Agent's host
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+Spans appear in **APM → Traces**. Datadog also offers an agentless OTLP traces
+intake that takes a `dd-api-key` header; its URL depends on your Datadog site.
+
+Docs: [OTLP ingestion by the Datadog Agent](https://docs.datadoghq.com/opentelemetry/setup/otlp_ingest_in_the_agent/) ·
+[OTLP traces intake endpoint](https://docs.datadoghq.com/opentelemetry/setup/otlp_ingest/traces/)
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Create an access token with the `openTelemetryTrace.ingest` scope.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://<environment-id>.live.dynatrace.com/api/v2/otlp"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Api-Token%20<token>"
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+Use `live.dynatrace.com`, not `live.apps.dynatrace.com`. Through an ActiveGate the
+base URL is `https://<activegate>:9999/e/<environment-id>/api/v2/otlp`. Spans
+appear in **Distributed Tracing**.
+
+Docs: [Dynatrace OTLP API endpoints](https://docs.dynatrace.com/docs/ingest-from/opentelemetry/otlp-api)
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Langfuse is built for LLM traces, so the `gen_ai.*` model and token attributes
+on DDK spans are what it reads. Authenticate with your project's public and
+secret key, base64-encoded:
+
+```bash
+AUTH_STRING=$(echo -n "pk-lf-...:sk-lf-..." | base64)
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://cloud.langfuse.com/api/public/otel"   # US: https://us.cloud.langfuse.com/api/public/otel
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic%20${AUTH_STRING},x-langfuse-ingestion-version=4"
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+The `x-langfuse-ingestion-version=4` header makes spans appear in real time
+instead of after a delay of up to ten minutes. Self-hosted Langfuse (v3.22 or
+later) takes the same path on your own host.
+
+Docs: [Langfuse OpenTelemetry](https://langfuse.com/docs/opentelemetry/get-started)
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Phoenix is open source and runs locally with no account, which makes it a
+quick way to look at LLM spans during development:
+
+```bash
+docker run -p 6006:6006 -p 4317:4317 arizephoenix/phoenix:latest
+```
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:6006"
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+Open `http://localhost:6006` to browse the spans. A Phoenix deployment with
+authentication enabled also needs its API key as a bearer token:
+`OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20<api-key>"`.
+
+Docs: [Phoenix configuration](https://arize.com/docs/phoenix/self-hosting/configuration) ·
+[Get started with tracing](https://arize.com/docs/phoenix/get-started/get-started-tracing)
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Jaeger's all-in-one container is the fastest way to see spans on your laptop,
+with no account and no credentials:
+
+```bash
+docker run --rm --name jaeger -p 16686:16686 -p 4318:4318 \
+  cr.jaegertracing.io/jaegertracing/jaeger:latest
+```
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+export OTEL_SERVICE_NAME="support-triage"
+```
+
+Open `http://localhost:16686`, pick the `support-triage` service and search.
+Storage is in memory, so traces are gone when the container stops.
+
+Docs: [Jaeger getting started](https://www.jaegertracing.io/docs/latest/getting-started/)
+
+</Tabs.Tab>
+</Tabs>
+
+A few rules hold for every backend:
+
+- **Base endpoint vs traces endpoint.** `OTEL_EXPORTER_OTLP_ENDPOINT` is a base
+  URL: the exporter appends `/v1/traces`. If you set
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` instead, give the full URL including
+  `/v1/traces`, or the backend answers `404`.
+- **Encode spaces in headers.** Header values such as `Basic <token>` or
+  `ApiKey <key>` should be written with `%20` in place of the space; separate
+  several headers with commas.
+- **Protocol.** DDK exports `http/protobuf`, which every backend above accepts.
+  For gRPC, set `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` and install
+  `opentelemetry-exporter-otlp-proto-grpc`.
+- **In production, consider a Collector.** Sending to an
+  [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) (or a
+  vendor distribution such as Grafana Alloy) lets you batch, retry, redact and
+  fan out to several backends without touching the app.
+- **Prompts stay private by default.** None of these backends receives prompt or
+  completion text unless you opt in; see
+  [Message content stays off spans by default](#message-content-stays-off-spans-by-default).
 
 ### Semantic-convention stability and sinks
 
