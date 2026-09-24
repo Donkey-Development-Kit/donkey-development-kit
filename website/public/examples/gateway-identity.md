@@ -202,10 +202,10 @@ except Exception as err:
 - **`ModelSubstituted` is not a `PolicyViolation`.** The request succeeded,
   against a model you did not choose. `last_call` is still populated before the
   raise.
-- **`provider/model` names read as substituted.** On a model-based routing
-  proxy the gateway reports the served model without the `provider/` prefix,
-  so `substituted` is currently `True` on every such call. Use `fallback` to
-  detect a real failover there (see [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing)).
+- **A `provider/` prefix is not a substitution.** On a model-based routing
+  proxy the gateway reports the served model without the `provider/` prefix;
+  `substituted` ignores a prefix that names the served provider (see
+  [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing)).
 
   The simulator's captured success response was recorded against `gpt-5.1`, so
   asking for any other model id shows up as a substitution in narrative demo
