@@ -4,7 +4,7 @@
 
 ## Get started
 
-- [Introduction](https://donkey-development-kit.github.io/donkey-development-kit/index.md): Governed by the gateway, understood by your code. DDK brings MuleSoft Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
+- [Introduction](https://donkey-development-kit.github.io/donkey-development-kit/index.md): Governed by the gateway, understood by your code. DDK brings Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
 - [Quickstart](https://donkey-development-kit.github.io/donkey-development-kit/quickstart.md): From pip install to a governed model call, a typed refusal, a budget and an OpenTelemetry span — locally, with no gateway and no credentials.
 - [Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md): Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by pillar.
 

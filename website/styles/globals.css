@@ -800,3 +800,23 @@ a.af-card:hover .af-card-title::after {
   font-weight: 600;
   color: var(--af-accent);
 }
+
+/* ------------------------------------------------------------ navbar */
+
+.af-nav-link {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--af-fg-muted);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.af-nav-link:hover {
+  color: var(--af-accent);
+}
+
+footer a[href^='https://www.mulesoft.com'] {
+  color: var(--af-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

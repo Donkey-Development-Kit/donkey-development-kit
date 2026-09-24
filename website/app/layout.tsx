@@ -8,7 +8,7 @@ import '../styles/globals.css'
 
 const SITE_NAME = 'Donkey Development Kit'
 const SITE_DESCRIPTION =
-  'Governed by the gateway, understood by your code. An open-source SDK that brings MuleSoft Agent Fabric and Omni Gateway awareness into your agent framework.'
+  'Governed by the gateway, understood by your code. An open-source SDK that brings Agent Fabric and Omni Gateway awareness into your agent framework.'
 
 // next/image's unoptimized loader does not prefix basePath for /public assets,
 // so reference the served copy under website/public/img/ with the base path
@@ -61,7 +61,16 @@ const navbar = (
       </span>
     }
     projectLink="https://github.com/Donkey-Development-Kit/donkey-development-kit"
-  />
+  >
+    <a
+      href="https://www.mulesoft.com/"
+      target="_blank"
+      rel="noreferrer"
+      className="af-nav-link"
+    >
+      MuleSoft
+    </a>
+  </Navbar>
 )
 
 const footer = (
@@ -71,7 +80,11 @@ const footer = (
       (Apache-2.0). It is not an official Salesforce or MuleSoft product and is
       not supported by Salesforce. “Agent Fabric”, “Anypoint”, “MuleSoft” and
       “Omni Gateway” are trademarks of Salesforce, Inc., used here only to
-      describe the platform DDK connects to.
+      describe the platform DDK connects to. Learn more about the platform at{' '}
+      <a href="https://www.mulesoft.com/" target="_blank" rel="noreferrer">
+        mulesoft.com
+      </a>
+      .
     </span>
   </Footer>
 )
@@ -89,7 +102,7 @@ export default async function RootLayout({
       suppressHydrationWarning
       className={`${inter.variable} ${inter.className}`}
     >
-      {/* Violet accent, close to the reference docs look (was theme.config `color`). */}
+      {/* #00B4FF accent, matching --af-accent in styles/globals.css. */}
       <Head color={{ hue: 198, saturation: 100, lightness: { light: 50, dark: 50 } }} />
       <body>
         <Layout
