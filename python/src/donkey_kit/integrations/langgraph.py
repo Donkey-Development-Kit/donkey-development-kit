@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING, Any, cast
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
-    import httpx
     from langchain_openai import ChatOpenAI
 
 
@@ -130,5 +129,8 @@ def typed_refusals() -> Iterator[None]:
         # maps it (and reads back the sent correlation/call ids) into the typed
         # taxonomy. ``from exc`` keeps the framework wrapper as the cause.
         # openai>=3 vendors its own httpx, so ``exc.response`` is statically a
-        # distinct-but-duck-identical Response type; cast to the one classify wants.
-        raise classify(cast("httpx.Response", exc.response)) from exc
+        # distinct-but-duck-identical Response type; cast erases it to the one
+        # classify wants. `cast(Any, …)` (not `cast("httpx.Response", …)`) so this
+        # typechecks clean under BOTH majors: under openai<3 ``exc.response`` is
+        # already ``httpx.Response`` and a cast to it is `redundant-cast` (#597).
+        raise classify(cast(Any, exc.response)) from exc
