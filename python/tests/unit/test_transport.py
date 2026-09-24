@@ -965,6 +965,58 @@ async def test_llm_post_emits_one_span_with_both_namespaces(monkeypatch) -> None
     assert attrs["donkey.correlation_id"] == "run-7f3a"  # equals the header actually sent
 
 
+async def test_semantic_routing_span_carries_matched_topic_and_score(monkeypatch) -> None:
+    # #590: a semantic-routing response surfaces the matched topic + similarity
+    # score on the same span as the shared routing facts (LIVE-VERIFIED format).
+    exporter = _use_tracer(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={
+                _PROVIDER_HEADER: "openai",
+                "x-llm-proxy-routing-type": "Semantic",
+                "x-llm-proxy-semantic-routing-success": (
+                    "Request successfully matched 'Finance' topic "
+                    "(Provider: openai, Model: gpt-5-mini). Score: 0.62."
+                ),
+            },
+            json=_SUCCESS_BODY,
+        )
+
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["donkey.routing.type"] == "Semantic"
+    assert attrs["donkey.routing.matched_topic"] == "Finance"
+    assert attrs["donkey.routing.score"] == 0.62
+
+
+async def test_model_based_span_omits_the_semantic_match(monkeypatch) -> None:
+    # A model-based response carries no semantic header, so neither semantic
+    # attribute appears on the span (the None-omit rule, not a 0.0 placeholder).
+    exporter = _use_tracer(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={_PROVIDER_HEADER: "openai", "x-llm-proxy-routing-type": "ModelBased"},
+            json=_SUCCESS_BODY,
+        )
+
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert "donkey.routing.matched_topic" not in attrs
+    assert "donkey.routing.score" not in attrs
+
+
 async def test_every_span_in_a_run_shares_the_run_id(monkeypatch) -> None:
     """Per-run id on EVERY span in the block (#195 AC): two model calls inside one
     ``donkey.run()`` open two spans, and both carry the same

@@ -105,11 +105,36 @@ ROUTING_FALLBACK_HEADER = "x-llm-proxy-routing-fallback"
 LLM_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
 LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 
+# VERIFIED (LIVE, docs/verified-apis.md §3 semantic-routing row, 2026-09-24,
+# ``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
+# SEMANTIC-routing proxy (``routing_type == "Semantic"``) additionally states
+# WHICH topic the prompt matched and how confident the match was, in a single
+# prose header. The four routing headers above are emitted identically to
+# model-based routing; this one is semantic-only (absent on a model-based proxy).
+# The verified message format is:
+#   Request successfully matched '<topic>' topic (Provider: <p>, Model: <m>). Score: <0.xx>.
+# The topic and score are the entire point of semantic routing — they explain
+# the routing decision that ``routing_type == "Semantic"`` alone leaves opaque
+# (#590). Parsed for :attr:`LastCall.matched_topic` / :attr:`LastCall.routing_score`;
+# the prose is tolerated with two independent patterns so a drift in the
+# provider/model portion never loses the topic or the score (verification discipline).
+SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
+
 # ``api-instance-21133858.3e6ce455-e3e8-4402-b830-9fcf07d9207b.svc`` → instance
 # ``21133858`` + environment ``3e6ce455-…`` (a UUID; it carries dashes but no
 # dots, so a plain three-way split on ``.`` is unambiguous). An unrecognised
 # shape matches nothing and yields ``(None, None)`` — never a guess (verification discipline).
 _DECORATOR_RE = re.compile(r"^api-instance-(?P<instance>[^.]+)\.(?P<env>[^.]+)\.svc$")
+
+# Two INDEPENDENT patterns over the verified ``x-llm-proxy-semantic-routing-success``
+# prose (``Request successfully matched '<topic>' topic (Provider: <p>, Model:
+# <m>). Score: <0.xx>.``). Parsing topic and score separately — rather than one
+# rigid full-message regex — means a drift in the provider/model portion the SDK
+# does not consume never costs us the topic or the score. Each fails open to
+# ``None`` (verification discipline); the topic is the single-quoted value before
+# ``topic``, the score the trailing float after ``Score:``.
+_SEMANTIC_TOPIC_RE = re.compile(r"matched\s+'(?P<topic>[^']*)'\s+topic")
+_SEMANTIC_SCORE_RE = re.compile(r"Score:\s*(?P<score>[0-9]*\.?[0-9]+)")
 
 
 def _utcnow() -> datetime:
@@ -160,6 +185,27 @@ def _parse_fallback(raw: str | None) -> bool | None:
     return None
 
 
+def _parse_semantic_routing(raw: str | None) -> tuple[str | None, float | None]:
+    """``(matched_topic, routing_score)`` from ``x-llm-proxy-semantic-routing-success``,
+    or ``(None, None)`` when the header is absent (a model-based / non-proxy /
+    simulated response) or unparseable. Topic and score are matched independently
+    so a partial format drift still recovers whichever it can; a score that is
+    present but not a valid float yields ``None`` for the score alone. Never raises
+    (verification discipline)."""
+    if raw is None:
+        return None, None
+    topic_match = _SEMANTIC_TOPIC_RE.search(raw)
+    topic = topic_match["topic"] if topic_match is not None else None
+    score_match = _SEMANTIC_SCORE_RE.search(raw)
+    score: float | None = None
+    if score_match is not None:
+        try:
+            score = float(score_match["score"])
+        except ValueError:  # matched digits that float() still rejects — stay None
+            score = None
+    return topic, score
+
+
 def request_id(response: httpx.Response) -> str | None:
     """The upstream provider's request id for a response, resolved from the first
     present of :data:`REQUEST_ID_HEADERS` (``x-request-id``, then
@@ -186,6 +232,16 @@ def routing_fallback(response: httpx.Response) -> bool | None:
     :attr:`LastCall.fallback` and the span, where ``False`` is a meaningful
     observation distinct from ``None``."""
     return _parse_fallback(response.headers.get(ROUTING_FALLBACK_HEADER))
+
+
+def semantic_routing(response: httpx.Response) -> tuple[str | None, float | None]:
+    """The ``(matched_topic, routing_score)`` a semantic-routing proxy stated for
+    this response (``x-llm-proxy-semantic-routing-success``), or ``(None, None)``
+    on a model-based / non-proxy / simulated response. These are the values that
+    land on :attr:`LastCall.matched_topic` / :attr:`LastCall.routing_score` and the
+    span. Shared by :meth:`LastCall.from_response` and ``core/transport.py`` so the
+    record and the span read the header identically (one definition, #590)."""
+    return _parse_semantic_routing(response.headers.get(SEMANTIC_ROUTING_SUCCESS_HEADER))
 
 
 def is_fallback(response: httpx.Response) -> bool:
@@ -352,6 +408,14 @@ class LastCall:
     #: is absent (non-proxy / simulated response) — distinct from a definitive
     #: ``False`` ("no fallback occurred").
     fallback: bool | None = None
+    #: On a SEMANTIC-routing proxy, the topic the prompt matched (from
+    #: ``x-llm-proxy-semantic-routing-success``, #590). ``None`` on a model-based
+    #: proxy (the header is semantic-only) or when the message did not parse.
+    matched_topic: str | None = None
+    #: On a SEMANTIC-routing proxy, the similarity score of the matched topic
+    #: (a bare ``0.xx`` float). ``None`` on a model-based proxy or when the score
+    #: did not parse — never guessed.
+    routing_score: float | None = None
     # --- per-call usage token counts (#307), from the response BODY's ``usage``.
     # ``None`` (never ``0``) when unobserved or absent; on a stream they land once
     # the terminal SSE event is scanned (:func:`observe_usage`), not at record time.
@@ -413,6 +477,9 @@ class LastCall:
             response.headers.get(DECORATOR_OPERATION_HEADER)
         )
         usage = usage_from_response(response)
+        matched_topic, routing_score = _parse_semantic_routing(
+            response.headers.get(SEMANTIC_ROUTING_SUCCESS_HEADER)
+        )
         return cls(
             status=LastCallStatus.OBSERVED,
             request_id=request_id(response),
@@ -424,6 +491,8 @@ class LastCall:
             served_model=response.headers.get(LLM_MODEL_HEADER),
             routing_type=response.headers.get(ROUTING_TYPE_HEADER),
             fallback=_parse_fallback(response.headers.get(ROUTING_FALLBACK_HEADER)),
+            matched_topic=matched_topic,
+            routing_score=routing_score,
             input_tokens=usage["input_tokens"],
             output_tokens=usage["output_tokens"],
             total_tokens=usage["total_tokens"],
