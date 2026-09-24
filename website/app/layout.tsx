@@ -67,8 +67,16 @@ const navbar = (
       target="_blank"
       rel="noreferrer"
       className="af-nav-link"
+      aria-label="MuleSoft"
+      title="MuleSoft"
     >
-      MuleSoft
+      <img
+        src={`${BASE_PATH}/img/mulesoft-logo.png`}
+        alt="MuleSoft"
+        width={24}
+        height={24}
+        className="af-nav-logo"
+      />
     </a>
   </Navbar>
 )

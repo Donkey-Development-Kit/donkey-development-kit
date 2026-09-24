@@ -804,15 +804,23 @@ a.af-card:hover .af-card-title::after {
 /* ------------------------------------------------------------ navbar */
 
 .af-nav-link {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--af-fg-muted);
-  text-decoration: none;
-  transition: color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
 }
 
 .af-nav-link:hover {
-  color: var(--af-accent);
+  opacity: 1;
+}
+
+.af-nav-logo {
+  width: 24px;
+  height: 24px;
+}
+
+.dark .af-nav-logo {
+  filter: invert(1);
 }
 
 footer a[href^='https://www.mulesoft.com'] {
