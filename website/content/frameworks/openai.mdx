@@ -1,17 +1,24 @@
+---
+description: Use a governed OpenAIChatCompletionsModel in the OpenAI Agents SDK, backed by a pre-built AsyncOpenAI client pointed at your Omni Gateway LLM proxy.
+---
+
 import { Tabs } from 'nextra/components'
 import OpenAiProxyTs from '../../components/openai-proxy-ts.mdx'
 import AdapterErrorTaxonomyNote from '../../components/adapter-error-taxonomy-note.mdx'
 
-# OpenAI Agents SDK — governed model access
+# OpenAI Agents SDK
 
 The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
-`OpenAIChatCompletionsModel` backed by a pre-built `AsyncOpenAI` client — the
-SDK constructs the OpenAI client itself, wired with its shared http client and
-verified headers, and hands it to the Agents SDK ready-made.
+`OpenAIChatCompletionsModel` backed by a pre-built `AsyncOpenAI` client. The
+adapter builds that client itself, with the SDK's shared HTTP client and proxy
+headers, and hands it to the Agents SDK ready-made.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** Full header AND transport injection —
-> the adapter builds the `AsyncOpenAI` client itself, so both travel together
-> as one object.
+**What you get**
+
+- A native `agents.OpenAIChatCompletionsModel`.
+- Full header **and** transport injection — both travel together in one
+  `AsyncOpenAI` object.
+- Supported at `connection_kwargs()`.
 
 ## Install
 
@@ -30,17 +37,15 @@ from donkey_kit.integrations.openai_agents import model
 llm = model("gpt-4o")
 ```
 
-`llm` is a real, native **`agents.OpenAIChatCompletionsModel`** instance —
-pass it to your `Agent(model=...)` as you would any other Agents SDK model.
+`llm` is a real `agents.OpenAIChatCompletionsModel` instance — pass it to
+`Agent(model=...)` as you would any other Agents SDK model.
 
 </Tabs.Tab>
 <Tabs.Tab>
 
-There's no first-party Agent Fabric TypeScript SDK yet (it's on the
-[roadmap](/concepts/verification)). The proxy is OpenAI-compatible, so point the
-official `openai` npm client at it — the same base URL and
-`client_id`/`client_secret` headers also drop into the **OpenAI Agents SDK for
-JS** (`@openai/agents`).
+Call the proxy's OpenAI-compatible API with the official `openai` npm client.
+The same base URL and `client_id`/`client_secret` headers also work with the
+**OpenAI Agents SDK for JS** (`@openai/agents`).
 
 <OpenAiProxyTs />
 
@@ -79,7 +84,7 @@ async with Donkey.from_env() as donkey:
     )
 ```
 
-## The manual equivalent (eject at any time)
+## Manual equivalent
 
 ```python
 from openai import AsyncOpenAI
@@ -101,20 +106,16 @@ llm = OpenAIChatCompletionsModel(
 `connection_kwargs()` returns exactly one key, `openai_client`, holding this
 pre-built `AsyncOpenAI` instance.
 
-## Notes & limitations
+## Notes
 
-> **Preferred pattern: hand the framework a pre-built OpenAI client.**
-> Wherever a framework accepts a ready-made `AsyncOpenAI` instance instead of
-> a set of loose kwargs, that's the adapter's preferred integration point —
-> it guarantees the shared transport and every governed header travel
-> together as one object, with no risk of a kwarg being dropped along the
-> way. This is why header injection here is full even though the model
-> object itself never sees `base_url` or `default_headers` directly.
-
-> The `openai-agents` package is distinct from the plain `openai` client —
-> `agents.OpenAIChatCompletionsModel` lives in the Agents SDK, not in the base
-> OpenAI Python SDK. Installing `donkey-kit[openai-agents]` pulls in
-> `openai-agents` for you. For the raw governed client with no framework, use
-> `donkey.openai()` (from `donkey-kit[llm]`) instead.
+- **A pre-built client is the preferred integration point.** When a framework
+  accepts a ready-made `AsyncOpenAI` instead of loose kwargs, the shared
+  transport and every proxy header travel together as one object, with no
+  risk of a kwarg being dropped. That's why injection is full here even though
+  the model object never sees `base_url` or `default_headers` directly.
+- `openai-agents` is distinct from the plain `openai` package:
+  `agents.OpenAIChatCompletionsModel` lives in the Agents SDK. Installing
+  `donkey-kit[openai-agents]` pulls it in for you. For the raw governed client
+  with no framework, use `donkey.openai()` (from `donkey-kit[llm]`) instead.
 
 <AdapterErrorTaxonomyNote />

@@ -45,6 +45,7 @@ jobs:
         run: npm run build
         env:
           DOCS_BASE_PATH: /donkey-development-kit
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Disable Jekyll so Pages serves Next's _next/ directory
         run: touch out/.nojekyll
       - uses: actions/configure-pages@v6

@@ -1,109 +1,113 @@
+---
+description: From pip install to a governed model call, a typed refusal, a budget and an OpenTelemetry span — locally, with no gateway and no credentials.
+---
+
 import { Callout, Steps } from 'nextra/components'
+import { Badge, Output } from '../components'
 
 # Quickstart
 
-Make your first **governed** model call and see the three things a bare
-`base_url` + headers can't give you — a **typed refusal**, a **budget** object,
-and a **span** — in under 15 minutes, with **no Anypoint credentials** and **no
-real gateway**.
+Make your first governed model call, then see what a plain `base_url` can't
+give you — a **typed refusal**, a **budget** and a **span** — in a few
+minutes, on your laptop. You start against DDK's **local gateway simulator**,
+so you need no Anypoint account and no credentials. Switching to your real
+Omni Gateway later is an environment change, not a code change.
 
-You'll run the SDK against the bundled **local gateway simulator**: a
-pure-Python stand-in that replays the *same* captured rejection fixtures the
-SDK's typed errors are tested against, so refusals light up locally exactly as
-they would against a live proxy.
+## What you can use
 
-<Callout type="info">
-  The simulator is a **fixture replay, never a real gateway** (BG §1.4). It
-  enforces no policy and forwards no traffic, and every response it serves
-  carries `x-donkey-simulator: true` so it can't be mistaken for one. It also
-  **ignores auth** — that's why the credentials below are throwaway
-  placeholders. See [Verification policy](/concepts/verification).
-</Callout>
+| Capability | Status | Learn more |
+|---|---|---|
+| Governed model access for 8 frameworks | <Badge tone="live">Live</Badge> | [Frameworks](/frameworks) |
+| Typed refusals | <Badge tone="live">Live</Badge> | [Typed refusals](/errors) |
+| Budget & pacing | <Badge tone="live">Live</Badge> | [Budget & pacing](/budget) |
+| OpenTelemetry spans & cost attribution | <Badge tone="live">Live</Badge> | [Telemetry & cost](/telemetry) |
+| Local simulator & `simulate()` | <Badge tone="live">Live</Badge> | [Local simulator](/simulator) |
+| Conformance testing with pytest | <Badge tone="live">Live</Badge> | [Testing & conformance](/testing) |
+| CLI (`init`, `doctor`, `mock`, `test`) & decorators | <Badge tone="live">Live</Badge> | [CLI & decorators](/cli) |
+| Governed tool access (MCP) | <Badge tone="roadmap">Roadmap</Badge> | [Tool access](/tool-access) |
+| A2A agents (`serve`, `expose`, `dev`) | <Badge tone="roadmap">Roadmap</Badge> | [A2A agents](/a2a) |
+| On-behalf-of identity | <Badge tone="roadmap">Roadmap</Badge> | [Identity](/identity) |
+| Human-in-the-loop | <Badge tone="roadmap">Roadmap</Badge> | [Human-in-the-loop](/hitl) |
+| Scan & publish to the registry | <Badge tone="roadmap">Roadmap</Badge> | [Scan & publish](/publishing) |
+| Policy handshake | <Badge tone="roadmap">Roadmap</Badge> | [Policy handshake](/policies) |
+
+## Your first governed call
 
 <Steps>
 
 ### Install
 
-Install the base SDK, the raw LLM client, the simulator, and OpenTelemetry (so
-you can see a span):
-
 ```bash
 pip install "donkey-kit[llm,local,otel]"
 ```
 
-- `llm` — the OpenAI client `donkey.llm.client()` hands back.
-- `local` — the local gateway simulator (`starlette` + `uvicorn`).
-- `otel` — the OpenTelemetry SDK, so the `donkey.llm.chat` span is emitted.
+`llm` adds the OpenAI client, `local` the gateway simulator, `otel` the
+OpenTelemetry SDK. Quote the extras — zsh treats unquoted brackets as a glob.
 
 ### Start the local gateway
 
-In one terminal, boot the simulator. It binds `127.0.0.1:8080` and stays in the
-foreground:
+In one terminal:
 
 ```bash
 donkey mock
 ```
 
-It serves the captured fixtures over a real TCP port — the exact surface a stock
-client points `DONKEY_LLM_PROXY_URL` at.
+The simulator listens on `127.0.0.1:8080` and replays real gateway responses,
+including every refusal shape. It enforces no policy and ignores
+credentials, and every response carries `x-donkey-simulator: true`.
 
-### Point the SDK at it
+### Point DDK at it
 
-In a second terminal, set the three governed-access values. `Donkey.from_env()`
-requires the `client_id` / `client_secret` header pair to *exist*, but the
-simulator never checks it — so these are placeholders, not real credentials:
+In a second terminal:
 
 ```bash
 export DONKEY_LLM_PROXY_URL="http://127.0.0.1:8080"
-export DONKEY_LLM_PROXY_CLIENT_ID="local"       # placeholder — simulator ignores auth
-export DONKEY_LLM_PROXY_CLIENT_SECRET="local"   # placeholder — simulator ignores auth
+export DONKEY_LLM_PROXY_CLIENT_ID="local"       # placeholder — the simulator ignores auth
+export DONKEY_LLM_PROXY_CLIENT_SECRET="local"
 ```
 
-<Callout type="info">
-  **No Anypoint credentials at any step.** This is the whole point of the
-  gateway-free path: you see the SDK's governance surfaces work before you ever
-  obtain a single credential.
-</Callout>
+### Make the call
 
-### See a span and a budget
-
-Wire a `ConsoleSpanExporter` so spans print to your terminal, then make one
-governed call. `donkey.llm.client(sync=True)` returns a real `openai.OpenAI`,
-but routed through the Donkey transport — which is what makes the call
-auto-emit a span and update the budget:
-
-```python
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
-
+```python filename="hello.py"
 from donkey_kit import Donkey
-
-# Send spans to the console. core.telemetry reads the global provider when it
-# opens each span, so set this before the first call.
-provider = TracerProvider()
-provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
-trace.set_tracer_provider(provider)
 
 with Donkey.from_env() as donkey:
     client = donkey.llm.client(sync=True)      # a real openai.OpenAI, governed
-    reply = client.responses.create(model="gpt-5.1", input="Say hi in three words.")
+    reply = client.responses.create(
+        model="gpt-5.1",
+        input="Tell me a one-sentence bedtime story about a unicorn.",
+    )
     print(reply.output_text)
     print("budget remaining:", donkey.budget.remaining, "tokens")
 ```
 
-You'll see a `donkey.llm.chat` span printed with `gen_ai.usage.*` token counts,
-`donkey.policy.decision` (`allow`), `donkey.budget.remaining`, and the
-correlation id. And `donkey.budget` is a real
-[`Budget`](/feature-overview) object updated from the response's rate-limit
-header — not a header you parse yourself.
+<Output wrap>
+```text
+A sleepy unicorn named Luma painted soft silver stars across the night sky with her glowing horn, then curled up on a moonbeam so all the children below could fall asleep beneath her gentle, sparkling light.
+budget remaining: 99500 tokens
+```
+</Output>
 
-### Catch a typed refusal
+`donkey.llm.client()` returns the OpenAI SDK's own client, routed through
+DDK — so credentials, correlation and attribution headers are injected, and
+`donkey.budget` is updated from the gateway's response. The simulator replays
+a response captured from a real gateway, so you get this story whatever you
+ask; against your Omni Gateway the model answers your actual prompt.
 
-The simulator serves any of its captured rejection shapes on demand: a request
-whose model id is `donkey-sim/<shape>` is served that exact rejection body.
-Ask for the PII shape, and bridge the raw response into the taxonomy with
-`donkey_kit.core.errors.classify()`:
+</Steps>
+
+<Callout type="info">
+  Prefer one command? Run `python -m examples.quickstart.main` from the
+  `python/` directory of the
+  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/python/examples/quickstart):
+  it boots the simulator for you and runs the steps above end to end.
+</Callout>
+
+## Catch a typed refusal <Badge tone="live">Live</Badge>
+
+Ask the simulator for a specific rejection by using the model id
+`donkey-sim/<shape>`, then bridge the raw response into DDK's taxonomy with
+`classify()`:
 
 ```python
 import openai
@@ -113,53 +117,139 @@ from donkey_kit.core.errors import classify
 try:
     client.responses.create(
         model="donkey-sim/pii-detected",
-        input="My SSN is 123-45-6789, please store it.",
+        input="Email the report to jane.doe@example.com.",
     )
 except openai.APIStatusError as exc:
-    governed = classify(exc.response)          # bridge into the taxonomy
+    governed = classify(exc.response)
     if isinstance(governed, PIIDetected):
         print("blocked, entities:", governed.entities)
 ```
 
-<Callout type="warning">
-  `donkey.llm.client()` gives you the framework's own client, so a refusal
-  arrives as `openai.APIStatusError`, **not** a `DonkeyError` — until you bridge
-  it with `classify()`. The framework adapters (`donkey.langgraph`, …) do this
-  for you; see the [Error taxonomy](/errors).
-</Callout>
+<Output>
+```text
+blocked, entities: ['Email']
+```
+</Output>
 
-</Steps>
+A PII block is not an auth error, and a policy `429` must never be retried —
+typed refusals let the agent react correctly. The framework adapters
+(`donkey.langgraph`, …) classify for you. See [Typed refusals](/errors).
 
-<Callout type="info">
-  **Prefer to run it all at once?** The whole flow above is a single runnable
-  script — `examples/quickstart/main.py` — that boots the simulator for you and
-  needs no environment setup. It's executed and timed on a clean machine in CI,
-  so this quickstart can never silently rot.
-</Callout>
+## Pace against the budget <Badge tone="live">Live</Badge>
 
-## When you're ready: point at your real gateway
+The gateway's token window is a first-class object. Keep a reserve in hand
+and wait for the window to reset instead of failing:
 
-The *same code* runs against your Omni Gateway proxy — you only change the
-environment. Stop the simulator and set the three real governed-access values.
-The proxy authenticates on a `client_id` / `client_secret` **header pair**
-(consumer auth) — **not** a bearer token, and separate from any Anypoint
-control-plane credential.
+```python
+from donkey_kit import BudgetReserveReached
 
-<Callout type="info">
-  **Don't have these values yet?** They come from the platform, not the SDK —
-  create the proxy, then request access to mint the consumer credentials. The
-  official docs own each step (linking rather than restating so this page can't
-  drift from them):
+async with Donkey.from_env() as donkey:
+    while True:
+        try:
+            async with donkey.budget.pace(reserve=0.05):
+                await enrich(batch)
+            break
+        except BudgetReserveReached:
+            await donkey.budget.wait_for_reset()
+```
 
-  - **[Create the model proxy](https://docs.mulesoft.com/general/model-proxy-create-model-proxy)**
-    on the Omni Gateway — its consumer endpoint is your `DONKEY_LLM_PROXY_URL`
-    (with **no `/v1`**). Choose **Format=OpenAI**: that's the verified
-    data-plane path the SDK targets ([why](/frameworks#which-wire-format-does-your-proxy-speak)).
-  - **[Request access](https://docs.mulesoft.com/exchange/to-request-access)** in
-    Exchange — the proxy is protected by a client-ID enforcement policy, so
-    requesting access registers a client application and mints the pair that
-    becomes `DONKEY_LLM_PROXY_CLIENT_ID` / `DONKEY_LLM_PROXY_CLIENT_SECRET`.
-</Callout>
+See [Budget & pacing](/budget).
+
+## See a span <Badge tone="live">Live</Badge>
+
+With `otel` installed, every governed call emits an OpenTelemetry GenAI span.
+Print them to the console:
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
+provider = TracerProvider()
+provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+trace.set_tracer_provider(provider)   # set before the first call
+```
+
+Put these lines at the top of `hello.py` and run it again. Alongside the
+story, the console prints the span:
+
+<Output>
+```text
+{
+    "name": "donkey.llm.chat",
+    "context": {
+        "trace_id": "0x604e2f805df7f12cfdc402f83a66c8f4",
+        "span_id": "0x212735c846ec8f18",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "gen_ai.request.model": "gpt-5.1",
+        "gen_ai.system": "openai",
+        "gen_ai.response.model": "gpt-5.1",
+        "donkey.routing.type": "ModelBased",
+        "donkey.routing.fallback": false,
+        "gen_ai.usage.input_tokens": 17,
+        "gen_ai.usage.output_tokens": 51,
+        "donkey.usage.cached_tokens": 0,
+        "donkey.usage.cache_write_tokens": 0,
+        "donkey.usage.reasoning_tokens": 0,
+        "donkey.policy.decision": "allow",
+        "donkey.budget.remaining": 99000,
+        "donkey.correlation_id": "e2fec0b686694055846da9446fa24c96"
+    },
+    ...
+}
+```
+</Output>
+
+Each `donkey.llm.chat` span carries `gen_ai.usage.*` token counts,
+`donkey.policy.decision`, `donkey.budget.remaining` and the correlation ID.
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` and DDK exports over OTLP with no code at
+all. See [Telemetry & cost](/telemetry).
+
+## Attribute cost to a run <Badge tone="live">Live</Badge>
+
+Group one logical task under a single correlation ID and cost tags, so the
+gateway record, your logs and your spans all join up:
+
+```python
+async with donkey.run(id=ticket.id, team="support", project="triage"):
+    await triage_agent.ainvoke(ticket)
+```
+
+Or fold it into one line with a decorator:
+
+```python
+@donkey.governed(team="support")
+async def handle_ticket(ticket): ...
+```
+
+See [CLI & decorators](/cli).
+
+## Test the refusal branch <Badge tone="live">Live</Badge>
+
+Inject a real gateway refusal in-process — no server, no network:
+
+```python
+from donkey_kit import PIIDetected
+
+with donkey.simulate(PIIDetected):
+    await agent.ainvoke(...)      # the next call fails as a real PIIDetected
+```
+
+Then grade your own agent against every refusal shape with the pytest
+conformance suite. See [Testing & conformance](/testing).
+
+## Connect to your Omni Gateway
+
+The same code runs against your real gateway — stop the simulator and set
+three values. The proxy authenticates on a `client_id` / `client_secret`
+header pair (consumer auth), not a bearer token.
 
 ```bash
 export DONKEY_LLM_PROXY_URL="https://<ingress-gw>/<instance>/"   # note: no /v1
@@ -167,28 +257,39 @@ export DONKEY_LLM_PROXY_CLIENT_ID="<consumer client id>"
 export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
 ```
 
-Nothing in the Python changes — same `Donkey.from_env()`, same client, same
-typed refusals, same span and budget. From here:
+Where the values come from:
 
-- **[Pick your framework](/frameworks)** — get your framework's own native model
-  object (LangGraph, ADK, Strands, LlamaIndex, CrewAI, the OpenAI Agents SDK,
-  the Anthropic SDK, Agent Framework) instead of the raw client, in three lines.
-  The proxy is OpenAI-compatible, so any OpenAI-compatible TypeScript SDK works
-  the same way.
+- **[Create the model proxy](https://docs.mulesoft.com/general/model-proxy-create-model-proxy)**
+  on Omni Gateway with **Format=OpenAI**. Its consumer endpoint is your
+  `DONKEY_LLM_PROXY_URL`.
+- **[Request access](https://docs.mulesoft.com/exchange/to-request-access)**
+  to the proxy in Exchange. That registers a client application and issues the
+  `client_id` / `client_secret` pair.
 
-## Where to go next
+Then check the setup:
 
-- **[LangGraph support-triage demo](/frameworks/langgraph)** — this quickstart
-  scaled to a real agent: `examples/langgraph/main.py` triages five support
-  tickets through a two-node LangGraph graph against the simulator, blocks the
-  PII-laden one as a typed `PIIDetected`, and exports every call's span to a
-  bundled local OTLP collector — end to end, still no gateway. Run it with
-  `python -m examples.langgraph.main`. It's the Phase-1 acceptance demo, timed in
-  CI.
-- **[Feature overview](/feature-overview)** — everything governed model access
-  gives you, including `donkey.budget` pacing and the telemetry span contract.
-- **[Error taxonomy](/errors)** — every rejection shape, its discriminator, and
-  the typed exception `classify()` returns for it.
-- **[Verification policy](/concepts/verification)** — what's confirmed against a
-  live proxy vs. what raises a clear error, and why the simulator only ever
-  replays captured shapes.
+```bash
+donkey doctor
+```
+
+<Output>
+```text
+[ok] config       env (3 fields)
+[ok] gateway      reachable, responded
+[ok] credentials  client_id accepted
+[ok] model        accepted by the proxy
+[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+```
+</Output>
+
+`donkey doctor` tells a wrong URL from wrong credentials from a model that is
+not on the proxy's allow-list, instead of one opaque failure.
+
+## Next steps
+
+- **[Pick your framework](/frameworks)** — get a native LangGraph, ADK,
+  Strands, LlamaIndex, CrewAI, OpenAI Agents SDK, Anthropic SDK or Agent
+  Framework object in three lines.
+- **[Examples](/examples)** — runnable demos for every capability on this page.
+- **[Scenarios](/scenarios)** — support triage, a nightly batch and an internal
+  copilot, built end to end.

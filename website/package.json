@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "generate:llms": "node scripts/generate-llms.mjs",
-    "prebuild": "npm run generate:llms",
+    "generate:roadmap": "node scripts/generate-roadmap.mjs",
+    "prebuild": "npm run generate:roadmap && npm run generate:llms",
     "build": "next build",
     "postbuild": "pagefind --site out --output-subdir _pagefind",
     "preview:pages": "node scripts/preview-pages.mjs",

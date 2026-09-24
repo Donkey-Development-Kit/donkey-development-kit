@@ -1,12 +1,21 @@
-# Anthropic SDK — governed model access
+# Anthropic SDK
 
-The Anthropic SDK gets a governed `AsyncAnthropic` client pointed at the
-Agent Fabric LLM proxy, with the SDK's shared transport and verified headers
-injected directly into the client constructor.
+The Anthropic SDK gets a governed `AsyncAnthropic` client pointed at the Omni
+Gateway LLM proxy, with the SDK's shared transport and proxy headers passed
+straight into the client constructor.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with one important divergence from
-> every other adapter in this roster: this factory returns a bare **client**,
-> not a model-bound object — see below before you reach for it.
+**What you get**
+
+- A native `anthropic.AsyncAnthropic` client.
+- Full header **and** transport injection.
+- Supported at `connection_kwargs()`.
+
+  **Requires a `Format=Anthropic` proxy.** The native Anthropic Messages route
+  (`POST /<base-path>/v1/messages`) is only served by a proxy provisioned with
+  the Anthropic ingress Format. Default DDK proxies are `Format=OpenAI`: there,
+  `/v1/messages` returns 404 and Claude is reachable only as an upstream
+  provider through the OpenAI-compatible adapters. See
+  [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) for how ingress Format works.
 
 ## Install
 
@@ -22,9 +31,9 @@ from donkey_kit.integrations.anthropic import client
 llm = client()
 ```
 
-`llm` is a real, native **`anthropic.AsyncAnthropic`** instance. Unlike every
-other framework in this roster, there is no `model` argument on the factory —
-pass the model id per call, exactly as the native Anthropic SDK expects:
+`llm` is a real `anthropic.AsyncAnthropic` instance. Unlike the other
+adapters, the factory takes no `model` argument — pass the model ID per call,
+as the Anthropic SDK expects:
 
 ```python
 reply = await llm.messages.create(
@@ -34,20 +43,15 @@ reply = await llm.messages.create(
 )
 ```
 
-There's no first-party Agent Fabric TypeScript SDK yet (it's on the
-[roadmap](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The native match here is the official
-**`@anthropic-ai/sdk`** client pointed at the proxy — same `client_id` /
-`client_secret` header pair, model id passed per call. **Caveat (proxy Format):**
-the native Anthropic ingress route is LIVE-verified at `POST /<base-path>/v1/messages`,
-but it requires a proxy provisioned `Format=Anthropic`; every default DDK proxy is
-`Format=OpenAI`, so point `baseURL` at a `Format=Anthropic` proxy to use the native
-surface (#304).
+Use the official **`@anthropic-ai/sdk`** client pointed at a `Format=Anthropic`
+proxy, with the same `client_id` / `client_secret` header pair and the model ID
+passed per call:
 
 ```typescript
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
-  baseURL: process.env.DONKEY_LLM_PROXY_URL,   // native /v1/messages route LIVE-verified: use a Format=Anthropic proxy
+  baseURL: process.env.DONKEY_LLM_PROXY_URL,   // a Format=Anthropic proxy
   apiKey: "unused",                              // required slot; proxy uses the headers below
   defaultHeaders: {
     client_id: process.env.DONKEY_LLM_PROXY_CLIENT_ID!,
@@ -92,7 +96,7 @@ async with Donkey.from_env() as donkey:
     llm = AsyncAnthropic(**donkey.anthropic.connection_kwargs())
 ```
 
-## The manual equivalent (eject at any time)
+## Manual equivalent
 
 ```python
 from anthropic import AsyncAnthropic
@@ -102,34 +106,28 @@ llm = AsyncAnthropic(
     api_key=...,
     default_headers=...,   # client_id / client_secret header pair
     http_client=...,       # the SDK's shared httpx client
+    max_retries=0,         # the SDK retries in its own transport layer
 )
 ```
 
-Nothing here is hidden — `connection_kwargs()` returns exactly these keys, so
-you can always drop the factory and construct `AsyncAnthropic` by hand.
+`connection_kwargs()` returns exactly these keys, so you can drop the factory
+and construct `AsyncAnthropic` by hand at any time.
 
-## Notes & limitations
+## Notes
 
-> **Divergence: `client()`, not `model(...)`.** Every other adapter in this
-> roster returns a framework object already bound to a model id, because the
-> underlying native constructor accepts `model` as a kwarg. `AsyncAnthropic`
-> doesn't work that way — it's a bare client, and the model id is an argument
-> to `.messages.create()`, not to the constructor. `donkey.anthropic.client()`
-> therefore takes no model argument at all; you supply the model id yourself
-> on every call.
-
-> **The proxy's Anthropic-native ingress is LIVE-verified — but requires a
-> `Format=Anthropic` proxy.** MuleSoft Model Proxy offers a **native Anthropic
-> ingress Format** — one of three selectable Formats (OpenAI / Gemini / Anthropic)
-> fixed at proxy creation ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)).
-> A live capture against a `Format=Anthropic` proxy confirms the native route at
-> `POST /<base-path>/v1/messages` (200 with a native Anthropic body; an
-> OpenAI-shaped `/chat/completions` request 404s), on the same `client_id` /
-> `client_secret` CIE auth (#304). The one remaining caveat is provisioning: every
-> default DDK proxy is `Format=OpenAI`, so pointing `AsyncAnthropic` at them
-> reaches Claude only as an *upstream provider*, not natively (`/v1/messages` 404s
-> there). Point `base_url` at a `Format=Anthropic` proxy to use the native surface.
+- **`client()`, not `model(...)`.** The other adapters return a framework
+  object already bound to a model ID, because their native constructors accept
+  `model`. `AsyncAnthropic` is a bare client and the model ID is an argument to
+  `.messages.create()`, so `donkey.anthropic.client()` takes no model argument.
+- **Proxy Format.** MuleSoft Model Proxy offers three ingress Formats (OpenAI /
+  Gemini / Anthropic), fixed when the proxy is created
+  ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)). A
+  `Format=Anthropic` proxy returns a native Anthropic body from
+  `/v1/messages` and 404s an OpenAI-shaped `/chat/completions` request. Auth is
+  the same `client_id` / `client_secret` header pair as every other proxy.
+  To use the native surface, set `DONKEY_LLM_PROXY_URL` (or `llm_proxy_url`)
+  to a `Format=Anthropic` proxy.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

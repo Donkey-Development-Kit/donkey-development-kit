@@ -110,8 +110,7 @@ The budget object, `pace()`, and `wait_for_reset()` are **shipped** (Phase 1).
 The windowed-counter behaviour you're pacing against here is the
 [simulator's](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — a faithful replay of the observed live contract
 (prose window on the `200`, numeric `x-token-*` trio on the `429`), never a
-header shape the gateway does not emit ([Verification
-policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The end-to-end assertion against the simulator
+header shape the gateway does not emit. The end-to-end assertion against the simulator
 is exactly what this scenario runs.
 
 ## Where to go next

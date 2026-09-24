@@ -25,7 +25,7 @@ Support triage runs **completely** today — it is the Phase-1 acceptance
 artefact (`BG §1.8`), timed in CI so its first-run experience can't rot. The
 nightly-batch and internal-copilot walkthroughs run their **governed-call and
 refusal-handling** paths against the simulator now; where a step depends on a
-surface that is still [blocked on verification](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) — MCP
+surface that is still blocked on verification — MCP
 tool access, agent identity, the kill switch — the page says so in the reader's
 terms and shows the shape without inventing an endpoint (verification discipline). A "blocked"
 note here means *known, deliberate, and tracked*, never *guessed*.

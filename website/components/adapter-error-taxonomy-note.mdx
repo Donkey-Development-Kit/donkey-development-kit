@@ -8,10 +8,10 @@
 
   Intentional overrides that keep their own inline wording (documented, not silent):
     • langgraph        — prefixes a proxy-surface caveat before this sentence.
-    • adk, crewai      — "surface through LiteLLM's error path" (LiteLLM owns transport).
+    • adk, crewai      — "surface through ADK's `LiteLlm` model" / "CrewAI's LiteLLM layer".
     • agent-framework  — references the PolicyViolation hierarchy / middleware shape.
 */}
 
 See the [error taxonomy](/errors) for how proxy rejections surface as typed
-exceptions, and the [verification policy](/concepts/verification) page for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

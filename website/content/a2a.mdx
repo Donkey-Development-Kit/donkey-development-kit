@@ -1,46 +1,37 @@
 ---
-description: Make your agent callable by other agents — serve, expose, and dev, wrapping the official a2a-sdk.
+description: Make your agent callable by other agents over A2A — serve it locally, expose it through the gateway, and develop against a gateway on your laptop.
 ---
 
 import { Callout } from 'nextra/components'
+import { Badge } from '../components'
 
 # A2A agents
 
-<Callout type="info">
-  **Phase 2 — designed, not yet shipped.** Command and API shapes below are a
-  proposal; the committed part is the behaviour. See [Roadmap](/roadmap) and
-  [Verification policy](/concepts/verification).
-</Callout>
+<Badge tone="roadmap">Roadmap</Badge>
 
-Three commands that take an agent from "runs on my laptop" to "callable by
-other agents, through the gateway."
+This capability is on the [Roadmap](/roadmap); the API shown here is the planned design.
 
-## First, an honest answer to the obvious question
+Three steps take an agent from "runs on my laptop" to "callable by other agents,
+through the gateway": **serve** it, **expose** it, and **develop** against a
+gateway locally. The protocol is the official `a2a-sdk`, wrapped; the SDK adds
+the governance around it.
 
-The question that always comes up: *A2A needs an HTTP listener — we have the
-gateway, so can the gateway ingress be embedded in the agent process, making
-the agent A2A-ready without running its own server?*
+## Why the agent still runs a listener
 
-**No to the literal idea, yes to what it is really asking for.**
+An A2A agent *is* a server: it serves an agent card at a well-known path and
+answers JSON-RPC task calls. Something must accept the socket, so the SDK hides
+that listener behind one line rather than removing it.
 
-Omni Gateway is an Envoy-based data plane whose policies compile to WASM. It is
-a separate process, not a library — you cannot `import` it any more than you
-could import nginx. More importantly you would not want to:
+What it can remove is everything painful around the listener — TLS, auth, rate
+limits, public exposure, and registration. Those are the gateway's job. Omni
+Gateway is an Envoy-based data plane whose policies compile to WASM; it runs as
+a separate process in front of your agent, not as a library inside it.
 
 <Callout type="warning">
-  **The moment the enforcement point lives inside the agent's process, the
-  agent's own code can bypass it.** The gateway's value depends on being
-  *outside* the thing it governs.
+  **Enforcement stays outside the agent's process.** If the enforcement point
+  lived inside the agent, the agent's own code could bypass it. The gateway's
+  value depends on being outside the thing it governs.
 </Callout>
-
-So be precise about what A2A actually requires: something must accept the
-socket. An A2A agent *is* a server — it serves an agent card at a well-known
-path and answers JSON-RPC task calls. That listener can be hidden behind one
-line, but it cannot be removed.
-
-What *can* be removed is everything painful about it: TLS, auth, rate limits,
-public exposure, and registration. Those are the gateway's job, and that is
-where the SDK helps.
 
 ## `donkey serve` — the listener, in one line
 
@@ -52,19 +43,14 @@ async def handle(task: A2ATask) -> A2AResult:
 donkey.serve(handle)      # A2A server on 127.0.0.1:8000, card auto-generated
 ```
 
-The card is generated from the same `@donkey.tool` / `@donkey.agent` markers
-the [scanner](/publishing) reads, so there is no second description of your
-agent to keep in sync. It binds to **localhost by default** — your agent is
-never the public face.
-
-The protocol itself is the official **`a2a-sdk`**, wrapped. This project does
-not implement A2A; re-implementing a protocol someone else maintains is on the
-[will-not-build list](/roadmap).
-
-What a plain A2A server does *not* give you is the inbound governance path:
-every call arriving over A2A gets the same treatment as an outgoing one —
-correlation ID, cost tags, an OTel span, and typed refusals when the agent's
-own downstream calls are blocked.
+- **The card is generated from your code** — the same `@donkey.tool` /
+  `@donkey.agent` markers the [scanner](/publishing) reads — so there is no
+  second description of your agent to keep in sync.
+- **It binds to localhost by default**, so your agent is never the public face;
+  the gateway is.
+- **Inbound calls are governed.** Every call arriving over A2A gets the same
+  treatment as an outgoing one: correlation ID, cost tags, an OTel span, and
+  typed refusals when the agent's own downstream calls are blocked.
 
 ## `donkey expose` — the ingress, registered from code
 
@@ -76,24 +62,25 @@ $ donkey expose --env prod
 ```
 
 The gateway does the work — provisioning the A2A proxy, attaching the policy
-set, registering the card. The SDK's contribution is turning a console session
-into one command that runs in CI.
+set, and registering the card. `donkey expose` turns that console session into
+one command that runs in CI.
 
 ## `donkey dev` — a gateway in front of your laptop
 
-Two options, and which one ships depends on what is actually available rather
-than on preference:
+`donkey dev` puts a gateway in front of `donkey serve` on your machine, so you
+can call your agent over A2A through governance before deploying. Two modes are
+planned:
 
-- **A real gateway.** If a self-managed Omni Gateway image is usable for local
-  development, `donkey dev` runs it alongside `donkey serve` so you hit A2A
-  *through real policies* on your machine. Gated on image availability and
-  licensing.
-- **Simulated ingress.** If that is blocked, the [local simulator](/simulator)
-  gains an A2A ingress mode: a local fake gateway in front of `donkey serve`,
-  replaying the same rejection fixtures. Fully within this project's control,
-  and held to the same honesty test — a plain A2A client must see
-  byte-identical responses.
+- **A real gateway.** Where a self-managed Omni Gateway image is available for
+  local development, `donkey dev` runs it alongside `donkey serve`, so A2A calls
+  pass through real policies.
+- **Simulated ingress.** The [local simulator](/simulator) gains an A2A ingress
+  mode: a local fake gateway in front of `donkey serve`, replaying the same
+  rejection fixtures. A plain A2A client sees byte-identical responses, and
+  every response carries `x-donkey-simulator: true`.
 
----
+## Related
 
-**Status: Phase 2 — not yet shipped.**
+- [A2A agent tools](/tool-access/a2a) — call *other* A2A agents as tools.
+- [Scan & publish](/publishing) — register your agent card with Agent Registry.
+- [Local simulator](/simulator) — the fixture-replay server behind simulated ingress.

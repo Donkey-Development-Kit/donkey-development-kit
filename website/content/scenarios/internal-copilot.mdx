@@ -12,7 +12,7 @@ and when the guardrail fires you need the refusal to (a) surface as something
 you can branch on and (b) carry an id that joins the block back to the run in
 your own logs. This page runs that content-safety branch against the [local
 simulator](/simulator), and is honest about the parts of a full internal
-copilot that are still [blocked on verification](/concepts/verification).
+copilot that are still blocked on verification.
 
 ## What it demonstrates
 
@@ -111,7 +111,7 @@ an endpoint:
 The content-safety **discriminator** (the vendor `…-action: reject` header) is
 typed by `donkey_kit.core.errors.classify()`, but its exact body is
 **documented-but-not-live-captured** — pinned from the policy pages and pending
-a live sandbox round-trip ([Verification policy](/concepts/verification)). The
+a live sandbox round-trip. The
 simulator replays the captured fixture so the branch runs today; no verification
 row flips to `verified` until a live capture confirms the shape. The correlation
 mechanism (`donkey.run()` → `X-Correlation-Id` → `.correlation_id`) is shipped

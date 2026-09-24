@@ -1,0 +1,282 @@
+---
+description: Every captured gateway rejection shape mapped to a typed exception with classify(), live refusals on a blocking client, and GatewayUnavailable when nothing answers.
+---
+
+import { Callout } from 'nextra/components'
+import { Output } from '../../components'
+
+# Typed refusals
+
+Governance outcomes should be something you branch on, not something you
+parse. These examples run the gateway's rejection shapes through `classify()`
+and show the exception hierarchy you write `except` clauses against. The
+discriminator is deliberately not the status code: a PII block is a 403 but is
+not an auth failure, and an injection block is identified by a header. They
+also show the one failure `classify()` cannot produce — `GatewayUnavailable`,
+raised when there is no HTTP response at all.
+
+| Example | Shows | Needs |
+| --- | --- | --- |
+| Narrative demo 02 | Nine captured shapes through `classify()`, what the hierarchy buys, the handler you write, and a dead origin raising `GatewayUnavailable` | Nothing — no gateway, no simulator |
+| OpenAI script 04 | Live `UpstreamRequestError`, `PIIDetected`, `TokenBudgetExceeded` and `AuthError` on a blocking client, no `async` | Proxy credentials, plus policies for the PII and budget cases |
+| OpenAI script 11 | A dead origin surfacing `GatewayUnavailable` as `__cause__` | Nothing |
+
+## Run it
+
+```bash
+make demo N=02
+```
+
+<Output>
+```text
+════════════════════════════════════════════════════════════════════════════════════════
+Demo 02 — typed refusals
+The gateway's rejection shapes, mapped to exceptions you can branch on.
+════════════════════════════════════════════════════════════════════════════════════════
+
+Run context
+───────────
+  target                 offline — no gateway, no simulator, no credentials
+  output masking         on
+
+Nine captured responses through classify()
+──────────────────────────────────────────
+
+    from donkey_kit.core.errors import classify
+    
+    governed = classify(response)     # -> a typed DonkeyError subclass
+
+
+  client-id-missing      consumer auth — a genuinely missing/wrong client id
+    HTTP                 401
+    classified as        AuthError
+
+  pii-detected           PII policy — a 403 that is NOT an auth failure
+    HTTP                 403
+    classified as        PIIDetected
+    .policy              pii-detection
+    .entities            ['Email']
+
+  token-rate-limit       token budget — a 429 with an EMPTY body; state is header-only
+    HTTP                 429
+    classified as        TokenBudgetExceeded
+    .policy              token-rate-limit
+    .retry_after         41.728
+
+  injection-protection   prompt injection — identified by a header, not a status
+    HTTP                 400
+    classified as        PromptInjectionBlocked
+    .policy              prompt-injection-protection
+
+  regex-prompt-guard     regex prompt guard — 403 keyed on matched_patterns, not auth
+    HTTP                 403
+    classified as        PromptInjectionBlocked
+    .policy              regex-prompt-guard
+
+  content-safety         content safety / guardrails — 403 keyed on a vendor reject header
+    HTTP                 403
+    classified as        ContentSafetyBlocked
+    .policy              content-safety
+    .categories          ['severity_hate', 'severity_violence']
+
+  content-moderation     undiscriminated moderation — no live capture, left unnamed
+    HTTP                 400
+    classified as        PolicyViolation
+    .policy              unknown
+
+  model-not-found        upstream passthrough — the provider's own error, not a policy
+    HTTP                 400
+    classified as        UpstreamRequestError
+    .code                model_not_found
+    .error_type          invalid_request_error
+    .param               model
+
+  upstream-5xx           provider failure — retryable, unlike every refusal above
+    HTTP                 503
+    classified as        UpstreamModelError
+
+Why the hierarchy is shaped this way
+────────────────────────────────────
+  PASS  a PII block is a policy refusal, not an auth error
+  PASS  a token-budget 429 is also a policy refusal — so one `except PolicyViolation` catches both
+  PASS  content-safety is ContentSafetyBlocked, still a PolicyViolation
+  PASS  regex-prompt-guard is PromptInjectionBlocked with its own policy name
+  PASS  an upstream 400 is NOT a policy refusal — it is your request that is wrong, not the gateway saying no
+  PASS  the budget refusal carries retry_after, parsed from x-token-reset (milliseconds, not an epoch)
+  PASS  GatewayUnavailable is not a PolicyViolation — nothing was refused, the request never arrived
+  PASS  a transport failure has no request_id — there was no response to read the gateway's id from
+
+What that looks like in your agent
+──────────────────────────────────
+
+    try:
+        response = await client.responses.create(model=..., input=...)
+    except openai.APIStatusError as exc:
+        raise classify(exc.response) from exc
+    
+    except PIIDetected as e:          # 403, and e.entities says what tripped
+        redact_and_retry(e.entities)
+    except ContentSafetyBlocked as e: # 403, e.categories is the moderation analog
+        revise(e.categories)
+    except TokenBudgetExceeded as e:  # 429, terminal — never retry it
+        await donkey.budget.wait_for_reset()
+    except PolicyViolation as e:      # any other gateway refusal
+        escalate(e.remediation)
+    except GatewayUnavailable as e:   # NO response — not a refusal
+        diagnose(e.base_url, e.cause) # checkpoint / shed / donkey doctor
+    except ModelSubstituted as e:     # NOT classify() — you opted in (demo 10)
+        pin_or_accept(e.served_model)
+    except UpstreamRequestError as e: # your request was wrong (e.code)
+        fix(e.code)
+    except UpstreamModelError:        # provider 5xx — this one IS retryable
+        retry_with_backoff()
+
+
+What is typed from docs, and what is still unnamed
+──────────────────────────────────────────────────
+  Four of these shapes are live-verified against a real proxy: consumer auth, PII, token
+  rate limit, and upstream passthrough. Injection, regex prompt guard, and content-
+  safety are typed from the documented wire shapes — classify() produces
+  PromptInjectionBlocked / ContentSafetyBlocked — and are pending a live sandbox
+  capture. That is the same posture as header-based injection: named because the shape
+  is specified, not because a capture has landed yet.
+
+  content-moderation     PolicyViolation
+  remediation            This refusal matched no documented rejection shape, so its contract is unconfirmed (#184, #253). It is terminal and was NOT retried. Please file an issue on the donkey-development-kit repo with the response status, headers and body (all carried on this exception's .response) so the shape can be typed.
+
+  An undiscriminated content-moderation 4xx still falls through to a generic
+  PolicyViolation. That leftover shape has never been captured from a live gateway, so
+  it is left unnamed rather than given a class that would imply more certainty than
+  exists.
+
+  ModelSubstituted is not in the table above because it is not a gateway refusal and
+  classify() never produces it. It is raised by the transport when you opt into
+  on_model_substitution='raise' and the gateway serves a different model than you asked
+  for. Demo 10.
+
+  GatewayUnavailable is the other type classify() never produces: there is no HTTP
+  response to classify. DNS, connection refused, TLS, timeout — the transport wraps
+  those as a typed DonkeyError so a long-running agent can tell 'lost the gateway' from
+  a policy refusal without matching raw httpx exceptions. It is not retried. Act 5
+  actually raises it.
+
+A refused connection, typed — not a raw httpx error
+───────────────────────────────────────────────────
+
+    donkey = Donkey(DonkeyConfig(llm_proxy_url="http://127.0.0.1:9/", ...))
+    client.responses.create(...)   # nothing is listening
+    # -> GatewayUnavailable, not ConnectError
+
+  PASS  GatewayUnavailable — the request never left the building
+  base_url               http://127.0.0.1:9
+  cause                  ConnectError
+  request_id             None
+  call_id                c46d490e7aef47b18a391a2764087952
+
+  The gateway could not be reached and no HTTP response came back. The three usual
+  causes: (1) the host is unreachable — DNS failure or the gateway is down; (2) the
+  configured base URL is wrong; or (3) network egress to the gateway is blocked — a
+  firewall or air-gapped environment. Run `donkey doctor` to diagnose connectivity, and
+  check `base_url` on this error against your gateway's address.
+
+  PASS  not a PolicyViolation — nothing was refused, because nothing arrived
+
+────────────────────────────────────────────────────────────────────────────────────────
+```
+</Output>
+
+```bash
+python "demos/human-made/openai/04 - typed-refusals-live.py"      # needs proxy credentials
+python "demos/human-made/openai/11 - gateway-unavailable.py"      # no gateway
+```
+
+<Callout type="info">
+  Narrative demo 02 loads its fixtures from the installed SDK
+  (`donkey_kit.simulator.fixtures`) — the same bytes `classify()` is tested
+  against and `donkey mock` serves. OpenAI script 04 provokes the upstream and
+  auth cases with nothing extra; the PII case needs the PII detection policy
+  with `Email` and action `Reject`, and the budget case needs the token rate
+  limit policy with a small `maximumTokens`.
+</Callout>
+
+## Key code
+
+The handler shape the hierarchy is designed for (narrative demo 02, act 3):
+
+```python
+try:
+    response = await client.responses.create(model=..., input=...)
+except openai.APIStatusError as exc:
+    raise classify(exc.response) from exc
+
+except PIIDetected as e:          # 403, and e.entities says what tripped
+    redact_and_retry(e.entities)
+except ContentSafetyBlocked as e: # 403, e.categories is the moderation analog
+    revise(e.categories)
+except TokenBudgetExceeded as e:  # 429, terminal — never retry it
+    await donkey.budget.wait_for_reset()
+except PolicyViolation as e:      # any other gateway refusal
+    escalate(e.remediation)
+except GatewayUnavailable as e:   # NO response — not a refusal
+    diagnose(e.base_url, e.cause) # checkpoint / shed / donkey doctor
+except UpstreamRequestError as e: # your request was wrong (e.code)
+    fix(e.code)
+except UpstreamModelError:        # provider 5xx — this one IS retryable
+    retry_with_backoff()
+```
+
+A live refusal on a blocking client (OpenAI script 04):
+
+```python
+cfg = DonkeyConfig.from_env()
+donkey = Donkey(cfg)
+client = donkey.openai(sync=True)
+
+with donkey.run(id="live-refusals-PIIDetected"):
+    try:
+        raw = client.responses.with_raw_response.create(model=MODEL, input=PII_PROMPT)
+    except openai.APIStatusError as err:
+        error = classify(err.response)
+        print(f"  REFUSED        {type(error).__name__} (HTTP {err.response.status_code})")
+        print(f"  entities       {getattr(error, 'entities', None)}")
+        print(f"  remediation    {getattr(error, 'remediation', None)}")
+        print(f"  correlation_id {getattr(error, 'correlation_id', None)}")
+```
+
+When nothing is listening, the OpenAI client wraps the transport error and the
+typed `GatewayUnavailable` sits on `__cause__` (OpenAI script 11):
+
+```python
+donkey = Donkey(
+    DonkeyConfig(
+        llm_proxy_url="http://127.0.0.1:9/",
+        llm_proxy_client_id="demo-client-id-not-a-real-credential",
+        llm_proxy_client_secret="demo-client-secret-not-a-real-credential",
+        timeout_s=2.0,
+        max_retries=0,
+    )
+)
+client = donkey.openai(sync=True)
+
+try:
+    client.responses.create(model="gpt-4o", input="hello")
+except Exception as err:
+    hit = err if isinstance(err, GatewayUnavailable) else err.__cause__
+    if isinstance(hit, GatewayUnavailable):
+        print("base_url   ", hit.base_url)
+        print(hit.remediation)
+```
+
+A token-budget 429 and a PII 403 are both `PolicyViolation`s, so one `except
+PolicyViolation` catches either. An upstream 400 is not — your request was
+wrong, the gateway did not say no. `GatewayUnavailable` is not a
+`PolicyViolation` either: nothing was refused, because nothing arrived. An
+undiscriminated `content-moderation` 4xx falls through to a generic
+`PolicyViolation`.
+
+**Learn more:** [Typed refusals](/errors)
+
+**Source:**
+[narrative demo 02](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/02_typed_refusals) ·
+[script 04](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/04%20-%20typed-refusals-live.py) ·
+[script 11](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/11%20-%20gateway-unavailable.py)

@@ -8,10 +8,10 @@
 /* ---------------------------------------------------------------- tokens */
 
 :root {
-  --af-accent: #6d47d9;
-  --af-accent-strong: #5a35c4;
-  --af-accent-soft: rgba(109, 71, 217, 0.08);
-  --af-accent-border: rgba(109, 71, 217, 0.28);
+  --af-accent: #00b4ff;
+  --af-accent-strong: #0096d6;
+  --af-accent-soft: rgba(0, 180, 255, 0.08);
+  --af-accent-border: rgba(0, 180, 255, 0.28);
 
   --af-fg: #12131a;
   --af-fg-muted: #5b6072;
@@ -33,10 +33,10 @@
 }
 
 .dark {
-  --af-accent: #a68bff;
-  --af-accent-strong: #bda6ff;
-  --af-accent-soft: rgba(166, 139, 255, 0.12);
-  --af-accent-border: rgba(166, 139, 255, 0.3);
+  --af-accent: #00b4ff;
+  --af-accent-strong: #33c3ff;
+  --af-accent-soft: rgba(0, 180, 255, 0.12);
+  --af-accent-border: rgba(0, 180, 255, 0.3);
 
   --af-fg: #f2f3f7;
   --af-fg-muted: #a2a8ba;
@@ -56,9 +56,8 @@
 
 html,
 body {
-  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+  font-family: var(--font-play), ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', sans-serif;
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -150,26 +149,161 @@ body {
   color: var(--af-fg);
 }
 
-.af-prose pre {
-  border: 1px solid var(--af-border);
-  border-radius: var(--af-radius);
-  background: var(--af-surface-raised) !important;
-  font-size: 0.87rem;
-  line-height: 1.65;
+/* Code blocks are dark in both site themes, matching the Dark+ Shiki palette
+   configured in next.config.mjs. */
+.af-prose {
+  --af-code-bg: #1e1e1e;
+  --af-code-border: #2d2d30;
+  --af-code-fg: #d4d4d4;
+  --af-code-muted: #858585;
+  --af-output-bg: #161617;
 }
 
-.dark .af-prose pre {
-  background: #101118 !important;
+.af-prose pre {
+  border: 1px solid var(--af-code-border);
+  border-radius: var(--af-radius);
+  background: var(--af-code-bg) !important;
+  box-shadow: none;
+  --tw-ring-color: transparent;
+  color: var(--af-code-fg);
+  font-size: 0.8rem;
+  line-height: 1.7;
 }
 
 .af-prose .nextra-code > pre {
   padding-block: 1rem;
 }
 
-/* Filename tab above a code block */
-.af-prose div[data-filename] {
+.af-prose pre code.nextra-code > span {
+  padding-inline: 1.1rem;
+}
+
+/* Number every multi-line block; single commands stay unnumbered. */
+.af-prose pre code.nextra-code:has(> span:nth-child(2)) > span {
+  padding-left: 0.4rem;
+}
+
+.af-prose pre code.nextra-code:has(> span:nth-child(2)) > span::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 1.6rem;
+  margin-right: 1.1rem;
+  padding: 0;
+  text-align: right;
+  color: var(--af-code-muted);
+  user-select: none;
+}
+
+/* Copy / word-wrap buttons sit on the dark panel in both themes. */
+.af-prose pre button {
+  color: #c5c5c5;
+  background: #2a2a2d;
+  border-color: #3c3c40 !important;
+}
+
+.af-prose pre button:hover {
+  color: #ffffff;
+  background: #37373b;
+}
+
+/* Filename tab above a code block (```python filename="…") */
+.af-prose .nextra-code > div:has(+ pre) {
+  height: 2.5rem;
   border-radius: var(--af-radius) var(--af-radius) 0 0;
-  border-color: var(--af-border);
+  border: 1px solid var(--af-code-border);
+  border-bottom: 1px solid var(--af-code-border);
+  background: #252526;
+  color: #cccccc;
+  font-size: 0.75rem;
+}
+
+.af-prose .nextra-code > div:has(+ pre) button {
+  color: #c5c5c5;
+  background: #2a2a2d;
+  border-color: #3c3c40 !important;
+}
+
+.af-prose .nextra-code > div + pre {
+  border-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* "Expected output" panel attached under the code block that produces it. */
+.af-prose .nextra-code:has(+ .af-output) > pre {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.af-prose .af-output {
+  margin-top: 0 !important;
+  border: 1px solid var(--af-code-border);
+  border-top: 0;
+  border-radius: 0 0 var(--af-radius) var(--af-radius);
+  background: var(--af-output-bg);
+  overflow: hidden;
+}
+
+.af-prose :not(.nextra-code) + .af-output,
+.af-prose .af-output:first-child {
+  margin-top: 1.25em !important;
+  border-top: 1px solid var(--af-code-border);
+  border-radius: var(--af-radius);
+}
+
+.af-prose .af-output-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1.1rem;
+  border-bottom: 1px solid var(--af-code-border);
+  color: var(--af-code-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.af-prose .af-output-label::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #4ec9b0;
+}
+
+.af-prose .af-output .nextra-code {
+  margin-top: 0 !important;
+}
+
+.af-prose .af-output pre {
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.af-prose .af-output pre code.nextra-code > span {
+  min-height: 1.7em;
+}
+
+.af-prose .af-output-wrap pre code.nextra-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.af-prose .af-output pre code.nextra-code > span {
+  padding-left: 1.1rem !important;
+}
+
+.af-prose .af-output pre code.nextra-code > span::before {
+  content: none !important;
+}
+
+.af-prose .af-output pre code.nextra-code span {
+  color: #bcbcbc !important;
 }
 
 /* ---------------------------------------------------------------- tables */
@@ -353,17 +487,14 @@ body {
   transform: translateY(1px);
 }
 
+/* Dark label in both themes: white text on #00b4ff is too low-contrast. */
 .af-button-primary {
   background: var(--af-accent);
-  color: #fff !important;
+  color: #001824 !important;
 }
 
 .af-button-primary:hover {
   background: var(--af-accent-strong);
-}
-
-.dark .af-button-primary {
-  color: #14101f !important;
 }
 
 .af-button-secondary {
@@ -406,7 +537,7 @@ body {
 
 a.af-card:hover {
   border-color: var(--af-accent-border);
-  box-shadow: 0 6px 22px -12px rgba(24, 20, 45, 0.28);
+  box-shadow: 0 6px 22px -12px rgba(0, 24, 36, 0.28);
   transform: translateY(-2px);
 }
 
@@ -529,4 +660,170 @@ a.af-card:hover .af-card-title::after {
   line-height: 1.6;
   color: var(--af-fg-subtle);
   text-align: center;
+}
+
+/* --------------------------------------------------------------- roadmap */
+
+.af-phase {
+  margin-top: 1.25rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--af-border);
+  border-radius: var(--af-radius);
+  background: var(--af-surface);
+}
+
+.af-phase-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.af-prose a.af-phase-title {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--af-fg);
+  text-decoration: none;
+}
+
+.af-phase-body > p:first-child {
+  margin-top: 0.6rem;
+}
+
+.af-progress {
+  margin-top: 0.9rem;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--af-surface-sunken);
+  overflow: hidden;
+}
+
+.af-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--af-accent);
+}
+
+.af-prose p.af-phase-stats {
+  margin: 0.45rem 0 0;
+  font-size: 0.8rem;
+  color: var(--af-fg-subtle);
+}
+
+.af-phase-issues {
+  margin-top: 0.7rem;
+  font-size: 0.875rem;
+}
+
+.af-phase-issues summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--af-fg);
+}
+
+.af-issue-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.af-prose .af-issue-list li {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  margin: 0.2rem 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.af-issue-state {
+  flex: none;
+  font-size: 0.7rem;
+  color: var(--af-green);
+}
+
+.af-issue-list li[data-state='open'] .af-issue-state {
+  color: var(--af-amber);
+}
+
+.af-roadmap-updated {
+  font-size: 0.8rem;
+  color: var(--af-fg-subtle);
+}
+
+/* ------------------------------------------------------------------ team */
+
+.af-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+  gap: 0.9rem;
+  margin-top: 1.5rem;
+}
+
+.af-team-member {
+  align-items: flex-start;
+}
+
+.af-team-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--af-accent);
+  background: var(--af-accent-soft);
+  border: 1px solid var(--af-accent-border);
+}
+
+.af-team-photo {
+  width: 4rem;
+  height: 4rem;
+  padding: 0;
+  object-fit: cover;
+  background: var(--af-surface-sunken);
+}
+
+.af-team-member .af-card-badges {
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.af-team-link {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--af-accent);
+}
+
+/* ------------------------------------------------------------ navbar */
+
+.af-nav-link {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+
+.af-nav-link:hover {
+  opacity: 1;
+}
+
+.af-nav-logo {
+  width: 24px;
+  height: 24px;
+}
+
+.dark .af-nav-logo {
+  filter: invert(1);
+}
+
+footer a[href^='https://www.mulesoft.com'] {
+  color: var(--af-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

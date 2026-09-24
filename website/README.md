@@ -80,17 +80,43 @@ future custom domain serve at the root without the sub-path.
 
 ## Structure
 
+The sidebar is grouped into capability pillars by separators in
+`content/_meta.js`; page URLs are flat, so moving a page between pillars never
+breaks a link.
+
 ```
 content/
-  index.mdx                 Introduction — what the SDK is
-  quickstart.mdx            First governed request
-  feature-overview.mdx      The three pillars at a glance
-  frameworks/               Model access — one page per framework (Pillar 1)
-  tool-access.mdx           Pillar 2 (roadmap)
-  provisioning.mdx          Pillar 3 (roadmap)
-  concepts/                 Verification policy, governance, attribution
-  errors.mdx                Governed error taxonomy
-  reference/                Configuration, unsupported boundary
+  index.mdx, quickstart.mdx,
+  feature-overview.mdx               Get started
+  frameworks/                         Model access — one page per framework
+  errors, budget, identity,
+  hitl, policies                      Governance
+  telemetry                           Observability
+  simulator, testing, cli,
+  use-with-your-agent                 Developer tooling
+  tool-access/, a2a, publishing       Registry & catalog
+  scenarios/                          Scenarios
+  examples/                           Examples (from donkey-development-kit-demos)
+  roadmap.mdx                         Roadmap — rendered from data/roadmap.json
+  community/                          Team, Contribute
+  reference/                          Configuration, unsupported boundary
+```
+
+Capability status uses one vocabulary: `<Badge tone="live">Live</Badge>` for
+what is available now and `<Badge tone="roadmap">Roadmap</Badge>` for what is
+planned. Delivery detail (phases, milestones, issues) belongs on the Roadmap
+page only.
+
+## Roadmap data
+
+`data/roadmap.json` is a snapshot of the phase milestones and their issues,
+written by [`scripts/generate-roadmap.mjs`](scripts/generate-roadmap.mjs) from
+the GitHub API. `npm run build` refreshes it first (via `prebuild`); if the API
+is unreachable the committed snapshot is kept, so builds never depend on the
+network. Set `GITHUB_TOKEN` to avoid the unauthenticated rate limit.
+
+```bash
+npm run generate:roadmap
 ```
 
 ## Editing rules (inherited from the SDK — verification discipline)

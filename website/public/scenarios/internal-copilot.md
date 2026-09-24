@@ -6,7 +6,7 @@ and when the guardrail fires you need the refusal to (a) surface as something
 you can branch on and (b) carry an id that joins the block back to the run in
 your own logs. This page runs that content-safety branch against the [local
 simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), and is honest about the parts of a full internal
-copilot that are still [blocked on verification](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+copilot that are still blocked on verification.
 
 ## What it demonstrates
 
@@ -95,7 +95,7 @@ an endpoint:
 The content-safety **discriminator** (the vendor `…-action: reject` header) is
 typed by `donkey_kit.core.errors.classify()`, but its exact body is
 **documented-but-not-live-captured** — pinned from the policy pages and pending
-a live sandbox round-trip ([Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The
+a live sandbox round-trip. The
 simulator replays the captured fixture so the branch runs today; no verification
 row flips to `verified` until a live capture confirms the shape. The correlation
 mechanism (`donkey.run()` → `X-Correlation-Id` → `.correlation_id`) is shipped

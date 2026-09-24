@@ -1,20 +1,21 @@
 # Human-in-the-loop
 
-  **Phase 2 — designed, not yet shipped.** The API shape below is a proposal;
-  the gateway step-up path is **unverified**. See [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and
-  [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+Roadmap
+
+This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned
+design.
 
 Refunds over €100 need a human. Today that is bespoke code, per team, per
-framework.
+framework. DDK will let you declare the approval requirement on the tool itself:
 
 ```python
 @donkey.tool(approval="required", risk="financial")
 async def issue_refund(ticket_id: str, amount: float): ...
 ```
 
-When the agent calls `issue_refund`, the SDK raises `ApprovalRequired` (or
-triggers the framework's own interrupt), records the pending approval against
-the correlation ID, and resumes when you resolve it:
+When the agent calls `issue_refund`, DDK raises `ApprovalRequired` (or triggers
+the framework's own interrupt), records the pending approval against the
+correlation ID, and resumes when you resolve it:
 
 ```python
 await donkey.approvals.resolve(approval_id, approved_by=reviewer.id)
@@ -22,8 +23,8 @@ await donkey.approvals.resolve(approval_id, approved_by=reviewer.id)
 
 ## Mapped onto what your framework already has
 
-The SDK does not introduce a new pause mechanism. It maps one vocabulary onto
-the primitive each framework already ships:
+DDK does not introduce a new pause mechanism. It maps one vocabulary onto the
+primitive each framework already ships:
 
 | Framework / protocol | Native primitive |
 |---|---|
@@ -32,14 +33,12 @@ the primitive each framework already ships:
 | Google ADK | before/after tool callbacks |
 | Strands | hooks |
 | MCP | elicitation |
-| Omni Gateway | Trusted Agent Identity step-up (MFA) — unverified |
+| Omni Gateway | Trusted Agent Identity step-up (MFA) |
 
-## What the value actually is
+## What DDK adds
 
-  **Every framework already has human-in-the-loop.** So be clear about what is
-  being added, or this looks like reinvention.
-
-Three things, none of which is a new mechanism:
+Every framework already has human-in-the-loop. DDK adds three things on top,
+none of which is a new mechanism:
 
 1. **Normalisation** — one vocabulary across frameworks, so approval policy is
    not rewritten when a team switches from ADK to LangGraph.
@@ -50,14 +49,11 @@ Three things, none of which is a new mechanism:
    gateway's identity layer for step-up MFA, rather than trusting a click in
    your own UI.
 
-## What it will not become
+## Out of scope
 
-No approval queue and no approval UI — both are on the
-[will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md). This integrates with whatever you already
-run: Slack, ServiceNow, or LangGraph's own checkpointer. Building a queue would
-mean owning a durable store, an escalation model, and a notification system,
-which is a product rather than a feature.
+  DDK will not ship an approval queue or an approval UI — both are on the
+  [will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md). It integrates with whatever you already run:
+  Slack, ServiceNow, or LangGraph's own checkpointer.
 
----
-
-**Status: Phase 2 — not yet shipped.**
+A queue would mean owning a durable store, an escalation model, and a
+notification system — a product rather than a feature.

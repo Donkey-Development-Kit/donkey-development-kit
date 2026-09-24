@@ -3,8 +3,15 @@ import nextra from 'nextra'
 // Nextra 4 is App-Router only: `theme` / `themeConfig` are gone — the docs theme
 // is composed from <Layout>/<Navbar>/<Footer> in app/layout.tsx instead. Search
 // moved from FlexSearch to Pagefind, indexed by the `postbuild` step against out/.
+// Code blocks use one dark palette (VS Code Dark+) in both site themes.
+// Options must stay plain data: Turbopack serialises loader options.
 const withNextra = nextra({
   defaultShowCopyCode: true,
+  mdxOptions: {
+    rehypePrettyCodeOptions: {
+      theme: { light: 'dark-plus', dark: 'dark-plus' },
+    },
+  },
 })
 
 // Project sub-path for GitHub Pages (e.g. "/donkey-development-kit"). Left empty for
