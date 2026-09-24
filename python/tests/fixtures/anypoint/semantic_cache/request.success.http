@@ -1,0 +1,33 @@
+# Live semantic-caching request (consumer creds redacted).
+# Same OpenAI /chat/completions wire shape as ../llm_proxy/ and
+# ../semantic_routing/. The Semantic Caching policy embeds the prompt, does an
+# ANN lookup in Azure AI Search, and on a hit above the similarity threshold
+# replays the stored completion WITHOUT calling the upstream provider.
+#
+# Per-request steering rides the lowercase `x-cache-*` request headers (all
+# honored live — the spec table's `X-Cache-*` casing is accepted lowercase):
+#   x-cache-skip: true         -> bypass the policy entirely (passthrough)
+#   x-cache-no-store: true     -> look up, but do NOT write on a miss
+#   x-cache-ttl: <int seconds> -> override the stored entry TTL
+#   x-cache-threshold: <0..1>  -> override the similarity threshold for this call
+#   x-cache-principal-id: <s>  -> partition the similarity filter by principal
+
+POST /ddk-semantic-cache/chat/completions HTTP/1.1
+Host: private-space-omni-gateway-qrpud8.wxdmnv.usa-e2.cloudhub.io
+Content-Type: application/json
+client_id: <redacted>
+client_secret: <redacted>
+
+{"model": "gpt-5-mini", "messages": [{"role": "user", "content": "In one short sentence, what is DDKCACHE-<nonce>-alpha the internal codename for?"}]}
+
+# Captured sequence (2026-09-24), all against instance 21195392:
+#   1. identical prompt, 1st call   -> x-semantic-cache-status: miss  (9.3s, upstream) -> responses.miss.*
+#   2. identical prompt, 2nd call   -> x-semantic-cache-status: hit   (3.0s, replay)   -> responses.hit.*
+#      (hit body is BYTE-IDENTICAL to the miss body — same chatcmpl id + usage)
+#   3. + x-cache-skip: true         -> x-semantic-cache-status: bypass (upstream)      -> responses.bypass.*
+#   4. + x-cache-ttl: 60            -> x-semantic-cache-ttl: 60 echoed on the response  -> responses.ttl-override.*
+#   5. + x-cache-threshold: 0.5     -> x-semantic-cache-threshold: 0.5000 echoed        -> responses.threshold-override.*
+#   6. + x-cache-principal-id: ddk-verify-588 -> echoed; MISS despite a near entry
+#      (principal partitions the filter)                                               -> responses.principal-id.*
+#   7. fresh prompt + x-cache-no-store: true  -> x-semantic-cache-status: no-store      -> responses.no-store.*
+#   8. same fresh prompt, no header -> still MISS (proves step 7 skipped the write)     -> responses.no-store-proof.*
