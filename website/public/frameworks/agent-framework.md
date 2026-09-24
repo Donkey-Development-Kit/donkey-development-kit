@@ -1,16 +1,17 @@
-# Microsoft Agent Framework — governed model access
+# Microsoft Agent Framework
 
-Microsoft Agent Framework gets a governed chat client at the Agent Fabric LLM
-proxy, plus first-class policy middleware for terminating a run cleanly on a
-governance rejection instead of letting the agent loop retry.
+Microsoft Agent Framework gets a governed chat client pointed at the Omni
+Gateway LLM proxy, plus policy middleware that stops a run on a governance
+rejection instead of letting the agent loop retry.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).**
-> This adapter receives a static `default_headers` snapshot, not the SDK's shared
-> httpx client, so per-run correlation and `donkey.last_call` response
-> observation are documented exemptions. It also ships the strongest
-> policy-integration story of the eight frameworks
-> (`policy_middleware()`), but its native client class is young and
-> **UNVERIFIED** — read the callouts below before depending on it.
+**What you get**
+
+- A native `agent_framework.openai.OpenAIChatClient`, checked against
+  agent-framework 1.19.0.
+- `policy_middleware()` for terminating a run on a `PolicyViolation`.
+- Supported at `connection_kwargs()`. The client receives a static
+  `default_headers` snapshot, so per-run correlation and `donkey.last_call` are
+  not available (see [Notes](#notes)).
 
 ## Install
 
@@ -26,15 +27,11 @@ from donkey_kit.integrations.agent_framework import chat_client
 llm = chat_client("gpt-4o")
 ```
 
-`llm` is intended to be a native **`agent_framework.openai.OpenAIChatClient`**
-instance. If that import fails on your installed version, the factory raises
-`NotImplementedError("blocked on verification: ...")` rather than guessing —
-see the UNVERIFIED callout below.
+`llm` is a real `agent_framework.openai.OpenAIChatClient` instance.
 
-There's no first-party Agent Fabric TypeScript SDK yet, and **Microsoft Agent
-Framework has no TypeScript SDK** (it ships for .NET, Python, and Go). You can
-still make the same governed call from TypeScript via the OpenAI-compatible
-proxy with the official `openai` npm client:
+Microsoft Agent Framework ships for .NET, Python, and Go, not TypeScript. From
+TypeScript, call the proxy's OpenAI-compatible API directly with the official
+`openai` npm client:
 
 ```typescript
 import OpenAI from "openai";
@@ -87,50 +84,44 @@ async with Donkey.from_env() as donkey:
     )
 ```
 
-## The manual equivalent (eject at any time)
+## Manual equivalent
 
 ```python
 from agent_framework.openai import OpenAIChatClient
 
 llm = OpenAIChatClient(
-    model=...,           # verified against agent-framework 1.19.0
-    base_url=...,        # from DONKEY_LLM_PROXY_URL, no /v1 suffix
+    model=...,            # `model`, not `model_id`
+    base_url=...,         # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,  # client_id / client_secret header pair
 )
 ```
 
-## Notes & limitations
+## Policy middleware
 
-> **VERIFIED** against agent-framework 1.19.0.
-> `agent_framework.openai.OpenAIChatClient` takes `model`, `base_url`,
-> `api_key` and `default_headers` (`model_id` is **not** accepted). The
-> `chat_client()` factory stays guarded on both ends: if the import fails or
-> the constructor signature changes upstream, it raises
-> `NotImplementedError("blocked on verification")` instead of leaking a raw
-> `ImportError`/`TypeError` — so a future upstream rename surfaces as a clear
-> verification refusal rather than a cryptic error.
+`donkey.agent_framework.policy_middleware()` returns an async
+`(context, next)` middleware that lets a `PolicyViolation` propagate, so the
+host ends the run instead of retrying. It is a plain async wrapper whose
+signature has not been confirmed against Agent Framework's middleware
+protocol, so check it in your host before relying on it. Setting Agent
+Framework's explicit "terminate run" signal instead of re-raising is planned
+Roadmap.
 
-> Agent Framework has first-class middleware for intercepting agent actions.
-> The adapter ships `policy_middleware()`, which catches a `PolicyViolation`
-> and re-raises it so the host terminates the run cleanly rather than
-> retrying — the best policy-integration story of any of the eight
-> frameworks. The exact middleware signature Agent Framework expects is also
-> **UNVERIFIED**; the shipped middleware is a plain async wrapper pending
-> confirmation of the framework's middleware protocol.
+## Notes
 
-> **This adapter cannot propagate per-run correlation or populate
-> `donkey.last_call`.** Agent Framework receives a static `default_headers`
-> snapshot, which deliberately excludes the correlation ID bound later by
-> `donkey.run(id=...)`, and not the SDK's httpx client. No response reaches
-> `_on_response`, so gateway identity, routing, and usage fields cannot be
-> observed either. When every adapter resolved on a `Donkey` is non-observing,
-> the record reports `status == LastCallStatus.UNAVAILABLE`, `available == False`,
-> and names the resolved adapters in `surface`. These are documented, asserted
-> `correlation_id_propagated` and `gateway_identity_observed` conformance
-> exemptions.
+- **Constructor signature.** `OpenAIChatClient` takes `model`, `base_url`,
+  `api_key`, and `default_headers` (agent-framework 1.19.0; `model_id` is not
+  accepted). If the import fails or an upstream release renames a kwarg,
+  `chat_client()` raises a `NotImplementedError` naming the class path or
+  signature to check, rather than a raw `ImportError` or `TypeError`.
+- **No per-run correlation or `donkey.last_call`.** The client receives a
+  static `default_headers` snapshot, which excludes the correlation ID bound
+  later by `donkey.run(id=...)`, and the SDK's httpx client is not used. No
+  response reaches the SDK, so gateway identity, routing, and usage fields
+  can't be observed. When every adapter resolved on a `Donkey` is like this
+  one, `donkey.last_call` reports `status == LastCallStatus.UNAVAILABLE` and
+  `available == False`, and names the resolved adapters in `surface`. The
+  conformance suite asserts both as documented exemptions.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for the full `PolicyViolation` hierarchy
-that `policy_middleware()` catches, and the
-[verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for the current
-verification status of this adapter's constructor and middleware shape.
+that `policy_middleware()` lets through.

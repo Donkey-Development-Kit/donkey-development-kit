@@ -1,48 +1,66 @@
 export default {
+  '-- get-started': {
+    type: 'separator',
+    title: 'Get started',
+  },
   index: 'Introduction',
   quickstart: 'Quickstart',
   'feature-overview': 'Feature overview',
-  'use-with-your-agent': 'Use with your agent',
-  roadmap: 'Roadmap',
-  '-- live': {
+  concepts: 'Concepts',
+  '-- model-access': {
     type: 'separator',
-    title: 'Live today',
+    title: 'Model access',
   },
-  frameworks: 'Model access',
-  '-- six-piece': {
+  frameworks: 'Frameworks',
+  '-- governance': {
     type: 'separator',
-    title: 'Phase 1 — the six-piece minimum',
+    title: 'Governance',
   },
   errors: 'Typed refusals',
   budget: 'Budget & pacing',
+  identity: 'Identity',
+  hitl: 'Human-in-the-loop',
+  policies: 'Policy handshake',
+  '-- observability': {
+    type: 'separator',
+    title: 'Observability',
+  },
+  telemetry: 'Telemetry & cost',
+  '-- developer-tooling': {
+    type: 'separator',
+    title: 'Developer tooling',
+  },
   simulator: 'Local simulator',
   testing: 'Testing & conformance',
-  telemetry: 'Telemetry & cost',
   cli: 'CLI & decorators',
-  '-- scenarios': {
+  'use-with-your-agent': 'Use with your coding agent',
+  '-- registry': {
     type: 'separator',
-    title: 'Scenarios — the pieces together',
-  },
-  scenarios: 'Scenarios',
-  '-- phase-2': {
-    type: 'separator',
-    title: 'Phase 2 — differentiate',
+    title: 'Registry & catalog',
   },
   'tool-access': 'Tool access',
   a2a: 'A2A agents',
-  identity: 'Identity',
-  hitl: 'Human-in-the-loop',
   publishing: 'Scan & publish',
-  '-- phase-3': {
+  '-- scenarios': {
     type: 'separator',
-    title: 'Phase 3 — platform',
+    title: 'Scenarios',
   },
-  policies: 'Policy handshake',
-  '-- concepts': {
+  scenarios: 'Scenarios',
+  '-- examples': {
     type: 'separator',
-    title: 'Concepts',
+    title: 'Examples',
   },
-  concepts: 'Concepts',
+  examples: 'Examples',
+  '-- roadmap': {
+    type: 'separator',
+    title: 'Roadmap',
+  },
+  roadmap: 'Roadmap',
+  '-- community': {
+    type: 'separator',
+    title: 'Community',
+  },
+  community: 'Community',
   '-- reference': {
     type: 'separator',
     title: 'Reference',

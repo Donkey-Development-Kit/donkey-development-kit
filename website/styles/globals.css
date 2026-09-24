@@ -530,3 +530,133 @@ a.af-card:hover .af-card-title::after {
   color: var(--af-fg-subtle);
   text-align: center;
 }
+
+/* --------------------------------------------------------------- roadmap */
+
+.af-phase {
+  margin-top: 1.25rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--af-border);
+  border-radius: var(--af-radius);
+  background: var(--af-surface);
+}
+
+.af-phase-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.af-prose a.af-phase-title {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--af-fg);
+  text-decoration: none;
+}
+
+.af-phase-body > p:first-child {
+  margin-top: 0.6rem;
+}
+
+.af-progress {
+  margin-top: 0.9rem;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--af-surface-sunken);
+  overflow: hidden;
+}
+
+.af-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--af-accent);
+}
+
+.af-prose p.af-phase-stats {
+  margin: 0.45rem 0 0;
+  font-size: 0.8rem;
+  color: var(--af-fg-subtle);
+}
+
+.af-phase-issues {
+  margin-top: 0.7rem;
+  font-size: 0.875rem;
+}
+
+.af-phase-issues summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--af-fg);
+}
+
+.af-issue-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.af-prose .af-issue-list li {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  margin: 0.2rem 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.af-issue-state {
+  flex: none;
+  font-size: 0.7rem;
+  color: var(--af-green);
+}
+
+.af-issue-list li[data-state='open'] .af-issue-state {
+  color: var(--af-amber);
+}
+
+.af-roadmap-updated {
+  font-size: 0.8rem;
+  color: var(--af-fg-subtle);
+}
+
+/* ------------------------------------------------------------------ team */
+
+.af-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+  gap: 0.9rem;
+  margin-top: 1.5rem;
+}
+
+.af-team-member {
+  align-items: flex-start;
+}
+
+.af-team-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--af-accent);
+  background: var(--af-accent-soft);
+  border: 1px solid var(--af-accent-border);
+}
+
+.af-team-member .af-card-badges {
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.af-team-link {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--af-accent);
+}

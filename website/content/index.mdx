@@ -1,66 +1,205 @@
 ---
-description: An SDK for Agent Fabric — governed model access from your own agent framework, with budget, refusals, telemetry and simulation on one skeleton.
+description: Governed by the gateway, understood by your code. DDK brings MuleSoft Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
 ---
 
 import { Callout, Tabs } from 'nextra/components'
-import { Badge, Card, CardGrid, Figure, Hero } from '../components'
+import { Card, CardGrid, Figure, Hero } from '../components'
 
 <Hero
-  eyebrow="Governed model access — live-verified"
+  eyebrow="Open-source SDK for MuleSoft Agent Fabric"
   title="Donkey Development Kit"
   tagline={
     <>
-      Consume <strong>Agent Fabric</strong> capabilities — governed model
-      access, and the budget, refusal, telemetry and simulation machinery that
-      hangs off it — from your own agent framework, in your own IDE,{' '}
-      <strong>without adopting Mule</strong>.
+      <strong>Governed by the gateway. Understood by your code.</strong> DDK
+      brings Omni Gateway awareness into the agents you already write — in
+      LangGraph, Google ADK, Strands, CrewAI, LlamaIndex, the OpenAI Agents SDK,
+      the Anthropic SDK or Microsoft Agent Framework — so governance is not
+      just enforced on your agents, it is respected by them.
     </>
   }
   media={
     <Figure
-      src="/img/omni-gateway-banner.jpg"
-      alt="Omni Gateway — AI Gateway, Federated Gateways, and API Gateway."
-      caption="Omni Gateway spans AI, federated, and API gateways. This SDK is the developer-side client for the AI lane — the one that is live-verified today."
-      width={1024}
-      height={682}
+      src="/img/introducing-ddk.jpg"
+      alt="Introducing DDK: one control point for all AI traffic, a proven MuleSoft API management stack, zero friction for developers, governed by Agent Fabric. A short Python script makes a governed call and prints the remaining token budget, next to an Agent Fabric usage dashboard showing token usage by model and provider."
+      width={1800}
+      height={1012}
       priority
     />
   }
   actions={[
     { label: 'Quickstart', href: '/quickstart', primary: true },
-    { label: 'Pick your framework', href: '/frameworks' },
+    { label: 'Feature overview', href: '/feature-overview' },
+    { label: 'Examples', href: '/examples' },
   ]}
 />
 
-You keep writing LangGraph, Google ADK, Strands, LlamaIndex, CrewAI, the OpenAI
-Agents SDK, the Anthropic SDK, or Microsoft Agent Framework code exactly as you
-do today. The SDK wires those frameworks to your organisation's governed **Omni
-Gateway LLM proxy** so every model call is authenticated, attributed, and
-policy-checked — and it hands you back your framework's **own native objects**,
-never a wrapper you have to code around.
+## Why gateway awareness
+
+Enterprises put a gateway in front of their AI traffic for good reasons: one
+place to authenticate every caller, meter every token, block personal data,
+stop prompt injection and attribute cost to the team that spent it. MuleSoft
+**Omni Gateway**, managed through **Agent Fabric**, does exactly that — for
+LLMs, MCP servers, APIs and agents alike.
+
+But a gateway that governs alone only solves half the problem. The agent on the
+other side of the wire sees an opaque `403` or `429` and does what code does
+with errors it does not understand: it retries a PII block as if it were a
+network blip, burns the remaining budget on calls that will be refused, crashes
+a nightly batch at 2am, and leaves no trace that connects its own run to the
+gateway's audit log. Control is one-sided, and the cost of that shows up as
+wasted tokens, broken runs and incident tickets.
+
+**DDK makes governance a collaboration.** It brings the gateway's view of the
+world into your agent code:
+
+- a PII refusal arrives as a typed `PIIDetected`, not a generic HTTP error, so
+  the agent can redact and continue instead of retrying;
+- the remaining token budget is an object the agent can **pace** against,
+  instead of a limit it discovers by failing;
+- every call carries a correlation ID and cost tags, and emits an
+  OpenTelemetry span that lines up with the gateway's own audit trail;
+- and you can rehearse all of it on your laptop, against a local simulator,
+  before an agent ever meets production policy.
+
+The gateway stays the enforcement point — it always has the final word. What
+changes is that your agents become **good citizens** of the platform: aware of
+the rules, efficient within them, and observable end to end. That is the
+enterprise vision behind DDK — control at the proxy, efficiency in the agent —
+built for AI engineers, developers and the AI teams who have to run their
+agents in production.
+
+<CardGrid columns={2}>
+  <Card title="One control point for all AI traffic" icon="◆">
+    Authentication, cost attribution, PII blocking and budget limits are set
+    once at the gateway and inherited by every app that uses DDK.
+  </Card>
+  <Card title="A proven stack, not a new one" icon="▣">
+    The same MuleSoft API management plane that already governs thousands of
+    enterprise APIs, now covering model traffic. No second gateway to buy,
+    staff or audit.
+  </Card>
+  <Card title="Zero friction for developers" icon="⚡">
+    One import, your framework, your IDE, your code. DDK returns native
+    framework objects, not wrappers — eight frameworks, three lines to eject.
+  </Card>
+  <Card title="Governed by Agent Fabric" icon="◎">
+    Governed model access today, with governed tool access, agent-to-agent
+    calls and publishing to the Agent Fabric registry on the same foundation.
+  </Card>
+</CardGrid>
 
 <Callout type="info">
-  **"Agent Fabric" is a MuleSoft (Salesforce) product name**, not a generic
-  term. This project is an SDK *for* that product; it is descriptive, not a
-  first-party release. See [the trademark/support boundary in the README](https://github.com/Donkey-Development-Kit/donkey-development-kit).
+  **DDK is an open-source, community-driven project** (Apache-2.0). It is **not
+  an official Salesforce or MuleSoft product** and is not supported by
+  Salesforce. "Agent Fabric", "Anypoint", "MuleSoft" and "Omni Gateway" are
+  Salesforce trademarks; DDK uses them only to describe the platform it
+  connects to. Meet the people behind it on the [Team](/community/team) page.
 </Callout>
 
-## The one design rule
+## Architecture
 
-> **Adapters return the framework's native object — never a wrapper.**
+DDK sits inside your agent process and speaks to the platform on three
+fronts: governed calls through the gateway, assets published to the control
+plane, and telemetry to your observability stack.
 
-`donkey.langgraph.chat_model("gpt-4o")` returns a real `langchain_openai.ChatOpenAI`.
-`donkey.llamaindex.llm("gpt-4o")` returns a real `OpenAILike`. You can hand these
-straight to `create_agent`, a LlamaIndex query engine, a Strands `Agent`,
-and so on. If you ever want to drop the SDK, you eject to three lines of native
-constructor code — every framework page shows you exactly which three.
+<Figure
+  src="/img/gateway-sdk-architecture.jpg"
+  alt="Architecture: the AI Control Plane (agent registry, cost control, gateway federation, govern and observe) is connected to the Omni Gateway, which fronts APIs, MCP, LLM and agent traffic with policies and enforcement — auth and identity, token budgets and rate limits, PII detection, content safety and guardrails, model routing and fallback, audit trails, contract drift and tool-poisoning checks — and manages upstream APIs, MCP servers, LLM providers and AI apps. DDK, inside the agent, makes governed calls and receives typed refusals, scans code and publishes assets to the control plane, serves and exposes A2A agents, and emits OpenTelemetry spans to the observability stack."
+  width={1800}
+  height={1012}
+/>
+
+**The AI control plane** is where the platform team manages the AI estate:
+the agent registry, cost control, gateway federation, and governance and
+observability across every runtime.
+
+**Omni Gateway** is the single data-plane entry point for APIs, MCP servers,
+LLMs and agents. Its policies do the enforcing — authentication and identity,
+token budgets and rate limits, PII detection, prompt-injection and
+content-safety guardrails, model routing and fallback, audit trails, contract
+drift and tool-poisoning detection — before traffic reaches the managed
+upstreams: enterprise APIs and integrations, MCP servers, LLM providers, and
+other AI apps and agents.
+
+**DDK** is the developer-side half of that picture. It is wired into the
+framework client your agent already uses and adds:
+
+- **Governed calls and typed refusals** — every model request goes through the
+  gateway with consumer credentials, correlation and attribution headers
+  injected; every policy rejection comes back as a typed exception such as
+  `PIIDetected` or `TokenBudgetExceeded`, never confused with an auth error.
+- **Token budget awareness** — the gateway's rate-limit headers become a
+  `Budget` object with `remaining`, `pace()` and `wait_for_reset()`.
+- **Local testing** — `donkey mock` and `donkey.simulate()` replay real
+  gateway rejection shapes on your laptop, and a pytest conformance suite
+  proves your agent handles each one before it ships.
+- **OpenTelemetry GenAI spans** — each call emits a span carrying the policy
+  decision, policy type, budget and correlation ID, exported to whatever
+  observability stack you run (Grafana, Datadog, Jaeger, and others) and
+  joined to the gateway's audit record through the correlation ID.
+- **Registry and agent-to-agent** — scanning your code to publish tools and
+  agent cards to the control plane, and serving or exposing your agent to
+  other agents over A2A.
+
+The division of labour is deliberate. The gateway enforces; DDK makes the
+enforcement legible and actionable inside the agent. Nothing in DDK
+re-implements a policy client-side, and nothing in your process can override
+the gateway.
+
+## Before and after
+
+Take the most ordinary piece of agent code there is: one model call.
+
+<Figure
+  src="/img/example-with-without-ddk.jpg"
+  alt="LLM routing example. Before: a stock OpenAI client calls gpt-4o directly, with no governance (no centralized controls or policy enforcement), no visibility (no observability or usage tracking) and no audit (no logs or attribution). After: the same call made through DDK is governed, observable and insightful, and the Agent Fabric usage dashboard shows total, input and output tokens, usage by model, and usage per consumer such as openai and hr-agent."
+  width={1800}
+  height={1014}
+/>
+
+**Without DDK**, a stock client talks straight to the model provider. It works
+— and it is invisible. There are no centralised controls or policy
+enforcement, no usage tracking, no record of which team or agent spent which
+tokens, and nothing an auditor can follow.
+
+```python
+import openai
+
+client = openai.OpenAI()
+completion = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Capital of Switzerland?"}],
+)
+print(completion.choices[0].message.content)
+```
+
+**With DDK**, the call is the same shape and the client is the same native
+`openai.OpenAI` — but it now goes through your organisation's Omni Gateway.
+The request is authenticated and attributed, policy is applied, the agent
+knows how much budget it has left, and the platform team sees the usage per
+model and per consumer in Agent Fabric.
+
+```python
+from donkey_kit import Donkey
+
+with Donkey.from_env() as donkey:
+    client = donkey.llm.client(sync=True)      # a real openai.OpenAI, governed
+    reply = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Capital of Switzerland?"}],
+    )
+    print(reply.choices[0].message.content)
+    print(donkey.budget.remaining, "tokens left")
+```
+
+Three lines changed. Governed, observable and attributed — without leaving
+your framework.
 
 ## Make a governed call
 
-The Python SDK returns native framework objects. From any other language you hit
-the *same* governed proxy over its OpenAI-compatible HTTP API — the verified base
-URL plus the `client_id` / `client_secret` headers. (No first-party TypeScript
-SDK yet.)
+From Python, DDK hands you your framework's own objects. From any other
+language, call the same governed proxy over its OpenAI-compatible HTTP API
+with the `client_id` / `client_secret` header pair.
 
 <Tabs items={['Python (async)', 'Python (sync)', 'TypeScript', 'cURL']}>
 <Tabs.Tab>
@@ -127,88 +266,42 @@ curl "${DONKEY_LLM_PROXY_URL}chat/completions" \
 </Tabs.Tab>
 </Tabs>
 
-## Why not just set `base_url`?
+## Native objects, never wrappers
 
-Fair question, and the honest answer shapes everything else here:
+> **Adapters return the framework's native object — never a wrapper.**
 
-> A stock OpenAI client with a `base_url` and two headers **can** reach the
-> governed proxy. This SDK is not selling you that.
+`donkey.langgraph.chat_model("gpt-4o")` returns a real `langchain_openai.ChatOpenAI`.
+`donkey.llamaindex.llm("gpt-4o")` returns a real `OpenAILike`. Hand them
+straight to `create_agent`, a LlamaIndex query engine or a Strands `Agent`.
+And if you ever want to drop DDK, you eject to three lines of native
+constructor code — every [framework page](/frameworks) shows exactly which
+three.
 
-What it sells is the **skeleton** — one place in your process where every
-request enters and every response leaves. That is the only place where budget
-headers, error classification, correlation IDs, cost tags, OTel spans,
-simulation, and refusal handlers can all attach *without you wiring each one*.
-
-<CardGrid>
-  <Card
-    title="Governed model access"
-    href="/frameworks"
-    icon="◆"
-    badge="Live"
-    badgeTone="live"
-  >
-    Point your framework at the governed proxy. Verified auth, attribution,
-    retries, and a typed error taxonomy — injected for you.
-  </Card>
-  <Card
-    title="The six-piece minimum"
-    href="/roadmap"
-    icon="◈"
-    badge="Shipped"
-    badgeTone="accent"
-  >
-    Typed refusals, budget pacing, a local simulator, a conformance plugin,
-    OTel GenAI spans, and correlation IDs — one release, because the skeleton
-    is worth the sum of what hangs on it.
-  </Card>
-  <Card
-    title="Governed tool access"
-    href="/tool-access"
-    icon="◇"
-    badge="Phase 2"
-    badgeTone="roadmap"
-  >
-    Discover and bind governed MCP tools across frameworks, with governed-only
-    filtering. The page covers what's blocked and why.
-  </Card>
-</CardGrid>
-
-## What is live today
-
-<Callout type="default">
-  **Governed model access is live-verified** against a real Anypoint sandbox:
-  the proxy base-URL shape (`https://<ingress>/<instance>/`, no `/v1`), the
-  `client_id` + `client_secret` consumer-auth header pair, the attribution
-  headers, and six policy rejection shapes (auth `401`, PII `403`,
-  token-budget `429`, upstream passthrough, plus the regex prompt-guard and
-  Azure content-safety `403` blocks). The framework-free client and the
-  adapters are wired to that verified contract.
-</Callout>
-
-Beyond the live-verified contract above, shipped SDK capability pages say what
-is implemented and call out any remaining platform-verification caveats.
-Planned Phase 2 and Phase 3 pages carry roadmap badges and describe proposal
-API shapes. Where a platform fact is not confirmed, the SDK raises
-`NotImplementedError("blocked on verification: …")` rather than fabricate an
-endpoint, header, or class name — see [Verification policy](/concepts/verification)
-for the current ledger, and the [Roadmap](/roadmap) for what lands when.
+A stock client with a `base_url` and two headers can reach the gateway. What
+DDK adds is the **single place in your process** where every request enters
+and every response leaves — which is where typed refusals, budget pacing,
+correlation IDs, cost tags, spans and simulation all attach without you
+wiring each one.
 
 ## Next steps
 
 <CardGrid>
   <Card title="Quickstart" href="/quickstart" icon="→">
-    Make your first governed model call in under five minutes.
+    Your first governed call in minutes — no gateway or credentials needed.
   </Card>
   <Card title="Feature overview" href="/feature-overview" icon="☰">
-    A tour of everything governed model access gives you today.
+    Every capability, its purpose, and what it saves you.
   </Card>
-  <Card title="Pick your framework" href="/frameworks" icon="⚙">
-    Per-framework install, quickstart, and the manual equivalent.
+  <Card title="Frameworks" href="/frameworks" icon="⚙">
+    Install and quickstart for each of the eight supported frameworks.
   </Card>
-  <Card title="Typed refusals" href="/errors" icon="!">
-    Branch on governance outcomes instead of parsing error bodies.
+  <Card title="Examples" href="/examples" icon="▶">
+    Runnable demos, from a first governed call to a full LangGraph agent.
   </Card>
   <Card title="Roadmap" href="/roadmap" icon="◷">
-    What ships when — and what this SDK deliberately will not build.
+    What is available now and what is coming next, phase by phase.
+  </Card>
+  <Card title="Contribute" href="/community/contribute" icon="♥">
+    DDK is open source — issues, docs, examples and adapters welcome.
   </Card>
 </CardGrid>

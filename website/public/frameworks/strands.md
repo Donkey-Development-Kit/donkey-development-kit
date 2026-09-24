@@ -1,11 +1,15 @@
-# Strands Agents — governed model access
+# Strands Agents
 
-Strands Agents gets a governed `OpenAIModel`, with proxy connection details
-forwarded through Strands' `client_args`, which Strands passes straight
-through to the underlying OpenAI client.
+Strands Agents gets a governed `OpenAIModel` pointed at the Agent Fabric LLM
+proxy. The connection details travel in Strands' `client_args`, which Strands
+passes straight through to its underlying OpenAI client.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`).** `client_args` gives full header AND
-> transport injection, on par with the LangGraph adapter.
+**What you get**
+
+- A native `strands.models.openai.OpenAIModel`.
+- Full header **and** transport injection through `client_args` — per-run
+  correlation IDs and `donkey.last_call` work, as with LangGraph.
+- Supported at `connection_kwargs()`.
 
 ## Install
 
@@ -21,14 +25,12 @@ from donkey_kit.integrations.strands import model
 llm = model("gpt-4o")
 ```
 
-`llm` is a real, native **`strands.models.openai.OpenAIModel`** instance —
-pass it to your `Agent` as you would any other Strands model.
+`llm` is a real `strands.models.openai.OpenAIModel` instance — pass it to your
+`Agent` as you would any other Strands model.
 
-There's no first-party Agent Fabric TypeScript SDK yet (it's on the
-[roadmap](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The proxy is OpenAI-compatible, so point the
-official `openai` npm client at it — the same base URL and
-`client_id`/`client_secret` headers also drop into the **Strands TypeScript
-SDK** (`@strands-agents/sdk`).
+Call the proxy's OpenAI-compatible API with the official `openai` npm client.
+The same base URL and `client_id`/`client_secret` headers also work with the
+**Strands TypeScript SDK** (`@strands-agents/sdk`).
 
 ```typescript
 import OpenAI from "openai";
@@ -78,7 +80,7 @@ async with Donkey.from_env() as donkey:
     llm = OpenAIModel(model_id="gpt-4o", **donkey.strands.connection_kwargs())
 ```
 
-## The manual equivalent (eject at any time)
+## Manual equivalent
 
 ```python
 from strands.models.openai import OpenAIModel
@@ -95,19 +97,17 @@ llm = OpenAIModel(
 ```
 
 Everything the SDK injects lives inside the single `client_args` dict that
-Strands forwards to its internal OpenAI client — nothing is bolted on
-separately.
+Strands forwards to its internal OpenAI client.
 
-## Notes & limitations
+## Notes
 
-> Because Strands forwards `client_args` verbatim to the underlying OpenAI
-> client, both header injection (`default_headers`) AND transport injection
-> (`http_client`) are available — full conformance, same tier as LangGraph.
-
-> Strands also exposes lifecycle hooks (`BeforeToolCallEvent` and friends),
-> which the SDK uses elsewhere for the policy-termination pattern — see the
-> error taxonomy for how a `PolicyViolation` should end a run cleanly rather
-> than triggering a retry loop.
+- Strands forwards `client_args` verbatim to the underlying OpenAI client, so
+  both header injection (`default_headers`) and transport injection
+  (`http_client`) are available.
+- Strands also exposes lifecycle hooks (`BeforeToolCallEvent` and friends).
+  The SDK uses them for the policy-termination pattern — see the error taxonomy
+  for how a `PolicyViolation` should end a run cleanly rather than trigger a
+  retry loop.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for

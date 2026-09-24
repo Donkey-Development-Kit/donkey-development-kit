@@ -1,31 +1,33 @@
 # CLI & decorators
 
-  **Phase 1 — the decorators and the four-command CLI are shipped.** Both
-  decorators below (`@donkey.governed` / `@donkey.tool`) have landed (#200), and
-  the CLI now exposes its four commands — `init`, `doctor`, `mock`, and `test`
-  (#201, #202) — with consistent global flags and exit codes. See
-  [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+Live
 
-Two on-ramps. Everything on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md)'s six-piece list attaches
-to the same transport hooks, and these are how you reach all of it without
-wiring each piece by hand.
+Two on-ramps to the SDK: decorators that govern a function in one line, and a
+four-command CLI for setup, diagnosis, local simulation, and conformance
+testing.
 
 ## Decorators
 
-`@donkey.governed` runs a function inside a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) scope:
+### `@donkey.governed`
+
+Runs a function inside a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) scope:
 
 ```python
 @donkey.governed(team="support")
 async def handle_ticket(ticket): ...
 ```
 
-One decorator gives that function a run/correlation ID, cost tags, an OTel span,
+One decorator gives the function a run/correlation ID, cost tags, an OTel span,
 and typed refusals — the four things you would otherwise set up per call site.
-It wraps **both sync and async** callables, works bare (`@donkey.governed`) or
-parametrised (`@donkey.governed(team=…, project=…, env=…, enduser_id=…)`), and
-deliberately takes **no `id=`**: each call opens its own run (a "run of one"),
-and a fixed id pinned across calls would collapse unrelated runs into one
-correlation. When you need a specific id, use `donkey.run(id=…)` directly.
+
+- Wraps **both sync and async** callables.
+- Works bare (`@donkey.governed`) or parametrised
+  (`@donkey.governed(team=…, project=…, env=…, enduser_id=…)`).
+- Takes **no `id=`**: each call opens its own run, so unrelated calls are never
+  collapsed into one correlation. When you need a specific id, use
+  `donkey.run(id=…)` directly.
+
+### `@donkey.tool`
 
 ```python
 @donkey.tool
@@ -34,20 +36,23 @@ async def lookup_crm(customer_id: str) -> dict:
     ...
 ```
 
-`@donkey.tool` marks a function as a governed tool **without changing how it's
-called** — it returns the same function with a `__donkey_tool__` marker and
-records a `ToolSpec` (name, qualname, signature, docstring, `is_async`) in a
-process-global registry you read with `registered_tools()`. A tool with **no
-docstring is rejected at decoration time** (`ValueError`) — an undescribed tool
-is useless to a model and to the registry. `ToolSpec` and `registered_tools`
-are exported from `donkey_kit`.
+Marks a function as a governed tool **without changing how it's called**. It
+returns the same function with a `__donkey_tool__` marker and records a
+`ToolSpec` (name, qualname, signature, docstring, `is_async`) in a
+process-global registry you read with `registered_tools()`. Both `ToolSpec` and
+`registered_tools` are exported from `donkey_kit`.
 
-The registry exists in Phase 1; its **consumers** are Phase 2 — the
-[scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) reads these markers to derive a manifest from your code,
-and the [A2A](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) agent-card generator reads the same markers to build a card.
-Marking tools early costs nothing and saves the migration later.
+A tool with **no docstring is rejected at decoration time** (`ValueError`) — an
+undescribed tool is useless to a model and to a registry.
+
+The same markers are what the planned [scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) and
+[A2A](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) agent-card generator read, so marking tools now carries forward.
 
 ## The CLI
+
+```bash
+pip install "donkey-kit[cli]"
+```
 
 ```bash
 donkey init          # writes a commented .donkey-kit.toml, names every missing env var at once
@@ -56,78 +61,102 @@ donkey mock          # the local simulator — --scenario scripts failures
 donkey test          # a thin front end to pytest --donkey-conformance
 ```
 
-All four share three global flags, which precede the subcommand:
+### Global flags
+
+Three global flags precede the subcommand:
 
 ```bash
 donkey --config ./cfg.toml init   # write/read a config file at a non-default path
-donkey --env Production doctor     # override the Anypoint environment
-donkey --json init                 # machine-readable output where a command supports it
+donkey --env Sandbox doctor       # override the Anypoint environment
+donkey --json init                # machine-readable output where a command supports it
 ```
+
+### Exit codes
 
 Every command exits non-zero on failure, so any of them drops into CI as a
 preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
 `donkey test` → `[test]`, `donkey doctor` → `[llm]`) prints the exact
 `pip install` line and exits `1` — never a stack trace.
 
-### `donkey init` bootstraps your config
+### `donkey init`
 
-`donkey init` resolves your current configuration (kwargs → env vars →
-`.donkey-kit.toml` → defaults) and writes a **commented** `.donkey-kit.toml`
-with the values it found. Three properties matter:
+Resolves your current configuration (kwargs → env vars → `.donkey-kit.toml` →
+defaults) and writes a **commented** `.donkey-kit.toml` with the values it
+found.
 
-- **It names every missing required field at once** — control-plane *and* proxy
-  — reusing the same validation the SDK runs at a live call, so `init` and a
+- **Names every missing required field at once** — control plane *and* LLM
+  proxy — using the same validation the SDK runs at call time, so `init` and a
   real request never disagree about what is required.
-- **It never writes a secret.** `client_secret`, `llm_proxy_client_secret`, and
-  `llm_proxy_key` are emitted as commented `env` pointers, not values — a
-  committed config file is the wrong home for a credential.
-- **It is idempotent.** An existing file is left untouched unless you pass
-  `--force`.
+- **Never writes a secret.** `client_secret`, `llm_proxy_client_secret`, and
+  `llm_proxy_key` are emitted as commented `env` pointers, not values.
+- **Idempotent.** An existing file is left untouched unless you pass `--force`.
 
-### `donkey test` runs the conformance suite against your agent
+```bash
+donkey init --force
+donkey --json init    # {"path": "...", "written": true, "missing": [...]}
+```
 
-`donkey test` is a thin front end to `pytest --donkey-conformance` — it does
-not re-implement the runner. Point it at your agent factory and pass any
-trailing pytest arguments straight through; pytest's exit code becomes
-`donkey test`'s own.
+### `donkey doctor`
+
+A governed call can fail for several reasons that look identical from the
+outside. `doctor` makes one real governed call and tells them apart:
+
+- **Wrong credentials** — the `client_id`/`client_secret` pair is rejected.
+- **Wrong URL** — the credentials are fine but the base URL is not a proxy
+  instance. (A trailing `/v1` lands here; the governed proxy has no `/v1`
+  segment.)
+- **Credentials fine, model not in the allow-list** — nothing is misconfigured;
+  your platform team has not granted that model.
+
+Each verdict prints the same remediation string the matching typed exception
+carries, so the fix is in the output rather than in a runbook. The budget line
+states how old the reading is, since the proxy has no budget endpoint.
+
+```bash
+donkey doctor --model gpt-4o     # model to test against the allow-list (default gpt-4o)
+donkey doctor --json             # machine-readable checks
+```
+
+### `donkey mock`
+
+Runs the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), which replays captured gateway
+rejections. Needs the `[local]` extra.
+
+```bash
+donkey mock --port 8080 --host 127.0.0.1 \
+  --scenario pii_block:every=5 \
+  --scenario budget:limit=20000,window=60s
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--port` | `8080` | TCP port to bind. |
+| `--host` | `127.0.0.1` | Host/interface to bind. |
+| `--scenario` | none | Fault-injection rule, repeatable. See [Scenario scripting](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting). |
+
+An invalid `--scenario` exits with code `2`.
+
+### `donkey test`
+
+A thin front end to `pytest --donkey-conformance` — it does not re-implement the
+runner. Point it at your agent factory and pass any trailing pytest arguments
+straight through; pytest's exit code becomes `donkey test`'s own. Needs the
+`[test]` extra.
 
 ```bash
 donkey test --agent my.pkg:make_agent -k governance -x
 ```
 
-### `donkey doctor` is the one that pays for itself
+See [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) for what the suite checks.
 
-A governed call can fail for several reasons that all look identical from the
-outside. `doctor` exists to tell them apart:
+## Planned commands Roadmap
 
-- **Wrong credentials** — the `client_id`/`client_secret` pair is rejected.
-- **Wrong URL** — the credentials are fine but the base URL is not a proxy
-  instance. (The trailing `/v1` mistake lands here; the governed proxy has no
-  `/v1` segment.)
-- **Credentials fine, model not in the allow-list** — nothing is misconfigured
-  at all; your platform team has not granted that model.
+These commands are part of the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and are not available in the
+CLI yet:
 
-Each answer comes with the same remediation string the matching typed
-exception carries, so the fix is in the output rather than in a runbook. This
-is the difference between an afternoon of guessing and thirty seconds.
+- `donkey scan` and `donkey publish` — derive a manifest and agent card from
+  your code and register them with Exchange. See [Scan & publish](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md).
+- `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
+  A2A and expose it through the gateway. See [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md).
 
-## Acceptance bar
-
-- `donkey --help` lists exactly the four commands: `init`, `doctor`, `mock`,
-  `test`.
-- Global `--config` / `--env` / `--json` are consistent across the commands
-  that support them, and every command exits non-zero on failure.
-- `donkey init` writes a commented `.donkey-kit.toml` with the resolved values,
-  lists every missing required field in one run, never writes a secret, and does
-  not clobber an existing file without `--force`.
-- `donkey doctor` distinguishes those three failures from each other — not one
-  generic "could not connect." Each verdict prints the remediation string from
-  the corresponding typed refusal, so the CLI and the exception never disagree.
-- `donkey test` forwards to `pytest --donkey-conformance` and propagates its
-  exit code.
-
----
-
-**Status: Phase 1 — the `@donkey.governed` / `@donkey.tool` decorators (#200)
-and the four-command CLI (`init`, `doctor`, `mock`, `test`) are shipped (#201,
-#202).**
+  Run `donkey --help` to see the commands available in your installed version.

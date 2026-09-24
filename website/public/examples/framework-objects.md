@@ -1,0 +1,86 @@
+# Framework objects & model handles
+
+No adapter returns a wrapper. `donkey.langgraph.chat_model(...)` hands back a
+real `langchain_openai.ChatOpenAI`, so everything your framework can do with a
+model still works and nothing new appears in your stack traces. LangGraph is
+the one deep, conformance-gated adapter; the other seven are supported at
+`connection_kwargs()` — the SDK gives you the base URL, headers and client
+configuration, and you pass them to the framework's own constructor. The
+companion example covers model handles: `resolve()` gives a local capability
+handle, and `list_models(live=True)` raises a `ConfigError` explaining that the
+proxy has no catalog endpoint rather than guessing one.
+
+| Example | Shows | Needs |
+| --- | --- | --- |
+| Narrative demo 07 | `resolve()` capability handles, `list_models(live=True)` raising `ConfigError`, and config validation listing every missing field at once | Nothing |
+| Narrative demo 08 | One factory call per framework and what came back, then `connection_kwargs()` for the shallow adapters | Nothing — objects are constructed, no network calls |
+
+## Run it
+
+```bash
+make demo N=07
+make demo N=08
+```
+
+Narrative demo 08 uses obviously-fake config, so it needs no credentials.
+Frameworks that are not installed are reported with their exact `pip install`
+line.
+
+## Key code
+
+The roster narrative demo 08 walks — attribute on `Donkey`, factory method, and
+depth:
+
+```python
+ROSTER = [
+    ("langgraph", "chat_model", True, "deep — the conformance-gated adapter"),
+    ("adk", "model", True, "connection_kwargs()"),
+    ("strands", "model", True, "connection_kwargs()"),
+    ("agent_framework", "chat_client", True, "connection_kwargs()"),
+    ("openai_agents", "model", True, "no connection_kwargs() — builds its own client"),
+    ("anthropic", "client", False, "connection_kwargs()"),
+    ("crewai", "llm", True, "connection_kwargs()"),
+    ("llamaindex", "llm", True, "connection_kwargs()"),
+]
+```
+
+For the shallow adapters, `connection_kwargs()` is the whole supported surface:
+
+```python
+kwargs = donkey.strands.connection_kwargs()
+SomeFrameworkModel(model="gpt-4o", **kwargs)
+```
+
+Model handles and the missing catalog (narrative demo 07):
+
+```python
+handle = donkey.llm.resolve("gpt-4o")
+handle.capabilities
+
+await donkey.llm.list_models(live=True)   # raises ConfigError
+```
+
+And config validation reports every missing field in one error, each naming
+the environment variable that sets it:
+
+```python
+DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
+```
+
+  `donkey.openai_agents` is the OpenAI Agents SDK adapter; `donkey.openai()` is
+  the raw OpenAI client factory. The LangGraph adapter sets
+  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. Where
+  an adapter cannot confirm a framework's class name or constructor, it raises
+  "blocked on verification" rather than guessing.
+
+`resolve()` capabilities are heuristics derived from the model id, not a
+governed catalog. The gateway returns 404 for `GET /models` because
+model-based routing only routes requests that already carry `model` in the
+body. When a live call fails — wrong URL, wrong credentials, or a model the
+allow-list does not include — [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) tells those apart.
+
+**Learn more:** [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
+
+**Source:**
+[narrative demo 07](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/07_model_handles) ·
+[narrative demo 08](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/08_framework_objects)

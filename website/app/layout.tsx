@@ -8,7 +8,7 @@ import '../styles/globals.css'
 
 const SITE_NAME = 'Donkey Development Kit'
 const SITE_DESCRIPTION =
-  'An SDK for Agent Fabric — governed model access from your own agent framework, with budget, refusals, telemetry and simulation on one skeleton.'
+  'Governed by the gateway, understood by your code. An open-source SDK that brings MuleSoft Agent Fabric and Omni Gateway awareness into your agent framework.'
 
 // next/image's unoptimized loader does not prefix basePath for /public assets,
 // so reference the served copy under website/public/img/ with the base path
@@ -67,9 +67,11 @@ const navbar = (
 const footer = (
   <Footer>
     <span>
-      Donkey Development Kit — an SDK <em>for</em> Agent Fabric. “Agent Fabric”,
-      “Anypoint”, and “Omni Gateway” are Salesforce trademarks; this project is
-      descriptive (the trademark/support boundary).
+      Donkey Development Kit is an open-source, community-driven project
+      (Apache-2.0). It is not an official Salesforce or MuleSoft product and is
+      not supported by Salesforce. “Agent Fabric”, “Anypoint”, “MuleSoft” and
+      “Omni Gateway” are trademarks of Salesforce, Inc., used here only to
+      describe the platform DDK connects to.
     </span>
   </Footer>
 )
@@ -94,7 +96,7 @@ export default async function RootLayout({
           navbar={navbar}
           footer={footer}
           pageMap={pageMap}
-          docsRepositoryBase="https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/website/content"
+          docsRepositoryBase="https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/website/content"
           sidebar={{ defaultMenuCollapseLevel: 1, toggleButton: true }}
           toc={{ backToTop: 'Scroll to top' }}
         >

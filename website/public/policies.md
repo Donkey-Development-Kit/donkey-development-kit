@@ -1,13 +1,13 @@
 # Policy handshake
 
-  **Phase 3 — blocked upstream, not merely unbuilt.** This needs a
-  policy-discovery endpoint that **does not exist on the gateway today**. It is
-  filed as an upstream gap; until that ships, this cannot be built without
-  inventing an endpoint. See [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and
-  [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+Roadmap
 
-On first connection, the SDK fetches the policy set in force for your
-credentials and exposes it:
+This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned
+design. It depends on a policy-discovery endpoint on the gateway, which does not
+exist today.
+
+On first connection, DDK will fetch the policy set in force for your
+credentials and expose it:
 
 ```python
 donkey.policies.models_allowed        # ["gpt-4o", "claude-sonnet"]
@@ -18,37 +18,32 @@ donkey.policies.content_safety.on     # True
 donkey.policies.observed_at           # when this view was fetched
 ```
 
-## Why it is worth an upstream ask
+## What it enables
 
-**Wasted calls.** An agent requests a model that is not in its allow-list.
-Today that is one wasted round-trip and one refusal, every time. With the
-handshake, the adapter picks from `models_allowed` at construction time and the
-refusal never happens. Multiply by a few thousand tickets a day.
+**Fewer wasted calls.** An agent that requests a model outside its allow-list
+costs one round-trip and one refusal, every time. With the handshake, the
+adapter picks from `models_allowed` at construction time and the refusal never
+happens. Multiply by a few thousand tickets a day.
 
-**Honest UX.** If `pii.mode == "mask"`, the gateway will redact rather than
+**Better UX.** If `pii.mode == "mask"`, the gateway will redact rather than
 reject — so your bot can say *"some details were redacted"* instead of
-*"request failed."* Same gateway behaviour, completely different experience,
-and today the client has no way to know which mode is in force.
+*"request failed."* Same gateway behaviour, a very different experience, and
+today the client has no way to know which mode is in force.
 
-**Cold start.** It is also what makes [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) live rather than
+**Warm start.** It also makes [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) live rather than
 last-known-good: a fresh process currently knows nothing about its budget until
 its first response comes back.
 
-## The hard rule
+## The handshake is advisory
 
-  **The handshake is advisory.** It exists to avoid *wasted* calls and to
-  improve UX — never to make an access decision. The gateway still evaluates
-  every single request.
+  **The handshake never makes an access decision.** It exists to avoid *wasted*
+  calls and to improve UX. The gateway still evaluates every request.
 
 If the client's cached view and the gateway disagree, **the gateway wins** and
-the client learns from the refusal. Any proposal to skip a gateway call
-*"because the handshake said it's fine"* is client-side enforcement, which is
-on the [will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+the client learns from the refusal. Skipping a gateway call *"because the
+handshake said it's fine"* is client-side enforcement, which is on the
+[will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
 
-This is also why `observed_at` is part of the surface, exactly as it is on the
-budget object: a policy view is a snapshot, and code that cannot tell a
-snapshot from live state will eventually make a decision it should not have.
-
----
-
-**Status: Phase 3 — blocked on an upstream endpoint.**
+This is also why `observed_at` is part of the surface, as it is on the budget
+object: a policy view is a snapshot, and code that cannot tell a snapshot from
+live state will eventually make a decision it should not have.

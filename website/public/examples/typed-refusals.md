@@ -1,0 +1,115 @@
+# Typed refusals
+
+Governance outcomes should be something you branch on, not something you
+parse. These examples run the gateway's rejection shapes through `classify()`
+and show the exception hierarchy you write `except` clauses against. The
+discriminator is deliberately not the status code: a PII block is a 403 but is
+not an auth failure, and an injection block is identified by a header. They
+also show the one failure `classify()` cannot produce — `GatewayUnavailable`,
+raised when there is no HTTP response at all.
+
+| Example | Shows | Needs |
+| --- | --- | --- |
+| Narrative demo 02 | Nine captured shapes through `classify()`, what the hierarchy buys, the handler you write, and a dead origin raising `GatewayUnavailable` | Nothing — no gateway, no simulator |
+| OpenAI script 04 | Live `UpstreamRequestError`, `PIIDetected`, `TokenBudgetExceeded` and `AuthError` on a blocking client, no `async` | Proxy credentials, plus policies for the PII and budget cases |
+| OpenAI script 11 | A dead origin surfacing `GatewayUnavailable` as `__cause__` | Nothing |
+
+## Run it
+
+```bash
+make demo N=02
+```
+
+```bash
+python "demos/human-made/openai/04 - typed-refusals-live.py"      # needs proxy credentials
+python "demos/human-made/openai/11 - gateway-unavailable.py"      # no gateway
+```
+
+  Narrative demo 02 loads its fixtures from the installed SDK
+  (`donkey_kit.simulator.fixtures`) — the same bytes `classify()` is tested
+  against and `donkey mock` serves. OpenAI script 04 provokes the upstream and
+  auth cases with nothing extra; the PII case needs the PII detection policy
+  with `Email` and action `Reject`, and the budget case needs the token rate
+  limit policy with a small `maximumTokens`.
+
+## Key code
+
+The handler shape the hierarchy is designed for (narrative demo 02, act 3):
+
+```python
+try:
+    response = await client.responses.create(model=..., input=...)
+except openai.APIStatusError as exc:
+    raise classify(exc.response) from exc
+
+except PIIDetected as e:          # 403, and e.entities says what tripped
+    redact_and_retry(e.entities)
+except ContentSafetyBlocked as e: # 403, e.categories is the moderation analog
+    revise(e.categories)
+except TokenBudgetExceeded as e:  # 429, terminal — never retry it
+    await donkey.budget.wait_for_reset()
+except PolicyViolation as e:      # any other gateway refusal
+    escalate(e.remediation)
+except GatewayUnavailable as e:   # NO response — not a refusal
+    diagnose(e.base_url, e.cause) # checkpoint / shed / donkey doctor
+except UpstreamRequestError as e: # your request was wrong (e.code)
+    fix(e.code)
+except UpstreamModelError:        # provider 5xx — this one IS retryable
+    retry_with_backoff()
+```
+
+A live refusal on a blocking client (OpenAI script 04):
+
+```python
+cfg = DonkeyConfig.from_env()
+donkey = Donkey(cfg)
+client = donkey.openai(sync=True)
+
+with donkey.run(id="live-refusals-PIIDetected"):
+    try:
+        raw = client.responses.with_raw_response.create(model=MODEL, input=PII_PROMPT)
+    except openai.APIStatusError as err:
+        error = classify(err.response)
+        print(f"  REFUSED        {type(error).__name__} (HTTP {err.response.status_code})")
+        print(f"  entities       {getattr(error, 'entities', None)}")
+        print(f"  remediation    {getattr(error, 'remediation', None)}")
+        print(f"  correlation_id {getattr(error, 'correlation_id', None)}")
+```
+
+When nothing is listening, the OpenAI client wraps the transport error and the
+typed `GatewayUnavailable` sits on `__cause__` (OpenAI script 11):
+
+```python
+donkey = Donkey(
+    DonkeyConfig(
+        llm_proxy_url="http://127.0.0.1:9/",
+        llm_proxy_client_id="demo-client-id-not-a-real-credential",
+        llm_proxy_client_secret="demo-client-secret-not-a-real-credential",
+        timeout_s=2.0,
+        max_retries=0,
+    )
+)
+client = donkey.openai(sync=True)
+
+try:
+    client.responses.create(model="gpt-4o", input="hello")
+except Exception as err:
+    hit = err if isinstance(err, GatewayUnavailable) else err.__cause__
+    if isinstance(hit, GatewayUnavailable):
+        print("base_url   ", hit.base_url)
+        print(hit.remediation)
+```
+
+A token-budget 429 and a PII 403 are both `PolicyViolation`s, so one `except
+PolicyViolation` catches either. An upstream 400 is not — your request was
+wrong, the gateway did not say no. `GatewayUnavailable` is not a
+`PolicyViolation` either: nothing was refused, because nothing arrived. An
+undiscriminated `content-moderation` 4xx falls through to a generic
+`PolicyViolation`.
+
+**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md)
+
+**Source:**
+[narrative demo 02](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/02_typed_refusals) ·
+[script 04](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/04%20-%20typed-refusals-live.py) ·
+[script 11](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/11%20-%20gateway-unavailable.py)

@@ -3,43 +3,44 @@ description: On-behalf-of token exchange, so the gateway can enforce per-user po
 ---
 
 import { Callout } from 'nextra/components'
+import { Badge } from '../components'
 
 # Identity
 
-<Callout type="info">
-  **Phase 2 — designed, not yet shipped.** The API shape below is a proposal.
-  The exact token-exchange endpoint and header the gateway expects are
-  **unverified**, and will not be guessed. See [Roadmap](/roadmap) and
-  [Verification policy](/concepts/verification).
-</Callout>
+<Badge tone="roadmap">Roadmap</Badge>
+
+This capability is on the [Roadmap](/roadmap); the API shown here is the planned
+design.
 
 By default the gateway sees your **service**, not the person the agent is
-acting for. That is fine until policy depends on who is asking.
+acting for. That is fine until policy depends on who is asking. DDK will let you
+run a block of agent code on behalf of a user:
 
 ```python
 async with donkey.as_user(id_token=slack_user_oidc_token):
     await hr_bot.answer(question)      # the gateway sees the user, not just the service
 ```
 
-Inside that block, a user-scoped token is acquired via RFC 8693 token exchange
-and attached to every governed call, so the gateway's Trusted Agent Identity
-layer can apply per-user policy.
+Inside that block, DDK acquires a user-scoped token via RFC 8693 token exchange
+and attaches it to every governed call, so the gateway's Trusted Agent Identity
+layer can apply per-user policy. The exact token-exchange endpoint and header
+the gateway expects will be pinned to the gateway's documented contract.
 
-## The problem this actually solves
+## The problem this solves
 
 An HR bot must not answer a manager's salary question about a *different*
 manager's report.
 
 That decision belongs to the gateway — it is the component that holds the
-identity policy, the org chart relationships, and the audit obligation. The
-SDK's entire job is to get the user's token onto the request correctly so the
-gateway can make the call it is already able to make.
+identity policy, the org-chart relationships, and the audit obligation. DDK's
+job is to get the user's token onto the request correctly so the gateway can
+make the call it is already able to make.
 
-## The boundary, stated plainly
+## Where the boundary sits
 
 <Callout type="warning">
-  **This does not implement authorisation logic.** Trusted Agent Identity is a
-  shipped MuleSoft feature. The SDK does the token-exchange plumbing and header
+  **DDK does not implement authorisation logic.** Trusted Agent Identity is a
+  MuleSoft gateway feature. DDK does the token-exchange plumbing and header
   placement — nothing more. "Check the user's role in the SDK" is client-side
   enforcement, and it is on the [will-not-build list](/roadmap): code in your
   process can be bypassed by code in your process.
@@ -47,14 +48,9 @@ gateway can make the call it is already able to make.
 
 ## No silent fallback
 
-The failure mode worth designing against is a token exchange that quietly
-fails and lets the call proceed under the **service** identity. That would
-mean per-user policy silently stops applying while everything still appears to
-work — the worst possible outcome, because nothing looks broken.
+The failure mode to design against is a token exchange that quietly fails and
+lets the call proceed under the **service** identity. Per-user policy would stop
+applying while everything still appears to work.
 
-So entering `as_user()` either attaches a user-scoped token or raises. It never
+So entering `as_user()` will either attach a user-scoped token or raise. It never
 degrades to the service identity without telling you.
-
----
-
-**Status: Phase 2 — not yet shipped.**

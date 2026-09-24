@@ -1,46 +1,44 @@
 # Governed error taxonomy
 
+Live
+
 The proxy doesn't just pass model calls through — it enforces policy. When it
-rejects a call, the SDK turns the response into a **typed exception** so you
+rejects a call, DDK turns the response into a **typed exception** so you
 branch on the governance outcome instead of parsing bodies.
 
 ## The rejection shapes `classify()` types
 
-`classify()` types eight rejection shapes. **Six are live-verified** against the
-sandbox proxies (auth, PII, token rate limit, upstream, **regex prompt guard**,
-and **Azure content safety** — the last two confirmed 2026-09-22, [#253]).
-Still pending live capture: **injection protection** (typed by its header
-discriminator, body uncaptured — a distinct policy from regex prompt guard, with
-no proxy deployed), Amazon **Bedrock guardrails**, and the **undiscriminated
-content-moderation** fall-through — all tracked in [#253]. The critical lesson:
-**neither the status code nor the shape of the `error` value alone is a
-sufficient discriminator** — a `403` can be PII, a regex-guard block, a
-content-safety block (all policy blocks) *or* auth, and the same nested-object
-envelope is emitted by both the upstream provider and a gateway policy. The
-authoritative discriminator is the error **`type`** plus specific headers.
+`classify()` types eight rejection shapes. **Neither the status code nor the
+shape of the `error` value alone is a sufficient discriminator** — a `403` can be
+PII, a regex-guard block, a content-safety block (all policy blocks) *or* auth,
+and the same nested-object envelope is emitted by both the upstream provider and
+a gateway policy. The authoritative discriminator is the error **`type`** plus
+specific headers.
 
-| Rejection | HTTP | Discriminator | Maps to | Verified? |
-|---|---|---|---|---|
-| Client-ID enforcement (auth) | `401` | flat `{"error":"…"}` + `www-authenticate: Client-ID-Enforcement` | `AuthError` | live |
-| PII detected | `403` | nested `{"error":{type:"pii_detected"}}`, **no** `www-authenticate` | `PIIDetected` (parses `entities`) | live |
-| Injection protection | `400` | header `x-injection-protection: blocked` (**not** the status) | `PromptInjectionBlocked` | pending (#253) |
-| Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | live (#253) |
-| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) | live — Azure; Bedrock pending (#253) |
-| Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) | live |
-| Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` | pending (#253) |
-| Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`, #548) | `UpstreamRequestError` | live |
-| Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) | live |
+| Rejection | HTTP | Discriminator | Maps to |
+|---|---|---|---|
+| Client-ID enforcement (auth) | `401` | flat `{"error":"…"}` + `www-authenticate: Client-ID-Enforcement` | `AuthError` |
+| PII detected | `403` | nested `{"error":{type:"pii_detected"}}`, **no** `www-authenticate` | `PIIDetected` (parses `entities`) |
+| Injection protection | `400` | header `x-injection-protection: blocked` (**not** the status) | `PromptInjectionBlocked` |
+| Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
+| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) |
+| Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
+| Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
+| Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
+| Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
 
 `PIIDetected`, the regex-prompt-guard check, and the content-safety check are all
-evaluated **before** the generic 401/403→auth rule, precisely because each is a
-`403` (or `4xx`) that is *not* an auth failure. Likewise the injection check gates
-on the `x-injection-protection` header, so an ordinary malformed `400` stays an
+evaluated **before** the generic 401/403→auth rule, because each is a `403` (or
+`4xx`) that is *not* an auth failure. Likewise the injection check gates on the
+`x-injection-protection` header, so an ordinary malformed `400` stays an
 ordinary refusal.
 
 Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the eight
 policy-rejection rows.
 
-[#253]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/253
+The Injection Protection header and the Amazon Bedrock Guardrails header are
+typed from the documented response shape; `classify()` keys on the header
+discriminator alone for those two.
 
 ## The exception tree
 
@@ -53,8 +51,8 @@ DonkeyError                     # base of the whole tree
 ├─ PolicyViolation              # base for every governance rejection
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
-│  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns (pending #253)
-│  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories (pending #253)
+│  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
+│  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 └─ UpstreamModelError           # upstream 5xx — provider error, retryable
@@ -80,19 +78,19 @@ never burn an exhausted budget or replay a blocked prompt.
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
-| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) — *body shape pending [#253]* | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
-| `PolicyViolation` (generic) | a `4xx` matching **no** documented rejection shape | **No** — terminal; the shape is simply not yet typed. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed ([#184]/[#253]). |
-| `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope, [#548]) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
+| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
+| `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
+| `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
-| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here (failover is separate); you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md). |
+| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md). |
 
 Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
-they sit outside the retry question: `BudgetReserveReached` is raised *before* a
+they sit outside the retry question. `BudgetReserveReached` is raised *before* a
 call by [`donkey.budget.pace()`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and is meant to be recovered from
 (`await donkey.budget.wait_for_reset()`, then continue) when its `.reset_at` is
 known. If `.reset_at` is `None`, propagate or handle it instead — waiting returns
 immediately and an unconditional retry would spin. Its `.remediation` carries
-that branch as an inspectable next step, rather than requiring you to parse the
+that branch as an inspectable next step, so you don't have to parse the
 exception message. `ModelSubstituted` reports that a call *succeeded* against a
 different model than requested (opt-in via `on_model_substitution="raise"`).
 `ConfigError` is raised locally, pre-flight, and reports every missing field at
@@ -101,12 +99,9 @@ once — fix the config and re-run.
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
 [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) also prints. Control-plane token failures override that
-default with canonical guidance for the provider that failed: connected-app
-errors point to the Anypoint credentials and scopes, while an exhausted
-`ChainedAuth` points to each configured provider's credential or token source.
-
-[#184]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/184
-[#548]: https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/548
+default with guidance for the provider that failed: connected-app errors point
+to the Anypoint credentials and scopes, while an exhausted `ChainedAuth` points
+to each configured provider's credential or token source.
 
 ## When the gateway can't be reached at all
 
@@ -119,8 +114,7 @@ queue, shed load, or fall back to a non-AI path — instead of pattern-matching 
 raw `httpx` exception.
 
 `DonkeyAsyncClient` and its blocking twin both raise it, so the async and sync
-surfaces behave identically. It is terminal here and **not retried** — this issue
-only *names* the failure; failover is separate. It carries:
+surfaces behave identically. It is terminal and **not retried**. It carries:
 
 - `.base_url` — the origin that failed, on the exception, not only in the message.
 - `.cause` — the underlying `httpx` exception (also chained via `raise … from`).
@@ -128,15 +122,15 @@ only *names* the failure; failover is separate. It carries:
 - `.correlation_id` / `.call_id` — the run and per-call ids the client sent, carried
   even though no response came back, so the failure joins your logs like any other.
 
-Its `.remediation` is a single canonical string that names the three real causes —
-an unreachable host, a wrong base URL, or blocked network egress — and points at
-`donkey doctor` for connectivity diagnosis.
+Its `.remediation` names the three real causes — an unreachable host, a wrong
+base URL, or blocked network egress — and points at `donkey doctor` for
+connectivity diagnosis.
 
 ## Every refusal names a next step
 
-`remediation` is not optional. Every `PolicyViolation` carries a non-empty,
-human-readable next step — the constructor **raises** if you try to build one
-without it — and each concrete subclass ships a canonical default:
+Every `PolicyViolation` carries a non-empty, human-readable `remediation` — the
+constructor **raises** if you try to build one without it — and each concrete
+subclass ships a canonical default:
 
 - `PIIDetected` → remove or redact the flagged values, or relax the policy's
   entity list in API Manager.
@@ -147,16 +141,15 @@ without it — and each concrete subclass ships a canonical default:
 - `ContentSafetyBlocked` → revise the flagged content, or adjust the policy's
   categories / severity thresholds.
 
-The text names the **action you can take**, not the policy that fired — a typed
-refusal without a next step is just a renamed exception. Because each default
-lives on the exception class, it is a single source of wording that
+The text names the **action you can take**, not the policy that fired. Because
+each default lives on the exception class, it is a single source of wording that
 [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) reuses for its own failure output, so the CLI and the
-exception can never disagree.
+exception never disagree.
 
 ## The ids every `DonkeyError` carries
 
 Every exception in the tree carries three ids so you can join a failure to your
-logs and to the gateway's own record — **three ids, three provenances**:
+logs and to the gateway's own record:
 
 | Attribute | What it is | Provenance |
 | --- | --- | --- |
@@ -198,31 +191,24 @@ except openai.APIConnectionError as e:
 
 The blocking client from `donkey.llm.client(sync=True)` behaves identically here
 — drop the `await`. It is the same OpenAI SDK raising the same
-`openai.APIStatusError`, and `classify()` reads the response the same way, so the
-taxonomy is not an async-only feature.
+`openai.APIStatusError`, and `classify()` reads the response the same way.
 
-One deliberate difference sits below the taxonomy, in the retry policy. Both
-clients retry only transient upstream/gateway failures (502/503/504) and treat
-every 4xx as terminal — **including a 429**: on this proxy a 429 is a
+## Retry behaviour
+
+Both clients retry only transient upstream/gateway failures (502/503/504) and
+treat every 4xx as terminal — **including a 429**: on this proxy a 429 is a
 token-budget refusal (`TokenBudgetExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
-against, but the transport never silently retries it. The async client
-additionally refreshes its token and retries **once** on a 401, because it may
-carry an Anypoint control-plane credential. The blocking client holds no such
-credential — that refresh protocol is async-only — so a 401 there is terminal and
-surfaces immediately as `AuthError`.
+against, but the transport never silently retries it.
 
-## Documented-but-not-live-captured shapes
+The async client additionally refreshes its token and retries **once** on a 401,
+because it may carry an Anypoint control-plane credential. The blocking client
+holds no such credential, so a 401 there is terminal and surfaces immediately as
+`AuthError`.
 
-The regex `matched_patterns` list and the **Azure Content Safety**
-`…-action: reject` header are now **live-captured** (2026-09-22, [#253]) against
-the deployed provisioning proxies. Two documented discriminators remain pinned
-from the policy pages but **not yet confirmed against a live sandbox**: the
-`x-injection-protection` header of the distinct **Injection Protection** policy
-(no such proxy is deployed to capture it) and the **Bedrock Guardrails** sibling
-of the content-safety header. `classify()` types those from the header
-discriminator only, and no verification row flips to `verified` until a live
-round-trip confirms the shape. Any *other* content-moderation /
-federated-guardrail shape still falls through to a generic `PolicyViolation`
-rather than an invented type — this is deliberate (verification discipline): we don't invent a
-discriminator we haven't observed. See [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+## Unrecognised shapes
+
+Any content-moderation or federated-guardrail response that matches none of the
+discriminators above falls through to a generic `PolicyViolation` rather than an
+invented type. DDK only types a refusal by a discriminator it can identify
+reliably; everything else stays inspectable via `.response`.

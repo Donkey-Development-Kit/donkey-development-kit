@@ -1,0 +1,99 @@
+---
+description: donkey.last_call on a successful call — which gateway served it, what it routed to, per-call token usage — and on_model_substitution="raise" turning a silent model swap into ModelSubstituted.
+---
+
+import { Callout } from 'nextra/components'
+
+# Gateway identity (last_call)
+
+A refusal already tells you which gateway said no. `donkey.last_call` is the
+success-path counterpart: after every governed call it records which gateway
+served the request, what it actually routed to, and what the call cost —
+without parsing headers or running a span backend. That matters because a
+silent model substitution is otherwise invisible to your cost model and your
+evals, and reading only `total_tokens` misses cached and reasoning tokens. If
+your assumptions are pinned to one model, `on_model_substitution="raise"`
+turns a swap into a hard `ModelSubstituted` error.
+
+| Example | Shows | Needs |
+| --- | --- | --- |
+| Narrative demo 10 | A cold `UNOBSERVED` record, one call populating identity, routing and usage, the substitution flag, and `on_model_substitution="raise"` | Nothing (simulator) |
+| OpenAI script 08 | The full `last_call` record on a live call, then `on_model_substitution="raise"` | Proxy credentials |
+
+## Run it
+
+```bash
+make demo N=10
+```
+
+```bash
+python "demos/human-made/openai/08 - last-call.py"   # needs proxy credentials
+```
+
+## Key code
+
+Reading the record after a call (OpenAI script 08):
+
+```python
+donkey = Donkey.from_env()
+client = donkey.openai(sync=True)
+
+print("before any call ", donkey.last_call.status.value)
+
+reply = client.responses.create(model="gpt-4o", input="Say hello in exactly three words.")
+
+last = donkey.last_call
+print("status          ", last.status.value)
+print("request_id      ", last.request_id)
+print("requested_model ", last.requested_model)
+print("served_model    ", last.served_model)
+print("served_provider ", last.served_provider)
+print("routing_type    ", last.routing_type)
+print("fallback        ", last.fallback)
+print("substituted     ", last.substituted)
+print("total_tokens    ", last.total_tokens)
+print("cached_tokens   ", last.cached_tokens)
+print("reasoning_tokens", last.reasoning_tokens)
+```
+
+Opting in to a hard error. The OpenAI client wraps the transport error, so the
+typed `ModelSubstituted` is on `__cause__`:
+
+```python
+strict = Donkey.from_env(on_model_substitution="raise")
+strict_client = strict.openai(sync=True)
+try:
+    strict_client.responses.create(model="gpt-4o", input="Say hello in exactly three words.")
+    print("NO RAISE  substituted", strict.last_call.substituted)
+except Exception as err:
+    hit = err if isinstance(err, ModelSubstituted) else err.__cause__
+    if not isinstance(hit, ModelSubstituted):
+        raise
+    print("requested_model   ", hit.requested_model)
+    print("served_model      ", hit.served_model)
+```
+
+- **Three named states, never a bare `None`.** `UNOBSERVED` is a cold read;
+  `OBSERVED` means the SDK saw a response (fields may still be `None` if the
+  gateway said nothing); `UNAVAILABLE` marks adapter surfaces that never route
+  through the SDK's transport.
+- **`request_id` is the gateway's own id** (`x-request-id`) — the same field
+  `classify()` puts on a refusal, now present on a 200 too.
+- **Absent counts are `None`, never `0`.** `cached_tokens` are billed at the
+  cached rate; `reasoning_tokens` are output you never see.
+- **`ModelSubstituted` is not a `PolicyViolation`.** The request succeeded,
+  against a model you did not choose. `last_call` is still populated before the
+  raise.
+
+<Callout type="info">
+  The simulator's captured success response was recorded against `gpt-5.1`, so
+  asking for any other model id shows up as a substitution in narrative demo
+  10. That is the fixture, not a live failover — and it is exactly the
+  mismatch `last_call` exists to surface.
+</Callout>
+
+**Learn more:** [Feature overview](/feature-overview) · [Telemetry & cost](/telemetry)
+
+**Source:**
+[narrative demo 10](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/10_last_call) ·
+[script 08](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/08%20-%20last-call.py)

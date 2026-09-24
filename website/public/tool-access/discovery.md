@@ -1,8 +1,12 @@
 # Discovery, search & filter
 
+Roadmap
+
+This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+
 `donkey.tools.discover(...)` is the one entry point for finding governed tools.
 It narrows the catalog by **name/description (search)**, **governance**, domain,
-tags, asset type, and environment — so an agent binds only the tools it needs
+tags, asset type, and environment, so an agent binds only the tools it needs
 rather than the entire catalog. It returns a [`ToolSet`](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md)
 whose per-framework methods hand back native tool objects.
 
@@ -17,7 +21,7 @@ tools = await donkey.tools.discover(governed_only=True, search="*accounts*")
 tools = await donkey.tools.discover(domain="hr", governed_only=True)
 ```
 
-## The full filter surface
+## Filter reference
 
 Every argument is optional and combines with `AND` semantics:
 
@@ -39,26 +43,23 @@ tools = await donkey.tools.discover(
 | `governed_only` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
 | `domain` | `str \| None` | Catalog domain. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
-| `asset_types` | `list[AssetType] \| None` | e.g. `["mcp"]`; exact Exchange filter tokens remain unverified. |
+| `asset_types` | `list[AssetType] \| None` | Restrict by asset type, e.g. `["mcp"]`. |
 | `environment` | `str \| None` | Which environment governance is computed against. |
 | `limit` | `int` | Max results (default 50). |
 
   `discover(...)` is the high-level facade over `ExchangeRegistry.search()`. On
   the facade, `search` is the text/glob filter (the registry's `query`) and
   `governed_only` is the governance predicate (the registry's `governed`). The
-  glob is applied server-side where Exchange supports a wildcard/substring query,
-  and client-side otherwise — the behaviour you see is identical either way.
-  Which path Exchange supports is a live-verification item; see
-  [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+  glob runs server-side where Exchange supports it and client-side otherwise —
+  the results are identical either way.
 
-## "Governed" is a computed predicate, not a flag
+## "Governed" is a computed predicate
 
 Publication to Exchange says nothing about whether an asset is fronted by a
 gateway, has policies applied, or passes the org's rulesets — there is no single
-boolean to query. "Governed" is **computed** by joining state across systems, and
-it is **environment-scoped**: an asset governed in Production may be ungoverned in
-Sandbox. `GovernanceCriteria` makes every condition explicit and independently
-checkable:
+boolean to query. "Governed" is **computed** by joining state across systems,
+and it is **environment-scoped**: an asset governed in Production may be
+ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit:
 
 ```python
 from donkey_kit.registry.governance import GovernanceCriteria, STRICT
@@ -84,21 +85,21 @@ STRICT = GovernanceCriteria(
 )
 ```
 
-`governed_only=STRICT` passes it straight through:
+Pass it straight through:
 
 ```python
 tools = await donkey.tools.discover(domain="hr", governed_only=STRICT)
 ```
 
-  `allow_unknown` matters more than it looks. If the platform doesn't expose, say,
-  ruleset results, then `require_governance_pass=True` with `allow_unknown=False`
-  silently filters the whole catalog to zero — so every filtered-out asset carries
-  a **reason**, surfaced by `explain()`.
+  `allow_unknown` matters more than it looks. If the platform doesn't expose,
+  say, ruleset results, then `require_governance_pass=True` with
+  `allow_unknown=False` filters the whole catalog to zero — so every
+  filtered-out asset carries a **reason**, surfaced by `explain()`.
 
 ## `explain()` — why a tool was included or excluded
 
-`governed_only=True` returning an empty list is otherwise indistinguishable from a
-broken credential. `explain()` is a first-class, always-available method:
+Without it, `governed_only=True` returning an empty list is indistinguishable
+from a broken credential. `explain()` reports every check:
 
 ```python
 report = await donkey.registry.explain(ref, criteria=STRICT)
@@ -112,20 +113,20 @@ report = await donkey.registry.explain(ref, criteria=STRICT)
 
 Each check is `True` (passed), `False` (failed, with the reason), or `None`
 (couldn't be evaluated — resolved via `allow_unknown`). The empty-result warning
-message references `explain()` directly.
+message points you to `explain()`.
 
 ## Defaults and performance
 
-- **Unfiltered by default.** `governed_only` defaults to `None` in v1, with a
-  startup log line stating discovery is unfiltered. Flipping the default to `True`
-  is a breaking change reserved for a later major version.
+- **Unfiltered by default.** `governed_only` defaults to `None`, and a startup
+  log line states that discovery is unfiltered. Changing the default to `True`
+  is reserved for a future major version.
 - **Warm the index.** The governance join is a bulk operation, not one API call
-  per asset. A long-running agent process can build the index at startup with
-  `donkey.registry.warm(environment=...)` so first discovery is fast.
+  per asset. A long-running agent can build the index at startup with
+  `donkey.registry.warm(environment=...)` so the first discovery is fast.
 
 ## Related
 
 - [Framework binding](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md) — turn a `ToolSet` into native tools.
-- [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md) — pin resolved versions for prod.
-- [Governance & environments](https://donkey-development-kit.github.io/donkey-development-kit/concepts/environments.md) — the `Governance` object
+- [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md) — pin resolved versions for production.
+- [Environments & governance](https://donkey-development-kit.github.io/donkey-development-kit/concepts/environments.md) — the `Governance` object
   you can pass as `governance=` to scope discovery to a target.

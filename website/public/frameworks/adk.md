@@ -1,13 +1,17 @@
-# Google ADK — governed model access
+# Google ADK
 
-Google's Agent Development Kit (ADK) is Gemini-first; it reaches the
-Agent Fabric LLM proxy through ADK's `LiteLlm` model wrapper, which speaks
-LiteLLM's own model-string and kwarg conventions rather than raw OpenAI ones.
+Google's Agent Development Kit (ADK) reaches the Agent Fabric LLM proxy through
+ADK's `LiteLlm` model wrapper. The adapter translates the governed connection
+into LiteLLM's own model-string and kwarg conventions for you.
 
-> **Supported at `connection_kwargs()` — not conformance-tested (`BG §1.8`)**, with two documented exemptions: LiteLLM
-> owns its own transport, so the SDK's shared httpx client is not injected
-> here. Per-run correlation and `donkey.last_call` response observation are
-> unavailable as a result (see below).
+**What you get**
+
+- A native `google.adk.models.lite_llm.LiteLlm`, with the proxy auth and
+  attribution headers set.
+- The `openai/` model prefix and LiteLLM kwarg names handled automatically.
+- Supported at `connection_kwargs()`. LiteLLM owns its HTTP transport, so
+  per-run correlation and `donkey.last_call` are not available (see
+  [Notes](#notes)).
 
 ## Install
 
@@ -23,16 +27,14 @@ from donkey_kit.integrations.adk import model
 llm = model("gpt-4o")
 ```
 
-`llm` is a real, native **`google.adk.models.lite_llm.LiteLlm`** instance. The
-model string is auto-prefixed with `openai/` before it reaches LiteLLM
-(`openai/gpt-4o`), because that's the prefix LiteLLM's OpenAI-compatible route
-expects — you don't need to add it yourself.
+`llm` is a real `google.adk.models.lite_llm.LiteLlm` instance. The model string
+is prefixed with `openai/` before it reaches LiteLLM (`openai/gpt-4o`), which
+is the prefix LiteLLM's OpenAI-compatible route expects — you don't add it
+yourself.
 
-There's no first-party Agent Fabric TypeScript SDK yet (it's on the
-[roadmap](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The proxy is OpenAI-compatible, so point the
-official `openai` npm client at it — the same base URL and
-`client_id`/`client_secret` headers also drop into **ADK for TypeScript**
-(`@google/adk`).
+Call the proxy's OpenAI-compatible API with the official `openai` npm client.
+The same base URL and `client_id`/`client_secret` headers also work with
+**ADK for TypeScript** (`@google/adk`).
 
 ```typescript
 import OpenAI from "openai";
@@ -82,7 +84,7 @@ async with Donkey.from_env() as donkey:
     llm = LiteLlm(model="openai/gpt-4o", **donkey.adk.connection_kwargs())
 ```
 
-## The manual equivalent (eject at any time)
+## Manual equivalent
 
 ```python
 from google.adk.models.lite_llm import LiteLlm
@@ -95,31 +97,23 @@ llm = LiteLlm(
 )
 ```
 
-Note the kwarg names: LiteLLM uses `api_base` and `extra_headers`, not
-`base_url` / `default_headers` — `connection_kwargs()` already translates for
-you.
+LiteLLM uses `api_base` and `extra_headers`, not `base_url` /
+`default_headers` — `connection_kwargs()` already translates for you.
 
-## Notes & limitations
+## Notes
 
-> **Correlation IDs are per-client, not per-run, for this adapter.** LiteLLM
-> owns its own HTTP transport, so the SDK's shared httpx client — and the
-> per-run correlation ID it stamps on every request — cannot be injected into
-> it. This is a documented, asserted conformance exemption, not an oversight:
-> ADK is the one adapter in the set where header injection is full but
-> transport injection is not possible.
-
-> **This adapter cannot populate `donkey.last_call`.** The same LiteLLM-owned
-> transport means no response reaches the SDK's `_on_response` hook, so gateway
-> identity, routing, and usage fields cannot be observed. When every adapter
-> resolved on a `Donkey` is non-observing, the record reports
-> `status == LastCallStatus.UNAVAILABLE`, `available == False`, and names the
-> resolved adapters in `surface`. This is a
-> documented, asserted `gateway_identity_observed` conformance exemption.
-
-> `google-adk` requires `litellm>=1.84` as a floor (not a ceiling) — pin your
-> own upper bound if you need one.
+- **Correlation IDs are per-client, not per-run.** LiteLLM owns its own HTTP
+  transport, so the SDK's shared httpx client — and the per-run correlation ID
+  it stamps on each request — can't be injected. Headers are fully injected;
+  the transport is not. The conformance suite asserts this as a documented
+  exemption.
+- **`donkey.last_call` is unavailable.** Because no response reaches the SDK,
+  gateway identity, routing, and usage fields can't be observed. When every
+  adapter resolved on a `Donkey` is like this one, `donkey.last_call` reports
+  `status == LastCallStatus.UNAVAILABLE` and `available == False`, and names the
+  resolved adapters in `surface`.
+- `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
+  own upper bound if you need one.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface through
-LiteLLM's error path, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)
-page for the current status of every constructor signature this adapter
-depends on.
+LiteLLM's error path.

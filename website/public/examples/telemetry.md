@@ -1,0 +1,108 @@
+# Telemetry
+
+Platform teams ask for two things agent teams rarely deliver: a trace that
+follows one logical run across every model call it fans out into, and spans in
+the standard GenAI vocabulary so they land in existing dashboards. Both come
+from the same client every request leaves through. Each governed call emits a
+span carrying `gen_ai.*` and `donkey.*` attributes, `donkey.run(id=…)` ties a
+whole run to one correlation id and one set of cost tags, and setting
+`OTEL_EXPORTER_OTLP_ENDPOINT` is enough for `Donkey.from_env()` to install an
+exporter.
+
+| Example | Shows | Needs |
+| --- | --- | --- |
+| Narrative demo 06 | One span per call with both namespaces and routing/usage, three calls under one run id and cost tags, a refused call as an `ERROR` span, and zero-config OTLP | `[otel]` (simulator) |
+| OpenAI script 06 | A host-owned `TracerProvider` exporting over OTLP; Donkey rides it | Proxy credentials + an OTLP endpoint |
+| OpenAI script 07 | Several `donkey.run(team=…, project=…)` blocks, including a refusal span | Proxy credentials + an OTLP endpoint |
+| OpenAI script 10 | `Donkey.from_env()` installing OTLP itself when the env var is set | Proxy credentials |
+
+## Run it
+
+```bash
+pip install "donkey-kit[otel]"
+make demo N=06
+```
+
+```bash
+python "demos/human-made/openai/06 - otel exporter simple.py"     # proxy + OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS
+python "demos/human-made/openai/07 - otel exporter advanced.py"   # proxy + OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS
+python "demos/human-made/openai/10 - zero-config-otlp.py"         # proxy; set OTEL_EXPORTER_OTLP_ENDPOINT to export
+```
+
+Without `[otel]` installed, narrative demo 06 prints the install command and
+exits cleanly. It installs an in-memory exporter so it can print the spans as a
+table.
+
+## Key code
+
+One correlation id and one set of cost tags for a whole run (narrative demo 06,
+act 2):
+
+```python
+async with donkey.run(id=ticket.id, team="support", project="triage"):
+    await client.responses.create(...)     # all three calls share
+    await client.responses.create(...)     # one id, and the cost
+    await client.responses.create(...)     # tags, on wire and spans
+```
+
+Your own `TracerProvider`, with several runs and a refusal (OpenAI script 07):
+
+```python
+provider = TracerProvider(resource=Resource.create({"service.name": "donkey-dev-kit"}))
+provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+donkey = Donkey.from_env()
+client = donkey.openai(sync=True)
+
+with donkey.run(id="agent-greeter", team="cx", project="welcome"):
+    reply = client.responses.create(model=MODEL, input="Say hello in exactly three words.")
+    print("greeter:", reply.output_text)
+
+with donkey.run(id="agent-support", team="cx", project="tickets"):
+    try:
+        client.responses.create(model=MODEL, input=PII_PROMPT)
+        print("support: no refusal")
+    except openai.APIStatusError as err:
+        error = classify(err.response)
+        print("support:", type(error).__name__, getattr(error, "entities", None))
+
+provider.force_flush()
+donkey.close()
+```
+
+Zero-config export (OpenAI script 10) needs no provider setup at all:
+
+```python
+donkey = Donkey.from_env()
+client = donkey.openai(sync=True)
+
+with donkey.run(id="otel-zero-config", team="cx", project="welcome"):
+    reply = client.responses.create(model="gpt-4o", input="Say hello in exactly three words.")
+    print(reply.output_text)
+```
+
+  `gen_ai.prompt` and `gen_ai.completion` stay off the span unless you set
+  `telemetry_capture_content=True` (or `DONKEY_TELEMETRY_CAPTURE_CONTENT=1`).
+  Spans are emitted upstream of the gateway's PII mask, so capturing by default
+  would re-export content the platform just masked.
+
+- **Two ids per request.** The run id (`X-Correlation-Id`) answers "everything
+  this ticket did"; the per-call id (`X-Donkey-Request-Id`) answers "which call
+  was this". A caught refusal carries both as `.correlation_id` and `.call_id`.
+- **Refusals are failed spans.** A refused call sets the span status to
+  `ERROR` and records `donkey.policy.decision=refuse` with the specific
+  `donkey.policy.type`.
+- **Cost tags are a fixed four** — `team`, `project`, `env`, `enduser.id` —
+  set on `from_env()` and overridable per `run()`, landing on `donkey.cost.*`.
+- **Export is opt-in.** No endpoint means inert and silent;
+  `DONKEY_TELEMETRY=false` opts out even when one is set, and a host
+  `TracerProvider` is never replaced.
+
+**Learn more:** [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)
+
+**Source:**
+[narrative demo 06](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/06_telemetry) ·
+[script 06](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/06%20-%20otel%20exporter%20simple.py) ·
+[script 07](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/07%20-%20otel%20exporter%20advanced.py) ·
+[script 10](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/10%20-%20zero-config-otlp.py)

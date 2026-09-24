@@ -1,28 +1,32 @@
 # Framework binding
 
-Once [discovery](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md) hands you a `ToolSet`, binding is the
-step that turns governed MCP servers into a framework's own tool objects —
-nothing wrapped, nothing re-implemented.
+Roadmap
+
+This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+
+Once [discovery](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md) hands you a `ToolSet`, binding turns
+governed MCP servers into a framework's own tool objects — nothing wrapped,
+nothing re-implemented.
 
 ## MCP session management
 
 MCP servers created by MCP Bridge are gateway endpoints speaking streamable
 HTTP, protected by gateway policies. The SDK's session layer handles four
-things so you don't have to:
+things for you:
 
 - **Auth.** Client-credentials OAuth is the machine-to-machine case. Strands'
   `MCPClient` already builds streamable HTTP with a `client_credentials` grant
   internally; every other framework needs headers supplied explicitly.
-  `McpServerHandle.auth_headers()` returns a ready-to-use header dict, and it
-  is refreshed automatically on a `401`.
+  `McpServerHandle.auth_headers()` returns a ready-to-use header dict, refreshed
+  automatically on a `401`.
 - **Connection lifecycle.** MCP clients are stateful, and several frameworks
   connect lazily. `donkey.tools.discover()` never opens a connection — it
-  returns handles. The underlying connection opens on first tool use.
+  returns handles, and the connection opens on first tool use.
 - **Multi-server aggregation.** `ToolSet` wraps N `McpServerHandle`s. When two
   servers expose a tool with the same name, the collision is resolved by
-  prefixing with the server's short name — for example `hr__get_employee` —
-  and the mapping is surfaced on `ToolSet.name_map` so you can see exactly why
-  the model called that name.
+  prefixing the server's short name — for example `hr__get_employee` — and the
+  mapping is available on `ToolSet.name_map`, so you can see exactly why the
+  model called that name.
 - **Filtering.** Enterprise MCP servers can expose dozens of tools. Handing 60
   tool descriptors to a model degrades it and inflates token cost, so filter
   before you bind:
@@ -41,20 +45,8 @@ filtered = tools.filter(predicate=lambda t: t.name.startswith("get_"))
 
 ## Per-framework binding
 
-| Framework | Binding |
-|---|---|
-| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient({...}).get_tools()` — the SDK builds the connection dict from your handles, transport `"streamable_http"`, headers injected. |
-| Google ADK | `McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=...), tool_filter=[...])`, passed straight into `LlmAgent(tools=[...])`. |
-| MS Agent Framework | its MCP client/tool class for streamable HTTP (name pending live verification); the framework's own docs reference hosted MCP tools and MCP clients for tool integration. |
-| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": ..., "headers": ...})`, passed into `Agent(mcp_servers=[...])` (pending live verification). |
-| Anthropic SDK | no native client-side MCP binding in the `anthropic` SDK itself; bind via the MCP Python SDK's streamable-HTTP client and pass the resulting tool schemas to `messages.create(tools=...)` (pending live verification). |
-| CrewAI | its MCP adapter for streamable-HTTP servers (name pending live verification), yielding native `crewai` tool objects for a `Crew`/`Agent`. |
-| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec(...).to_tool_list_async()`. |
-| Strands | `MCPClient(lambda: streamablehttp_client(url, headers=...))` — implements `ToolProvider`, so it can be passed directly into `Agent(tools=[...])` with automatic lifecycle management. |
-
-Each binding returns the framework's **native** tool type — a LangGraph
-`BaseTool`, an ADK `McpToolset`, a Strands `MCPClient`, and so on. `ToolSet`
-exposes one method per installed integration:
+`ToolSet` exposes one method per installed integration, each returning the
+framework's **native** tool type:
 
 ```python
 ts = await donkey.tools.discover(domain="hr")
@@ -65,14 +57,27 @@ ts.llamaindex()         # -> list[FunctionTool]
 # etc.
 ```
 
-Note the shape difference: ADK and Strands want a toolset/provider object,
-LangGraph and LlamaIndex want a flat tool list. The SDK does not force a
-uniform return type — each method matches its framework's own idiom, and the
-difference is called out in that method's docstring.
+Note the shape difference: ADK and Strands take a toolset/provider object,
+while LangGraph and LlamaIndex take a flat tool list. Each method matches its
+framework's own idiom rather than forcing a uniform return type, and its
+docstring calls out the difference.
 
-  The proxy contract discovery and session management depend on is designed
-  against MCP Bridge, but the binding classes marked "pending live
-  verification" above have not yet been confirmed against an installed
-  framework. See [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) for how these
-  get unblocked, and the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how a binding failure
-  or a `401` surfaces as a typed exception.
+| Framework | Binding |
+|---|---|
+| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient({...}).get_tools()` — the SDK builds the connection dict from your handles, transport `"streamable_http"`, headers injected. |
+| Google ADK | `McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=...), tool_filter=[...])`, passed straight into `LlmAgent(tools=[...])`. |
+| MS Agent Framework | The framework's MCP client/tool class for streamable HTTP. |
+| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": ..., "headers": ...})`, passed into `Agent(mcp_servers=[...])`. |
+| Anthropic SDK | The `anthropic` SDK has no native client-side MCP binding; the SDK binds via the MCP Python SDK's streamable-HTTP client and passes the resulting tool schemas to `messages.create(tools=...)`. |
+| CrewAI | The framework's MCP adapter for streamable-HTTP servers, yielding native `crewai` tool objects for a `Crew`/`Agent`. |
+| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec(...).to_tool_list_async()`. |
+| Strands | `MCPClient(lambda: streamablehttp_client(url, headers=...))` — implements `ToolProvider`, so it can be passed directly into `Agent(tools=[...])` with automatic lifecycle management. |
+
+A binding failure or a `401` surfaces as a typed exception from the
+[error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+
+## Related
+
+- [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md) — produce the `ToolSet`.
+- [A2A agent tools](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/a2a.md) — bind a remote agent the same way.
+- [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) — governed model access per framework.

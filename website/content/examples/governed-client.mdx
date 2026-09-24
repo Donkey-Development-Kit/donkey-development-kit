@@ -1,0 +1,115 @@
+---
+description: A stock OpenAI client next to a governed one, the same PII refusal through both, and the @donkey.governed / @donkey.tool decorators.
+---
+
+import { Callout } from 'nextra/components'
+
+# Governed client
+
+You do not need the SDK to reach the gateway — a stock OpenAI client with a
+`base_url` and two headers gets there. These examples show that first, then
+show what the stock client leaves you holding. Both clients hit the same
+gateway and get the same PII refusal back; the stock one gives you an
+`openai.APIStatusError` and a JSON body to parse, the governed one gives you a
+`PIIDetected` with the flagged entities and a remediation string. And because
+every request leaves through one client, that same call also updated the
+budget window, stamped a correlation id and opened a GenAI span, with no wiring
+from you.
+
+| Example | Shows | Needs |
+| --- | --- | --- |
+| Narrative demo 01 | `donkey.openai()` and `sync=True`, the injected headers, one call and what it updated, stock vs governed on the same PII refusal, `@donkey.governed` / `@donkey.tool` | Nothing (simulator) |
+| OpenAI script 01 | Stock OpenAI with no gateway — the baseline | `OPENAI_API_KEY` |
+| OpenAI script 02 | `donkey.openai()` plus `last_call` on a successful call | Proxy credentials |
+| OpenAI script 09 | `@donkey.governed` and `@donkey.tool` on their own | Nothing |
+
+## Run it
+
+```bash
+make demo N=01                        # offline, against the local simulator
+make demo N=01 ARGS="--target live"   # against your gateway
+```
+
+```bash
+python "demos/human-made/openai/01 - basic-responses-no-gw.py"   # needs OPENAI_API_KEY
+python "demos/human-made/openai/02 - basic-responses-gw.py"      # needs proxy credentials
+python "demos/human-made/openai/09 - governed-and-tool.py"       # no gateway
+```
+
+<Callout type="info">
+  Against the simulator the reply in act 2 is a captured response, so it
+  answers the recorded prompt rather than the one just sent. The demo prints a
+  warning saying so. The PII act against `--target live` needs the PII
+  detection policy applied with `Email` among its entities and its action set
+  to `Reject` — the default action, `Log`, does not block.
+</Callout>
+
+## Key code
+
+The governed client is a real OpenAI client, already pointed at the proxy
+(OpenAI script 02):
+
+```python
+async with Donkey.from_env() as donkey:
+    client = donkey.openai()   # THIS is returning the native openai
+
+    response = await client.responses.create(
+        model="gpt-4o",
+        input="Say hello in exactly three words.",
+    )
+
+    print(response.output_text)
+    last = donkey.last_call
+    print("last_call.status      ", last.status.value)
+    print("last_call.served_model", last.served_model)
+```
+
+The same refusal through the governed client, typed with `classify()`
+(narrative demo 01, act 3):
+
+```python
+client = donkey.openai()
+try:
+    await client.responses.create(model=pii_model, input=PII_PROMPT)
+except openai.APIStatusError as exc:
+    governed = classify(exc.response)
+    say.field("B: raised", type(governed).__name__)
+    say.field("B: policy", getattr(governed, "policy", "—"))
+    say.field("B: entities", getattr(governed, "entities", []), raw=True)
+    say.field("B: remediation", getattr(governed, "remediation", "—"))
+```
+
+The one-line on-ramps (OpenAI script 09). `@donkey.governed` opens a fresh run
+per invocation; `@donkey.tool` records the function without wrapping it, and
+rejects a tool with no docstring at decoration time:
+
+```python
+@donkey.governed(team="support", project="triage")
+def handle_ticket(ticket: str) -> str:
+    print("run id inside", current_correlation_id())
+    print("cost tags    ", current_cost_tags())
+    return ticket
+
+
+@donkey.tool
+def lookup_sku(sku: str) -> str:
+    """Return stock for a product SKU."""
+    return "42"
+
+
+print("same function object ", lookup_sku is registered_tools()[-1].func)
+```
+
+Note the base URL has no `/v1`, and auth is a `client_id` / `client_secret`
+header pair rather than a bearer token. There is deliberately no `id=` on
+`@donkey.governed`: a fixed id would collapse unrelated calls into one
+correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
+[Telemetry](/examples/telemetry)).
+
+**Learn more:** [Introduction](/) · [Model access](/frameworks) · [CLI & decorators](/cli)
+
+**Source:**
+[narrative demo 01](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/01_governed_client) ·
+[script 01](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/01%20-%20basic-responses-no-gw.py) ·
+[script 02](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/02%20-%20basic-responses-gw.py) ·
+[script 09](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/blob/main/demos/human-made/openai/09%20-%20governed-and-tool.py)

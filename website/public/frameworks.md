@@ -1,36 +1,25 @@
 # Model access
 
+Live
+
 Governed model access from eight agent frameworks. Each adapter returns the
-framework's **own native object**, pointed at your Omni Gateway proxy with
-verified auth, attribution, and retries injected.
+framework's **own native object**, pointed at your Omni Gateway LLM proxy with
+consumer auth and attribution headers already set. Nothing wraps the object you
+get back, and every page shows the plain-framework code you can switch to at
+any time.
 
-  **Language support.** Python is the only first-party SDK today; a TypeScript
-  SDK is planned. Until then, every framework
-  page's **TypeScript** tab reaches the same governed proxy over its
-  OpenAI-compatible API with the official `openai` npm client (or
-  `@anthropic-ai/sdk` for Anthropic) — a real, typed native integration, with no
-  first-party TS package implied. Native TypeScript SDKs exist for LangGraph,
-  ADK, Strands, the OpenAI Agents SDK, the Anthropic SDK, and LlamaIndex;
-  **CrewAI (Python-only)** and **MS Agent Framework (.NET/Python/Go)** have none.
+  **Using TypeScript or another language?** The SDK is Python. From TypeScript
+  or any other language, call the proxy's OpenAI-compatible HTTP API directly —
+  every framework page has a **TypeScript** tab showing the official `openai`
+  npm client (or `@anthropic-ai/sdk` for Anthropic) pointed at the same proxy.
 
-## One deep adapter, seven supported
+## Supported frameworks
 
-Support depth is about **how much is guaranteed by tests**, not about quality
-or how well a framework works:
-
-- **Deep** — conformance-gated in blocking CI, with the full scenario suite run
-  against it.
-- **Supported at `connection_kwargs()`** — the governed connection is verified
-  at the kwargs level; the factory methods exist and return native objects, but
-  the constructor call itself is not conformance-gated.
-
-  **Why one deep adapter and not eight.** Eight conformance-gated adapters cost
-  more to maintain than they returned, and the maintenance came out of the
-  budget for the things that actually differentiate the SDK — budget pacing, the
-  simulator, the conformance plugin. A second framework is promoted to deep
-  support based on **real demand**, one at a time, rather than guessed up front.
-  This makes `connection_kwargs()` the most load-bearing surface here: it is the
-  entire supported contract for seven of the eight.
+LangGraph is the **deep** adapter: it runs the full conformance suite in CI,
+including graph-level scenarios against a compiled `StateGraph`. The other
+seven are **supported at `connection_kwargs()`**: the governed connection
+settings are tested, and each exposes factory methods that return the native
+object.
 
   
     `chat_model()` → `langchain_openai.ChatOpenAI`
@@ -60,38 +49,6 @@ or how well a framework works:
     `donkey.llm.client()` → `openai.AsyncOpenAI` (or `OpenAI` with `sync=True`)
   
 
-## Which wire format does your proxy speak?
-
-Every adapter on this page — and the raw `donkey.llm.client()` — speaks the
-**OpenAI wire format**. Whether that matches your gateway depends on the
-**Format** (OpenAI / Anthropic / Gemini) you chose when the proxy was
-provisioned, which fixes the wire protocol the proxy's *ingress* accepts.
-
-The wire format is a property of the **provisioned proxy**, not an SDK
-setting — there is no `llm_proxy_format` config field, by design. You match the
-adapter to the proxy, not the other way round.
-
-| Proxy ingress **Format** | Point it at | Status |
-|---|---|---|
-| **OpenAI** | `donkey.llm.client()` or any framework adapter | **VERIFIED (LIVE)** — the SDK's verified data-plane path |
-| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **VERIFIED (LIVE)** — a `Format=Anthropic` proxy serves the native Anthropic Messages route at `POST /<base-path>/v1/messages` (OpenAI-shape `/chat/completions` → 404), captured in `tests/fixtures/anypoint/anthropic_inbound/` (#304). Requires a `Format=Anthropic` proxy — every default DDK proxy is `Format=OpenAI`, where Claude is reachable only as an upstream provider |
-| **Gemini** | *No SDK adapter* — point a native `google-genai` client at `…/models/<model>:generateContent` yourself | **VERIFIED (LIVE)** — a `Format=Gemini` proxy serves a native Gemini `:generateContent` passthrough (#540). The SDK ships **no** `donkey.gemini` adapter (demand-driven, #244); reach Gemini as an **upstream provider** behind an OpenAI-format ingress instead — see below |
-
-  **Ingress Format is not upstream provider routing.** "Anthropic" and "Gemini"
-  appear in two different places and mean different things:
-
-  - **Ingress Format** — the wire protocol *your request* speaks to the proxy.
-    The verified path is OpenAI.
-  - **Upstream provider** — which model the proxy routes *to* after accepting
-    your request. A model-based-routing proxy with an OpenAI ingress already
-    fans out to OpenAI, Gemini, Azure OpenAI, Bedrock Anthropic, and NVIDIA
-    upstreams today, selected by the `model` value in your request body — no
-    new SDK code needed.
-
-  So to *use* Gemini or Claude models you don't need a Gemini- or
-  Anthropic-format ingress at all: send an OpenAI-format request naming that
-  model to an OpenAI-format proxy. See [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
-
 ## The shape is the same everywhere
 
 ```bash
@@ -105,25 +62,53 @@ async with Donkey.from_env() as donkey:
     model = donkey.<framework>.<factory>("gpt-4o")   # native object at the proxy
 ```
 
-Each page shows the factory name, the native class you get back, the three ways
-to construct it, and — importantly — **the manual equivalent** so you can eject
-to plain framework code whenever you want.
+Each framework page shows the factory name, the native class you get back, the
+three ways to construct it, and **the manual equivalent** — the plain framework
+constructor call the factory makes for you.
+
+## Match the adapter to your proxy's wire format
+
+Every adapter on this page except Anthropic — and the raw `donkey.llm.client()`
+— speaks the **OpenAI wire format**. The format your proxy accepts is the
+**Format** (OpenAI / Anthropic / Gemini) chosen when the proxy was provisioned.
+It is a property of the proxy, not an SDK setting, so there is no config field
+for it: pick the adapter that matches your proxy.
+
+| Proxy ingress **Format** | Use |
+|---|---|
+| **OpenAI** | `donkey.llm.client()` or any framework adapter. Default DDK proxies are `Format=OpenAI`. |
+| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`). The proxy serves the native Messages route at `POST /<base-path>/v1/messages`; OpenAI-shape `/chat/completions` returns 404. |
+| **Gemini** | No SDK adapter. Point a native `google-genai` client at `…/models/<model>:generateContent` yourself, or reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
+
+  **Ingress Format is not the same as the upstream provider.** The ingress
+  Format is the wire protocol *your request* speaks to the proxy. The upstream
+  provider is the model the proxy routes *to* after accepting it. A
+  model-based-routing proxy with OpenAI ingress already fans out to OpenAI,
+  Gemini, Azure OpenAI, Bedrock Anthropic, and NVIDIA upstreams, selected by the
+  `model` value in your request body.
+
+  So to use Gemini or Claude models you don't need a Gemini- or Anthropic-format
+  proxy: send an OpenAI-format request naming that model to an OpenAI-format
+  proxy.
 
 ## Injection depth differs by framework
 
-How completely the SDK can inject its governed HTTP transport depends on what
-each framework exposes:
+How much of the SDK's HTTP layer reaches the request depends on what each
+framework's constructor accepts. With **header injection**, the proxy auth and
+attribution headers are sent. With **transport injection**, the SDK's shared
+HTTP client is also used, which adds per-run correlation IDs and
+`donkey.last_call`.
 
 | Framework | Header injection | Transport injection | Notes |
 |---|---|---|---|
-| LangGraph | ✅ | ✅ | Best case — `default_headers` + custom async client. |
+| LangGraph | ✅ | ✅ | `default_headers` plus a custom async client. |
 | Strands | ✅ | ✅ | Via `client_args`. |
-| LlamaIndex | ✅ | ❌ | Receives a static `default_headers` snapshot, so per-run correlation and `donkey.last_call` are unavailable. `is_chat_model=True` is forced. |
-| OpenAI Agents SDK | ✅ | ✅ | We build the `AsyncOpenAI` client ourselves. |
-| Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [divergence note](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
-| MS Agent Framework | ✅ | ❌ | Receives a static `default_headers` snapshot, so per-run correlation and `donkey.last_call` are unavailable. Class name/kwarg **unverified**. |
-| Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; correlation is per-client and the adapter cannot populate `donkey.last_call`. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport; same correlation and `donkey.last_call` exemptions as Google ADK. |
+| OpenAI Agents SDK | ✅ | ✅ | The adapter builds the `AsyncOpenAI` client itself. |
+| Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [Anthropic page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
+| LlamaIndex | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. `is_chat_model=True` is forced. |
+| MS Agent Framework | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. |
+| Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport: correlation is per-client and `donkey.last_call` is unavailable. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport: same limits as Google ADK. |
 
-  The proxy contract is verified; the exact **constructor signatures** are still
-  being confirmed per framework — see [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md).
+See [Verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) for how each constructor
+signature the adapters depend on is checked.
