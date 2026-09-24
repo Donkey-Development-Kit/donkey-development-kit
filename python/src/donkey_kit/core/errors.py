@@ -477,15 +477,18 @@ def classify(
       (flagged reasons parsed from the sibling ``...-reason`` header). Also
       checked before the auth rule.
 
-    Both shapes are now **live-verified** (2026-09-22, #253): Regex Prompt Guard
-    against ``ddk-injection-guard`` and Azure Content Safety against
-    ``ddk-azure-content-safety`` (docs/verified-apis.md §4). These shapes have no
-    ``_verify.py`` constant — ``classify()`` reads them straight from the
-    response — so the record is the §4 rows, not a ``verified=True`` flip. Amazon
-    Bedrock Guardrails (same ``...-action: reject`` header family) and the
-    Injection Protection body (``x-injection-protection: blocked``, a distinct
-    policy) stay documented-only — no proxy running them is deployed to capture
-    (#253). Any other content-moderation / federated-guardrail shape still falls
+    All three provider-backed guardrail shapes are now **live-verified**: Regex
+    Prompt Guard against ``ddk-injection-guard`` and Azure Content Safety against
+    ``ddk-azure-content-safety`` (both 2026-09-22, #253), and Amazon Bedrock
+    Guardrails against ``ddk-bedrock-guardrails`` (2026-09-24, #568) — the same
+    ``...-action: reject`` header family, now confirmed against a real Bedrock
+    upstream (docs/verified-apis.md §4). These shapes have no ``_verify.py``
+    constant — ``classify()`` reads them straight from the response — so the
+    record is the §4 rows, not a ``verified=True`` flip. The Injection Protection
+    body (``x-injection-protection: blocked``, a distinct policy) is the only
+    content-moderation shape that stays documented-only — no proxy running it is
+    deployed to capture (#253). Any other content-moderation / federated-guardrail
+    shape still falls
     through to a generic
     :class:`PolicyViolation` whose message names what was observed and says the
     shape is unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate``
@@ -541,10 +544,10 @@ def classify(
 
     # Content-safety / guardrails policy: 403 + a vendor `...-action: reject`
     # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4).
-    # Azure verified LIVE 2026-09-22 (#253); Bedrock still documented-only.
+    # Azure verified LIVE 2026-09-22, Bedrock verified LIVE 2026-09-24 (#253/#568).
     # Checked before the 401/403 → auth rule because a moderation block is not an
-    # auth failure. Keyed on the header, not the body, so the body-less Bedrock
-    # reject is caught too.
+    # auth failure. Keyed on the header, not the body, so a reject with an
+    # unexpected or absent body is still caught.
     cs = _content_safety_reject(response)
     if cs is not None:
         vendor, categories = cs
@@ -799,7 +802,8 @@ def _code_str(value: Any) -> str | None:
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
 # ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4).
 # Azure Content Safety verified LIVE 2026-09-22 against ddk-azure-content-safety
-# (#253); Amazon Bedrock Guardrails still documented-only (no proxy deployed).
+# (#253); Amazon Bedrock Guardrails verified LIVE 2026-09-24 against
+# ddk-bedrock-guardrails (#568).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
     (
         "x-llm-proxy-azure-content-safety-action",

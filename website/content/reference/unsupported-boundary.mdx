@@ -35,8 +35,8 @@ before making a network request.
 |---|---|---|
 | Anypoint connected-app token endpoint | **Documented and public** | Retrieves an OAuth bearer token with client credentials. |
 | Model Proxy OpenAI-format `/responses` endpoint | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. The raw client can also call documented OpenAI-native routes such as `/chat/completions`; `/responses` is the route tested against a deployed proxy. |
-| Model Proxy policy refusals (observed) | **Documented and public** | Classifies Client ID Enforcement, token-rate-limit, and PII responses captured from a deployed proxy. |
-| Model Proxy policy refusals (from documentation) | **Documented and public** | Classifies Regex Prompt Guard, Injection Protection, Azure Content Safety, and Amazon Bedrock Guardrails responses from their official policy pages. |
+| Model Proxy policy refusals (observed) | **Documented and public** | Classifies Client ID Enforcement, token-rate-limit, PII, Regex Prompt Guard, Azure Content Safety, and Amazon Bedrock Guardrails responses captured from a deployed proxy. |
+| Model Proxy policy refusals (from documentation) | **Documented and public** | Classifies Injection Protection responses from its official policy page. |
 | Upstream provider error pass-through | **Documented, no SLA for third-party use** | Classifies the nested non-`429` `4xx` provider envelope as `UpstreamRequestError`; generic `5xx` responses become `UpstreamModelError` by status only. The envelope schema belongs to the upstream provider, and MuleSoft's public Model Proxy page states no pass-through compatibility contract. |
 | `x-llm-proxy-ratelimit` success-budget sentence | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored. |
 | Gateway identity and routing extension headers | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`. |

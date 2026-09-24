@@ -36,9 +36,8 @@ ordinary refusal.
 Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the eight
 policy-rejection rows.
 
-The Injection Protection header and the Amazon Bedrock Guardrails header are
-typed from the documented response shape; `classify()` keys on the header
-discriminator alone for those two.
+The Injection Protection header is typed from the documented response shape;
+`classify()` keys on the header discriminator alone for it.
 
 ## The exception tree
 
