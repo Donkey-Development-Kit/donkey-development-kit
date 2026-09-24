@@ -805,7 +805,7 @@ adapter to the proxy, not the other way round.
 | Proxy ingress **Format** | Point it at | Status |
 |---|---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter | **VERIFIED (LIVE)** — the SDK's verified data-plane path |
-| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **DOCUMENTED, path unverified** — MuleSoft docs confirm an Anthropic ingress Format exists, but the exact route path + live behavior are pending a capture against a `Format=Anthropic` proxy (every DDK proxy is `Format=OpenAI`); the factory warns on first use (#304) |
+| **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`) | **VERIFIED (LIVE)** — a `Format=Anthropic` proxy serves the native Anthropic Messages route at `POST /<base-path>/v1/messages` (OpenAI-shape `/chat/completions` → 404), captured in `tests/fixtures/anypoint/anthropic_inbound/` (#304). Requires a `Format=Anthropic` proxy — every default DDK proxy is `Format=OpenAI`, where Claude is reachable only as an upstream provider |
 | **Gemini** | *No SDK adapter* — point a native `google-genai` client at `…/models/<model>:generateContent` yourself | **VERIFIED (LIVE)** — a `Format=Gemini` proxy serves a native Gemini `:generateContent` passthrough (#540). The SDK ships **no** `donkey.gemini` adapter (demand-driven, #244); reach Gemini as an **upstream provider** behind an OpenAI-format ingress instead — see below |
 
   **Ingress Format is not upstream provider routing.** "Anthropic" and "Gemini"
@@ -1621,17 +1621,17 @@ reply = await llm.messages.create(
 There's no first-party Agent Fabric TypeScript SDK yet (it's on the
 [roadmap](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md)). The native match here is the official
 **`@anthropic-ai/sdk`** client pointed at the proxy — same `client_id` /
-`client_secret` header pair, model id passed per call. **Caveat (unverified
-path):** MuleSoft Model Proxy offers a native Anthropic ingress Format, but every
-DDK proxy is provisioned `Format=OpenAI` and the Anthropic ingress path/behavior
-are not yet captured — point `baseURL` at a `Format=Anthropic` proxy before
-relying on this path (#304).
+`client_secret` header pair, model id passed per call. **Caveat (proxy Format):**
+the native Anthropic ingress route is LIVE-verified at `POST /<base-path>/v1/messages`,
+but it requires a proxy provisioned `Format=Anthropic`; every default DDK proxy is
+`Format=OpenAI`, so point `baseURL` at a `Format=Anthropic` proxy to use the native
+surface (#304).
 
 ```typescript
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
-  baseURL: process.env.DONKEY_LLM_PROXY_URL,   // UNVERIFIED path/behavior: use a Format=Anthropic proxy
+  baseURL: process.env.DONKEY_LLM_PROXY_URL,   // native /v1/messages route LIVE-verified: use a Format=Anthropic proxy
   apiKey: "unused",                              // required slot; proxy uses the headers below
   defaultHeaders: {
     client_id: process.env.DONKEY_LLM_PROXY_CLIENT_ID!,
@@ -1702,19 +1702,17 @@ you can always drop the factory and construct `AsyncAnthropic` by hand.
 > therefore takes no model argument at all; you supply the model id yourself
 > on every call.
 
-> **UNVERIFIED path: the proxy's Anthropic-native ingress.**
-> MuleSoft Model Proxy offers a **native Anthropic ingress Format** — one of
-> three selectable Formats (OpenAI / Gemini / Anthropic) fixed at proxy creation
-> ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)) — so the
-> Anthropic-native route is a real product capability. Two gaps keep it
-> unverified: (1) it must be *provisioned* that way, and every DDK proxy is
-> `Format=OpenAI`, so pointing `AsyncAnthropic` at them reaches Claude only as an
-> *upstream provider*, not natively; (2) the exact Anthropic ingress path (likely
-> `/v1/messages`) and its live behavior have **not** been captured against a real
-> `Format=Anthropic` proxy. `client()` emits a one-time runtime warning flagging
-> this rather than silently assuming the route works — point `base_url` at a
-> `Format=Anthropic` proxy and confirm against your own sandbox before depending
-> on it (#304).
+> **The proxy's Anthropic-native ingress is LIVE-verified — but requires a
+> `Format=Anthropic` proxy.** MuleSoft Model Proxy offers a **native Anthropic
+> ingress Format** — one of three selectable Formats (OpenAI / Gemini / Anthropic)
+> fixed at proxy creation ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)).
+> A live capture against a `Format=Anthropic` proxy confirms the native route at
+> `POST /<base-path>/v1/messages` (200 with a native Anthropic body; an
+> OpenAI-shaped `/chat/completions` request 404s), on the same `client_id` /
+> `client_secret` CIE auth (#304). The one remaining caveat is provisioning: every
+> default DDK proxy is `Format=OpenAI`, so pointing `AsyncAnthropic` at them
+> reaches Claude only as an *upstream provider*, not natively (`/v1/messages` 404s
+> there). Point `base_url` at a `Format=Anthropic` proxy to use the native surface.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification policy](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification.md) page for
@@ -4483,7 +4481,7 @@ how a blocked value flips to verified — is documented for contributors in
 
 | Area | Status | What the SDK does about it |
 |---|---|---|
-| Non-OpenAI proxy **ingress Format** (Anthropic / Gemini) | Anthropic Format documented, route path/behavior unverified (#304); Gemini-native ingress **VERIFIED (LIVE)**, no SDK adapter (#540) | The default data-plane path is **Format=OpenAI**. MuleSoft Model Proxy [documents](https://docs.mulesoft.com/general/model-proxy) three selectable ingress Formats (OpenAI / Anthropic / Gemini) fixed at proxy creation. The **Gemini**-native ingress is now **VERIFIED (LIVE)**: a `Format=Gemini` proxy serves a native `POST …/models/<model>:generateContent` passthrough (200, native Gemini body; OpenAI-shape → 400), captured in `tests/fixtures/anypoint/gemini_inbound/` (#540). The **Anthropic**-native Messages route is documented but its exact path + live behavior are still **UNVERIFIED** (no `Format=Anthropic` proxy provisioned yet); `donkey.anthropic.client()` points `AsyncAnthropic` at it and warns on first use (#304). Either way the SDK ships **no** `donkey.gemini` adapter — a native `google-genai` adapter is demand-driven (#244); Gemini and Claude models are also reachable as **upstream providers** behind an OpenAI-format ingress via model-based routing, which works today. Ingress Format is a property of the provisioned proxy, not an SDK setting (no `llm_proxy_format` field). See [Which wire format does your proxy speak?](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#which-wire-format-does-your-proxy-speak). |
+| Non-OpenAI proxy **ingress Format** (Anthropic / Gemini) | Both native ingress Formats now **VERIFIED (LIVE)**: Anthropic Messages route (#304) and Gemini `:generateContent` route (#540); no `donkey.gemini` SDK adapter | The default data-plane path is **Format=OpenAI**. MuleSoft Model Proxy [documents](https://docs.mulesoft.com/general/model-proxy) three selectable ingress Formats (OpenAI / Anthropic / Gemini) fixed at proxy creation, and both non-OpenAI Formats are now live-confirmed. The **Anthropic**-native Messages route is **VERIFIED (LIVE)**: a `Format=Anthropic` proxy serves `POST /<base-path>/v1/messages` natively (200, native Anthropic body; OpenAI-shape `/chat/completions` → 404), captured in `tests/fixtures/anypoint/anthropic_inbound/` (#304). The **Gemini**-native ingress is likewise **VERIFIED (LIVE)**: a `Format=Gemini` proxy serves a native `POST …/models/<model>:generateContent` passthrough (200, native Gemini body; OpenAI-shape → 400), captured in `tests/fixtures/anypoint/gemini_inbound/` (#540). `donkey.anthropic.client()` points `AsyncAnthropic` at the native route — but it requires a `Format=Anthropic` proxy (default DDK proxies are `Format=OpenAI`). The SDK ships **no** `donkey.gemini` adapter — a native `google-genai` adapter is demand-driven (#244); Gemini and Claude models are also reachable as **upstream providers** behind an OpenAI-format ingress via model-based routing, which works today. Ingress Format is a property of the provisioned proxy, not an SDK setting (no `llm_proxy_format` field). See [Which wire format does your proxy speak?](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#which-wire-format-does-your-proxy-speak). |
 | Framework **constructor signatures** (docs/verified-apis.md §8) | Unverified per framework | Adapters target recorded class names; a mismatch surfaces via the verification harness / nightly matrix rather than silently misbehaving. Agent Framework's client raises `blocked on verification` today. |
 | MCP tool discovery + binding ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md)) | Unverified | `donkey.tools.discover` and the binding classes raise `blocked on verification`. |
 | Exchange publish API ([Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md)) | Partially verified | First-class MCP/agent asset types exist, but the exact publication and discovery token vocabulary is unverified. `donkey publish` and Exchange search remain blocked rather than sending the SDK's assumed `mcp` / `a2a-agent` values. |

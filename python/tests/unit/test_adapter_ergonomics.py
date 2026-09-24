@@ -136,15 +136,11 @@ def test_agent_framework_connection_kwargs_are_the_openai_connection() -> None:
 
 
 def test_anthropic_connection_kwargs_carry_proxy_and_shared_client() -> None:
-    import warnings
-
     from donkey_kit.integrations.anthropic import AnthropicAdapter
 
-    with warnings.catch_warnings():
-        # The Anthropic ingress Format is documented but its exact path + live behavior
-        # are unverified (#304); connection_kwargs() warns once. Not what this test asserts.
-        warnings.simplefilter("ignore")
-        kw = AnthropicAdapter(_cfg(), _http()).connection_kwargs()
+    # The proxy's Anthropic-native route is LIVE-verified (#304), so connection_kwargs()
+    # no longer emits an unverified-route warning.
+    kw = AnthropicAdapter(_cfg(), _http()).connection_kwargs()
     assert kw["base_url"] == "https://proxy"
     assert "client_id" in kw["default_headers"]
     assert kw["http_client"] is not None
@@ -424,7 +420,7 @@ def test_factory_and_connection_kwargs_do_not_drift(
 
     captured = _install_native_stub(monkeypatch, f.native_module, f.native_attr)
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # anthropic warns once about its unverified route
+        warnings.simplefilter("ignore")  # suppress any one-time adapter construction warnings
         factory(*f.args)
 
     # The factory built the native object through the process-wide cached default

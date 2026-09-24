@@ -8,16 +8,15 @@ at the governed Agent Fabric LLM proxy with a single factory call:
     from donkey_kit.integrations.anthropic import client
     c = client()   # the model id is a per-call argument, not a constructor one
 
-UNVERIFIED DEPENDENCY (docs/verified-apis.md §2, #304): MuleSoft Model Proxy
-offers a native **Anthropic** ingress Format (one of three — OpenAI / Gemini /
-Anthropic — fixed at proxy creation), so the Anthropic-native route is a real
-product capability. But every DDK proxy is ``Format=OpenAI``, so this client
-pointed at them reaches Claude only as an *upstream provider*, not natively; and
-the exact Anthropic ingress path + live behavior are not yet captured against a
-``Format=Anthropic`` proxy. Point ``base_url`` (via ``**kw``) at a
-``Format=Anthropic`` proxy to use the native surface. The first ``client()``
-call emits a one-time unverified-route warning. This example constructs the
-client but does NOT make a live call.
+PROXY ROUTE (docs/verified-apis.md §2, #304): MuleSoft Model Proxy offers a
+native **Anthropic** ingress Format (one of three — OpenAI / Gemini / Anthropic —
+fixed at proxy creation). That route is now **LIVE-verified**: a
+``Format=Anthropic`` proxy serves the Anthropic Messages API natively at
+``POST /<base-path>/v1/messages``. Usage caveat: the SDK's own default DDK proxies
+are ``Format=OpenAI``, so this client pointed at them reaches Claude only as an
+*upstream provider*, not natively (``/v1/messages`` 404s there). Point
+``base_url`` (via ``**kw``) at a ``Format=Anthropic`` proxy to use the native
+surface. This example constructs the client but does NOT make a live call.
 """
 
 from __future__ import annotations
@@ -58,10 +57,10 @@ def main() -> None:
 
     print(f"Constructed native object: {type(c).__module__}.{type(c).__name__}")
     print(
-        "Construction is the SDK's verified surface. The Anthropic ingress Format "
-        "is documented but the exact path + live behavior are UNVERIFIED "
-        "(docs/verified-apis.md §2, #304) — point base_url at a Format=Anthropic "
-        "proxy, then call c.messages.create(model=..., ...) per Anthropic's own docs."
+        "The proxy's Anthropic-native route is LIVE-verified at "
+        "POST /<base-path>/v1/messages (docs/verified-apis.md §2, #304). Point "
+        "base_url at a Format=Anthropic proxy (DDK defaults are Format=OpenAI), "
+        "then call c.messages.create(model=..., ...) per Anthropic's own docs."
     )
 
 

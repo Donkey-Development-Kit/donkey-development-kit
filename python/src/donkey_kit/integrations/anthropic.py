@@ -11,35 +11,31 @@ is a *client*, and the model id is a per-call argument, not a constructor one.
 So this adapter exposes ``client()`` rather than the ``model(...)`` factory the
 OpenAI-compatible adapters use.
 
-UNVERIFIED DEPENDENCY (docs/verified-apis.md §2, #304): MuleSoft Model Proxy
-*does* offer a native **Anthropic** ingress Format — it is one of three
-selectable ingress Formats (OpenAI / Gemini / Anthropic), fixed at proxy
-creation (docs.mulesoft.com/general/model-proxy). So the Anthropic-native route
-is a real product capability, **but** two things keep it UNVERIFIED for this
-adapter: (1) it must be *provisioned* that way — every DDK proxy is
-``Format=OpenAI``, so pointing this client at them reaches Claude only as an
-*upstream provider*, not via Anthropic's native surface; (2) the exact ingress
-path (likely ``/v1/messages``) and its live behavior have not been captured
-against a real ``Format=Anthropic`` proxy. Until that capture lands, point
-``base_url`` (via ``**kw``) at a proxy provisioned with ``Format=Anthropic``.
-The first ``client()`` call emits a one-time
-:class:`~donkey_kit.core._verify.UnverifiedValueWarning`.
+PROXY ROUTE (docs/verified-apis.md §2, #304): MuleSoft Model Proxy offers a
+native **Anthropic** ingress Format — one of three selectable ingress Formats
+(OpenAI / Gemini / Anthropic), fixed at proxy creation. That route is now
+**LIVE-verified**: a ``Format=Anthropic`` proxy serves the Anthropic Messages API
+natively at ``POST /<base-path>/v1/messages`` (200 with a native Anthropic body;
+an OpenAI-shaped ``/chat/completions`` request 404s). Captured in
+``python/tests/fixtures/anypoint/anthropic_inbound/``.
 
-Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
+Usage caveat (not a verification gap): the route requires a proxy *provisioned*
+``Format=Anthropic``. The SDK's own default DDK proxies are ``Format=OpenAI``, so
+pointing this client at them reaches Claude only as an *upstream provider*, not
+via Anthropic's native surface (``/v1/messages`` 404s there). Point ``base_url``
+(via ``**kw``) at a ``Format=Anthropic`` proxy to use the native ingress.
+
+Class names / kwargs UNVERIFIED — docs/verified-apis.md §8 (#34).
 """
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
-from ..core import _verify
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from anthropic import AsyncAnthropic
-
-_ROUTE_KEY = "anthropic.proxy_messages_route"
 
 
 class AnthropicAdapter(Adapter):
@@ -48,19 +44,9 @@ class AnthropicAdapter(Adapter):
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``AsyncAnthropic(**kwargs)`` you build yourself:
         proxy ``base_url``, the verified consumer-auth ``default_headers``, the
-        shared http client, and the ``api_key`` slot. Warns once that the proxy's
-        Anthropic-native route is unverified (see the module docstring)."""
-        if _ROUTE_KEY not in _verify._warned:
-            _verify._warned.add(_ROUTE_KEY)
-            warnings.warn(
-                "MuleSoft Model Proxy offers a native Anthropic ingress Format, but every "
-                "DDK proxy is provisioned Format=OpenAI, and the Anthropic ingress path + "
-                "live behavior are UNVERIFIED (docs/verified-apis.md §2, #304). Pointed at a "
-                "Format=OpenAI proxy this reaches Claude only as an upstream provider, not "
-                "natively; override base_url via **kw to target a Format=Anthropic proxy.",
-                _verify.UnverifiedValueWarning,
-                stacklevel=3,
-            )
+        shared http client, and the ``api_key`` slot. The proxy's Anthropic-native
+        route is LIVE-verified but requires a ``Format=Anthropic`` proxy (see the
+        module docstring)."""
         conn = self._openai_connection()  # base_url, api_key, default_headers
         return {
             "base_url": conn["base_url"],
