@@ -52,6 +52,7 @@ from .lastcall import (
     LLM_PROVIDER_HEADER,
     ROUTING_TYPE_HEADER,
     is_fallback,
+    is_substitution,
     observe_last_call,
     observe_usage,
     parse_usage,
@@ -447,23 +448,29 @@ def _substitution_error(
     Only a **2xx** is checked — a refusal or upstream error is classified on its
     own terms elsewhere and is not a "silent substitution". A substitution
     requires both the requested model (from the body) and the served model (the
-    gateway header) to be known and to differ; a missing either side is never a
-    guess (verification discipline). Never raises here — it returns the error for the caller path to
-    raise once telemetry has been recorded."""
+    gateway header) to be known and to differ — by the same prefix-aware rule as
+    ``last_call.substituted`` (:func:`is_substitution`, #586); a missing either
+    side is never a guess (verification discipline). Never raises here — it
+    returns the error for the caller path to raise once telemetry has been
+    recorded."""
     if cfg.on_model_substitution != "raise":
         return None
     if response.status_code // 100 != 2:
         return None
     requested = _request_model(request)
     served = response.headers.get(LLM_MODEL_HEADER)
-    if requested is None or served is None or requested == served:
+    provider = response.headers.get(LLM_PROVIDER_HEADER)
+    if requested is None or served is None or not is_substitution(requested, served, provider):
         return None
+    # A semantic route can serve another model without failing over, so only
+    # name a fallback when the gateway reported one.
+    cause = " (routing fallback)" if routing_fallback(response) else ""
     return ModelSubstituted(
-        f"Gateway served model {served!r}, but {requested!r} was requested "
-        f"(routing fallback); raised because on_model_substitution='raise'.",
+        f"Gateway served model {served!r}, but {requested!r} was requested"
+        f"{cause}; raised because on_model_substitution='raise'.",
         requested_model=requested,
         served_model=served,
-        served_provider=response.headers.get(LLM_PROVIDER_HEADER),
+        served_provider=provider,
         request_id=request_id(response),
         response=response,
     )

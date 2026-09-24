@@ -676,6 +676,42 @@ def test_substituted_is_true_only_when_both_known_and_differ() -> None:
     assert rec(requested_model=None, served_model="gpt-4o").substituted is False
 
 
+# Live header pairs (DDK sandbox, #586): a model-based proxy reports the served
+# model WITHOUT the `provider/` routing prefix, carrying the provider in its own
+# header. Bedrock ids contain dots, never a slash, so the first `/` is the split.
+@pytest.mark.parametrize(
+    ("requested", "provider", "served", "expected"),
+    [
+        ("openai/gpt-5-mini", "openai", "gpt-5-mini", False),
+        ("gemini/gemini-2.5-flash", "gemini", "gemini-2.5-flash", False),
+        ("azureopenai/gpt-5-mini", "azureopenai", "gpt-5-mini", False),
+        (
+            "bedrockanthropic/us.anthropic.claude-sonnet-5",
+            "bedrockanthropic",
+            "us.anthropic.claude-sonnet-5",
+            False,
+        ),
+        ("OpenAI/gpt-5-mini", "openai", "gpt-5-mini", False),  # provider is case-insensitive
+        ("openai/gpt-5-mini", "gemini", "gemini-2.5-flash", True),  # a real substitution
+        ("openai/gpt-5-mini", "azureopenai", "gpt-5-mini", True),  # same model, other provider
+        ("openai/gpt-5-mini", None, "gpt-5-mini", True),  # no provider: verbatim, never hidden
+        ("gpt-5.1", "openai", "gpt-5.1", False),  # bare names: verbatim, as before
+        ("gpt-5.1", "openai", "gpt-4o", True),
+    ],
+)
+def test_substituted_ignores_a_prefix_that_names_the_served_provider(
+    requested: str, provider: str | None, served: str, expected: bool
+) -> None:
+    record = LastCall(
+        status=LastCallStatus.OBSERVED,
+        requested_model=requested,
+        served_provider=provider,
+        served_model=served,
+    )
+    assert record.substituted is expected
+    assert lastcall.is_substitution(requested, served, provider) is expected
+
+
 async def test_transport_threads_requested_model_onto_the_record() -> None:
     # The requested model comes from the request body; the served model from the
     # gateway header. A substitution is only knowable when both are on the record.
