@@ -66,7 +66,7 @@ so the raw `donkey.llm.client()` path gets them with no framework required. See
 | `served_model` | `str \| None` | The model the gateway actually served (`x-llm-proxy-llm-model`). May differ from `requested_model` after a fallback. |
 | `routing_type` | `str \| None` | The routing strategy the gateway applied (`x-llm-proxy-routing-type`), e.g. `"ModelBased"` or `"Semantic"`. |
 | `fallback` | `bool \| None` | Whether the gateway performed a routing **fallback**. `None` when the header is absent (non-proxy / simulated response) — distinct from a definitive `False` ("no fallback occurred"). |
-| `substituted` | `bool` | `True` iff the gateway served a *different* model than requested — a silent substitution your cost model and evals are otherwise blind to. Requires both models known; a missing either side is not a substitution claim. |
+| `substituted` | `bool` | `True` iff the gateway served a *different* model than requested — a silent substitution your cost model and evals are otherwise blind to. A `provider/` prefix on the requested model that names `served_provider` is ignored (`openai/gpt-5-mini` served as `gpt-5-mini` by `openai` is not a substitution). Requires both models known; a missing either side is not a substitution claim. |
 | `matched_topic` | `str \| None` | On a **semantic-routing** proxy, the topic the prompt matched (`x-llm-proxy-semantic-routing-success`). `None` on a model-based proxy (the header is semantic-only) or when the message did not parse. |
 | `routing_score` | `float \| None` | On a **semantic-routing** proxy, the similarity score of the matched topic (a bare `0.xx` float). `None` on a model-based proxy or when the score did not parse. |
 

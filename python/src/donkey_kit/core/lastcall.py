@@ -246,6 +246,30 @@ def _parse_cache_score(raw: str | None) -> float | None:
         return None
 
 
+def is_substitution(
+    requested_model: str | None, served_model: str | None, served_provider: str | None
+) -> bool:
+    """True iff the gateway served a different model than the one requested.
+
+    A model-based proxy routes on a ``provider/model`` name but reports the served
+    model WITHOUT the prefix (``x-llm-proxy-llm-model: gpt-5-mini``), carrying the
+    provider in ``x-llm-proxy-llm-provider`` (live on OpenAI, Gemini, Azure OpenAI
+    and Bedrock routes, #586). So when the requested name's prefix — split on the
+    FIRST ``/``; Bedrock ids use dots — names the served provider
+    (case-insensitive), only the remainder is compared. Any other shape, including
+    an absent provider header, compares verbatim: a different provider serving the
+    same model name is still a substitution, and an unknown one is never hidden.
+    A missing requested or served model is not a substitution claim. Shared by
+    :attr:`LastCall.substituted` and the ``on_model_substitution="raise"`` path so
+    the two can never disagree."""
+    if requested_model is None or served_model is None:
+        return False
+    prefix, sep, model = requested_model.partition("/")
+    if sep and served_provider is not None and prefix.lower() == served_provider.lower():
+        return model != served_model
+    return requested_model != served_model
+
+
 def request_id(response: httpx.Response) -> str | None:
     """The upstream provider's request id for a response, resolved from the first
     present of :data:`REQUEST_ID_HEADERS` (``x-request-id``, then
@@ -516,12 +540,9 @@ class LastCall:
         — a silent model substitution the developer's cost model, token
         assumptions and evaluation are otherwise blind to (#309). Requires both
         the requested and served model to be known; a missing either side is not
-        a substitution claim."""
-        return (
-            self.requested_model is not None
-            and self.served_model is not None
-            and self.requested_model != self.served_model
-        )
+        a substitution claim. A ``provider/`` prefix naming :attr:`served_provider`
+        is not a difference — see :func:`is_substitution` (#586)."""
+        return is_substitution(self.requested_model, self.served_model, self.served_provider)
 
     @property
     def cache_hit(self) -> bool:

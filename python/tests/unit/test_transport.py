@@ -1871,6 +1871,70 @@ async def test_on_model_substitution_raise_is_silent_when_models_match() -> None
     assert resp.status_code == 200
 
 
+async def test_on_model_substitution_raise_is_silent_for_a_provider_prefixed_match() -> None:
+    # #586: `openai/gpt-5-mini` served as provider `openai`, model `gpt-5-mini` is
+    # the model the caller asked for — the gateway strips the routing prefix.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={
+                _LLM_MODEL_HEADER: "gpt-5-mini",
+                "x-llm-proxy-llm-provider": "openai",
+                _ROUTING_FALLBACK: "false",
+            },
+            json={"model": "gpt-5-mini"},
+        )
+
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
+    async with _client(handler, cfg) as client:
+        resp = await client.post(
+            "https://proxy/chat", json={"model": "openai/gpt-5-mini", "input": "hi"}
+        )
+    assert resp.status_code == 200
+
+
+def test_sync_on_model_substitution_raise_is_silent_for_a_provider_prefixed_match() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={_LLM_MODEL_HEADER: "gemini-2.5-flash", "x-llm-proxy-llm-provider": "gemini"},
+            json={"model": "gemini-2.5-flash"},
+        )
+
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
+    with _sync_client(handler, cfg) as client:
+        resp = client.post(
+            "https://proxy/chat", json={"model": "gemini/gemini-2.5-flash", "input": "hi"}
+        )
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize(("fallback", "says_fallback"), [("true", True), ("false", False)])
+async def test_model_substituted_message_names_a_fallback_only_when_the_gateway_did(
+    fallback: str, says_fallback: bool
+) -> None:
+    from donkey_kit.core.errors import ModelSubstituted
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={
+                _LLM_MODEL_HEADER: "gemini-2.5-flash",
+                "x-llm-proxy-llm-provider": "gemini",
+                _ROUTING_FALLBACK: fallback,
+            },
+            json={"model": "gemini-2.5-flash"},
+        )
+
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
+    async with _client(handler, cfg) as client:
+        with pytest.raises(ModelSubstituted) as exc:
+            await client.post(
+                "https://proxy/chat", json={"model": "openai/gpt-5-mini", "input": "hi"}
+            )
+    assert ("routing fallback" in str(exc.value)) is says_fallback
+
+
 async def test_on_model_substitution_raise_ignores_a_refusal() -> None:
     # A non-2xx is classified on its own terms — it is never a "silent
     # substitution", so the raise path leaves it alone even when opted in.

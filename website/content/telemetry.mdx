@@ -438,17 +438,12 @@ donkey = Donkey.from_env(on_model_substitution="raise")
 `DONKEY_ON_MODEL_SUBSTITUTION` → `.donkey-kit.toml` → default) and **defaults to
 `"off"`**.
 
-<Callout type="warning">
-  **Known limitation with `provider/model` names.** On a model-based routing
-  proxy you address models as `provider/model` (for example
-  `openai/gpt-5-mini`), but the gateway reports the served model without the
-  provider prefix (`gpt-5-mini`). DDK currently compares the two verbatim, so
-  `last_call.substituted` reads `True` on every such call, and
-  `on_model_substitution="raise"` raises `ModelSubstituted` even when
-  `last_call.fallback` is `False`. Until this is fixed, check
-  `last_call.fallback` to detect a real failover, and leave
-  `on_model_substitution` at `"off"` on model-based proxies.
-</Callout>
+On a model-based routing proxy you address models as `provider/model` (for
+example `openai/gpt-5-mini`), and the gateway reports the served model without
+the prefix (`gpt-5-mini`), with the provider in its own header. A prefix that
+names the served provider is not counted as a difference, so asking for
+`openai/gpt-5-mini` and being served `gpt-5-mini` by `openai` is not a
+substitution. The same model served by a different provider still is.
 
 ### Semantic caching & semantic routing <Badge tone="live">Live</Badge>
 
