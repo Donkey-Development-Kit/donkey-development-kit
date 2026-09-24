@@ -358,15 +358,29 @@ r = donkey.last_call
 r.requested_model    # "gpt-5.1"  — what you asked for
 r.served_model       # "gpt-5.1"  — or a substitute after failover
 r.served_provider    # "openai"
-r.routing_type       # "ModelBased"
+r.routing_type       # "ModelBased" — or "Semantic" on a semantic-routing proxy
 r.fallback           # False      — True if the gateway failed over
 r.substituted        # False      — served_model != requested_model
+r.matched_topic      # None       — the topic a Semantic proxy matched (else None)
+r.routing_score      # None       — that match's similarity score (else None)
 ```
 
+On a **semantic-routing** proxy (`routing_type == "Semantic"`), the gateway also
+reports *why* it picked a provider: the topic your prompt matched and the
+similarity score behind that match. Those land on `r.matched_topic` /
+`r.routing_score`. On a model-based proxy both are `None` — the gateway emits no
+semantic header, and DDK never fabricates a value for a signal it did not
+observe.
+
 They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
-`donkey.routing.fallback`) — the most useful thing to have on hand when latency
-spikes: it tells an operator whether a slow call was routed normally or
-recovered from a degraded provider.
+`donkey.routing.fallback`, and — on a semantic route —
+`donkey.routing.matched_topic` / `donkey.routing.score`) — the most useful thing
+to have on hand when latency spikes: it tells an operator whether a slow call was
+routed normally or recovered from a degraded provider.
+
+For the complete list of `last_call` fields — observability status, gateway
+identity, routing, and token usage — see the [`last_call` field
+reference](/reference/last-call).
 
 ### When `last_call` is unavailable
 

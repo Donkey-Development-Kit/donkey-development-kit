@@ -701,3 +701,83 @@ def test_no_unverified_warning_on_the_routing_read_path() -> None:
             httpx.Response(200, headers={**_IDENTITY_HEADERS, **_ROUTING_HEADERS}),
             requested_model="gpt-5.1",
         )
+
+
+# --- semantic routing: matched topic + similarity score (BG §1.1, #590) ----------
+# The LIVE-VERIFIED format (tests/fixtures/anypoint/semantic_routing/, 2026-09-24):
+#   Request successfully matched '{topic}' topic (Provider: {p}, Model: {m}). Score: {s}.
+_SEMANTIC_SUCCESS = (
+    "Request successfully matched 'Finance' topic "
+    "(Provider: openai, Model: gpt-5-mini). Score: 0.62."
+)
+_SEMANTIC_HEADER = "x-llm-proxy-semantic-routing-success"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (_SEMANTIC_SUCCESS, ("Finance", 0.62)),
+        # A low-but-above-threshold match (the offtopic capture) still surfaces.
+        (
+            "Request successfully matched 'Finance' topic "
+            "(Provider: openai, Model: gpt-5-mini). Score: 0.51.",
+            ("Finance", 0.51),
+        ),
+        # A multi-word topic name with spaces parses whole.
+        (
+            "Request successfully matched 'Customer Support' topic "
+            "(Provider: gemini, Model: gemini-2.5-flash). Score: 0.7.",
+            ("Customer Support", 0.7),
+        ),
+        (None, (None, None)),  # header absent — model-based / non-proxy / simulated
+        ("", (None, None)),  # empty is not a guess
+        ("total gibberish, no markers", (None, None)),  # format drift → no fabrication
+        # Partial drift: topic present but score marker gone — surface what parses.
+        ("Request successfully matched 'Code' topic (Provider: x).", ("Code", None)),
+    ],
+)
+def test_parse_semantic_routing_shapes(raw, expected) -> None:
+    # Never raises on the caller's request path — a format the gateway changes
+    # yields (None, None) or a partial, not an exception (verification discipline).
+    assert lastcall._parse_semantic_routing(raw) == expected
+
+
+def test_semantic_routing_helper_reads_the_header() -> None:
+    resp = httpx.Response(200, headers={_SEMANTIC_HEADER: _SEMANTIC_SUCCESS})
+    assert lastcall.semantic_routing(resp) == ("Finance", 0.62)
+    # Model-based / non-proxy response carries no semantic header → both None.
+    assert lastcall.semantic_routing(httpx.Response(200, headers=_ROUTING_HEADERS)) == (
+        None,
+        None,
+    )
+
+
+def test_from_response_surfaces_matched_topic_and_score() -> None:
+    resp = httpx.Response(
+        200, headers={**_IDENTITY_HEADERS, _SEMANTIC_HEADER: _SEMANTIC_SUCCESS}
+    )
+    record = LastCall.from_response(resp)
+    assert record.matched_topic == "Finance"
+    assert record.routing_score == 0.62
+
+
+def test_from_response_semantic_fields_are_none_on_model_based() -> None:
+    # A model-based route emits the shared routing headers but not the semantic
+    # one, so the two semantic-only fields stay None (they are not a 0.0 default).
+    record = LastCall.from_response(httpx.Response(200, headers=_ROUTING_HEADERS))
+    assert record.matched_topic is None
+    assert record.routing_score is None
+
+
+def test_semantic_score_is_a_float() -> None:
+    _, score = lastcall._parse_semantic_routing(_SEMANTIC_SUCCESS)
+    assert isinstance(score, float)
+    assert score == 0.62
+
+
+def test_no_unverified_warning_on_the_semantic_read_path() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        LastCall.from_response(
+            httpx.Response(200, headers={_SEMANTIC_HEADER: _SEMANTIC_SUCCESS})
+        )

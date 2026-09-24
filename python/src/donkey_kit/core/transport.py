@@ -56,6 +56,7 @@ from .lastcall import (
     parse_usage,
     request_id,
     routing_fallback,
+    semantic_routing,
     usage_from_response,
     usage_mapping,
 )
@@ -381,6 +382,7 @@ def _record_response(
     try:
         decision, policy_type = _span_decision(response)
         usage = usage_from_response(response)
+        matched_topic, routing_score = semantic_routing(response)
         gspan.record(
             system=response.headers.get(LLM_PROVIDER_HEADER),
             # Served model + routing facts (docs/verified-apis.md §3, #309):
@@ -390,6 +392,11 @@ def _record_response(
             response_model=response.headers.get(LLM_MODEL_HEADER),
             routing_type=response.headers.get(ROUTING_TYPE_HEADER),
             fallback=routing_fallback(response),
+            # Semantic-routing match detail — both None on model-based / non-proxy
+            # responses, and the span omits any None field (docs/verified-apis.md
+            # §3, #590).
+            matched_topic=matched_topic,
+            routing_score=routing_score,
             input_tokens=usage["input_tokens"],
             output_tokens=usage["output_tokens"],
             cached_tokens=usage["cached_tokens"],

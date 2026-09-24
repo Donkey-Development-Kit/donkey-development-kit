@@ -120,6 +120,12 @@ DONKEY_COST_ENDUSER = "donkey.cost.enduser.id"
 # operator wants on every span, not just the failover ones.
 DONKEY_ROUTING_TYPE = "donkey.routing.type"
 DONKEY_ROUTING_FALLBACK = "donkey.routing.fallback"
+# Semantic-routing match detail (docs/verified-apis.md §3, #590). Populated only
+# on a semantic-routing proxy (``routing_type == "Semantic"``); absent —and so
+# dropped from the span— on model-based routing. The topic and score explain the
+# routing decision the bare ``donkey.routing.type`` leaves opaque.
+DONKEY_ROUTING_MATCHED_TOPIC = "donkey.routing.matched_topic"
+DONKEY_ROUTING_SCORE = "donkey.routing.score"
 # Per-call usage token counts the semconv has no pinned key for (#307). Stable
 # public API, same as the other donkey.* keys — renaming one is a breaking change.
 DONKEY_USAGE_CACHED_TOKENS = "donkey.usage.cached_tokens"
@@ -164,6 +170,8 @@ _ALLOWED_SPAN_ATTRIBUTES = frozenset(
         DONKEY_COST_ENDUSER,
         DONKEY_ROUTING_TYPE,
         DONKEY_ROUTING_FALLBACK,
+        DONKEY_ROUTING_MATCHED_TOPIC,
+        DONKEY_ROUTING_SCORE,
     }
 )
 
@@ -529,6 +537,8 @@ def build_genai_attributes(
     response_model: str | None = None,
     routing_type: str | None = None,
     fallback: bool | None = None,
+    matched_topic: str | None = None,
+    routing_score: float | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
     cached_tokens: int | None = None,
@@ -572,6 +582,12 @@ def build_genai_attributes(
     # useful observation; only an absent header (``None``) is dropped (#309).
     if fallback is not None:
         attrs[DONKEY_ROUTING_FALLBACK] = fallback
+    # Semantic-routing match detail: present only on a semantic-routing proxy,
+    # dropped (``None``) on model-based routing — same omit-when-unobserved rule.
+    if matched_topic is not None:
+        attrs[DONKEY_ROUTING_MATCHED_TOPIC] = matched_topic
+    if routing_score is not None:
+        attrs[DONKEY_ROUTING_SCORE] = routing_score
     if input_tokens is not None:
         attrs[GEN_AI_USAGE_INPUT_TOKENS] = input_tokens
     if output_tokens is not None:
