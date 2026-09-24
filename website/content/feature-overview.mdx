@@ -32,7 +32,7 @@ attaches there once, so you never wire it call by call.
     correlation, attribution and retry policy injected. No wrapper to code
     around, three lines to eject.
   </Card>
-  <Card title="Framework-free client" href="/frameworks/openai" icon="◇" badge="Live" badgeTone="live">
+  <Card title="Framework-free client" href="/quickstart" icon="◇" badge="Live" badgeTone="live">
     **Purpose:** use the OpenAI SDK directly. **Advantage:**
     `donkey.llm.client()` returns a native `AsyncOpenAI` (or `OpenAI` with
     `sync=True`) — Chat Completions and Responses, streaming included — governed
@@ -162,5 +162,6 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
 DDK makes the platform's capabilities reachable and typed; it does not
 reproduce them. Policy enforcement, semantic caching, provisioning, agent
 scanners, kill switch, trusted agent identity, approval UIs and evaluation all
-stay with Agent Fabric and Omni Gateway. See the [Roadmap](/roadmap#what-ddk-will-not-build)
-for the full list.
+stay with Agent Fabric and Omni Gateway. Where the platform exposes a signal,
+such as a semantic-cache hit or the routing decision, DDK surfaces it to your
+code. See the [Roadmap](/roadmap#what-ddk-will-not-build) for the full list.

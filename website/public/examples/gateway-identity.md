@@ -192,13 +192,20 @@ except Exception as err:
   `OBSERVED` means the SDK saw a response (fields may still be `None` if the
   gateway said nothing); `UNAVAILABLE` marks adapter surfaces that never route
   through the SDK's transport.
-- **`request_id` is the gateway's own id** (`x-request-id`) — the same field
-  `classify()` puts on a refusal, now present on a 200 too.
+- **`request_id` is the upstream provider's id, passed through by the
+  gateway** — `x-request-id` for OpenAI, `x-amzn-requestid` for Amazon Bedrock,
+  `apim-request-id` for Azure OpenAI. Quote it to the provider's support team.
+  It is the same field `classify()` puts on a refusal, now present on a 200 too,
+  and `None` on a route whose provider forwards no id.
 - **Absent counts are `None`, never `0`.** `cached_tokens` are billed at the
   cached rate; `reasoning_tokens` are output you never see.
 - **`ModelSubstituted` is not a `PolicyViolation`.** The request succeeded,
   against a model you did not choose. `last_call` is still populated before the
   raise.
+- **`provider/model` names read as substituted.** On a model-based routing
+  proxy the gateway reports the served model without the `provider/` prefix,
+  so `substituted` is currently `True` on every such call. Use `fallback` to
+  detect a real failover there (see [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing)).
 
   The simulator's captured success response was recorded against `gpt-5.1`, so
   asking for any other model id shows up as a substitution in narrative demo

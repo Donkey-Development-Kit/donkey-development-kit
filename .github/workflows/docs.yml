@@ -13,6 +13,10 @@ on:
     paths:
       - 'website/**'
       - '.github/workflows/docs.yml'
+  # A rebuild every 6 hours refreshes the Roadmap snapshot (data/roadmap.json) that
+  # visitors without JavaScript, and search indexing, see.
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 # Least privilege + the OIDC token deploy-pages needs to publish.
@@ -34,7 +38,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Scheduled runs start from the default branch (develop); always publish main.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'main' || github.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: 20

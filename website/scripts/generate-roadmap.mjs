@@ -1,10 +1,13 @@
 // Snapshot the delivery milestones and their issues from the GitHub API into
-// data/roadmap.json, which the Roadmap page renders.
+// data/roadmap.json. The Roadmap page renders this snapshot on the server and
+// for visitors without JavaScript; in the browser it then refetches the same
+// data live from GitHub (components/roadmap.tsx) and falls back to this file
+// when that fails.
 //
 // The snapshot is committed so that `next build` never depends on the network:
 // when the API is unreachable or rate-limited, the previous snapshot is kept
-// and the build carries on. The Pages workflow runs this before every build
-// (and on a daily schedule), so the published page tracks the milestones.
+// and the build carries on. The Pages workflow runs this before every build,
+// including its scheduled rebuild every 6 hours.
 //
 // Set GITHUB_TOKEN to lift the unauthenticated rate limit (60 requests/hour).
 //

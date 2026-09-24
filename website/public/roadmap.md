@@ -1,8 +1,8 @@
 # Roadmap
 
 DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
-goal; the progress bars and issue lists below come straight from those
-milestones. 
+goal; the progress bars and issue lists below are loaded from those milestones
+when you open the page. 
 
   Complete every issue in the milestone is closed ·{' '}
   In progress work has landed and more is open ·{' '}
@@ -20,7 +20,8 @@ milestones.
   conformance suite, OpenTelemetry GenAI spans, correlation IDs and cost tags.
   Plus a deep LangGraph adapter, `connection_kwargs()` for seven more
   frameworks, the decorators and CLI, the documentation site, and the PyPI
-  release.
+  release. Closing out the phase: steering the gateway's semantic cache and
+  surfacing cache hits and semantic-routing matches on `last_call`.
 
 ## Phase 2 — Differentiate, go beyond
 
@@ -30,8 +31,18 @@ milestones.
   Governed tool access (MCP discovery and binding), A2A `serve` / `expose` /
   `dev`, on-behalf-of identity, human-in-the-loop, scan & publish to the
   registry with a GitHub Action, declarative refusal handlers and a
-  classification registry for custom policies, kill-switch awareness, and a
-  second deep framework adapter chosen by demand.
+  classification registry for custom policies, typed federated guardrail
+  verdicts, kill-switch awareness with the kill reason, and a second deep
+  framework adapter chosen by demand.
+
+  Around them: an inbound correlation ID carried across MCP and A2A hops, a
+  stated concurrency contract for budget and telemetry under parallel fan-out,
+  a per-request business group for shared multi-tenant clients, bring-your-own
+  provider keys, and a token and registry cache. Also in this phase: governed
+  access to [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+  a System One decision model, with the same typed refusals, spans, budget and
+  simulator support as LLM calls, plus worked patterns for confidence-gated
+  review, tool ranking and budget-aware routing.
 
 ## Phase 3 — Platform capabilities
 
@@ -40,8 +51,9 @@ milestones.
 
   The policy handshake (read the in-force policy set, advisory only),
   policy updates pushed to the code at run boundaries, a governed
-  structured-output path, evaluation hooks on the run span, monetary spend and
-  wallet warnings, and run-level cost rollups. Much of this phase depends on
+  structured-output path, a model catalog with honest model resolution,
+  evaluation hooks on the run span, monetary spend and wallet warnings, custom
+  cost dimensions, and run-level cost rollups. Much of this phase depends on
   new gateway endpoints tracked under Upstream gaps.
 
 ## Phase 4 — Enterprise readiness
@@ -53,7 +65,9 @@ milestones.
   overhead budget enforced in CI, a full pass over every error message, the
   public API contract and deprecation policy, compliance evidence mapping (EU
   AI Act Art. 12, ISO 42001, OWASP LLM Top 10), log shipping, data residency,
-  workload identity, air-gapped operation and gateway failover.
+  workload identity, air-gapped operation, opt-in gateway failover, a clear
+  boundary against the platform's infrastructure-as-code, and a support model
+  with a release cadence.
 
 ## Phase 5 — Complete rollout
 
@@ -82,7 +96,8 @@ At each of these boundaries the job is to make the platform's own capability
 reachable and typed, not to reproduce it:
 
 - Client-side policy enforcement — the gateway is the enforcement point.
-- Client-side semantic caching.
+- Client-side semantic caching — DDK steers the gateway's semantic cache and
+  reports hits, but never caches responses itself.
 - A provisioning control plane competing with API Manager or Terraform.
 - Re-implementations of Agent Scanners, Kill Switch or Trusted Agent Identity.
 - An approval UI or queue.

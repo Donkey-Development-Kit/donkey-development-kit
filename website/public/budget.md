@@ -2,19 +2,28 @@
 
 Live
 
-The governed proxy reports your token budget on **every response**, in
-`x-token-*` headers. Parsing those yourself in every call site is tedious, and
-most code skips it — so the first time budget matters is the moment it runs out.
+Once a token-rate-limit policy is applied, the governed proxy reports your
+token budget on its responses, in **two shapes** depending on the response:
 
-With DDK **you never parse a header.** Every response updates a `Budget` object
-on the `Donkey` instance.
+| Response | Header | Example |
+|---|---|---|
+| Success `200` (and a `403` refusal) | `x-llm-proxy-ratelimit`, as prose | `Token rate limit: 10000 tokens remaining of 10000 limit. Reset in 56711ms.` |
+| Budget refusal `429` | `x-token-limit`, `x-token-remaining`, `x-token-reset` | numeric values |
+
+Parsing those yourself in every call site is tedious, and most code skips
+it — so the first time budget matters is the moment it runs out.
+
+With DDK **you never parse a header.** Every response that carries either shape
+updates a `Budget` object on the `Donkey` instance. Where both are present the
+numeric values win, and the prose header fills any field they leave unset.
+Until the first such response, every field is `None`, never a misleading zero.
 
 ## The object
 
 ```python
 donkey.budget.limit          # int, tokens per window
 donkey.budget.remaining      # int, from the last response
-donkey.budget.reset_at       # datetime, converted from x-token-reset (ms) — not raw
+donkey.budget.reset_at       # datetime, converted from the ms-to-reset value — not raw
 donkey.budget.observed_at    # when headers were last seen (staleness)
 donkey.budget.fraction_used  # 0.0–1.0
 ```
@@ -88,8 +97,9 @@ last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donke
 
 ## Behaviour guarantees
 
-- `x-token-reset` (milliseconds) is converted to a `datetime`, accurate to the
-  second.
+- The reset value (milliseconds *until* reset, in both `x-token-reset` and the
+  prose `Reset in …ms`) is converted to a `datetime` anchored to
+  `observed_at`, accurate to the second.
 - `pace()` raises before the request that would cross the reserve, never after
   a `429`.
 - After `reset_at`, `pace()` no longer refuses, so a wait-and-retry loop can
