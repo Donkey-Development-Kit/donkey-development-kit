@@ -90,7 +90,7 @@ export default async function RootLayout({
       className={`${inter.variable} ${inter.className}`}
     >
       {/* Violet accent, close to the reference docs look (was theme.config `color`). */}
-      <Head color={{ hue: 262, saturation: 90 }} />
+      <Head color={{ hue: 198, saturation: 100, lightness: { light: 50, dark: 50 } }} />
       <body>
         <Layout
           navbar={navbar}

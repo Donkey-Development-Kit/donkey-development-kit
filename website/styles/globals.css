@@ -8,10 +8,10 @@
 /* ---------------------------------------------------------------- tokens */
 
 :root {
-  --af-accent: #6d47d9;
-  --af-accent-strong: #5a35c4;
-  --af-accent-soft: rgba(109, 71, 217, 0.08);
-  --af-accent-border: rgba(109, 71, 217, 0.28);
+  --af-accent: #00b4ff;
+  --af-accent-strong: #0096d6;
+  --af-accent-soft: rgba(0, 180, 255, 0.08);
+  --af-accent-border: rgba(0, 180, 255, 0.28);
 
   --af-fg: #12131a;
   --af-fg-muted: #5b6072;
@@ -33,10 +33,10 @@
 }
 
 .dark {
-  --af-accent: #a68bff;
-  --af-accent-strong: #bda6ff;
-  --af-accent-soft: rgba(166, 139, 255, 0.12);
-  --af-accent-border: rgba(166, 139, 255, 0.3);
+  --af-accent: #00b4ff;
+  --af-accent-strong: #33c3ff;
+  --af-accent-soft: rgba(0, 180, 255, 0.12);
+  --af-accent-border: rgba(0, 180, 255, 0.3);
 
   --af-fg: #f2f3f7;
   --af-fg-muted: #a2a8ba;
@@ -488,17 +488,14 @@ body {
   transform: translateY(1px);
 }
 
+/* Dark label in both themes: white text on #00b4ff is too low-contrast. */
 .af-button-primary {
   background: var(--af-accent);
-  color: #fff !important;
+  color: #001824 !important;
 }
 
 .af-button-primary:hover {
   background: var(--af-accent-strong);
-}
-
-.dark .af-button-primary {
-  color: #14101f !important;
 }
 
 .af-button-secondary {
@@ -541,7 +538,7 @@ body {
 
 a.af-card:hover {
   border-color: var(--af-accent-border);
-  box-shadow: 0 6px 22px -12px rgba(24, 20, 45, 0.28);
+  box-shadow: 0 6px 22px -12px rgba(0, 24, 36, 0.28);
   transform: translateY(-2px);
 }
 
