@@ -46,17 +46,17 @@ reply = await llm.messages.create(
 There's no first-party Agent Fabric TypeScript SDK yet (it's on the
 [roadmap](/concepts/verification)). The native match here is the official
 **`@anthropic-ai/sdk`** client pointed at the proxy — same `client_id` /
-`client_secret` header pair, model id passed per call. **Caveat (unverified
-path):** MuleSoft Model Proxy offers a native Anthropic ingress Format, but every
-DDK proxy is provisioned `Format=OpenAI` and the Anthropic ingress path/behavior
-are not yet captured — point `baseURL` at a `Format=Anthropic` proxy before
-relying on this path (#304).
+`client_secret` header pair, model id passed per call. **Caveat (proxy Format):**
+the native Anthropic ingress route is LIVE-verified at `POST /<base-path>/v1/messages`,
+but it requires a proxy provisioned `Format=Anthropic`; every default DDK proxy is
+`Format=OpenAI`, so point `baseURL` at a `Format=Anthropic` proxy to use the native
+surface (#304).
 
 ```typescript
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
-  baseURL: process.env.DONKEY_LLM_PROXY_URL,   // UNVERIFIED path/behavior: use a Format=Anthropic proxy
+  baseURL: process.env.DONKEY_LLM_PROXY_URL,   // native /v1/messages route LIVE-verified: use a Format=Anthropic proxy
   apiKey: "unused",                              // required slot; proxy uses the headers below
   defaultHeaders: {
     client_id: process.env.DONKEY_LLM_PROXY_CLIENT_ID!,
@@ -130,18 +130,16 @@ you can always drop the factory and construct `AsyncAnthropic` by hand.
 > therefore takes no model argument at all; you supply the model id yourself
 > on every call.
 
-> **UNVERIFIED path: the proxy's Anthropic-native ingress.**
-> MuleSoft Model Proxy offers a **native Anthropic ingress Format** — one of
-> three selectable Formats (OpenAI / Gemini / Anthropic) fixed at proxy creation
-> ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)) — so the
-> Anthropic-native route is a real product capability. Two gaps keep it
-> unverified: (1) it must be *provisioned* that way, and every DDK proxy is
-> `Format=OpenAI`, so pointing `AsyncAnthropic` at them reaches Claude only as an
-> *upstream provider*, not natively; (2) the exact Anthropic ingress path (likely
-> `/v1/messages`) and its live behavior have **not** been captured against a real
-> `Format=Anthropic` proxy. `client()` emits a one-time runtime warning flagging
-> this rather than silently assuming the route works — point `base_url` at a
-> `Format=Anthropic` proxy and confirm against your own sandbox before depending
-> on it (#304).
+> **The proxy's Anthropic-native ingress is LIVE-verified — but requires a
+> `Format=Anthropic` proxy.** MuleSoft Model Proxy offers a **native Anthropic
+> ingress Format** — one of three selectable Formats (OpenAI / Gemini / Anthropic)
+> fixed at proxy creation ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)).
+> A live capture against a `Format=Anthropic` proxy confirms the native route at
+> `POST /<base-path>/v1/messages` (200 with a native Anthropic body; an
+> OpenAI-shaped `/chat/completions` request 404s), on the same `client_id` /
+> `client_secret` CIE auth (#304). The one remaining caveat is provisioning: every
+> default DDK proxy is `Format=OpenAI`, so pointing `AsyncAnthropic` at them
+> reaches Claude only as an *upstream provider*, not natively (`/v1/messages` 404s
+> there). Point `base_url` at a `Format=Anthropic` proxy to use the native surface.
 
 <AdapterErrorTaxonomyNote />

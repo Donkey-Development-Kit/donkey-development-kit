@@ -119,3 +119,19 @@ def test_row8_content_safety_is_content_safety_blocked_not_auth() -> None:
     # on a hate-speech probe against ddk-azure-content-safety, #253).
     assert err.categories == ["severity_hate", "severity_violence"]
     assert err.remediation  # required, non-empty
+
+
+def test_row8_bedrock_guardrails_variant_is_content_safety_blocked() -> None:
+    # The Bedrock Guardrails sibling of row 8: a different vendor header family
+    # (x-llm-proxy-bedrock-guardrail-*) and a single `content_filter` category,
+    # live-captured against ddk-bedrock-guardrails on 2026-09-24 (#568). It must
+    # type identically to the Azure capture — same ContentSafetyBlocked, keyed on
+    # the `...-action: reject` header — which exercises the bedrock branch of
+    # _CONTENT_SAFETY_VENDORS the Azure fixture never reaches. This capture is a
+    # classify()-contract sibling of row 8, not a simulator-served shape, so it is
+    # deliberately absent from fixtures.lock (see rejections/README.md).
+    err = classify(_response(REJECTIONS, "content-safety-bedrock", 403))
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.policy == "content-safety"
+    assert err.categories == ["content_filter"]
+    assert err.remediation  # required, non-empty

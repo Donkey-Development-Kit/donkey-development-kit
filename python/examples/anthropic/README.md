@@ -13,16 +13,15 @@ and the model id is a per-call argument (`c.messages.create(model=..., ...)`),
 not a constructor one. So this adapter exposes `client()` rather than the
 `model(...)` factory the OpenAI-compatible adapters use.
 
-**Unverified dependency (docs/verified-apis.md §2, #304).** MuleSoft Model Proxy
-offers a native **Anthropic** ingress Format — one of three selectable Formats
-(OpenAI / Gemini / Anthropic) fixed at proxy creation — so the Anthropic-native
-route is a real product capability. But every DDK proxy is `Format=OpenAI`, so
+**Proxy route (docs/verified-apis.md §2, #304).** MuleSoft Model Proxy offers a
+native **Anthropic** ingress Format — one of three selectable Formats (OpenAI /
+Gemini / Anthropic) fixed at proxy creation. That route is now **LIVE-verified**:
+a `Format=Anthropic` proxy serves the Anthropic Messages API natively at
+`POST /<base-path>/v1/messages` (an OpenAI-shaped `/chat/completions` request 404s
+there). Usage caveat: the SDK's own default DDK proxies are `Format=OpenAI`, so
 this client pointed at them reaches Claude only as an *upstream provider*, not
-natively; and the exact Anthropic ingress path (likely `/v1/messages`) + live
-behavior are not yet captured against a `Format=Anthropic` proxy. Override
-`base_url` via `**kw` to point at a `Format=Anthropic` proxy to use the native
-surface. The first `client()` call emits a one-time unverified-route warning;
-this example does not make a live call.
+natively. Override `base_url` via `**kw` to point at a `Format=Anthropic` proxy to
+use the native surface. This example does not make a live call.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
@@ -52,7 +51,7 @@ import httpx
 from anthropic import AsyncAnthropic
 
 c = AsyncAnthropic(
-    base_url=DONKEY_LLM_PROXY_URL,   # UNVERIFIED path/behavior: use a Format=Anthropic proxy
+    base_url=DONKEY_LLM_PROXY_URL,   # native /v1/messages route LIVE-verified: use a Format=Anthropic proxy
     api_key="unused",                  # proxy enforces client_id/client_secret headers
     default_headers={
         "client_id": DONKEY_LLM_PROXY_CLIENT_ID,

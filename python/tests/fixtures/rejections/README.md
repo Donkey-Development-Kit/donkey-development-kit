@@ -32,6 +32,19 @@ deployed** to capture them, so their bytes remain honest placeholders (the
 deployed injection-lane proxy runs Regex Prompt Guard = row 7, a distinct
 policy). Rows 1/2/5 remain LIVE from the original 2026-08-28 captures.
 
+**Bedrock Guardrails sibling (#568, 2026-09-24):** row 8's second vendor was
+live-captured against `ddk-bedrock-guardrails` — a `403` carrying
+`x-llm-proxy-bedrock-guardrail-action: reject` /
+`x-llm-proxy-bedrock-guardrail-reason: content_filter` and a
+`{"error":…,"categories":["content_filter"]}` body. Its bytes live beside the
+Azure capture as `reject.content-safety-bedrock.{headers.txt,body.json}` and are
+asserted by `test_row8_bedrock_guardrails_variant_is_content_safety_blocked`.
+This sibling is a **classify()-contract fixture only** — it is *not* wired into
+`simulator.fixtures.SHAPES` (row 8 stays one canonical shape, keyed on the
+vendor `…-action: reject` header family), so, unlike every served fixture, it is
+deliberately **absent from `fixtures.lock`**; the contract test's assertions
+guard its bytes instead.
+
 ## The eight rows
 
 | # | Shape | Fixture | classify() → | Discriminator | Provenance |
@@ -43,7 +56,7 @@ policy). Rows 1/2/5 remain LIVE from the original 2026-08-28 captures.
 | 5 | Upstream provider 4xx | `../anypoint/llm_proxy/reject.model-not-found.body.json` | `UpstreamRequestError` | non-429 4xx, nested `error` with `code`/`type`/`param` | LIVE, 2026-08-28 (OpenAI passthrough) |
 | 6 | Upstream 5xx | `reject.upstream-5xx.{headers.txt,body.empty}` | `UpstreamModelError` (retryable) | 5xx status range (no competing discriminator) | **SYNTHETIC** — status-range classification only; no live capture, no invented body. |
 | 7 | Regex Prompt Guard | `reject.regex-prompt-guard.{headers.txt,body.json}` | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | 403 + top-level `matched_patterns` list (flat-string `error`) | **VERIFIED (LIVE), 2026-09-22 (#253)** — body matches the live capture byte-for-byte against `ddk-injection-guard` (instance 21179713). [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4). |
-| 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **VERIFIED (LIVE), 2026-09-22 (#253)** — discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957); `.body.json`/`-reason` hold a live-captured category set (`severity_hate,severity_violence`; categories are prompt-dependent). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0). |
+| 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **VERIFIED (LIVE)** — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0). |
 
 Rows 1, 2, 5 **alias** the existing live captures in `../anypoint/llm_proxy/`
 (referenced, not copied — moving them would break that directory's contract-test
@@ -51,12 +64,13 @@ helpers and provenance chain). Rows 3, 4, 6 live here because they are not (yet)
 live-captured; their bodies are zero-byte `.body.empty` placeholders — the honest
 "shape unknown" marker, never a guessed body.
 
-Rows 7 and 8 (#289) also live here and are now **VERIFIED (LIVE), 2026-09-22
-(#253)**: their discriminators (the `matched_patterns` list, the vendor
-`…-action: reject` header) were confirmed against the deployed provisioning
-proxies, not just pinned from the policy pages. The regex-prompt-guard body
-matched the committed bytes exactly; the content-safety fixture now carries a
-live-captured category set. These shapes have **no `_verify.py` constant** to
+Rows 7 and 8 (#289) also live here and are now **VERIFIED (LIVE)**: their
+discriminators (the `matched_patterns` list, the vendor `…-action: reject`
+header) were confirmed against the deployed provisioning proxies — Regex Prompt
+Guard and Azure Content Safety on 2026-09-22 (#253), Bedrock Guardrails on
+2026-09-24 (#568) — not just pinned from the policy pages. The regex-prompt-guard
+body matched the committed bytes exactly; the content-safety fixtures carry a
+live-captured category set for each vendor. These shapes have **no `_verify.py` constant** to
 flip — `classify()` reads them straight from the response, so the verification
 record is the docs/verified-apis.md §4 rows plus this table, not an
 `Unverified(...)` guard. Unlike rows 3/4/6, row 7 needs a non-empty body: its
