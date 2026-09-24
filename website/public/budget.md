@@ -95,6 +95,49 @@ This is why `observed_at` is part of the public surface: a dashboard reading
 A budget-query endpoint on the gateway would make this object live rather than
 last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
 
+## Semantic cache steering
+
+Live
+
+When the proxy is fronted by the Anypoint **semantic-caching** policy, the
+gateway can answer a request from a stored completion when a semantically
+similar prompt was seen before — no provider round-trip, no fresh token spend.
+DDK caches nothing and computes no embeddings itself (that stays on the
+[do-not-build](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) list); it lets you **steer** the gateway's cache per
+block and **surfaces** the outcome.
+
+```python
+# Skip the cache for a block where a fresh answer matters:
+with donkey.cache(skip=True):
+    await agent.run(task)
+
+# Or tighten the match and shorten entry lifetime:
+async with donkey.cache(threshold=0.9, ttl=60):
+    ...
+```
+
+`donkey.cache(...)` is a dual sync/async context manager — like
+[`donkey.run(...)`](https://donkey-development-kit.github.io/donkey-development-kit/identity.md), the controls bind to a context variable, so they
+reach every governed call in the block (including calls on framework-spawned
+`asyncio` tasks) with no threading through framework state. The five controls:
+
+| Control | Type | Effect |
+|---|---|---|
+| `skip` | `bool` | Bypass the cache policy entirely (passthrough to the provider). |
+| `no_store` | `bool` | Look up, but do not write the result on a miss. |
+| `ttl` | `int` | Override the entry time-to-live, in seconds (a positive int). |
+| `threshold` | `float` | Override the similarity threshold, in `[0.0, 1.0]`. |
+| `principal_id` | `str` | Override the id the similarity filter partitions on. |
+
+An invalid control (a negative `ttl`, a `threshold` outside `[0.0, 1.0]`, a
+`principal_id` with a control character) raises `ConfigError` **at the call
+site**, not on the first request. The **outcome** of each call is on
+[`donkey.last_call.cache_status`](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#semantic-cache) /
+`.cache_score` and the OTel span. The same
+[degradation](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) as `donkey.run(...)` applies: a `connection_kwargs()`
+/ LiteLLM-backed adapter that does not route through the shared transport does
+not see the context variable, so its calls are not steered.
+
 ## Behaviour guarantees
 
 - The reset value (milliseconds *until* reset, in both `x-token-reset` and the
@@ -106,4 +149,6 @@ last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donke
   continue without a manual budget observation.
 - If the reserve is reached without a known `reset_at`, the retry loop raises
   once instead of spinning at zero delay.
+- A semantic-cache **hit** is a verbatim replay with no provider round-trip, so
+  it never advances the budget window — the replayed `usage` is not fresh spend.
 - Budget state is per-`Donkey` instance.

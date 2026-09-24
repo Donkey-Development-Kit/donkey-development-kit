@@ -89,12 +89,30 @@ Each is `None` (never `0`) when unobserved or absent.
 | `cache_write_tokens` | `int \| None` | Input tokens written into the prompt cache this call. |
 | `reasoning_tokens` | `int \| None` | Output tokens spent on model reasoning the developer never sees. |
 
+## Semantic cache
+
+When the proxy is fronted by the Anypoint **semantic-caching** policy, the
+gateway reports what it did with each request. Steer it per block with
+[`donkey.cache(...)`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md#semantic-cache-steering); read the outcome here.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `cache_status` | `str \| None` | What the caching policy did (`x-semantic-cache-status`): `"hit"` / `"miss"` / `"bypass"` / `"no-store"`. `None` on a proxy with no caching policy (the header is absent) or a simulated response. |
+| `cache_score` | `float \| None` | On a cache **hit**, the similarity score of the matched entry (`x-semantic-cache-score`). `None` on miss/bypass/no-store (the header is hit-only) or when the score did not parse. |
+| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) (a replay is no fresh spend). |
+
+  A cache **hit** replays a stored completion byte-for-byte, including its
+  original `usage` block — so the token counts above describe the *cached*
+  call, not fresh spend. `cache_hit` is the signal that they should not be
+  counted again.
+
 ## On the span
 
-The routing and usage fields also land on the OpenTelemetry GenAI span for each
-governed call, under the pinned `gen_ai.*` keys and the stable `donkey.*`
-namespace: `gen_ai.response.model`, `donkey.routing.type`,
-`donkey.routing.fallback`, and — on a semantic route —
-`donkey.routing.matched_topic` / `donkey.routing.score`, alongside the usage
+The routing, usage, and cache fields also land on the OpenTelemetry GenAI span
+for each governed call, under the pinned `gen_ai.*` keys and the stable
+`donkey.*` namespace: `gen_ai.response.model`, `donkey.routing.type`,
+`donkey.routing.fallback`, — on a semantic route —
+`donkey.routing.matched_topic` / `donkey.routing.score`, and — on a cached
+proxy — `donkey.cache.status` / `donkey.cache.score`, alongside the usage
 counts. A field that is `None` is omitted from the span entirely. See
 [Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) for the full attribute list.

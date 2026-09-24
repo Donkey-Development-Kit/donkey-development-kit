@@ -84,5 +84,5 @@
 ## Reference
 
 - [Configuration](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md): Every DDK configuration value — LLM proxy URL and credentials, JWT model-wallet auth, attribution, cost tags, telemetry, and Anypoint control-plane settings — as env vars, config file, or code.
-- [last_call fields](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md): Every field on donkey.last_call — the observability status, the gateway identity, the routing and fallback signals, and the per-call token usage the gateway reported about the most recent governed model call.
+- [last_call fields](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md): Every field on donkey.last_call — the observability status, the gateway identity, the routing and fallback signals, the per-call token usage, and the semantic-cache outcome the gateway reported about the most recent governed model call.
 - [Unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md): Which MuleSoft platform APIs DDK calls, whether each is documented for third-party use, and the project's support statement.
