@@ -91,6 +91,17 @@ for it: pick the adapter that matches your proxy.
   proxy: send an OpenAI-format request naming that model to an OpenAI-format
   proxy.
 
+### Decision models: TypeSafe Jev Roadmap
+
+[TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev)
+is a *System One* model: instead of generating text it answers typed questions
+(yes/no probability, a choice among options, or a score on a scale) with
+calibrated confidence. Its API is **not OpenAI-compatible**, so none of the
+adapters above, and no OpenAI-format proxy, can call it. Planned support
+returns TypeSafe's own client pointed at Jev behind Omni Gateway, with the same
+auth, correlation, typed refusals, spans, budget and simulator support as LLM
+calls.
+
 ## Injection depth differs by framework
 
 How much of the SDK's HTTP layer reaches the request depends on what each

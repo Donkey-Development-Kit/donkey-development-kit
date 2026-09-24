@@ -1,0 +1,24 @@
+HTTP/1.1 200 OK
+x-gemini-service-tier: standard
+content-type: application/json; charset=UTF-8
+vary: X-Origin,Referer,Origin,Accept-Encoding
+date: Thu, 24 Sep 2026 12:43:02 GMT
+server: Anypoint Flex Gateway
+x-xss-protection: 0
+x-frame-options: SAMEORIGIN
+x-content-type-options: nosniff
+server-timing: gfet4t7; dur=16193
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+accept-ranges: none
+x-llm-proxy-semantic-routing-success: Request successfully matched 'Code' topic (Provider: gemini, Model: gemini-2.5-flash). Score: 0.62.
+x-llm-proxy-routing-type: Semantic
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: gemini
+x-llm-proxy-llm-model: gemini-2.5-flash
+x-llm-proxy-request-success: Request completed successfully. Provider: gemini, Model: gemini-2.5-flash.
+x-envoy-decorator-operation: api-instance-21194930.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
+transfer-encoding: chunked
+x-correlation-id: d72f3ffa-2019-458d-b44c-ceb8867d2105
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Keep-Alive
+

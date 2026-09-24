@@ -1,14 +1,14 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-09-24T09:35:41.948Z",
+  "generatedAt": "2026-09-24T12:48:52.545Z",
   "milestones": [
     {
       "number": 11,
       "title": "Phase 1 — Build the MVP (0.1.0)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/11",
-      "open": 15,
-      "closed": 113,
+      "open": 7,
+      "closed": 125,
       "issues": [
         {
           "number": 9,
@@ -825,85 +825,113 @@
         {
           "number": 556,
           "title": "epic(docs): restructure the docs site into end-user documentation organised by capability pillars",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/556",
           "epic": true
         },
         {
           "number": 557,
           "title": "docs(intro): rewrite the Introduction around gateway awareness, with architecture and before/after sections",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/557",
           "epic": false
         },
         {
           "number": 558,
           "title": "docs(quickstart): simplify the Quickstart and mark each capability Live or Roadmap",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/558",
           "epic": false
         },
         {
           "number": 559,
           "title": "docs(feature-overview): high-level capability tour with the gateway-aware image",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/559",
           "epic": false
         },
         {
           "number": 560,
           "title": "docs(nav): restructure the sidebar from phase separators into capability pillars",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/560",
           "epic": false
         },
         {
           "number": 561,
           "title": "docs(pages): remove issue refs, phase labels and verification narration from capability pages",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/561",
           "epic": false
         },
         {
           "number": 562,
           "title": "docs(examples): add an Examples pillar built on the donkey-development-kit-demos repo",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/562",
           "epic": false
         },
         {
           "number": 563,
           "title": "docs(roadmap): phases in order with live milestone progress and the issues in each",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/563",
           "epic": false
         },
         {
           "number": 564,
           "title": "docs(community): add a Team (About us) page with Creator/Contributor pills",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/564",
           "epic": false
         },
         {
           "number": 565,
           "title": "docs(community): add a Contribute page condensed from CONTRIBUTING.md",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/565",
           "epic": false
         },
         {
           "number": 566,
           "title": "docs(site): open-source disclaimer footer, metadata and optimised images",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/566",
           "epic": false
         },
         {
           "number": 568,
           "title": "errors: flip Amazon Bedrock Guardrails refusal from documented-only to VERIFIED (LIVE) after the acceptance capture",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/568",
+          "epic": false
+        },
+        {
+          "number": 587,
+          "title": "Support gateway semantic caching: steer requests and surface hits",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/587",
+          "epic": false
+        },
+        {
+          "number": 590,
+          "title": "Surface the semantic-routing match topic and score on last_call",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/590",
+          "epic": false
+        },
+        {
+          "number": 592,
+          "title": "docs(roadmap): fetch milestone status live from GitHub, keep the snapshot as fallback",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/592",
+          "epic": false
+        },
+        {
+          "number": 593,
+          "title": "docs(site): sync pages with the current code and the issues filed since the restructure",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/593",
           "epic": false
         }
       ]
@@ -913,7 +941,7 @@
       "title": "Phase 2 — Differentiate, go beyond (0.2.0)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/12",
-      "open": 33,
+      "open": 47,
       "closed": 1,
       "issues": [
         {
@@ -1152,6 +1180,104 @@
           "title": "scanner: define how a @donkey.tool is attributed to an MCP server / Exchange asset",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/503",
+          "epic": false
+        },
+        {
+          "number": 572,
+          "title": "epic(jev): support TypeSafe Jev (System One models) as a governed decision surface",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/572",
+          "epic": true
+        },
+        {
+          "number": 573,
+          "title": "verify: govern TypeSafe's System One endpoint through Omni Gateway and capture its shapes",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/573",
+          "epic": false
+        },
+        {
+          "number": 574,
+          "title": "adapters: donkey.typesafe — a governed native TypeSafeClient / AsyncTypeSafeClient",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/574",
+          "epic": false
+        },
+        {
+          "number": 575,
+          "title": "retry: tell a gateway budget 429 apart from TypeSafe's own 429/529 on the Jev route",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/575",
+          "epic": false
+        },
+        {
+          "number": 576,
+          "title": "refusals: classify System One failures into the DDK error taxonomy",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/576",
+          "epic": false
+        },
+        {
+          "number": 577,
+          "title": "telemetry: a correlated span per System One call, with usage and confidence",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/577",
+          "epic": false
+        },
+        {
+          "number": 578,
+          "title": "budget: expose the Jev route's rate-limit window through donkey.budget",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/578",
+          "epic": false
+        },
+        {
+          "number": 579,
+          "title": "simulator: serve /v1/systemone in donkey mock and simulate()",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/579",
+          "epic": false
+        },
+        {
+          "number": 580,
+          "title": "spike: run system-one-adapter over a governed DDK proxy (the OpenAI-compatible route)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/580",
+          "epic": false
+        },
+        {
+          "number": 581,
+          "title": "example(jev): confidence-gated human review through the HITL vocabulary",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/581",
+          "epic": false
+        },
+        {
+          "number": 582,
+          "title": "example(jev): rank governed MCP tools and A2A agents with a Choice question",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/582",
+          "epic": false
+        },
+        {
+          "number": 583,
+          "title": "example(jev): advisory pre-screen to avoid gateway refusals (gateway stays the enforcement point)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/583",
+          "epic": false
+        },
+        {
+          "number": 584,
+          "title": "example(jev): budget-aware cascade across code, small and large governed models",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/584",
+          "epic": false
+        },
+        {
+          "number": 585,
+          "title": "docs(site): document TypeSafe Jev support, examples and System One sections",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/585",
           "epic": false
         }
       ]
@@ -1401,7 +1527,7 @@
       "title": "Verification",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/16",
-      "open": 26,
+      "open": 28,
       "closed": 5,
       "issues": [
         {
@@ -1619,6 +1745,20 @@
           "title": "verify: whether the LLM proxy exposes a Gemini-native ingress route",
           "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/540",
+          "epic": false
+        },
+        {
+          "number": 588,
+          "title": "verify: the semantic-caching policy header contract on the LLM proxy",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/588",
+          "epic": false
+        },
+        {
+          "number": 589,
+          "title": "verify: the semantic-routing success header (topic + score) on the LLM proxy",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/589",
           "epic": false
         }
       ]

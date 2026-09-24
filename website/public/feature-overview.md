@@ -139,5 +139,6 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
 DDK makes the platform's capabilities reachable and typed; it does not
 reproduce them. Policy enforcement, semantic caching, provisioning, agent
 scanners, kill switch, trusted agent identity, approval UIs and evaluation all
-stay with Agent Fabric and Omni Gateway. See the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md#what-ddk-will-not-build)
-for the full list.
+stay with Agent Fabric and Omni Gateway. Where the platform exposes a signal,
+such as a semantic-cache hit or the routing decision, DDK surfaces it to your
+code. See the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md#what-ddk-will-not-build) for the full list.

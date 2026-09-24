@@ -1,7 +1,6 @@
 import React from 'react'
 import Link from 'next/link'
 import NextImage from 'next/image'
-import roadmap from '../data/roadmap.json'
 
 /* Presentation components for the docs pages.
  *
@@ -168,93 +167,7 @@ export function Figure({
 
 /* ---------------------------------------------------------------- roadmap */
 
-type RoadmapIssue = {
-  number: number
-  title: string
-  state: string
-  url: string
-  epic: boolean
-}
-
-function IssueList({ issues }: { issues: RoadmapIssue[] }) {
-  return (
-    <ul className="af-issue-list">
-      {issues.map(issue => (
-        <li key={issue.number} data-state={issue.state}>
-          <span className="af-issue-state" aria-label={issue.state === 'open' ? 'Open' : 'Done'}>
-            {issue.state === 'open' ? '○' : '●'}
-          </span>
-          <a href={issue.url} target="_blank" rel="noopener noreferrer">
-            #{issue.number}
-          </a>{' '}
-          {issue.title}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-// Renders one milestone from data/roadmap.json (see scripts/generate-roadmap.mjs):
-// a status pill, a progress bar, and its issues split into open and done.
-export function RoadmapPhase({
-  milestone,
-  children,
-}: {
-  milestone: string
-  children?: React.ReactNode
-}) {
-  const m = roadmap.milestones.find(x => x.title.startsWith(milestone))
-  if (!m) return null
-  const total = m.open + m.closed
-  const pct = total ? Math.round((m.closed / total) * 100) : 0
-  const status =
-    m.open === 0 && total > 0
-      ? { label: 'Complete', tone: 'live' as Tone }
-      : m.closed > 0
-        ? { label: 'In progress', tone: 'accent' as Tone }
-        : { label: 'Planned', tone: 'roadmap' as Tone }
-  const open = m.issues.filter(i => i.state === 'open')
-  const done = m.issues.filter(i => i.state !== 'open')
-  return (
-    <section className="af-phase">
-      <div className="af-phase-head">
-        <a className="af-phase-title" href={m.url} target="_blank" rel="noopener noreferrer">
-          {m.title}
-        </a>
-        <Badge tone={status.tone}>{status.label}</Badge>
-      </div>
-      {children ? <div className="af-phase-body">{children}</div> : null}
-      <div className="af-progress" role="img" aria-label={`${pct}% complete`}>
-        <span style={{ width: `${pct}%` }} />
-      </div>
-      <p className="af-phase-stats">
-        {pct}% complete · {m.closed} done · {m.open} open
-      </p>
-      {open.length ? (
-        <details className="af-phase-issues">
-          <summary>Open issues ({open.length})</summary>
-          <IssueList issues={open} />
-        </details>
-      ) : null}
-      {done.length ? (
-        <details className="af-phase-issues">
-          <summary>Done ({done.length})</summary>
-          <IssueList issues={done} />
-        </details>
-      ) : null}
-    </section>
-  )
-}
-
-export function RoadmapUpdated() {
-  const date = new Date(roadmap.generatedAt)
-  return (
-    <span className="af-roadmap-updated">
-      Status synced from GitHub milestones on{' '}
-      {date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.
-    </span>
-  )
-}
+export { RoadmapPhase, RoadmapUpdated } from './roadmap'
 
 /* ------------------------------------------------------------------- team */
 

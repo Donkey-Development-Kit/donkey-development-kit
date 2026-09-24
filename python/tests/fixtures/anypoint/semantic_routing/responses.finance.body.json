@@ -1,0 +1,35 @@
+{
+  "id": "chatcmpl-ERd4VU9Og5T4W8ZwvOHbI79ucgKvr",
+  "object": "chat.completion",
+  "created": 1790253755,
+  "model": "gpt-5-mini-2025-08-07",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Compound interest means you earn interest on the principal and on previously earned interest. The basic formula and how to use it:\n\n1) Standard (discrete) compounding\n- Formula: A = P (1 + r/n)^(n t)\n  - A = amount after t years\n  - P = principal (initial amount)\n  - r = annual nominal interest rate (as a decimal, e.g., 5% = 0.05)\n  - n = number of compounding periods per year (1 for annual, 12 for monthly, 365 for daily, etc.)\n  - t = time in years\n\n- Interest earned = A − P\n\nExample:\n- P = $1,000, r = 5% = 0.05, n = 12, t = 3 years\n- A = 1000*(1 + 0.05/12)^(12*3) ≈ 1000*(1.0041667)^36 ≈ $1,161.62\n- Interest earned ≈ $161.62\n\n2) Continuous compounding\n- Formula: A = P e^(r t)\n  - e ≈ 2.71828\n- Example with same numbers: A = 1000 * e^(0.05*3) ≈ 1000 * 1.16183 ≈ $1,161.83\n\n3) Effective annual rate (EAR)\n- EAR = (1 + r/n)^n − 1\n- If r = 5% and n = 12, EAR ≈ (1 + 0.05/12)^12 − 1 ≈ 0.05116 = 5.116%\n\n4) Solving for time or rate\n- To find t given A: t = ln(A/P) / (n ln(1 + r/n))\n- For continuous compounding: t = ln(A/P) / r\n- To find r given A and t (discrete): r = n[(A/P)^(1/(n t)) − 1]\n\nTips\n- Always convert percentage rates to decimals before using formulas.\n- Make sure t and n use the same time units (t in years if n is per year).\n- Use a calculator or spreadsheet; most have functions for power and e^x.\n\nIf you want, tell me P, r, n and t and I’ll compute A and interest for you.",
+        "refusal": null,
+        "annotations": []
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 13,
+    "completion_tokens": 962,
+    "total_tokens": 975,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 448,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": null
+}
