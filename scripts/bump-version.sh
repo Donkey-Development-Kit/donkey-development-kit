@@ -10,7 +10,11 @@
 # then opens a squash PR into `develop` (branch → develop is always a squash
 # merge, per [[ddk-merge-strategy]]) and enables GitHub auto-merge so it lands
 # the moment the blocking CI gates pass (base-only, typecheck-and-lint incl.
-# mypy --strict + lint-imports, and the test matrix).
+# mypy --strict + lint-imports, and the test matrix). It then waits for the
+# merge, switches back to `develop` (fast-forwarded), and deletes the bump
+# branch locally and on origin. If the PR doesn't merge within
+# MERGE_TIMEOUT_SECS (default 1800), it still returns to `develop` but keeps
+# the branch.
 #
 # The version scheme is PEP 440, milestone-driven, on the pre-release ladder
 #   0.1.0.dev0 < … < 0.1.0a1 < 0.1.0b1 < 0.1.0rc1 < 0.1.0
@@ -34,6 +38,8 @@ REPO="Donkey-Development-Kit/donkey-development-kit"
 BASE_BRANCH="develop"
 PYPROJECT="python/pyproject.toml"
 INIT_PY="python/src/donkey_kit/__init__.py"
+MERGE_POLL_SECS="${MERGE_POLL_SECS:-15}"
+MERGE_TIMEOUT_SECS="${MERGE_TIMEOUT_SECS:-1800}"
 
 DRY_RUN=0
 ASSUME_YES=0
@@ -243,6 +249,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
     "$REPO" "$BASE_BRANCH" "$BRANCH" "$PR_TITLE"
   printf '\033[33m[dry-run]\033[0m would run: gh pr merge --repo %s --squash --auto --delete-branch --subject %q --head %s\n' \
     "$REPO" "chore: bump version to ${NEW}" "$BRANCH"
+  printf '\033[33m[dry-run]\033[0m would wait for the merge, then: git switch %s && git pull --ff-only origin %s\n' \
+    "$BASE_BRANCH" "$BASE_BRANCH"
+  printf '\033[33m[dry-run]\033[0m would run: git branch -D %s && git push origin --delete %s\n' "$BRANCH" "$BRANCH"
   info "dry run complete — no branch, commit, or PR was created"
   exit 0
 fi
@@ -264,11 +273,44 @@ if gh pr merge "$PR_NUM" --repo "$REPO" \
      --subject "chore: bump version to ${NEW} (#${PR_NUM})"; then
   printf '\n\033[32m✓\033[0m PR #%s opened with auto-merge enabled.\n' "$PR_NUM"
   printf '  It will squash-merge into %s automatically once CI is green.\n' "$BASE_BRANCH"
-  printf '  Watch it:  gh pr checks %s --repo %s --watch\n' "$PR_NUM" "$REPO"
 else
   printf '\n\033[33m!\033[0m PR #%s is open, but enabling auto-merge failed.\n' "$PR_NUM"
   printf '  This usually means repository auto-merge is disabled. Once CI is green, merge with:\n'
   printf '    gh pr merge %s --repo %s --squash --delete-branch --subject "chore: bump version to %s (#%s)"\n' \
     "$PR_NUM" "$REPO" "$NEW" "$PR_NUM"
+  git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
   exit 1
 fi
+
+# --- Wait for the merge, then return to develop and delete the bump branch ----
+# The branch can only be deleted AFTER the merge: deleting the head branch of an
+# open PR closes it unmerged.
+info "waiting for PR #$PR_NUM to merge (polling every ${MERGE_POLL_SECS}s, timeout ${MERGE_TIMEOUT_SECS}s; Ctrl-C to stop waiting)"
+state="OPEN"
+waited=0
+while [ "$waited" -lt "$MERGE_TIMEOUT_SECS" ]; do
+  state=$(gh pr view "$PR_NUM" --repo "$REPO" --json state --jq .state 2>/dev/null || echo "UNKNOWN")
+  case "$state" in MERGED|CLOSED) break ;; esac
+  sleep "$MERGE_POLL_SECS"
+  waited=$((waited + MERGE_POLL_SECS))
+done
+
+run git switch "$BASE_BRANCH"
+run git pull --ff-only origin "$BASE_BRANCH"
+
+if [ "$state" != "MERGED" ]; then
+  printf '\n\033[33m!\033[0m PR #%s is %s — kept branch %s (local and remote).\n' "$PR_NUM" "$state" "$BRANCH"
+  printf '  Watch it:  gh pr checks %s --repo %s --watch\n' "$PR_NUM" "$REPO"
+  printf '  After it merges:  git branch -D %s && git push origin --delete %s\n' "$BRANCH" "$BRANCH"
+  exit 1
+fi
+
+# Squash merges leave the branch tip unreachable from develop, so -d would refuse.
+run git branch -D "$BRANCH"
+if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+  run git push origin --delete "$BRANCH"
+fi
+run git fetch --prune origin
+
+printf '\n\033[32m✓\033[0m PR #%s merged; on %s at %s, branch %s deleted locally and remotely.\n' \
+  "$PR_NUM" "$BASE_BRANCH" "$NEW" "$BRANCH"
