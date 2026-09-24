@@ -56,9 +56,8 @@
 
 html,
 body {
-  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+  font-family: var(--font-play), ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', sans-serif;
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }

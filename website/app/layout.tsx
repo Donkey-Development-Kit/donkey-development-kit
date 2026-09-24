@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Play } from 'next/font/google'
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
@@ -15,10 +15,11 @@ const SITE_DESCRIPTION =
 // applied manually — same convention as components/index.tsx.
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
 
-const inter = Inter({
+const play = Play({
   subsets: ['latin'],
+  weight: ['400', '700'],
   display: 'swap',
-  variable: '--font-inter',
+  variable: '--font-play',
 })
 
 // Replaces theme.config.tsx `head()`: the Metadata API builds the same
@@ -108,7 +109,7 @@ export default async function RootLayout({
       lang="en"
       dir="ltr"
       suppressHydrationWarning
-      className={`${inter.variable} ${inter.className}`}
+      className={`${play.variable} ${play.className}`}
     >
       {/* #00B4FF accent, matching --af-accent in styles/globals.css. */}
       <Head color={{ hue: 198, saturation: 100, lightness: { light: 50, dark: 50 } }} />
