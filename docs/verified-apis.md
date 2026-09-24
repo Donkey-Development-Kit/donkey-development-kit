@@ -461,18 +461,21 @@ run is diagnosable instead of surprising.
 
 | Dependency | Breaks at | Symptom | Status | Date |
 |---|---|---|---|---|
-| `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. **Mitigated** with a targeted `# type: ignore[arg-type]` at the three call sites (`llm/client.py` ×2, `integrations/openai_agents.py`); `mypy --strict` passes under openai 3.x (#137). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-09-20 |
+| `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. **Mitigated** with a `cast(Any, …)` on the argument at the four version-conditional sites (`llm/client.py` ×2, `integrations/openai_agents.py`, and the `exc.response` cast in `integrations/langgraph.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-09-24 |
 
-The targeted ignores keep `mypy --strict` green against the newest `openai` a fresh
+The `cast(Any, …)` guards keep `mypy --strict` green against the newest `openai` a fresh
 resolve pulls (the floors-never-ceilings rule). A full fix — migrating `core/transport.py` off `httpx` onto
 `httpx2` — also touches every adapter that accepts `http_async_client` /
 `client_args`, so it is a core-layer change (the layered architecture) and out of scope for the mitigation.
 The re-verification (#18) confirms it is unnecessary: injection works end to end under openai 3.x, and
 `test_llm_client_openai3_injection.py` is the standing gate that would fail loudly if a future openai
 release actually broke it — the point of keeping the extras floor-only rather than capping `openai<3`.
-Because the ignores are code-specific and `--strict` enables `warn_unused_ignores`, a
-pinned `openai<3` (where the mismatch does not occur) would now flag them as *unused* —
-a non-issue while the extras stay floor-only and every resolve takes openai 3.x.
+`cast(Any, …)` is resolve-independent — the argument is a concrete type on both majors, so the cast is
+never `redundant-cast`, and passing `Any` to any parameter type is never an error — so `mypy --strict`
+passes under **both** an `openai<3` and an `openai>=3` resolve. This replaced the earlier
+`# type: ignore[arg-type]` / `cast("httpx.Response", …)` guards, which passed only under `openai>=3`:
+because `--strict` enables `warn_unused_ignores` / `warn_redundant_casts`, a pinned `openai<3` (where the
+mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 

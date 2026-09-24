@@ -21,7 +21,7 @@ VERIFICATION NOTES (LIVE-VERIFIED 2026-08-28, docs/verified-apis.md §2/§3):
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from ..core.config import DonkeyConfig
 from ..core.errors import ConfigError
@@ -129,10 +129,12 @@ class LLMClient:
         # Runtime-verified end to end (async + sync) against openai 3.x by
         # tests/unit/test_llm_client_openai3_injection.py (#18); see
         # docs/verified-apis.md (openai >=3.0 row). No upper pin, by design (the
-        # floors-never-ceilings rule).
+        # floors-never-ceilings rule). `cast(Any, …)` erases the argument type so
+        # this typechecks clean under BOTH majors: a bare `# type: ignore` is
+        # `unused-ignore` under openai<3 where the types already match (#597).
         if sync:
-            return OpenAI(http_client=self._sync_http(), **shared)  # type: ignore[arg-type]
-        return AsyncOpenAI(http_client=self._http, **shared)  # type: ignore[arg-type]
+            return OpenAI(http_client=cast(Any, self._sync_http()), **shared)
+        return AsyncOpenAI(http_client=cast(Any, self._http), **shared)
 
     async def list_models(self, *, live: bool = False) -> list[ModelHandle]:
         """List logical models the proxy exposes.
