@@ -649,6 +649,14 @@ a.af-card:hover .af-card-title::after {
   border: 1px solid var(--af-accent-border);
 }
 
+.af-team-photo {
+  width: 4rem;
+  height: 4rem;
+  padding: 0;
+  object-fit: cover;
+  background: var(--af-surface-sunken);
+}
+
 .af-team-member .af-card-badges {
   align-items: center;
   justify-content: space-between;

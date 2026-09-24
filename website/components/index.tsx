@@ -249,10 +249,12 @@ export function TeamMember({
   name,
   role,
   linkedin,
+  photo,
 }: {
   name: string
   role: 'Creator' | 'Contributor'
   linkedin: string
+  photo?: string
 }) {
   const initials = name
     .split(/[\s-]+/)
@@ -262,9 +264,20 @@ export function TeamMember({
     .join('')
   return (
     <a className="af-card af-team-member" href={linkedin} target="_blank" rel="noopener noreferrer">
-      <span className="af-team-avatar" aria-hidden="true">
-        {initials}
-      </span>
+      {photo ? (
+        <img
+          className="af-team-avatar af-team-photo"
+          src={photo.startsWith('/') ? `${BASE_PATH}${photo}` : photo}
+          alt=""
+          width={64}
+          height={64}
+          loading="lazy"
+        />
+      ) : (
+        <span className="af-team-avatar" aria-hidden="true">
+          {initials}
+        </span>
+      )}
       <span className="af-card-title">{name}</span>
       <span className="af-card-badges">
         <Badge tone={role === 'Creator' ? 'accent' : 'neutral'}>{role}</Badge>
