@@ -331,7 +331,7 @@ recovered from a degraded provider.
 
 `donkey.last_call` is populated only when the governed response passes through
 the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
-outside that response path: ADK and CrewAI use LiteLLM's transport, while
+outside that response path: ADK and CrewAI send requests through LiteLLM, while
 LlamaIndex and Microsoft Agent Framework receive only `default_headers`.
 That static snapshot excludes the correlation ID bound later by
 `donkey.run(id=...)`, so those two adapters also do not propagate the run's

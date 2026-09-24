@@ -107,8 +107,8 @@ HTTP client is also used, which adds per-run correlation IDs and
 | Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [Anthropic page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
 | LlamaIndex | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. `is_chat_model=True` is forced. |
 | MS Agent Framework | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. |
-| Google ADK | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport: correlation is per-client and `donkey.last_call` is unavailable. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | LiteLLM owns the transport: same limits as Google ADK. |
+| Google ADK | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's LiteLLM layer: same behaviour as Google ADK. |
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.
