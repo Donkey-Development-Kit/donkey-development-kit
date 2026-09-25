@@ -3,7 +3,7 @@ description: Run the refusal branch of your agent without a gateway — donkey.s
 ---
 
 import { Callout } from 'nextra/components'
-import { Output } from '../../components'
+import { Output } from '../../../components'
 
 # Simulating refusals
 
@@ -196,7 +196,7 @@ exhaustion until the window rolls over.
   `simulate(ToolInvocationError)` and `simulate(GatewayUnavailable)` raise
   `ValueError` instead of inventing one — a transport failure has no HTTP
   response to replay. To provoke `GatewayUnavailable`, point at a dead origin
-  (see [Typed refusals](/examples/typed-refusals)).
+  (see [Typed refusals](/examples/general/typed-refusals)).
 </Callout>
 
 Because the injection sits on the transport, it also reaches framework objects

@@ -1,10 +1,3 @@
----
-description: Framework adapters that return your framework's own objects, connection_kwargs() for the rest, local model capability handles, and config validation that reports everything at once.
----
-
-import { Callout } from 'nextra/components'
-import { Output } from '../../components'
-
 # Framework objects & model handles
 
 No adapter returns a wrapper. `donkey.langgraph.chat_model(...)` hands back a
@@ -29,7 +22,6 @@ make demo N=07
 make demo N=08
 ```
 
-<Output label="Expected output: demo 07">
 ```text
 ════════════════════════════════════════════════════════════════════════════════════════
 Demo 07 — model handles and honest gaps
@@ -76,7 +68,6 @@ Run context
 
     DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 
-
     Configuration for 'llm' is incomplete. Missing:
       - llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)
       - llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)
@@ -93,9 +84,7 @@ Run context
 
 ────────────────────────────────────────────────────────────────────────────────────────
 ```
-</Output>
 
-<Output label="Expected output: demo 08">
 ```text
 ════════════════════════════════════════════════════════════════════════════════════════
 Demo 08 — native framework objects
@@ -146,7 +135,6 @@ Run context
     kwargs = donkey.strands.connection_kwargs()
     SomeFrameworkModel(model="gpt-4o", **kwargs)
 
-
   langgraph.connection_kwargs() 
     base_url                       https://demo-gateway.example.invalid/openai-sdk/
     api_key                        client-id-enforced
@@ -176,7 +164,6 @@ What is and is not verified here
 
 ────────────────────────────────────────────────────────────────────────────────────────
 ```
-</Output>
 
 Narrative demo 08 uses obviously-fake config, so it needs no credentials.
 Frameworks that are not installed are reported with their exact `pip install`
@@ -223,21 +210,19 @@ the environment variable that sets it:
 DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 ```
 
-<Callout type="info">
   `donkey.openai_agents` is the OpenAI Agents SDK adapter; `donkey.openai()` is
   the raw OpenAI client factory. The LangGraph adapter sets
   `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. Where
   an adapter cannot confirm a framework's class name or constructor, it raises
   "blocked on verification" rather than guessing.
-</Callout>
 
 `resolve()` capabilities are heuristics derived from the model id, not a
 governed catalog. The gateway returns 404 for `GET /models` because
 model-based routing only routes requests that already carry `model` in the
 body. When a live call fails — wrong URL, wrong credentials, or a model the
-allow-list does not include — [`donkey doctor`](/cli) tells those apart.
+allow-list does not include — [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) tells those apart.
 
-**Learn more:** [Model access](/frameworks) · [LangGraph](/frameworks/langgraph) · [CLI & decorators](/cli)
+**Learn more:** [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
 
 **Source:**
 [narrative demo 07](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/07_model_handles) ·

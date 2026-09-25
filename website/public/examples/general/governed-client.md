@@ -1,10 +1,3 @@
----
-description: A stock OpenAI client next to a governed one, the same PII refusal through both, and the @donkey.governed / @donkey.tool decorators.
----
-
-import { Callout } from 'nextra/components'
-import { Output } from '../../components'
-
 # Governed client
 
 You do not need the SDK to reach the gateway — a stock OpenAI client with a
@@ -31,7 +24,6 @@ make demo N=01                        # offline, against the local simulator
 make demo N=01 ARGS="--target live"   # against your gateway
 ```
 
-<Output label="Expected output (offline)">
 ```text
 ════════════════════════════════════════════════════════════════════════════════════════
 Demo 01 — the governed client
@@ -108,7 +100,6 @@ Run context
   A: status              403
   A: you get             a JSON body to parse, and a status code to guess from
 
-
     # B: the same request, through the governed client
     try:
         await client.responses.create(model=..., input="...")
@@ -141,7 +132,6 @@ Run context
   run id after           235d9e98804b480092a2738f58fd7997
   PASS  restored to the enclosing context — nested run() rebinds, then restores
 
-
     @donkey.tool
     def lookup_sku(sku: str) -> str:
         """Return stock for a product SKU."""
@@ -156,7 +146,6 @@ Run context
   read. Neither consumer is built yet; this is the annotation they will look for, not a
   wrapper around the tool.
 
-
 The point
 ─────────
   The wrapper is not sold as a way to reach the gateway. It is the one place every
@@ -167,7 +156,6 @@ The point
 
 ────────────────────────────────────────────────────────────────────────────────────────
 ```
-</Output>
 
 ```bash
 python "demos/human-made/openai/01 - basic-responses-no-gw.py"   # needs OPENAI_API_KEY
@@ -175,13 +163,11 @@ python "demos/human-made/openai/02 - basic-responses-gw.py"      # needs proxy c
 python "demos/human-made/openai/09 - governed-and-tool.py"       # no gateway
 ```
 
-<Callout type="info">
   Against the simulator the reply in act 2 is a captured response, so it
   answers the recorded prompt rather than the one just sent. The demo prints a
   warning saying so. The PII act against `--target live` needs the PII
   detection policy applied with `Email` among its entities and its action set
   to `Reject` — the default action, `Log`, does not block.
-</Callout>
 
 ## Key code
 
@@ -229,12 +215,10 @@ def handle_ticket(ticket: str) -> str:
     print("cost tags    ", current_cost_tags())
     return ticket
 
-
 @donkey.tool
 def lookup_sku(sku: str) -> str:
     """Return stock for a product SKU."""
     return "42"
-
 
 print("same function object ", lookup_sku is registered_tools()[-1].func)
 ```
@@ -243,9 +227,9 @@ Note the base URL has no `/v1`, and auth is a `client_id` / `client_secret`
 header pair rather than a bearer token. There is deliberately no `id=` on
 `@donkey.governed`: a fixed id would collapse unrelated calls into one
 correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
-[Telemetry](/examples/telemetry)).
+[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/telemetry.md)).
 
-**Learn more:** [Introduction](/) · [Model access](/frameworks) · [CLI & decorators](/cli)
+**Learn more:** [Introduction](https://donkey-development-kit.github.io/donkey-development-kit/) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
 
 **Source:**
 [narrative demo 01](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/01_governed_client) ·

@@ -1,10 +1,3 @@
----
-description: The gateway's token window as an object, pace(reserve=) refusing locally before a request would cross your reserve, and wait_for_reset().
----
-
-import { Callout } from 'nextra/components'
-import { Output } from '../../components'
-
 # Budget & pacing
 
 The gateway reports your token budget only in-band, on response headers —
@@ -26,7 +19,6 @@ until the window rolls over.
 make demo N=03
 ```
 
-<Output>
 ```text
 ════════════════════════════════════════════════════════════════════════════════════════
 Demo 03 — budget and pacing
@@ -105,18 +97,15 @@ Run context
 
 ────────────────────────────────────────────────────────────────────────────────────────
 ```
-</Output>
 
 ```bash
 python "demos/human-made/openai/05 - budget_and_pacing.py"   # needs proxy credentials
 ```
 
-<Callout type="info">
   On a live gateway the window arrives only when the token rate limit policy
   is applied to the proxy. The simulator synthesises a decreasing window so
   pacing can run locally; its happy-path numbers are illustrative, the parse
   path is not.
-</Callout>
 
 ## Key code
 
@@ -160,7 +149,7 @@ terminal, while this is a local signal you are expected to recover from. If you
 do cross the window, the resulting `TokenBudgetExceeded` is not retried by the
 transport — retrying only burns the same window.
 
-**Learn more:** [Budget & pacing](/budget)
+**Learn more:** [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md)
 
 **Source:**
 [narrative demo 03](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/03_budget_and_pacing) ·

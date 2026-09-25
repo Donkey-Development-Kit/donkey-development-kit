@@ -1,0 +1,126 @@
+# Strands
+
+Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
+the governed client is passed in, the SDK owns the transport: run id,
+`last_call` and typed refusals all work. The calls go to
+**`/chat/completions`, which is not live-verified on the DDK proxies**
+(`/responses` is), so use a proxy whose upstream serves that route.
+
+  **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
+  client per request from `client_args`. That closes the shared transport
+  after the first call, and the second fails with "client has been closed". A
+  pre-built `client=` is reused and left open.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | A governed agent, Strands usage and `last_call` | Proxy credentials |
+| 02 | `agent-and-tool.py` | The run id reaching a tool across two model calls | Proxy credentials (live only) |
+| 03 | `typed-refusals-simulated.py` | Three simulated refusals, typed | Nothing — any placeholder values |
+| 04 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` | Proxy + PII policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm]" "strands-agents[openai]"
+set -a; source .env.local; set +a
+```
+
+## 01 — A governed agent
+
+```bash
+python "demos/human-made/strands/01 - basic-gw.py"
+```
+
+```python
+async with Donkey.from_env() as donkey:
+    model = OpenAIModel(client=donkey.openai(), model_id="gpt-4o")
+    agent = Agent(model=model, callback_handler=None, system_prompt="Answer in one short sentence.")
+
+    result = await agent.invoke_async("Say hello in exactly three words.")
+    print(str(result).strip())
+    print("usage       ", result.metrics.accumulated_usage)
+    print("status      ", donkey.last_call.status.value)
+    print("served_model", donkey.last_call.served_model)
+```
+
+**You should see:** a one-sentence answer, Strands' accumulated usage, then
+`status observed` and the served model — unlike LangGraph, Strands calls the
+model on the caller's task, so `last_call` is populated.
+
+## 02 — Agent and tool
+
+```bash
+python "demos/human-made/strands/02 - agent-and-tool.py"
+```
+
+One Strands `@tool` (`lookup_sku`) inside `donkey.run(...)`. The tool loop is
+two model calls, and `client=donkey.openai()` keeps the transport open across
+both. The tool prints the run id it sees.
+
+```python
+@tool
+def lookup_sku(sku: str) -> str:
+    """Return stock for a product SKU."""
+    print("tool sees run id", current_correlation_id())
+    return "42"
+
+async with donkey.run(id="strands-ticket-4417", team="support", project="triage"):
+    result = await agent.invoke_async("How many AF-1001 are in stock?")
+```
+
+**Live only.** **You should see:** `tool sees run id strands-ticket-4417`, the
+answer, `model calls 2`, and `last_call observed <model>`.
+
+## 03 — Typed refusals, simulated
+
+```bash
+python "demos/human-made/strands/03 - typed-refusals-simulated.py"
+```
+
+`donkey.simulate(...)` replays each captured refusal while a Strands agent
+runs; the `openai.APIStatusError` comes through unchanged and `classify()`
+types it.
+
+```python
+model = OpenAIModel(client=donkey.openai(), model_id="gpt-4o")
+for refusal in REFUSALS:
+    async with donkey.run(id=f"strands-simulated-{refusal.__name__}"):
+        with donkey.simulate(refusal):
+            try:
+                await Agent(model=model, callback_handler=None).invoke_async("hello")
+            except openai.APIStatusError as err:
+                error = classify(err.response)
+                print(type(error).__name__, error.policy, error.correlation_id)
+```
+
+```text
+PIIDetected pii-detection strands-simulated-PIIDetected
+PromptInjectionBlocked prompt-injection-protection strands-simulated-PromptInjectionBlocked
+ContentSafetyBlocked content-safety strands-simulated-ContentSafetyBlocked
+```
+
+`TokenBudgetExceeded` is deliberately absent. Strands retries a 429 itself
+(`ModelThrottledException`), so the one simulated 429 is absorbed and the
+retry succeeds. Against a live proxy the same retry means a real budget 429
+takes a while to surface.
+
+## 04 — Typed refusals, live
+
+```bash
+python "demos/human-made/strands/04 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: a contact record for `PIIDetected`, a
+model that does not exist for `UpstreamRequestError`, and wrong credentials
+for `AuthError`.
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case. **You should see:** `<case> ->  <entities>` per case, or
+`<case> NO REFUSAL`.
+
+**Learn more:** [Strands](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/strands.md)
+
+**Source:**
+[`demos/human-made/strands/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/strands)

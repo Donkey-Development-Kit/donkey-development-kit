@@ -1,0 +1,84 @@
+# CrewAI
+
+CrewAI 1.x with `donkey.crewai.llm("…")`. `openai/` models go through CrewAI's
+native OpenAI provider to **`/chat/completions`, which is not live-verified on
+the DDK proxies** (`/responses` is). CrewAI owns the transport: the
+credentials go on the wire, but there is **no run id and no `last_call`**.
+Refusals are still typed, because the native provider keeps the openai error's
+response.
+
+Both scripts need a live gateway; there is no offline CrewAI script.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | `llm.call(...)`, then a one-agent crew | Proxy credentials |
+| 02 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` | Proxy + PII policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,crewai]"
+set -a; source .env.local; set +a
+```
+
+  Both scripts set `CREWAI_TRACING_ENABLED=false` unless you set it yourself.
+  Otherwise CrewAI stops on an interactive "view your traces?" prompt and the
+  script appears to hang with no output.
+
+## 01 — A direct call and a crew
+
+```bash
+python "demos/human-made/crewai/01 - basic-gw.py"
+```
+
+```python
+donkey = Donkey.from_env()
+llm = donkey.crewai.llm("gpt-4o")
+
+print(llm.call("Say hello in exactly three words."))
+
+agent = Agent(role="Greeter", goal="Greet people", backstory="Friendly and brief.", llm=llm)
+out = agent.kickoff("Say goodbye in exactly three words.")
+
+print(out.raw)
+print("usage    ", out.usage_metrics)
+print("last_call", donkey.last_call.status.value, donkey.last_call.surface)
+```
+
+**You should see:** the greeting, the crew's answer, CrewAI's
+`usage_metrics`, and `last_call unavailable …` — CrewAI owns the transport, so
+read usage from `usage_metrics`.
+
+## 02 — Typed refusals, live
+
+```bash
+python "demos/human-made/crewai/02 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: a contact record for `PIIDetected`, a
+model that does not exist for `UpstreamRequestError`, and wrong credentials
+for `AuthError`.
+
+```python
+for name, case_cfg, model, prompt in CASES:
+    donkey = Donkey(case_cfg)
+    try:
+        donkey.crewai.llm(model).call(prompt)
+        print(name, "NO REFUSAL")
+    except openai.APIStatusError as err:
+        error = classify(err.response)
+        print(name, "->", type(error).__name__, getattr(error, "entities", None))
+    donkey.close()
+```
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case. **You should see:** `<case> ->  <entities>` per case, or
+`<case> NO REFUSAL`. A `404` means the proxy's upstream has no
+`/chat/completions` route.
+
+**Learn more:** [CrewAI](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md)
+
+**Source:**
+[`demos/human-made/crewai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/crewai)

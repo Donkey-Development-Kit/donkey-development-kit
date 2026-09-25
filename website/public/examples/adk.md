@@ -1,0 +1,77 @@
+# Google ADK
+
+Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
+**`/chat/completions`, which is not live-verified on the DDK proxies**, and
+owns the transport: the credentials go on the wire, but there is **no run id,
+no `last_call`, and no typed refusals**. Script 02 exists to show that last
+gap.
+
+Both scripts need a live gateway; there is no offline ADK script.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | An ADK `Agent` through an `InMemoryRunner` | Proxy credentials |
+| 02 | `refusal-live.py` | A PII refusal surfacing as LiteLLM's `APIError` | Proxy + PII policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,adk]"
+set -a; source .env.local; set +a
+```
+
+## 01 — An ADK agent
+
+```bash
+python "demos/human-made/adk/01 - basic-gw.py"
+```
+
+```python
+donkey = Donkey.from_env()
+agent = Agent(name="greeter", model=donkey.adk.model("gpt-4o"), instruction="Answer in one short sentence.")
+
+events = asyncio.run(InMemoryRunner(agent=agent).run_debug("Say hello in exactly three words.", quiet=True))
+
+print(events[-1].content.parts[0].text)
+print("total tokens", events[-1].usage_metadata.total_token_count)
+print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
+```
+
+**You should see:** a one-sentence answer, `total tokens` from the last
+event's `usage_metadata`, and `last_call unavailable …`. LiteLLM also logs a
+provider-list banner, which is harmless.
+
+## 02 — A refusal that is not typed
+
+```bash
+python "demos/human-made/adk/02 - refusal-live.py"
+```
+
+A PII prompt against a proxy with the PII policy applied. LiteLLM keeps the
+status code and the message but drops the response headers, so `classify()`
+has nothing to read. The script therefore catches LiteLLM's own error:
+
+```python
+try:
+    asyncio.run(InMemoryRunner(agent=agent).run_debug(PII_PROMPT, quiet=True))
+    print("NO REFUSAL")
+except litellm.exceptions.APIError as err:
+    print(type(err).__name__, err.status_code)
+    print(str(err).splitlines()[0])
+```
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject`. **You
+should see:** `APIError 403` and the first line of the proxy's message — **not**
+`PIIDetected`. Without the policy it prints `NO REFUSAL`.
+
+  If you need typed refusals, `last_call` or run ids with ADK today, prefer a
+  framework path where the SDK owns the transport, such as
+  [OpenAI](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md) or [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md). A `404`
+  here means the proxy's upstream has no `/chat/completions` route.
+
+**Learn more:** [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md)
+
+**Source:**
+[`demos/human-made/adk/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/adk)
