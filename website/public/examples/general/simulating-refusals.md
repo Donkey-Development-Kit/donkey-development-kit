@@ -183,7 +183,7 @@ exhaustion until the window rolls over.
   `simulate(ToolInvocationError)` and `simulate(GatewayUnavailable)` raise
   `ValueError` instead of inventing one — a transport failure has no HTTP
   response to replay. To provoke `GatewayUnavailable`, point at a dead origin
-  (see [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/typed-refusals.md)).
+  (see [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/typed-refusals.md)).
 
 Because the injection sits on the transport, it also reaches framework objects
 the SDK does not wrap — demo 04 drives `donkey.langgraph.chat_model("gpt-4o")`

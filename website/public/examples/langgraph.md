@@ -1,0 +1,242 @@
+# LangGraph
+
+`donkey.langgraph("…")` returns a real `langchain_openai.ChatOpenAI` with
+`use_responses_api=True`, so calls go to the live-verified `/responses` route
+on the governed transport. It is the one deep, conformance-gated adapter:
+`donkey.langgraph.typed_refusals()` turns the openai error a graph node raises
+back into the SDK's typed refusal.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-no-gw.py` | Stock `ChatOpenAI`, no SDK — the baseline | `OPENAI_API_KEY` |
+| 02 | `basic-gw.py` | The governed model, LangChain's own usage | Proxy credentials |
+| 03 | `typed-refusals-simulated.py` | Five refusals out of `create_agent`, typed | Nothing — any placeholder values |
+| 04 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` live | Proxy + PII policy |
+| 05 | `agent-and-tool.py` | The run id reaching a tool inside the graph | Proxy credentials (live only) |
+| 06 | `otel exporter simple.py` | Donkey riding a host `TracerProvider` | Proxy + `[otel]` + OTLP endpoint |
+| 07 | `streaming.py` | `astream` chunks and terminal usage | Proxy credentials (live only) |
+| 08 | `gateway-unavailable.py` | `GatewayUnavailable` two causes down | Nothing |
+| 09 | `start-gateway.py` | An agent loop over the local simulator | `[local]` |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,local,langgraph]" "langchain>=1.0"
+python -m pip install -e "../donkey-development-kit/python[otel]"   # 06 only
+set -a; source .env.local; set +a
+```
+
+`langchain>=1.0` provides `create_agent` (03, 04, 05, 09); it is not part of
+any `donkey-kit` extra.
+
+  **Async only.** The governed transport is `ChatOpenAI`'s
+  `http_async_client`, so every gateway script uses `ainvoke` / `astream`. A
+  sync `.invoke()` would bypass governance.
+
+## 01 — Stock ChatOpenAI, no gateway
+
+```bash
+export OPENAI_API_KEY=…
+python "demos/human-made/langgraph/01 - basic-no-gw.py"
+```
+
+`ChatOpenAI(model="gpt-4o", use_responses_api=True)` straight to
+api.openai.com. It prints a three-word greeting.
+
+## 02 — The governed model
+
+```bash
+python "demos/human-made/langgraph/02 - basic-gw.py"
+```
+
+```python
+async with Donkey.from_env() as donkey:
+    model = donkey.langgraph("gpt-4o")   # native ChatOpenAI on /responses
+
+    reply = await model.ainvoke("Say hello in exactly three words.")
+    print(reply.text)
+    print("model_name ", reply.response_metadata.get("model_name"))
+    print("usage      ", reply.usage_metadata)
+    print("last_call  ", donkey.last_call.status.value)
+```
+
+**You should see:** the reply, `model_name`, LangChain's `usage` dict, and
+`last_call unobserved`. That last line is expected: LangChain drives the call
+on its own task, and `last_call` is scoped per task, so it never reaches the
+caller. Use `usage_metadata` instead.
+
+## 03 — Typed refusals, simulated
+
+```bash
+python "demos/human-made/langgraph/03 - typed-refusals-simulated.py"
+```
+
+`donkey.simulate(...)` replays five captured refusals in-process while a
+`create_agent` graph runs. Without help, the error would surface wrapped by
+the graph; `typed_refusals()` re-raises it as the SDK type, so a plain `except
+PolicyViolation` catches all five.
+
+```python
+agent = create_agent(donkey.langgraph("gpt-4o"), tools=[])
+
+for refusal in REFUSALS:
+    async with donkey.run(id=f"lg-simulated-{refusal.__name__}"):
+        with donkey.simulate(refusal):
+            try:
+                with donkey.langgraph.typed_refusals():
+                    await agent.ainvoke({"messages": [{"role": "user", "content": "hello"}]})
+            except PolicyViolation as error:
+                print(type(error).__name__, error.policy, error.correlation_id)
+```
+
+```text
+PIIDetected pii-detection lg-simulated-PIIDetected
+PromptInjectionBlocked prompt-injection-protection lg-simulated-PromptInjectionBlocked
+ContentSafetyBlocked content-safety lg-simulated-ContentSafetyBlocked
+TokenBudgetExceeded token-rate-limit lg-simulated-TokenBudgetExceeded
+PolicyViolation unknown lg-simulated-PolicyViolation
+```
+
+The correlation id on each error is the `donkey.run(id=…)` around the graph —
+it survived LangGraph's own task scheduling.
+
+## 04 — Typed refusals, live
+
+```bash
+python "demos/human-made/langgraph/04 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: `PIIDetected` from a contact record,
+`UpstreamRequestError` from a model that does not exist, and `AuthError` from
+deliberately wrong credentials. All three are caught as `DonkeyError` out of
+`typed_refusals()`.
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case; the other two need nothing extra. **You should see:** `<case> ->
+ <policy> <entities>` per case, or `<case> NO REFUSAL` when the policy
+is not applied.
+
+## 05 — Agent and tool
+
+```bash
+python "demos/human-made/langgraph/05 - agent-and-tool.py"
+```
+
+`create_agent` with one tool (`lookup_sku`) inside `donkey.run(...)`. LangGraph
+copies the context into every node, so the tool reads the same run id the
+caller set — every model call and tool call in the loop is correlated.
+
+```python
+@tool
+def lookup_sku(sku: str) -> str:
+    """Return stock for a product SKU."""
+    print("tool sees run id", current_correlation_id())
+    return "42"
+
+async with donkey.run(id="lg-ticket-4417", team="support", project="triage"):
+    out = await agent.ainvoke({"messages": [{"role": "user", "content": "How many AF-1001 are in stock?"}]})
+```
+
+**Live only** — the simulator replays one completion and never decides to call
+a tool. **You should see:** `run id lg-ticket-4417`, then `tool sees run id
+lg-ticket-4417`, the final answer and the message count.
+
+## 06 — OpenTelemetry
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://<collector>  OTEL_EXPORTER_OTLP_HEADERS=…
+python "demos/human-made/langgraph/06 - otel exporter simple.py"
+```
+
+The host owns the `TracerProvider` and Donkey rides it, as in
+[OpenAI 06](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md#06--opentelemetry-host-owned-provider). Two
+`ainvoke` calls run in one tagged `donkey.run(...)`. **You should see:** two
+replies locally, and two spans with one correlation id in the collector.
+
+## 07 — Streaming
+
+```bash
+python "demos/human-made/langgraph/07 - streaming.py"
+```
+
+`astream` chunks are added together; usage lands on the terminal event.
+
+```python
+final = None
+async for chunk in model.astream("Say hello in exactly three words."):
+    final = chunk if final is None else final + chunk
+print(final.text)
+print("usage", final.usage_metadata)
+```
+
+**Live only** — `ChatOpenAI` rejects the simulator's truncated SSE. **You
+should see:** the reply and a `usage` dict.
+
+## 08 — Gateway unavailable
+
+```bash
+python "demos/human-made/langgraph/08 - gateway-unavailable.py"
+```
+
+A governed model aimed at `127.0.0.1:9`, where nothing listens.
+`typed_refusals()` passes transport failures through untouched, so the script
+walks `__cause__` until it finds `GatewayUnavailable`.
+
+```python
+try:
+    with donkey.langgraph.typed_refusals():
+        await donkey.langgraph("gpt-4o").ainvoke("hello")
+except Exception as err:
+    hit = err
+    while hit is not None and not isinstance(hit, GatewayUnavailable):
+        hit = hit.__cause__
+```
+
+```text
+raised GatewayUnavailable
+cause  GatewayUnavailable
+base_url http://127.0.0.1:9
+The gateway could not be reached and no HTTP response came back. The three usual causes: (1) the host is unreachable — DNS failure or the gateway is down; (2) the configured base URL is wrong; or (3) network egress to the gateway is blocked — a firewall or air-gapped environment. Run `donkey doctor` to diagnose connectivity, and check `base_url` on this error against your gateway's address.
+```
+
+## 09 — An agent loop over the local simulator
+
+```bash
+python "demos/human-made/langgraph/09 - start-gateway.py"
+```
+
+No gateway and no credentials. `start_gateway()` boots the simulator with
+`pii_block:every=2`, so every second request is the captured PII 403. A
+`create_agent` loop handles two support tickets: the first gets the replayed
+completion, the second is refused and caught as a typed `PolicyViolation`.
+
+```python
+gw = start_gateway()
+gw.set_scenarios("pii_block:every=2")
+cfg = DonkeyConfig(llm_proxy_url=gw.url, llm_proxy_client_id=..., llm_proxy_client_secret=...)
+
+async with Donkey(cfg) as donkey:
+    agent = create_agent(donkey.langgraph("gpt-4o"), tools=[], system_prompt="Reply in one sentence.")
+    for ticket in TICKETS:
+        try:
+            with donkey.langgraph.typed_refusals():
+                out = await agent.ainvoke({"messages": [{"role": "user", "content": ticket}]})
+            print("ok     ", out["messages"][-1].text[:60])
+        except PolicyViolation as error:
+            print("refused", type(error).__name__, error.entities)
+```
+
+```text
+ok      A sleepy unicorn named Luma painted soft silver stars across
+refused PIIDetected ['Email']
+requests 2
+```
+
+The "ok" text is the simulator's canned completion, not a reply to the ticket.
+
+**Learn more:** [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [LangGraph agent](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/langgraph-agent.md)
+
+**Source:**
+[`demos/human-made/langgraph/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/langgraph)

@@ -11,7 +11,7 @@ in the agent's control flow.
 
 | Example | Shows | Needs |
 | --- | --- | --- |
-| Narrative demo 09 | `donkey.langgraph.chat_model()`, a `create_agent` loop calling two tools, then the run's budget, `last_call` and the registered tools | Live credentials + `[langgraph]` |
+| Narrative demo 09 | `donkey.langgraph.chat_model()`, a `create_agent` loop calling two tools, then the proxy's token window, `last_call` from the run scope and the registered tools | Live credentials + `[langgraph]` |
 
 ## Run it
 
@@ -22,7 +22,7 @@ make demo N=09          # needs live credentials
   This example needs a live gateway. The local simulator replays a captured
   `/responses` completion and will not decide to call tools, so there is no
   offline version. Without credentials it exits cleanly with setup guidance.
-  The refusal path *can* run offline: [Simulating refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/simulating-refusals.md)
+  The refusal path *can* run offline: [Simulating refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/simulating-refusals.md)
   drives the same `ChatOpenAI` through `donkey.simulate()`.
 
 ## Key code
@@ -47,7 +47,7 @@ The model and the governed loop:
 
 ```python
 async with Donkey.from_env() as donkey:
-    model = donkey.langgraph.chat_model(MODEL, temperature=0)
+    model = donkey.langgraph.chat_model(MODEL)
     agent = create_agent(model, tools=[check_inventory, get_price])
 
     async with donkey.run(id="sku-lookup"):
@@ -61,14 +61,24 @@ async with Donkey.from_env() as donkey:
     last = donkey.last_call
 ```
 
-After the loop, `donkey.budget` reflects the run's real consumption across
-every model call, and `donkey.last_call` describes the most recent one — who
-served it, what they served and what it cost. The adapter targets the
+After the loop, `donkey.budget` is the proxy's token window for this client
+id, read in-band from every model call in the loop. It is shared, not a
+per-run total, and it stays unobserved on a proxy without a token rate-limit
+policy.
+
+`donkey.last_call` reads `UNOBSERVED` here, by design. It is scoped per
+`asyncio` task, so parallel calls never overwrite each other's record, and
+LangGraph makes each model call on its own task, so the record never reaches
+the caller's scope. On a direct call it is populated (see
+[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md)); a run-level record of every call is tracked
+in [#613](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/613).
+
+The adapter targets the
 `/responses` route (`use_responses_api=True`), the same one `donkey.openai()`
 uses. `DEMO_MODEL` defaults to `gpt-4o-mini` in this example; set it to a model
 your proxy routes.
 
-If the gateway is unavailable, [Framework objects](https://donkey-development-kit.github.io/donkey-development-kit/examples/framework-objects.md)
+If the gateway is unavailable, [Framework objects](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/framework-objects.md)
 constructs the same real framework objects with no network.
 
 **Learn more:** [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)

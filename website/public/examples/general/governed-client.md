@@ -227,7 +227,7 @@ Note the base URL has no `/v1`, and auth is a `client_id` / `client_secret`
 header pair rather than a bearer token. There is deliberately no `id=` on
 `@donkey.governed`: a fixed id would collapse unrelated calls into one
 correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
-[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/examples/telemetry.md)).
+[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/telemetry.md)).
 
 **Learn more:** [Introduction](https://donkey-development-kit.github.io/donkey-development-kit/) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
 

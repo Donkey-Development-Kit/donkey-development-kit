@@ -1,0 +1,146 @@
+---
+description: Three OpenAI Agents SDK scripts — an OpenAIResponsesModel on the governed client, a tool-calling Runner, typed refusals and the local simulator.
+---
+
+import { Output } from '../../components'
+
+# OpenAI Agents SDK
+
+The agent is given `OpenAIResponsesModel(model=…,
+**donkey.openai_agents.connection_kwargs())`. `connection_kwargs()` is one
+key, `openai_client`, a governed `AsyncOpenAI`, so the agent stays on the
+live-verified `/responses` route and the SDK owns the transport.
+`donkey.openai_agents.model()` builds a chat-completions model instead. The
+`Runner` re-raises the openai error unchanged, so `classify()` types it.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `agent-and-tool.py` | An `Agent` with a `@function_tool` run by `Runner.run` | Proxy credentials (live only) |
+| 02 | `typed-refusals-simulated.py` | Four simulated refusals through `Runner.run` | Nothing — any placeholder values |
+| 03 | `start-gateway.py` | An agent over the local simulator | `[local]` |
+
+## Install
+
+Follow the [examples setup](/examples#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,local,openai-agents]"
+set -a; source .env.local; set +a
+```
+
+Every script calls `set_tracing_disabled(True)` so the Agents SDK does not
+export traces to api.openai.com.
+
+## 01 — Agent and tool
+
+```bash
+python "demos/human-made/openai-agents/01 - agent-and-tool.py"
+```
+
+A `weather` agent with one `@function_tool` (`get_weather`), run by
+`Runner.run` inside `donkey.run(...)`. The runner makes two model calls: one
+that decides to call the tool, one that writes the answer.
+
+```python
+model = OpenAIResponsesModel(model="gpt-4o", **donkey.openai_agents.connection_kwargs())
+agent = Agent(
+    name="weather",
+    instructions="Answer in one short sentence. Use the tool for weather.",
+    model=model,
+    tools=[get_weather],
+)
+
+async with donkey.run(id="agents-sdk-weather"):
+    result = await Runner.run(agent, "What is the weather in Paris?")
+
+print(result.final_output)
+print("model calls ", result.context_wrapper.usage.requests)
+print("total_tokens", result.context_wrapper.usage.total_tokens)
+print("last_call   ", donkey.last_call.status.value)
+```
+
+**Live only** — the simulator never calls tools. **You should see:** the final
+answer, `model calls 2`, total tokens from the Agents SDK's own usage, and
+`last_call unobserved`. The runner calls the model on its own task, so trust
+the SDK usage line here.
+
+## 02 — Typed refusals, simulated
+
+```bash
+python "demos/human-made/openai-agents/02 - typed-refusals-simulated.py"
+```
+
+`donkey.simulate(...)` replays each captured refusal while `Runner.run`
+drives the agent. The runner lets the `openai.APIStatusError` through, and
+`classify()` turns its response into the typed refusal.
+
+```python
+for refusal in REFUSALS:
+    async with donkey.run(id=f"agents-simulated-{refusal.__name__}"):
+        with donkey.simulate(refusal):
+            try:
+                await Runner.run(agent, "hello")
+            except openai.APIStatusError as err:
+                error = classify(err.response)
+                print(type(error).__name__, error.policy, error.correlation_id)
+```
+
+<Output label="Output">
+```text
+Error getting response
+Error getting response
+Error getting response
+Error getting response
+PIIDetected pii-detection agents-simulated-PIIDetected
+PromptInjectionBlocked prompt-injection-protection agents-simulated-PromptInjectionBlocked
+ContentSafetyBlocked content-safety agents-simulated-ContentSafetyBlocked
+TokenBudgetExceeded token-rate-limit agents-simulated-TokenBudgetExceeded
+```
+</Output>
+
+The `Error getting response` lines are the Agents SDK logging each failed
+model call to stderr before it re-raises; they are not from DDK.
+
+## 03 — An agent over the local simulator
+
+```bash
+python "demos/human-made/openai-agents/03 - start-gateway.py"
+```
+
+No gateway and no credentials. `start_gateway()` with `pii_block:every=2`
+over two support tickets: the first gets the simulator's canned completion,
+the second is the captured PII 403.
+
+```python
+gw = start_gateway()
+gw.set_scenarios("pii_block:every=2")
+cfg = DonkeyConfig(llm_proxy_url=gw.url, llm_proxy_client_id=..., llm_proxy_client_secret=...)
+
+async with Donkey(cfg) as donkey:
+    agent = Agent(
+        name="triage",
+        instructions="Reply in one sentence.",
+        model=OpenAIResponsesModel(model="gpt-4o", **donkey.openai_agents.connection_kwargs()),
+    )
+    for ticket in TICKETS:
+        try:
+            result = await Runner.run(agent, ticket)
+            print("ok     ", result.final_output[:60])
+        except openai.APIStatusError as err:
+            error = classify(err.response)
+            print("refused", type(error).__name__, error.entities)
+```
+
+<Output label="Output">
+```text
+Error getting response
+ok      A sleepy unicorn named Luma painted soft silver stars across
+refused PIIDetected ['Email']
+requests 2
+```
+</Output>
+
+**Learn more:** [OpenAI Agents SDK](/frameworks/openai)
+
+**Source:**
+[`demos/human-made/openai-agents/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai-agents)
