@@ -3,7 +3,7 @@ description: A stock OpenAI client next to a governed one, the same PII refusal 
 ---
 
 import { Callout } from 'nextra/components'
-import { Output } from '../../components'
+import { Output } from '../../../components'
 
 # Governed client
 
@@ -243,7 +243,7 @@ Note the base URL has no `/v1`, and auth is a `client_id` / `client_secret`
 header pair rather than a bearer token. There is deliberately no `id=` on
 `@donkey.governed`: a fixed id would collapse unrelated calls into one
 correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
-[Telemetry](/examples/telemetry)).
+[Telemetry](/examples/general/telemetry)).
 
 **Learn more:** [Introduction](/) · [Model access](/frameworks) · [CLI & decorators](/cli)
 

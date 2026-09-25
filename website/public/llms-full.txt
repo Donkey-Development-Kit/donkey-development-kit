@@ -2800,7 +2800,7 @@ reference](https://donkey-development-kit.github.io/donkey-development-kit/refer
 The same record also carries the call's identity and usage: `request_id` (the
 upstream provider's id), `api_instance_id` and `environment_id` (which gateway
 instance served it), and the token counts including cached and reasoning
-tokens. The [gateway identity example](https://donkey-development-kit.github.io/donkey-development-kit/examples/gateway-identity.md) walks
+tokens. The [gateway identity example](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md) walks
 through every field.
 
 ### When `last_call` is unavailable
@@ -3013,7 +3013,7 @@ The selectable shapes are `token-rate-limit`, `pii-detected`,
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see
-[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
+[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
 Any other `model` value gets the default model-based happy path. The
 `donkey-sim/` prefix is a simulator-only control surface; the real gateway never
 interprets it.
@@ -4562,24 +4562,31 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/examples
 The [DDK demos repo](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos)
 holds runnable examples for every piece of the SDK: the governed client, typed
 refusals, budget pacing, simulation, the conformance suite, telemetry,
-framework objects and `last_call`. Each page in this section covers one of
-those, pairs the examples that show it, and gives you the command to run them.
+framework objects and `last_call`. The section has two parts:
+
+- **[General](#general)** — one page per SDK capability, pairing the examples
+  that show it with the command to run them.
+- **[By framework](#by-framework)** — one page per framework, walking through
+  every script in its folder: what it shows, what it needs, and what it
+  prints.
 
 The repo ships **two suites on purpose**. They cover the same SDK, but they are
 not interchangeable:
 
-| | Narrative demos | OpenAI scripts |
+| | Narrative demos | Framework scripts |
 | --- | --- | --- |
-| **Where** | [`demos/claude-made/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made) | [`demos/human-made/openai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai) |
-| **Best for** | A room, a recording, or CI that must stay offline | A terminal you type in, or paste from |
-| **Shape** | Numbered demos (`01`–`10`), each a `demo.py` + README told in acts | Straight-line OpenAI scripts (`01`–`11`), one file each |
-| **Runner** | `make demo N=03`, `make offline` | `python "demos/human-made/openai/<file>.py"` |
-| **Network** | Nine of ten run offline against the local simulator; demo 09 needs a live gateway | Most need gateway credentials; 09 and 11 need no gateway |
+| **Where** | [`demos/claude-made/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made) | [`demos/human-made/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made), one folder per framework |
+| **Best for** | A room, a recording, or CI that must stay offline | A terminal you type in, or paste into your own project |
+| **Shape** | Numbered demos (`01`–`10`), each a `demo.py` + README told in acts | Short, top-to-bottom scripts, one file each, across ten frameworks |
+| **Runner** | `make demo N=03`, `make offline` | `python "demos/human-made/<framework>/<file>.py"` |
+| **Network** | Nine of ten run offline against the local simulator; demo 09 needs a live gateway | Most need gateway credentials; the `*-simulated`, `start-gateway` and `gateway-unavailable` scripts need none |
 | **Output** | Masked by default | Not masked — use on a private terminal |
 
 Every narrative demo takes `--target mock` (the default, pointing at the local
-simulator) or `--target live` (your real credentials). The OpenAI scripts have
-no harness: they use the same environment you already use for the SDK.
+simulator) or `--target live` (your real credentials). The framework scripts
+have no harness: they use the same environment you already use for the SDK.
+Frameworks pin conflicting dependencies, so one virtual environment per
+framework is the safe default; each framework page has its install line.
 
 ## Setup
 
@@ -4633,7 +4640,7 @@ python -m pip install -i https://test.pypi.org/simple/ \
 ## Live credentials
 
 The offline narrative demos need none of this. Live runs, the LangGraph agent
-example and most OpenAI scripts need three variables for the governed LLM
+example and most framework scripts need three variables for the governed LLM
 proxy, plus the model to ask for:
 
 | Variable | What it is |
@@ -4650,16 +4657,20 @@ cp .env.example .env.local     # .env.local is git-ignored
 ```
 
 A shell `export` always wins over a file value, so you can skip the file and
-the OpenAI scripts do not (the SDK never reads dotenv files on its own), so
+the framework scripts do not (the SDK never reads dotenv files on its own), so
 
 ```bash
 set -a; source .env.local; set +a
 python "demos/human-made/openai/02 - basic-responses-gw.py"
 ```
 
-  The OpenAI scripts hardcode their model ids (mostly `gpt-4o`). If your proxy
-  routes a different model, expect a routing refusal or a `ModelSubstituted`
-  until the script's model matches the proxy's.
+  Three things trip people up with the framework scripts. **The model id:**
+  they hardcode `gpt-4o`, while the provisioned DDK proxies route
+  `gpt-5-mini` — change the string, or expect a routing refusal or a
+  `ModelSubstituted`. **Filenames have spaces:** always quote the path.
+  **Policies decide refusals:** a `typed-refusals-live` script prints `NO
+  REFUSAL` when the proxy does not have that policy applied — that is the
+  proxy telling the truth, not the script failing.
 
 ## Commands
 
@@ -4701,11 +4712,11 @@ make scan       # everything tracked
 make hooks      # then it runs on every commit
 ```
 
-  **The OpenAI scripts do not mask anything.** They print completions and
+  **The framework scripts do not mask anything.** They print completions and
   error strings exactly as the SDK returned them. Run them on a private
   terminal, not on a shared screen or recording.
 
-## Browse by purpose
+## General
 
   
     Stock client versus governed client, then `@donkey.governed` and `@donkey.tool`.
@@ -4733,10 +4744,50 @@ make hooks      # then it runs on every commit
   
   
     Who served the call, what it routed to, what it cost — and `ModelSubstituted`.
+  
+
+## By framework
+
+Each framework page covers one folder of
+[`demos/human-made/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made).
+How much DDK can do depends on who owns the HTTP transport: where the SDK does
+(OpenAI, LangGraph, OpenAI Agents SDK, Strands, Anthropic), you get `last_call`,
+run ids and `simulate()`; where the framework does, only the credential
+headers go on the wire.
+
+  
+    The stock client: `last_call`, refusals, pacing, spans, streaming, guardrails, JWT wallets.
+  
+  
+    A real `ChatOpenAI`, `typed_refusals()` out of `create_agent`, the run id in tools.
+  
+  
+    `OpenAIResponsesModel` on the governed client, `Runner.run` with a tool.
+  
+  
+    `OpenAIChatClient` with the governed headers; refusals from `ChatClientException`.
+  
+  
+    `OpenAIModel(client=donkey.openai())`, tools, and a 429 Strands retries itself.
+  
+  
+    `donkey.crewai.llm()` for a direct call and a crew; typed refusals.
+  
+  
+    An `OpenAILike` for `complete()` and `chat()`; typed refusals.
+  
+  
+    A `LiteLlm` model in an `InMemoryRunner` — and why its refusals are not typed.
+  
+  
+    The native client on `/v1/messages`, `last_call` and simulated refusals.
+  
+  
+    Plain `httpx` against a `Format=Gemini` proxy, errors typed by `classify()`.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/governed-client.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/governed-client.md
 
 # Governed client
 
@@ -4967,7 +5018,7 @@ Note the base URL has no `/v1`, and auth is a `client_id` / `client_secret`
 header pair rather than a bearer token. There is deliberately no `id=` on
 `@donkey.governed`: a fixed id would collapse unrelated calls into one
 correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
-[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/examples/telemetry.md)).
+[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/telemetry.md)).
 
 **Learn more:** [Introduction](https://donkey-development-kit.github.io/donkey-development-kit/) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
 
@@ -4979,7 +5030,7 @@ correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/typed-refusals.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/typed-refusals.md
 
 # Typed refusals
 
@@ -5253,7 +5304,7 @@ undiscriminated `content-moderation` 4xx falls through to a generic
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/budget-and-pacing.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/budget-and-pacing.md
 
 # Budget & pacing
 
@@ -5414,7 +5465,7 @@ transport — retrying only burns the same window.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/simulating-refusals.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/simulating-refusals.md
 
 # Simulating refusals
 
@@ -5601,7 +5652,7 @@ exhaustion until the window rolls over.
   `simulate(ToolInvocationError)` and `simulate(GatewayUnavailable)` raise
   `ValueError` instead of inventing one — a transport failure has no HTTP
   response to replay. To provoke `GatewayUnavailable`, point at a dead origin
-  (see [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/typed-refusals.md)).
+  (see [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/typed-refusals.md)).
 
 Because the injection sits on the transport, it also reaches framework objects
 the SDK does not wrap — demo 04 drives `donkey.langgraph.chat_model("gpt-4o")`
@@ -5615,7 +5666,7 @@ through `simulate(PIIDetected)` and gets the same taxonomy back.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/conformance.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/conformance.md
 
 # Conformance suite
 
@@ -5843,7 +5894,7 @@ The naive agent in the same file retries three times and re-raises a bare
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/telemetry.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/telemetry.md
 
 # Telemetry
 
@@ -6116,7 +6167,7 @@ with donkey.run(id="otel-zero-config", team="cx", project="welcome"):
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/framework-objects.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/framework-objects.md
 
 # Framework objects & model handles
 
@@ -6350,7 +6401,7 @@ allow-list does not include — [`donkey doctor`](https://donkey-development-kit
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph-agent.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/langgraph-agent.md
 
 # LangGraph agent
 
@@ -6376,7 +6427,7 @@ make demo N=09          # needs live credentials
   This example needs a live gateway. The local simulator replays a captured
   `/responses` completion and will not decide to call tools, so there is no
   offline version. Without credentials it exits cleanly with setup guidance.
-  The refusal path *can* run offline: [Simulating refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/simulating-refusals.md)
+  The refusal path *can* run offline: [Simulating refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/simulating-refusals.md)
   drives the same `ChatOpenAI` through `donkey.simulate()`.
 
 ## Key code
@@ -6424,7 +6475,7 @@ policy.
 `asyncio` task, so parallel calls never overwrite each other's record, and
 LangGraph makes each model call on its own task, so the record never reaches
 the caller's scope. On a direct call it is populated (see
-[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/gateway-identity.md)); a run-level record of every call is tracked
+[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md)); a run-level record of every call is tracked
 in [#613](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/613).
 
 The adapter targets the
@@ -6432,7 +6483,7 @@ The adapter targets the
 uses. `DEMO_MODEL` defaults to `gpt-4o-mini` in this example; set it to a model
 your proxy routes.
 
-If the gateway is unavailable, [Framework objects](https://donkey-development-kit.github.io/donkey-development-kit/examples/framework-objects.md)
+If the gateway is unavailable, [Framework objects](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/framework-objects.md)
 constructs the same real framework objects with no network.
 
 **Learn more:** [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)
@@ -6442,7 +6493,7 @@ constructs the same real framework objects with no network.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/gateway-identity.md
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md
 
 # Gateway identity (last_call)
 
@@ -6705,13 +6756,1591 @@ print("routing_score", last.routing_score)  # 0.62
 
 ---
 
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md
+
+# OpenAI
+
+`donkey.openai()` returns the stock `openai.AsyncOpenAI` (or `OpenAI` with
+`sync=True`) on the SDK's governed transport. Because the SDK owns every
+request, everything works here: `last_call`, the budget, spans, correlation
+ids, typed refusals and `simulate()`. The route is `/responses`, which is
+live-verified on the DDK proxies. This is the reference suite — the other
+framework pages are measured against it.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-responses-no-gw.py` | Stock OpenAI, no SDK — the baseline | `OPENAI_API_KEY` |
+| 02 | `basic-responses-gw.py` | The same call governed, then `last_call` | Proxy credentials |
+| 03 | `typed-refusals-simulated.py` | Five captured refusals replayed in-process | Nothing — any placeholder values |
+| 04 | `typed-refusals-live.py` | Four real refusals on a blocking client | Proxy + PII and token-rate policies |
+| 05 | `budget_and_pacing.py` | `pace(reserve=)` stopping a call locally, `wait_for_reset()` | Proxy + token-rate policy |
+| 06 | `otel exporter simple.py` | Donkey riding a host `TracerProvider` | Proxy + `[otel]` + OTLP endpoint |
+| 07 | `otel exporter advanced.py` | Three runs with different cost tags, one refused | Proxy + `[otel]` + OTLP + PII policy |
+| 08 | `last-call.py` | The full `last_call` record and `ModelSubstituted` | Proxy credentials |
+| 09 | `governed-and-tool.py` | `@donkey.governed` and `@donkey.tool` | Nothing |
+| 10 | `zero-config-otlp.py` | `Donkey.from_env()` installing OTLP itself | Proxy, optional OTLP endpoint |
+| 11 | `gateway-unavailable.py` | A dead origin raising `GatewayUnavailable` | Nothing |
+| 12 | `streaming.py` | `stream=True`, usage after the terminal event | Proxy credentials (live only) |
+| 13 | `regex-and-content-safety.py` | Regex prompt guard and Azure Content Safety | Proxy + both policies |
+| 14 | `jwt-wallet.py` | `llm_proxy_auth="jwt"` with a rotating token | Wallet-backed proxy + IdP JWT |
+| 15 | `start-gateway.py` | The simulator on a real port, hit with `httpx` | `[local]` |
+| 16 | `bedrock-guardrails.py` | Bedrock Guardrails as `ContentSafetyBlocked` | Proxy + Bedrock Guardrails policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,local]"
+python -m pip install -e "../donkey-development-kit/python[otel]"   # 06, 07, 10 only
+set -a; source .env.local; set +a                                    # proxy credentials
+```
+
+  The scripts ask for `gpt-4o`. The provisioned DDK proxies route
+  `gpt-5-mini` — change the model string to one your proxy routes, or expect
+  a routing refusal or `ModelSubstituted`.
+
+## 01 — Stock OpenAI, no gateway
+
+```bash
+export OPENAI_API_KEY=…
+python "demos/human-made/openai/01 - basic-responses-no-gw.py"
+```
+
+The baseline every other script is compared to: `openai.AsyncOpenAI()` with no
+`base_url`, talking to api.openai.com. It prints a three-word greeting and
+nothing else — there is no SDK here.
+
+## 02 — The same call, governed
+
+```bash
+python "demos/human-made/openai/02 - basic-responses-gw.py"
+```
+
+One line changes: the client comes from `donkey.openai()`. The call is
+identical, and afterwards `donkey.last_call` says what actually happened.
+
+```python
+async with Donkey.from_env() as donkey:
+    client = donkey.openai()   # the native AsyncOpenAI, on the governed transport
+
+    response = await client.responses.create(
+        model="gpt-4o",
+        input="Say hello in exactly three words.",
+    )
+
+    print(response.output_text)
+    last = donkey.last_call
+    print("last_call.status      ", last.status.value)
+    print("last_call.served_model", last.served_model)
+    print("last_call.total_tokens", last.total_tokens)
+    print("last_call.substituted ", last.substituted)
+```
+
+**You should see:** the reply, then `last_call.status observed`, the served
+model, total tokens and `substituted False` — or `True` if the proxy served a
+different model than you asked for.
+
+## 03 — Typed refusals, simulated
+
+```bash
+python "demos/human-made/openai/03 - typed-refusals-simulated.py"
+```
+
+`donkey.simulate(...)` replays the captured gateway fixture for each refusal
+in-process, so the refusal branch runs with no network and no policy to
+provoke. Each error is run through `classify()` and printed with its policy,
+remediation, correlation id (the `donkey.run(id=…)` around it), call id and
+request id. It ends by asking for `simulate(GatewayUnavailable)`, which
+refuses: there is no response to replay for a request that never arrived.
+
+```python
+for refusal in REFUSALS:
+    async with donkey.run(id=f"typed-refusals-{refusal.__name__}"):
+        with donkey.simulate(refusal):
+            try:
+                await client.responses.create(model="gpt-4o", input="...")
+            except openai.APIStatusError as err:
+                report(classify(err.response))
+```
+
+```text
+PIIDetected  (policy: pii-detection)
+  Request contains PII data: [
+  {
+    "pii_type": "Email",
+    "value": "john.doe@example.com",
+    "start": 12,
+    "end": 32
+  }
+]
+  remediation    The PII-detection policy blocked this request because the prompt (or completion) contained personally identifiable information. Remove or redact the flagged values, or relax the policy's entity list / action in API Manager.
+  correlation_id typed-refusals-PIIDetected
+  call_id        60dfc226ece343f3b266ac13cab99edf
+  request_id     None
+  entities       Email
+
+PromptInjectionBlocked  (policy: prompt-injection-protection)
+  Request blocked by the injection-protection policy (400).
+  remediation    The prompt-injection-protection policy flagged this request as a prompt-injection attempt. Review and sanitise the untrusted input in the prompt, or adjust the policy's sensitivity in API Manager.
+  correlation_id typed-refusals-PromptInjectionBlocked
+  call_id        b317e2e1535a429da48541292612ba00
+  request_id     None
+
+ContentSafetyBlocked  (policy: content-safety)
+  Request blocked by Azure Content Safety (severity_hate, severity_violence) (403).
+  remediation    The Azure Content Safety content-moderation policy blocked this request. Revise the flagged content, or adjust the policy's categories / severity thresholds in API Manager.
+  correlation_id typed-refusals-ContentSafetyBlocked
+  call_id        df36871604c9408788a1aa37874365a7
+  request_id     None
+  categories     severity_hate, severity_violence
+
+TokenBudgetExceeded  (policy: token-rate-limit)
+  Token rate limit or budget exceeded (429).
+  remediation    A token-rate-limit policy exhausted the budget window. Wait for it to reset (see retry_after / x-token-reset) or request an increase in API Manager.
+  correlation_id typed-refusals-TokenBudgetExceeded
+  call_id        e7580506e64c44cd8f54ef00a5134188
+  request_id     None
+  retry_after    41.728
+
+PolicyViolation  (policy: unknown)
+  Request refused by a gateway policy; shape unconfirmed (status 400). It matched no documented rejection contract.
+  remediation    This refusal matched no documented rejection shape, so its contract is unconfirmed (#184, #253). It is terminal and was NOT retried. Please file an issue on the donkey-development-kit repo with the response status, headers and body (all carried on this exception's .response) so the shape can be typed.
+  correlation_id typed-refusals-PolicyViolation
+  call_id        6910b17935bf4820a651d7fc7794eac5
+  request_id     None
+
+simulate(GatewayUnavailable)
+  simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AuthError, ContentSafetyBlocked, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
+```
+
+`request_id` is `None` throughout because a simulated response carries no
+gateway request id; `call_id` is the SDK's own id and is always set.
+
+## 04 — Typed refusals, live
+
+```bash
+python "demos/human-made/openai/04 - typed-refusals-live.py"
+```
+
+Four real refusals on the blocking client (`donkey.openai(sync=True)`, no
+`async`): `UpstreamRequestError` from a model that does not exist,
+`PIIDetected` from a contact record, `TokenBudgetExceeded` from a long answer,
+and `AuthError` from a second `Donkey` built with deliberately wrong
+credentials via `cfg.with_overrides(...)`. This script has its own
+`MODEL = "gpt-4-turbo-2024-04-09"` constant at the top.
+
+```python
+with donkey.run(id="live-refusals-PIIDetected"):
+    try:
+        raw = client.responses.with_raw_response.create(model=MODEL, input=PII_PROMPT)
+    except openai.APIStatusError as err:
+        error = classify(err.response)
+        print(f"  REFUSED        {type(error).__name__} (HTTP {err.response.status_code})")
+        print(f"  entities       {getattr(error, 'entities', None)}")
+    except openai.APIConnectionError as err:
+        print(f"  UNREACHABLE    {type(err.__cause__ or err).__name__}")
+    else:
+        print(f"  NO REFUSAL     (HTTP {raw.status_code})")
+```
+
+**Needs:** `llm-pii-detection-policy` with `Email` among its entities and
+action `Reject` (the default, `Log`, lets it through), and
+`llm-token-rate-limit` with a tiny `maximumTokens` for the budget case. The
+upstream and auth cases need nothing extra.
+
+**You should see:** a `REFUSED  (HTTP n)` block per case. A case whose
+policy is not applied prints `NO REFUSAL` with the served model or the budget
+window instead — that is the proxy telling the truth, not the script failing.
+
+## 05 — Budget & pacing
+
+```bash
+python "demos/human-made/openai/05 - budget_and_pacing.py"
+```
+
+`donkey.budget.pace(reserve=0.99999)` means "keep almost the whole window".
+The first call is let through because nothing has been observed yet; its
+response carries the token window in-band. The second `pace()` sees that any
+usage breaches the reserve and raises `BudgetReserveReached` locally — the
+request never leaves the process. The script then observes a crafted
+one-second window and `wait_for_reset()` sleeps until it resets.
+
+```python
+async with donkey.budget.pace(reserve=0.99999):
+    response = await client.responses.create(model="gpt-4o", input="...")
+    print("after request 1, budget remaining is", donkey.budget.remaining)
+
+try:
+    async with donkey.budget.pace(reserve=0.99999):
+        await client.responses.create(model="gpt-4o", input="...")
+except BudgetReserveReached as exc:
+    print("stopped locally [in-script]", exc.fraction_used, exc.reserve)
+    await donkey.budget.wait_for_reset()
+```
+
+**Needs:** a proxy that sends the token-window header (for example
+`ddk-token-rate-limit`). **You should see:** the budget fields after request 1,
+then `stopped locally [in-script]` and `Ended script after reset`. Without the
+header every field is `None` and the second call simply goes through.
+
+## 06 — OpenTelemetry, host-owned provider
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://<collector>  OTEL_EXPORTER_OTLP_HEADERS=…
+python "demos/human-made/openai/06 - otel exporter simple.py"
+```
+
+The process installs its own `TracerProvider` with an OTLP exporter before
+building `Donkey`, so the SDK rides that provider instead of installing one.
+Two calls run inside `donkey.run(id="otel-demo")`.
+
+```python
+provider = TracerProvider(resource=Resource.create({"service.name": "donkey-dev-kit"}))
+provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+donkey = Donkey.from_env()
+client = donkey.openai(sync=True)
+with donkey.run(id="otel-demo"):
+    client.responses.create(model="gpt-4o", input="Say hello in exactly three words.")
+    client.responses.create(model="gpt-4o", input="Say goodbye in exactly three words.")
+```
+
+**You should see:** two replies in the terminal, and in your collector two
+spans sharing the correlation id `otel-demo` under `service.name
+donkey-dev-kit`. Nothing about spans is printed locally.
+
+## 07 — OpenTelemetry with cost tags
+
+```bash
+python "demos/human-made/openai/07 - otel exporter advanced.py"
+```
+
+Three `donkey.run(...)` scopes, each tagged with a different `team` /
+`project`: a greeter that succeeds, a support agent whose prompt trips the PII
+policy, and a researcher on a second model. Budget and `last_call` are printed
+between them.
+
+```python
+with donkey.run(id="agent-greeter", team="cx", project="welcome"):
+    reply = client.responses.create(model=MODEL, input="Say hello in exactly three words.")
+
+with donkey.run(id="agent-support", team="cx", project="tickets"):
+    try:
+        client.responses.create(model=MODEL, input=PII_PROMPT)
+    except openai.APIStatusError as err:
+        print("support:", type(classify(err.response)).__name__)
+```
+
+**You should see:** `greeter:` with its reply, budget and `last_call`;
+`support: PIIDetected ['Email']` (or `no refusal` without the policy);
+`researcher:`; then the final budget. In the collector: three traces, one of
+them an `ERROR` span naming the PII policy.
+
+## 08 — The full `last_call` record
+
+```bash
+python "demos/human-made/openai/08 - last-call.py"
+```
+
+Before any call `last_call` is `unobserved`. After one, it carries status,
+request id, requested versus served model, provider, routing type, fallback,
+substitution, and total, cached and reasoning tokens. The second half builds
+a client with `on_model_substitution="raise"`, which turns a silent model swap
+into an exception.
+
+```python
+strict = Donkey.from_env(on_model_substitution="raise")
+try:
+    strict.openai(sync=True).responses.create(model="gpt-4o", input="...")
+    print("NO RAISE  substituted", strict.last_call.substituted)
+except Exception as err:
+    hit = err if isinstance(err, ModelSubstituted) else err.__cause__
+    print("requested_model   ", hit.requested_model)
+    print("served_model      ", hit.served_model)
+```
+
+**You should see:** `before any call unobserved`, then the populated record.
+The second half prints `NO RAISE` when the proxy served the model you asked
+for, or `RAISED … ModelSubstituted` with both model ids.
+
+## 09 — `@donkey.governed` and `@donkey.tool`
+
+```bash
+python "demos/human-made/openai/09 - governed-and-tool.py"
+```
+
+No gateway, decorators only. `@donkey.governed(team=…, project=…)` gives each
+call of the handler its own run id and cost tags, and clears them afterwards.
+`@donkey.tool` records a callable in the tool registry without wrapping it —
+the function object is unchanged — and rejects a tool with no docstring,
+because an undescribed tool is useless to a model.
+
+```python
+@donkey.governed(team="support", project="triage")
+def handle_ticket(ticket: str) -> str:
+    print("run id inside", current_correlation_id())
+    print("cost tags    ", current_cost_tags())
+    return ticket
+
+@donkey.tool
+def lookup_sku(sku: str) -> str:
+    """Return stock for a product SKU."""
+    return "42"
+```
+
+```text
+run id before None
+run id inside 4a2ff59b241a493ca27886058e97e52e
+cost tags     CostTags(team='support', project='triage', env=None, enduser_id=None)
+run id inside 13e6ef2bf82e4b83b4cb96c387699484
+cost tags     CostTags(team='support', project='triage', env=None, enduser_id=None)
+run id after  None
+lookup_sku('AF-1001') 42
+same function object  True
+registered            lookup_sku (sku: str) -> str
+undescribed tool      @donkey.tool requires a docstring on 'undescribed': an undescribed tool is useless to a model and to the registry (#200). Add a short description of what the tool does.
+```
+
+## 10 — Zero-config OTLP
+
+```bash
+python "demos/human-made/openai/10 - zero-config-otlp.py"                                  # inert
+OTEL_EXPORTER_OTLP_ENDPOINT=https://<collector> python "demos/human-made/openai/10 - zero-config-otlp.py"
+```
+
+With no `TracerProvider` in the process, `Donkey.from_env()` installs an OTLP
+exporter itself when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, and stays silent
+when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
+
+**You should see:** the endpoint (or `(unset — Donkey.from_env() will not
+install an exporter)`), the reply, and `last_call observed <model>`.
+
+## 11 — Gateway unavailable
+
+```bash
+python "demos/human-made/openai/11 - gateway-unavailable.py"
+```
+
+A governed client aimed at `127.0.0.1:9`, where nothing listens, with
+`max_retries=0` and a two-second timeout. There is no HTTP response to
+classify, so the transport raises the typed `GatewayUnavailable` — a long-running
+agent can tell "lost the gateway" from a policy refusal without matching raw
+`httpx` exceptions. The script reads it from the exception or from
+`__cause__`, whichever holds it.
+
+```python
+try:
+    client.responses.create(model="gpt-4o", input="hello")
+except Exception as err:
+    hit = err if isinstance(err, GatewayUnavailable) else err.__cause__
+    if isinstance(hit, GatewayUnavailable):
+        print("base_url   ", hit.base_url)
+        print(hit.remediation)
+```
+
+```text
+raised GatewayUnavailable
+cause  GatewayUnavailable
+base_url    http://127.0.0.1:9
+request_id  None
+call_id     787cba4a82ed421bb49c786049401575
+The gateway could not be reached and no HTTP response came back. The three usual causes: (1) the host is unreachable — DNS failure or the gateway is down; (2) the configured base URL is wrong; or (3) network egress to the gateway is blocked — a firewall or air-gapped environment. Run `donkey doctor` to diagnose connectivity, and check `base_url` on this error against your gateway's address.
+```
+
+`request_id` is `None` because no response ever came back; `call_id` is set
+because the SDK assigned it before sending.
+
+## 12 — Streaming
+
+```bash
+python "demos/human-made/openai/12 - streaming.py"
+```
+
+`responses.create(stream=True)`; the `response.output_text.delta` events are
+joined, and `last_call` usage is read after the terminal event.
+
+**Live only** — the simulator's stream is truncated SSE, so terminal usage
+would be a lie there. **You should see:** the reply, `observed`, the served
+model and total tokens.
+
+## 13 — Regex prompt guard and Azure Content Safety
+
+```bash
+python "demos/human-made/openai/13 - regex-and-content-safety.py"
+```
+
+Two live guardrails. A "reveal your system prompt" prompt trips
+`regex-prompt-guard` and comes back as `PromptInjectionBlocked`; a hateful
+prompt trips Azure Content Safety and comes back as `ContentSafetyBlocked`
+with its categories.
+
+**Needs:** a proxy with both policies (for example `ddk-injection-guard` and
+`ddk-azure-content-safety`; point `DONKEY_LLM_PROXY_URL` at each in turn if
+they are separate proxies). **You should see:** the type and policy per case,
+or `NO REFUSAL`.
+
+## 14 — JWT wallet auth
+
+```bash
+export DONKEY_LLM_PROXY_WALLET_CLIENT_ID=…  DONKEY_LLM_JWT=…
+python "demos/human-made/openai/14 - jwt-wallet.py"
+```
+
+`llm_proxy_auth="jwt"` sends `X-Client-Id` plus a JWT and no client secret.
+The JWT is never a config field: it is passed as an auth provider, so it can
+rotate. JWT mode is async-only.
+
+```python
+cfg = DonkeyConfig.from_env().with_overrides(
+    llm_proxy_auth="jwt",
+    llm_proxy_wallet_client_id=os.environ["DONKEY_LLM_PROXY_WALLET_CLIENT_ID"],
+)
+async with Donkey(cfg, llm_auth=StaticToken(os.environ["DONKEY_LLM_JWT"])) as donkey:
+    client = donkey.openai()
+```
+
+**Needs:** a wallet-backed proxy URL in `DONKEY_LLM_PROXY_URL` and a JWT from
+your IdP. **You should see:** the reply, `observed` and the served model. An
+invalid JWT is an `AuthError`.
+
+## 15 — The simulator on a real port
+
+```bash
+python "demos/human-made/openai/15 - start-gateway.py"
+```
+
+`start_gateway()` boots the SDK's local simulator on an ephemeral port — the
+same fixtures as 03, but served over HTTP, so any client can hit it.
+`set_scenarios("pii_block:every=1")` makes every request the captured PII 403,
+and a stock `httpx.post` gets it.
+
+```python
+gw = start_gateway()
+gw.set_scenarios("pii_block:every=1")
+
+response = httpx.post(f"{gw.url}/responses", json={"model": "gpt-4o", "input": "hello"}, headers=...)
+print(type(classify(response)).__name__, response.status_code)
+print("requests", gw.requests_received)
+gw.close()
+```
+
+```text
+PIIDetected 403
+requests 1
+```
+
+## 16 — Amazon Bedrock Guardrails
+
+```bash
+python "demos/human-made/openai/16 - bedrock-guardrails.py"
+```
+
+Bedrock Guardrails rejecting a prompt. It is the same `ContentSafetyBlocked`
+class as Azure in 13, with the vendor in the message. Bedrock's own id rides
+`x-amzn-requestid`, not `x-request-id`, and the SDK still fills `request_id`.
+
+**Needs:** a proxy with Bedrock Guardrails applied (for example
+`ddk-bedrock-guardrails`). **You should see:** `ContentSafetyBlocked
+content-safety ['content_filter']`, the message, `x-request-id None` and a
+populated `request_id`.
+
+**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) · [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) ·
+[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) · [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md)
+
+**Source:**
+[`demos/human-made/openai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md
+
+# LangGraph
+
+`donkey.langgraph("…")` returns a real `langchain_openai.ChatOpenAI` with
+`use_responses_api=True`, so calls go to the live-verified `/responses` route
+on the governed transport. It is the one deep, conformance-gated adapter:
+`donkey.langgraph.typed_refusals()` turns the openai error a graph node raises
+back into the SDK's typed refusal.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-no-gw.py` | Stock `ChatOpenAI`, no SDK — the baseline | `OPENAI_API_KEY` |
+| 02 | `basic-gw.py` | The governed model, LangChain's own usage | Proxy credentials |
+| 03 | `typed-refusals-simulated.py` | Five refusals out of `create_agent`, typed | Nothing — any placeholder values |
+| 04 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` live | Proxy + PII policy |
+| 05 | `agent-and-tool.py` | The run id reaching a tool inside the graph | Proxy credentials (live only) |
+| 06 | `otel exporter simple.py` | Donkey riding a host `TracerProvider` | Proxy + `[otel]` + OTLP endpoint |
+| 07 | `streaming.py` | `astream` chunks and terminal usage | Proxy credentials (live only) |
+| 08 | `gateway-unavailable.py` | `GatewayUnavailable` two causes down | Nothing |
+| 09 | `start-gateway.py` | An agent loop over the local simulator | `[local]` |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,local,langgraph]" "langchain>=1.0"
+python -m pip install -e "../donkey-development-kit/python[otel]"   # 06 only
+set -a; source .env.local; set +a
+```
+
+`langchain>=1.0` provides `create_agent` (03, 04, 05, 09); it is not part of
+any `donkey-kit` extra.
+
+  **Async only.** The governed transport is `ChatOpenAI`'s
+  `http_async_client`, so every gateway script uses `ainvoke` / `astream`. A
+  sync `.invoke()` would bypass governance.
+
+## 01 — Stock ChatOpenAI, no gateway
+
+```bash
+export OPENAI_API_KEY=…
+python "demos/human-made/langgraph/01 - basic-no-gw.py"
+```
+
+`ChatOpenAI(model="gpt-4o", use_responses_api=True)` straight to
+api.openai.com. It prints a three-word greeting.
+
+## 02 — The governed model
+
+```bash
+python "demos/human-made/langgraph/02 - basic-gw.py"
+```
+
+```python
+async with Donkey.from_env() as donkey:
+    model = donkey.langgraph("gpt-4o")   # native ChatOpenAI on /responses
+
+    reply = await model.ainvoke("Say hello in exactly three words.")
+    print(reply.text)
+    print("model_name ", reply.response_metadata.get("model_name"))
+    print("usage      ", reply.usage_metadata)
+    print("last_call  ", donkey.last_call.status.value)
+```
+
+**You should see:** the reply, `model_name`, LangChain's `usage` dict, and
+`last_call unobserved`. That last line is expected: LangChain drives the call
+on its own task, and `last_call` is scoped per task, so it never reaches the
+caller. Use `usage_metadata` instead.
+
+## 03 — Typed refusals, simulated
+
+```bash
+python "demos/human-made/langgraph/03 - typed-refusals-simulated.py"
+```
+
+`donkey.simulate(...)` replays five captured refusals in-process while a
+`create_agent` graph runs. Without help, the error would surface wrapped by
+the graph; `typed_refusals()` re-raises it as the SDK type, so a plain `except
+PolicyViolation` catches all five.
+
+```python
+agent = create_agent(donkey.langgraph("gpt-4o"), tools=[])
+
+for refusal in REFUSALS:
+    async with donkey.run(id=f"lg-simulated-{refusal.__name__}"):
+        with donkey.simulate(refusal):
+            try:
+                with donkey.langgraph.typed_refusals():
+                    await agent.ainvoke({"messages": [{"role": "user", "content": "hello"}]})
+            except PolicyViolation as error:
+                print(type(error).__name__, error.policy, error.correlation_id)
+```
+
+```text
+PIIDetected pii-detection lg-simulated-PIIDetected
+PromptInjectionBlocked prompt-injection-protection lg-simulated-PromptInjectionBlocked
+ContentSafetyBlocked content-safety lg-simulated-ContentSafetyBlocked
+TokenBudgetExceeded token-rate-limit lg-simulated-TokenBudgetExceeded
+PolicyViolation unknown lg-simulated-PolicyViolation
+```
+
+The correlation id on each error is the `donkey.run(id=…)` around the graph —
+it survived LangGraph's own task scheduling.
+
+## 04 — Typed refusals, live
+
+```bash
+python "demos/human-made/langgraph/04 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: `PIIDetected` from a contact record,
+`UpstreamRequestError` from a model that does not exist, and `AuthError` from
+deliberately wrong credentials. All three are caught as `DonkeyError` out of
+`typed_refusals()`.
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case; the other two need nothing extra. **You should see:** `<case> ->
+ <policy> <entities>` per case, or `<case> NO REFUSAL` when the policy
+is not applied.
+
+## 05 — Agent and tool
+
+```bash
+python "demos/human-made/langgraph/05 - agent-and-tool.py"
+```
+
+`create_agent` with one tool (`lookup_sku`) inside `donkey.run(...)`. LangGraph
+copies the context into every node, so the tool reads the same run id the
+caller set — every model call and tool call in the loop is correlated.
+
+```python
+@tool
+def lookup_sku(sku: str) -> str:
+    """Return stock for a product SKU."""
+    print("tool sees run id", current_correlation_id())
+    return "42"
+
+async with donkey.run(id="lg-ticket-4417", team="support", project="triage"):
+    out = await agent.ainvoke({"messages": [{"role": "user", "content": "How many AF-1001 are in stock?"}]})
+```
+
+**Live only** — the simulator replays one completion and never decides to call
+a tool. **You should see:** `run id lg-ticket-4417`, then `tool sees run id
+lg-ticket-4417`, the final answer and the message count.
+
+## 06 — OpenTelemetry
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://<collector>  OTEL_EXPORTER_OTLP_HEADERS=…
+python "demos/human-made/langgraph/06 - otel exporter simple.py"
+```
+
+The host owns the `TracerProvider` and Donkey rides it, as in
+[OpenAI 06](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md#06--opentelemetry-host-owned-provider). Two
+`ainvoke` calls run in one tagged `donkey.run(...)`. **You should see:** two
+replies locally, and two spans with one correlation id in the collector.
+
+## 07 — Streaming
+
+```bash
+python "demos/human-made/langgraph/07 - streaming.py"
+```
+
+`astream` chunks are added together; usage lands on the terminal event.
+
+```python
+final = None
+async for chunk in model.astream("Say hello in exactly three words."):
+    final = chunk if final is None else final + chunk
+print(final.text)
+print("usage", final.usage_metadata)
+```
+
+**Live only** — `ChatOpenAI` rejects the simulator's truncated SSE. **You
+should see:** the reply and a `usage` dict.
+
+## 08 — Gateway unavailable
+
+```bash
+python "demos/human-made/langgraph/08 - gateway-unavailable.py"
+```
+
+A governed model aimed at `127.0.0.1:9`, where nothing listens.
+`typed_refusals()` passes transport failures through untouched, so the script
+walks `__cause__` until it finds `GatewayUnavailable`.
+
+```python
+try:
+    with donkey.langgraph.typed_refusals():
+        await donkey.langgraph("gpt-4o").ainvoke("hello")
+except Exception as err:
+    hit = err
+    while hit is not None and not isinstance(hit, GatewayUnavailable):
+        hit = hit.__cause__
+```
+
+```text
+raised GatewayUnavailable
+cause  GatewayUnavailable
+base_url http://127.0.0.1:9
+The gateway could not be reached and no HTTP response came back. The three usual causes: (1) the host is unreachable — DNS failure or the gateway is down; (2) the configured base URL is wrong; or (3) network egress to the gateway is blocked — a firewall or air-gapped environment. Run `donkey doctor` to diagnose connectivity, and check `base_url` on this error against your gateway's address.
+```
+
+## 09 — An agent loop over the local simulator
+
+```bash
+python "demos/human-made/langgraph/09 - start-gateway.py"
+```
+
+No gateway and no credentials. `start_gateway()` boots the simulator with
+`pii_block:every=2`, so every second request is the captured PII 403. A
+`create_agent` loop handles two support tickets: the first gets the replayed
+completion, the second is refused and caught as a typed `PolicyViolation`.
+
+```python
+gw = start_gateway()
+gw.set_scenarios("pii_block:every=2")
+cfg = DonkeyConfig(llm_proxy_url=gw.url, llm_proxy_client_id=..., llm_proxy_client_secret=...)
+
+async with Donkey(cfg) as donkey:
+    agent = create_agent(donkey.langgraph("gpt-4o"), tools=[], system_prompt="Reply in one sentence.")
+    for ticket in TICKETS:
+        try:
+            with donkey.langgraph.typed_refusals():
+                out = await agent.ainvoke({"messages": [{"role": "user", "content": ticket}]})
+            print("ok     ", out["messages"][-1].text[:60])
+        except PolicyViolation as error:
+            print("refused", type(error).__name__, error.entities)
+```
+
+```text
+ok      A sleepy unicorn named Luma painted soft silver stars across
+refused PIIDetected ['Email']
+requests 2
+```
+
+The "ok" text is the simulator's canned completion, not a reply to the ticket.
+
+**Learn more:** [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [LangGraph agent](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/langgraph-agent.md)
+
+**Source:**
+[`demos/human-made/langgraph/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/langgraph)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/openai-agents.md
+
+# OpenAI Agents SDK
+
+The agent is given `OpenAIResponsesModel(model=…,
+**donkey.openai_agents.connection_kwargs())`. `connection_kwargs()` is one
+key, `openai_client`, a governed `AsyncOpenAI`, so the agent stays on the
+live-verified `/responses` route and the SDK owns the transport.
+`donkey.openai_agents.model()` builds a chat-completions model instead. The
+`Runner` re-raises the openai error unchanged, so `classify()` types it.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `agent-and-tool.py` | An `Agent` with a `@function_tool` run by `Runner.run` | Proxy credentials (live only) |
+| 02 | `typed-refusals-simulated.py` | Four simulated refusals through `Runner.run` | Nothing — any placeholder values |
+| 03 | `start-gateway.py` | An agent over the local simulator | `[local]` |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,local,openai-agents]"
+set -a; source .env.local; set +a
+```
+
+Every script calls `set_tracing_disabled(True)` so the Agents SDK does not
+
+## 01 — Agent and tool
+
+```bash
+python "demos/human-made/openai-agents/01 - agent-and-tool.py"
+```
+
+A `weather` agent with one `@function_tool` (`get_weather`), run by
+`Runner.run` inside `donkey.run(...)`. The runner makes two model calls: one
+that decides to call the tool, one that writes the answer.
+
+```python
+model = OpenAIResponsesModel(model="gpt-4o", **donkey.openai_agents.connection_kwargs())
+agent = Agent(
+    name="weather",
+    instructions="Answer in one short sentence. Use the tool for weather.",
+    model=model,
+    tools=[get_weather],
+)
+
+async with donkey.run(id="agents-sdk-weather"):
+    result = await Runner.run(agent, "What is the weather in Paris?")
+
+print(result.final_output)
+print("model calls ", result.context_wrapper.usage.requests)
+print("total_tokens", result.context_wrapper.usage.total_tokens)
+print("last_call   ", donkey.last_call.status.value)
+```
+
+**Live only** — the simulator never calls tools. **You should see:** the final
+answer, `model calls 2`, total tokens from the Agents SDK's own usage, and
+`last_call unobserved`. The runner calls the model on its own task, so trust
+the SDK usage line here.
+
+## 02 — Typed refusals, simulated
+
+```bash
+python "demos/human-made/openai-agents/02 - typed-refusals-simulated.py"
+```
+
+`donkey.simulate(...)` replays each captured refusal while `Runner.run`
+drives the agent. The runner lets the `openai.APIStatusError` through, and
+`classify()` turns its response into the typed refusal.
+
+```python
+for refusal in REFUSALS:
+    async with donkey.run(id=f"agents-simulated-{refusal.__name__}"):
+        with donkey.simulate(refusal):
+            try:
+                await Runner.run(agent, "hello")
+            except openai.APIStatusError as err:
+                error = classify(err.response)
+                print(type(error).__name__, error.policy, error.correlation_id)
+```
+
+```text
+Error getting response
+Error getting response
+Error getting response
+Error getting response
+PIIDetected pii-detection agents-simulated-PIIDetected
+PromptInjectionBlocked prompt-injection-protection agents-simulated-PromptInjectionBlocked
+ContentSafetyBlocked content-safety agents-simulated-ContentSafetyBlocked
+TokenBudgetExceeded token-rate-limit agents-simulated-TokenBudgetExceeded
+```
+
+The `Error getting response` lines are the Agents SDK logging each failed
+model call to stderr before it re-raises; they are not from DDK.
+
+## 03 — An agent over the local simulator
+
+```bash
+python "demos/human-made/openai-agents/03 - start-gateway.py"
+```
+
+No gateway and no credentials. `start_gateway()` with `pii_block:every=2`
+over two support tickets: the first gets the simulator's canned completion,
+the second is the captured PII 403.
+
+```python
+gw = start_gateway()
+gw.set_scenarios("pii_block:every=2")
+cfg = DonkeyConfig(llm_proxy_url=gw.url, llm_proxy_client_id=..., llm_proxy_client_secret=...)
+
+async with Donkey(cfg) as donkey:
+    agent = Agent(
+        name="triage",
+        instructions="Reply in one sentence.",
+        model=OpenAIResponsesModel(model="gpt-4o", **donkey.openai_agents.connection_kwargs()),
+    )
+    for ticket in TICKETS:
+        try:
+            result = await Runner.run(agent, ticket)
+            print("ok     ", result.final_output[:60])
+        except openai.APIStatusError as err:
+            error = classify(err.response)
+            print("refused", type(error).__name__, error.entities)
+```
+
+```text
+Error getting response
+ok      A sleepy unicorn named Luma painted soft silver stars across
+refused PIIDetected ['Email']
+requests 2
+```
+
+**Learn more:** [OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md)
+
+**Source:**
+[`demos/human-made/openai-agents/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai-agents)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/agent-framework.md
+
+# Microsoft Agent Framework
+
+`donkey.agent_framework.chat_client("…")` builds an `OpenAIChatClient`
+(verified against 1.19.0, where the keyword is `model=`) that calls
+`/responses`. Only `default_headers` are handed over, so the proxy sees your
+credentials but the SDK does not own the transport: there is **no run id and
+no `last_call`**. Refusals still come back typed — Agent Framework wraps the
+openai error in `ChatClientException`, and the response rides on `__cause__`.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | An `Agent` on the governed chat client | Proxy credentials |
+| 02 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` | Proxy + PII policy |
+| 03 | `start-gateway.py` | Two tickets over the local simulator | `[local]` |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,local,agent_framework]"
+set -a; source .env.local; set +a
+```
+
+## 01 — A governed agent
+
+```bash
+python "demos/human-made/agent-framework/01 - basic-gw.py"
+```
+
+```python
+donkey = Donkey.from_env()
+agent = Agent(
+    client=donkey.agent_framework.chat_client("gpt-4o"),
+    name="greeter",
+    instructions="Answer in one short sentence.",
+)
+
+result = asyncio.run(agent.run("Say hello in exactly three words."))
+print(result.text)
+print("total tokens", result.usage_details["total_token_count"])
+print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
+```
+
+**You should see:** the reply, `total tokens` from Agent Framework's
+`usage_details`, and `last_call unavailable …` — the honest answer when the SDK
+only supplied headers. Read usage from the framework on this path.
+
+## 02 — Typed refusals, live
+
+```bash
+python "demos/human-made/agent-framework/02 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: a contact record for `PIIDetected`, a
+model that does not exist for `UpstreamRequestError`, and wrong credentials
+for `AuthError`. The one Agent Framework-specific line is where the response
+is read from:
+
+```python
+try:
+    asyncio.run(agent.run(prompt))
+    print(name, "NO REFUSAL")
+except ChatClientException as err:
+    error = classify(err.__cause__.response)
+    print(name, "->", type(error).__name__, getattr(error, "entities", None))
+```
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case. **You should see:** `<case> ->  <entities>` per case, or
+`<case> NO REFUSAL`.
+
+## 03 — Two tickets over the local simulator
+
+```bash
+python "demos/human-made/agent-framework/03 - start-gateway.py"
+```
+
+No gateway and no credentials. `start_gateway()` with `pii_block:every=2`:
+the first ticket gets the simulator's canned completion, the second is the
+captured PII 403, unwrapped from `ChatClientException` and classified.
+
+```python
+gw = start_gateway()
+gw.set_scenarios("pii_block:every=2")
+donkey = Donkey(DonkeyConfig(llm_proxy_url=gw.url, llm_proxy_client_id=..., llm_proxy_client_secret=...))
+
+for ticket in TICKETS:
+    agent = Agent(client=donkey.agent_framework.chat_client("gpt-4o"), instructions="Reply in one sentence.")
+    try:
+        print("ok     ", asyncio.run(agent.run(ticket)).text[:60])
+    except ChatClientException as err:
+        error = classify(err.__cause__.response)
+        print("refused", type(error).__name__, error.entities)
+```
+
+```text
+ok      A sleepy unicorn named Luma painted soft silver stars across
+refused PIIDetected ['Email']
+requests 2
+```
+
+  `TypeError … model_id` means an older Agent Framework; the scripts target
+  the 1.19.0 `model=` keyword.
+
+**Learn more:** [MS Agent Framework](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/agent-framework.md)
+
+**Source:**
+[`demos/human-made/agent-framework/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/agent-framework)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/strands.md
+
+# Strands
+
+Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
+the governed client is passed in, the SDK owns the transport: run id,
+`last_call` and typed refusals all work. The calls go to
+**`/chat/completions`, which is not live-verified on the DDK proxies**
+(`/responses` is), so use a proxy whose upstream serves that route.
+
+  **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
+  client per request from `client_args`. That closes the shared transport
+  after the first call, and the second fails with "client has been closed". A
+  pre-built `client=` is reused and left open.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | A governed agent, Strands usage and `last_call` | Proxy credentials |
+| 02 | `agent-and-tool.py` | The run id reaching a tool across two model calls | Proxy credentials (live only) |
+| 03 | `typed-refusals-simulated.py` | Three simulated refusals, typed | Nothing — any placeholder values |
+| 04 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` | Proxy + PII policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm]" "strands-agents[openai]"
+set -a; source .env.local; set +a
+```
+
+## 01 — A governed agent
+
+```bash
+python "demos/human-made/strands/01 - basic-gw.py"
+```
+
+```python
+async with Donkey.from_env() as donkey:
+    model = OpenAIModel(client=donkey.openai(), model_id="gpt-4o")
+    agent = Agent(model=model, callback_handler=None, system_prompt="Answer in one short sentence.")
+
+    result = await agent.invoke_async("Say hello in exactly three words.")
+    print(str(result).strip())
+    print("usage       ", result.metrics.accumulated_usage)
+    print("status      ", donkey.last_call.status.value)
+    print("served_model", donkey.last_call.served_model)
+```
+
+**You should see:** a one-sentence answer, Strands' accumulated usage, then
+`status observed` and the served model — unlike LangGraph, Strands calls the
+model on the caller's task, so `last_call` is populated.
+
+## 02 — Agent and tool
+
+```bash
+python "demos/human-made/strands/02 - agent-and-tool.py"
+```
+
+One Strands `@tool` (`lookup_sku`) inside `donkey.run(...)`. The tool loop is
+two model calls, and `client=donkey.openai()` keeps the transport open across
+both. The tool prints the run id it sees.
+
+```python
+@tool
+def lookup_sku(sku: str) -> str:
+    """Return stock for a product SKU."""
+    print("tool sees run id", current_correlation_id())
+    return "42"
+
+async with donkey.run(id="strands-ticket-4417", team="support", project="triage"):
+    result = await agent.invoke_async("How many AF-1001 are in stock?")
+```
+
+**Live only.** **You should see:** `tool sees run id strands-ticket-4417`, the
+answer, `model calls 2`, and `last_call observed <model>`.
+
+## 03 — Typed refusals, simulated
+
+```bash
+python "demos/human-made/strands/03 - typed-refusals-simulated.py"
+```
+
+`donkey.simulate(...)` replays each captured refusal while a Strands agent
+runs; the `openai.APIStatusError` comes through unchanged and `classify()`
+types it.
+
+```python
+model = OpenAIModel(client=donkey.openai(), model_id="gpt-4o")
+for refusal in REFUSALS:
+    async with donkey.run(id=f"strands-simulated-{refusal.__name__}"):
+        with donkey.simulate(refusal):
+            try:
+                await Agent(model=model, callback_handler=None).invoke_async("hello")
+            except openai.APIStatusError as err:
+                error = classify(err.response)
+                print(type(error).__name__, error.policy, error.correlation_id)
+```
+
+```text
+PIIDetected pii-detection strands-simulated-PIIDetected
+PromptInjectionBlocked prompt-injection-protection strands-simulated-PromptInjectionBlocked
+ContentSafetyBlocked content-safety strands-simulated-ContentSafetyBlocked
+```
+
+`TokenBudgetExceeded` is deliberately absent. Strands retries a 429 itself
+(`ModelThrottledException`), so the one simulated 429 is absorbed and the
+retry succeeds. Against a live proxy the same retry means a real budget 429
+takes a while to surface.
+
+## 04 — Typed refusals, live
+
+```bash
+python "demos/human-made/strands/04 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: a contact record for `PIIDetected`, a
+model that does not exist for `UpstreamRequestError`, and wrong credentials
+for `AuthError`.
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case. **You should see:** `<case> ->  <entities>` per case, or
+`<case> NO REFUSAL`.
+
+**Learn more:** [Strands](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/strands.md)
+
+**Source:**
+[`demos/human-made/strands/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/strands)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/crewai.md
+
+# CrewAI
+
+CrewAI 1.x with `donkey.crewai.llm("…")`. `openai/` models go through CrewAI's
+native OpenAI provider to **`/chat/completions`, which is not live-verified on
+the DDK proxies** (`/responses` is). CrewAI owns the transport: the
+credentials go on the wire, but there is **no run id and no `last_call`**.
+Refusals are still typed, because the native provider keeps the openai error's
+response.
+
+Both scripts need a live gateway; there is no offline CrewAI script.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | `llm.call(...)`, then a one-agent crew | Proxy credentials |
+| 02 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` | Proxy + PII policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,crewai]"
+set -a; source .env.local; set +a
+```
+
+  Both scripts set `CREWAI_TRACING_ENABLED=false` unless you set it yourself.
+  Otherwise CrewAI stops on an interactive "view your traces?" prompt and the
+  script appears to hang with no output.
+
+## 01 — A direct call and a crew
+
+```bash
+python "demos/human-made/crewai/01 - basic-gw.py"
+```
+
+```python
+donkey = Donkey.from_env()
+llm = donkey.crewai.llm("gpt-4o")
+
+print(llm.call("Say hello in exactly three words."))
+
+agent = Agent(role="Greeter", goal="Greet people", backstory="Friendly and brief.", llm=llm)
+out = agent.kickoff("Say goodbye in exactly three words.")
+
+print(out.raw)
+print("usage    ", out.usage_metrics)
+print("last_call", donkey.last_call.status.value, donkey.last_call.surface)
+```
+
+**You should see:** the greeting, the crew's answer, CrewAI's
+`usage_metrics`, and `last_call unavailable …` — CrewAI owns the transport, so
+read usage from `usage_metrics`.
+
+## 02 — Typed refusals, live
+
+```bash
+python "demos/human-made/crewai/02 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: a contact record for `PIIDetected`, a
+model that does not exist for `UpstreamRequestError`, and wrong credentials
+for `AuthError`.
+
+```python
+for name, case_cfg, model, prompt in CASES:
+    donkey = Donkey(case_cfg)
+    try:
+        donkey.crewai.llm(model).call(prompt)
+        print(name, "NO REFUSAL")
+    except openai.APIStatusError as err:
+        error = classify(err.response)
+        print(name, "->", type(error).__name__, getattr(error, "entities", None))
+    donkey.close()
+```
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case. **You should see:** `<case> ->  <entities>` per case, or
+`<case> NO REFUSAL`. A `404` means the proxy's upstream has no
+`/chat/completions` route.
+
+**Learn more:** [CrewAI](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md)
+
+**Source:**
+[`demos/human-made/crewai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/crewai)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/llamaindex.md
+
+# LlamaIndex
+
+LlamaIndex with `donkey.llamaindex.llm("…")`, an `OpenAILike`. The adapter sets
+`is_chat_model=True` — the `OpenAILike` default of `False` hits
+`/completions` — so calls go to **`/chat/completions`, which is not
+live-verified on the DDK proxies**. Only `default_headers` are handed over:
+there is **no run id and no `last_call`**. `OpenAILike` re-raises the openai
+error unchanged, so `classify()` still types refusals.
+
+Both scripts need a live gateway; there is no offline LlamaIndex script.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | `complete(...)` then `chat(...)` | Proxy credentials |
+| 02 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` | Proxy + PII policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,llamaindex]"
+set -a; source .env.local; set +a
+```
+
+## 01 — `complete()` and `chat()`
+
+```bash
+python "demos/human-made/llamaindex/01 - basic-gw.py"
+```
+
+```python
+donkey = Donkey.from_env()
+llm = donkey.llamaindex.llm("gpt-4o")
+
+print(llm.complete("Say hello in exactly three words.").text)
+
+reply = llm.chat([ChatMessage(role="user", content="Say goodbye in exactly three words.")])
+print(reply.message.content)
+print("total tokens", reply.raw.usage.total_tokens)
+print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
+```
+
+**You should see:** two greetings, `total tokens`, and `last_call unavailable
+…`. A `404 … /completions` means `is_chat_model` was overridden back to
+`False`.
+
+## 02 — Typed refusals, live
+
+```bash
+python "demos/human-made/llamaindex/02 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: a contact record for `PIIDetected`, a
+model that does not exist for `UpstreamRequestError`, and wrong credentials
+for `AuthError`.
+
+```python
+try:
+    donkey.llamaindex.llm(model).complete(prompt)
+    print(name, "NO REFUSAL")
+except openai.APIStatusError as err:
+    error = classify(err.response)
+    print(name, "->", type(error).__name__, getattr(error, "entities", None))
+```
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case. **You should see:** `<case> ->  <entities>` per case, or
+`<case> NO REFUSAL`.
+
+**Learn more:** [LlamaIndex](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/llamaindex.md)
+
+**Source:**
+[`demos/human-made/llamaindex/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/llamaindex)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md
+
+# Google ADK
+
+Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
+**`/chat/completions`, which is not live-verified on the DDK proxies**, and
+owns the transport: the credentials go on the wire, but there is **no run id,
+no `last_call`, and no typed refusals**. Script 02 exists to show that last
+gap.
+
+Both scripts need a live gateway; there is no offline ADK script.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | An ADK `Agent` through an `InMemoryRunner` | Proxy credentials |
+| 02 | `refusal-live.py` | A PII refusal surfacing as LiteLLM's `APIError` | Proxy + PII policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,adk]"
+set -a; source .env.local; set +a
+```
+
+## 01 — An ADK agent
+
+```bash
+python "demos/human-made/adk/01 - basic-gw.py"
+```
+
+```python
+donkey = Donkey.from_env()
+agent = Agent(name="greeter", model=donkey.adk.model("gpt-4o"), instruction="Answer in one short sentence.")
+
+events = asyncio.run(InMemoryRunner(agent=agent).run_debug("Say hello in exactly three words.", quiet=True))
+
+print(events[-1].content.parts[0].text)
+print("total tokens", events[-1].usage_metadata.total_token_count)
+print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
+```
+
+**You should see:** a one-sentence answer, `total tokens` from the last
+event's `usage_metadata`, and `last_call unavailable …`. LiteLLM also logs a
+provider-list banner, which is harmless.
+
+## 02 — A refusal that is not typed
+
+```bash
+python "demos/human-made/adk/02 - refusal-live.py"
+```
+
+A PII prompt against a proxy with the PII policy applied. LiteLLM keeps the
+status code and the message but drops the response headers, so `classify()`
+has nothing to read. The script therefore catches LiteLLM's own error:
+
+```python
+try:
+    asyncio.run(InMemoryRunner(agent=agent).run_debug(PII_PROMPT, quiet=True))
+    print("NO REFUSAL")
+except litellm.exceptions.APIError as err:
+    print(type(err).__name__, err.status_code)
+    print(str(err).splitlines()[0])
+```
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject`. **You
+should see:** `APIError 403` and the first line of the proxy's message — **not**
+`PIIDetected`. Without the policy it prints `NO REFUSAL`.
+
+  If you need typed refusals, `last_call` or run ids with ADK today, prefer a
+  framework path where the SDK owns the transport, such as
+  [OpenAI](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md) or [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md). A `404`
+  here means the proxy's upstream has no `/chat/completions` route.
+
+**Learn more:** [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md)
+
+**Source:**
+[`demos/human-made/adk/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/adk)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/anthropic.md
+
+# Anthropic
+
+The native `anthropic` client from `donkey.anthropic.client()`, on the
+governed transport. It sends `/v1/messages`, so it needs a proxy provisioned
+**`Format=Anthropic`** (for example `ddk-anthropic-inbound`). The default DDK
+proxies are `Format=OpenAI` and return 404 on `/v1/messages`. Because the
+client shares the governed transport, `last_call` and `simulate()` work just
+as they do for OpenAI.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `native-messages.py` | A native Messages call and `last_call` | Proxy credentials, `Format=Anthropic` |
+| 02 | `typed-refusals-simulated.py` | Four simulated refusals, typed | Nothing — any placeholder values |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,anthropic]" "anthropic<1"
+set -a; source .env.local; set +a
+export DONKEY_LLM_PROXY_URL=https://<host>/ddk-anthropic-inbound/   # 01 only; overrides the file
+```
+
+  **Pin `anthropic<1`.** The `anthropic` 1.x releases (September 2026) moved
+  to `httpx2` and reject the SDK's `httpx`-based governed client with
+  `TypeError: Invalid http_client argument`. These examples were run with
+  `anthropic` 0.125.0.
+
+The client id and secret are the same pair as the other proxies. The model is
+`claude-haiku-4-5-20251001` (the `MODEL` constant).
+
+## 01 — Native Messages
+
+```bash
+python "demos/human-made/anthropic/01 - native-messages.py"
+```
+
+```python
+async with Donkey.from_env() as donkey:
+    client = donkey.anthropic.client()   # native AsyncAnthropic, POST /v1/messages
+
+    raw = await client.messages.with_raw_response.create(
+        model=MODEL,
+        max_tokens=32,
+        messages=[{"role": "user", "content": "Say hello in exactly three words."}],
+    )
+    print(raw.parse().content[0].text)
+
+    last = donkey.last_call
+    print("served_provider", last.served_provider)
+    print("served_model   ", last.served_model)
+    print("input_tokens   ", last.input_tokens)
+    print("output_tokens  ", last.output_tokens)
+    print("request-id     ", raw.headers.get("request-id"))
+    print("request_id     ", last.request_id)
+```
+
+**You should see:** the reply; `served_provider`, `served_model`, and input and
+output tokens from `last_call`; then Anthropic's `request-id` header next to
+`last_call.request_id`. `request-id` is not one of the headers the SDK reads
+for `request_id` yet, so the two can differ, or the field can be `None`.
+
+## 02 — Typed refusals, simulated
+
+```bash
+python "demos/human-made/anthropic/02 - typed-refusals-simulated.py"
+```
+
+`donkey.simulate(...)` works for the Anthropic client too, because it shares
+the governed transport. Each refusal surfaces as the matching Anthropic error
+class, and `classify()` maps its response to the SDK type.
+
+```python
+client = donkey.anthropic.client()
+for refusal in REFUSALS:
+    async with donkey.run(id=f"anthropic-simulated-{refusal.__name__}"):
+        with donkey.simulate(refusal):
+            try:
+                await client.messages.create(model="claude-haiku-4-5-20251001", max_tokens=32,
+                                             messages=[{"role": "user", "content": "hello"}])
+            except anthropic.APIStatusError as err:
+                error = classify(err.response)
+                print(type(err).__name__, "->", type(error).__name__, error.policy, error.correlation_id)
+```
+
+```text
+PermissionDeniedError -> PIIDetected pii-detection anthropic-simulated-PIIDetected
+BadRequestError -> PromptInjectionBlocked prompt-injection-protection anthropic-simulated-PromptInjectionBlocked
+PermissionDeniedError -> ContentSafetyBlocked content-safety anthropic-simulated-ContentSafetyBlocked
+RateLimitError -> TokenBudgetExceeded token-rate-limit anthropic-simulated-TokenBudgetExceeded
+```
+
+The left column is what Anthropic's client alone would tell you — a 403 is a
+`PermissionDeniedError` whether it was PII or content safety. The right column
+is what the gateway actually decided.
+
+**Learn more:** [Anthropic SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md)
+
+**Source:**
+[`demos/human-made/anthropic/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/anthropic)
+
+---
+
+Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/gemini.md
+
+# Gemini
+
+No Gemini adapter ships, so these are plain `httpx` against a proxy
+provisioned **`Format=Gemini`** (for example `ddk-gemini-inbound`) with the
+same `client_id` / `client_secret` pair. The route is
+`<proxy URL>/models/<model>:generateContent`. `DonkeyConfig` still resolves
+and validates the credentials, and `classify()` still types the errors.
+
+Both scripts need a live `Format=Gemini` proxy; there is no offline Gemini
+script.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `native-generate-content.py` | A Gemini-shaped `contents` body, usage and routing | Proxy credentials, `Format=Gemini` |
+| 02 | `openai-shape-rejected.py` | An OpenAI-shaped request typed as `UpstreamRequestError` | Proxy credentials, `Format=Gemini` |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm]"   # httpx + classify()
+set -a; source .env.local; set +a
+export DONKEY_LLM_PROXY_URL=https://<host>/ddk-gemini-inbound/      # overrides the file
+```
+
+The model is `gemini-2.5-flash` (the `MODEL` constant).
+
+## 01 — Native `generateContent`
+
+```bash
+python "demos/human-made/gemini/01 - native-generate-content.py"
+```
+
+```python
+cfg = DonkeyConfig.from_env().validated(need="llm")
+headers = {"client_id": cfg.llm_proxy_client_id, "client_secret": cfg.llm_proxy_client_secret}
+
+ok = httpx.post(
+    f"{cfg.llm_proxy_url}/models/{MODEL}:generateContent",
+    headers=headers,
+    json={"contents": [{"role": "user", "parts": [{"text": "Say hello in exactly three words."}]}]},
+    timeout=60,
+)
+ok.raise_for_status()
+body = ok.json()
+print(body["candidates"][0]["content"]["parts"][0]["text"])
+print("total tokens ", body["usageMetadata"]["totalTokenCount"])
+print("routing      ", ok.headers.get("x-llm-proxy-model-based-routing-success"))
+```
+
+**You should see:** the reply, `total tokens` from `usageMetadata`, and the
+proxy's model-based `routing` header. A `KeyError: 'candidates'` means the
+proxy refused; print `ok.text` to see why. A `404` means the URL points at a
+`Format=OpenAI` proxy.
+
+## 02 — The wrong shape, typed
+
+```bash
+python "demos/human-made/gemini/02 - openai-shape-rejected.py"
+```
+
+An OpenAI-shaped `/chat/completions` request sent to the Gemini proxy comes
+back as Gemini's error envelope. `classify()` types it as a bad request, not a
+policy refusal.
+
+```python
+bad = httpx.post(
+    f"{cfg.llm_proxy_url}/chat/completions",
+    headers=headers,
+    json={"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "hello"}]},
+    timeout=60,
+)
+error = classify(bad)
+print(type(error).__name__, bad.status_code, getattr(error, "code", None), getattr(error, "error_type", None))
+print(error)
+```
+
+**You should see:** `UpstreamRequestError`, the HTTP status, the upstream code
+and error type, and the message. Typing Gemini's list envelope needs
+`donkey-kit` 0.1.0.dev9 or later.
+
+**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)
+
+**Source:**
+[`demos/human-made/gemini/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/gemini)
+
+---
+
 Source: https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md
 
 # Roadmap
 
 DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
 goal; the progress bars and issue lists below are loaded from those milestones
-when you open the page. 
+when you open the page. Phase 1 is complete and released as `donkey-kit`
+0.1.0 on [PyPI](https://pypi.org/project/donkey-kit/); Phase 2 is next.
 
   Complete every issue in the milestone is closed ·{' '}
   In progress work has landed and more is open ·{' '}
@@ -6729,8 +8358,10 @@ when you open the page.
   conformance suite, OpenTelemetry GenAI spans, correlation IDs and cost tags.
   Plus a deep LangGraph adapter, `connection_kwargs()` for seven more
   frameworks, the decorators and CLI, the documentation site, and the PyPI
-  release. Closing out the phase: steering the gateway's semantic cache and
-  surfacing cache hits and semantic-routing matches on `last_call`.
+  release. The phase closed with steering the gateway's semantic cache,
+  surfacing cache hits and semantic-routing matches (topic and score) on
+  `last_call`, and fixing model-substitution detection when the gateway strips
+  a provider prefix.
 
 ## Phase 2 — Differentiate, go beyond
 
@@ -6751,7 +8382,8 @@ when you open the page.
   access to [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
   a System One decision model, with the same typed refusals, spans, budget and
   simulator support as LLM calls, plus worked patterns for confidence-gated
-  review, tool ranking and budget-aware routing.
+  review, tool ranking and budget-aware routing. Now that 0.1.0 is published,
+  the phase also picks up archiving daily PyPI adoption metrics.
 
 ## Phase 3 — Platform capabilities
 
@@ -6793,7 +8425,9 @@ These milestones run alongside every phase.
 
   Every endpoint, header, class name and constructor argument DDK relies on is
   checked against the real platform and the installed framework packages
-  before features are built on it.
+  before features are built on it. The semantic-caching and semantic-routing
+  header contracts are now live-captured; next up is scoping mTLS as a
+  consumer auth option for the LLM proxy.
 
   Requests to the Omni Gateway team for platform capabilities DDK needs — such
   as a budget-query endpoint, policy discovery, a dry-run mode and richer

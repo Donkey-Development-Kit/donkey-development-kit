@@ -34,7 +34,7 @@ The selectable shapes are `token-rate-limit`, `pii-detected`,
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see
-[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
+[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
 Any other `model` value gets the default model-based happy path. The
 `donkey-sim/` prefix is a simulator-only control surface; the real gateway never
 interprets it.

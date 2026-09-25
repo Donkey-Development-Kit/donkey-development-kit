@@ -1,0 +1,74 @@
+# LlamaIndex
+
+LlamaIndex with `donkey.llamaindex.llm("…")`, an `OpenAILike`. The adapter sets
+`is_chat_model=True` — the `OpenAILike` default of `False` hits
+`/completions` — so calls go to **`/chat/completions`, which is not
+live-verified on the DDK proxies**. Only `default_headers` are handed over:
+there is **no run id and no `last_call`**. `OpenAILike` re-raises the openai
+error unchanged, so `classify()` still types refusals.
+
+Both scripts need a live gateway; there is no offline LlamaIndex script.
+
+| # | Script | Shows | Needs |
+| --- | --- | --- | --- |
+| 01 | `basic-gw.py` | `complete(...)` then `chat(...)` | Proxy credentials |
+| 02 | `typed-refusals-live.py` | `PIIDetected`, `UpstreamRequestError`, `AuthError` | Proxy + PII policy |
+
+## Install
+
+Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+
+```bash
+python -m pip install -e "../donkey-development-kit/python[llm,llamaindex]"
+set -a; source .env.local; set +a
+```
+
+## 01 — `complete()` and `chat()`
+
+```bash
+python "demos/human-made/llamaindex/01 - basic-gw.py"
+```
+
+```python
+donkey = Donkey.from_env()
+llm = donkey.llamaindex.llm("gpt-4o")
+
+print(llm.complete("Say hello in exactly three words.").text)
+
+reply = llm.chat([ChatMessage(role="user", content="Say goodbye in exactly three words.")])
+print(reply.message.content)
+print("total tokens", reply.raw.usage.total_tokens)
+print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
+```
+
+**You should see:** two greetings, `total tokens`, and `last_call unavailable
+…`. A `404 … /completions` means `is_chat_model` was overridden back to
+`False`.
+
+## 02 — Typed refusals, live
+
+```bash
+python "demos/human-made/llamaindex/02 - typed-refusals-live.py"
+```
+
+Three cases, each with its own `Donkey`: a contact record for `PIIDetected`, a
+model that does not exist for `UpstreamRequestError`, and wrong credentials
+for `AuthError`.
+
+```python
+try:
+    donkey.llamaindex.llm(model).complete(prompt)
+    print(name, "NO REFUSAL")
+except openai.APIStatusError as err:
+    error = classify(err.response)
+    print(name, "->", type(error).__name__, getattr(error, "entities", None))
+```
+
+**Needs:** `llm-pii-detection-policy` with `Email` and action `Reject` for the
+first case. **You should see:** `<case> ->  <entities>` per case, or
+`<case> NO REFUSAL`.
+
+**Learn more:** [LlamaIndex](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/llamaindex.md)
+
+**Source:**
+[`demos/human-made/llamaindex/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/llamaindex)

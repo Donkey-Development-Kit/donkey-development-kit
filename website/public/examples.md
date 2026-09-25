@@ -3,24 +3,31 @@
 The [DDK demos repo](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos)
 holds runnable examples for every piece of the SDK: the governed client, typed
 refusals, budget pacing, simulation, the conformance suite, telemetry,
-framework objects and `last_call`. Each page in this section covers one of
-those, pairs the examples that show it, and gives you the command to run them.
+framework objects and `last_call`. The section has two parts:
+
+- **[General](#general)** — one page per SDK capability, pairing the examples
+  that show it with the command to run them.
+- **[By framework](#by-framework)** — one page per framework, walking through
+  every script in its folder: what it shows, what it needs, and what it
+  prints.
 
 The repo ships **two suites on purpose**. They cover the same SDK, but they are
 not interchangeable:
 
-| | Narrative demos | OpenAI scripts |
+| | Narrative demos | Framework scripts |
 | --- | --- | --- |
-| **Where** | [`demos/claude-made/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made) | [`demos/human-made/openai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai) |
-| **Best for** | A room, a recording, or CI that must stay offline | A terminal you type in, or paste from |
-| **Shape** | Numbered demos (`01`–`10`), each a `demo.py` + README told in acts | Straight-line OpenAI scripts (`01`–`11`), one file each |
-| **Runner** | `make demo N=03`, `make offline` | `python "demos/human-made/openai/<file>.py"` |
-| **Network** | Nine of ten run offline against the local simulator; demo 09 needs a live gateway | Most need gateway credentials; 09 and 11 need no gateway |
+| **Where** | [`demos/claude-made/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made) | [`demos/human-made/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made), one folder per framework |
+| **Best for** | A room, a recording, or CI that must stay offline | A terminal you type in, or paste into your own project |
+| **Shape** | Numbered demos (`01`–`10`), each a `demo.py` + README told in acts | Short, top-to-bottom scripts, one file each, across ten frameworks |
+| **Runner** | `make demo N=03`, `make offline` | `python "demos/human-made/<framework>/<file>.py"` |
+| **Network** | Nine of ten run offline against the local simulator; demo 09 needs a live gateway | Most need gateway credentials; the `*-simulated`, `start-gateway` and `gateway-unavailable` scripts need none |
 | **Output** | Masked by default | Not masked — use on a private terminal |
 
 Every narrative demo takes `--target mock` (the default, pointing at the local
-simulator) or `--target live` (your real credentials). The OpenAI scripts have
-no harness: they use the same environment you already use for the SDK.
+simulator) or `--target live` (your real credentials). The framework scripts
+have no harness: they use the same environment you already use for the SDK.
+Frameworks pin conflicting dependencies, so one virtual environment per
+framework is the safe default; each framework page has its install line.
 
 ## Setup
 
@@ -74,7 +81,7 @@ python -m pip install -i https://test.pypi.org/simple/ \
 ## Live credentials
 
 The offline narrative demos need none of this. Live runs, the LangGraph agent
-example and most OpenAI scripts need three variables for the governed LLM
+example and most framework scripts need three variables for the governed LLM
 proxy, plus the model to ask for:
 
 | Variable | What it is |
@@ -91,16 +98,20 @@ cp .env.example .env.local     # .env.local is git-ignored
 ```
 
 A shell `export` always wins over a file value, so you can skip the file and
-the OpenAI scripts do not (the SDK never reads dotenv files on its own), so
+the framework scripts do not (the SDK never reads dotenv files on its own), so
 
 ```bash
 set -a; source .env.local; set +a
 python "demos/human-made/openai/02 - basic-responses-gw.py"
 ```
 
-  The OpenAI scripts hardcode their model ids (mostly `gpt-4o`). If your proxy
-  routes a different model, expect a routing refusal or a `ModelSubstituted`
-  until the script's model matches the proxy's.
+  Three things trip people up with the framework scripts. **The model id:**
+  they hardcode `gpt-4o`, while the provisioned DDK proxies route
+  `gpt-5-mini` — change the string, or expect a routing refusal or a
+  `ModelSubstituted`. **Filenames have spaces:** always quote the path.
+  **Policies decide refusals:** a `typed-refusals-live` script prints `NO
+  REFUSAL` when the proxy does not have that policy applied — that is the
+  proxy telling the truth, not the script failing.
 
 ## Commands
 
@@ -142,11 +153,11 @@ make scan       # everything tracked
 make hooks      # then it runs on every commit
 ```
 
-  **The OpenAI scripts do not mask anything.** They print completions and
+  **The framework scripts do not mask anything.** They print completions and
   error strings exactly as the SDK returned them. Run them on a private
   terminal, not on a shared screen or recording.
 
-## Browse by purpose
+## General
 
   
     Stock client versus governed client, then `@donkey.governed` and `@donkey.tool`.
@@ -174,3 +185,43 @@ make hooks      # then it runs on every commit
   
   
     Who served the call, what it routed to, what it cost — and `ModelSubstituted`.
+  
+
+## By framework
+
+Each framework page covers one folder of
+[`demos/human-made/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made).
+How much DDK can do depends on who owns the HTTP transport: where the SDK does
+(OpenAI, LangGraph, OpenAI Agents SDK, Strands, Anthropic), you get `last_call`,
+run ids and `simulate()`; where the framework does, only the credential
+headers go on the wire.
+
+  
+    The stock client: `last_call`, refusals, pacing, spans, streaming, guardrails, JWT wallets.
+  
+  
+    A real `ChatOpenAI`, `typed_refusals()` out of `create_agent`, the run id in tools.
+  
+  
+    `OpenAIResponsesModel` on the governed client, `Runner.run` with a tool.
+  
+  
+    `OpenAIChatClient` with the governed headers; refusals from `ChatClientException`.
+  
+  
+    `OpenAIModel(client=donkey.openai())`, tools, and a 429 Strands retries itself.
+  
+  
+    `donkey.crewai.llm()` for a direct call and a crew; typed refusals.
+  
+  
+    An `OpenAILike` for `complete()` and `chat()`; typed refusals.
+  
+  
+    A `LiteLlm` model in an `InMemoryRunner` — and why its refusals are not typed.
+  
+  
+    The native client on `/v1/messages`, `last_call` and simulated refusals.
+  
+  
+    Plain `httpx` against a `Format=Gemini` proxy, errors typed by `classify()`.

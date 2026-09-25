@@ -1,14 +1,14 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-09-24T12:48:52.545Z",
+  "generatedAt": "2026-09-25T14:34:59.819Z",
   "milestones": [
     {
       "number": 11,
       "title": "Phase 1 — Build the MVP (0.1.0)",
-      "state": "open",
+      "state": "closed",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/11",
-      "open": 7,
-      "closed": 125,
+      "open": 0,
+      "closed": 135,
       "issues": [
         {
           "number": 9,
@@ -293,7 +293,7 @@
         {
           "number": 259,
           "title": "epic: Phase 1 — Build the MVP",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/259",
           "epic": true
         },
@@ -405,7 +405,7 @@
         {
           "number": 339,
           "title": "Publish donkey-kit to PyPI and wire project URLs",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/339",
           "epic": false
         },
@@ -767,13 +767,6 @@
           "epic": false
         },
         {
-          "number": 515,
-          "title": "Archive daily PyPI adoption metrics; TestPyPI publishes none",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/515",
-          "epic": false
-        },
-        {
           "number": 517,
           "title": "Drop :8081 from the sandbox proxies.toml base_url guidance",
           "state": "closed",
@@ -907,31 +900,59 @@
           "epic": false
         },
         {
+          "number": 586,
+          "title": "last_call.substituted is always True for provider/model names (gateway strips the routing prefix)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/586",
+          "epic": false
+        },
+        {
           "number": 587,
           "title": "Support gateway semantic caching: steer requests and surface hits",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/587",
           "epic": false
         },
         {
           "number": 590,
           "title": "Surface the semantic-routing match topic and score on last_call",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/590",
           "epic": false
         },
         {
           "number": 592,
           "title": "docs(roadmap): fetch milestone status live from GitHub, keep the snapshot as fallback",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/592",
           "epic": false
         },
         {
           "number": 593,
           "title": "docs(site): sync pages with the current code and the issues filed since the restructure",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/593",
+          "epic": false
+        },
+        {
+          "number": 595,
+          "title": "errors: PolicyViolation's default remediation still calls content-moderation shapes under-documented",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/595",
+          "epic": false
+        },
+        {
+          "number": 597,
+          "title": "mypy --strict fails under openai<3 with 4 stale ignore/cast guards",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/597",
+          "epic": false
+        },
+        {
+          "number": 601,
+          "title": "docs: extend the gateway-identity example with a semantic-routing walkthrough (follow-up to #599)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/601",
           "epic": false
         }
       ]
@@ -941,7 +962,7 @@
       "title": "Phase 2 — Differentiate, go beyond (0.2.0)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/12",
-      "open": 47,
+      "open": 48,
       "closed": 1,
       "issues": [
         {
@@ -1180,6 +1201,13 @@
           "title": "scanner: define how a @donkey.tool is attributed to an MCP server / Exchange asset",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/503",
+          "epic": false
+        },
+        {
+          "number": 515,
+          "title": "Archive daily PyPI adoption metrics; TestPyPI publishes none",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/515",
           "epic": false
         },
         {
@@ -1527,8 +1555,8 @@
       "title": "Verification",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/16",
-      "open": 28,
-      "closed": 5,
+      "open": 27,
+      "closed": 7,
       "issues": [
         {
           "number": 1,
@@ -1750,15 +1778,22 @@
         {
           "number": 588,
           "title": "verify: the semantic-caching policy header contract on the LLM proxy",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/588",
           "epic": false
         },
         {
           "number": 589,
           "title": "verify: the semantic-routing success header (topic + score) on the LLM proxy",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/589",
+          "epic": false
+        },
+        {
+          "number": 607,
+          "title": "Scope and verify mTLS as a consumer auth option for the LLM proxy",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/607",
           "epic": false
         }
       ]
