@@ -6711,7 +6711,8 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/roadmap.
 
 DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
 goal; the progress bars and issue lists below are loaded from those milestones
-when you open the page. 
+when you open the page. Phase 1 is complete and released as `donkey-kit`
+0.1.0 on [PyPI](https://pypi.org/project/donkey-kit/); Phase 2 is next.
 
   Complete every issue in the milestone is closed ·{' '}
   In progress work has landed and more is open ·{' '}
@@ -6729,8 +6730,10 @@ when you open the page.
   conformance suite, OpenTelemetry GenAI spans, correlation IDs and cost tags.
   Plus a deep LangGraph adapter, `connection_kwargs()` for seven more
   frameworks, the decorators and CLI, the documentation site, and the PyPI
-  release. Closing out the phase: steering the gateway's semantic cache and
-  surfacing cache hits and semantic-routing matches on `last_call`.
+  release. The phase closed with steering the gateway's semantic cache,
+  surfacing cache hits and semantic-routing matches (topic and score) on
+  `last_call`, and fixing model-substitution detection when the gateway strips
+  a provider prefix.
 
 ## Phase 2 — Differentiate, go beyond
 
@@ -6751,7 +6754,8 @@ when you open the page.
   access to [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
   a System One decision model, with the same typed refusals, spans, budget and
   simulator support as LLM calls, plus worked patterns for confidence-gated
-  review, tool ranking and budget-aware routing.
+  review, tool ranking and budget-aware routing. Now that 0.1.0 is published,
+  the phase also picks up archiving daily PyPI adoption metrics.
 
 ## Phase 3 — Platform capabilities
 
@@ -6793,7 +6797,9 @@ These milestones run alongside every phase.
 
   Every endpoint, header, class name and constructor argument DDK relies on is
   checked against the real platform and the installed framework packages
-  before features are built on it.
+  before features are built on it. The semantic-caching and semantic-routing
+  header contracts are now live-captured; next up is scoping mTLS as a
+  consumer auth option for the LLM proxy.
 
   Requests to the Omni Gateway team for platform capabilities DDK needs — such
   as a budget-query endpoint, policy discovery, a dry-run mode and richer
