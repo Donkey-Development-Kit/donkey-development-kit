@@ -7,11 +7,12 @@
 An SDK for consuming **Agent Fabric** capabilities — governed model and tool
 access — from your own agent framework, in your own IDE, without adopting Mule.
 
-> **Project status — alpha, pre-release.** This is `v0.1.0.dev3`
+> **Project status — alpha.** This is `v0.1.0`, the first release
 > (`Development Status :: 3 - Alpha`). The **LLM data plane is live-verified**;
 > most other surfaces are verification-gated (see
-> [What's verified](#whats-verified-verification-discipline) below). **Not yet published to PyPI** —
-> [install from source](#install). **Unofficial:** an independent project,
+> [What's verified](#whats-verified-verification-discipline) below). Install it
+> from PyPI with `pip install donkey-kit` — see [Install](#install).
+> **Unofficial:** an independent project,
 > **not** affiliated with or endorsed by Salesforce or MuleSoft.
 
 > **Already integrated the pre-rebrand SDK?** The move to Donkey Development Kit
@@ -64,13 +65,16 @@ Two audiences, two doc sets:
 
 ## Install
 
-> **Not yet published to PyPI.** Until the first release is cut, install from
-> source:
+```bash
+pip install "donkey-kit[llm,langgraph]"   # base + raw client + one framework
+```
+
+To work on the SDK itself, install from source instead:
 
 ```bash
 git clone https://github.com/Donkey-Development-Kit/donkey-development-kit.git
 cd donkey-development-kit/python
-pip install -e ".[llm,langgraph]"   # base + raw client + one framework
+pip install -e ".[llm,langgraph]"
 ```
 
 Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
