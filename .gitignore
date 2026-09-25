@@ -32,9 +32,10 @@ node_modules/
 # Claude Code worktrees (isolated agent workspaces)
 .claude/worktrees/
 
-# Claude config & skills — moved to the private donkey-development-kit-claude
-# repo and symlinked in locally; never track them here (keeps internal IP out
-# of this public repo). Clone donkey-development-kit-claude as a sibling dir.
+# AI agent config & skills — live in the private donkey-development-kit-ai-config
+# repo and are symlinked in locally; never track them here (keeps internal IP out
+# of this public repo). Clone donkey-development-kit-ai-config as a sibling dir.
+/AGENTS.md
 /CLAUDE.md
 /.claude/skills
 /.claude/settings.json
