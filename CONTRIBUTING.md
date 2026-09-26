@@ -330,6 +330,16 @@ markers gate *infra availability*, so a clean skip is correct; the conformance
 kit gates *framework support*, where a silent skip is not. Run them explicitly
 with `pytest -q -m local_gateway` / `-m sandbox` (with the service/env in place).
 
+The real-image probes in `tests/conformance/test_flex_local_mode.py` use the
+same `local_gateway` opt-in marker. They require a locally available pinned
+Flex Gateway image and Docker; the registered cases additionally need
+`DDK_FLEX_REGISTRATION` pointing to a dedicated Local Mode registration file.
+They run network-isolated containers, never register or pull automatically,
+and remove their containers on teardown. See
+[`docs/evidence/local-gateway/README.md`](docs/evidence/local-gateway/README.md)
+for commands, scope, and captured results. These are separate from both the
+pure-Python simulator boot tests and the adapter conformance scenarios.
+
 ### `scripts/verify_frameworks.py` — signatures, outside pytest
 
 This is the executable verification-discipline step for adapters' native constructor

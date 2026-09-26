@@ -1,0 +1,9 @@
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: ddk-local-verification
+spec:
+  address: http://0.0.0.0:8081
+  services:
+    unavailable-upstream:
+      address: http://127.0.0.1:18081

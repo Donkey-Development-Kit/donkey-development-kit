@@ -183,7 +183,7 @@ testpaths = ["tests"]
 # default" statement in CLAUDE.md, which was previously unenforced.
 addopts = "-m 'not local_gateway and not sandbox and not benchmark'"
 markers = [
-    "local_gateway: boots the pure-Python local gateway simulator (BG §1.4) on a real TCP port; off by default",
+    "local_gateway: runs the local simulator or opt-in real Flex Gateway probes; off by default",
     "sandbox: requires a real Anypoint sandbox (DONKEY_SANDBOX_TESTS=1); off by default",
     "benchmark: measures per-call span overhead against the <1ms bar (BG §1.6, #194); off by default, run with `pytest -m benchmark` in its own CI job",
 ]

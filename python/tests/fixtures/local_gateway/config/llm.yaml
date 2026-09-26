@@ -1,0 +1,14 @@
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: ddk-llm-verification
+spec:
+  address: http://0.0.0.0:8083
+  services:
+    unavailable-upstream:
+      address: http://127.0.0.1:18081
+  policies:
+    - policyRef:
+        name: llm-proxy-core
+    - policyRef:
+        name: model-based-routing

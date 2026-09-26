@@ -1,0 +1,9 @@
+HTTP/1.1 400 Bad Request
+content-type: application/json; charset=UTF-8
+x-injection-protection: blocked
+content-length: 76
+date: Sat, 26 Sep 2026 11:17:03 GMT
+server: Anypoint Flex Gateway
+connection: close
+
+{"message":"Injection attack detected - Rule: 'XSS Attack', Location: Body"}

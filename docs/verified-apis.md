@@ -415,10 +415,10 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
-| Can Local Mode run the LLM Proxy? | the Verification milestone | UNVERIFIED | — | — |
-| Can Local Mode run MCP Bridge? | the Verification milestone | UNVERIFIED | — | — |
-| Does Local Mode need a control-plane licence/registration artifact? | OSS/CI viability | UNVERIFIED | — | — |
-| Which policies are Connected-Mode-only? (portability table) | the Verification milestone | UNVERIFIED | — | — |
+| Can Local Mode run the LLM Proxy? | the Verification milestone | PARTIAL (stock-image rejection); complete capability UNVERIFIED | Flex 1.14.0 rejects the recorded `llm-proxy-core`, `model-based-routing`, and `openai-transcoding-policy` refs as missing extensions. No alternate/custom deployment was verified. | 2026-09-26; [runtime evidence](evidence/local-gateway/README.md) |
+| Can Local Mode run MCP Bridge? | the Verification milestone | PARTIAL (stock-image rejection); Bridge UNVERIFIED | Flex 1.14.0 rejects `mcp-support` as a missing extension; no MCP session/Bridge deployment was exercised. Official MCP Support docs exclude Local Mode. | 2026-09-26; [runtime evidence + source](evidence/local-gateway/README.md) |
+| Does Local Mode need a control-plane licence/registration artifact? | OSS/CI viability | VERIFIED (registration prerequisite) | The stock 1.14.0 image rejects API configuration without registration; a newly issued Sandbox Local Mode registration enables its listener. A separate commercial licence artifact and indefinite disconnected operation were not evaluated. | 2026-09-26; [negative and positive runtime evidence](evidence/local-gateway/README.md) |
+| Which policies are Connected-Mode-only? (portability table) | the Verification milestone | PARTIAL (runtime + documentation) | Versioned table distinguishes missing extensions, resolved references, and an executed Injection Protection block. Broader connected-only claims are documentation-only; no untested policy is marked live-verified. | 2026-09-26; [portability table](evidence/local-gateway/README.md#policy-portability-table) |
 | Is "deployed to gateway" readable per API instance? | `require_deployed` | VERIFIED (CLI) | Yes — `api-mgr:api:list` (per env) + `:api:describe <id>` returns Endpoint URI, gateway, deployment target | 2026-08-28 |
 | Are applied policies readable per API instance? | governed-state join | VERIFIED (CLI) | Yes — `api-mgr:policy:list <id>` returns `{ID, Template ID, Asset ID, Asset Version, Label, Status, Configuration}` | 2026-08-28 |
 | Are governance ruleset results exposed via API? | `require_governance_pass` | PARTIAL | `governance:api` evaluates rulesets; `governance:profile:*` manages profiles (ruleset refs = Maven GAV). Result-read shape pending | 2026-08-28 |

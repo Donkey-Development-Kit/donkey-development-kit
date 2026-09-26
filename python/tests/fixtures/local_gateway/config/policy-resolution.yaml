@@ -1,0 +1,64 @@
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: ddk-policy-0
+spec:
+  address: http://0.0.0.0:8090
+  services:
+    unavailable-upstream:
+      address: http://127.0.0.1:18081
+  policies:
+    - policyRef:
+        name: cors
+---
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: ddk-policy-1
+spec:
+  address: http://0.0.0.0:8091
+  services:
+    unavailable-upstream:
+      address: http://127.0.0.1:18081
+  policies:
+    - policyRef:
+        name: dataweave-headers-transformation
+---
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: ddk-policy-2
+spec:
+  address: http://0.0.0.0:8092
+  services:
+    unavailable-upstream:
+      address: http://127.0.0.1:18081
+  policies:
+    - policyRef:
+        name: client-id-enforcement
+---
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: ddk-policy-3
+spec:
+  address: http://0.0.0.0:8093
+  services:
+    unavailable-upstream:
+      address: http://127.0.0.1:18081
+  policies:
+    - policyRef:
+        name: header-injection
+---
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: ddk-policy-4
+spec:
+  address: http://0.0.0.0:8094
+  services:
+    unavailable-upstream:
+      address: http://127.0.0.1:18081
+  policies:
+    - policyRef:
+        name: openai-transcoding-policy
