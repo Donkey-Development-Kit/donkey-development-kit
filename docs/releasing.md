@@ -42,8 +42,8 @@ correctly:
    dev0            devN            alpha 1       beta 1      rc 1        final
 ```
 
-- **`.devN`** — pre-MVP groundwork: docs, spec, scaffolding, plumbing. No usable
-  feature surface yet. *(Today's `main` is here.)*
+- **`.devN`** — pre-milestone groundwork: docs, spec, scaffolding, plumbing.
+  This was the path used before the first final `0.1.0` release.
 - **`aN` / `bN`** — alpha/beta: real feature surface exists, still unstable.
 - **`rcN`** — release candidate: milestone all-but-complete, final validation.
 - **final** (`0.1.0`) — the milestone hit 0 open issues and was promoted.
@@ -104,6 +104,37 @@ A manual dispatch is **structurally incapable** of reaching prod: the
 Release can trigger it. The workflow never creates tags or releases — it only
 reacts to them.
 
+## Adoption archive after publishing
+
+Production-package adoption signals are collected outside this SDK repository
+in the private
+[`donkey-development-kit-metrics`](https://github.com/Donkey-Development-Kit/donkey-development-kit-metrics)
+repository. That repository owns the daily source collection, committed CSV
+archive, and the authenticated `ddk-core-team` dashboard. Keeping its collector
+write token separate means it cannot modify SDK source or release history.
+
+The first production release, `donkey-kit` 0.1.0, reached PyPI at
+`2026-09-25T07:17:10.707684Z`; archive backfill starts there. Interpret the
+sources separately:
+
+- **pypistats**, operated by the Python Software Foundation, supplies overall
+  and Python-minor request counts from PyPI's public download data. Headline
+  totals use `without_mirrors`; these are requests, not unique users, customers,
+  or verified installations.
+- **ClickPy**, operated by ClickHouse over PyPI's public download stream,
+  supplies aggregate country counts. Those counts include mirrors, and country
+  represents request-origin IP geolocation after PyPI's privacy processing.
+- **ecosyste.ms** is a third-party package index used for daily dependent,
+  repository, star, fork, and percentile snapshots. Missing values remain
+  unavailable rather than becoming zero; dependent-repository counts are an
+  experimental indicator.
+- **PyPI's JSON API** supplies release timestamps used as dashboard markers.
+
+TestPyPI does **not** publish a download-statistics series, so the archive does
+not invent one. The release workflow's manual-run history can show that a
+snapshot was published to TestPyPI, but it cannot show whether anyone downloaded
+or installed it.
+
 ## The public API surface semver governs
 
 The package follows semantic versioning (PEP 440 spelling). The versioned public
@@ -135,9 +166,9 @@ usable SDK.
 
 The workflow is inert until the trust is registered on PyPI's side. This is a
 manual step on the web UI (it cannot be done from CI), performed **once per
-index**. Because `donkey-kit` is not yet published, use the **pending publisher**
-form (Your projects → Publishing, or account → Publishing before the project
-exists). Enter, on the **GitHub** tab:
+index**. Production `donkey-kit` now exists, so manage its publisher under the
+project's Publishing settings. For an index where the project does not yet
+exist, use that index's **pending publisher** form. Enter, on the **GitHub** tab:
 
 | Field | Value |
 | --- | --- |
@@ -157,5 +188,5 @@ irreversible production upload — the go-ahead gate #339 requires.
 
 > A public PyPI publish is effectively irreversible (names can be squatted;
 > releases can only be *yanked*, never deleted). Do not submit the **production**
-> pending publisher or approve a `pypi` deployment until the release is genuinely
-> ready — see #339 for the first-publish checklist.
+> publisher change or approve a `pypi` deployment until the release is genuinely
+> ready. See #339 for the completed first-publish checklist.
