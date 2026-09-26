@@ -62,7 +62,7 @@ class AnthropicAdapter(Adapter):
         Anthropic SDK's own surface (BG §1.8)."""
         from anthropic import AsyncAnthropic  # VERIFY name/path: docs/verified-apis.md §8
 
-        return AsyncAnthropic(**self.connection_kwargs(), **kw)
+        return AsyncAnthropic(**{**self.connection_kwargs(), **kw})
 
 
 def client(**kw: Any) -> AsyncAnthropic:

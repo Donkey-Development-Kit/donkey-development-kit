@@ -45,7 +45,7 @@ class LlamaIndexAdapter(Adapter):
             OpenAILike,  # VERIFY name/path: docs/verified-apis.md §8
         )
 
-        return OpenAILike(model=model, **self.connection_kwargs(), **kw)
+        return OpenAILike(model=model, **{**self.connection_kwargs(), **kw})
 
 
 def llm(model: str, **kw: Any) -> OpenAILike:

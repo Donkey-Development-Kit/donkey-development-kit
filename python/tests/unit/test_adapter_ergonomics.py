@@ -345,6 +345,8 @@ class _F(NamedTuple):
     native_module: str  # dotted module the factory imports its native class from
     native_attr: str  # native class attribute name to spy on
     args: tuple[str, ...]  # positional args the factory takes (model id, if any)
+    override_key: str  # connection kwarg the caller can replace
+    override_value: Any
 
 
 # Every adapter whose connection_kwargs() is a plain value dict spread straight
@@ -352,10 +354,35 @@ class _F(NamedTuple):
 # because its governed value is a freshly-built client object (BG §1.8).
 _FACTORIES = [
     _F(
-        "langgraph", "chat_model", "LangGraphAdapter", "langchain_openai", "ChatOpenAI", ("gpt-4o",)
+        "langgraph",
+        "chat_model",
+        "LangGraphAdapter",
+        "langchain_openai",
+        "ChatOpenAI",
+        ("gpt-4o",),
+        "use_responses_api",
+        False,
     ),
-    _F("adk", "model", "ADKAdapter", "google.adk.models.lite_llm", "LiteLlm", ("gpt-4o",)),
-    _F("strands", "model", "StrandsAdapter", "strands.models.openai", "OpenAIModel", ("gpt-4o",)),
+    _F(
+        "adk",
+        "model",
+        "ADKAdapter",
+        "google.adk.models.lite_llm",
+        "LiteLlm",
+        ("gpt-4o",),
+        "api_base",
+        "https://override",
+    ),
+    _F(
+        "strands",
+        "model",
+        "StrandsAdapter",
+        "strands.models.openai",
+        "OpenAIModel",
+        ("gpt-4o",),
+        "client_args",
+        {"sentinel": object()},
+    ),
     _F(
         "agent_framework",
         "chat_client",
@@ -363,9 +390,29 @@ _FACTORIES = [
         "agent_framework.openai",
         "OpenAIChatClient",
         ("gpt-4o",),
+        "base_url",
+        "https://override",
     ),
-    _F("anthropic", "client", "AnthropicAdapter", "anthropic", "AsyncAnthropic", ()),
-    _F("crewai", "llm", "CrewAIAdapter", "crewai", "LLM", ("gpt-4o",)),
+    _F(
+        "anthropic",
+        "client",
+        "AnthropicAdapter",
+        "anthropic",
+        "AsyncAnthropic",
+        (),
+        "base_url",
+        "https://override",
+    ),
+    _F(
+        "crewai",
+        "llm",
+        "CrewAIAdapter",
+        "crewai",
+        "LLM",
+        ("gpt-4o",),
+        "base_url",
+        "https://override",
+    ),
     _F(
         "llamaindex",
         "llm",
@@ -373,6 +420,8 @@ _FACTORIES = [
         "llama_index.llms.openai_like",
         "OpenAILike",
         ("gpt-4o",),
+        "is_chat_model",
+        False,
     ),
 ]
 
@@ -436,6 +485,22 @@ def test_factory_and_connection_kwargs_do_not_drift(
     assert {k: captured[k] for k in expected} == expected
 
 
+@pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)
+def test_factory_caller_kwargs_override_connection_defaults(
+    f: _F, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_proxy_env(monkeypatch)
+    mod = importlib.import_module(f"donkey_kit.integrations.{f.module}")
+    factory = getattr(mod, f.factory)
+    captured = _install_native_stub(monkeypatch, f.native_module, f.native_attr)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        factory(*f.args, **{f.override_key: f.override_value})
+
+    assert captured[f.override_key] is f.override_value
+
+
 def test_openai_agents_factory_and_connection_kwargs_do_not_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -461,3 +526,19 @@ def test_openai_agents_factory_and_connection_kwargs_do_not_drift(
         )
 
     assert _governed(factory_client) == _governed(accessor_client)
+
+
+def test_openai_agents_factory_caller_openai_client_overrides_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_proxy_env(monkeypatch)
+    captured = _install_native_stub(monkeypatch, "agents", "OpenAIChatCompletionsModel")
+    from donkey_kit.integrations.openai_agents import OpenAIAgentsAdapter, model
+
+    default_client = object()
+    caller_client = object()
+    monkeypatch.setattr(OpenAIAgentsAdapter, "_proxy_openai_client", lambda self: default_client)
+
+    model("gpt-4o", openai_client=caller_client)
+
+    assert captured["openai_client"] is caller_client

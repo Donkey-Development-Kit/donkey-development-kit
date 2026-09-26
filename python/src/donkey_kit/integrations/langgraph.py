@@ -63,7 +63,7 @@ class LangGraphAdapter(Adapter):
         """Return a native ``ChatOpenAI`` pointed at the proxy (BG §1.8)."""
         from langchain_openai import ChatOpenAI  # VERIFY name/path: docs/verified-apis.md §8
 
-        return ChatOpenAI(model=model, **self.connection_kwargs(), **kw)
+        return ChatOpenAI(model=model, **{**self.connection_kwargs(), **kw})
 
     def __call__(self, model: str, **kw: Any) -> ChatOpenAI:
         """Callable sugar: ``donkey.langgraph("gpt-4o")`` is ``chat_model(...)``.
