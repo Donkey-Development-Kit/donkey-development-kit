@@ -447,7 +447,7 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | LangGraph | `langchain_openai.ChatOpenAI(base_url, api_key, default_headers, http_async_client, use_responses_api=True)` | UNVERIFIED (constructor); endpoint VERIFIED | The kwargs/class name are still §8-pending, but the deep adapter (#198) pins `use_responses_api=True` so it calls the **live-verified** `/responses` data plane (§4) rather than ChatOpenAI's default `/chat/completions` route. Overridable via `chat_model(..., use_responses_api=False)`. | 2026-09-11 | #198 |
 | Google ADK | `google.adk.models.lite_llm.LiteLlm(model="openai/…", api_base, extra_headers)` | UNVERIFIED | — | — | — |
 | MS Agent Framework | `agent_framework.openai.OpenAIChatClient(model, base_url, api_key, default_headers)` | VERIFIED | Class path confirmed; the constructor kwarg is `model=` — `model_id` is **not** accepted. `base_url`/`api_key`/`default_headers` all accepted, so `connection_kwargs()` is unchanged. Pinned to agent-framework 1.19.0. | 2026-09-22 | #520 (`verify_frameworks.py --only agent_framework`) |
-| OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model, openai_client=AsyncOpenAI(...))` | UNVERIFIED | — | — | — |
+| OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model="gpt-4o", openai_client=AsyncOpenAI(base_url, api_key, default_headers, http_client, max_retries=0))` | VERIFIED (offline signature) | Real DDK factory constructed the recorded public class; no live call was made. Tested: `mcp==1.28.1`; `openai==2.54.0`; `openai-agents==0.20.0`. | 2026-09-26 | [captured output + pinned environment](evidence/frameworks/openai_agents/README.md); `verify_frameworks.py --only openai_agents --emit-verified` |
 | Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client)` — model id per-call; the proxy's Anthropic-native ingress route is now **LIVE-verified at `POST /<base-path>/v1/messages`** (see §2, #304) and requires a `Format=Anthropic` proxy. Row stays UNVERIFIED for the **constructor signature** only (#34). | UNVERIFIED | — | — | — |
 | CrewAI | `crewai.LLM(model="openai/…", base_url, api_key, extra_headers)` | UNVERIFIED | — | — | — |
 | LlamaIndex | `llama_index.llms.openai_like.OpenAILike(is_chat_model=True)` | UNVERIFIED | — | — | — |
@@ -485,7 +485,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient` | UNVERIFIED | — |
 | Google ADK | `McpToolset` + `StreamableHTTPConnectionParams` | UNVERIFIED | — |
 | MS Agent Framework | MCP client/tool class for streamable HTTP | UNVERIFIED | — |
-| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
+| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={url, headers}, cache_tools_list=True, name="probe")` | VERIFIED (offline construction) | `mcp==1.28.1`; `openai==2.54.0`; `openai-agents==0.20.0`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/openai_agents/README.md). DDK binding guard retained. |
 | Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
 | CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED | — |
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
@@ -500,7 +500,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | Strands | tool spec input schema | UNVERIFIED | — |
 | ADK | `FunctionTool` declaration params | UNVERIFIED | — |
 | LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
-| OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
+| OpenAI Agents SDK | `agents.function_tool(fn)`: `.name`, `.description`, `.params_json_schema` | VERIFIED (offline attributes) | `mcp==1.28.1`; `openai==2.54.0`; `openai-agents==0.20.0`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/openai_agents/README.md). Descriptor derivation guard retained. |
 | Anthropic SDK | tool param dict `name`/`description`/`input_schema` | UNVERIFIED | — |
 | CrewAI | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
 | MS Agent Framework | `AIFunction` declaration + JSON schema | UNVERIFIED | — |

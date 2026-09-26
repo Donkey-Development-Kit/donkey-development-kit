@@ -1,0 +1,9 @@
+
+framework      installed  signature  expected  live    verdict
+--------------------------------------------------------------------
+openai_agents  yes        ok         ok        not run  VERIFIED
+
+
+# Paste into docs/verified-apis.md §8 (maintainer sign-off still required):
+
+| openai_agents | `agents.OpenAIChatCompletionsModel` | VERIFIED (signature) | agents.models.openai_chatcompletions.OpenAIChatCompletionsModel | 2026-09-26 | verify_frameworks.py |
