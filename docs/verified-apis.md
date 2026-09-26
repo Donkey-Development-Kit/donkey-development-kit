@@ -451,7 +451,7 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client)` — model id per-call; the proxy's Anthropic-native ingress route is now **LIVE-verified at `POST /<base-path>/v1/messages`** (see §2, #304) and requires a `Format=Anthropic` proxy. Row stays UNVERIFIED for the **constructor signature** only (#34). | UNVERIFIED | — | — | — |
 | CrewAI | `crewai.LLM(model="openai/…", base_url, api_key, extra_headers)` | UNVERIFIED | — | — | — |
 | LlamaIndex | `llama_index.llms.openai_like.OpenAILike(is_chat_model=True)` | UNVERIFIED | — | — | — |
-| Strands | `strands.models.openai.OpenAIModel(client_args={...})` | UNVERIFIED | — | — | — |
+| Strands | `strands.models.openai.OpenAIModel(model_id="gpt-4o", client_args={base_url, api_key, default_headers, http_client})` | VERIFIED (offline signature) | Real DDK factory constructed the recorded public class; no live call was made. Tested: `mcp==1.28.1`; `openai==2.54.0`; `strands-agents==1.57.1`. | 2026-09-26 | [captured output + pinned environment](evidence/frameworks/strands/README.md); `verify_frameworks.py --only strands --emit-verified` |
 
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
@@ -489,7 +489,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
 | CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED | — |
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
-| Strands | `MCPClient(lambda: streamablehttp_client(...))` | UNVERIFIED | — |
+| Strands | `strands.tools.mcp.MCPClient(lambda: mcp.client.streamable_http.streamablehttp_client(url, headers))` | VERIFIED (offline construction) | `mcp==1.28.1`; `openai==2.54.0`; `strands-agents==1.57.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/strands/README.md). DDK binding guard retained. |
 
 ## 10. Descriptor-derivation attributes (BG §2.5) — semi-public, put in nightly matrix
 
@@ -497,7 +497,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 |---|---|---|---|
 | FastMCP | `.name` `.description` `.inputSchema` | UNVERIFIED | — |
 | LangChain | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
-| Strands | tool spec input schema | UNVERIFIED | — |
+| Strands | `strands.tool(fn).tool_spec`: `name`, `description`, `inputSchema["json"]` | VERIFIED (offline attributes) | `mcp==1.28.1`; `openai==2.54.0`; `strands-agents==1.57.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/strands/README.md). Descriptor derivation guard retained. |
 | ADK | `FunctionTool` declaration params | UNVERIFIED | — |
 | LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
 | OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
