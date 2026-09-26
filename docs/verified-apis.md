@@ -462,6 +462,7 @@ run is diagnosable instead of surprising.
 
 | Dependency | Breaks at | Symptom | Status | Date |
 |---|---|---|---|---|
+| `mcp` / `fastmcp-slim` | Observed at `mcp==1.30.0` / `fastmcp-slim==3.4.7`; first affected version unknown | The guessed §10 native `.inputSchema` attribute is absent in both FastMCP implementations. Native tools expose `.parameters`; their `mcp.types.Tool` representation exposes `.inputSchema`. The two `FastMCP.list_tools()` methods return different representations. [Offline evidence](evidence/frameworks/fastmcp/README.md). This corrects an object-kind assumption, not a claimed upstream regression. | CORRECTED (ledger and introspection guidance; derivation remains guarded) | 2026-09-26 |
 | `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. **Mitigated** with a `cast(Any, …)` on the argument at the four version-conditional sites (`llm/client.py` ×2, `integrations/openai_agents.py`, and the `exc.response` cast in `integrations/langgraph.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-09-24 |
 
 The `cast(Any, …)` guards keep `mypy --strict` green against the newest `openai` a fresh
@@ -495,7 +496,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 
 | Framework | Attributes read | Status | Source |
 |---|---|---|---|
-| FastMCP | `.name` `.description` `.inputSchema` | UNVERIFIED | — |
+| FastMCP | Native `mcp.server.fastmcp.tools.base.Tool` and `fastmcp.tools.FunctionTool` (`fastmcp.tools.function_tool.FunctionTool`): `.name`, `.description`, `.parameters`; protocol `mcp.types.Tool`: `.name`, `.description`, `.inputSchema` | VERIFIED (corrected offline attributes) | `mcp==1.30.0`, `fastmcp==3.4.7`, implementation owner `fastmcp-slim==3.4.7`; 2026-09-26; [probe and captured output](evidence/frameworks/fastmcp/README.md), #653. Both real native tools and their protocol conversions checked. SDK FastMCP `list_tools()` returns protocol tools; standalone FastMCP `list_tools()` returns native tools, converted by `.to_mcp_tool()`. All calls in-process; no server/session started. Derivation guard retained. |
 | LangChain | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
 | Strands | tool spec input schema | UNVERIFIED | — |
 | ADK | `FunctionTool` declaration params | UNVERIFIED | — |

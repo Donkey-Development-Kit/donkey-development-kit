@@ -1,0 +1,97 @@
+{
+  "date": "2026-09-26",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "section": 10,
+  "status": "VERIFIED (corrected offline attributes)",
+  "versions": {
+    "fastmcp": "3.4.7",
+    "fastmcp-slim": "3.4.7",
+    "mcp": "1.30.0"
+  },
+  "network": "denied by audit hook",
+  "checks": [
+    {
+      "name": "lookup",
+      "description": "Look up a city.",
+      "native.parameters": {
+        "properties": {
+          "city": {
+            "title": "City",
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "title": "lookupArguments",
+        "type": "object"
+      },
+      "native.has_inputSchema": false,
+      "protocol.inputSchema": {
+        "properties": {
+          "city": {
+            "title": "City",
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "title": "lookupArguments",
+        "type": "object"
+      },
+      "protocol_symbol": {
+        "class": "mcp.types.Tool",
+        "owning_distribution": "mcp==1.30.0"
+      },
+      "implementation": "MCP Python SDK FastMCP",
+      "native_symbol": {
+        "class": "mcp.server.fastmcp.tools.base.Tool",
+        "owning_distribution": "mcp==1.30.0"
+      },
+      "conversion": "mcp.server.fastmcp.FastMCP.list_tools() (in-process)"
+    },
+    {
+      "name": "lookup",
+      "description": "Look up a city.",
+      "native.parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "type": "object"
+      },
+      "native.has_inputSchema": false,
+      "protocol.inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "type": "object"
+      },
+      "protocol_symbol": {
+        "class": "mcp.types.Tool",
+        "owning_distribution": "mcp==1.30.0"
+      },
+      "implementation": "standalone FastMCP",
+      "native_symbol": {
+        "class": "fastmcp.tools.function_tool.FunctionTool",
+        "owning_distribution": "fastmcp-slim==3.4.7"
+      },
+      "conversion": "fastmcp.tools.FunctionTool.to_mcp_tool()"
+    }
+  ]
+}
+
+# Candidate §10 row; no live session or descriptor implementation verified.
+| FastMCP | Native tools: `.name`, `.description`, `.parameters`; protocol `mcp.types.Tool`: `.name`, `.description`, `.inputSchema` | VERIFIED (corrected offline attributes) | fastmcp==3.4.7; fastmcp-slim==3.4.7; mcp==1.30.0; 2026-09-26; both FastMCP implementations probed; descriptor guard retained |

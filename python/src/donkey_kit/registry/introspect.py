@@ -18,7 +18,9 @@ Modes, by fidelity (BG §2.5):
 
 Every per-framework attribute read here is semi-public and WILL break on
 upstream releases → all go in the conformance kit + nightly matrix (BG §2.5).
-Names are UNVERIFIED (docs/verified-apis.md §10).
+See docs/verified-apis.md §10 for version-specific offline attribute evidence.
+Descriptor derivation remains unimplemented and guarded; native tool objects
+and MCP protocol representations can expose different schema attributes.
 """
 
 from __future__ import annotations

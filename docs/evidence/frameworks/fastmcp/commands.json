@@ -1,0 +1,67 @@
+{
+  "commands": {
+    "apis": [
+      "/private/tmp/ddk-descriptor-verify/bin/python",
+      "scripts/verification/verify_fastmcp_apis.py",
+      "--emit-verified"
+    ],
+    "pip-check": [
+      "/private/tmp/ddk-descriptor-verify/bin/python",
+      "-m",
+      "pip",
+      "check"
+    ],
+    "section-10": [
+      "/private/tmp/ddk-descriptor-verify/bin/python",
+      "scripts/verification/verify_fastmcp_apis.py",
+      "--section",
+      "10",
+      "--emit-verified"
+    ],
+    "gate-base-only": [
+      "/private/tmp/ddk-base-verify/bin/pytest",
+      "-q",
+      "tests/unit"
+    ],
+    "gate-pytest": [
+      "/private/tmp/ddk-gates/bin/pytest",
+      "-q"
+    ],
+    "gate-all-frameworks": [
+      "/private/tmp/ddk-framework-verify/bin/pytest",
+      "-q"
+    ],
+    "gate-mypy": [
+      "/private/tmp/ddk-gates/bin/mypy"
+    ],
+    "gate-ruff": [
+      "/private/tmp/ddk-gates/bin/ruff",
+      "check",
+      "."
+    ],
+    "gate-imports": [
+      "/private/tmp/ddk-gates/bin/lint-imports",
+      "--no-logo"
+    ],
+    "gate-diff": [
+      "git",
+      "diff",
+      "--check"
+    ]
+  },
+  "exit_codes": {
+    "apis": 0,
+    "pip-check": 0,
+    "section-10": 0,
+    "gate-base-only": 0,
+    "gate-pytest": 0,
+    "gate-all-frameworks": 0,
+    "gate-mypy": 0,
+    "gate-ruff": 0,
+    "gate-imports": 0,
+    "gate-diff": 0
+  },
+  "source": "/private/tmp/ddk-worktrees/fastmcp/python/src",
+  "telemetry": "Inherited telemetry environment left untouched; CrewAI telemetry disabled only.",
+  "probe_sha256": "60383211ce37e9904aba7a27b8f3259deb7dfaab97d8742f27a9b32edcd5c7fb"
+}
