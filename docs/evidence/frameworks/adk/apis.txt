@@ -1,0 +1,49 @@
+/private/tmp/ddk-framework-verify/lib/python3.11/site-packages/google/adk/features/_feature_decorator.py:71: UserWarning: [EXPERIMENTAL] feature FeatureName.PLUGGABLE_AUTH is enabled.
+  check_feature_enabled()
+/private/tmp/ddk-worktrees/adk/python/scripts/verification/verify_adk_apis.py:44: UserWarning: [EXPERIMENTAL] feature FeatureName.JSON_SCHEMA_FOR_FUNC_DECL is enabled.
+  declaration = tool._get_declaration()
+{
+  "binding": {
+    "connection_params": {
+      "headers": {
+        "x-probe": "offline"
+      },
+      "url": "https://placeholder.invalid/mcp"
+    }
+  },
+  "binding_symbols": [
+    {
+      "signature": "(*, connection_params: 'StdioServerParameters | StdioConnectionParams | SseConnectionParams | StreamableHTTPConnectionParams', tool_filter: 'ToolPredicate | list[str] | None' = None, tool_name_prefix: 'str | None' = None, tool_list_cache_ttl_seconds: 'float | None' = None, errlog: 'TextIO' = <_io.TextIOWrapper name='<stderr>' mode='w' encoding='utf-8'>, auth_scheme: 'AuthScheme | None' = None, auth_credential: 'AuthCredential | None' = None, require_confirmation: 'bool | Callable[..., bool]' = False, header_provider: 'Callable[[ReadonlyContext], dict[str, str] | Awaitable[dict[str, str]]] | None' = None, progress_callback: 'ProgressFnT | ProgressCallbackFactory | None' = None, use_mcp_resources: 'bool | None' = False, sampling_callback: 'SamplingFnT | None' = None, sampling_capabilities: 'SamplingCapability | None' = None, elicitation_callback: 'ElicitationFnT | None' = None, credential_key: 'str | None' = None)",
+      "symbol": "google.adk.tools.mcp_tool.mcp_toolset.McpToolset"
+    },
+    {
+      "signature": "(*, url: str, headers: dict[str, typing.Any] | None = None, timeout: float = 5.0, sse_read_timeout: float = 300.0, terminate_on_close: bool = True, httpx_client_factory: google.adk.tools.mcp_tool.mcp_session_manager.CheckableMcpHttpClientFactory = <function create_mcp_http_client at 0x10da923e0>) -> None",
+      "symbol": "google.adk.tools.mcp_tool.mcp_session_manager.StreamableHTTPConnectionParams"
+    }
+  ],
+  "descriptor": {
+    "description": "Look up a city.",
+    "name": "lookup",
+    "schema": {
+      "properties": {
+        "city": {
+          "title": "City",
+          "type": "string"
+        }
+      },
+      "required": [
+        "city"
+      ],
+      "title": "lookupParams",
+      "type": "object"
+    }
+  },
+  "network": "denied by audit hook; no gateway or live MCP verification",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "google-adk": "2.10.0",
+    "google-genai": "2.25.0",
+    "litellm": "1.102.1",
+    "mcp": "1.28.1"
+  }
+}
