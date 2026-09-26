@@ -1,0 +1,75 @@
+{
+  "binding": {
+    "mcp_servers": [
+      {
+        "name": "probe",
+        "type": "url",
+        "url": "https://placeholder.invalid/mcp"
+      }
+    ],
+    "scope": "SDK request serialization only; no MCP transport"
+  },
+  "binding_symbols": [
+    {
+      "signature": "(*, max_tokens: 'int', messages: 'Iterable[BetaMessageParam]', model: 'ModelParam', cache_control: 'Optional[BetaCacheControlEphemeralParam] | Omit' = <anthropic.Omit object at 0x108cf7250>, container: 'Optional[message_create_params.Container] | Omit' = <anthropic.Omit object at 0x108cf7250>, context_management: 'Optional[BetaContextManagementConfigParam] | Omit' = <anthropic.Omit object at 0x108cf7250>, diagnostics: 'Optional[BetaDiagnosticsParam] | Omit' = <anthropic.Omit object at 0x108cf7250>, fallback_credit_token: 'Optional[str] | Omit' = <anthropic.Omit object at 0x108cf7250>, fallbacks: 'Optional[Iterable[BetaFallbackParam]] | Omit' = <anthropic.Omit object at 0x108cf7250>, inference_geo: 'Optional[str] | Omit' = <anthropic.Omit object at 0x108cf7250>, mcp_servers: 'Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit' = <anthropic.Omit object at 0x108cf7250>, metadata: 'BetaMetadataParam | Omit' = <anthropic.Omit object at 0x108cf7250>, output_config: 'BetaOutputConfigParam | Omit' = <anthropic.Omit object at 0x108cf7250>, output_format: 'Optional[BetaJSONOutputFormatParam] | Omit' = <anthropic.Omit object at 0x108cf7250>, service_tier: \"Literal['auto', 'standard_only'] | Omit\" = <anthropic.Omit object at 0x108cf7250>, speed: \"Optional[Literal['standard', 'fast']] | Omit\" = <anthropic.Omit object at 0x108cf7250>, stop_sequences: 'SequenceNotStr[str] | Omit' = <anthropic.Omit object at 0x108cf7250>, stream: 'Literal[False] | Literal[True] | Omit' = <anthropic.Omit object at 0x108cf7250>, system: 'Union[str, Iterable[BetaTextBlockParam]] | Omit' = <anthropic.Omit object at 0x108cf7250>, temperature: 'float | Omit' = <anthropic.Omit object at 0x108cf7250>, thinking: 'BetaThinkingConfigParam | Omit' = <anthropic.Omit object at 0x108cf7250>, tool_choice: 'BetaToolChoiceParam | Omit' = <anthropic.Omit object at 0x108cf7250>, tools: 'Iterable[BetaToolUnionParam] | Omit' = <anthropic.Omit object at 0x108cf7250>, top_k: 'int | Omit' = <anthropic.Omit object at 0x108cf7250>, top_p: 'float | Omit' = <anthropic.Omit object at 0x108cf7250>, betas: 'List[AnthropicBetaParam] | Omit' = <anthropic.Omit object at 0x108cf7250>, user_profile_id: 'str | Omit' = <anthropic.Omit object at 0x108cf7250>, extra_headers: 'Headers | None' = None, extra_query: 'Query | None' = None, extra_body: 'Body | None' = None, timeout: 'float | httpx.Timeout | None | NotGiven' = NOT_GIVEN) -> 'BetaMessage | AsyncStream[BetaRawMessageStreamEvent]'",
+      "symbol": "anthropic.AsyncAnthropic.beta.messages.create"
+    }
+  ],
+  "descriptor": {
+    "serialized_request": {
+      "max_tokens": 1,
+      "mcp_servers": [
+        {
+          "name": "probe",
+          "type": "url",
+          "url": "https://placeholder.invalid/mcp"
+        }
+      ],
+      "messages": [
+        {
+          "content": "probe",
+          "role": "user"
+        }
+      ],
+      "model": "probe",
+      "tools": [
+        {
+          "description": "Look up a city.",
+          "input_schema": {
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "name": "lookup"
+        }
+      ]
+    },
+    "tool": {
+      "description": "Look up a city.",
+      "input_schema": {
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "type": "object"
+      },
+      "name": "lookup"
+    }
+  },
+  "network": "denied by audit hook; no gateway or live MCP verification",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "anthropic": "0.116.0",
+    "httpx": "0.28.1"
+  }
+}

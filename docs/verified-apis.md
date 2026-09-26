@@ -448,7 +448,7 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | Google ADK | `google.adk.models.lite_llm.LiteLlm(model="openai/…", api_base, extra_headers)` | UNVERIFIED | — | — | — |
 | MS Agent Framework | `agent_framework.openai.OpenAIChatClient(model, base_url, api_key, default_headers)` | VERIFIED | Class path confirmed; the constructor kwarg is `model=` — `model_id` is **not** accepted. `base_url`/`api_key`/`default_headers` all accepted, so `connection_kwargs()` is unchanged. Pinned to agent-framework 1.19.0. | 2026-09-22 | #520 (`verify_frameworks.py --only agent_framework`) |
 | OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model, openai_client=AsyncOpenAI(...))` | UNVERIFIED | — | — | — |
-| Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client)` — model id per-call; the proxy's Anthropic-native ingress route is now **LIVE-verified at `POST /<base-path>/v1/messages`** (see §2, #304) and requires a `Format=Anthropic` proxy. Row stays UNVERIFIED for the **constructor signature** only (#34). | UNVERIFIED | — | — | — |
+| Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client, max_retries=0)` | VERIFIED (offline signature) | Real DDK factory constructed the recorded public class; no live call was made. Model is per-call; the independently live-verified `/v1/messages` route requires `Format=Anthropic` (§2). Tested: `anthropic==0.116.0`; `httpx==0.28.1`. | 2026-09-26 | [captured output + pinned environment](evidence/frameworks/anthropic/README.md); `verify_frameworks.py --only anthropic --emit-verified` |
 | CrewAI | `crewai.LLM(model="openai/…", base_url, api_key, extra_headers)` | UNVERIFIED | — | — | — |
 | LlamaIndex | `llama_index.llms.openai_like.OpenAILike(is_chat_model=True)` | UNVERIFIED | — | — | — |
 | Strands | `strands.models.openai.OpenAIModel(client_args={...})` | UNVERIFIED | — | — | — |
@@ -486,7 +486,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | Google ADK | `McpToolset` + `StreamableHTTPConnectionParams` | UNVERIFIED | — |
 | MS Agent Framework | MCP client/tool class for streamable HTTP | UNVERIFIED | — |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
-| Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
+| Anthropic SDK | `anthropic.AsyncAnthropic.beta.messages.create(mcp_servers=[{type: "url", name, url}], ...)`; `anthropic.types.beta.BetaRequestMCPServerURLDefinitionParam` — SDK serialization only, not a local MCP binding client | VERIFIED (SDK serialization); MCP transport UNVERIFIED | `anthropic==0.116.0`; `httpx==0.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/anthropic/README.md). DDK binding guard retained. |
 | CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED | — |
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
 | Strands | `MCPClient(lambda: streamablehttp_client(...))` | UNVERIFIED | — |
@@ -501,7 +501,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | ADK | `FunctionTool` declaration params | UNVERIFIED | — |
 | LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
 | OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
-| Anthropic SDK | tool param dict `name`/`description`/`input_schema` | UNVERIFIED | — |
+| Anthropic SDK | `anthropic.types.ToolParam`: dict keys `name`, `description`, `input_schema`; annotations and request serialization verified, not framework-derived schema | VERIFIED (offline attributes) | `anthropic==0.116.0`; `httpx==0.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/anthropic/README.md). Descriptor derivation guard retained. |
 | CrewAI | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
 | MS Agent Framework | `AIFunction` declaration + JSON schema | UNVERIFIED | — |
 
