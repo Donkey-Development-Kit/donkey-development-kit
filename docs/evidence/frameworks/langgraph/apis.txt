@@ -1,0 +1,46 @@
+{
+  "binding": {
+    "connections": {
+      "probe": {
+        "headers": {
+          "x-probe": "offline"
+        },
+        "transport": "streamable_http",
+        "url": "https://placeholder.invalid/mcp"
+      }
+    }
+  },
+  "binding_symbols": [
+    {
+      "signature": "(connections: dict[str, langchain_mcp_adapters.sessions.StdioConnection | langchain_mcp_adapters.sessions.SSEConnection | langchain_mcp_adapters.sessions.StreamableHttpConnection | langchain_mcp_adapters.sessions.WebsocketConnection] | None = None, *, callbacks: langchain_mcp_adapters.callbacks.Callbacks | None = None, tool_interceptors: list[langchain_mcp_adapters.interceptors.ToolCallInterceptor] | None = None, tool_name_prefix: bool = False, handle_tool_errors: bool = True) -> None",
+      "symbol": "langchain_mcp_adapters.client.MultiServerMCPClient"
+    }
+  ],
+  "descriptor": {
+    "args_schema": {
+      "description": "Look up a city.",
+      "properties": {
+        "city": {
+          "title": "City",
+          "type": "string"
+        }
+      },
+      "required": [
+        "city"
+      ],
+      "title": "lookup",
+      "type": "object"
+    },
+    "description": "Look up a city.",
+    "name": "lookup"
+  },
+  "network": "denied by audit hook; no gateway or live MCP verification",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "langchain-core": "1.6.5",
+    "langchain-mcp-adapters": "0.3.2",
+    "langchain-openai": "1.6.6",
+    "langgraph": "1.2.12",
+    "mcp": "1.28.1"
+  }
+}
