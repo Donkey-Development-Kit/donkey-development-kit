@@ -1,0 +1,43 @@
+{
+  "binding": {
+    "cache_tools_list": true,
+    "name": "probe",
+    "params": {
+      "headers": {
+        "x-probe": "offline"
+      },
+      "url": "https://placeholder.invalid/mcp"
+    }
+  },
+  "binding_symbols": [
+    {
+      "signature": "(params: 'MCPServerStreamableHttpParams', cache_tools_list: 'bool' = False, name: 'str | None' = None, client_session_timeout_seconds: 'float | None' = 5, tool_filter: 'ToolFilter' = None, use_structured_content: 'bool' = False, max_retry_attempts: 'int' = 0, retry_backoff_seconds_base: 'float' = 1.0, message_handler: 'MessageHandlerFnT | None' = None, require_approval: 'RequireApprovalSetting' = None, failure_error_function: 'ToolErrorFunction | None | _UnsetType' = <agents.mcp.server._UnsetType object at 0x10b848990>, tool_meta_resolver: 'MCPToolMetaResolver | None' = None, custom_data_extractor: 'MCPToolCustomDataExtractor | None' = None)",
+      "symbol": "agents.mcp.server.MCPServerStreamableHttp"
+    }
+  ],
+  "descriptor": {
+    "description": "Look up a city.",
+    "name": "lookup",
+    "params_json_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "city": {
+          "title": "City",
+          "type": "string"
+        }
+      },
+      "required": [
+        "city"
+      ],
+      "title": "lookup_args",
+      "type": "object"
+    }
+  },
+  "network": "denied by audit hook; no gateway or live MCP verification",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "mcp": "1.28.1",
+    "openai": "2.54.0",
+    "openai-agents": "0.20.0"
+  }
+}
