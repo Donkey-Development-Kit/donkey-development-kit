@@ -79,8 +79,8 @@ def test_model_not_found_uses_the_400_fallback_with_no_header_file() -> None:
 
 
 def test_empty_body_shapes_load_as_empty_bytes() -> None:
-    # Rows 1/3/4/6 are real empty-body captures — not a guessed body.
-    for shape in ("token-rate-limit", "injection-protection", "content-moderation", "upstream-5xx"):
+    # Row 1 is captured empty; row 4 remains unknown and row 6 is synthetic.
+    for shape in ("token-rate-limit", "content-moderation", "upstream-5xx"):
         assert fx.load(shape).body == b""
 
 

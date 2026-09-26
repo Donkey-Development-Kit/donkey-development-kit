@@ -1,0 +1,26 @@
+{
+  "captured_at": "2026-09-26T13:45:03Z",
+  "origin": "msaleme own org; not the DDK team sandbox",
+  "organization_id": "4ac1188d-b7b2-469d-9ec5-e68c760bf874",
+  "environment_name": "Sandbox",
+  "environment_id": "67ebd3a4-afb7-4f6f-be27-3c4a8611be15",
+  "api_instance_id": 21199453,
+  "policy_instance_id": 9349269,
+  "policy_gav": "68ef9520-24e9-4cf2-b2f5-620025690913:injection-protection:1.0.1",
+  "gateway_id": "c636f4ea-0069-420a-827c-6b9e3bbc76a6",
+  "gateway_version": "1.12.9",
+  "cli_plugin_version": "1.3.0",
+  "request_method": "POST",
+  "request_url": "https://m-f-g-large-ingress1-iprchw.wgd7if.usa-e2.cloudhub.io/4ac1188d-b7b2-469d-9ec5-e68c760bf874/ddk-253-injection-upstream/ddk253CaptureOpenai/chat/completions",
+  "status": 400,
+  "header_bytes": 340,
+  "body_bytes": 79,
+  "headers_sha256": "663886ff9bfab74f7bcbc98b5e4ac82efef26dde5307332bd4575ec60ff1599c",
+  "body_sha256": "410d0b612a62c85041652e4fb200ccc312f6456b94f4b85b2a69fda050fd5e60",
+  "benign_probe": {
+    "status": 401,
+    "classification": "Recognised upstream invalid_api_key; no successful completion claimed.",
+    "committed": false
+  },
+  "row_4": "UNVERIFIED: no genuine unrecognised data-plane 4xx observed."
+}

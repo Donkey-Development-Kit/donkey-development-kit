@@ -1,3 +1,10 @@
 HTTP/1.1 400 Bad Request
+content-type: application/json; charset=UTF-8
 x-injection-protection: blocked
-content-length: 0
+content-length: 79
+date: Sat, 26 Sep 2026 13:45:03 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: 71f2d88a-af8f-4449-868a-bb85be29ce30
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Keep-Alive
+

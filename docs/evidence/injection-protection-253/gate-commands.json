@@ -1,0 +1,44 @@
+{
+  "commands": {
+    "base-only": [
+      "/private/tmp/ddk-base-verify/bin/pytest",
+      "-q",
+      "tests/unit"
+    ],
+    "pytest": [
+      "/private/tmp/ddk-gates/bin/pytest",
+      "-q"
+    ],
+    "all-frameworks": [
+      "/private/tmp/ddk-framework-verify/bin/pytest",
+      "-q"
+    ],
+    "mypy": [
+      "/private/tmp/ddk-gates/bin/mypy"
+    ],
+    "ruff": [
+      "/private/tmp/ddk-gates/bin/ruff",
+      "check",
+      "."
+    ],
+    "imports": [
+      "/private/tmp/ddk-gates/bin/lint-imports",
+      "--no-logo"
+    ],
+    "diff": [
+      "git",
+      "diff",
+      "--check"
+    ]
+  },
+  "exit_codes": {
+    "base-only": 0,
+    "pytest": 0,
+    "all-frameworks": 0,
+    "mypy": 0,
+    "ruff": 0,
+    "imports": 0,
+    "diff": 0
+  },
+  "telemetry": "OpenTelemetry settings untouched; CrewAI telemetry disabled."
+}

@@ -1,0 +1,12 @@
+{
+  "builtInProtections": [
+    "sql",
+    "xss"
+  ],
+  "customProtections": [],
+  "protectPathAndQuery": true,
+  "protectHeaders": false,
+  "protectBody": true,
+  "headersToProtect": "",
+  "rejectRequests": true
+}

@@ -1,0 +1,29 @@
+{
+  "api_instance_removed": 21199453,
+  "existing_api_ids_preserved": [
+    21069354,
+    21069355,
+    21069356,
+    21069357,
+    21069358,
+    21087483,
+    21087772,
+    21096012,
+    21111513,
+    21164956
+  ],
+  "unexpected_removed_api_ids": [],
+  "remaining_capture_deployments": 0,
+  "consumer_application_delete": {
+    "application_id": 188951879,
+    "delete_status": 204,
+    "body": ""
+  },
+  "gateway_inventory_unchanged": [
+    "7d4b4351-3e14-4694-84eb-345ed51388c1",
+    "969d0f10-c7ec-44c5-a013-1887d234dae0",
+    "c636f4ea-0069-420a-827c-6b9e3bbc76a6",
+    "e2953786-13d8-4d5b-8d66-83501752d57d",
+    "f70387a5-3936-458b-b78a-b4d664b051e1"
+  ]
+}
