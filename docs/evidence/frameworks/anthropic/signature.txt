@@ -1,0 +1,9 @@
+
+framework  installed  signature  expected  live    verdict
+----------------------------------------------------------------
+anthropic  yes        ok         ok        not run  VERIFIED
+
+
+# Paste into docs/verified-apis.md §8 (maintainer sign-off still required):
+
+| anthropic | `anthropic.AsyncAnthropic` | VERIFIED (signature) | anthropic.AsyncAnthropic | 2026-09-26 | verify_frameworks.py |

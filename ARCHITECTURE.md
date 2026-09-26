@@ -164,8 +164,10 @@ What is verified today: the LLM-proxy data plane (its base-URL shape — note th
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
-discovery, the provisioning control plane, and the exact framework-adapter class
-names/kwargs (the conformance kit and the build plan phases).
+discovery, the provisioning control plane, and any framework-adapter class
+names/kwargs still unverified in the ledger. Offline installed-package checks
+establish only the recorded signatures and attributes; they do not establish
+live MCP behavior or remove the binding/descriptor guards.
 
 ---
 
