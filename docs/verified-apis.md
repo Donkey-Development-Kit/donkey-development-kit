@@ -450,7 +450,7 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model, openai_client=AsyncOpenAI(...))` | UNVERIFIED | — | — | — |
 | Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client)` — model id per-call; the proxy's Anthropic-native ingress route is now **LIVE-verified at `POST /<base-path>/v1/messages`** (see §2, #304) and requires a `Format=Anthropic` proxy. Row stays UNVERIFIED for the **constructor signature** only (#34). | UNVERIFIED | — | — | — |
 | CrewAI | `crewai.LLM(model="openai/…", base_url, api_key, extra_headers)` | UNVERIFIED | — | — | — |
-| LlamaIndex | `llama_index.llms.openai_like.OpenAILike(is_chat_model=True)` | UNVERIFIED | — | — | — |
+| LlamaIndex | `llama_index.llms.openai_like.OpenAILike(model="gpt-4o", api_base, api_key, default_headers, is_chat_model=True, is_function_calling_model=True)` | VERIFIED (offline signature) | Real DDK factory constructed the recorded public class; no live call was made. Tested: `llama-index-core==0.14.25`; `llama-index-llms-openai-like==0.8.0`; `llama-index-tools-mcp==0.4.8`; `mcp==1.28.1`. | 2026-09-26 | [captured output + pinned environment](evidence/frameworks/llamaindex/README.md); `verify_frameworks.py --only llamaindex --emit-verified` |
 | Strands | `strands.models.openai.OpenAIModel(client_args={...})` | UNVERIFIED | — | — | — |
 
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
@@ -488,7 +488,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
 | Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
 | CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED | — |
-| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
+| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient(command_or_url, headers)` + `McpToolSpec(client, allowed_tools)` | VERIFIED (offline construction) | `llama-index-core==0.14.25`; `llama-index-llms-openai-like==0.8.0`; `llama-index-tools-mcp==0.4.8`; `mcp==1.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/llamaindex/README.md). DDK binding guard retained. |
 | Strands | `MCPClient(lambda: streamablehttp_client(...))` | UNVERIFIED | — |
 
 ## 10. Descriptor-derivation attributes (BG §2.5) — semi-public, put in nightly matrix
@@ -499,7 +499,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | LangChain | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
 | Strands | tool spec input schema | UNVERIFIED | — |
 | ADK | `FunctionTool` declaration params | UNVERIFIED | — |
-| LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
+| LlamaIndex | `llama_index.core.tools.FunctionTool.from_defaults(fn=...)`: `.metadata.name`, `.metadata.description`, `.metadata.fn_schema.model_json_schema()` | VERIFIED (offline attributes) | `llama-index-core==0.14.25`; `llama-index-llms-openai-like==0.8.0`; `llama-index-tools-mcp==0.4.8`; `mcp==1.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/llamaindex/README.md). Descriptor derivation guard retained. |
 | OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
 | Anthropic SDK | tool param dict `name`/`description`/`input_schema` | UNVERIFIED | — |
 | CrewAI | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |

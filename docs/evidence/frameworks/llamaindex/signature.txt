@@ -1,0 +1,9 @@
+
+framework   installed  signature  expected  live    verdict
+-----------------------------------------------------------------
+llamaindex  yes        ok         ok        not run  VERIFIED
+
+
+# Paste into docs/verified-apis.md §8 (maintainer sign-off still required):
+
+| llamaindex | `llama_index.llms.openai_like.OpenAILike` | VERIFIED (signature) | llama_index.llms.openai_like.base.OpenAILike | 2026-09-26 | verify_frameworks.py |

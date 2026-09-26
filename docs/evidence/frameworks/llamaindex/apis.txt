@@ -1,0 +1,46 @@
+{
+  "binding": {
+    "allowed_tools": [
+      "lookup"
+    ],
+    "command_or_url": "https://placeholder.invalid/mcp",
+    "headers": {
+      "x-probe": "offline"
+    }
+  },
+  "binding_symbols": [
+    {
+      "signature": "(command_or_url: str, args: Optional[List[str]] = None, env: Optional[Dict[str, str]] = None, timeout: int = 30, sse_read_timeout: int = 300, auth: Optional[mcp.client.auth.oauth2.OAuthClientProvider] = None, sampling_callback: Optional[Callable[[mcp.types.CreateMessageRequestParams], Awaitable[mcp.types.CreateMessageResult]]] = None, headers: Optional[Dict[str, Any]] = None, tool_call_logs_callback: Optional[Callable[[List[str]], Awaitable[Any]]] = None, http_client: Optional[httpx.AsyncClient] = None)",
+      "symbol": "llama_index.tools.mcp.client.BasicMCPClient"
+    },
+    {
+      "signature": "(client: mcp.client.session.ClientSession, allowed_tools: Optional[List[str]] = None, global_partial_params: Optional[Dict[str, Any]] = None, partial_params_by_tool: Optional[Dict[str, Dict[str, Any]]] = None, include_resources: bool = False) -> None",
+      "symbol": "llama_index.tools.mcp.base.McpToolSpec"
+    }
+  ],
+  "descriptor": {
+    "metadata.description": "lookup(city: 'str') -> 'str'\nLook up a city.",
+    "metadata.fn_schema": {
+      "properties": {
+        "city": {
+          "title": "City",
+          "type": "string"
+        }
+      },
+      "required": [
+        "city"
+      ],
+      "title": "lookup",
+      "type": "object"
+    },
+    "metadata.name": "lookup"
+  },
+  "network": "denied by audit hook; no gateway or live MCP verification",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "llama-index-core": "0.14.25",
+    "llama-index-llms-openai-like": "0.8.0",
+    "llama-index-tools-mcp": "0.4.8",
+    "mcp": "1.28.1"
+  }
+}
