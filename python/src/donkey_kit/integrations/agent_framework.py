@@ -60,8 +60,7 @@ class AgentFrameworkAdapter(Adapter):
         try:
             return OpenAIChatClient(
                 model=model,  # verified: docs/verified-apis.md §8 (1.19.0)
-                **self.connection_kwargs(),
-                **kw,
+                **{**self.connection_kwargs(), **kw},
             )
         except TypeError as exc:
             # A TypeError from the constructor means a kwarg this adapter relies on

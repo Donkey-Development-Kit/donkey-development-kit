@@ -62,7 +62,7 @@ class OpenAIAgentsAdapter(Adapter):
         ready to pass into ``agents.Agent(model=...)`` (BG §1.8)."""
         from agents import OpenAIChatCompletionsModel  # VERIFY name/path: docs/verified-apis.md §8
 
-        return OpenAIChatCompletionsModel(model=model, **self.connection_kwargs(), **kw)
+        return OpenAIChatCompletionsModel(model=model, **{**self.connection_kwargs(), **kw})
 
 
 def model(model: str, **kw: Any) -> OpenAIChatCompletionsModel:

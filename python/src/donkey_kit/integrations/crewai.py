@@ -47,7 +47,7 @@ class CrewAIAdapter(Adapter):
         from crewai import LLM  # VERIFY name/path: docs/verified-apis.md §8
 
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
-        return LLM(model=f"openai/{model}", **self.connection_kwargs(), **kw)
+        return LLM(model=f"openai/{model}", **{**self.connection_kwargs(), **kw})
 
 
 def llm(model: str, **kw: Any) -> LLM:
