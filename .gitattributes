@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Captured HTTP headers retain CRLF; body retains its exact bytes (no final LF).
+python/tests/fixtures/rejections/reject.injection-protection.headers.txt binary
+python/tests/fixtures/rejections/reject.injection-protection.body.json -text

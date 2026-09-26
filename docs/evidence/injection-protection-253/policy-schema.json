@@ -1,0 +1,96 @@
+{
+  "name": "Injection Protection",
+  "category": "Security",
+  "description": "Protects against SQL injection and cross-site scripting (XSS) attacks by analyzing request paths, query parameters, headers, and body content.",
+  "configuration": [
+    {
+      "type": "string",
+      "sensitive": false,
+      "allowMultiple": true,
+      "description": "Select which built-in protections to enable. Can be left empty if custom protections are configured.",
+      "defaultValue": [],
+      "name": "Built-in Protections",
+      "propertyName": "builtInProtections",
+      "optional": true
+    },
+    {
+      "type": "nested",
+      "sensitive": false,
+      "allowMultiple": true,
+      "description": "Add custom regular expression patterns for injection detection.",
+      "defaultValue": [],
+      "name": "Custom Protections",
+      "configuration": [
+        {
+          "type": "string",
+          "sensitive": false,
+          "allowMultiple": false,
+          "description": "Descriptive name for this custom rule.",
+          "name": "Rule Name",
+          "propertyName": "name",
+          "optional": false
+        },
+        {
+          "type": "string",
+          "sensitive": false,
+          "allowMultiple": false,
+          "description": "Regular expression pattern for injection detection.",
+          "name": "Regular Expression",
+          "propertyName": "regex",
+          "optional": false
+        }
+      ],
+      "propertyName": "customProtections",
+      "optional": true
+    },
+    {
+      "type": "boolean",
+      "sensitive": false,
+      "allowMultiple": false,
+      "description": "Scan URL path and query string parameters for injection patterns.",
+      "defaultValue": true,
+      "name": "Protect Path and Query Parameters",
+      "propertyName": "protectPathAndQuery",
+      "optional": false
+    },
+    {
+      "type": "boolean",
+      "sensitive": false,
+      "allowMultiple": false,
+      "description": "Scan HTTP headers for injection patterns.",
+      "defaultValue": true,
+      "name": "Protect HTTP Headers",
+      "propertyName": "protectHeaders",
+      "optional": false
+    },
+    {
+      "type": "string",
+      "sensitive": false,
+      "allowMultiple": false,
+      "description": "Comma-separated list of headers to scan for injection patterns. Leave empty to scan all headers.",
+      "name": "Headers to Protect",
+      "propertyName": "headersToProtect",
+      "optional": true
+    },
+    {
+      "type": "boolean",
+      "sensitive": false,
+      "allowMultiple": false,
+      "description": "Scan request body content for injection patterns.",
+      "defaultValue": false,
+      "name": "Protect Request Body",
+      "propertyName": "protectBody",
+      "optional": false
+    },
+    {
+      "type": "boolean",
+      "sensitive": false,
+      "allowMultiple": false,
+      "description": "Block requests matching injection patterns with 403 Forbidden. If disabled, requests are logged but allowed.",
+      "defaultValue": true,
+      "name": "Reject Malicious Requests",
+      "propertyName": "rejectRequests",
+      "optional": false
+    }
+  ]
+}

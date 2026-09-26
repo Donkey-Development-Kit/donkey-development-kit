@@ -15,7 +15,8 @@
   "rejections/reject.content-moderation.headers.txt": "sha256:5df6a849d1ea245db54617e66f1d380566270f23102ca0cb8046a1c8b990cbda",
   "rejections/reject.content-safety.body.json": "sha256:678a01904e36159a5089f4e0784fc3a61b9fcdeefda04e6a16c07b8e81fea267",
   "rejections/reject.content-safety.headers.txt": "sha256:d991dbc094133c574968b5f735d000398fb556bbae5c65139fba11ce7e3bfdec",
-  "rejections/reject.injection-protection.headers.txt": "sha256:7964c425ed91c8498b6f25474d6cd91c0350ec3803496f75c40fb71004930ea2",
+  "rejections/reject.injection-protection.body.json": "sha256:410d0b612a62c85041652e4fb200ccc312f6456b94f4b85b2a69fda050fd5e60",
+  "rejections/reject.injection-protection.headers.txt": "sha256:663886ff9bfab74f7bcbc98b5e4ac82efef26dde5307332bd4575ec60ff1599c",
   "rejections/reject.regex-prompt-guard.body.json": "sha256:9bf2ca369b9250edbac362f3d74904d76d8c6e338c1c9ef53fe33b9848db7f23",
   "rejections/reject.regex-prompt-guard.headers.txt": "sha256:01c9848a2470e700602713dc0530656c4ff6be647b69441308b24e78ab3e11ae",
   "rejections/reject.upstream-5xx.headers.txt": "sha256:0e284c1ab5e63c77a51ee3ba8386c4c5c4caadca5b55ac14d51b215251e89a79"

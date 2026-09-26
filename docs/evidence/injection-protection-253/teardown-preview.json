@@ -1,0 +1,26 @@
+{
+  "dryRun": true,
+  "count": 2,
+  "resources": [
+    {
+      "kind": "Egress connection",
+      "name": "ddk253CaptureOpenai",
+      "detail": "connectionId=4ac1188d-b7b2-469d-9ec5-e68c760bf874:ddk-253-injection-upstream:ddk253CaptureOpenai",
+      "gav": {
+        "groupId": "4ac1188d-b7b2-469d-9ec5-e68c760bf874",
+        "assetId": "ddk-253-injection-upstream",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "kind": "AMC deployment",
+      "name": "ddk-253-injection-capture",
+      "detail": "ddk-253-injection-capture",
+      "gav": {
+        "groupId": "4ac1188d-b7b2-469d-9ec5-e68c760bf874",
+        "assetId": "ddk-253-injection-capture",
+        "version": "1.0.0"
+      }
+    }
+  ]
+}

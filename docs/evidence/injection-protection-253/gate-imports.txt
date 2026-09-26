@@ -1,0 +1,15 @@
+
+---------
+Contracts
+---------
+
+Analyzed 58 files, 156 dependencies.
+------------------------------------
+
+core is framework-free (nothing in integrations may be imported by lower layers)KEPT
+layered architecture KEPT
+integrations are mutually independent (no cross-framework leakage, §1.1) KEPT
+simulator is a dev-only sibling (BG §1.4) KEPT
+conformance is a dev-only sibling (BG §1.5) KEPT
+
+Contracts: 5 kept, 0 broken.

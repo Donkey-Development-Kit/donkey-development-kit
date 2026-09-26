@@ -169,7 +169,10 @@ SHAPES: dict[str, _Spec] = {
         403,
     ),
     "injection-protection": _Spec(
-        "rejections", "reject.injection-protection.headers.txt", None, 400
+        "rejections",
+        "reject.injection-protection.headers.txt",
+        "reject.injection-protection.body.json",
+        400,
     ),
     "regex-prompt-guard": _Spec(
         "rejections",

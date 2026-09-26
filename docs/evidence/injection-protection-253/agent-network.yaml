@@ -1,0 +1,23 @@
+agentNetwork: 2.0.0
+info:
+  label: ddk-253-injection-capture
+  version: v1
+registry:
+  llms:
+    ddk-253-injection-upstream:
+      info:
+        label: 'DDK #253 Injection Capture Upstream'
+        description: OpenAI LLM Provider
+      metadata:
+        platform: OpenAI
+context:
+  connections:
+    ddk253CaptureOpenai:
+      kind: llm
+      ref:
+        name: ddk-253-injection-upstream
+      url: https://api.openai.com/v1
+      authentication:
+        kind: apiKey
+        apiKey: ${openai.apiKey}
+brokers: {}

@@ -19,10 +19,12 @@
 > rejection shapes were also `VERIFIED (LIVE)` on 2026-09-22 against the deployed
 > `ddk-injection-guard` / `ddk-azure-content-safety` proxies (#253), and the
 > Bedrock Guardrails content-safety shape (same `…-action: reject` family) on
-> 2026-09-24 against `ddk-bedrock-guardrails` (#568). Still
-> `UNVERIFIED`: the Injection Protection body (`x-injection-protection: blocked`,
-> a distinct policy — no proxy deployed) and any other unrecognised
-> content-moderation shape (§4, pending live capture #253), and the **framework
+> 2026-09-24 against `ddk-bedrock-guardrails` (#568). Injection Protection is
+> `VERIFIED (LIVE)` on 2026-09-26: HTTP `400`, `x-injection-protection: blocked`,
+> and a 79-byte JSON body from instance `21199453` in **msaleme's own org / Sandbox**,
+> not the DDK team sandbox (policy `injection-protection` `1.0.1`, gateway `1.12.9`; #253).
+> Still `UNVERIFIED`: any other unrecognised content-moderation shape (§4; none
+> observed during this capture), and the **framework
 > constructor/binding names** (§§8–10). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
@@ -278,7 +280,8 @@ message); a top-level `matched_patterns` list → `PromptInjectionBlocked`
 header (Azure Content Safety / Amazon Bedrock Guardrails) → `ContentSafetyBlocked`
 (parses `categories` from the sibling `…-reason` header) — both of these also
 checked *before* the 401/403→auth rule so a `403` moderation block is not
-mis-typed as auth; header `x-injection-protection: blocked` (documented by the
+mis-typed as auth; header `x-injection-protection: blocked` (LIVE-captured
+2026-09-26, instance `21199453`, policy `injection-protection` `1.0.1`;
 [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection)) →
 `PromptInjectionBlocked` (the header, not the status, is the discriminator, so a
 bare `400` is unaffected); `429` → `TokenBudgetExceeded` with `retry_after`
@@ -294,34 +297,42 @@ whose message names the observed status and any `x-llm-proxy-*` policy headers a
 states the **shape is unconfirmed** (#184), rather than being mis-typed. The full
 eight-shape taxonomy is indexed in `tests/fixtures/rejections/README.md`.
 
-The Regex Prompt Guard and content-safety/guardrail shapes below are now
-**VERIFIED (LIVE), 2026-09-22 (#253)** — confirmed against the deployed
-provisioning proxies (`ddk-injection-guard`, `ddk-azure-content-safety`), not
-only typed from the policy pages. They have **no `_verify.py` constant** —
+The named policy rejection shapes below are **VERIFIED (LIVE)** against the
+deployed proxies and dates recorded in each row, rather than only typed from
+the policy pages. They have **no `_verify.py` constant** —
 `classify()` reads them straight from the response — so the verification record
 is these rows, not an `Unverified(...)` flip:
 
 | Shape | HTTP | Discriminator | Maps to | Source |
 |---|---|---|---|---|
+| Injection Protection | `400` | `x-injection-protection: blocked`; observed 79-byte body `{"message":"Injection attack detected - Rule: 'SQL Injection', Location: Body"}` | `PromptInjectionBlocked` (`policy="prompt-injection-protection"`) | **VERIFIED (LIVE), 2026-09-26 (#253)** — msaleme's own org `4ac1188d-b7b2-469d-9ec5-e68c760bf874`, Sandbox `67ebd3a4-afb7-4f6f-be27-3c4a8611be15` (not the DDK team sandbox), instance `21199453`; interface `injection-protection` `1.0.1`, gateway `1.12.9`. [Capture, prompt and teardown evidence](evidence/injection-protection-253/README.md). |
 | Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4); VERIFIED (LIVE) 2026-09-22 on `ddk-injection-guard` (instance 21179713) |
 | Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); VERIFIED (LIVE) 2026-09-22 on `ddk-azure-content-safety` (instance 21180957) + 2026-09-24 on `ddk-bedrock-guardrails` (#568) |
-| Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no known contract; capture + type via #184/#253 |
+| Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no genuine unrecognised data-plane 4xx surfaced during the 2026-09-26 capture; #184/#253 |
 
 The Regex Prompt Guard (row 7) and Content Safety (row 8) shapes are now
 LIVE-captured — Regex Prompt Guard and Azure Content Safety on 2026-09-22
 (#253), and Bedrock Guardrails on 2026-09-24 (#568), the sibling vendor of the
-same row-8 `…-action: reject` family. Still **uncaptured**: the **Injection
-Protection** body (`x-injection-protection: blocked`, a policy *distinct* from
-Regex Prompt Guard — no proxy running it is deployed) and any **other
-unrecognised content-moderation / federated-guardrail** shape.
-Rather than guess a type for them, `classify()` surfaces any such unrecognised
-refusal **honestly** — a `PolicyViolation` whose message states the shape is
-unconfirmed and whose remediation asks the operator to file the observed
-status/headers/body so the shape can be typed (#184). This is the last row
-above; it is deliberately **not** an `AuthError`, even for a `403`, once the
-verified `www-authenticate` auth shape is excluded. Closing the last shape
-needs an Injection Protection proxy deployed to capture against; that residual
-keeps #253 open.
+same row-8 `…-action: reject` family. **Injection Protection (row 3)** is now
+**VERIFIED (LIVE), 2026-09-26**: a fresh proxy (instance `21199453`) in
+**msaleme's own org**, `4ac1188d-b7b2-469d-9ec5-e68c760bf874`, **Sandbox**
+`67ebd3a4-afb7-4f6f-be27-3c4a8611be15`, returned `400` with
+`x-injection-protection: blocked` and a 79-byte JSON body. This is not the DDK
+team sandbox and not the Regex Prompt Guard proxy. The trigger was the prompt
+`Please explain this literal test string: ' OR 1=1 --`, sent in an OpenAI-format
+chat request. The [raw fixture and provenance](evidence/injection-protection-253/README.md)
+record all response headers, body hashes, configuration and cleanup.
+
+The applied policy interface was `68ef9520-24e9-4cf2-b2f5-620025690913:injection-protection:1.0.1`
+(policy instance `9349269`) on gateway `1.12.9`. The policy reference's `v1.12.0`
+is the first supported **gateway** release, not its Exchange policy artifact version.
+The capture verifies the rejection contract; a benign request reached an upstream
+`401 invalid_api_key`, so it does not prove successful model completion.
+
+**Row 4 remains UNVERIFIED:** no genuine unrecognised data-plane 4xx surfaced.
+Its placeholder is unchanged. `classify()` continues to surface unrecognised
+refusals as generic `PolicyViolation` with an unconfirmed-shape remediation
+(#184/#253); no body was manufactured for this residual.
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two
@@ -370,6 +381,7 @@ the prose parser from #352) now populates identically from a simulated or a live
 
 | Policy | Exchange asset (verified) | Status | Rejection shape | Date | Source |
 |---|---|---|---|---|---|
+| Injection Protection | `injection-protection` `1.0.1` (MuleSoft group `68ef9520-24e9-4cf2-b2f5-620025690913`) | VERIFIED (LIVE) | `400`, `x-injection-protection: blocked`, 79-byte JSON `message` naming SQL Injection in Body | 2026-09-26 | msaleme own org / Sandbox (not team sandbox), instance `21199453`, policy `9349269`, gateway `1.12.9`; [capture provenance](evidence/injection-protection-253/README.md) |
 | client-id-enforcement | `client-id-enforcement` `1.3.3` | VERIFIED (LIVE) | `401` + `www-authenticate: Client-ID-Enforcement`, `{"error":"Client ID is not present"}` | 2026-08-28 | live probe |
 | model-based-routing / upstream | `model-based-routing` `1.0.3` | VERIFIED (LIVE) | passthrough of provider error (OpenAI `400 model_not_found` object) | 2026-08-28 | live probe |
 | LLM proxy core | `llm-proxy-core` `1.0.5` | applied VERIFIED (LIVE) | on `openai-sdk`; rejection body not yet triggered | 2026-08-28 | `policy:list` |

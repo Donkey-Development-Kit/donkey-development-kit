@@ -9,9 +9,10 @@ now LIVE-VERIFIED (2026-09-22, #253): the regex-prompt-guard body matched the
 committed fixture byte-for-byte against ``ddk-injection-guard`` (instance
 21179713), and the content-safety discriminator headers + body shape were
 confirmed against ``ddk-azure-content-safety`` (instance 21180957) — see
-``rejections/README.md`` and docs/verified-apis.md §4. Rows 3 (injection-protection
-``x-injection-protection: blocked``) and 4 (fall-through) stay documented-only:
-no Injection Protection policy proxy is deployed to capture them (#253).
+``rejections/README.md`` and docs/verified-apis.md §4. Row 3 was LIVE-captured
+on 2026-09-26 in msaleme's own org, Sandbox, instance 21199453: HTTP 400,
+``x-injection-protection: blocked``, and a 79-byte JSON body. Row 4 remains
+UNVERIFIED because no genuine unrecognised data-plane 4xx was observed (#253).
 The discriminator is the error ``type`` + specific headers, NEVER the status code
 alone — which is exactly why rows 7/8 (both 403) must not be swallowed by the
 401/403 → auth rule.
@@ -50,11 +51,11 @@ def _headers(path: Path) -> dict[str, str]:
 
 def _response(base: Path, slug: str, status: int) -> httpx.Response:
     """Build an httpx.Response from a ``reject.<slug>`` fixture pair. An empty
-    body is a real captured shape (``.body.empty``), never a guessed body."""
+    body may be captured or a documented placeholder; consult the fixture index."""
     headers = _headers(base / f"reject.{slug}.headers.txt")
     body_json = base / f"reject.{slug}.body.json"
     if body_json.exists():
-        return httpx.Response(status, headers=headers, json=json.loads(body_json.read_text()))
+        return httpx.Response(status, headers=headers, content=body_json.read_bytes())
     return httpx.Response(status, headers=headers)  # .body.empty → no body
 
 
@@ -71,7 +72,13 @@ def test_row2_pii_detection_is_pii_not_auth() -> None:
 
 
 def test_row3_injection_protection_is_prompt_injection_blocked() -> None:
-    err = classify(_response(REJECTIONS, "injection-protection", 400))
+    response = _response(REJECTIONS, "injection-protection", 400)
+    assert response.headers["x-injection-protection"] == "blocked"
+    assert len(response.content) == int(response.headers["content-length"]) == 79
+    assert response.json() == {
+        "message": "Injection attack detected - Rule: 'SQL Injection', Location: Body"
+    }
+    err = classify(response)
     assert isinstance(err, PromptInjectionBlocked)
     assert err.policy == "prompt-injection-protection"
     assert err.remediation  # required, non-empty

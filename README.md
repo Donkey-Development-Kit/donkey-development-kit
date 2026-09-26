@@ -9,7 +9,10 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 
 > **Project status — alpha.** This is `v0.1.0`, the first release
 > (`Development Status :: 3 - Alpha`). The **LLM data plane is live-verified**;
-> most other surfaces are verification-gated (see
+> Injection Protection now has a live `400` / 79-byte rejection fixture from
+> msaleme's own Sandbox ([capture evidence](docs/evidence/injection-protection-253/README.md));
+> unknown content-moderation fall-through remains unverified.
+> Most other surfaces are verification-gated (see
 > [What's verified](#whats-verified-verification-discipline) below). Install it
 > from PyPI with `pip install donkey-kit` — see [Install](#install).
 > **Unofficial:** an independent project,
