@@ -445,7 +445,7 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | Framework | Symbol / kwarg | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
 | LangGraph | `langchain_openai.ChatOpenAI(base_url, api_key, default_headers, http_async_client, use_responses_api=True)` | UNVERIFIED (constructor); endpoint VERIFIED | The kwargs/class name are still §8-pending, but the deep adapter (#198) pins `use_responses_api=True` so it calls the **live-verified** `/responses` data plane (§4) rather than ChatOpenAI's default `/chat/completions` route. Overridable via `chat_model(..., use_responses_api=False)`. | 2026-09-11 | #198 |
-| Google ADK | `google.adk.models.lite_llm.LiteLlm(model="openai/…", api_base, extra_headers)` | UNVERIFIED | — | — | — |
+| Google ADK | `google.adk.models.lite_llm.LiteLlm(model="openai/gpt-4o", api_base, api_key, extra_headers)` | VERIFIED (offline signature) | Real DDK factory constructed the recorded public class; no live call was made. Tested: `google-adk==2.10.0`; `google-genai==2.25.0`; `litellm==1.102.1`; `mcp==1.28.1`. | 2026-09-26 | [captured output + pinned environment](evidence/frameworks/adk/README.md); `verify_frameworks.py --only adk --emit-verified` |
 | MS Agent Framework | `agent_framework.openai.OpenAIChatClient(model, base_url, api_key, default_headers)` | VERIFIED | Class path confirmed; the constructor kwarg is `model=` — `model_id` is **not** accepted. `base_url`/`api_key`/`default_headers` all accepted, so `connection_kwargs()` is unchanged. Pinned to agent-framework 1.19.0. | 2026-09-22 | #520 (`verify_frameworks.py --only agent_framework`) |
 | OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model, openai_client=AsyncOpenAI(...))` | UNVERIFIED | — | — | — |
 | Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client)` — model id per-call; the proxy's Anthropic-native ingress route is now **LIVE-verified at `POST /<base-path>/v1/messages`** (see §2, #304) and requires a `Format=Anthropic` proxy. Row stays UNVERIFIED for the **constructor signature** only (#34). | UNVERIFIED | — | — | — |
@@ -483,7 +483,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | Framework | Binding class | Status | Source |
 |---|---|---|---|
 | LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient` | UNVERIFIED | — |
-| Google ADK | `McpToolset` + `StreamableHTTPConnectionParams` | UNVERIFIED | — |
+| Google ADK | `google.adk.tools.mcp_tool.mcp_toolset.McpToolset(connection_params=StreamableHTTPConnectionParams(url, headers))`; params class: `google.adk.tools.mcp_tool.mcp_session_manager.StreamableHTTPConnectionParams` | VERIFIED (offline construction) | `google-adk==2.10.0`; `google-genai==2.25.0`; `litellm==1.102.1`; `mcp==1.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/adk/README.md). DDK binding guard retained. |
 | MS Agent Framework | MCP client/tool class for streamable HTTP | UNVERIFIED | — |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
 | Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
@@ -498,7 +498,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | FastMCP | `.name` `.description` `.inputSchema` | UNVERIFIED | — |
 | LangChain | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
 | Strands | tool spec input schema | UNVERIFIED | — |
-| ADK | `FunctionTool` declaration params | UNVERIFIED | — |
+| ADK | `google.adk.tools.FunctionTool(func)._get_declaration()` → `.name`, `.description`, `.parameters_json_schema` (or `.parameters.model_dump(mode="json")`); semi-public declaration method | VERIFIED (offline attributes) | `google-adk==2.10.0`; `google-genai==2.25.0`; `litellm==1.102.1`; `mcp==1.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/adk/README.md). Descriptor derivation guard retained. |
 | LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
 | OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
 | Anthropic SDK | tool param dict `name`/`description`/`input_schema` | UNVERIFIED | — |

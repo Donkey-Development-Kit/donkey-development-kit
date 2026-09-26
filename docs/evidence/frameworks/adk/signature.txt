@@ -1,0 +1,9 @@
+
+framework  installed  signature  expected  live    verdict
+----------------------------------------------------------
+adk  yes        ok         ok        not run  VERIFIED
+
+
+# Paste into docs/verified-apis.md §8 (maintainer sign-off still required):
+
+| adk | `google.adk.models.lite_llm.LiteLlm` | VERIFIED (signature) | google.adk.models.lite_llm.LiteLlm | 2026-09-26 | verify_frameworks.py |
