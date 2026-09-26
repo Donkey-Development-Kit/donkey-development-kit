@@ -449,7 +449,7 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | MS Agent Framework | `agent_framework.openai.OpenAIChatClient(model, base_url, api_key, default_headers)` | VERIFIED | Class path confirmed; the constructor kwarg is `model=` — `model_id` is **not** accepted. `base_url`/`api_key`/`default_headers` all accepted, so `connection_kwargs()` is unchanged. Pinned to agent-framework 1.19.0. | 2026-09-22 | #520 (`verify_frameworks.py --only agent_framework`) |
 | OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model, openai_client=AsyncOpenAI(...))` | UNVERIFIED | — | — | — |
 | Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client)` — model id per-call; the proxy's Anthropic-native ingress route is now **LIVE-verified at `POST /<base-path>/v1/messages`** (see §2, #304) and requires a `Format=Anthropic` proxy. Row stays UNVERIFIED for the **constructor signature** only (#34). | UNVERIFIED | — | — | — |
-| CrewAI | `crewai.LLM(model="openai/…", base_url, api_key, extra_headers)` | UNVERIFIED | — | — | — |
+| CrewAI | `crewai.LLM(model="openai/gpt-4o", base_url, api_key, extra_headers)` | UNVERIFIED (class mismatch) | Kwargs accepted, but factory returns `crewai.llms.providers.openai.completion.OpenAICompletion`, not an instance of `crewai.LLM`. Original harness exits 1 (`CLASS RENAMED`); see §8.1. Tested: `crewai==1.15.22`; `crewai-tools==1.15.22`; `mcp==1.28.1`. | 2026-09-26 | [captured output + pinned environment](evidence/frameworks/crewai/README.md); `verify_frameworks.py --only crewai --emit-verified` |
 | LlamaIndex | `llama_index.llms.openai_like.OpenAILike(is_chat_model=True)` | UNVERIFIED | — | — | — |
 | Strands | `strands.models.openai.OpenAIModel(client_args={...})` | UNVERIFIED | — | — | — |
 
@@ -463,6 +463,7 @@ run is diagnosable instead of surprising.
 | Dependency | Breaks at | Symptom | Status | Date |
 |---|---|---|---|---|
 | `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. **Mitigated** with a `cast(Any, …)` on the argument at the four version-conditional sites (`llm/client.py` ×2, `integrations/openai_agents.py`, and the `exc.response` cast in `integrations/langgraph.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-09-24 |
+| `crewai` | Observed at `1.15.22`; first affected version not established | `crewai.LLM(model="openai/gpt-4o", base_url, api_key, extra_headers)` constructs `crewai.llms.providers.openai.completion.OpenAICompletion`; `isinstance(obj, crewai.LLM)` is false. The unmodified verifier reports `CLASS RENAMED` and exits 1. Constructor kwargs are accepted; returned-class contract is not verified. No inference about request/header forwarding or older versions. | OPEN — [captured output](evidence/frameworks/crewai/signature.txt); no dependency ceiling or verifier bypass | 2026-09-26 |
 
 The `cast(Any, …)` guards keep `mypy --strict` green against the newest `openai` a fresh
 resolve pulls (the floors-never-ceilings rule). A full fix — migrating `core/transport.py` off `httpx` onto
@@ -487,7 +488,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | MS Agent Framework | MCP client/tool class for streamable HTTP | UNVERIFIED | — |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
 | Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
-| CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED | — |
+| CrewAI | `crewai_tools.MCPServerAdapter(serverparams={url, transport: "streamable-http", headers}, connect_timeout=1)` — import/signature bind only; constructor eagerly connects | PARTIAL (import/signature only) | `crewai==1.15.22`; `crewai-tools==1.15.22`; `mcp==1.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/crewai/README.md). DDK binding guard retained. |
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
 | Strands | `MCPClient(lambda: streamablehttp_client(...))` | UNVERIFIED | — |
 
@@ -502,7 +503,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
 | OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
 | Anthropic SDK | tool param dict `name`/`description`/`input_schema` | UNVERIFIED | — |
-| CrewAI | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
+| CrewAI | `crewai.tools.tool(fn)`: `.name`, `.description`, `.args_schema.model_json_schema()` | VERIFIED (offline attributes) | `crewai==1.15.22`; `crewai-tools==1.15.22`; `mcp==1.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/crewai/README.md). Descriptor derivation guard retained. |
 | MS Agent Framework | `AIFunction` declaration + JSON schema | UNVERIFIED | — |
 
 ## 11. A2D platform MCP tools — shapes captured 2026-08-28 (NOT the direct Anypoint REST API)

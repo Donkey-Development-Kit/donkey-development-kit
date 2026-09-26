@@ -1,0 +1,12 @@
+
+1 installed framework(s) failed signature verification: crewai
+
+framework  installed  signature  expected  live    verdict
+-------------------------------------------------------------
+crewai  yes        ok         RENAMED   not run  CLASS RENAMED
+
+• crewai: 
+    ↳ object is 'crewai.llms.providers.openai.completion.OpenAICompletion', not a 'crewai.LLM' — update docs/verified-apis.md §8
+
+# Paste into docs/verified-apis.md §8 (maintainer sign-off still required):
+
