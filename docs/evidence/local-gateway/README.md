@@ -118,3 +118,6 @@ Model Proxy/MCP Bridge deployment questions stay open on #65.
 The two manually launched runtime containers and the disposable control-plane
 registration were removed after the probes. The pytest fixtures removed their
 own uniquely named containers.
+
+HTTP captures are marked binary in `.gitattributes` to preserve CRLF framing.
+Verify their committed bytes with `sha256sum -c SHA256SUMS` in this directory.

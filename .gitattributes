@@ -1,2 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Wire captures must retain byte-exact CRLF framing and response bodies.
+docs/evidence/local-gateway/*.http binary
