@@ -1,0 +1,45 @@
+{
+  "binding": {
+    "kwargs": {
+      "connect_timeout": 1,
+      "serverparams": {
+        "headers": {
+          "x-probe": "offline"
+        },
+        "transport": "streamable-http",
+        "url": "https://placeholder.invalid/mcp"
+      }
+    },
+    "scope": "import and signature binding only; constructor opens network"
+  },
+  "binding_symbols": [
+    {
+      "signature": "(serverparams: 'StdioServerParameters | dict[str, Any]', *tool_names: 'str', connect_timeout: 'int' = 30) -> 'None'",
+      "symbol": "crewai_tools.adapters.mcp_adapter.MCPServerAdapter"
+    }
+  ],
+  "descriptor": {
+    "args_schema": {
+      "properties": {
+        "city": {
+          "title": "City",
+          "type": "string"
+        }
+      },
+      "required": [
+        "city"
+      ],
+      "title": "Lookup",
+      "type": "object"
+    },
+    "description": "Look up a city.",
+    "name": "lookup"
+  },
+  "network": "denied by audit hook; no gateway or live MCP verification",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "crewai": "1.15.22",
+    "crewai-tools": "1.15.22",
+    "mcp": "1.28.1"
+  }
+}
