@@ -462,6 +462,7 @@ run is diagnosable instead of surprising.
 
 | Dependency | Breaks at | Symptom | Status | Date |
 |---|---|---|---|---|
+| `agent-framework-core` | Observed at `1.19.0`; first affected version unknown | The guessed §10 public `agent_framework.AIFunction` symbol is absent. A real tool made with `agent_framework.tool` is `agent_framework.FunctionTool`; its computed schema is available through `.parameters()` and `.to_json_schema_spec()`. [Offline evidence](evidence/frameworks/agent_framework/README.md). This corrects the ledger assumption, not an established historical rename. | CORRECTED (ledger + guarded binding diagnostic; no descriptor implementation enabled) | 2026-09-26 |
 | `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. **Mitigated** with a `cast(Any, …)` on the argument at the four version-conditional sites (`llm/client.py` ×2, `integrations/openai_agents.py`, and the `exc.response` cast in `integrations/langgraph.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-09-24 |
 
 The `cast(Any, …)` guards keep `mypy --strict` green against the newest `openai` a fresh
@@ -484,7 +485,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 |---|---|---|---|
 | LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient` | UNVERIFIED | — |
 | Google ADK | `McpToolset` + `StreamableHTTPConnectionParams` | UNVERIFIED | — |
-| MS Agent Framework | MCP client/tool class for streamable HTTP | UNVERIFIED | — |
+| MS Agent Framework | `agent_framework.MCPStreamableHTTPTool(name, url, description=…, static_headers=…)` (implementation: `agent_framework._mcp.MCPStreamableHTTPTool`) | VERIFIED (offline construction) | `agent-framework==1.19.0`, `agent-framework-core==1.19.0`, `mcp==1.30.0`; 2026-09-26; [probe and captured output](evidence/frameworks/agent_framework/README.md), #652. Import, signature and retained URL/header configuration asserted; no connect, context entry, discovery, tool call, or header forwarding checked. Binding guard retained. |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
 | Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
 | CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED | — |
@@ -503,7 +504,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
 | Anthropic SDK | tool param dict `name`/`description`/`input_schema` | UNVERIFIED | — |
 | CrewAI | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
-| MS Agent Framework | `AIFunction` declaration + JSON schema | UNVERIFIED | — |
+| MS Agent Framework | `agent_framework.FunctionTool`, created by `agent_framework.tool`: `.name`, `.description`, `.parameters()`, `.to_json_schema_spec()` | VERIFIED (corrected offline attributes) | `agent-framework==1.19.0`, `agent-framework-core==1.19.0`; 2026-09-26; [probe and captured output](evidence/frameworks/agent_framework/README.md), #652. Real trivial tool produces string name/description and an object JSON schema with a required string field; public `AIFunction` is absent. Descriptor derivation remains guarded. |
 
 ## 11. A2D platform MCP tools — shapes captured 2026-08-28 (NOT the direct Anypoint REST API)
 

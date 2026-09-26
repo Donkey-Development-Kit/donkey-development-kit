@@ -109,6 +109,15 @@ Framework's explicit "terminate run" signal instead of re-raising is planned
 
 ## Notes
 
+- **Offline MCP and descriptor APIs.** With `agent-framework==1.19.0` and
+  `agent-framework-core==1.19.0`, `agent_framework.MCPStreamableHTTPTool`
+  accepts `name`, `url`, `description`, and `static_headers` without connecting.
+  `agent_framework.tool` produces a `FunctionTool` with `.name`, `.description`,
+  `.parameters()` and `.to_json_schema_spec()`; the guessed public `AIFunction`
+  symbol is absent. The [captured probe](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/evidence/frameworks/agent_framework/README.md)
+  checks local objects only. DDK MCP binding and descriptor derivation remain
+  guarded; no session, discovery, tool execution, or header forwarding was verified.
+
 - **Constructor signature.** `OpenAIChatClient` takes `model`, `base_url`,
   `api_key`, and `default_headers` (agent-framework 1.19.0; `model_id` is not
   accepted). If the import fails or an upstream release renames a kwarg,

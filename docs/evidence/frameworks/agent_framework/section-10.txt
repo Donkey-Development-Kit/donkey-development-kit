@@ -1,0 +1,57 @@
+{
+  "date": "2026-09-26",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "agent-framework": "1.19.0",
+    "agent-framework-core": "1.19.0",
+    "mcp": "1.30.0"
+  },
+  "network": "denied by audit hook",
+  "checks": [
+    {
+      "section": 10,
+      "status": "VERIFIED (corrected offline attributes)",
+      "public_path": "agent_framework.FunctionTool (created by agent_framework.tool)",
+      "symbol": {
+        "class": "agent_framework._tools.FunctionTool",
+        "signature": "(*, name: 'str', description: 'str' = '', approval_mode: 'ApprovalMode | None' = None, kind: 'str | None' = None, max_invocations: 'int | None' = None, max_invocation_exceptions: 'int | None' = None, additional_properties: 'dict[str, Any] | None' = None, func: 'Callable[..., Any] | None' = None, input_model: 'type[BaseModel] | Mapping[str, Any] | None' = None, result_parser: 'Callable[[Any], str | list[Content]] | _SkipParsingSentinel | None' = None, **kwargs: 'Any') -> 'None'",
+        "owning_distribution": "agent-framework-core==1.19.0"
+      },
+      "old_public_symbol": {
+        "agent_framework.AIFunction": false
+      },
+      "attributes": [
+        "name",
+        "description",
+        "parameters()",
+        "to_json_schema_spec()"
+      ],
+      "descriptor": {
+        "type": "function",
+        "function": {
+          "name": "lookup",
+          "description": "Look up a city.",
+          "parameters": {
+            "properties": {
+              "city": {
+                "title": "City",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "title": "lookup_input",
+            "type": "object"
+          }
+        }
+      },
+      "limit": "Reads the framework-computed schema; DDK descriptor derivation stays guarded."
+    }
+  ]
+}
+
+# Candidate ledger rows; offline scope only; guards stay in place.
+
+# Section 10
+| MS Agent Framework | `agent_framework.FunctionTool (created by agent_framework.tool): .name, .description, .parameters(), .to_json_schema_spec()` | VERIFIED (corrected offline attributes) | agent-framework==1.19.0; agent-framework-core==1.19.0; mcp==1.30.0; 2026-09-26; Reads the framework-computed schema; DDK descriptor derivation stays guarded. |

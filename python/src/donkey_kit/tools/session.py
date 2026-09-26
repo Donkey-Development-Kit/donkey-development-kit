@@ -115,4 +115,8 @@ class ToolSet:
         )
 
     def agent_framework(self) -> list[object]:
-        raise _verify.blocked("Agent Framework MCP client/tool class (docs/verified-apis.md §9).")
+        raise _verify.blocked(
+            "Agent Framework agent_framework.MCPStreamableHTTPTool binding: "
+            "offline API verified, DDK binding and live session pending "
+            "(docs/verified-apis.md §9)."
+        )

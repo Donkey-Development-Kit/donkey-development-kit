@@ -1,0 +1,79 @@
+{
+  "date": "2026-09-26",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "agent-framework": "1.19.0",
+    "agent-framework-core": "1.19.0",
+    "mcp": "1.30.0"
+  },
+  "network": "denied by audit hook",
+  "checks": [
+    {
+      "section": 9,
+      "status": "VERIFIED (offline construction)",
+      "public_path": "agent_framework.MCPStreamableHTTPTool",
+      "symbol": {
+        "class": "agent_framework._mcp.MCPStreamableHTTPTool",
+        "signature": "(name: 'str', url: 'str', *, tool_name_prefix: 'str | None' = None, load_tools: 'bool' = True, parse_tool_results: 'Callable[[types.CallToolResult], str | list[Content]] | None' = None, load_prompts: 'bool' = True, parse_prompt_results: 'Callable[[types.GetPromptResult], str] | None' = None, request_timeout: 'int | None' = None, session: 'ClientSession | None' = None, description: 'str | None' = None, approval_mode: \"Literal['always_require', 'never_require'] | MCPSpecificApproval | None\" = None, allowed_tools: 'Collection[str] | None' = None, use_progressive_disclosure: 'bool' = False, always_load: 'Collection[str] | None' = None, terminate_on_close: 'bool | None' = None, client: 'SupportsChatGetResponse | None' = None, sampling_approval_callback: 'SamplingApprovalCallback | None' = None, sampling_max_tokens: 'int | None' = 4096, sampling_max_requests: 'int | None' = 25, additional_properties: 'dict[str, Any] | None' = None, http_client: 'AsyncClient | None' = None, static_headers: 'Mapping[str, str] | None' = None, header_provider: 'Callable[[dict[str, Any]], dict[str, str]] | None' = None, task_options: 'MCPTaskOptions | None' = None, additional_tool_argument_names: 'Sequence[str] | Mapping[str, Sequence[str]] | None' = None, max_host_payload_size_bytes: 'int | None' = 1048576, tool_result_content: 'MCPToolResultContentMode' = 'structured_first', **kwargs: 'Any') -> 'None'",
+        "owning_distribution": "agent-framework-core==1.19.0"
+      },
+      "kwargs": {
+        "name": "offline-probe",
+        "url": "https://placeholder.invalid/mcp",
+        "description": "Offline endpoint configuration probe.",
+        "static_headers": {
+          "x-probe": "offline"
+        }
+      },
+      "limit": "No connect(), context entry, discovery, tool call, or header forwarding checked."
+    },
+    {
+      "section": 10,
+      "status": "VERIFIED (corrected offline attributes)",
+      "public_path": "agent_framework.FunctionTool (created by agent_framework.tool)",
+      "symbol": {
+        "class": "agent_framework._tools.FunctionTool",
+        "signature": "(*, name: 'str', description: 'str' = '', approval_mode: 'ApprovalMode | None' = None, kind: 'str | None' = None, max_invocations: 'int | None' = None, max_invocation_exceptions: 'int | None' = None, additional_properties: 'dict[str, Any] | None' = None, func: 'Callable[..., Any] | None' = None, input_model: 'type[BaseModel] | Mapping[str, Any] | None' = None, result_parser: 'Callable[[Any], str | list[Content]] | _SkipParsingSentinel | None' = None, **kwargs: 'Any') -> 'None'",
+        "owning_distribution": "agent-framework-core==1.19.0"
+      },
+      "old_public_symbol": {
+        "agent_framework.AIFunction": false
+      },
+      "attributes": [
+        "name",
+        "description",
+        "parameters()",
+        "to_json_schema_spec()"
+      ],
+      "descriptor": {
+        "type": "function",
+        "function": {
+          "name": "lookup",
+          "description": "Look up a city.",
+          "parameters": {
+            "properties": {
+              "city": {
+                "title": "City",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "title": "lookup_input",
+            "type": "object"
+          }
+        }
+      },
+      "limit": "Reads the framework-computed schema; DDK descriptor derivation stays guarded."
+    }
+  ]
+}
+
+# Candidate ledger rows; offline scope only; guards stay in place.
+
+# Section 9
+| MS Agent Framework | `agent_framework.MCPStreamableHTTPTool(name, url, description, static_headers)` | VERIFIED (offline construction) | agent-framework==1.19.0; agent-framework-core==1.19.0; mcp==1.30.0; 2026-09-26; No connect(), context entry, discovery, tool call, or header forwarding checked. |
+
+# Section 10
+| MS Agent Framework | `agent_framework.FunctionTool (created by agent_framework.tool): .name, .description, .parameters(), .to_json_schema_spec()` | VERIFIED (corrected offline attributes) | agent-framework==1.19.0; agent-framework-core==1.19.0; mcp==1.30.0; 2026-09-26; Reads the framework-computed schema; DDK descriptor derivation stays guarded. |
