@@ -111,7 +111,9 @@ is held to the conformance suite, the other seven are supported at the
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
 rather than guessing at an unverified endpoint, header, or class name — that
 currently includes Exchange→MCP tool discovery, the provisioning control-plane,
-and the exact framework adapter class names/kwargs.
+and framework APIs whose ledger rows remain unverified. Offline constructor and
+attribute checks are version-specific; they do not establish live MCP behavior
+or expand conformance support.
 
 The discipline behind this is documented in
 [`ARCHITECTURE.md` → Verification discipline](ARCHITECTURE.md#verification-discipline);

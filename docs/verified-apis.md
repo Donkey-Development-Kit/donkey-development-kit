@@ -444,7 +444,7 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 
 | Framework | Symbol / kwarg | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
-| LangGraph | `langchain_openai.ChatOpenAI(base_url, api_key, default_headers, http_async_client, use_responses_api=True)` | UNVERIFIED (constructor); endpoint VERIFIED | The kwargs/class name are still §8-pending, but the deep adapter (#198) pins `use_responses_api=True` so it calls the **live-verified** `/responses` data plane (§4) rather than ChatOpenAI's default `/chat/completions` route. Overridable via `chat_model(..., use_responses_api=False)`. | 2026-09-11 | #198 |
+| LangGraph | `langchain_openai.ChatOpenAI(model="gpt-4o", base_url, api_key, default_headers, http_async_client, max_retries=0, use_responses_api=True)` | VERIFIED (offline signature) | Real DDK factory constructed the recorded public class; no live call was made. `/responses` remains independently live-verified (§4); `use_responses_api=False` is still overridable. Tested: `langchain-core==1.6.5`; `langchain-mcp-adapters==0.3.2`; `langchain-openai==1.6.6`; `langgraph==1.2.12`; `mcp==1.28.1`. | 2026-09-26 | [captured output + pinned environment](evidence/frameworks/langgraph/README.md); `verify_frameworks.py --only langgraph --emit-verified` |
 | Google ADK | `google.adk.models.lite_llm.LiteLlm(model="openai/…", api_base, extra_headers)` | UNVERIFIED | — | — | — |
 | MS Agent Framework | `agent_framework.openai.OpenAIChatClient(model, base_url, api_key, default_headers)` | VERIFIED | Class path confirmed; the constructor kwarg is `model=` — `model_id` is **not** accepted. `base_url`/`api_key`/`default_headers` all accepted, so `connection_kwargs()` is unchanged. Pinned to agent-framework 1.19.0. | 2026-09-22 | #520 (`verify_frameworks.py --only agent_framework`) |
 | OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model, openai_client=AsyncOpenAI(...))` | UNVERIFIED | — | — | — |
@@ -482,7 +482,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 
 | Framework | Binding class | Status | Source |
 |---|---|---|---|
-| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient` | UNVERIFIED | — |
+| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient(connections={probe: {transport: "streamable_http", url, headers}})` | VERIFIED (offline construction) | `langchain-core==1.6.5`; `langchain-mcp-adapters==0.3.2`; `langchain-openai==1.6.6`; `langgraph==1.2.12`; `mcp==1.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/langgraph/README.md). DDK binding guard retained. |
 | Google ADK | `McpToolset` + `StreamableHTTPConnectionParams` | UNVERIFIED | — |
 | MS Agent Framework | MCP client/tool class for streamable HTTP | UNVERIFIED | — |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
@@ -496,7 +496,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | Framework | Attributes read | Status | Source |
 |---|---|---|---|
 | FastMCP | `.name` `.description` `.inputSchema` | UNVERIFIED | — |
-| LangChain | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
+| LangChain | `langchain_core.tools.tool(fn)`: `.name`, `.description`, `.args_schema.model_json_schema()` | VERIFIED (offline attributes) | `langchain-core==1.6.5`; `langchain-mcp-adapters==0.3.2`; `langchain-openai==1.6.6`; `langgraph==1.2.12`; `mcp==1.28.1`; 2026-09-26; [captured output + pinned environment](evidence/frameworks/langgraph/README.md). Descriptor derivation guard retained. |
 | Strands | tool spec input schema | UNVERIFIED | — |
 | ADK | `FunctionTool` declaration params | UNVERIFIED | — |
 | LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
