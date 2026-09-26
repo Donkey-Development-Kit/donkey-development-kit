@@ -1,0 +1,40 @@
+{
+  "binding": {
+    "transport_callable": "lambda: streamablehttp_client(url=URL, headers=HEADERS)"
+  },
+  "binding_symbols": [
+    {
+      "signature": "(transport_callable: collections.abc.Callable[[], contextlib.AbstractAsyncContextManager[tuple[anyio.streams.memory.MemoryObjectReceiveStream[mcp.shared.message.SessionMessage | Exception], anyio.streams.memory.MemoryObjectSendStream[mcp.shared.message.SessionMessage]] | tuple[anyio.streams.memory.MemoryObjectReceiveStream[mcp.shared.message.SessionMessage | Exception], anyio.streams.memory.MemoryObjectSendStream[mcp.shared.message.SessionMessage], collections.abc.Callable[[], str | None]]]] | None = None, *, url: str | None = None, headers: dict[str, str] | None = None, auth: strands.tools.mcp.mcp_types.MCPClientCredentials | None = None, auth_provider: httpx.Auth | None = None, startup_timeout: int = 30, tool_filters: strands.tools.mcp.mcp_client.ToolFilters | None = None, prefix: str | None = None, application_name: str | None = None, application_version: str | None = None, continue_on_error: bool = False, elicitation_callback: mcp.client.session.ElicitationFnT | None = None, progress_callback: mcp.shared.session.ProgressFnT | None = None, tasks_config: strands.tools.mcp.mcp_tasks.TasksConfig | None = None, on_tools_changed: collections.abc.Callable[[list[str], 'list[MCPAgentTool]'], None] | strands.tools.mcp.mcp_types.ToolsChangedCallback | None = None) -> None",
+      "symbol": "strands.tools.mcp.mcp_client.MCPClient"
+    },
+    {
+      "signature": "(url: str, headers: dict[str, str] | None = None, timeout: float | datetime.timedelta = 30, sse_read_timeout: float | datetime.timedelta = 300, terminate_on_close: bool = True, httpx_client_factory: mcp.shared._httpx_utils.McpHttpClientFactory = <function create_mcp_http_client at 0x10bf7d120>, auth: httpx.Auth | None = None) -> collections.abc.AsyncGenerator[tuple[anyio.streams.memory.MemoryObjectReceiveStream[mcp.shared.message.SessionMessage | Exception], anyio.streams.memory.MemoryObjectSendStream[mcp.shared.message.SessionMessage], collections.abc.Callable[[], str | None]], None]",
+      "symbol": "mcp.client.streamable_http.streamablehttp_client"
+    }
+  ],
+  "descriptor": {
+    "description": "Look up a city.",
+    "inputSchema": {
+      "json": {
+        "properties": {
+          "city": {
+            "description": "Parameter city",
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "type": "object"
+      }
+    },
+    "name": "lookup"
+  },
+  "network": "denied by audit hook; no gateway or live MCP verification",
+  "python": "3.11.16 (main, Aug 12 2026, 23:03:19) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "versions": {
+    "mcp": "1.28.1",
+    "openai": "2.54.0",
+    "strands-agents": "1.57.1"
+  }
+}
