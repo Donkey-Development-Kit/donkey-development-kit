@@ -13,8 +13,9 @@ Two independent checks per framework:
      import the native class via the adapter's factory and construct it. If the
      class path is wrong -> ImportError/AttributeError. If a kwarg name is wrong
      -> TypeError. Construction succeeding *is* the signature verification. The
-     script then confirms the object's real ``module.ClassName`` matches the
-     value recorded in docs/verified-apis.md §8, so a silently-renamed class is caught too.
+     script then confirms the object is an instance of the class ``FRAMEWORKS``
+     records (the docs/verified-apis.md §8 name), so a silently-renamed class is
+     caught too.
 
   B. LIVE ROUND-TRIP (``--live``, needs the 3 DONKEY_LLM_PROXY_* env vars):
      make one real completion through the framework's *own* native call and

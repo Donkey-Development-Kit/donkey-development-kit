@@ -2,16 +2,17 @@
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
-**What this shows.** A one-line factory call gets you a *native* `crewai.LLM`
-already pointed at the governed Agent Fabric LLM proxy — correct base URL,
+**What this shows.** A one-line factory call gets you a *native* CrewAI LLM
+(`crewai.BaseLLM`, concretely `OpenAICompletion`) already pointed at the
+governed Agent Fabric LLM proxy — correct base URL,
 `client_id`/`client_secret` header auth (not bearer), and attribution headers.
 The returned object is CrewAI's own class, not a wrapper, so it drops straight
 into a `crewai` `Agent`/`Crew`.
 
-`crewai.LLM` wraps LiteLLM, so the OpenAI-compatible route uses the `openai/`
-model prefix and headers go via `extra_headers`. LiteLLM owns the transport, so
-the SDK's per-run correlation ID degrades to per-client — a documented
-conformance exemption, the same one ADK has.
+`crewai.LLM` is a factory: the `openai/` model prefix plus `base_url` routes it
+to CrewAI's native OpenAI provider, and headers go via `extra_headers`. That
+provider owns the transport, so the SDK's per-run correlation ID degrades to
+per-client — a documented conformance exemption, the same one ADK has.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
@@ -40,7 +41,7 @@ governed connection values (BG §1.8):
 from crewai import LLM
 
 model = LLM(
-    model="openai/gpt-4o",          # LiteLLM's OpenAI-compatible route
+    model="openai/gpt-4o",          # routes to CrewAI's native OpenAI provider
     base_url=DONKEY_LLM_PROXY_URL,
     api_key="unused",               # proxy enforces client_id/client_secret headers
     extra_headers={

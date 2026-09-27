@@ -1,5 +1,5 @@
 ---
-description: Use a governed, LiteLLM-backed CrewAI LLM, pointed at your Omni Gateway LLM proxy.
+description: Use a governed CrewAI LLM, served by CrewAI's native OpenAI provider and pointed at your Omni Gateway LLM proxy.
 ---
 
 import { Tabs } from 'nextra/components'
@@ -7,20 +7,22 @@ import OpenAiProxyTs from '../../components/openai-proxy-ts.mdx'
 
 # CrewAI
 
-CrewAI gets a governed native LLM object, backed by LiteLLM, pointed at the
-Agent Fabric LLM proxy. The adapter translates the governed connection into
-LiteLLM's own model-string and kwarg conventions for you.
+CrewAI gets a governed native LLM object pointed at the Agent Fabric LLM
+proxy. The adapter translates the governed connection into CrewAI's own
+model-string and kwarg conventions for you.
 
 **What you get**
 
-- A native `crewai.BaseLLM` — concretely `OpenAICompletion`, since
-  `crewai.LLM`'s own `__new__` factory routes an `openai/`-prefixed model to
-  its native OpenAI provider subclass rather than returning an `LLM` instance
-  itself — with the proxy auth and attribution headers set.
-- The `openai/` model prefix and LiteLLM kwarg names handled automatically.
-- Supported at `connection_kwargs()`. CrewAI's model calls go through
-  LiteLLM, so correlation is per client and `donkey.last_call` is not
-  populated — the same as [Google ADK](/frameworks/adk) (see [Notes](#notes)).
+- A native `crewai.BaseLLM` — concretely `OpenAICompletion`, CrewAI's native
+  OpenAI provider. `crewai.LLM`'s own `__new__` factory routes an
+  `openai/`-prefixed model with an explicit `base_url` to that provider rather
+  than returning an `LLM` instance itself. The proxy auth and attribution
+  headers are set.
+- The `openai/` model prefix and CrewAI's kwarg names handled automatically.
+- Supported at `connection_kwargs()`. CrewAI's native provider builds its own
+  HTTP client rather than using the SDK's, so correlation is per client and
+  `donkey.last_call` is not populated — the same as
+  [Google ADK](/frameworks/adk) (see [Notes](#notes)).
 
 ## Install
 
@@ -39,12 +41,11 @@ from donkey_kit.integrations.crewai import llm
 model = llm("gpt-4o")
 ```
 
-`model` is a real `crewai.BaseLLM` instance (`OpenAICompletion`) — the model
-string is prefixed with `openai/` before it reaches LiteLLM (`openai/gpt-4o`),
-which is the prefix LiteLLM's OpenAI-compatible route expects, and that same
-prefix is what routes `crewai.LLM`'s factory to the `OpenAICompletion`
-subclass rather than to an `LLM` instance itself — you don't add the prefix
-yourself.
+`model` is a real `crewai.BaseLLM` instance (`OpenAICompletion`). The adapter
+prefixes the model string with `openai/` (`openai/gpt-4o`) — you don't add it
+yourself. That prefix, together with the proxy `base_url`, is what routes
+`crewai.LLM`'s factory to its native OpenAI provider; the provider strips the
+prefix again, so the proxy receives the bare model id (`gpt-4o`).
 
 </Tabs.Tab>
 <Tabs.Tab>
@@ -93,27 +94,28 @@ from crewai import LLM
 
 model = LLM(
     model="openai/gpt-4o",
-    api_base=...,       # from DONKEY_LLM_PROXY_URL, no /v1 suffix
+    base_url=...,       # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     extra_headers=...,  # client_id / client_secret header pair
 )
 ```
 
-LiteLLM uses `api_base` and `extra_headers`, not `base_url` /
-`default_headers` — `connection_kwargs()` already translates for you.
+`connection_kwargs()` fills in `base_url`, `api_key`, and `extra_headers` (the
+`client_id` / `client_secret` header pair) for you.
 
 ## Notes
 
 - **Correlation IDs are per-client, not per-run.** CrewAI sends requests through
-  its built-in LiteLLM model layer rather than the SDK's shared HTTP client, so
-  the correlation ID is set once per client instead of per `donkey.run()`. Every
-  governance header is still sent on every request. The conformance suite
+  its native OpenAI provider's own HTTP client rather than the SDK's shared one,
+  so the correlation ID is set once per client instead of per `donkey.run()`.
+  Every governance header is still sent on every request. The conformance suite
   checks this as a documented behaviour.
-- **`donkey.last_call` is unavailable.** Because the response is handled by LiteLLM,
-  gateway identity, routing, and usage fields can't be observed. When every
-  adapter resolved on a `Donkey` is like this one, `donkey.last_call` reports
+- **`donkey.last_call` is unavailable.** Because the response is handled by
+  CrewAI's own client, gateway identity, routing, and usage fields can't be
+  observed. When every adapter resolved on a `Donkey` is like this one,
+  `donkey.last_call` reports
   `status == LastCallStatus.UNAVAILABLE` and `available == False`, and names the
   resolved adapters in `surface`.
 
 See the [error taxonomy](/errors) for how proxy rejections surface through
-CrewAI's LiteLLM layer.
+CrewAI.

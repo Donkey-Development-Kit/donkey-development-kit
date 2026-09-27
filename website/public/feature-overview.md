@@ -14,7 +14,7 @@ attaches there once, so you never wire it call by call.
   
     **Purpose:** point any of eight agent frameworks at your governed Omni
     Gateway proxy. **Advantage:** you get your framework's own object —
-    `ChatOpenAI`, `LiteLlm`, `OpenAIModel`, `crewai.LLM` … — with credentials,
+    `ChatOpenAI`, `LiteLlm`, `OpenAIModel`, `crewai.BaseLLM` … — with credentials,
     correlation, attribution and retry policy injected. No wrapper to code
     around, three lines to eject.
   
@@ -34,7 +34,7 @@ attaches there once, so you never wire it call by call.
 | LlamaIndex | `donkey.llamaindex.llm("gpt-4o")` | `OpenAILike` |
 | OpenAI Agents SDK | `donkey.openai_agents.model("gpt-4o")` | `OpenAIChatCompletionsModel` |
 | Anthropic SDK | `donkey.anthropic.client()` | `anthropic.AsyncAnthropic` |
-| CrewAI | `donkey.crewai.llm("gpt-4o")` | `crewai.LLM` |
+| CrewAI | `donkey.crewai.llm("gpt-4o")` | `crewai.BaseLLM` |
 
 Every adapter offers the same governed connection three ways — a factory on a
 shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
