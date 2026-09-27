@@ -1,0 +1,78 @@
+# Publish to PyPI (production) via Trusted Publishing (OIDC) — #206/#410/#674.
+# No long-lived token exists: PyPI mints a short-lived OIDC token keyed on the
+# repo + THIS filename (publish-pypi.yml) + the `pypi` Environment. The trust is
+# registered once on PyPI's web UI (see docs/releasing.md). This file reaches
+# production ONLY — it has no workflow_dispatch trigger. A pre-release GitHub
+# Release publishes NOWHERE (the prerelease == false guard stays). This workflow
+# never creates tags/releases; ddk-release owns that and this reacts.
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+# Least privilege by default; only the publish job opts into id-token below.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: python
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Build
+        run: |
+          pip install build twine
+          python -m build
+      - name: twine check (PyPI long description renders cleanly)
+        run: twine check dist/*
+      - name: Floors, never ceilings (§8.4) — no upper pins in the built metadata
+        # A release is the last place an accidental upper pin could slip into what
+        # consumers resolve. Read the actual wheel metadata (not the source
+        # pyproject) and inspect ONLY the version specifier — everything before the
+        # ';' environment marker — so the 'extra == ...' and 'python_version < ...'
+        # markers are never mistaken for a dependency ceiling. Flag <, <=, ==, ~=,
+        # != : anything that is not a bare >= floor.
+        run: |
+          pins="$(unzip -p dist/*.whl '*/METADATA' \
+            | sed -n 's/^Requires-Dist: //p' \
+            | sed 's/;.*//' \
+            | grep -E '(<|~=|==|!=)' || true)"
+          if [ -n "$pins" ]; then
+            echo "::error::Upper version pins found in built metadata (floors-never-ceilings, §8.4):"
+            echo "$pins"
+            exit 1
+          fi
+          echo "Requires-Dist carries only >= floors."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: python/dist/
+
+  publish-pypi:
+    name: Publish to PyPI (final release)
+    needs: build
+    # Prod requires a *published, non-pre-release* GitHub Release. The explicit
+    # event_name check means a manual dispatch can never reach prod — but this
+    # workflow has no workflow_dispatch trigger at all, so that can't happen.
+    if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC token for Trusted Publishing; no stored secret.
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
