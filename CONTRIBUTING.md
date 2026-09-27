@@ -303,13 +303,42 @@ frameworks or it doesn't belong there.
 
 ### Fixture-driven tests — captures, not conveniences
 
-`tests/fixtures/anypoint/` holds **real captures** from a sandbox org, not
+`tests/fixtures/anypoint/` holds **real captures** from a sandbox, not
 hand-written JSON. The error taxonomy is fixture-derived (BG §1.5), not
-assumption-derived. If you need a new response shape, capture it for real and
-document its provenance in the relevant `README` (org id, environment,
-CLI/proxy version, what produced the rejection, confirmation nothing sensitive
-survived) — don't hand-write a synthetic body. Cite the fixture's `§`-section in
-the test docstring.
+assumption-derived. If you need a new response shape, capture it for real — 
+never hand-write a synthetic body — and cite the fixture's `§`-section in the
+test docstring.
+
+**A live capture is recorded as exactly three things:** the fixture files;
+the regenerated integrity lock (`python -m donkey_kit.simulator.fixtures
+--relock` — the reviewable "I re-captured this, I meant it" step); and one
+row in the `docs/verified-apis.md` ledger carrying the date, the instance ID,
+and the policy + gateway version. Nothing else belongs in the repo — no
+`docs/evidence/<issue>/` folders, and no committed local gate logs (pytest /
+mypy / ruff / import-linter output); CI is the record for those. Deployment,
+teardown, and inventory receipts go in the **PR description**, not a committed
+file.
+
+Record **how to reproduce the shape** in the fixture index
+(`python/tests/fixtures/rejections/README.md`): one line giving the trigger
+input and the policy configuration that produced it. If what you observed
+differs from what the platform documents, record the discrepancy in the
+ledger row (e.g. "schema documents 403, gateway returned 400") — the ledger
+tracks reality, not the spec.
+
+**No personal attribution in committed files.** Don't name contributors or
+their organizations anywhere in the repo; the PR and git history record
+authorship. Describe a non-team environment neutrally (e.g. "a contributor
+Anypoint sandbox, not the DDK team sandbox, instance `NNN`") and **omit
+organization/environment UUIDs and gateway hostnames**. This is why fixture
+provenance records a neutral environment description plus the instance ID —
+not an org id.
+
+**Byte-exact captures.** When a capture must keep its exact bytes — CRLF in a
+`.headers.txt`, no trailing newline — add a **narrow** `.gitattributes` entry
+marking just those paths **`-text`** (never `binary`, which makes re-captures
+undiffable in review). `-text` disables newline normalization while keeping
+the file reviewable as text.
 
 ### `local_gateway` and `sandbox` — infra-gated, clean-skip by default
 
