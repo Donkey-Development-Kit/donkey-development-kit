@@ -2,10 +2,12 @@
 
 The canonical index of the gateway rejection shapes `core/errors.classify()`
 discriminates, one row per shape. These fixtures are **shared with the local
-gateway simulator** (`donkey mock`, #187): the simulator replays these exact
-files, so contract drift fails `classify()` and the simulator at once. Keep them
-byte-faithful and parser-compatible (see `../anypoint/llm_proxy/README.md` for
-the `.headers.txt` / `.body.json` / `.body.empty` convention).
+gateway simulator** (`donkey mock`, #187): the simulator replays the semantic
+header subset from these files (see "Which headers each `.headers.txt`
+records" below) and serves bodies byte-faithfully, so contract drift fails
+`classify()` and the simulator at once. Keep bodies byte-faithful and headers
+parser-compatible (see `../anypoint/llm_proxy/README.md` for the
+`.headers.txt` / `.body.json` / `.body.empty` convention).
 
 ## Provenance & verification status (verification discipline)
 
@@ -90,3 +92,40 @@ row 3's discriminator is the header alone, so its body is carried on
 Client-ID enforcement (401 + `www-authenticate` → `AuthError`) is a separate
 **consumer-auth** case, deliberately **not** one of the eight policy-rejection
 rows.
+
+## Which headers each `.headers.txt` records (#670)
+
+A live gateway response carries far more headers than any fixture here
+records — a live capture against `ddk-injection-protection` (#670) returned
+**~10** response headers for row 3, while
+`reject.injection-protection.headers.txt` records **2**. That gap is
+deliberate, not a missed capture: every `.headers.txt` file in this directory
+records the **semantic subset** — the status line, the discriminator
+header(s) `classify()` reads, and `content-type` when the body is JSON —
+i.e. exactly what `classify()` and an SDK consumer actually consume. None of
+them records transport/CDN framing headers (`server`, `date`,
+`strict-transport-security`, `connection`) or the body-derived
+`content-length`.
+
+The reason lives in `simulator/fixtures.py`'s `replay_headers()`: it is an
+**allow-list**, not a deny-list (`_KEEP_EXACT` / `_KEEP_PREFIX`), and its
+comment names exactly those framing headers as dropped on replay — carrying
+them would misrepresent a fixture as a live gateway response and undercut the
+`x-donkey-simulator` honesty guarantee. So even if a `.headers.txt` recorded
+`server` or `Strict-Transport-Security`, the simulator would never emit them;
+recording them here would be dead weight, not a fuller fixture.
+
+One header from the row-3 live capture is deliberately excluded for a
+different reason: `x-llm-proxy-model-based-routing-success` matches the
+`x-llm-proxy-` allow-list prefix, so it *would* be replayed if recorded — but
+it is a **proxy-topology artifact** (present because `ddk-injection-protection`
+happens to sit on a model-based-routing proxy), not a property an injection
+rejection intrinsically has. Baking a proxy-specific header into the canonical
+fixture would misrepresent it as universal — §0.3 territory. `content-type`,
+by contrast, *is* semantic here and was added in #669/#673.
+
+When capturing a new rejection, or comparing a live capture against a
+committed fixture, use this rule rather than transcribing the full raw header
+block: keep the discriminator(s) plus `content-type` (when the body is JSON),
+drop framing headers, and question any header that looks specific to the
+capturing proxy's own configuration rather than to the policy itself.
