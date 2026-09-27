@@ -315,6 +315,10 @@ The simulator listens on `127.0.0.1:8080` and replays real gateway responses,
 including every refusal shape. It enforces no policy and ignores
 credentials, and every response carries `x-donkey-simulator: true`.
 
+  "Local gateway" here means DDK's pure-Python simulator, not Omni/Flex
+  Gateway running in Local Mode — that deployment target isn't supported
+  (see the [unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)).
+
 ### Point DDK at it
 
 In a second terminal:
@@ -3119,8 +3123,11 @@ guardrailed bot is exercised before it faces a real attack.
   [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) cannot drift apart. The wheel ships a sha256
   integrity manifest of every fixture, so a changed byte fails loudly rather
   than silently altering what the simulator replays.
-- **It is pure Python.** `pip install "donkey-kit[local]"` adds Starlette and
-  Uvicorn; no Docker required.
+- **It is pure Python — not Omni/Flex Gateway running in Local Mode.**
+  `pip install "donkey-kit[local]"` adds Starlette and Uvicorn; no Docker
+  required. DDK does not support Local Mode as a deployment target (see the
+  [unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)); real-gateway
+  behavior is exercised against a hosted (Connected Mode) proxy instead.
 
 ## Related
 
@@ -8968,6 +8975,18 @@ before making a network request.
 The full ledger links each contract to its official documentation, SDK
 consumer, evidence, and maintenance owner. Its **Undocumented surfaces**
 section is empty.
+
+## Local Mode is not supported
+
+  Donkey Development Kit does not support Omni/Flex Gateway **Local Mode**.
+  The [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) (`donkey mock` / `simulate()`) is the
+  supported local dev loop; real-gateway behavior is exercised against a
+  hosted (Connected Mode) proxy instead. A stock Flex Gateway 1.14.0 Local
+  Mode image rejects the LLM Proxy and MCP Bridge policies as missing
+  extensions and refuses configuration until registered to a control plane —
+  enough to make this scope call, bounded to that image version. See the
+  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md#6-governance--local-mode-the-verification-milestone)
+  and [issue #661](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/661).
 
 ## Support statement
 

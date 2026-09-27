@@ -45,6 +45,18 @@ The full ledger links each contract to its official documentation, SDK
 consumer, evidence, and maintenance owner. Its **Undocumented surfaces**
 section is empty.
 
+## Local Mode is not supported
+
+  Donkey Development Kit does not support Omni/Flex Gateway **Local Mode**.
+  The [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) (`donkey mock` / `simulate()`) is the
+  supported local dev loop; real-gateway behavior is exercised against a
+  hosted (Connected Mode) proxy instead. A stock Flex Gateway 1.14.0 Local
+  Mode image rejects the LLM Proxy and MCP Bridge policies as missing
+  extensions and refuses configuration until registered to a control plane —
+  enough to make this scope call, bounded to that image version. See the
+  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md#6-governance--local-mode-the-verification-milestone)
+  and [issue #661](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/661).
+
 ## Support statement
 
   Donkey Development Kit is an independent, community-maintained project with

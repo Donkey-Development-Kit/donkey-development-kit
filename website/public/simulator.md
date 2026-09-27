@@ -140,8 +140,11 @@ guardrailed bot is exercised before it faces a real attack.
   [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) cannot drift apart. The wheel ships a sha256
   integrity manifest of every fixture, so a changed byte fails loudly rather
   than silently altering what the simulator replays.
-- **It is pure Python.** `pip install "donkey-kit[local]"` adds Starlette and
-  Uvicorn; no Docker required.
+- **It is pure Python — not Omni/Flex Gateway running in Local Mode.**
+  `pip install "donkey-kit[local]"` adds Starlette and Uvicorn; no Docker
+  required. DDK does not support Local Mode as a deployment target (see the
+  [unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)); real-gateway
+  behavior is exercised against a hosted (Connected Mode) proxy instead.
 
 ## Related
 
