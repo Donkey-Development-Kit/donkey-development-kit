@@ -478,10 +478,23 @@ this is a PR-time discipline. The full surface→page mapping is in the
 | `provisioning/*` | the matching `provisioning/*.mdx` page |
 | `README.md` (install/status/extras) | `quickstart.mdx`, `index.mdx` |
 
-`docs/verified-apis.md` is not "engineering-internal" for this purpose: a status
-flip there feeds `concepts/verification.mdx`, `reference/unsupported-boundary.mdx`,
-and the README status banner — update them together so one page never says "live"
-while another still says "planned design."
+`docs/verified-apis.md` is not "engineering-internal" for this purpose: when
+a row moves to **`VERIFIED (LIVE)`**, the same PR must remove **every**
+remaining "unverified / documented-only / pending capture" claim about that
+shape, so one surface never says "live" while another still says "planned" or
+"pending." Sweep, in the same PR:
+
+- `classify()` and the related docstrings in `python/src/donkey_kit/core/`
+  (notably `core/errors.py`);
+- `docs/unsupported-boundary.md`;
+- `website/content/**` **and** the generated `website/public/**` copies
+  (regenerate with `npm run generate:llms`);
+- the fixture index (`python/tests/fixtures/rejections/README.md`);
+- the affected test module docstrings.
+
+Do **not** touch the top-level `README.md` status banner for an individual
+fixture/row flip — that banner tracks milestone/release-level posture, not a
+single shape going live, and moves only when the overall status does.
 
 For every surface a PR touches, do **one** of:
 
