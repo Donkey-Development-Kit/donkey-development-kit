@@ -57,7 +57,9 @@ for quoting to a provider's support team.
 What the gateway *did* with the request — which provider and model served it, how
 it routed, and whether that was a failover. Read live off the shared transport,
 so the raw `donkey.llm.client()` path gets them with no framework required. See
-[Routing & resilience](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#routing--resilience) for the operational story.
+[Routing & resilience](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#routing--resilience) for the operational story,
+or [Which provider served this?](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#which-provider-served-this)
+for why a LangGraph message's own `model_provider` field disagrees with these.
 
 | Field | Type | Meaning |
 |---|---|---|

@@ -998,6 +998,68 @@ correlation ID into its logs, and tolerates a response with no budget headers.
 The [`examples/langgraph`](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/langgraph)
 factory has exactly this shape. See [Testing](https://donkey-development-kit.github.io/donkey-development-kit/testing.md).
 
+### Which provider served this?
+
+A call routed by the gateway to Gemini, Anthropic, or Bedrock still comes back
+with `response_metadata["model_provider"] == "openai"` on the LangChain
+message. That is not a routing bug — LangChain stamps `model_provider` from
+the **client class** (`ChatOpenAI`, OpenAI-compatible), not from whichever
+upstream the gateway actually picked. Don't use it for routing attribution;
+use one of the following instead.
+
+**Per context — `donkey.last_call`.** Right after `ainvoke`, read the record
+the gateway reported for the most recent call:
+
+```python
+reply = await model.ainvoke(state["messages"])
+
+r = donkey.last_call
+r.served_provider  # e.g. "gemini"
+r.served_model
+r.routing_type
+r.fallback
+r.substituted
+```
+
+`last_call` is contextvar-scoped: it is the last call **in the current task**,
+so it does not survive into graph state and does not leak back to a parent
+that gathered parallel branches (each branch runs on its own `asyncio` task
+with its own copy). Read it immediately after the call it describes. See the
+[full field reference](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#routing--fallback) for every
+field.
+
+**Per message — opt-in headers.** For attribution that needs to travel with
+the message itself (into checkpoints, across the boundary where `last_call`
+would go stale), pass `include_response_headers=True` — this is
+`langchain_openai.ChatOpenAI`'s own field, forwarded through
+`chat_model(**kwargs)` like any other native kwarg:
+
+```python
+model = donkey.langgraph.chat_model("gpt-4o", include_response_headers=True)
+msg = await model.ainvoke(...)
+headers = msg.response_metadata["headers"]
+headers.get("x-llm-proxy-llm-provider")   # e.g. "gemini"
+headers.get("x-llm-proxy-llm-model")
+headers.get("x-llm-proxy-routing-fallback")
+headers.get("x-llm-proxy-routing-type")
+```
+
+Because this is langchain-openai's own behavior, not the SDK's, its exact
+shape tracks that package's version:
+
+- It copies **all** response headers into `response_metadata["headers"]` on
+  every message — and therefore into every checkpoint that stores the
+  message.
+- On a streamed response, the headers land on the **first chunk only**.
+- Whether headers are captured on the chat-completions + `response_format`
+  path has varied by langchain-openai version — verify against the version
+  you have installed rather than assuming either way.
+
+**Traces.** The OTel GenAI span for the call already carries the served
+provider and model under `gen_ai.system` / `gen_ai.response.model` (see
+[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)) — but a LangSmith-style tracer that reads LangChain's
+own fields instead of the span will still show `openai`.
+
 ## Notes
 
 - `base_url`, `api_key`, `default_headers`, and a custom `http_async_client`
@@ -1010,7 +1072,9 @@ factory has exactly this shape. See [Testing](https://donkey-development-kit.git
   `client_id`/`client_secret` header pair rather than a bearer token.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions.
+exceptions, and [Which provider served this?](#which-provider-served-this)
+for reading the served provider/model instead of LangChain's own
+`model_provider`.
 
 ---
 
@@ -8858,7 +8922,9 @@ for quoting to a provider's support team.
 What the gateway *did* with the request — which provider and model served it, how
 it routed, and whether that was a failover. Read live off the shared transport,
 so the raw `donkey.llm.client()` path gets them with no framework required. See
-[Routing & resilience](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#routing--resilience) for the operational story.
+[Routing & resilience](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#routing--resilience) for the operational story,
+or [Which provider served this?](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#which-provider-served-this)
+for why a LangGraph message's own `model_provider` field disagrees with these.
 
 | Field | Type | Meaning |
 |---|---|---|
