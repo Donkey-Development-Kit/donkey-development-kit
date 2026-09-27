@@ -101,7 +101,16 @@ class Result:
         if self.blocked:
             return "BLOCKED (verification discipline)"
         if self.signature_ok and self.class_matches:
-            return "VERIFIED" if self.live in ("ok", "not run") else "SIGNATURE OK / LIVE FAIL"
+            if self.live == "ok":
+                return "VERIFIED (LIVE)"
+            # An offline-only pass (no --live, or --live skipped) confirms
+            # construction + isinstance against the recorded class path — not
+            # a real-sandbox round-trip, so it must not read "VERIFIED" on its
+            # own (§0.3; docs/verified-apis.md §8 reserves that word for a
+            # live gateway request, #681).
+            if self.live.startswith("fail"):
+                return "UNVERIFIED (signature confirmed; live check FAILED)"
+            return "UNVERIFIED (signature confirmed)"
         if self.signature_ok and self.class_matches is False:
             return "CLASS RENAMED"
         return "SIGNATURE FAIL"
@@ -270,7 +279,14 @@ def emit_verified_rows(results: list[Result]) -> None:
     print("\n# Paste into docs/verified-apis.md §8 (maintainer sign-off still required):\n")
     for r in results:
         if r.signature_ok and r.class_matches:
-            status = "VERIFIED (LIVE)" if r.live == "ok" else "VERIFIED (signature)"
+            # Match the docs/verified-apis.md §8 vocabulary exactly (#681): only
+            # a real --live round-trip earns "VERIFIED"; an offline-only pass is
+            # "UNVERIFIED (signature confirmed)" until a maintainer signs off.
+            status = (
+                "VERIFIED (LIVE)"
+                if r.live == "ok"
+                else "UNVERIFIED (signature confirmed; pending maintainer --live + sign-off)"
+            )
             print(
                 f"| {r.framework} | `{r.expected_class}` | {status} "
                 f"| {r.actual_class} | {today} | verify_frameworks.py |"
