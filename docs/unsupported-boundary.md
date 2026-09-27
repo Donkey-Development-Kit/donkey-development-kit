@@ -45,6 +45,18 @@ Classification:
   reads them and does not depend on it doing so, so they are not represented as
   supported platform contracts here.
 
+## Local Mode is not a supported deployment target
+
+Omni/Flex Gateway **Local Mode** is not supported by DDK. The pure-Python
+local gateway simulator (`donkey mock` / `simulate()`) is the supported local
+dev loop; real-gateway behavior — the LLM Proxy, MCP Bridge, and their
+policies — is exercised against a hosted (Connected Mode) proxy instead. A
+stock Flex Gateway 1.14.0 Local Mode image rejects the LLM Proxy and MCP
+Bridge policies as missing extensions and refuses configuration until
+registered to a control plane — enough to make this scope call, and bounded
+to that image version. See `verified-apis.md` §6 for the underlying findings
+and #661 for the decision.
+
 ## Undocumented surfaces
 
 **This section must stay empty.** If a surface lands here, it needs a written
