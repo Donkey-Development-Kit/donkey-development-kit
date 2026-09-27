@@ -64,6 +64,20 @@ const navbar = (
     projectLink="https://github.com/Donkey-Development-Kit/donkey-development-kit"
   >
     <a
+      href="https://pypi.org/project/donkey-kit/"
+      target="_blank"
+      rel="noreferrer"
+      className="af-nav-link"
+      aria-label="donkey-kit on PyPI"
+      title="donkey-kit on PyPI"
+    >
+      <img
+        src="https://img.shields.io/pypi/v/donkey-kit?logo=pypi&logoColor=white&label=PyPI"
+        alt="PyPI"
+        className="af-nav-badge"
+      />
+    </a>
+    <a
       href="https://www.mulesoft.com/"
       target="_blank"
       rel="noreferrer"
