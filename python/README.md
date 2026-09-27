@@ -2,12 +2,16 @@
   <img src="https://raw.githubusercontent.com/Donkey-Development-Kit/donkey-development-kit/main/brand/ddk-logo-stacked-black.png" alt="Donkey Development Kit (DDK)" width="180" />
 </p>
 
+<p align="center">
+  <a href="https://pypi.org/project/donkey-kit/"><img src="https://img.shields.io/pypi/v/donkey-kit?logo=pypi&logoColor=white&label=PyPI" alt="donkey-kit on PyPI" /></a>
+</p>
+
 # Donkey Development Kit
 
 An SDK for consuming **Agent Fabric** capabilities — governed model and tool
 access — from your own agent framework, in your own IDE, without adopting Mule.
 
-> **Project status — alpha.** This is `v0.1.0`, the first release
+> **Project status — alpha.** This is an early release
 > (`Development Status :: 3 - Alpha`). The **LLM data plane is live-verified**;
 > most other surfaces are verification-gated (see
 > [What's verified](#whats-verified-verification-discipline) below). Install it
