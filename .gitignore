@@ -45,9 +45,6 @@ node_modules/
 # Playwright MCP scratch output (local agent tooling)
 .playwright-mcp/
 
-# Rebrand issue/PR sweep dry-run report (#338) — generated artifact, not source
-scripts/rebrand/sweep-report/
-
 # Local donkey config (secrets / dev creds — never commit)
 .donkey-kit.local.toml
 donkey.lock.local
