@@ -415,9 +415,9 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
-| Can Local Mode run the LLM Proxy? | the Verification milestone | UNVERIFIED | — | — |
-| Can Local Mode run MCP Bridge? | the Verification milestone | UNVERIFIED | — | — |
-| Does Local Mode need a control-plane licence/registration artifact? | OSS/CI viability | UNVERIFIED | — | — |
+| Can Local Mode run the LLM Proxy? | the Verification milestone | UNVERIFIED | A stock Flex Gateway 1.14.0 Local Mode image rejects `llm-proxy-core`, `model-based-routing`, and `openai-transcoding-policy` as missing extensions; bounded to that image version, not a full-capability verification (#651, #661) | 2026-09-27 |
+| Can Local Mode run MCP Bridge? | the Verification milestone | UNVERIFIED | Same stock image rejects `mcp-support` as a missing extension; bounded to that image version (#651, #661) | 2026-09-27 |
+| Does Local Mode need a control-plane licence/registration artifact? | OSS/CI viability | UNVERIFIED | Yes — the gateway refuses API configuration until registered to a control plane, so OSS contributors/CI without an Anypoint org cannot run it (#651, #661) | 2026-09-27 |
 | Which policies are Connected-Mode-only? (portability table) | the Verification milestone | UNVERIFIED | — | — |
 | Is "deployed to gateway" readable per API instance? | `require_deployed` | VERIFIED (CLI) | Yes — `api-mgr:api:list` (per env) + `:api:describe <id>` returns Endpoint URI, gateway, deployment target | 2026-08-28 |
 | Are applied policies readable per API instance? | governed-state join | VERIFIED (CLI) | Yes — `api-mgr:policy:list <id>` returns `{ID, Template ID, Asset ID, Asset Version, Label, Status, Configuration}` | 2026-08-28 |
@@ -426,6 +426,19 @@ provisioning API. Exact REST calls behind the CLI are now recorded in §12
 | MCP-specific + enforcement policies observed | the Verification milestone (portability) | VERIFIED (CLI) | `mcp-support` (`injectMcpNameHeaders`), `client-id-enforcement` (client_id/client_secret headers), `header-injection` (`x-gateway-token`) | 2026-08-28 |
 | Governed MCP endpoint URL shape | `McpServerHandle.endpoint_url` | VERIFIED (CLI) | ingress gw: `https://agent-network-ingress-gw-<id>.<region>.cloudhub.io/mcp/<name>/` | 2026-08-28 |
 | Governed **LLM proxy** policy stack (live) | governed-state join, the Verification milestone | VERIFIED (LIVE) | on `openai-sdk`: `cors 1.3.2`, `dataweave-headers-transformation 1.0.0`, `client-id-enforcement 1.3.3`, `llm-proxy-core 1.0.5`, `model-based-routing 1.0.3`, `openai-transcoding-policy 1.0.3` — all Enabled | 2026-08-28 |
+
+**Decision (2026-09-27, #661): Donkey Development Kit does not support Omni/Flex
+Gateway Local Mode.** The rows above stay `UNVERIFIED` for full Local Mode
+capability — this is a scope decision, not a completed verification — but the
+bounded findings against a Flex Gateway 1.14.0 stock image are sufficient to
+make the call: the LLM Proxy and MCP Bridge policies this SDK depends on are
+rejected as missing extensions, and the gateway will not accept configuration
+without control-plane registration. The pure-Python local gateway simulator
+(`donkey mock` / `simulate()`, BG §1.4, the `local_gateway` pytest marker) is
+DDK's supported local dev loop; real-gateway behavior is exercised against a
+hosted (Connected Mode) proxy. See `docs/unsupported-boundary.md` for the
+consumer-facing statement of this same decision, and #65 for the verification
+questions this decision resolves as out of scope rather than answered.
 
 ## 7. Publication / Exchange (BG §2.5)
 
