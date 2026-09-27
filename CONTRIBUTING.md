@@ -184,9 +184,11 @@ reading the `DONKEY_LLM_PROXY_*` env vars) do **not** run on your PR — a
 maintainer runs them before merge. Run everything that needs no secrets locally
 so the gate is green on what CI *can* check on a fork: `pytest -q tests/unit`,
 `mypy`, `ruff check .`, `lint-imports`, and offline `python
-scripts/verify_frameworks.py` (no `--live`). The `sandbox` and `local_gateway`
-suites need creds/docker you likely don't have; they clean-skip, which is
-correct (Section 2). And **never flip a `docs/verified-apis.md` row or `verified=True`
+scripts/verify_frameworks.py` (no `--live`). The `sandbox` suite needs a real
+Anypoint sandbox you likely don't have, and `local_gateway` needs the optional
+`[local]` extra installed (no Docker, no Omni/Flex Gateway — donkey-development-kit
+does not support Local Mode as a test surface, #661); both clean-skip when their
+prerequisite is absent, which is correct (Section 2). And **never flip a `docs/verified-apis.md` row or `verified=True`
 from a fork** — that requires a real sandbox round-trip only a maintainer can
 run (verification discipline); raise it in the issue instead.
 
@@ -239,7 +241,7 @@ scenario nobody reviews). Pick by what the change exercises:
 | Framework-free logic (`core/`, `registry/`, errors, config, transport) using only httpx + pydantic | **`tests/unit/`** — the `base-only` CI job |
 | An adapter's behavior against a fixed scenario set (any of the eight frameworks) | **`tests/conformance/suite.py`** — the conformance kit |
 | Behavior pinned to a **real captured** Anypoint request/response | **fixture-driven** test reading `tests/fixtures/anypoint/**` |
-| A running local Omni Gateway (docker) | `@pytest.mark.local_gateway` (off by default) |
+| The pure-Python local gateway simulator (`donkey mock`, no Docker) | `@pytest.mark.local_gateway` (off by default) |
 | A real Anypoint sandbox | `@pytest.mark.sandbox` (off by default, gated by `DONKEY_SANDBOX_TESTS=1`) |
 | A framework's constructor signature/kwargs | `scripts/verify_frameworks.py` (not pytest) |
 | A downstream package-root import/call combination that source-only analysis cannot exercise | **`tests/typecheck/`** — checked by `mypy`, not pytest |
@@ -303,9 +305,11 @@ job via `pytest -q -m local_gateway`); `sandbox` is exercised by
 `tests/sandbox/` (#400), which calls the real provisioned proxies and is
 **never** run in CI — it is opt-in, local only.
 
-- **`@pytest.mark.local_gateway`** needs a local Omni Gateway via docker (the Verification milestone).
-  Docker is a hard dependency **for this feature only** — it ships behind the
-  optional `[local]` extra; the rest of the SDK works without it. The local
+- **`@pytest.mark.local_gateway`** boots the pure-Python local gateway simulator
+  (BG §1.4) on a real TCP port — it needs the optional `[local]` extra
+  (Starlette + Uvicorn) and nothing else; there is no Docker dependency, and
+  donkey-development-kit does not support Omni/Flex Gateway Local Mode as a
+  test surface (#661). The local
   harness (`Governance.simulate()`) is designed so that **port allocation is
   dynamic**, so parallel test workers don't collide on a fixed port; the fixture
   **prefers gateway config hot-reload over a container restart** between test
