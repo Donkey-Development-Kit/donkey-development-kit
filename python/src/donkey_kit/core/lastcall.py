@@ -166,8 +166,9 @@ class LastCallStatus(str, Enum):
     #: No governed model call has returned in this context yet (a cold read).
     UNOBSERVED = "unobserved"
     #: This adapter surface cannot be observed — the SDK does not own its
-    #: transport (LiteLLM-backed) or was handed only ``default_headers`` — so no
-    #: response ever reaches the record here. Distinct from a mere cold read.
+    #: transport (the framework builds its own client) or was handed only
+    #: ``default_headers`` — so no response ever reaches the record here.
+    #: Distinct from a mere cold read.
     UNAVAILABLE = "unavailable"
 
 
@@ -556,8 +557,9 @@ class LastCall:
     @property
     def available(self) -> bool:
         """False only when the current surface structurally cannot be observed
-        (LiteLLM-backed / ``default_headers``-only adapters); a plain cold read is
-        still ``available`` — it just has not observed anything yet."""
+        (the framework owns the transport, or the adapter gets only
+        ``default_headers``); a plain cold read is still ``available`` — it just
+        has not observed anything yet."""
         return self.status is not LastCallStatus.UNAVAILABLE
 
     @classmethod

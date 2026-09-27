@@ -134,9 +134,9 @@ An invalid control (a negative `ttl`, a `threshold` outside `[0.0, 1.0]`, a
 site**, not on the first request. The **outcome** of each call is on
 [`donkey.last_call.cache_status`](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#semantic-cache) /
 `.cache_score` and the OTel span. The same
-[degradation](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) as `donkey.run(...)` applies: a `connection_kwargs()`
-/ LiteLLM-backed adapter that does not route through the shared transport does
-not see the context variable, so its calls are not steered.
+[degradation](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) as `donkey.run(...)` applies: a
+`connection_kwargs()`-only adapter that does not route through the shared
+transport does not see the context variable, so its calls are not steered.
 
 ## Behaviour guarantees
 

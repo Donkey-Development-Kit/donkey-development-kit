@@ -58,8 +58,9 @@ def test_scenario_is_registered() -> None:
 
 def test_jwt_exemption_recorded_for_transport_detached_adapters() -> None:
     # A rotating model-wallet JWT can only be refreshed per-send by our transport
-    # (#509). The adapters that own their transport (LiteLLM) or take only a
-    # one-time default_headers snapshot pin the token at construction, so jwt auth
+    # (#509). The adapters whose framework owns the transport (ADK's LiteLLM,
+    # CrewAI's native OpenAI provider) or that take only a one-time
+    # default_headers snapshot pin the token at construction, so jwt auth
     # mode is unsupported on them — asserted here, exactly like the last_call and
     # correlation-id exemptions, never a silent skip. That is the SAME set of four
     # non-transport-routed adapters.

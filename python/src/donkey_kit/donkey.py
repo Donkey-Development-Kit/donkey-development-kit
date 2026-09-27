@@ -249,11 +249,12 @@ class Donkey:
           it said nothing").
         * **UNOBSERVED** — no governed model call has returned in this context yet.
         * **UNAVAILABLE** — every adapter used on this Donkey routes outside our
-          transport (LiteLLM-backed ADK/CrewAI, or ``default_headers``-only
-          LlamaIndex / MS Agent Framework), so a response can never reach the
-          record. :attr:`LastCall.surface` names which. This is derived from the
-          adapters actually resolved, and the conformance suite asserts the
-          exemption rather than skipping it (the conformance kit).
+          transport (ADK via LiteLLM, CrewAI via its native OpenAI provider, or
+          ``default_headers``-only LlamaIndex / MS Agent Framework), so a
+          response can never reach the record. :attr:`LastCall.surface` names
+          which. This is derived from the adapters actually resolved, and the
+          conformance suite asserts the exemption rather than skipping it (the
+          conformance kit).
         """
         observed = current_last_call()
         if observed is not None:
@@ -385,8 +386,8 @@ class Donkey:
         computes no embeddings; it steers and surfaces the *gateway's* cache.
 
         The same documented degradation as :meth:`run` applies (BG §1.8): a
-        ``connection_kwargs()`` / LiteLLM-backed adapter that does not route through
-        the shared transport does not see the contextvar, so its calls are not
+        ``connection_kwargs()``-only adapter that does not route through the
+        shared transport does not see the contextvar, so its calls are not
         steered. Invalid controls raise :class:`~donkey_kit.core.errors.ConfigError`
         at the call site, not on the first request.
         """
