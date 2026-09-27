@@ -8632,7 +8632,9 @@ git checkout -b docs/13-verified-apis-update upstream/develop
 
 Open the PR from your fork into `Donkey-Development-Kit:develop` and tick
 **Allow edits by maintainers**. A maintainer sets the milestone and labels,
-runs the secret-gated checks that GitHub does not run on fork PRs, and merges.
+runs the secret-gated checks that GitHub does not run on fork PRs, re-captures
+any live fixture on the team sandbox before a `verified-apis.md` row flips,
+and merges.
 
 ## Keep the docs in sync
 
