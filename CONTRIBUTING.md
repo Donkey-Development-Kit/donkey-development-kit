@@ -83,6 +83,13 @@ block waiting on it:
 - **Secret-gated CI and live/sandbox verification** — see
   [the pre-PR gate](#the-pre-pr-gate) and [§2](#2-testing-strategy).
 
+**(fork)** **Several PRs against one shared file.** When your contribution
+spans multiple PRs that all touch a single shared file — typically
+`docs/verified-apis.md` — open them **one at a time, each rebased on
+`develop` after the previous merges**, not as a parallel stack. Parallel PRs
+against the same file guarantee rebase conflicts and re-review of the same
+context. Fold closely related small changes into one PR.
+
 ### The issue is the plan
 
 **No code change lands without a GitHub issue and a branch named after it.**
@@ -189,8 +196,15 @@ Anypoint sandbox you likely don't have, and `local_gateway` needs the optional
 `[local]` extra installed (no Docker, no Omni/Flex Gateway — donkey-development-kit
 does not support Local Mode as a test surface, #661); both clean-skip when their
 prerequisite is absent, which is correct (Section 2). And **never flip a `docs/verified-apis.md` row or `verified=True`
-from a fork** — that requires a real sandbox round-trip only a maintainer can
-run (verification discipline); raise it in the issue instead.
+from a fork** — that requires a real sandbox round-trip only a maintainer can run
+(verification discipline). What you *can* contribute from a fork is the
+**fixture** for a new shape: capture it in your own sandbox following the
+provenance and byte-exact rules in
+[§2](#fixture-driven-tests--captures-not-conveniences), and propose the ledger
+row **left `UNVERIFIED`**, noting in the PR that the capture came from a
+contributor sandbox rather than the DDK team sandbox. A maintainer then
+re-captures the same shape on the team sandbox and flips the row — your
+capture is what makes that fast, but it is not itself the verification.
 
 ### The PR
 
