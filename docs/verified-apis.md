@@ -19,10 +19,12 @@
 > rejection shapes were also `VERIFIED (LIVE)` on 2026-09-22 against the deployed
 > `ddk-injection-guard` / `ddk-azure-content-safety` proxies (#253), and the
 > Bedrock Guardrails content-safety shape (same `…-action: reject` family) on
-> 2026-09-24 against `ddk-bedrock-guardrails` (#568). Still
-> `UNVERIFIED`: the Injection Protection body (`x-injection-protection: blocked`,
-> a distinct policy — no proxy deployed) and any other unrecognised
-> content-moderation shape (§4, pending live capture #253), and the **framework
+> 2026-09-24 against `ddk-bedrock-guardrails` (#568). The Injection Protection
+> body (`x-injection-protection: blocked`) was itself `VERIFIED (LIVE)` on
+> 2026-09-27 against `ddk-injection-protection` (instance 21200898, #669) — a
+> real 79-byte body, replacing the honest empty placeholder. Still
+> `UNVERIFIED`: any other unrecognised content-moderation shape (§4, pending
+> live capture #253), and the **framework
 > constructor/binding names** (§§8–10). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
@@ -234,12 +236,14 @@ point the SDK at it via the `cost_*_header` overrides.
 
 ## 4. Policy rejection response shapes (capture as fixtures, BG §1.5)
 
-**Six rejection shapes** are now LIVE-VERIFIED: four from the `openai-sdk` proxy
+**Seven rejection shapes** are now LIVE-VERIFIED: four from the `openai-sdk` proxy
 (client-id-enforcement, upstream passthrough, PII, token-rate-limit; 2026-08-28),
 plus **Regex Prompt Guard** and **Azure Content Safety** — both `403` policy
 blocks confirmed 2026-09-22 against the deployed provisioning proxies
 `ddk-injection-guard` (instance 21179713) and `ddk-azure-content-safety`
-(instance 21180957), rows added to the policy table below (#253).
+(instance 21180957), rows added to the policy table below (#253) — plus
+**Injection Protection**, confirmed 2026-09-27 against `ddk-injection-protection`
+(instance 21200898, #669).
 Fixtures in `tests/fixtures/anypoint/llm_proxy/reject.*` and
 `tests/fixtures/rejections/reject.*`. The critical lesson:
 **neither the status code nor the mere shape of the `error` value is a
@@ -278,8 +282,9 @@ message); a top-level `matched_patterns` list → `PromptInjectionBlocked`
 header (Azure Content Safety / Amazon Bedrock Guardrails) → `ContentSafetyBlocked`
 (parses `categories` from the sibling `…-reason` header) — both of these also
 checked *before* the 401/403→auth rule so a `403` moderation block is not
-mis-typed as auth; header `x-injection-protection: blocked` (documented by the
-[Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection)) →
+mis-typed as auth; header `x-injection-protection: blocked` (VERIFIED LIVE
+2026-09-27 against `ddk-injection-protection`, instance 21200898, #669 — see
+the [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection)) →
 `PromptInjectionBlocked` (the header, not the status, is the discriminator, so a
 bare `400` is unaffected); `429` → `TokenBudgetExceeded` with `retry_after`
 derived from `x-token-reset` (ms→s); non-auth 4xx with a nested `error` object —
@@ -303,25 +308,26 @@ is these rows, not an `Unverified(...)` flip:
 
 | Shape | HTTP | Discriminator | Maps to | Source |
 |---|---|---|---|---|
+| Injection Protection | `400` | header `x-injection-protection: blocked` (not the status) | `PromptInjectionBlocked` (`policy="prompt-injection-protection"`) | [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection) (v1.12.0); VERIFIED (LIVE) 2026-09-27 on `ddk-injection-protection` (instance 21200898, #669) — real 79-byte body |
 | Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4); VERIFIED (LIVE) 2026-09-22 on `ddk-injection-guard` (instance 21179713) |
 | Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); VERIFIED (LIVE) 2026-09-22 on `ddk-azure-content-safety` (instance 21180957) + 2026-09-24 on `ddk-bedrock-guardrails` (#568) |
 | Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no known contract; capture + type via #184/#253 |
 
-The Regex Prompt Guard (row 7) and Content Safety (row 8) shapes are now
-LIVE-captured — Regex Prompt Guard and Azure Content Safety on 2026-09-22
-(#253), and Bedrock Guardrails on 2026-09-24 (#568), the sibling vendor of the
-same row-8 `…-action: reject` family. Still **uncaptured**: the **Injection
-Protection** body (`x-injection-protection: blocked`, a policy *distinct* from
-Regex Prompt Guard — no proxy running it is deployed) and any **other
-unrecognised content-moderation / federated-guardrail** shape.
-Rather than guess a type for them, `classify()` surfaces any such unrecognised
+The Injection Protection (row 3), Regex Prompt Guard (row 7), and Content
+Safety (row 8) shapes are now LIVE-captured — Injection Protection on
+2026-09-27 against `ddk-injection-protection` (instance 21200898, #669), Regex
+Prompt Guard and Azure Content Safety on 2026-09-22 (#253), and Bedrock
+Guardrails on 2026-09-24 (#568), the sibling vendor of the same row-8
+`…-action: reject` family. Still **uncaptured**: any **unrecognised
+content-moderation / federated-guardrail** shape (row 4 — the fall-through).
+Rather than guess a type for it, `classify()` surfaces any such unrecognised
 refusal **honestly** — a `PolicyViolation` whose message states the shape is
 unconfirmed and whose remediation asks the operator to file the observed
 status/headers/body so the shape can be typed (#184). This is the last row
 above; it is deliberately **not** an `AuthError`, even for a `403`, once the
-verified `www-authenticate` auth shape is excluded. Closing the last shape
-needs an Injection Protection proxy deployed to capture against; that residual
-keeps #253 open.
+verified `www-authenticate` auth shape is excluded. Closing this last residual
+needs a live capture of an unrecognised content-moderation / federated-
+guardrail refusal; that keeps #253 open.
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two

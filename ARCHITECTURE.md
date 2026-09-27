@@ -208,8 +208,8 @@ code alone.** The captures established, for example, that:
 
 A **prompt-injection** block is typed on its own signal: the
 `x-injection-protection: blocked` response header decides `PromptInjectionBlocked`
-*before* the generic 4xx / nested-error branch, even though its rejection *body*
-is still pending live capture (#253). Only **content-moderation /
+*before* the generic 4xx / nested-error branch; its rejection *body* is now
+LIVE-VERIFIED, a real 79-byte capture (#669). Only **content-moderation /
 federated-guardrail** shapes remain under-documented, and those deliberately fall
 through to a generic `PolicyViolation` whose message *says so* rather than
 pretending to a precision the captures don't yet support — the same verification-discipline honesty

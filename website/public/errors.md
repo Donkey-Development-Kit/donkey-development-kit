@@ -36,8 +36,9 @@ ordinary refusal.
 Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the eight
 policy-rejection rows.
 
-The Injection Protection header is typed from the documented response shape;
-`classify()` keys on the header discriminator alone for it.
+The Injection Protection shape is live-verified against a deployed proxy
+(#669); `classify()` keys on the header discriminator alone for it, not the
+body.
 
 ## The exception tree
 
