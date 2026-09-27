@@ -299,6 +299,18 @@ whose message names the observed status and any `x-llm-proxy-*` policy headers a
 states the **shape is unconfirmed** (#184), rather than being mis-typed. The full
 eight-shape taxonomy is indexed in `tests/fixtures/rejections/README.md`.
 
+The committed rejection fixtures record only the **semantic header subset**
+each discriminator needs (plus `content-type` when the body is JSON) — not
+the full raw header set a live gateway response returns. A live capture
+against `ddk-injection-protection` (#670) returned ~10 response headers for
+the Injection Protection shape; the fixture records 2. The rest are
+transport/CDN framing headers the simulator's `replay_headers()` allow-list
+(`_KEEP_EXACT` / `_KEEP_PREFIX` in `simulator/fixtures.py`) drops on replay by
+design, plus, in that capture, a proxy-topology header
+(`x-llm-proxy-model-based-routing-success`) specific to the capturing proxy's
+own routing configuration rather than to the policy — see
+`tests/fixtures/rejections/README.md` for the full rationale.
+
 The Regex Prompt Guard and content-safety/guardrail shapes below are now
 **VERIFIED (LIVE), 2026-09-22 (#253)** — confirmed against the deployed
 provisioning proxies (`ddk-injection-guard`, `ddk-azure-content-safety`), not
