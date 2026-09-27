@@ -1,5 +1,5 @@
 ---
-description: Use a governed, LiteLLM-backed crewai.LLM in CrewAI, pointed at your Omni Gateway LLM proxy.
+description: Use a governed, LiteLLM-backed CrewAI LLM, pointed at your Omni Gateway LLM proxy.
 ---
 
 import { Tabs } from 'nextra/components'
@@ -7,13 +7,16 @@ import OpenAiProxyTs from '../../components/openai-proxy-ts.mdx'
 
 # CrewAI
 
-CrewAI gets a governed `LLM`, backed by LiteLLM, pointed at the Agent Fabric
-LLM proxy. The adapter translates the governed connection into LiteLLM's own
-model-string and kwarg conventions for you.
+CrewAI gets a governed native LLM object, backed by LiteLLM, pointed at the
+Agent Fabric LLM proxy. The adapter translates the governed connection into
+LiteLLM's own model-string and kwarg conventions for you.
 
 **What you get**
 
-- A native `crewai.LLM`, with the proxy auth and attribution headers set.
+- A native `crewai.BaseLLM` — concretely `OpenAICompletion`, since
+  `crewai.LLM`'s own `__new__` factory routes an `openai/`-prefixed model to
+  its native OpenAI provider subclass rather than returning an `LLM` instance
+  itself — with the proxy auth and attribution headers set.
 - The `openai/` model prefix and LiteLLM kwarg names handled automatically.
 - Supported at `connection_kwargs()`. CrewAI's model calls go through
   LiteLLM, so correlation is per client and `donkey.last_call` is not
@@ -36,9 +39,12 @@ from donkey_kit.integrations.crewai import llm
 model = llm("gpt-4o")
 ```
 
-`model` is a real `crewai.LLM` instance. The model string is prefixed with
-`openai/` before it reaches LiteLLM (`openai/gpt-4o`), which is the prefix
-LiteLLM's OpenAI-compatible route expects — you don't add it yourself.
+`model` is a real `crewai.BaseLLM` instance (`OpenAICompletion`) — the model
+string is prefixed with `openai/` before it reaches LiteLLM (`openai/gpt-4o`),
+which is the prefix LiteLLM's OpenAI-compatible route expects, and that same
+prefix is what routes `crewai.LLM`'s factory to the `OpenAICompletion`
+subclass rather than to an `LLM` instance itself — you don't add the prefix
+yourself.
 
 </Tabs.Tab>
 <Tabs.Tab>

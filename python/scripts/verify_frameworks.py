@@ -68,7 +68,7 @@ FRAMEWORKS: list[tuple[str, str, str, str]] = [
     ("anthropic", "donkey_kit.integrations.anthropic", "client",
      "anthropic.AsyncAnthropic"),
     ("crewai", "donkey_kit.integrations.crewai", "llm",
-     "crewai.LLM"),
+     "crewai.BaseLLM"),
     ("llamaindex", "donkey_kit.integrations.llamaindex", "llm",
      "llama_index.llms.openai_like.OpenAILike"),
 ]
