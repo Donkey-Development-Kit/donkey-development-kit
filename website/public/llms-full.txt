@@ -565,7 +565,7 @@ attaches there once, so you never wire it call by call.
   
     **Purpose:** point any of eight agent frameworks at your governed Omni
     Gateway proxy. **Advantage:** you get your framework's own object —
-    `ChatOpenAI`, `LiteLlm`, `OpenAIModel`, `crewai.LLM` … — with credentials,
+    `ChatOpenAI`, `LiteLlm`, `OpenAIModel`, `crewai.BaseLLM` … — with credentials,
     correlation, attribution and retry policy injected. No wrapper to code
     around, three lines to eject.
   
@@ -585,7 +585,7 @@ attaches there once, so you never wire it call by call.
 | LlamaIndex | `donkey.llamaindex.llm("gpt-4o")` | `OpenAILike` |
 | OpenAI Agents SDK | `donkey.openai_agents.model("gpt-4o")` | `OpenAIChatCompletionsModel` |
 | Anthropic SDK | `donkey.anthropic.client()` | `anthropic.AsyncAnthropic` |
-| CrewAI | `donkey.crewai.llm("gpt-4o")` | `crewai.LLM` |
+| CrewAI | `donkey.crewai.llm("gpt-4o")` | `crewai.BaseLLM` |
 
 Every adapter offers the same governed connection three ways — a factory on a
 shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
@@ -740,7 +740,7 @@ object.
     `client()` → `anthropic.AsyncAnthropic`
   
   
-    `llm()` → `crewai.LLM` (LiteLLM-backed)
+    `llm()` → `crewai.BaseLLM` (`OpenAICompletion`)
   
   
     `llm()` → `OpenAILike` (`is_chat_model=True`)
@@ -819,7 +819,7 @@ HTTP client is also used, which adds per-run correlation IDs and
 | LlamaIndex | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. `is_chat_model=True` is forced. |
 | MS Agent Framework | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. |
 | Google ADK | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's LiteLLM layer: same behaviour as Google ADK. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's native OpenAI provider, which builds its own HTTP client: same behaviour as Google ADK. |
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.
@@ -1727,17 +1727,22 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/framewor
 
 # CrewAI
 
-CrewAI gets a governed `LLM`, backed by LiteLLM, pointed at the Agent Fabric
-LLM proxy. The adapter translates the governed connection into LiteLLM's own
+CrewAI gets a governed native LLM object pointed at the Agent Fabric LLM
+proxy. The adapter translates the governed connection into CrewAI's own
 model-string and kwarg conventions for you.
 
 **What you get**
 
-- A native `crewai.LLM`, with the proxy auth and attribution headers set.
-- The `openai/` model prefix and LiteLLM kwarg names handled automatically.
-- Supported at `connection_kwargs()`. CrewAI's model calls go through
-  LiteLLM, so correlation is per client and `donkey.last_call` is not
-  populated — the same as [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md) (see [Notes](#notes)).
+- A native `crewai.BaseLLM` — concretely `OpenAICompletion`, CrewAI's native
+  OpenAI provider. `crewai.LLM`'s own `__new__` factory routes an
+  `openai/`-prefixed model with an explicit `base_url` to that provider rather
+  than returning an `LLM` instance itself. The proxy auth and attribution
+  headers are set.
+- The `openai/` model prefix and CrewAI's kwarg names handled automatically.
+- Supported at `connection_kwargs()`. CrewAI's native provider builds its own
+  HTTP client rather than using the SDK's, so correlation is per client and
+  `donkey.last_call` is not populated — the same as
+  [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md) (see [Notes](#notes)).
 
 ## Install
 
@@ -1753,9 +1758,11 @@ from donkey_kit.integrations.crewai import llm
 model = llm("gpt-4o")
 ```
 
-`model` is a real `crewai.LLM` instance. The model string is prefixed with
-`openai/` before it reaches LiteLLM (`openai/gpt-4o`), which is the prefix
-LiteLLM's OpenAI-compatible route expects — you don't add it yourself.
+`model` is a real `crewai.BaseLLM` instance (`OpenAICompletion`). The adapter
+prefixes the model string with `openai/` (`openai/gpt-4o`) — you don't add it
+yourself. That prefix, together with the proxy `base_url`, is what routes
+`crewai.LLM`'s factory to its native OpenAI provider; the provider strips the
+prefix again, so the proxy receives the bare model id (`gpt-4o`).
 
 CrewAI is Python-only. From TypeScript, call the proxy's OpenAI-compatible API
 directly with the official `openai` npm client:
@@ -1815,30 +1822,31 @@ from crewai import LLM
 
 model = LLM(
     model="openai/gpt-4o",
-    api_base=...,       # from DONKEY_LLM_PROXY_URL, no /v1 suffix
+    base_url=...,       # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     extra_headers=...,  # client_id / client_secret header pair
 )
 ```
 
-LiteLLM uses `api_base` and `extra_headers`, not `base_url` /
-`default_headers` — `connection_kwargs()` already translates for you.
+`connection_kwargs()` fills in `base_url`, `api_key`, and `extra_headers` (the
+`client_id` / `client_secret` header pair) for you.
 
 ## Notes
 
 - **Correlation IDs are per-client, not per-run.** CrewAI sends requests through
-  its built-in LiteLLM model layer rather than the SDK's shared HTTP client, so
-  the correlation ID is set once per client instead of per `donkey.run()`. Every
-  governance header is still sent on every request. The conformance suite
+  its native OpenAI provider's own HTTP client rather than the SDK's shared one,
+  so the correlation ID is set once per client instead of per `donkey.run()`.
+  Every governance header is still sent on every request. The conformance suite
   checks this as a documented behaviour.
-- **`donkey.last_call` is unavailable.** Because the response is handled by LiteLLM,
-  gateway identity, routing, and usage fields can't be observed. When every
-  adapter resolved on a `Donkey` is like this one, `donkey.last_call` reports
+- **`donkey.last_call` is unavailable.** Because the response is handled by
+  CrewAI's own client, gateway identity, routing, and usage fields can't be
+  observed. When every adapter resolved on a `Donkey` is like this one,
+  `donkey.last_call` reports
   `status == LastCallStatus.UNAVAILABLE` and `available == False`, and names the
   resolved adapters in `surface`.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface through
-CrewAI's LiteLLM layer.
+CrewAI.
 
 ---
 
@@ -2328,9 +2336,9 @@ An invalid control (a negative `ttl`, a `threshold` outside `[0.0, 1.0]`, a
 site**, not on the first request. The **outcome** of each call is on
 [`donkey.last_call.cache_status`](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#semantic-cache) /
 `.cache_score` and the OTel span. The same
-[degradation](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) as `donkey.run(...)` applies: a `connection_kwargs()`
-/ LiteLLM-backed adapter that does not route through the shared transport does
-not see the context variable, so its calls are not steered.
+[degradation](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) as `donkey.run(...)` applies: a
+`connection_kwargs()`-only adapter that does not route through the shared
+transport does not see the context variable, so its calls are not steered.
 
 ## Behaviour guarantees
 
@@ -2876,8 +2884,9 @@ through every field.
 
 `donkey.last_call` is populated only when the governed response passes through
 the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
-outside that response path: ADK and CrewAI send requests through LiteLLM, while
-LlamaIndex and Microsoft Agent Framework receive only `default_headers`.
+outside that response path: ADK sends requests through LiteLLM and CrewAI
+through its native OpenAI provider, while LlamaIndex and Microsoft Agent
+Framework receive only `default_headers`.
 That static snapshot excludes the correlation ID bound later by
 `donkey.run(id=...)`, so those two adapters also do not propagate the run's
 correlation ID.
@@ -6613,9 +6622,9 @@ Run context
   A bare None would be a lie of omission: you could not tell 'the gateway sent no id'
   from 'we never saw a response'. Budget uses the same honesty rule for an unobserved
   window (demo 03). UNAVAILABLE is the third state, for adapters that never route
-  through our transport — LiteLLM-backed ADK and CrewAI, or default_headers-only
-  LlamaIndex. Those surfaces report UNAVAILABLE by name rather than looking like a cold
-  read.
+  through our transport — ADK via LiteLLM, CrewAI via its native OpenAI provider,
+  default_headers-only LlamaIndex, or Agent Framework (observes_last_call = False).
+  Those surfaces report UNAVAILABLE by name rather than looking like a cold read.
 
 [2] One governed call, and the record is the success-path counterpart
 
@@ -8912,9 +8921,9 @@ even on a cold read.
 
   `donkey.last_call` is populated only when the governed response passes through
   the SDK's shared httpx client. Adapters that route outside that response path
-  (LiteLLM-backed, or `default_headers`-only) report `UNAVAILABLE` with the
-  surface named. See [When `last_call` is
-  unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
+  (ADK and CrewAI, whose framework owns the transport, or the
+  `default_headers`-only adapters) report `UNAVAILABLE` with the surface named.
+  See [When `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
 
 ## Gateway identity
 

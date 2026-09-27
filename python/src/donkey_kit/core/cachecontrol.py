@@ -25,8 +25,8 @@ threading through framework state, exactly like the run id and cost tags::
         ...                          # every governed call in the block bypasses the cache
 
 The same documented degradation as the run id / cost tags applies (BG §1.8): a
-``connection_kwargs()`` / LiteLLM-backed adapter that does not route through the
-shared transport never sees the contextvar, so its calls are not steered.
+``connection_kwargs()``-only adapter that does not route through the shared
+transport never sees the contextvar, so its calls are not steered.
 """
 
 from __future__ import annotations

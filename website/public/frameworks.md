@@ -40,7 +40,7 @@ object.
     `client()` → `anthropic.AsyncAnthropic`
   
   
-    `llm()` → `crewai.LLM` (LiteLLM-backed)
+    `llm()` → `crewai.BaseLLM` (`OpenAICompletion`)
   
   
     `llm()` → `OpenAILike` (`is_chat_model=True`)
@@ -119,7 +119,7 @@ HTTP client is also used, which adds per-run correlation IDs and
 | LlamaIndex | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. `is_chat_model=True` is forced. |
 | MS Agent Framework | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. |
 | Google ADK | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's LiteLLM layer: same behaviour as Google ADK. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's native OpenAI provider, which builds its own HTTP client: same behaviour as Google ADK. |
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.

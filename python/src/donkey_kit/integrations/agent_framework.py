@@ -5,7 +5,7 @@ Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 Current Python surface is ``from agent_framework import Agent`` with
 ``Agent(client=<ChatClient>, name=..., instructions=...)``. The
 OpenAI-compatible chat client class path and its constructor kwargs are
-VERIFIED against agent-framework 1.19.0 (docs/verified-apis.md §8):
+confirmed offline against agent-framework 1.19.0 (docs/verified-apis.md §8):
 ``agent_framework.openai.OpenAIChatClient`` takes ``model``, ``base_url``,
 ``api_key`` and ``default_headers``. Both the import and the construction stay
 guarded so a future upstream rename surfaces as a ``_verify.blocked(...)``
@@ -37,7 +37,7 @@ class AgentFrameworkAdapter(Adapter):
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` you
-        build yourself. VERIFIED against agent-framework 1.19.0
+        build yourself. Confirmed offline against agent-framework 1.19.0
         (docs/verified-apis.md §8): ``base_url``/``api_key``/``default_headers``
         are all accepted by the constructor."""
         return self._openai_connection()  # base_url, api_key, default_headers
@@ -46,12 +46,12 @@ class AgentFrameworkAdapter(Adapter):
         self._require_proxy()
         try:
             from agent_framework.openai import (
-                OpenAIChatClient,  # verified: docs/verified-apis.md §8 (1.19.0)
+                OpenAIChatClient,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
             )
         except ImportError as exc:
             raise _verify.blocked(
                 "agent_framework.openai.OpenAIChatClient import "
-                "(docs/verified-apis.md §8). The class path is VERIFIED against "
+                "(docs/verified-apis.md §8). The class path is confirmed offline against "
                 "agent-framework 1.19.0; an ImportError here means the package is "
                 "absent or has renamed the class again. Install 'agent-framework' "
                 "or confirm the class path against your installed version."
@@ -59,7 +59,7 @@ class AgentFrameworkAdapter(Adapter):
 
         try:
             return OpenAIChatClient(
-                model=model,  # verified: docs/verified-apis.md §8 (1.19.0)
+                model=model,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
                 **{**self.connection_kwargs(), **kw},
             )
         except TypeError as exc:

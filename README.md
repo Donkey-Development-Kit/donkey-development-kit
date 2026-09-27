@@ -131,7 +131,7 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 
 | Framework | Scenario | Why it's exempt |
 | --- | --- | --- |
-| ADK, CrewAI | correlation ID propagated | LiteLLM owns the transport, so the SDK's `httpx` client cannot be injected — the correlation ID ends up per-client, not per-run. A LiteLLM logger callback may recover trace correlation later. |
+| ADK, CrewAI | correlation ID propagated | The framework owns the transport — LiteLLM for ADK, CrewAI's native OpenAI provider for CrewAI — so the SDK's `httpx` client cannot be injected and the correlation ID ends up per-client, not per-run. For ADK, a LiteLLM logger callback may recover trace correlation later. |
 | LlamaIndex, Microsoft Agent Framework | correlation ID propagated | These adapters receive a static `default_headers` snapshot, which deliberately excludes the per-run correlation ID. Without the SDK's `httpx` client, `donkey.run(id=...)` cannot update their request headers. |
-| ADK, CrewAI | gateway identity observed | LiteLLM owns the transport, so no response reaches the SDK's `_on_response` hook. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
+| ADK, CrewAI | gateway identity observed | The framework owns the transport (LiteLLM for ADK, CrewAI's native OpenAI provider for CrewAI), so no response reaches the SDK's `_on_response` hook. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
 | LlamaIndex, Microsoft Agent Framework | gateway identity observed | These adapters receive `default_headers`, not the SDK's `httpx` client, so no response reaches `_on_response`. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |

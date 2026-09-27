@@ -473,16 +473,34 @@ questions this decision resolves as out of scope rather than answered.
 
 ## 8. Framework APIs (BG §1.8) — re-verify every constructor
 
+"Confirmed offline" below means exactly what `verify_frameworks.py` Check A checks
+(#681): the adapter's factory constructs the native object without raising, and
+that object is an instance of the class the script's `FRAMEWORKS` table records
+for the framework — normally the constructor named in this table's Symbol
+column. CrewAI is the exception: `crewai.LLM` is a factory that returns a
+different class, so the harness checks against the concrete class it returns
+(see its row). An `ImportError` during construction counts as a failure
+whenever the framework's distribution is installed; only a missing distribution
+reads as not installed.
+It does **not** mean each named kwarg was validated as a genuine accepted
+parameter — a pydantic/LiteLLM-backed constructor (or Strands' opaque
+`client_args={...}` dict, forwarded rather than named) can silently absorb an
+unknown or renamed kwarg via `**kwargs`/`model_kwargs`/`additional_params`
+without raising. Per §0.3, `VERIFIED` on this table is reserved for a
+real-sandbox round-trip; every row below that has not had one reads
+UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off),
+regardless of which issue/PR produced the offline pass.
+
 | Framework | Symbol / kwarg | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
-| LangGraph | `langchain_openai.ChatOpenAI(base_url, api_key, default_headers, http_async_client, use_responses_api=True)` | UNVERIFIED (constructor); endpoint VERIFIED | The kwargs/class name are still §8-pending, but the deep adapter (#198) pins `use_responses_api=True` so it calls the **live-verified** `/responses` data plane (§4) rather than ChatOpenAI's default `/chat/completions` route. Overridable via `chat_model(..., use_responses_api=False)`. | 2026-09-11 | #198 |
-| Google ADK | `google.adk.models.lite_llm.LiteLlm(model="openai/…", api_base, extra_headers)` | UNVERIFIED | — | — | — |
-| MS Agent Framework | `agent_framework.openai.OpenAIChatClient(model, base_url, api_key, default_headers)` | VERIFIED | Class path confirmed; the constructor kwarg is `model=` — `model_id` is **not** accepted. `base_url`/`api_key`/`default_headers` all accepted, so `connection_kwargs()` is unchanged. Pinned to agent-framework 1.19.0. | 2026-09-22 | #520 (`verify_frameworks.py --only agent_framework`) |
-| OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model, openai_client=AsyncOpenAI(...))` | UNVERIFIED | — | — | — |
-| Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client)` — model id per-call; the proxy's Anthropic-native ingress route is now **LIVE-verified at `POST /<base-path>/v1/messages`** (see §2, #304) and requires a `Format=Anthropic` proxy. Row stays UNVERIFIED for the **constructor signature** only (#34). | UNVERIFIED | — | — | — |
-| CrewAI | `crewai.LLM(model="openai/…", base_url, api_key, extra_headers)` | UNVERIFIED | — | — | — |
-| LlamaIndex | `llama_index.llms.openai_like.OpenAILike(is_chat_model=True)` | UNVERIFIED | — | — | — |
-| Strands | `strands.models.openai.OpenAIModel(client_args={...})` | UNVERIFIED | — | — | — |
+| LangGraph | `langchain_openai.ChatOpenAI(model, base_url, api_key, default_headers, http_async_client, max_retries=0, use_responses_api=True)` | UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off) | Construction and `isinstance` against the recorded path confirmed offline with `langgraph==1.2.12`, `langchain-openai==1.6.6`, `langchain-core==1.6.5`. The deep adapter (#198) retains `use_responses_api=True` for the live-verified `/responses` data plane (§2); overridable via `chat_model(..., use_responses_api=False)`. Tested with `openai==2.54.0`; no live round-trip. | 2026-09-27 | #34; `python/scripts/verify_frameworks.py --only langgraph` (also `--emit-verified`) |
+| Google ADK | `google.adk.models.lite_llm.LiteLlm(model="openai/…", api_base, api_key, extra_headers)` | UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off) | Construction and `isinstance` against the recorded path confirmed offline with `google-adk==2.10.0`, `litellm==1.102.1`. LiteLLM owns the transport; this does not verify request/header forwarding. Tested with `openai==2.54.0`; no live round-trip. | 2026-09-27 | #34; `python/scripts/verify_frameworks.py --only adk` (also `--emit-verified`) |
+| MS Agent Framework | `agent_framework.openai.OpenAIChatClient(model, base_url, api_key, default_headers)` | UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off) | Construction and `isinstance` against the recorded path confirmed offline with `agent-framework==1.19.0`. The constructor kwarg is `model=` — `model_id` is **not** accepted. `base_url`/`api_key`/`default_headers` all accepted, so `connection_kwargs()` is unchanged. No live round-trip. (Reclassified from a bare `VERIFIED` per #681 — same offline-only evidence class as its peer rows; §0.3 reserves `VERIFIED` for a real-sandbox round-trip.) | 2026-09-22 | #520 (`verify_frameworks.py --only agent_framework`) |
+| OpenAI Agents SDK | `agents.OpenAIChatCompletionsModel(model, openai_client=openai.AsyncOpenAI(base_url, api_key, default_headers, http_client, max_retries=0))` | UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off) | Construction and `isinstance` against the recorded path confirmed offline with `openai-agents==0.20.0`. Tested with `openai==2.54.0`; no live round-trip. | 2026-09-27 | #34; `python/scripts/verify_frameworks.py --only openai_agents` (also `--emit-verified`) |
+| Anthropic SDK | `anthropic.AsyncAnthropic(base_url, api_key, default_headers, http_client, max_retries=0)` | UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off) | Construction and `isinstance` against the recorded path confirmed offline with `anthropic==0.116.0`. Model id remains per-call; the separately live-verified Anthropic Messages ingress (§2, #304) requires a `Format=Anthropic` proxy. Tested with `openai==2.54.0`; no live round-trip. | 2026-09-27 | #34; `python/scripts/verify_frameworks.py --only anthropic` (also `--emit-verified`) |
+| CrewAI | `crewai.LLM(model="openai/…", base_url, api_key, extra_headers)` → returns `crewai.BaseLLM` (concretely `OpenAICompletion`) | UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off) | Construction and `isinstance` confirmed offline with `crewai==1.15.22`, `openai==2.54.0` — against the concrete `OpenAICompletion` class the factory returns, **not** `crewai.LLM`. `crewai.LLM.__new__` is a documented factory: an `openai/`-prefixed model with an explicit `base_url` (which `connection_kwargs()` always supplies) routes to and returns `crewai.llms.providers.openai.completion.OpenAICompletion`, CrewAI's native OpenAI provider and a sibling `crewai.BaseLLM` subclass, not a `crewai.LLM` instance (`isinstance(obj, crewai.LLM)` is false; `isinstance(obj, crewai.BaseLLM)` is true). That provider strips the `openai/` prefix and does not go through LiteLLM, which is only the factory's fallback route. `crewai.BaseLLM` (`crewai.llms.base_llm.BaseLLM`, a public top-level export) is the correct common return type and the adapter's annotation, but every provider is one, so the harness pins the concrete `OpenAICompletion` class: a routing change fails the check instead of passing as another `BaseLLM` (#640). The prior `crewai.LLM` expectation and its `CLASS RENAMED` verdict were an artifact of checking against the wrong class, not a real incompatibility. `extra_headers` is not a named `OpenAICompletion` field: `BaseLLM` collects it into `additional_params`, which `OpenAICompletion` merges into its request parameters, so the proxy auth headers arrive by that passthrough rather than a named parameter — the silently-absorbed-kwarg case above (seen on the wire against a local stub server, sync and streaming; not a sandbox round-trip). | 2026-09-27 | #640; `python/scripts/verify_frameworks.py --only crewai` (also `--emit-verified`) |
+| LlamaIndex | `llama_index.llms.openai_like.OpenAILike(model, api_base, api_key, default_headers, is_chat_model=True, is_function_calling_model=True)` | UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off) | Construction and `isinstance` against the recorded path confirmed offline with `llama-index-llms-openai-like==0.8.0`. Tested with `openai==2.54.0`; no live round-trip. | 2026-09-27 | #34; `python/scripts/verify_frameworks.py --only llamaindex` (also `--emit-verified`) |
+| Strands | `strands.models.openai.OpenAIModel(model_id, client_args={base_url, api_key, default_headers, http_client})` | UNVERIFIED (signature confirmed; pending maintainer `--live` + sign-off) | Construction and `isinstance` against the recorded path confirmed offline with `strands-agents==1.57.1`. Tested with `openai==2.54.0`; no live round-trip. | 2026-09-27 | #34; `python/scripts/verify_frameworks.py --only strands` (also `--emit-verified`) |
 
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
@@ -494,6 +512,10 @@ run is diagnosable instead of surprising.
 | Dependency | Breaks at | Symptom | Status | Date |
 |---|---|---|---|---|
 | `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. **Mitigated** with a `cast(Any, …)` on the argument at the four version-conditional sites (`llm/client.py` ×2, `integrations/openai_agents.py`, and the `exc.response` cast in `integrations/langgraph.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-09-24 |
+
+The CrewAI `crewai.LLM` return-class finding is **not** repeated here — it is a
+constructor return-type contract issue, not version-triggered dependency
+breakage, so its one row of record is the §8 CrewAI row above (#683).
 
 The `cast(Any, …)` guards keep `mypy --strict` green against the newest `openai` a fresh
 resolve pulls (the floors-never-ceilings rule). A full fix — migrating `core/transport.py` off `httpx` onto
@@ -518,7 +540,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | MS Agent Framework | MCP client/tool class for streamable HTTP | UNVERIFIED | — |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
 | Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
-| CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED | — |
+| CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED (signature confirmed offline) | `crewai_tools==1.15.22`: `inspect.signature(MCPServerAdapter.__init__)` → `(serverparams: StdioServerParameters \| dict[str, Any], *tool_names: str, connect_timeout: int = 30)`. Class path confirmed at `crewai_tools.adapters.mcp_adapter.MCPServerAdapter`, re-exported at top level. No MCP server actually connected/bound. 2026-09-27, #640 |
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
 | Strands | `MCPClient(lambda: streamablehttp_client(...))` | UNVERIFIED | — |
 
@@ -533,7 +555,7 @@ mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 | LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
 | OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
 | Anthropic SDK | tool param dict `name`/`description`/`input_schema` | UNVERIFIED | — |
-| CrewAI | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
+| CrewAI | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED (signature confirmed offline) | `crewai==1.15.22`: `crewai.tools.BaseTool.model_fields` has `name`, `description`, `args_schema: type[pydantic.BaseModel]` — `.args_schema.model_json_schema()` is a real call on that field's type. No bound tool actually inspected end to end. 2026-09-27, #640 |
 | MS Agent Framework | `AIFunction` declaration + JSON schema | UNVERIFIED | — |
 
 ## 11. A2D platform MCP tools — shapes captured 2026-08-28 (NOT the direct Anypoint REST API)

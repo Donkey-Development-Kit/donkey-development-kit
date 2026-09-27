@@ -37,9 +37,9 @@ even on a cold read.
 
   `donkey.last_call` is populated only when the governed response passes through
   the SDK's shared httpx client. Adapters that route outside that response path
-  (LiteLLM-backed, or `default_headers`-only) report `UNAVAILABLE` with the
-  surface named. See [When `last_call` is
-  unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
+  (ADK and CrewAI, whose framework owns the transport, or the
+  `default_headers`-only adapters) report `UNAVAILABLE` with the surface named.
+  See [When `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
 
 ## Gateway identity
 

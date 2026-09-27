@@ -44,9 +44,9 @@ Run context
   A bare None would be a lie of omission: you could not tell 'the gateway sent no id'
   from 'we never saw a response'. Budget uses the same honesty rule for an unobserved
   window (demo 03). UNAVAILABLE is the third state, for adapters that never route
-  through our transport — LiteLLM-backed ADK and CrewAI, or default_headers-only
-  LlamaIndex. Those surfaces report UNAVAILABLE by name rather than looking like a cold
-  read.
+  through our transport — ADK via LiteLLM, CrewAI via its native OpenAI provider,
+  default_headers-only LlamaIndex, or Agent Framework (observes_last_call = False).
+  Those surfaces report UNAVAILABLE by name rather than looking like a cold read.
 
 [2] One governed call, and the record is the success-path counterpart
 

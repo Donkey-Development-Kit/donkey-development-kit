@@ -58,6 +58,11 @@ _LITELLM_TRANSPORT_EXEMPTION = (
     "correlation ID is per-client, not per-run (BG §1.8). A LiteLLM custom "
     "logger callback may later recover trace correlation."
 )
+_CREWAI_TRANSPORT_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport: it builds its own sync and "
+    "async OpenAI clients from one set of client params, so our async httpx client "
+    "cannot be injected and the correlation ID is per-client, not per-run (BG §1.8)."
+)
 _DEFAULT_HEADERS_CORRELATION_EXEMPTION = (
     "The adapter is handed only a static default_headers snapshot, which "
     "deliberately excludes the per-run correlation ID; without our httpx "
@@ -75,6 +80,11 @@ _LITELLM_LAST_CALL_EXEMPTION = (
     "donkey.last_call cannot observe the gateway identity of the call and "
     "reports UNAVAILABLE (#362, same cause as correlation_id_propagated BG §1.8)."
 )
+_CREWAI_LAST_CALL_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport; no response reaches our "
+    "_on_response, so donkey.last_call cannot observe the gateway identity of the "
+    "call and reports UNAVAILABLE (#362, same cause as correlation_id_propagated BG §1.8)."
+)
 _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
     "The adapter is handed only default_headers, never our httpx client, so no "
     "response reaches our _on_response; donkey.last_call cannot observe the "
@@ -83,14 +93,21 @@ _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
 
 # jwt_token_refreshed has the SAME structural cause as the correlation-id and
 # last-call exemptions (#509): a rotating model-wallet JWT can only be refreshed
-# per-send by our transport. A framework that owns its transport (LiteLLM) or is
-# handed only a one-time default_headers snapshot pins whatever token existed at
-# construction and starts 401-ing after it expires — so jwt auth mode is
-# unsupported on those adapters, asserted here rather than silently skipped.
+# per-send by our transport. A framework that owns its transport (LiteLLM for
+# ADK, the native OpenAI provider for CrewAI) or is handed only a one-time
+# default_headers snapshot pins whatever token existed at construction and
+# starts 401-ing after it expires — so jwt auth mode is unsupported on those
+# adapters, asserted here rather than silently skipped.
 _LITELLM_JWT_EXEMPTION = (
     "LiteLLM owns the transport; we cannot inject our httpx client, so a rotating "
     "model-wallet JWT cannot be refreshed per-send and would expire. Use client-id "
     "auth with this adapter, or route the raw/LangGraph client for jwt mode (#509)."
+)
+_CREWAI_JWT_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport and takes the auth headers "
+    "once, at construction, so a rotating model-wallet JWT cannot be refreshed "
+    "per-send and would expire. Use client-id auth with this adapter, or route the "
+    "raw/LangGraph client for jwt mode (#509)."
 )
 _DEFAULT_HEADERS_JWT_EXEMPTION = (
     "The adapter is handed only a static default_headers snapshot, which pins the "
@@ -99,16 +116,17 @@ _DEFAULT_HEADERS_JWT_EXEMPTION = (
 )
 
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
-    # ADK and CrewAI both reach models through LiteLLM (BG §1.8).
+    # ADK reaches models through LiteLLM and CrewAI through its native OpenAI
+    # provider; either way the framework owns the transport (BG §1.8).
     "adk": {
         "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
         "jwt_token_refreshed": _LITELLM_JWT_EXEMPTION,
     },
     "crewai": {
-        "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
-        "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
-        "jwt_token_refreshed": _LITELLM_JWT_EXEMPTION,
+        "correlation_id_propagated": _CREWAI_TRANSPORT_EXEMPTION,
+        "gateway_identity_observed": _CREWAI_LAST_CALL_EXEMPTION,
+        "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
     },
     # LlamaIndex and MS Agent Framework get only a static default_headers snapshot,
     # no httpx client (BG §1.8). The snapshot deliberately excludes the per-run

@@ -51,7 +51,7 @@ def test_connection_kwargs_carry_governed_values() -> None:
     assert "client_secret" in kw["default_headers"]
     assert kw["max_retries"] == 0  # we retry in transport, not the framework
     assert kw["http_async_client"] is not None  # our shared, hooked client
-    # verified /responses endpoint (docs/verified-apis.md §4)
+    # verified /responses endpoint (docs/verified-apis.md §2)
     assert kw["use_responses_api"] is True
     # No model id — the caller supplies that: ChatOpenAI(model=…, **kw)
     assert "model" not in kw
@@ -147,11 +147,12 @@ def test_anthropic_connection_kwargs_carry_proxy_and_shared_client() -> None:
     assert kw["max_retries"] == 0  # we retry in transport (BG §1.1)
 
 
-def test_crewai_connection_kwargs_use_litellm_extra_headers() -> None:
+def test_crewai_connection_kwargs_use_extra_headers() -> None:
     from donkey_kit.integrations.crewai import CrewAIAdapter
 
-    # crewai.LLM forwards to LiteLLM, which uses extra_headers and owns its own
-    # transport, so no shared http client is injected (BG §1.8 exemption; the conformance kit).
+    # crewai.LLM routes to its native OpenAI provider, which takes extra_headers and
+    # builds its own client, so no shared http client is injected (BG §1.8 exemption;
+    # the conformance kit).
     kw = CrewAIAdapter(_cfg(), _http()).connection_kwargs()
     assert kw["base_url"] == "https://proxy"
     assert "client_id" in kw["extra_headers"]
