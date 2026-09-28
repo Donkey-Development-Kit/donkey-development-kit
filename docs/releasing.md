@@ -39,15 +39,15 @@ every pre-release is strictly less than the final, and PyPI orders them
 correctly:
 
 ```
-0.1.0.dev0  <  0.1.0.dev1  <  …  <  0.1.0a1  <  0.1.0b1  <  0.1.0rc1  <  0.1.0
+X.Y.Z.dev0  <  X.Y.Z.dev1  <  …  <  X.Y.Za1  <  X.Y.Zb1  <  X.Y.Zrc1  <  X.Y.Z
    dev0            devN            alpha 1       beta 1      rc 1        final
 ```
 
-- **`.devN`** — pre-MVP groundwork: docs, spec, scaffolding, plumbing. No usable
-  feature surface yet. *(Today's `main` is here.)*
+- **`.devN`** — dev snapshots toward the next version: work in progress on the
+  way to the milestone's release, not yet promoted to a pre-release or final.
 - **`aN` / `bN`** — alpha/beta: real feature surface exists, still unstable.
 - **`rcN`** — release candidate: milestone all-but-complete, final validation.
-- **final** (`0.1.0`) — the milestone hit 0 open issues and was promoted.
+- **final** (`X.Y.Z`) — the milestone hit 0 open issues and was promoted.
 
 Spell pre-releases in the **normalised PEP 440 form** — `0.1.0a1`, never
 `0.1.0-alpha.1` — so the git tag and the PyPI package version match.
@@ -147,10 +147,12 @@ usable SDK.
 Trust is registered **per index, and keyed on the workflow filename** — each
 index must point at the filename that actually publishes to it, or PyPI
 rejects the OIDC token. This is a manual step on the web UI (it cannot be
-done from CI), performed **once per index**. Because `donkey-kit` is not yet
-published, use the **pending publisher** form (Your projects → Publishing, or
-account → Publishing before the project exists). Enter, on the **GitHub**
-tab:
+done from CI), performed **once per index**. `donkey-kit` already exists on
+both PyPI and TestPyPI, so edit each project's **existing** trusted publisher
+(the project's Settings → Publishing) to point at the workflow filename in the
+table below. The **pending publisher** form (account → Publishing) is only the
+fallback for an index where the project does not exist yet. Enter, on the
+**GitHub** tab:
 
 | Field | On **pypi.org** | On **test.pypi.org** |
 | --- | --- | --- |
@@ -168,6 +170,6 @@ recommended: the publish job then pauses for a human approval before the
 irreversible production upload — the go-ahead gate #339 requires.
 
 > A public PyPI publish is effectively irreversible (names can be squatted;
-> releases can only be *yanked*, never deleted). Do not submit the **production**
-> pending publisher or approve a `pypi` deployment until the release is genuinely
-> ready — see #339 for the first-publish checklist.
+> releases can only be *yanked*, never deleted). Do not change the
+> **production** publisher or approve a `pypi` deployment until the release is
+> genuinely ready — #339 was the first-publish checklist (completed 2026-09-25).
