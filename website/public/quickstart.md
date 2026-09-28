@@ -47,6 +47,9 @@ The simulator listens on `127.0.0.1:8080` and replays real gateway responses,
 including every refusal shape. It enforces no policy and ignores
 credentials, and every response carries `x-donkey-simulator: true`.
 
+Port `8080` already taken? Run `donkey mock --port 9000` — see
+[Choosing a port or host](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#choosing-a-port-or-host).
+
   "Local gateway" here means DDK's pure-Python simulator, not Omni/Flex
   Gateway running in Local Mode — that deployment target isn't supported
   (see the [unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)).

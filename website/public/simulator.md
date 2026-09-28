@@ -43,6 +43,51 @@ Because each body is the *same fixture* the SDK's error classifier is tested
 against, a sentinel request surfaces in your agent as the typed exception — a
 [`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), not a raw `403`.
 
+## Choosing a port or host
+
+`donkey mock` binds `127.0.0.1:8080` by default. Two flags move it:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--port` | `8080` | TCP port to bind. Pass another value if `8080` is in use. |
+| `--host` | `127.0.0.1` | Interface to bind. `0.0.0.0` exposes it beyond localhost. |
+
+```bash
+donkey mock --port 9000 --host 0.0.0.0
+```
+
+  Binding `0.0.0.0` makes the simulator reachable from other machines on your
+  network. It is a fixture replay that enforces no policy and ignores
+  credentials, so only expose it on a network you trust.
+
+Whatever you choose, point your client at the same address: set
+`DONKEY_LLM_PROXY_URL=http://<host>:<port>` to match (for the example above,
+`http://127.0.0.1:9000`). The simulator's port is **not** read from an
+environment variable or `.donkey-kit.toml` — the `--port`/`--host` flags (or the
+`serve()` keyword arguments below) are the only way to change it.
+
+  If you run the simulator's ASGI app under `uvicorn` yourself instead of
+  through `donkey mock`, remember uvicorn's own default port is `8000`, not
+  `8080`. Using `donkey mock` (or `serve()`) gives you the documented `8080`
+  default.
+
+### Running the simulator from Python
+
+`donkey mock` is a thin wrapper over `serve()`. To boot the simulator from your
+own code, call it directly (the `[local]` extra must be installed):
+
+```python
+from donkey_kit.simulator import serve
+
+serve(host="127.0.0.1", port=9000)
+```
+
+`serve(*, host="127.0.0.1", port=8080, config=None)` is keyword-only and blocks
+until the process is stopped. Pass a `SimulatorConfig` (also importable from
+`donkey_kit.simulator`) as `config=` to script the same fault-injection
+scenarios the `--scenario` flag builds. If the `[local]` extra is missing,
+`serve()` raises `ImportError`.
+
 ## Budget windows on the happy path
 
 Happy-path `200` responses carry a synthesised `x-llm-proxy-ratelimit` budget
