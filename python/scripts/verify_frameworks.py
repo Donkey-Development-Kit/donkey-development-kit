@@ -62,6 +62,11 @@ FRAMEWORKS: list[tuple[str, str, str, str, str]] = [
      "langchain_openai.ChatOpenAI", "langchain-openai"),
     ("adk", "donkey_kit.integrations.adk", "model",
      "google.adk.models.lite_llm.LiteLlm", "google-adk"),
+    # ADK's native Gemini on a Format=Gemini proxy (#691). A dotted key is a second
+    # factory of the same framework: `--only adk` selects both, and its extra is
+    # the part before the dot.
+    ("adk.gemini", "donkey_kit.integrations.adk", "gemini",
+     "google.adk.models.Gemini", "google-adk"),
     ("strands", "donkey_kit.integrations.strands", "model",
      "strands.models.openai.OpenAIModel", "strands-agents"),
     ("agent_framework", "donkey_kit.integrations.agent_framework", "chat_client",
@@ -84,6 +89,10 @@ PROXY_ENV = (
     "DONKEY_LLM_PROXY_CLIENT_SECRET",
 )
 MODEL = os.environ.get("DEMO_MODEL", "gpt-4o")
+# adk.gemini needs a Format=Gemini proxy; the default DDK proxies are Format=OpenAI.
+# Its live round-trip runs only when this points at one (same consumer creds).
+GEMINI_PROXY_ENV = "DONKEY_GEMINI_PROXY_URL"
+GEMINI_MODEL = os.environ.get("DEMO_GEMINI_MODEL", "gemini-2.5-flash")
 
 
 @dataclass
@@ -184,7 +193,13 @@ def check_signature(
     try:
         # Anthropic's native surface is a client; the model id is a per-call
         # argument, so its factory takes no positional model (BG §1.8 divergence).
-        obj: object = fn() if res.framework == "anthropic" else fn(MODEL)
+        obj: object
+        if res.framework == "anthropic":
+            obj = fn()
+        elif res.framework == "adk.gemini":
+            obj = fn(GEMINI_MODEL, base_url=os.environ.get(GEMINI_PROXY_ENV) or None)
+        else:
+            obj = fn(MODEL)
     except NotImplementedError as exc:  # blocked on verification
         res.installed = True
         res.blocked = True
@@ -242,6 +257,29 @@ async def check_live(res: Result, obj: object) -> None:
         except Exception as exc:  # noqa: BLE001
             res.live = f"fail: {type(exc).__name__}: {exc}"
         return
+    if res.framework == "adk.gemini":
+        # ADK's model-level call (BaseLlm.generate_content_async), live-verified
+        # against ddk-gemini-inbound on 2026-09-29 (#691).
+        if not os.environ.get(GEMINI_PROXY_ENV):
+            res.live = f"skipped: set {GEMINI_PROXY_ENV} to a Format=Gemini proxy"
+            return
+        try:
+            from google.adk.models.llm_request import LlmRequest
+            from google.genai import types
+
+            request = LlmRequest(
+                model=GEMINI_MODEL,
+                contents=[types.Content(role="user", parts=[types.Part(text="Say hi.")])],
+            )
+            text = ""
+            async for resp in obj.generate_content_async(request):  # type: ignore[attr-defined]
+                if resp.content and resp.content.parts:
+                    text += "".join(p.text or "" for p in resp.content.parts)
+            res.live = "ok"
+            res.detail = f"completion: {text!r}"
+        except Exception as exc:  # noqa: BLE001
+            res.live = f"fail: {type(exc).__name__}: {exc}"
+        return
     res.live = (
         "skipped: framework runtime call API not verified (docs/verified-apis.md §8/§9); "
         "shared proxy path verified via raw client (docs/verified-apis.md §2)"
@@ -252,7 +290,7 @@ async def run(only: list[str] | None, live: bool) -> list[Result]:
     have_real = _ensure_proxy_env_for_offline()
     results: list[Result] = []
     for key, import_path, factory, expected, distribution in FRAMEWORKS:
-        if only and key not in only:
+        if only and key not in only and key.partition(".")[0] not in only:
             continue
         res = Result(framework=key, expected_class=expected)
         obj = check_signature(res, import_path, factory, distribution)

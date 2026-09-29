@@ -66,8 +66,10 @@ except litellm.exceptions.APIError as err:
 should see:** `APIError 403` and the first line of the proxy's message — **not**
 `PIIDetected`. Without the policy it prints `NO REFUSAL`.
 
-  If you need typed refusals, `last_call` or run ids with ADK today, prefer a
-  framework path where the SDK owns the transport, such as
+  If you need typed refusals, `last_call` or run ids with ADK, use
+  `donkey.adk.gemini("gemini-2.5-flash")` on a `Format=Gemini` proxy — the SDK
+  owns that transport (see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini)).
+  Otherwise prefer a framework path where the SDK owns the transport, such as
   [OpenAI](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md) or [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md). A `404`
   here means the proxy's upstream has no `/chat/completions` route.
 

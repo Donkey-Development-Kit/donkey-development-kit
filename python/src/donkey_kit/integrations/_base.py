@@ -30,7 +30,7 @@ class Adapter:
     #: (#362). True when the adapter hands the framework our shared
     #: :class:`DonkeyAsyncClient` (its ``_on_response`` observes the response);
     #: False when the SDK does not own the transport — the framework builds its own
-    #: client (ADK via LiteLLM, CrewAI via its native OpenAI provider) or the
+    #: client (ADK ``model()`` via LiteLLM, CrewAI via its native OpenAI provider) or the
     #: adapter is given only ``default_headers`` (LlamaIndex, MS Agent Framework).
     #: A ``False`` here is why ``donkey.last_call`` reports "not available on this
     #: surface" rather than a bare ``None`` (hazard #3),

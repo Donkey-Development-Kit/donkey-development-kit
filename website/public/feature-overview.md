@@ -29,6 +29,7 @@ attaches there once, so you never wire it call by call.
 |---|---|---|
 | LangGraph | `donkey.langgraph.chat_model("gpt-4o")` | `langchain_openai.ChatOpenAI` |
 | Google ADK | `donkey.adk.model("gpt-4o")` | `LiteLlm` |
+| Google ADK on a `Format=Gemini` proxy | `donkey.adk.gemini("gemini-2.5-flash")` | `google.adk.models.Gemini` |
 | Strands | `donkey.strands.model("gpt-4o")` | `OpenAIModel` |
 | MS Agent Framework | `donkey.agent_framework.chat_client("gpt-4o")` | Agent Framework chat client |
 | LlamaIndex | `donkey.llamaindex.llm("gpt-4o")` | `OpenAILike` |

@@ -583,6 +583,7 @@ attaches there once, so you never wire it call by call.
 |---|---|---|
 | LangGraph | `donkey.langgraph.chat_model("gpt-4o")` | `langchain_openai.ChatOpenAI` |
 | Google ADK | `donkey.adk.model("gpt-4o")` | `LiteLlm` |
+| Google ADK on a `Format=Gemini` proxy | `donkey.adk.gemini("gemini-2.5-flash")` | `google.adk.models.Gemini` |
 | Strands | `donkey.strands.model("gpt-4o")` | `OpenAIModel` |
 | MS Agent Framework | `donkey.agent_framework.chat_client("gpt-4o")` | Agent Framework chat client |
 | LlamaIndex | `donkey.llamaindex.llm("gpt-4o")` | `OpenAILike` |
@@ -728,7 +729,7 @@ object.
     `chat_model()` → `langchain_openai.ChatOpenAI`
   
   
-    `model()` → `google.adk … LiteLlm`
+    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
   
   
     `model()` → `strands … OpenAIModel`
@@ -771,8 +772,8 @@ constructor call the factory makes for you.
 
 ## Match the adapter to your proxy's wire format
 
-Every adapter on this page except Anthropic — and the raw `donkey.llm.client()`
-— speaks the **OpenAI wire format**. The format your proxy accepts is the
+Every adapter on this page except Anthropic and ADK's `gemini()` — and the raw
+`donkey.llm.client()` — speaks the **OpenAI wire format**. The format your proxy accepts is the
 **Format** (OpenAI / Anthropic / Gemini) chosen when the proxy was provisioned.
 It is a property of the proxy, not an SDK setting, so there is no config field
 for it: pick the adapter that matches your proxy.
@@ -781,7 +782,7 @@ for it: pick the adapter that matches your proxy.
 |---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter. Default DDK proxies are `Format=OpenAI`. |
 | **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`). The proxy serves the native Messages route at `POST /<base-path>/v1/messages`; OpenAI-shape `/chat/completions` returns 404. |
-| **Gemini** | No SDK adapter. Point a native `google-genai` client at `…/models/<model>:generateContent` yourself, or reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
+| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
 
   **Ingress Format is not the same as the upstream provider.** The ingress
   Format is the wire protocol *your request* speaks to the proxy. The upstream
@@ -821,8 +822,9 @@ HTTP client is also used, which adds per-run correlation IDs and
 | Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [Anthropic page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
 | LlamaIndex | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. `is_chat_model=True` is forced. |
 | MS Agent Framework | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. |
-| Google ADK | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's native OpenAI provider, which builds its own HTTP client: same behaviour as Google ADK. |
+| Google ADK — `model()` | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
+| Google ADK — `gemini()` | ✅ | ✅ | Via `HttpOptions.httpx_async_client`, on a `Format=Gemini` proxy. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's native OpenAI provider, which builds its own HTTP client: same behaviour as ADK's `model()`. |
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.
@@ -1089,18 +1091,28 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/framewor
 
 # Google ADK
 
-Google's Agent Development Kit (ADK) reaches the Agent Fabric LLM proxy through
-ADK's `LiteLlm` model wrapper. The adapter translates the governed connection
-into LiteLLM's own model-string and kwarg conventions for you.
+Google's Agent Development Kit (ADK) reaches the Agent Fabric LLM proxy in one
+of two ways, depending on the proxy's ingress **Format**:
+
+- `model()` — ADK's `LiteLlm` model wrapper, for a `Format=OpenAI` proxy (the
+  default). The adapter translates the governed connection into LiteLLM's own
+  model-string and kwarg conventions for you.
+- `gemini()` — ADK's native `Gemini` model, for a `Format=Gemini` proxy. The
+  SDK's shared HTTP client is injected, so every governed feature works: per-run
+  correlation, spans, usage and `donkey.last_call`. See
+  [Native Gemini](#native-gemini).
 
 **What you get**
 
-- A native `google.adk.models.lite_llm.LiteLlm`, with the proxy auth and
-  attribution headers set.
-- The `openai/` model prefix and LiteLLM kwarg names handled automatically.
-- Supported at `connection_kwargs()`. ADK's `LiteLlm` model makes the HTTP
+- A native `google.adk.models.lite_llm.LiteLlm` or `google.adk.models.Gemini`,
+  with the proxy auth and attribution headers set.
+- For `model()`: the `openai/` model prefix and LiteLLM kwarg names handled
+  automatically. Supported at `connection_kwargs()`. LiteLLM makes the HTTP
   calls itself, so correlation is per client and `donkey.last_call` is not
   populated (see [Notes](#notes)).
+- For `gemini()`: the shared client injected through
+  `HttpOptions.httpx_async_client`, round-trip verified live against a
+  `Format=Gemini` proxy.
 
 ## Install
 
@@ -1189,23 +1201,147 @@ llm = LiteLlm(
 LiteLLM uses `api_base` and `extra_headers`, not `base_url` /
 `default_headers` — `connection_kwargs()` already translates for you.
 
+## Native Gemini
+
+A proxy provisioned with **Format = Gemini** exposes the native Gemini API at
+`POST /<base-path>/models/<model>:generateContent` (and
+`:streamGenerateContent`). ADK's own `Gemini` model speaks that API, so
+`gemini()` returns a native `google.adk.models.Gemini` bound to the proxy, with
+the SDK's shared HTTP client injected.
+
+The three forms mirror `model()`. Pass the bare Gemini model id — there is no
+prefix, because the URL path carries the model:
+
+```python
+from donkey_kit import Donkey
+from google.adk.models import Gemini
+
+async with Donkey.from_env() as donkey:
+    # 1. Off a shared Donkey instance
+    llm = donkey.adk.gemini("gemini-2.5-flash")
+
+    # 3. Governed kwargs, native constructor
+    llm = Gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs())
+```
+
+```python
+# 2. Module-level factory
+from donkey_kit.integrations.adk import gemini
+
+llm = gemini("gemini-2.5-flash")
+```
+
+**Pointing at the Gemini proxy.** `DONKEY_LLM_PROXY_URL` usually names a
+`Format=OpenAI` proxy. If your Gemini proxy is a different one, pass its URL
+as `base_url`; the `client_id`/`client_secret` pair must be contracted on that
+proxy:
+
+```python
+llm = donkey.adk.gemini("gemini-2.5-flash", base_url="https://…/ddk-gemini-inbound/")
+```
+
+Any other keyword is passed to ADK's `Gemini` and overrides the governed
+default — for example `retry_options`, or your own `client_kwargs`.
+
+**Manual equivalent.** This is what `gemini_connection_kwargs()` returns:
+
+```python
+from google.adk.models import Gemini
+
+llm = Gemini(
+    model="gemini-2.5-flash",
+    base_url=...,  # the Format=Gemini proxy URL
+    client_kwargs={
+        "api_key": ...,  # a placeholder; google-genai requires one
+        "http_options": {
+            "base_url": ...,          # same URL
+            "api_version": "",        # the proxy path has no /v1beta segment
+            "headers": ...,           # client_id / client_secret header pair
+            "timeout": ...,           # milliseconds
+            "httpx_async_client": ..., # the SDK's shared client
+        },
+    },
+)
+```
+
+`client_kwargs` replaces ADK's default HTTP options wholesale, so all five
+`http_options` keys are passed together. `google-genai` requires an API key and
+always sends it as `x-goog-api-key`; the gateway authenticates on the
+`client_id`/`client_secret` pair and ignores it.
+
+**`donkey.last_call`.** Usage (`input_tokens`, `output_tokens`,
+`total_tokens`, `cached_tokens`, `reasoning_tokens`) is read from Gemini's
+`usageMetadata`, and `requested_model` from the URL path. Gemini's
+`total_tokens` includes the thinking tokens it also reports as
+`reasoning_tokens`. A `Format=Gemini` proxy is a passthrough, so it sends no
+routing headers: `served_provider`, `served_model` and `routing_type` stay
+`None`, and `substituted` is `False`. `request_id` and `api_instance_id` are
+populated.
+
+`last_call` is contextvar-scoped, and ADK's `Runner` makes the model call in a
+task of its own, so the caller of `runner.run_async(...)` reads `UNOBSERVED`.
+Read it in an `after_model_callback`, which runs in the same task as the call:
+
+```python
+from google.adk.agents import LlmAgent
+
+def record_usage(callback_context, llm_response):
+    r = donkey.last_call
+    print(r.requested_model, r.input_tokens, r.output_tokens)
+    return None  # keep the model's response
+
+agent = LlmAgent(
+    name="assistant",
+    model=donkey.adk.gemini("gemini-2.5-flash"),
+    after_model_callback=record_usage,
+)
+```
+
+When streaming, the callback runs once per partial response; usage lands on the
+last one.
+
+**Errors.** `google-genai` raises its own `google.genai.errors.APIError`
+(`ClientError` for a 4xx) and the SDK does not wrap it. The error's `.response`
+is the proxy's HTTP response, so `classify()` gives you the typed Donkey error:
+
+```python
+from donkey_kit.core.errors import classify
+from google.genai import errors as genai_errors
+
+try:
+    async for event in runner.run_async(...):
+        ...
+except genai_errors.APIError as exc:
+    err = classify(exc.response)  # e.g. AuthError on 401, UpstreamRequestError on 404
+```
+
+**One `Donkey` per event loop.** The shared HTTP client's connection pool is
+bound to the event loop that first uses it. Build the `Donkey` — and the
+models — inside the loop that runs them (`async with Donkey.from_env()` in your
+`main`), and don't reuse the module-level `gemini()` across separate
+`asyncio.run(...)` calls: the second run fails with
+`RuntimeError: Event loop is closed`.
+
 ## Notes
 
-- **Correlation IDs are per-client, not per-run.** ADK sends requests through
-  its built-in LiteLLM model layer rather than the SDK's shared HTTP client, so
-  the correlation ID is set once per client instead of per `donkey.run()`. Every
-  governance header is still sent on every request. The conformance suite
-  checks this as a documented behaviour.
-- **`donkey.last_call` is unavailable.** Because the response is handled by LiteLLM,
-  gateway identity, routing, and usage fields can't be observed. When every
-  adapter resolved on a `Donkey` is like this one, `donkey.last_call` reports
-  `status == LastCallStatus.UNAVAILABLE` and `available == False`, and names the
-  resolved adapters in `surface`.
+- **Correlation IDs are per-client, not per-run (`model()` only).** `model()`
+  sends requests through ADK's built-in LiteLLM model layer rather than the
+  SDK's shared HTTP client, so the correlation ID is set once per client instead
+  of per `donkey.run()`. Every governance header is still sent on every request.
+  The conformance suite checks this as a documented behaviour. `gemini()` uses
+  the shared client, so its correlation ID is per run.
+- **`donkey.last_call` is unavailable (`model()` only).** Because the response
+  is handled by LiteLLM, gateway identity, routing, and usage fields can't be
+  observed. When every adapter resolved on a `Donkey` is like this one,
+  `donkey.last_call` reports `status == LastCallStatus.UNAVAILABLE` and
+  `available == False`, and names the resolved adapters in `surface`. Once
+  `gemini()` has been called on a `Donkey`, the ADK adapter observes calls, so an
+  empty record reads `UNOBSERVED` instead.
 - `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
   own upper bound if you need one.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface through
-ADK's `LiteLlm` model.
+ADK's `LiteLlm` model, and [Native Gemini](#native-gemini) for `gemini()`.
 
 ---
 
@@ -2887,15 +3023,19 @@ through every field.
 
 `donkey.last_call` is populated only when the governed response passes through
 the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
-outside that response path: ADK sends requests through LiteLLM and CrewAI
-through its native OpenAI provider, while LlamaIndex and Microsoft Agent
-Framework receive only `default_headers`.
+outside that response path: ADK's `model()` sends requests through LiteLLM and
+CrewAI through its native OpenAI provider, while LlamaIndex and Microsoft Agent
+Framework receive only `default_headers`. ADK's `gemini()` uses the shared
+client, so once it has been called the ADK adapter observes calls (see
+[Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini) for reading `last_call` inside an
+ADK run).
 That static snapshot excludes the correlation ID bound later by
 `donkey.run(id=...)`, so those two adapters also do not propagate the run's
 correlation ID.
 
 When every adapter resolved on a `Donkey` is one of those four, a cold read
-reports the limitation explicitly. For a `Donkey` that resolved only ADK:
+reports the limitation explicitly. For a `Donkey` that resolved only ADK's
+`model()`:
 
 ```python
 r = donkey.last_call
@@ -8258,8 +8398,10 @@ except litellm.exceptions.APIError as err:
 should see:** `APIError 403` and the first line of the proxy's message — **not**
 `PIIDetected`. Without the policy it prints `NO REFUSAL`.
 
-  If you need typed refusals, `last_call` or run ids with ADK today, prefer a
-  framework path where the SDK owns the transport, such as
+  If you need typed refusals, `last_call` or run ids with ADK, use
+  `donkey.adk.gemini("gemini-2.5-flash")` on a `Format=Gemini` proxy — the SDK
+  owns that transport (see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini)).
+  Otherwise prefer a framework path where the SDK owns the transport, such as
   [OpenAI](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md) or [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md). A `404`
   here means the proxy's upstream has no `/chat/completions` route.
 
@@ -8380,9 +8522,11 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/examples
 
 # Gemini
 
-No Gemini adapter ships, so these are plain `httpx` against a proxy
-provisioned **`Format=Gemini`** (for example `ddk-gemini-inbound`) with the
-same `client_id` / `client_secret` pair. The route is
+These scripts show the wire: plain `httpx` against a proxy provisioned
+**`Format=Gemini`** (for example `ddk-gemini-inbound`) with the same
+`client_id` / `client_secret` pair. For an agent, ADK's native `Gemini` model is
+bound to the same proxy by `donkey.adk.gemini("gemini-2.5-flash")` — see
+[Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini). The route is
 `<proxy URL>/models/<model>:generateContent`. `DonkeyConfig` still resolves
 and validates the credentials, and `classify()` still types the errors.
 
@@ -8974,7 +9118,7 @@ even on a cold read.
 
   `donkey.last_call` is populated only when the governed response passes through
   the SDK's shared httpx client. Adapters that route outside that response path
-  (ADK and CrewAI, whose framework owns the transport, or the
+  (ADK's `model()` and CrewAI, whose framework owns the transport, or the
   `default_headers`-only adapters) report `UNAVAILABLE` with the surface named.
   See [When `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
 

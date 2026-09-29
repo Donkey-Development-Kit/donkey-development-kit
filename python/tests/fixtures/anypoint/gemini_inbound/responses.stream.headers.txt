@@ -1,0 +1,18 @@
+HTTP/1.1 200 OK
+content-type: text/event-stream
+content-disposition: attachment
+vary: Origin,X-Origin,Referer
+date: Tue, 29 Sep 2026 19:32:14 GMT
+server: Anypoint Flex Gateway
+x-xss-protection: 0
+x-frame-options: SAMEORIGIN
+x-content-type-options: nosniff
+server-timing: gfet4t7; dur=394
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+x-llm-proxy-model-based-routing-success: Request passed through without model-based routing.
+x-envoy-decorator-operation: api-instance-21193369.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
+transfer-encoding: chunked
+x-correlation-id: 2b7a3b6e-7354-4ac1-b71c-ddc265213298
+Strict-Transport-Security: max-age=31536000; includeSubdomains
+Connection: Keep-Alive
+

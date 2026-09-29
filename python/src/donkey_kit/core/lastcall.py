@@ -32,7 +32,7 @@ the call it actually made. This matches how ``core.telemetry`` already scopes th
 correlation id.
 
 **Three honest states (hazard #3).** A bare ``request_id is None`` is a lie of
-omission on the adapters where the SDK does not own the transport (ADK, CrewAI,
+omission on the adapters where the SDK does not own the transport (ADK ``model()``, CrewAI,
 LlamaIndex, MS Agent Framework — see
 :attr:`donkey_kit.integrations._base.Adapter.observes_last_call`).
 A developer there would read ``None`` as "the gateway sent no id" when the truth
@@ -355,10 +355,13 @@ def is_fallback(response: httpx.Response) -> bool:
 #   * ``reasoning_tokens`` — output tokens spent on reasoning the developer never
 #     sees. A reasoning model can spend most of its output here, so reading only
 #     ``total_tokens`` draws the wrong conclusion about both cost and latency.
-# Both wire shapes are read so the raw client, the deep LangGraph adapter, and any
-# OpenAI-compatible call populate identically: the Responses API
-# (``input_tokens`` + ``input_tokens_details``) and Chat Completions
-# (``prompt_tokens`` + ``prompt_tokens_details``).
+# All three wire shapes are read so the raw client, the deep LangGraph adapter,
+# any OpenAI-compatible call and a native Gemini call populate identically: the
+# Responses API (``input_tokens`` + ``input_tokens_details``), Chat Completions
+# (``prompt_tokens`` + ``prompt_tokens_details``), and Gemini's ``usageMetadata``
+# (``promptTokenCount`` / ``candidatesTokenCount`` / ``totalTokenCount`` /
+# ``cachedContentTokenCount`` / ``thoughtsTokenCount``; LIVE, #540/#691). Gemini's
+# ``totalTokenCount`` already includes the thoughts, so it is taken as reported.
 _USAGE_FIELDS = (
     "input_tokens",
     "output_tokens",
@@ -395,8 +398,9 @@ def parse_usage(usage: object) -> dict[str, int | None]:
     dict keyed by :data:`_USAGE_FIELDS`.
 
     Handles the Responses API (``input_tokens`` / ``input_tokens_details`` /
-    ``output_tokens_details``) and Chat Completions (``prompt_tokens`` /
-    ``prompt_tokens_details`` / ``completion_tokens_details``) shapes. A non-dict
+    ``output_tokens_details``), Chat Completions (``prompt_tokens`` /
+    ``prompt_tokens_details`` / ``completion_tokens_details``) and Gemini
+    ``usageMetadata`` (flat camelCase counts) shapes. A non-dict
     ``usage`` (absent, ``None``, wrong type) yields all-``None`` — an absent count
     is ``None``, never ``0`` (the same honesty rule ``Budget`` applies to an
     unobserved window). Never raises (verification discipline)."""
@@ -411,25 +415,41 @@ def parse_usage(usage: object) -> dict[str, int | None]:
         }
     input_details = _usage_details(usage, "input_tokens_details", "prompt_tokens_details")
     output_details = _usage_details(usage, "output_tokens_details", "completion_tokens_details")
+    cached = _first_int(input_details, "cached_tokens")
+    reasoning = _first_int(output_details, "reasoning_tokens")
     return {
-        "input_tokens": _first_int(usage, "input_tokens", "prompt_tokens"),
-        "output_tokens": _first_int(usage, "output_tokens", "completion_tokens"),
-        "total_tokens": _first_int(usage, "total_tokens"),
-        "cached_tokens": _first_int(input_details, "cached_tokens"),
+        "input_tokens": _first_int(usage, "input_tokens", "prompt_tokens", "promptTokenCount"),
+        "output_tokens": _first_int(
+            usage, "output_tokens", "completion_tokens", "candidatesTokenCount"
+        ),
+        "total_tokens": _first_int(usage, "total_tokens", "totalTokenCount"),
+        "cached_tokens": cached
+        if cached is not None
+        else _first_int(usage, "cachedContentTokenCount"),
         "cache_write_tokens": _first_int(input_details, "cache_write_tokens"),
-        "reasoning_tokens": _first_int(output_details, "reasoning_tokens"),
+        "reasoning_tokens": reasoning
+        if reasoning is not None
+        else _first_int(usage, "thoughtsTokenCount"),
     }
+
+
+def _body_usage(body: dict[str, object]) -> object:
+    """A response body's usage object: OpenAI's ``usage``, else Gemini's
+    ``usageMetadata``."""
+    usage = body.get("usage")
+    return usage if usage is not None else body.get("usageMetadata")
 
 
 def usage_mapping(obj: object) -> dict[str, object] | None:
     """The ``usage`` mapping from a parsed SSE ``data:`` object, or ``None``.
 
-    Handles Chat Completions (top-level ``usage``) and the Responses API (``usage``
+    Handles Chat Completions (top-level ``usage``), the Responses API (``usage``
     nested under ``response``, as the terminal ``response.completed`` event
-    carries it). Feeds the streaming scanner, which then :func:`parse_usage` it."""
+    carries it) and Gemini (top-level ``usageMetadata`` on each chunk). Feeds the
+    streaming scanner, which then :func:`parse_usage` it."""
     if not isinstance(obj, dict):
         return None
-    usage = obj.get("usage")
+    usage = _body_usage(obj)
     if not isinstance(usage, dict):
         nested = obj.get("response")
         usage = nested.get("usage") if isinstance(nested, dict) else None
@@ -450,7 +470,7 @@ def usage_from_response(response: httpx.Response) -> dict[str, int | None]:
         return parse_usage(None)
     if not isinstance(body, dict):
         return parse_usage(None)
-    return parse_usage(body.get("usage"))
+    return parse_usage(_body_usage(body))
 
 
 @dataclass(frozen=True)

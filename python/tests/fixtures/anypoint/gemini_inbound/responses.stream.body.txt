@@ -1,0 +1,6 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Donkeys are known"}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 9,"candidatesTokenCount": 4,"totalTokenCount": 13,"promptTokensDetails": [{"modality": "TEXT","tokenCount": 9}],"serviceTier": "standard"},"modelVersion": "gemini-2.5-flash","responseId": "PRK8aqqHN6iU39IPvtWW6A4"}
+
+data: {"candidates": [{"content": {"parts": [{"text": " for their long ears. They are hardy animals often used for work. Many people"}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 9,"candidatesTokenCount": 20,"totalTokenCount": 29,"promptTokensDetails": [{"modality": "TEXT","tokenCount": 9}],"serviceTier": "standard"},"modelVersion": "gemini-2.5-flash","responseId": "PRK8aqqHN6iU39IPvtWW6A4"}
+
+data: {"candidates": [{"content": {"parts": [{"text": " find their bray to be quite distinctive."}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 9,"candidatesTokenCount": 29,"totalTokenCount": 38,"promptTokensDetails": [{"modality": "TEXT","tokenCount": 9}],"serviceTier": "standard"},"modelVersion": "gemini-2.5-flash","responseId": "PRK8aqqHN6iU39IPvtWW6A4"}
+

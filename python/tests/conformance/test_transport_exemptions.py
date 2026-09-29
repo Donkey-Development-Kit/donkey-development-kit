@@ -104,6 +104,26 @@ def test_exemption_matches_observes_last_call_flag() -> None:
     assert non_observing == {"adk", "crewai", "llamaindex", "agent_framework"}
 
 
+async def test_adk_gemini_is_not_exempt() -> None:
+    # The adk exemptions are scoped to model() (LiteLLM). adk.gemini() is handed
+    # the shared DonkeyAsyncClient — the fact that makes correlation, last_call and
+    # per-send JWT work — and so flips observes_last_call on its instance (#691).
+    cfg = DonkeyConfig(
+        llm_proxy_url="https://proxy",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+    )
+    client = build_http_client(cfg, None)
+    try:
+        adapter = _adapter_class("adk")(cfg, client)
+        kw = adapter.gemini_connection_kwargs()  # type: ignore[attr-defined]
+        assert kw["client_kwargs"]["http_options"]["httpx_async_client"] is client
+    finally:
+        await client.aclose()
+    for reason in KNOWN_LIMITATIONS["adk"].values():
+        assert reason.startswith("adk.model() only:")
+
+
 async def test_header_only_correlation_exemptions_match_connection_kwargs() -> None:
     cfg = DonkeyConfig(
         llm_proxy_url="https://proxy",

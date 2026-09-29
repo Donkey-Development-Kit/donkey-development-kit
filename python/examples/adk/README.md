@@ -55,6 +55,23 @@ The factory (`donkey_kit.integrations.adk.model`) fills in `api_base`,
 `api_key`, `extra_headers`, and the `openai/` prefix from one governed
 config source.
 
+## Native Gemini (`Format=Gemini` proxy)
+
+On a proxy provisioned **Format = Gemini**, `gemini()` returns ADK's native
+`google.adk.models.Gemini` with the SDK's shared http client injected, so
+per-run correlation, spans, usage and `donkey.last_call` all work. Pass
+`base_url` when the Gemini proxy is not `DONKEY_LLM_PROXY_URL`:
+
+```python
+from donkey_kit.integrations.adk import gemini
+
+m = gemini("gemini-2.5-flash", base_url="https://<ingress-gw>/<gemini-instance>/")
+```
+
+The manual equivalent is
+`Gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs())`;
+the docs page lists every kwarg it fills in.
+
 ## Links
 
 - Google Agent Development Kit (ADK) docs: see the framework's official

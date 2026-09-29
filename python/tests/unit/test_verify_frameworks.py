@@ -118,9 +118,11 @@ def test_each_framework_checks_a_distribution_its_extra_installs() -> None:
     # a distribution the extra doesn't ship would read as NOT INSTALLED and exit 0.
     requirements = [Requirement(r) for r in importlib.metadata.requires("donkey-kit") or []]
     for key, _, _, _, distribution in vf.FRAMEWORKS:
+        # A dotted key is a second factory of the same framework (adk.gemini).
+        framework = key.partition(".")[0]
         extra = {
             canonicalize_name(r.name)
             for r in requirements
-            if r.marker and r.marker.evaluate({"extra": canonicalize_name(key)})
+            if r.marker and r.marker.evaluate({"extra": canonicalize_name(framework)})
         }
         assert canonicalize_name(distribution) in extra, (key, distribution, sorted(extra))

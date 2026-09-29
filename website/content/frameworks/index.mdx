@@ -35,7 +35,7 @@ object.
     `chat_model()` → `langchain_openai.ChatOpenAI`
   </Card>
   <Card title="Google ADK" href="/frameworks/adk" badge="Supported" badgeTone="neutral">
-    `model()` → `google.adk … LiteLlm`
+    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
   </Card>
   <Card title="Strands" href="/frameworks/strands" badge="Supported" badgeTone="neutral">
     `model()` → `strands … OpenAIModel`
@@ -79,8 +79,8 @@ constructor call the factory makes for you.
 
 ## Match the adapter to your proxy's wire format
 
-Every adapter on this page except Anthropic — and the raw `donkey.llm.client()`
-— speaks the **OpenAI wire format**. The format your proxy accepts is the
+Every adapter on this page except Anthropic and ADK's `gemini()` — and the raw
+`donkey.llm.client()` — speaks the **OpenAI wire format**. The format your proxy accepts is the
 **Format** (OpenAI / Anthropic / Gemini) chosen when the proxy was provisioned.
 It is a property of the proxy, not an SDK setting, so there is no config field
 for it: pick the adapter that matches your proxy.
@@ -89,7 +89,7 @@ for it: pick the adapter that matches your proxy.
 |---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter. Default DDK proxies are `Format=OpenAI`. |
 | **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`). The proxy serves the native Messages route at `POST /<base-path>/v1/messages`; OpenAI-shape `/chat/completions` returns 404. |
-| **Gemini** | No SDK adapter. Point a native `google-genai` client at `…/models/<model>:generateContent` yourself, or reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
+| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](/frameworks/adk#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
 
 <Callout type="info">
   **Ingress Format is not the same as the upstream provider.** The ingress
@@ -131,8 +131,9 @@ HTTP client is also used, which adds per-run correlation IDs and
 | Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [Anthropic page](/frameworks/anthropic). |
 | LlamaIndex | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. `is_chat_model=True` is forced. |
 | MS Agent Framework | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. |
-| Google ADK | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's native OpenAI provider, which builds its own HTTP client: same behaviour as Google ADK. |
+| Google ADK — `model()` | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
+| Google ADK — `gemini()` | ✅ | ✅ | Via `HttpOptions.httpx_async_client`, on a `Format=Gemini` proxy. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's native OpenAI provider, which builds its own HTTP client: same behaviour as ADK's `model()`. |
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.
