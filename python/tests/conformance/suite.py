@@ -54,7 +54,7 @@ CONFORMANCE_SCENARIOS = [
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
 # that cannot satisfy a scenario records WHY here rather than skipping silently.
 _LITELLM_TRANSPORT_EXEMPTION = (
-    "LiteLLM owns the transport; we cannot inject our httpx client, so the "
+    "adk.model() only: LiteLLM owns the transport; we cannot inject our httpx client, so the "
     "correlation ID is per-client, not per-run (BG §1.8). A LiteLLM custom "
     "logger callback may later recover trace correlation."
 )
@@ -76,7 +76,7 @@ _DEFAULT_HEADERS_CORRELATION_EXEMPTION = (
 # surface) rather than a bare None — the honest-state contract (hazard #3) —
 # and mirrors Adapter.observes_last_call = False on each of these adapters.
 _LITELLM_LAST_CALL_EXEMPTION = (
-    "LiteLLM owns the transport; no response reaches our _on_response, so "
+    "adk.model() only: LiteLLM owns the transport; no response reaches our _on_response, so "
     "donkey.last_call cannot observe the gateway identity of the call and "
     "reports UNAVAILABLE (#362, same cause as correlation_id_propagated BG §1.8)."
 )
@@ -99,8 +99,8 @@ _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
 # starts 401-ing after it expires — so jwt auth mode is unsupported on those
 # adapters, asserted here rather than silently skipped.
 _LITELLM_JWT_EXEMPTION = (
-    "LiteLLM owns the transport; we cannot inject our httpx client, so a rotating "
-    "model-wallet JWT cannot be refreshed per-send and would expire. Use client-id "
+    "adk.model() only: LiteLLM owns the transport; we cannot inject our httpx client, so a "
+    "rotating model-wallet JWT cannot be refreshed per-send and would expire. Use client-id "
     "auth with this adapter, or route the raw/LangGraph client for jwt mode (#509)."
 )
 _CREWAI_JWT_EXEMPTION = (
@@ -116,8 +116,9 @@ _DEFAULT_HEADERS_JWT_EXEMPTION = (
 )
 
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
-    # ADK reaches models through LiteLLM and CrewAI through its native OpenAI
-    # provider; either way the framework owns the transport (BG §1.8).
+    # ADK's model() reaches models through LiteLLM and CrewAI through its native
+    # OpenAI provider; either way the framework owns the transport (BG §1.8).
+    # adk.gemini() is handed our httpx client and records none of these (#691).
     "adk": {
         "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,

@@ -353,15 +353,19 @@ through every field.
 
 `donkey.last_call` is populated only when the governed response passes through
 the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
-outside that response path: ADK sends requests through LiteLLM and CrewAI
-through its native OpenAI provider, while LlamaIndex and Microsoft Agent
-Framework receive only `default_headers`.
+outside that response path: ADK's `model()` sends requests through LiteLLM and
+CrewAI through its native OpenAI provider, while LlamaIndex and Microsoft Agent
+Framework receive only `default_headers`. ADK's `gemini()` uses the shared
+client, so once it has been called the ADK adapter observes calls (see
+[Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini) for reading `last_call` inside an
+ADK run).
 That static snapshot excludes the correlation ID bound later by
 `donkey.run(id=...)`, so those two adapters also do not propagate the run's
 correlation ID.
 
 When every adapter resolved on a `Donkey` is one of those four, a cold read
-reports the limitation explicitly. For a `Donkey` that resolved only ADK:
+reports the limitation explicitly. For a `Donkey` that resolved only ADK's
+`model()`:
 
 ```python
 r = donkey.last_call

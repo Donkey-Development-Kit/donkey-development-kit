@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 import time
 from collections.abc import AsyncIterator, Iterator
 
@@ -337,11 +338,9 @@ def _gateway_unavailable(
 _STREAM_CONTENT_TYPE = "text/event-stream"
 
 
-def _request_model(request: httpx.Request) -> str | None:
-    """The requested model from the request's JSON body (``gen_ai.request.model``),
-    or ``None`` when the body is absent, unreadable, not JSON, or carries no
-    ``model``. A ``None`` marks "not a GenAI call": no span is opened, so GETs,
-    token fetches and bodyless POSTs stay byte-identical."""
+def _body_model(request: httpx.Request) -> str | None:
+    """The ``model`` from the request's JSON body, or ``None`` when the body is
+    absent, unreadable, not JSON, or carries no ``model``."""
     try:
         raw = request.content
     except Exception:  # noqa: BLE001 — streaming/unread body is not a model call
@@ -356,6 +355,28 @@ def _request_model(request: httpx.Request) -> str | None:
         model = body.get("model")
         return model if isinstance(model, str) else None
     return None
+
+
+# A Format=Gemini proxy carries the model in the URL path, never the body
+# (docs/verified-apis.md §2, #540/#691): ``/models/<model>:generateContent``
+# (LIVE-verified) and its SSE twin ``:streamGenerateContent``. The ingress ignores
+# a body ``model``, so this is read for the SDK's own bookkeeping only — the
+# request on the wire is never changed.
+_GEMINI_MODEL_PATH = re.compile(r"/models/([^/:]+):(?:generateContent|streamGenerateContent)$")
+
+
+def _request_model(request: httpx.Request) -> str | None:
+    """The requested model (``gen_ai.request.model``): the JSON body's ``model``,
+    else the model segment of a native Gemini ``POST`` path. ``None`` marks "not a
+    GenAI call": no span is opened, so GETs, token fetches and bodyless POSTs
+    stay byte-identical."""
+    model = _body_model(request)
+    if model is not None:
+        return model
+    if request.method != "POST":
+        return None
+    match = _GEMINI_MODEL_PATH.search(request.url.path)
+    return match.group(1) if match else None
 
 
 def _span_decision(response: httpx.Response) -> tuple[str | None, str | None]:
@@ -526,7 +547,8 @@ class _SseUsageScanner:
             self._buf = b""
 
     def _scan(self, line: bytes) -> None:
-        if b'"usage"' not in line:
+        # ``"usage`` matches both OpenAI's ``"usage"`` and Gemini's ``"usageMetadata"``.
+        if b'"usage' not in line:
             return
         stripped = line.strip()
         if not stripped.startswith(b"data:"):

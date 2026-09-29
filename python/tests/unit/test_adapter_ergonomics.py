@@ -543,3 +543,148 @@ def test_openai_agents_factory_caller_openai_client_overrides_default(
     model("gpt-4o", openai_client=caller_client)
 
     assert captured["openai_client"] is caller_client
+
+
+# --- ADK native Gemini on a Format=Gemini proxy (#691) -----------------------
+
+
+def test_adk_gemini_connection_kwargs_inject_the_shared_client() -> None:
+    # ADK replaces its own http_options with client_kwargs, so every governed
+    # value rides there — including OUR http client (full injection).
+    from donkey_kit.integrations.adk import ADKAdapter
+
+    cfg = _cfg()
+    http = build_http_client(cfg, None)
+    kw = ADKAdapter(cfg, http).gemini_connection_kwargs()
+    opts = kw["client_kwargs"]["http_options"]
+    assert kw["base_url"] == opts["base_url"] == "https://proxy"
+    assert opts["api_version"] == ""  # the proxy route has no /v1beta segment
+    assert opts["httpx_async_client"] is http
+    assert opts["headers"]["client_id"] == "cid"
+    assert opts["timeout"] == int(cfg.timeout_s * 1000)  # genai sends None otherwise
+    assert kw["client_kwargs"]["api_key"]  # google-genai requires the slot
+
+
+def test_adk_gemini_base_url_override_reaches_both_slots() -> None:
+    from donkey_kit.integrations.adk import ADKAdapter
+
+    kw = ADKAdapter(_cfg(), _http()).gemini_connection_kwargs(base_url="https://gw/gem/")
+    assert kw["base_url"] == kw["client_kwargs"]["http_options"]["base_url"] == "https://gw/gem/"
+
+
+def test_adk_gemini_factory_and_connection_kwargs_do_not_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_proxy_env(monkeypatch)
+    captured = _install_native_stub(monkeypatch, "google.adk.models", "Gemini")
+    from donkey_kit.integrations.adk import ADKAdapter, gemini
+
+    gemini("gemini-2.5-flash", base_url="https://gw/gem/")
+
+    adapter = default_adapter(ADKAdapter)
+    expected = adapter.gemini_connection_kwargs(base_url="https://gw/gem/")
+    assert captured["model"] == "gemini-2.5-flash"  # bare id, no provider prefix
+    assert {k: captured[k] for k in expected} == expected
+
+
+def test_adk_gemini_caller_kwargs_override_connection_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_proxy_env(monkeypatch)
+    captured = _install_native_stub(monkeypatch, "google.adk.models", "Gemini")
+    from donkey_kit.integrations.adk import gemini
+
+    caller = {"api_key": "k"}
+    gemini("gemini-2.5-flash", client_kwargs=caller)
+    assert captured["client_kwargs"] is caller
+
+
+def test_adk_gemini_flips_observes_last_call_on_the_instance_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # model() (LiteLLM) cannot observe; gemini() routes through our transport. The
+    # class default stays False so the exemption table keeps matching model().
+    _install_native_stub(monkeypatch, "google.adk.models", "Gemini")
+    from donkey_kit.integrations.adk import ADKAdapter
+
+    adapter = ADKAdapter(_cfg(), _http())
+    assert adapter.observes_last_call is False
+    adapter.gemini("gemini-2.5-flash")
+    assert adapter.observes_last_call is True
+    assert ADKAdapter.observes_last_call is False
+
+
+async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None:
+    """With google-adk installed: the native Gemini sends through the shared
+    DonkeyAsyncClient — consumer auth, the per-run correlation id, the native
+    route — and the reply populates donkey.last_call; a refusal surfaces as
+    google-genai's APIError whose ``.response`` classify() types (#691)."""
+    pytest.importorskip("google.adk")
+    import httpx
+    from google.adk.models.llm_request import LlmRequest
+    from google.genai import errors as genai_errors
+    from google.genai import types as genai_types
+
+    from donkey_kit.core.errors import UpstreamRequestError, classify
+    from donkey_kit.core.lastcall import LastCallStatus, current_last_call
+    from donkey_kit.core.telemetry import run_context
+    from donkey_kit.integrations.adk import ADKAdapter
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if "no-such-model" in request.url.path:
+            return httpx.Response(404, json={"error": {"code": 404, "status": "NOT_FOUND"}})
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [{"content": {"role": "model", "parts": [{"text": "PONG"}]}}],
+                "usageMetadata": {
+                    "promptTokenCount": 9,
+                    "candidatesTokenCount": 2,
+                    "totalTokenCount": 32,
+                    "thoughtsTokenCount": 21,
+                },
+            },
+            headers={"x-envoy-decorator-operation": "api-instance-21193369.env.svc"},
+        )
+
+    cfg = _cfg()
+    http = DonkeyAsyncClient(cfg, None, transport=httpx.MockTransport(handler))
+    adapter = ADKAdapter(cfg, http)
+
+    def _request(model: str) -> LlmRequest:
+        return LlmRequest(
+            model=model,
+            contents=[genai_types.Content(role="user", parts=[genai_types.Part(text="hi")])],
+        )
+
+    async with http:
+        with run_context("run-691"):
+            m = adapter.gemini("gemini-2.5-flash", base_url="https://gw/ddk-gemini-inbound/")
+            async for _ in m.generate_content_async(_request("gemini-2.5-flash")):
+                pass
+            record = current_last_call()
+
+            bad = adapter.gemini("no-such-model", base_url="https://gw/ddk-gemini-inbound/")
+            with pytest.raises(genai_errors.APIError) as exc_info:
+                async for _ in bad.generate_content_async(_request("no-such-model")):
+                    pass
+
+    sent = seen[0]
+    assert sent.url.path == "/ddk-gemini-inbound/models/gemini-2.5-flash:generateContent"
+    assert sent.headers["client_id"] == "cid"
+    assert sent.headers[http._correlation_header] == "run-691"
+    assert "model" not in json_body(sent)  # the wire body stays pure Gemini
+    assert record is not None and record.status is LastCallStatus.OBSERVED
+    assert record.requested_model == "gemini-2.5-flash"
+    assert (record.input_tokens, record.total_tokens, record.reasoning_tokens) == (9, 32, 21)
+    assert isinstance(classify(exc_info.value.response), UpstreamRequestError)
+
+
+def json_body(request: Any) -> dict[str, Any]:
+    import json
+
+    body: dict[str, Any] = json.loads(request.content)
+    return body

@@ -383,7 +383,10 @@ This is the executable verification-discipline step for adapters' native constru
 signatures (`docs/verified-apis.md` §8): does the exact class we name exist and
 accept the exact kwargs we pass, against the framework as actually installed.
 `--live` adds one real completion round-trip (needs the three
-`DONKEY_LLM_PROXY_*` env vars); `--only <fw>` restricts scope;
+`DONKEY_LLM_PROXY_*` env vars). The `adk.gemini` row needs a `Format=Gemini`
+proxy, so its live check runs only when `DONKEY_GEMINI_PROXY_URL` is also set,
+with a credential pair contracted on that proxy; otherwise it is skipped.
+`--only <fw>` restricts scope (`--only adk` covers `adk` and `adk.gemini`);
 `--emit-verified` prints `docs/verified-apis.md §8` markdown rows after maintainer sign-off. A
 `_verify.blocked(...)`-guarded adapter correctly shows as `BLOCKED (verification discipline)`, not a
 failure — don't "fix" the script to make a genuinely-blocked adapter pass.

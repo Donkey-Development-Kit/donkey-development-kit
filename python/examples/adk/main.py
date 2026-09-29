@@ -8,6 +8,9 @@ pointed at the governed Agent Fabric LLM proxy with a single factory call:
     from donkey_kit.integrations.adk import model
     m = model("gpt-4o")  # sent to LiteLLM as "openai/gpt-4o"
 
+On a ``Format=Gemini`` proxy, ``gemini("gemini-2.5-flash")`` from the same
+module returns ADK's native ``google.adk.models.Gemini`` instead (see README).
+
 Honest status (verification discipline / docs/verified-apis.md §8): the proxy *contract* (base URL,
 client_id/secret auth, attribution headers) is live-verified, and ``LiteLlm``/its kwargs are
 verified per the FACTS table. What is NOT attempted here is a live

@@ -56,12 +56,34 @@ directly. Consumer `client_id`/`client_secret` are **redacted** from
 `request.success.http` and were never persisted; the probe applications were
 removed after capture.
 
-## There is still no Gemini adapter — by design
+## Streaming and refusal captures (2026-09-29, #691)
 
-Verifying the route does **not** mean the SDK ships a `donkey.gemini` adapter.
-Per #540 / #244 a native adapter (a `google-genai` client bound at
-`connection_kwargs()` level, `BG §1.8`) is **demand-driven** — "do not guess it".
+Captured for the ADK native Gemini adapter (`donkey.adk.gemini(...)`), same
+instance `21193369`, with a consumer pair contracted on the proxy. The pair is
+**redacted** from both `request.*.http` files.
+
+- **Streaming is routed.** `POST /<base-path>/models/<model>:streamGenerateContent?alt=sse`
+  → **HTTP 200**, `content-type: text/event-stream`. Each `data:` event is a
+  native Gemini chunk; `usageMetadata` is **cumulative**, so the last event
+  carries the call's total. See `request.stream.http` +
+  `responses.stream.{body.txt,headers.txt}` (sent with `thinkingBudget: 0`).
+- **Unknown model is Google's 404, passed through.** `models/gemini-no-such-model:generateContent`
+  → **HTTP 404** with Google's `NOT_FOUND` envelope; `classify()` maps it to
+  `UpstreamRequestError`. See `request.unknown-model.http` +
+  `reject.unknown-model.*`.
+
+`usageMetadata.totalTokenCount` includes `thoughtsTokenCount`, and no
+`x-llm-proxy-llm-model` / `-llm-provider` header is emitted, so
+`donkey.last_call.served_model` stays `None` on this route. The body `model`
+field is ignored by the gateway (the URL path picks the model), so the SDK reads
+the requested model from the path. `tests/unit/test_gemini_inbound_contract.py`
+pins these shapes. The simulator does not serve these files.
+
+## The SDK adapter
+
+Google ADK's native `google.adk.models.Gemini` is bound to this ingress by
+`donkey.adk.gemini(...)` (#691, `BG §1.8`), with the shared http client injected
+through `HttpOptions.httpx_async_client`. There is no standalone `google-genai`
+adapter; the manual equivalent is `donkey.adk.gemini_connection_kwargs()`.
 Gemini also remains reachable as an *upstream provider* behind an OpenAI-format
-ingress via model-based routing (the §2 supported-providers row), which needs no
-new code. This capture records that the native ingress **exists and works**; a
-future adapter issue is filed only if demand warrants.
+ingress via model-based routing (the §2 supported-providers row).

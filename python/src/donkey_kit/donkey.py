@@ -233,7 +233,8 @@ class Donkey:
         :class:`~donkey_kit.core.errors.DonkeyError` hands you on a refusal.
 
         Usage counts are read from the response body, so they are ``None`` (never
-        ``0``) when the gateway sent no ``usage`` object; on a streamed response
+        ``0``) when the gateway sent no ``usage`` (or Gemini ``usageMetadata``)
+        object; on a streamed response
         they land once the terminal SSE event has been consumed, not at first read.
 
         Contextvar-scoped, not instance-scoped (hazard #2): under the parallel
@@ -249,7 +250,7 @@ class Donkey:
           it said nothing").
         * **UNOBSERVED** — no governed model call has returned in this context yet.
         * **UNAVAILABLE** — every adapter used on this Donkey routes outside our
-          transport (ADK via LiteLLM, CrewAI via its native OpenAI provider, or
+          transport (ADK ``model()`` via LiteLLM, CrewAI via its native OpenAI provider, or
           ``default_headers``-only LlamaIndex / MS Agent Framework), so a
           response can never reach the record. :attr:`LastCall.surface` names
           which. This is derived from the adapters actually resolved, and the

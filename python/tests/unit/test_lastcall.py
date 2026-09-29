@@ -432,6 +432,26 @@ def test_parse_usage_chat_completions_shape() -> None:
     }
 
 
+def test_parse_usage_gemini_usage_metadata_shape() -> None:
+    # Gemini's flat camelCase counts (LIVE, #540/#691). totalTokenCount already
+    # includes the thoughts, so it is taken as reported, never recomputed.
+    usage = {
+        "promptTokenCount": 9,
+        "candidatesTokenCount": 2,
+        "totalTokenCount": 32,
+        "cachedContentTokenCount": 4,
+        "thoughtsTokenCount": 21,
+    }
+    assert parse_usage(usage) == {
+        "input_tokens": 9,
+        "output_tokens": 2,
+        "total_tokens": 32,
+        "cached_tokens": 4,
+        "cache_write_tokens": None,
+        "reasoning_tokens": 21,
+    }
+
+
 def test_parse_usage_absent_detail_fields_are_none_not_zero() -> None:
     # Only the top-level counts present: the detail fields are ABSENT, so None —
     # distinct from the fixture's present-but-zero 0 (AC2).
@@ -459,6 +479,8 @@ def test_usage_mapping_reads_both_shapes_and_rejects_others() -> None:
     assert usage_mapping({"usage": {"prompt_tokens": 1}}) == {"prompt_tokens": 1}
     # The Responses API terminal event nests usage under `response`.
     assert usage_mapping({"response": {"usage": {"input_tokens": 2}}}) == {"input_tokens": 2}
+    # A Gemini SSE chunk carries usageMetadata at the top level.
+    assert usage_mapping({"usageMetadata": {"promptTokenCount": 3}}) == {"promptTokenCount": 3}
     assert usage_mapping({"type": "response.output_text.delta"}) is None
     assert usage_mapping("not-a-dict") is None
 
