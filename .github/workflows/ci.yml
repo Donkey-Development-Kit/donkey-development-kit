@@ -177,6 +177,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 20
+      - name: Unit-test the analytics beacon gate
+        run: npm test
       - run: node scripts/generate-llms.mjs
       - name: Fail if the generated llms artifacts are stale
         run: |

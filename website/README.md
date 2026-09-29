@@ -78,6 +78,21 @@ job has nowhere to publish.
 `basePath`/`assetPrefix` are gated on `DOCS_BASE_PATH`, so `npm run dev` and a
 future custom domain serve at the root without the sub-path.
 
+### Web analytics
+
+Production pages load the cookie-less
+[Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/)
+beacon when the repository variable `CF_WEB_ANALYTICS_TOKEN` holds the site
+token (Settings → Secrets and variables → Actions → Variables). The workflow
+passes it to the build as `NEXT_PUBLIC_CF_WEB_ANALYTICS_TOKEN`; the root layout
+renders the beacon only for a well-formed 32-character hex token (see
+`lib/analytics.mjs`), so `npm run dev` and unconfigured builds ship no
+analytics. The site token is public by design and appears in the page source.
+Unset the variable and redeploy to remove the beacon. Collection and reporting
+live in the private `donkey-development-kit-metrics` dashboard.
+
+`npm test` runs the beacon gate's unit tests.
+
 ## Structure
 
 The sidebar is grouped into capability pillars by separators in
