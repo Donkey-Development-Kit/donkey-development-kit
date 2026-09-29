@@ -53,6 +53,9 @@ jobs:
         env:
           DOCS_BASE_PATH: /donkey-development-kit
           GITHUB_TOKEN: ${{ github.token }}
+          # Public Cloudflare Web Analytics site token (repository variable);
+          # unset means the build ships no beacon.
+          NEXT_PUBLIC_CF_WEB_ANALYTICS_TOKEN: ${{ vars.CF_WEB_ANALYTICS_TOKEN }}
       - name: Disable Jekyll so Pages serves Next's _next/ directory
         run: touch out/.nojekyll
       - uses: actions/configure-pages@v6

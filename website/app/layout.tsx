@@ -4,6 +4,7 @@ import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
+import { cloudflareBeacon } from '../lib/analytics.mjs'
 import '../styles/globals.css'
 
 const SITE_NAME = 'Donkey Development Kit'
@@ -14,6 +15,10 @@ const SITE_DESCRIPTION =
 // so reference the served copy under website/public/img/ with the base path
 // applied manually — same convention as components/index.tsx.
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
+
+// Cookie-less Cloudflare Web Analytics; the Pages workflow supplies the public
+// site token, so local and unconfigured builds ship no beacon.
+const CLOUDFLARE_BEACON = cloudflareBeacon(process.env.NEXT_PUBLIC_CF_WEB_ANALYTICS_TOKEN)
 
 const play = Play({
   subsets: ['latin'],
@@ -138,6 +143,7 @@ export default async function RootLayout({
         >
           {children}
         </Layout>
+        {CLOUDFLARE_BEACON && <script defer {...CLOUDFLARE_BEACON} />}
       </body>
     </html>
   )

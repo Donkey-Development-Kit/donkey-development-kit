@@ -11,6 +11,7 @@
     "build": "next build",
     "postbuild": "pagefind --site out --output-subdir _pagefind",
     "preview:pages": "node scripts/preview-pages.mjs",
+    "test": "node --test lib/analytics.test.mjs",
     "start": "next start -p ${PORT:-3000}"
   },
   "dependencies": {
