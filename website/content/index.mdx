@@ -56,8 +56,8 @@ world into your agent code:
   the agent can redact and continue instead of retrying;
 - the remaining token budget is an object the agent can **pace** against,
   instead of a limit it discovers by failing;
-- every call carries a correlation ID and cost tags, and emits an
-  OpenTelemetry span that lines up with the gateway's own audit trail;
+- every call carries a correlation ID and emits an OpenTelemetry span, tagged
+  with your cost dimensions, that lines up with the gateway's own audit trail;
 - and you can rehearse all of it on your laptop, against a local simulator,
   before an agent ever meets production policy.
 

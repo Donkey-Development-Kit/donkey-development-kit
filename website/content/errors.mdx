@@ -110,8 +110,12 @@ immediately and an unconditional retry would spin. Its `.remediation` carries
 that branch as an inspectable next step, so you don't have to parse the
 exception message. `ModelSubstituted` reports that a call *succeeded* against a
 different model than requested (opt-in via `on_model_substitution="raise"`).
-`ConfigError` is raised locally, pre-flight, and reports every missing field at
-once — fix the config and re-run.
+`ConfigError` is raised locally, before any request. It reports every missing
+field at once, and it also reports an endpoint that may not receive the
+configured credentials: a non-`https://` URL, or a URL from the project's config
+files paired with credentials from elsewhere. See
+[Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
+Fix the config and re-run.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
@@ -183,6 +187,11 @@ Request blocked: personally identifiable information detected (403): 1 entity (E
 prompt itself. The other refusal messages are built from status codes,
 headers, category names and policy pattern names, never from the request.
 
+This applies to policy refusals. `UpstreamRequestError` messages include the
+upstream provider's own error text, which can quote parts of your request. For
+everything the SDK does and doesn't hide in printed output, see
+[What printed output hides](/reference/configuration#what-printed-output-hides).
+
 ## The ids every `DonkeyError` carries
 
 Every exception in the tree carries three ids so you can join a failure to your
@@ -244,7 +253,8 @@ In `jwt` mode the async client additionally refreshes the wallet JWT and
 retries **once** on a 401. In the default client-id mode the data-plane client
 holds no token, so a 401 is terminal, as it is on the blocking client, and
 surfaces immediately as `AuthError`. The Anypoint control-plane credential
-lives on a separate client: model calls never fetch, send or refresh it.
+lives on a separate client: model calls never fetch, send or refresh it. See
+[What the SDK sends where](/reference/configuration#what-the-sdk-sends-where).
 
 ## Unrecognised shapes
 

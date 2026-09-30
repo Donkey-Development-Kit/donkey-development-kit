@@ -68,22 +68,16 @@ constructor call the factory makes for you.
 
 ### Printing `connection_kwargs()` hides the secrets
 
-Every adapter's `connection_kwargs()` (and ADK's `gemini_connection_kwargs()`
-and `donkey_kit.core.proxy_auth_headers()`) returns a `dict` whose `repr()` and
-`str()` show `'***'` in place of `api_key`, the `client_secret` header and
-`Authorization`, including inside nested mappings such as `default_headers` or
-`client_args`. Logging it, printing it or seeing it in a test failure never
-shows the credential.
-
-Otherwise it is an ordinary `dict`. `**kwargs` unpacking, lookups, `==`,
-`copy.deepcopy` and `json.dumps` behave as before, and the framework
-constructor receives the real values. `.copy()`, `copy.copy`,
-`copy.deepcopy` and `|` keep the masking; `dict(kwargs)` gives a plain,
-unmasked top level (nested header mappings stay masked).
+`connection_kwargs()` returns a `dict` that prints `'***'` in place of
+`api_key`, the `client_secret` header, `Authorization` and other credential
+keys, including inside nested header mappings. The framework still receives the
+real values, and `json.dumps` or `dict(...)` still expose them. See
+[What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides)
+for exactly what is and isn't masked.
 
 ```python
 kwargs = donkey.llamaindex.connection_kwargs()
-print(kwargs["default_headers"])   # {'client_id': '…', 'client_secret': '***'}
+print(kwargs["default_headers"])      # {'client_id': 'my-client-id', 'client_secret': '***'}
 OpenAILike(model="gpt-4o", **kwargs)  # receives the real secret
 ```
 
@@ -142,6 +136,11 @@ HTTP client is also used, which adds per-run correlation IDs and
 | Google ADK — `model()` | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
 | Google ADK — `gemini()` | ✅ | ✅ | Via `HttpOptions.httpx_async_client`, on a `Format=Gemini` proxy. |
 | CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's native OpenAI provider, which builds its own HTTP client: same behaviour as ADK's `model()`. |
+
+Transport injection also decides whether `jwt` mode works: the rotating JWT is
+attached only by the SDK's shared client. Adapters marked ❌ send
+`X-Client-Id` but no JWT, so a wallet proxy answers `401`. See the
+[`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.
