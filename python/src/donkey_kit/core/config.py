@@ -33,7 +33,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
 
 from ._verify import REGION_HOSTS
 from .cost import CostTags
-from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, is_loopback, require_secure_url
+from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError
 
 Region = Literal["us", "eu", "ca", "jp"]
@@ -377,7 +377,7 @@ class DonkeyConfig:
 
         require_secure_url(url, name=key)
         origin = self.source_of(key)
-        if origin.kind not in _WORKDIR_KINDS or is_loopback(url):
+        if origin.kind not in _WORKDIR_KINDS:
             return
         if need == "control_plane" and host_of(url) in STANDARD_CONTROL_PLANE_HOSTS:
             return
