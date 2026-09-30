@@ -53,7 +53,7 @@ DonkeyError                     # base of the whole tree
 ├─ ConfigError                  # misconfiguration (raised locally, pre-flight)
 ├─ AuthError                    # rejected data-plane credentials or control-plane auth
 ├─ PolicyViolation              # base for every governance rejection
-│  ├─ PIIDetected               # 403, type=pii_detected; .entities
+│  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
@@ -157,6 +157,24 @@ The text names the **action you can take**, not the policy that fired. Because
 each default lives on the exception class, it is a single source of wording that
 [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) reuses for its own failure output, so the CLI and the
 exception never disagree.
+
+## Refusal messages don't repeat blocked content
+
+The PII policy's rejection text repeats every value it flagged. `PIIDetected`
+builds its own message instead, from the entity types, their count and their
+character offsets. So `str(exc)`, `repr(exc)` and `exc.args` never contain the
+blocked value, and neither does a log line, a traceback or
+[`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md):
+
+```
+Request blocked: personally identifiable information detected (403): 1 entity (Email at chars 12-32). Values withheld; the gateway's text is on .gateway_message.
+```
+
+`.entities` lists the flagged types (`["Email"]`). The gateway's own text is on
+`.gateway_message`, and the raw body is on `.response`. Neither is rendered by
+`str()` or `repr()`. Both carry the blocked content, so handle them like the
+prompt itself. The other refusal messages are built from status codes,
+headers, category names and policy pattern names, never from the request.
 
 ## The ids every `DonkeyError` carries
 

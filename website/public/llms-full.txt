@@ -2194,7 +2194,7 @@ DonkeyError                     # base of the whole tree
 ├─ ConfigError                  # misconfiguration (raised locally, pre-flight)
 ├─ AuthError                    # rejected data-plane credentials or control-plane auth
 ├─ PolicyViolation              # base for every governance rejection
-│  ├─ PIIDetected               # 403, type=pii_detected; .entities
+│  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
@@ -2298,6 +2298,24 @@ The text names the **action you can take**, not the policy that fired. Because
 each default lives on the exception class, it is a single source of wording that
 [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) reuses for its own failure output, so the CLI and the
 exception never disagree.
+
+## Refusal messages don't repeat blocked content
+
+The PII policy's rejection text repeats every value it flagged. `PIIDetected`
+builds its own message instead, from the entity types, their count and their
+character offsets. So `str(exc)`, `repr(exc)` and `exc.args` never contain the
+blocked value, and neither does a log line, a traceback or
+[`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md):
+
+```
+Request blocked: personally identifiable information detected (403): 1 entity (Email at chars 12-32). Values withheld; the gateway's text is on .gateway_message.
+```
+
+`.entities` lists the flagged types (`["Email"]`). The gateway's own text is on
+`.gateway_message`, and the raw body is on `.response`. Neither is rendered by
+`str()` or `repr()`. Both carry the blocked content, so handle them like the
+prompt itself. The other refusal messages are built from status codes,
+headers, category names and policy pattern names, never from the request.
 
 ## The ids every `DonkeyError` carries
 
@@ -3189,8 +3207,7 @@ directly.
 ## Cost-attribution tags
 
 A small, fixed set of tags — `team`, `project`, `env`, `enduser.id` — set once
-and emitted on every call, both as request headers and as `donkey.cost.*` span
-attributes:
+and emitted on every call as `donkey.cost.*` span attributes:
 
 ```python
 donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
@@ -3204,16 +3221,18 @@ kwargs, then `DONKEY_COST_*` env vars, then a `[donkey.cost]` table in
 `.donkey-kit.toml`. Per-run overrides layer on top: `donkey.run(team=…,
 project=…, env=…, enduser_id=…)` wins **per field** for its block and the rest
 fall back to the configured tags. The key set is **fixed** — an unknown
-dimension is a configuration error, never a silently-dropped header. Values are
+dimension is a configuration error, never a silently-dropped tag. Values are
 **validated** — fixed keys, bounded length — so nobody stuffs a JSON blob into a
-header.
+span attribute or header.
 
   The Anypoint LLM Gateway does not ingest cost tags from request headers — it
   meters cost from token usage per API instance and consuming client
   application. The **authoritative** carrier is the `donkey.cost.*` OTel span
-  attribute. The `X-Anypoint-Cost-*` request headers are a convention nothing
-  currently reads; their names are overridable (`cost_*_header`) for a gateway
-  that does read one.
+  attribute, and by default DDK sends **no** cost-tag request header. Set
+  `DONKEY_SEND_COST_HEADERS=true` (`send_cost_headers`) to also send them as
+  `X-Anypoint-Cost-*` headers, whose names are overridable (`cost_*_header`),
+  for a receiver that reads them. The `enduser.id` header then carries the end
+  user's identifier on every request.
 
 ### The question this answers
 
@@ -9019,8 +9038,8 @@ exceptions regardless of the header names. See
 
 ## Cost-attribution tags
 
-A fixed set of dimensions set once and emitted on every call (both as request
-headers and as `donkey.cost.*` span attributes). Override them per run with
+A fixed set of dimensions set once and emitted on every call as `donkey.cost.*`
+span attributes (and, only if you opt in, as request headers). Override them per run with
 `donkey.run(team=…, project=…, env=…, enduser_id=…)`. The key set is fixed — an
 unknown dimension is a configuration error, not a silently dropped tag. See
 [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
@@ -9043,12 +9062,20 @@ env = "prod"
 "enduser.id" = "user-42"
 ```
 
-The request-header **names** the gateway reads for these tags aren't
-published, so the SDK uses placeholder names you can override to match your
-gateway: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
+The LLM Gateway doesn't read cost tags from request headers, so by default DDK
+sends **no** cost-tag header. The `donkey.cost.*` span attributes carry every
+tag either way. To also send the tags as request headers, for example to a
+proxy of your own that reads them, opt in:
+
+| Env var | `DonkeyConfig` field | Default | Meaning |
+|---|---|---|---|
+| `DONKEY_SEND_COST_HEADERS` | `send_cost_headers` | `false` | Also send the cost tags as request headers. |
+
+With it enabled, the headers use placeholder names (`X-Anypoint-Cost-Team`, …)
+you can override: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
 `DONKEY_COST_ENV_HEADER`, `DONKEY_COST_ENDUSER_HEADER` (or the matching
-`cost_*_header` config keys). The `donkey.cost.*` span attributes carry the
-full value regardless.
+`cost_*_header` config keys). The end-user header carries `enduser.id`, so
+enable it only for a receiver you trust with that identifier.
 
 ## Telemetry
 
@@ -9119,6 +9146,11 @@ donkey = Donkey(DonkeyConfig(
 async with Donkey.from_env() as donkey:
     ...
 ```
+
+`repr()` and `str()` of a `DonkeyConfig` leave out `client_secret`,
+`llm_proxy_client_secret` and `llm_proxy_key`, so printing or logging a config
+(or a traceback that shows it) doesn't expose them. The other fields stay
+visible, and the secrets are still readable as attributes.
 
 ---
 

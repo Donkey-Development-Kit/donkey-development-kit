@@ -487,8 +487,7 @@ directly.
 ## Cost-attribution tags
 
 A small, fixed set of tags — `team`, `project`, `env`, `enduser.id` — set once
-and emitted on every call, both as request headers and as `donkey.cost.*` span
-attributes:
+and emitted on every call as `donkey.cost.*` span attributes:
 
 ```python
 donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
@@ -502,16 +501,18 @@ kwargs, then `DONKEY_COST_*` env vars, then a `[donkey.cost]` table in
 `.donkey-kit.toml`. Per-run overrides layer on top: `donkey.run(team=…,
 project=…, env=…, enduser_id=…)` wins **per field** for its block and the rest
 fall back to the configured tags. The key set is **fixed** — an unknown
-dimension is a configuration error, never a silently-dropped header. Values are
+dimension is a configuration error, never a silently-dropped tag. Values are
 **validated** — fixed keys, bounded length — so nobody stuffs a JSON blob into a
-header.
+span attribute or header.
 
   The Anypoint LLM Gateway does not ingest cost tags from request headers — it
   meters cost from token usage per API instance and consuming client
   application. The **authoritative** carrier is the `donkey.cost.*` OTel span
-  attribute. The `X-Anypoint-Cost-*` request headers are a convention nothing
-  currently reads; their names are overridable (`cost_*_header`) for a gateway
-  that does read one.
+  attribute, and by default DDK sends **no** cost-tag request header. Set
+  `DONKEY_SEND_COST_HEADERS=true` (`send_cost_headers`) to also send them as
+  `X-Anypoint-Cost-*` headers, whose names are overridable (`cost_*_header`),
+  for a receiver that reads them. The `enduser.id` header then carries the end
+  user's identifier on every request.
 
 ### The question this answers
 

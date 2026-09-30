@@ -115,7 +115,7 @@ framework that may not be installed.
 
   | Hook | When it fires | What attaches |
   | --- | --- | --- |
-  | `_on_request` | once, before the retry loop | correlation ID + cost-tag headers (`BG §1.7`); OTel span **start** (`BG §1.6`) |
+  | `_on_request` | once, before the retry loop | correlation ID + opt-in cost-tag headers (`BG §1.7`); OTel span **start** (`BG §1.6`) |
   | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); span **end**; classification |
   | `_on_refusal` | Phase-2 seam — no caller until `classify()` wires it (#181) | typed-refusal handlers (`BG §1.2`) |
   | `_swap_transport` | fixture seam | `simulate()` (#190) and `donkey mock` (#187) swap a fixture in (`BG §1.4`/`BG §1.5`) |

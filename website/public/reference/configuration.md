@@ -116,8 +116,8 @@ exceptions regardless of the header names. See
 
 ## Cost-attribution tags
 
-A fixed set of dimensions set once and emitted on every call (both as request
-headers and as `donkey.cost.*` span attributes). Override them per run with
+A fixed set of dimensions set once and emitted on every call as `donkey.cost.*`
+span attributes (and, only if you opt in, as request headers). Override them per run with
 `donkey.run(team=…, project=…, env=…, enduser_id=…)`. The key set is fixed — an
 unknown dimension is a configuration error, not a silently dropped tag. See
 [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
@@ -140,12 +140,20 @@ env = "prod"
 "enduser.id" = "user-42"
 ```
 
-The request-header **names** the gateway reads for these tags aren't
-published, so the SDK uses placeholder names you can override to match your
-gateway: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
+The LLM Gateway doesn't read cost tags from request headers, so by default DDK
+sends **no** cost-tag header. The `donkey.cost.*` span attributes carry every
+tag either way. To also send the tags as request headers, for example to a
+proxy of your own that reads them, opt in:
+
+| Env var | `DonkeyConfig` field | Default | Meaning |
+|---|---|---|---|
+| `DONKEY_SEND_COST_HEADERS` | `send_cost_headers` | `false` | Also send the cost tags as request headers. |
+
+With it enabled, the headers use placeholder names (`X-Anypoint-Cost-Team`, …)
+you can override: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
 `DONKEY_COST_ENV_HEADER`, `DONKEY_COST_ENDUSER_HEADER` (or the matching
-`cost_*_header` config keys). The `donkey.cost.*` span attributes carry the
-full value regardless.
+`cost_*_header` config keys). The end-user header carries `enduser.id`, so
+enable it only for a receiver you trust with that identifier.
 
 ## Telemetry
 
@@ -216,3 +224,8 @@ donkey = Donkey(DonkeyConfig(
 async with Donkey.from_env() as donkey:
     ...
 ```
+
+`repr()` and `str()` of a `DonkeyConfig` leave out `client_secret`,
+`llm_proxy_client_secret` and `llm_proxy_key`, so printing or logging a config
+(or a traceback that shows it) doesn't expose them. The other fields stay
+visible, and the secrets are still readable as attributes.

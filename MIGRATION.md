@@ -1,5 +1,37 @@
 # Migration guide
 
+## Cost-tag headers are opt-in; secrets and blocked values stay out of output
+
+Three changes to what the SDK renders and sends. Only the first changes
+anything on the wire.
+
+**Cost-tag request headers are off by default.** The cost tags (`team`,
+`project`, `env`, `enduser.id`) used to go out as `X-Anypoint-Cost-*` request
+headers on every call. The LLM Gateway reads none of them
+(`docs/verified-apis.md` §3), so they are now sent only when you opt in. The
+`donkey.cost.*` span attributes are unchanged and still carry every tag, so
+dashboards built on spans need no change. If something of your own reads those
+headers, turn them back on:
+
+```diff
++ DONKEY_SEND_COST_HEADERS=true
+```
+
+or `send_cost_headers = true` in the `[donkey]` table, or
+`DonkeyConfig(send_cost_headers=True)`. The `cost_*_header` name overrides
+apply as before.
+
+**`PIIDetected` messages no longer contain the flagged values.** `str(exc)`
+used to be the gateway's rejection text, which repeats each detected value. It
+now names the entity types, their count and their offsets, for example
+`… 1 entity (Email at chars 12-32) …`. `.entities` is unchanged. If you parsed
+the message, read the new `.gateway_message` attribute (the gateway's text) or
+`.response` (the raw body) instead. Both carry the blocked content.
+
+**`repr()` / `str()` of `DonkeyConfig` omit the secrets.** `client_secret`,
+`llm_proxy_client_secret` and `llm_proxy_key` no longer appear. Attribute
+access and equality are unchanged.
+
 ## `agent-fabric` → `donkey-kit` (the DDK rebrand)
 
 This SDK was renamed from **Agent Fabric SDK** to the **Donkey Development Kit
