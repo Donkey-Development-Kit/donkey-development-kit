@@ -354,8 +354,9 @@ class DonkeyConfig:
         The endpoint must be ``https://`` (``http://`` only for loopback). And an
         endpoint read from the working directory's ``.donkey-kit.toml`` or its
         ``.local`` overlay only receives credentials read from those same files,
-        unless the host is loopback, a standard Anypoint control-plane host, or
-        ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. In ``jwt``
+        unless it is a standard Anypoint control-plane host or
+        ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. Loopback
+        hosts are exempt from the ``https://`` rule only. In ``jwt``
         auth mode the JWT comes from the caller's ``AuthProvider``, never from
         those files, so it always counts as outside them.
         """

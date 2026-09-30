@@ -198,8 +198,9 @@ def _render_toml(config: DonkeyConfig, missing: list[str]) -> str:
         lines.append(f"#   - {field:<24} → env {envvar}")
     lines += [
         "#",
-        "# A base_url or llm_proxy_url set here only receives credentials from this file or",
-        f"# {_LOCAL_TOML_NAME}. If your credentials are in environment variables, set",
+        "# A base_url or llm_proxy_url set here (localhost included) only receives",
+        f"# credentials from this file or {_LOCAL_TOML_NAME}. If your credentials are",
+        "# in environment variables, set",
         "# the URL there too (ANYPOINT_BASE_URL / DONKEY_LLM_PROXY_URL), or set",
         f"# {TRUST_PROJECT_CONFIG_ENV}=1 to trust this directory's config files.",
     ]
