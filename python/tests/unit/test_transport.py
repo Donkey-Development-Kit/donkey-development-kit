@@ -782,6 +782,28 @@ async def test_does_not_retry_403_policy_rejection() -> None:
     assert calls["n"] == 1
 
 
+async def test_does_not_retry_agent_kill_switch_refusal() -> None:
+    """#694: a killed agent stays killed — the kill-switch 403 is sent once."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            403,
+            json={
+                "error": {
+                    "code": "agent_killed",
+                    "message": "This agent has been blocked by an active kill switch.",
+                }
+            },
+        )
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as client:
+        resp = await client.get("https://x")
+    assert resp.status_code == 403
+    assert calls["n"] == 1
+
+
 async def test_429_is_terminal_but_5xx_still_retries() -> None:
     """AC #3: the no-retry rule is status-specific, not a blanket disable. A
     transient 503 is still retried to exhaustion while a 429 budget refusal is

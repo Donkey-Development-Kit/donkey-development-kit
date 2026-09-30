@@ -64,7 +64,7 @@ SIM_MODEL_PREFIX = "donkey-sim/"
 # format string is fixed by the live/fixture capture (#352/#353):
 #   "Token rate limit: {remaining} tokens remaining of {limit} limit. Reset in {ms}ms."
 
-# Shapes selectable via the model-id sentinel: the eight documented rejections
+# Shapes selectable via the model-id sentinel: the nine documented rejections
 # plus the consumer-auth 401.
 _REJECTION_SHAPES = frozenset(
     {
@@ -74,6 +74,7 @@ _REJECTION_SHAPES = frozenset(
         "regex-prompt-guard",
         "content-safety",
         "content-moderation",
+        "agent-killed",
         "model-not-found",
         "upstream-5xx",
         "client-id-missing",

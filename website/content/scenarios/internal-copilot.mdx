@@ -101,9 +101,11 @@ an endpoint:
 <Callout type="info">
   **Agent identity and a kill switch** — a verifiable identity for the copilot,
   and the ability to disable it centrally — are platform capabilities the SDK's
-  job is to make *reachable and typed*, not to reimplement. Both are
-  [Phase 2](/roadmap) and gated on verifying the platform's own contract; see
-  [Identity](/identity). Until then the SDK does not fabricate a stand-in.
+  job is to make *reachable and typed*, not to reimplement. The kill switch's
+  refusal is already typed: a blocked agent surfaces as
+  [`AgentKilled`](/errors), never retried. Stopping a run cleanly on it, and
+  identity itself, are [Phase 2](/roadmap); see [Identity](/identity). Until
+  then the SDK does not fabricate a stand-in.
 </Callout>
 
 ## Verification status

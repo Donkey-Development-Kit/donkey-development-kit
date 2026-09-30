@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from donkey_kit.core.errors import (
+    AgentKilled,
     AuthError,
     ContentSafetyBlocked,
     DonkeyError,
@@ -311,6 +312,7 @@ def test_every_policy_violation_type_ships_its_own_nonempty_default() -> None:
         TokenBudgetExceeded,
         PromptInjectionBlocked,
         ContentSafetyBlocked,
+        AgentKilled,
     } <= types
     for cls in types:
         assert "remediation" in vars(cls), f"{cls.__name__} ships no own remediation default"
@@ -357,6 +359,70 @@ def test_classify_token_budget_falls_back_to_the_class_default_remediation() -> 
     err = classify(_resp(429))
     assert isinstance(err, TokenBudgetExceeded)
     assert err.remediation is TokenBudgetExceeded.remediation
+
+
+# --- Agent Kill Switch (#694, docs/verified-apis.md §4) ---------------------
+# The kill switch rejects with a 403 whose nested error carries
+# `code: agent_killed` and no `type`. The body code is the discriminator — the
+# same nested envelope from an upstream provider, or with any other code, must
+# keep classifying exactly as before.
+
+_KILLED_BODY = {
+    "error": {
+        "code": "agent_killed",
+        "message": "This agent has been blocked by an active kill switch.",
+    }
+}
+
+
+def test_agent_killed_code_is_agent_killed_with_class_default_remediation() -> None:
+    err = classify(_json_resp(403, _KILLED_BODY))
+    assert isinstance(err, AgentKilled)
+    assert not isinstance(err, UpstreamRequestError)
+    assert err.policy == "agent-kill-switch"
+    assert err.remediation is AgentKilled.remediation
+    assert str(err) == "This agent has been blocked by an active kill switch."
+
+
+def test_message_less_kill_body_still_types_as_agent_killed() -> None:
+    """The body code alone types it: a message-less kill body still classifies,
+    with a fallback message naming the kill switch."""
+    err = classify(_json_resp(403, {"error": {"code": "agent_killed"}}))
+    assert isinstance(err, AgentKilled)
+    assert "kill switch" in str(err)  # fallback message when the body has none
+
+
+def test_agent_killed_in_a_gemini_list_envelope_is_agent_killed() -> None:
+    err = classify(_json_list_resp(403, [_KILLED_BODY]))
+    assert isinstance(err, AgentKilled)
+
+
+def test_403_nested_error_with_another_code_is_still_upstream_request_error() -> None:
+    """No regression for the upstream passthrough: a nested error object with a
+    different ``code`` stays an UpstreamRequestError, never AgentKilled."""
+    err = classify(
+        _json_resp(403, {"error": {"code": "insufficient_quota", "message": "over quota"}})
+    )
+    assert isinstance(err, UpstreamRequestError)
+    assert not isinstance(err, AgentKilled)
+    assert err.code == "insufficient_quota"
+
+
+def test_pii_block_is_not_agent_killed() -> None:
+    err = classify(_json_resp(403, {"error": {"type": "pii_detected", "message": "blocked"}}))
+    assert type(err) is PIIDetected
+
+
+def test_403_with_www_authenticate_and_no_kill_code_is_still_auth_error() -> None:
+    err = classify(
+        _json_resp(
+            403,
+            {"error": {"code": "forbidden", "message": "nope"}},
+            {"www-authenticate": 'Bearer realm="anypoint"'},
+        )
+    )
+    assert isinstance(err, AuthError)
+    assert not isinstance(err, AgentKilled)
 
 
 # --- upstream request error, both envelope shapes (#548) --------------------

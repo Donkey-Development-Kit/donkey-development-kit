@@ -1,4 +1,4 @@
-"""The eight documented rejection shapes (#181, +#289), asserted from the shared
+"""The nine documented rejection shapes (#181, +#289, +#694), asserted from the shared
 ``tests/fixtures/rejections/`` index so the local gateway simulator (#187) can
 replay the identical files and any contract drift fails both at once (AC #4).
 
@@ -14,7 +14,9 @@ body matched the committed fixture byte-for-byte against ``ddk-injection-guard``
 were confirmed against ``ddk-azure-content-safety`` (instance 21180957) — see
 ``rejections/README.md`` and docs/verified-apis.md §4. Row 4 (fall-through)
 stays documented-only: it is a synthetic minimal 4xx proving the fall-through
-stays generic, not a captured policy shape (#253).
+stays generic, not a captured policy shape (#253). Row 9 (Agent Kill Switch,
+nested ``error.code == "agent_killed"``) was live-captured 2026-09-29 against
+``ddk-agent-kill-switch`` (instance 21206201, #694).
 The discriminator is the error ``type`` + specific headers, NEVER the status code
 alone — which is exactly why rows 7/8 (both 403) must not be swallowed by the
 401/403 → auth rule.
@@ -28,6 +30,8 @@ from pathlib import Path
 import httpx
 
 from donkey_kit.core.errors import (
+    AgentKilled,
+    AuthError,
     ContentSafetyBlocked,
     PIIDetected,
     PolicyViolation,
@@ -144,3 +148,31 @@ def test_row8_bedrock_guardrails_variant_is_content_safety_blocked() -> None:
     assert err.policy == "content-safety"
     assert err.categories == ["content_filter"]
     assert err.remediation  # required, non-empty
+
+
+def test_row9_agent_kill_switch_is_agent_killed_not_upstream_or_auth() -> None:
+    # docs/verified-apis.md §4, live capture 2026-09-29 (#694): the kill switch
+    # rejects with a 403 whose nested error carries `code: agent_killed` and no
+    # `type`. Before #694 it fell into the generic 4xx branch as an
+    # UpstreamRequestError — wrong twice over: the upstream was never called, and
+    # the agent was shut off by an administrator, not a fixable request mistake.
+    body = json.loads((REJECTIONS / "reject.agent-killed.body.json").read_text())
+    assert body["error"]["code"] == "agent_killed"
+    assert "type" not in body["error"]
+    headers = _headers(REJECTIONS / "reject.agent-killed.headers.txt")
+    assert "www-authenticate" not in headers  # discriminator vs. auth
+
+    request = httpx.Request(
+        "POST",
+        "https://gw.example/ddk-agent-kill-switch/chat/completions",
+        headers={"x-correlation-id": "e7641776-3160-4b59-814d-f6c354e7e177"},
+    )
+    err = classify(httpx.Response(403, headers=headers, json=body, request=request))
+    assert isinstance(err, AgentKilled)
+    assert isinstance(err, PolicyViolation)
+    assert not isinstance(err, (AuthError, UpstreamRequestError, UpstreamModelError))
+    assert err.policy == "agent-kill-switch"
+    assert err.remediation.strip()  # required, non-empty
+    assert "Governance > Security" in err.remediation
+    assert str(err) == "This agent has been blocked by an active kill switch."
+    assert err.correlation_id == "e7641776-3160-4b59-814d-f6c354e7e177"

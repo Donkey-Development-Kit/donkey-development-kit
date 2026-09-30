@@ -514,8 +514,8 @@ class Donkey:
         already been built (``client(sync=True)`` was called earlier); a sync
         client created *inside* the block is not retro-swapped. Raises
         ``ValueError`` for a refusal type with no captured fixture (e.g.
-        :class:`~donkey_kit.core.errors.ContentSafetyBlocked`, still
-        under-documented, #253). Body-shaping (specific PII entities, a custom
+        :class:`~donkey_kit.core.errors.GatewayUnavailable`, which no gateway
+        response produces). Body-shaping (specific PII entities, a custom
         message) is the follow-up #188; this injects the fixture verbatim.
         """
         from .simulator.inject import simulate as _simulate

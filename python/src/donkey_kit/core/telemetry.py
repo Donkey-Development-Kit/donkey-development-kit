@@ -31,6 +31,7 @@ from .cost import CostTags
 if TYPE_CHECKING:
     from .config import DonkeyConfig
 from .errors import (
+    AgentKilled,
     ContentSafetyBlocked,
     DonkeyError,
     PIIDetected,
@@ -535,6 +536,8 @@ def policy_type_slug(error: DonkeyError) -> str | None:
         return "injection"
     if isinstance(error, ContentSafetyBlocked):
         return "content_safety"
+    if isinstance(error, AgentKilled):
+        return "agent_killed"
     if isinstance(error, PolicyViolation):
         return "policy_violation"
     return None

@@ -22,6 +22,7 @@ import pytest
 from donkey_kit import Donkey
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import (
+    AgentKilled,
     AuthError,
     ConfigError,
     ContentSafetyBlocked,
@@ -62,6 +63,7 @@ _ROUND_TRIP = [
     (PIIDetected, "pii-detected"),
     (PromptInjectionBlocked, "injection-protection"),
     (ContentSafetyBlocked, "content-safety"),
+    (AgentKilled, "agent-killed"),
     (UpstreamRequestError, "model-not-found"),
     (UpstreamModelError, "upstream-5xx"),
     (AuthError, "client-id-missing"),

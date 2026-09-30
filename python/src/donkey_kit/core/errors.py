@@ -139,10 +139,11 @@ class PolicyViolation(DonkeyError):
     #: cannot pin more precisely); every concrete subclass overrides it.
     remediation: str = (
         "A gateway policy refused this request. This is terminal and was NOT "
-        "retried. PII (403), token-budget (429), prompt-injection (the "
-        "x-injection-protection header or the regex prompt guard's "
-        "matched_patterns) and content-safety (Azure Content Safety, Amazon "
-        "Bedrock Guardrails) rejections are identified specifically; only "
+        "retried. PII (403), agent kill switch (403, error code agent_killed), "
+        "token-budget (429), prompt-injection (the x-injection-protection "
+        "header or the regex prompt guard's matched_patterns) and "
+        "content-safety (Azure Content Safety, Amazon Bedrock Guardrails) "
+        "rejections are identified specifically; only "
         "federated-guardrail verdicts and otherwise-unrecognised shapes fall "
         "through to here. Inspect .response for the raw body."
     )
@@ -295,6 +296,22 @@ class PIIDetected(PolicyViolation):
     def __init__(self, message: str, *, entities: list[str] | None = None, **kw: Any) -> None:
         super().__init__(message, **kw)
         self.entities = entities or []
+
+
+class AgentKilled(PolicyViolation):
+    """The gateway's Agent Kill Switch blocked this agent — it is quarantined in
+    Governance > Security, or listed in the policy's *Killed Agent IDs*.
+
+    The upstream model was never called: the gateway refused the agent itself,
+    not the request, so no change to the prompt or parameters can succeed. The
+    live capture carries only ``code`` + ``message`` — no kill reason (#314)."""
+
+    policy = "agent-kill-switch"
+    remediation: str = (
+        "An administrator has blocked this agent via the Agent Kill Switch. "
+        "This is terminal and was NOT retried; ask them to restore model "
+        "access in Governance > Security."
+    )
 
 
 class UpstreamModelError(DonkeyError):
@@ -458,6 +475,12 @@ def classify(
       ``type`` is ``"pii_detected"`` (and, unlike a genuine auth failure, NO
       ``www-authenticate`` header). So a 403 is NOT automatically an auth error —
       the error ``type`` is checked first.
+    * **Agent Kill Switch** rejects with **403** and a *nested* error object whose
+      ``code`` is ``"agent_killed"`` (no ``type``, no ``www-authenticate``) →
+      :class:`AgentKilled`. Keyed on the body ``code``, not the status, and
+      checked BEFORE the auth and generic-4xx rules so a killed agent is not
+      mis-typed as an :class:`UpstreamRequestError`. Live-verified 2026-09-29
+      against ``ddk-agent-kill-switch`` (#694).
     * **Token rate limit** rejects with **429** and an **empty body**; the budget
       state is entirely in headers (``x-token-limit`` / ``x-token-remaining`` /
       ``x-token-reset`` in ms). There is NO standard ``retry-after``.
@@ -540,6 +563,18 @@ def classify(
             message or f"Request blocked: personally identifiable information detected ({status}).",
             entities=_pii_entities(message),
             # remediation: PIIDetected's canonical class default (#182).
+            **kw,
+        )
+
+    # Agent Kill Switch: 403 + nested object, code == "agent_killed" (no `type`).
+    # Verified LIVE 2026-09-29 against ddk-agent-kill-switch (#694). Keyed on the
+    # body code, not the status, and checked before the auth and generic-4xx
+    # rules: a killed agent is neither an auth failure nor an upstream mistake.
+    if error_obj is not None and error_obj.get("code") == "agent_killed":
+        message = _str_or_none(error_obj.get("message"))
+        return AgentKilled(
+            message or f"Agent blocked by an active kill switch ({status}).",
+            # remediation: AgentKilled's canonical class default (#182).
             **kw,
         )
 
