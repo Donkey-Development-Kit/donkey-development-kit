@@ -2,7 +2,7 @@
 
 ## Cost-tag headers are opt-in; secrets and blocked values stay out of output
 
-Three changes to what the SDK renders and sends. Only the first changes
+Four changes to what the SDK renders and sends. Only the first changes
 anything on the wire.
 
 **Cost-tag request headers are off by default.** The cost tags (`team`,
@@ -31,6 +31,13 @@ the message, read the new `.gateway_message` attribute (the gateway's text) or
 **`repr()` / `str()` of `DonkeyConfig` omit the secrets.** `client_secret`,
 `llm_proxy_client_secret` and `llm_proxy_key` no longer appear. Attribute
 access and equality are unchanged.
+
+**Printed `connection_kwargs()` show `'***'` for secrets.** Every adapter's
+`connection_kwargs()`, ADK's `gemini_connection_kwargs()` and
+`proxy_auth_headers()` now return a `dict` subclass that masks `api_key`, the
+`client_secret` header and `Authorization` in `repr()`/`str()`, including in
+nested header mappings. Unpacking, lookups, equality and `json.dumps` are
+unchanged. If a test compared the printed text, compare the mapping instead.
 
 ## `agent-fabric` → `donkey-kit` (the DDK rebrand)
 

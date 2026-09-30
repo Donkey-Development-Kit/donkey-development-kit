@@ -66,6 +66,27 @@ Each framework page shows the factory name, the native class you get back, the
 three ways to construct it, and **the manual equivalent** — the plain framework
 constructor call the factory makes for you.
 
+### Printing `connection_kwargs()` hides the secrets
+
+Every adapter's `connection_kwargs()` (and ADK's `gemini_connection_kwargs()`
+and `donkey_kit.core.proxy_auth_headers()`) returns a `dict` whose `repr()` and
+`str()` show `'***'` in place of `api_key`, the `client_secret` header and
+`Authorization`, including inside nested mappings such as `default_headers` or
+`client_args`. Logging it, printing it or seeing it in a test failure never
+shows the credential.
+
+Otherwise it is an ordinary `dict`. `**kwargs` unpacking, lookups, `==`,
+`copy.deepcopy` and `json.dumps` behave as before, and the framework
+constructor receives the real values. `.copy()`, `copy.copy`,
+`copy.deepcopy` and `|` keep the masking; `dict(kwargs)` gives a plain,
+unmasked top level (nested header mappings stay masked).
+
+```python
+kwargs = donkey.llamaindex.connection_kwargs()
+print(kwargs["default_headers"])   # {'client_id': '…', 'client_secret': '***'}
+OpenAILike(model="gpt-4o", **kwargs)  # receives the real secret
+```
+
 ## Match the adapter to your proxy's wire format
 
 Every adapter on this page except Anthropic and ADK's `gemini()` — and the raw
