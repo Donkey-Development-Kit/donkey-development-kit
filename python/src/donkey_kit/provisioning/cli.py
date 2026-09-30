@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover - install-time guidance
     raise SystemExit(1) from None
 
 from ..core.config import _LOCAL_TOML_NAME, _TOML_NAME, TRUST_PROJECT_CONFIG_ENV, DonkeyConfig
+from ..core.endpoints import ALLOW_HTTP_ENV
 from ..core.errors import DonkeyError
 from .spec import DonkeySpec
 
@@ -200,9 +201,12 @@ def _render_toml(config: DonkeyConfig, missing: list[str]) -> str:
         "#",
         "# A base_url or llm_proxy_url set here (localhost included) only receives",
         f"# credentials from this file or {_LOCAL_TOML_NAME}. If your credentials are",
-        "# in environment variables, set",
-        "# the URL there too (ANYPOINT_BASE_URL / DONKEY_LLM_PROXY_URL), or set",
-        f"# {TRUST_PROJECT_CONFIG_ENV}=1 to trust this directory's config files.",
+        "# in environment variables, set the URL there too (ANYPOINT_BASE_URL /",
+        f"# DONKEY_LLM_PROXY_URL), or set {TRUST_PROJECT_CONFIG_ENV}=1 to trust this",
+        "# directory's config files.",
+        "#",
+        "# URLs must use https://. Plain http:// is accepted for localhost; for other",
+        f"# hosts only with {ALLOW_HTTP_ENV}=1 in the environment (not in this file).",
     ]
     if missing:
         lines += [

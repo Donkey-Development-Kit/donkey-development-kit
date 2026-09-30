@@ -86,6 +86,6 @@ def require_secure_url(url: str, *, name: str) -> None:
         )
     raise ConfigError(
         f"{name} must be an https:// URL (got {scheme} scheme, {host}). Plain http:// "
-        "is accepted only for loopback hosts (localhost, 127.0.0.0/8, ::1), such as "
-        f"the local gateway simulator. {remedy}."
+        "is accepted for loopback hosts (localhost, 127.0.0.0/8, ::1), such as the "
+        f"local gateway simulator. {remedy}."
     )

@@ -5,8 +5,9 @@ Three layers of behaviour, each exercised through the documented surfaces
 connected-app token fetch):
 
 * **Scheme** — ``base_url``, ``llm_proxy_url`` and the token endpoint must be
-  ``https://``; plain ``http://`` is accepted only for loopback hosts (the local
-  simulator and local development).
+  ``https://``; plain ``http://`` is accepted for loopback hosts (the local
+  simulator and local development), and for other hosts only with
+  ``DONKEY_ALLOW_HTTP=1`` in the environment, which warns.
 * **Binding** — an endpoint read from the working directory's
   ``.donkey-kit.toml`` (or its ``.local`` overlay) only receives credentials
   from that same file pair, unless the host is a standard Anypoint control-plane

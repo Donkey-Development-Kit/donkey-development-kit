@@ -21,7 +21,7 @@ Before any request, doctor prints each endpoint's host and where it came from
 (env, project file, local overlay, user file or default). An LLM-proxy endpoint
 that may not receive the configured credentials (see
 :meth:`DonkeyConfig.check_endpoints`) fails the ``config`` line, so the probe
-never runs.
+never runs. When ``DONKEY_ALLOW_HTTP=1`` is set, a ``plain http`` line says so.
 
 Honest scope (verification discipline): the gateway's *allow-list* rejection (a model refused by
 API Manager policy rather than missing at the provider) has no captured 403

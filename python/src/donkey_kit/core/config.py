@@ -9,7 +9,8 @@ user calls ``load_dotenv()`` themselves.
 Every resolved field records its source, and :meth:`DonkeyConfig.check_endpoints`
 uses it so an endpoint read from the working directory's files only receives
 credentials read from those same files (``DONKEY_TRUST_PROJECT_CONFIG=1`` opts
-out). Endpoints must be ``https://``, except loopback hosts.
+out). Endpoints must be ``https://``, except loopback hosts, or any host when
+``DONKEY_ALLOW_HTTP=1`` is set in the environment.
 
 ``validated()`` reports ALL missing fields in one error, not one per run — the
 one-missing-variable-per-run loop is the most common first-five-minutes
@@ -347,7 +348,9 @@ class DonkeyConfig:
         """Raise :class:`ConfigError` if ``need``'s endpoint may not receive the
         credentials that would be sent to it.
 
-        The endpoint must be ``https://`` (``http://`` only for loopback). And an
+        The endpoint must be ``https://``; ``http://`` is accepted for loopback
+        hosts, and for other hosts only with ``DONKEY_ALLOW_HTTP=1`` in the
+        environment, which does not relax the rest of this check. And an
         endpoint read from the working directory's ``.donkey-kit.toml`` or its
         ``.local`` overlay only receives credentials read from those same files,
         unless it is a standard Anypoint control-plane host or
