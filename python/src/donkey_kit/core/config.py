@@ -294,8 +294,24 @@ class DonkeyConfig:
         ``need`` is one of ``"control_plane"`` (registry/provisioning) or
         ``"llm"`` (proxy). The two credentials are independent (BG §1.1): a user
         may legitimately have proxy access and no Exchange access.
+
+        Once nothing is missing, the endpoint is checked too (:meth:`check_endpoints`).
         """
 
+        missing = self.missing_fields(need=need)
+        if missing:
+            joined = "\n  - ".join(missing)
+            raise ConfigError(
+                f"Configuration for {need!r} is incomplete. Missing:\n  - {joined}\n"
+                f"Set them via kwargs, environment variables, or {_TOML_NAME} "
+                f"(secrets in {_LOCAL_TOML_NAME})."
+            )
+        self.check_endpoints(need=need)
+        return self
+
+    def missing_fields(self, *, need: str) -> list[str]:
+        """Every required field for ``need`` that is unset, each with the env var
+        that sets it. The list :meth:`validated` reports."""
         missing: list[str] = []
         if need == "control_plane":
             if not self.client_id:
@@ -329,16 +345,7 @@ class DonkeyConfig:
                     )
         else:
             raise ConfigError(f"Unknown capability {need!r} passed to validated().")
-
-        if missing:
-            joined = "\n  - ".join(missing)
-            raise ConfigError(
-                f"Configuration for {need!r} is incomplete. Missing:\n  - {joined}\n"
-                f"Set them via kwargs, environment variables, or {_TOML_NAME} "
-                f"(secrets in {_LOCAL_TOML_NAME})."
-            )
-        self.check_endpoints(need=need)
-        return self
+        return missing
 
     def check_endpoints(self, *, need: str) -> None:
         """Raise :class:`ConfigError` if ``need``'s endpoint may not receive the

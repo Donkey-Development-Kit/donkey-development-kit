@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover - install-time guidance
     raise SystemExit(1) from None
 
 from ..core.config import _LOCAL_TOML_NAME, _TOML_NAME, TRUST_PROJECT_CONFIG_ENV, DonkeyConfig
-from ..core.errors import ConfigError, DonkeyError
+from ..core.errors import DonkeyError
 from .spec import DonkeySpec
 
 app = typer.Typer(
@@ -173,18 +173,14 @@ def _toml_str(value: str) -> str:
 
 def _collect_missing(config: DonkeyConfig) -> list[str]:
     """Every missing required field across BOTH capabilities, in one list —
-    reusing ``DonkeyConfig.validated`` as the single source of truth for what
-    is required (config resolution), rather than duplicating the field set here."""
-    missing: list[str] = []
-    for need in ("control_plane", "llm"):
-        try:
-            config.validated(need=need)
-        except ConfigError as exc:
-            for line in str(exc).splitlines():
-                stripped = line.strip()
-                if stripped.startswith("- "):
-                    missing.append(stripped[2:])
-    return missing
+    reusing ``DonkeyConfig.missing_fields`` (what ``validated`` reports) as the
+    single source of truth for what is required (config resolution), rather than
+    duplicating the field set here."""
+    return [
+        item
+        for need in ("control_plane", "llm")
+        for item in config.missing_fields(need=need)
+    ]
 
 
 def _render_toml(config: DonkeyConfig, missing: list[str]) -> str:
