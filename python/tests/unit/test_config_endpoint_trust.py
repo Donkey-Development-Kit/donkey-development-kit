@@ -9,8 +9,9 @@ connected-app token fetch):
   simulator and local development).
 * **Binding** — an endpoint read from the working directory's
   ``.donkey-kit.toml`` (or its ``.local`` overlay) only receives credentials
-  from that same file pair, unless the host is loopback, a standard Anypoint
-  control-plane host, or ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set.
+  from that same file pair, unless the host is a standard Anypoint control-plane
+  host or ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set. Loopback hosts get no
+  exemption here: they are exempt from the https rule only.
 * **Overlay** — ``.donkey-kit.local.toml`` is layered over ``.donkey-kit.toml``;
   environment variables still win over both.
 
@@ -22,8 +23,12 @@ developer's real config is never read.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
+import threading
 import warnings
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import httpx
@@ -408,14 +413,207 @@ def test_lookalike_anypoint_host_is_not_treated_as_standard(
         DonkeyConfig.from_env().validated(need="control_plane")
 
 
-def test_project_loopback_endpoint_with_env_credentials_is_allowed(
-    project: Path, monkeypatch: pytest.MonkeyPatch
+# --- loopback: exempt from https-only, not from binding -----------------------
+
+
+@pytest.fixture
+def listener() -> Iterator[tuple[str, list[str]]]:
+    """A real HTTP listener on 127.0.0.1 that records every request path and
+    answers like a token endpoint."""
+    received: list[str] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def _answer(self) -> None:
+            received.append(self.path)
+            length = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(length)
+            body = json.dumps({"access_token": "tok", "expires_in": 3600}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        do_GET = do_POST = _answer
+
+        def log_message(self, *args: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", received
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_project_loopback_base_url_with_env_credentials_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch, listener: tuple[str, list[str]]
 ) -> None:
-    _write(project / _TOML, 'llm_proxy_url = "http://127.0.0.1:8080"\n')
+    url, _ = listener
+    _write(project / _TOML, f'base_url = "{url}"\n')
+    _env_control_plane_creds(monkeypatch)
+
+    with pytest.raises(ConfigError) as exc:
+        DonkeyConfig.from_env().validated(need="control_plane")
+    msg = str(exc.value)
+    assert str(project / _TOML) in msg
+    assert "base_url" in msg
+    assert "127.0.0.1" in msg
+
+
+def test_project_loopback_llm_proxy_url_with_env_credentials_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch, listener: tuple[str, list[str]]
+) -> None:
+    url, _ = listener
+    _write(project / _TOML, f'llm_proxy_url = "{url}/proxy/"\n')
+    _env_llm_creds(monkeypatch)
+
+    with pytest.raises(ConfigError) as exc:
+        DonkeyConfig.from_env().validated(need="llm")
+    msg = str(exc.value)
+    assert str(project / _TOML) in msg
+    assert "llm_proxy_url" in msg
+    assert "127.0.0.1" in msg
+
+
+async def test_project_loopback_token_endpoint_receives_no_env_credentials(
+    project: Path, monkeypatch: pytest.MonkeyPatch, listener: tuple[str, list[str]]
+) -> None:
+    url, received = listener
+    _write(project / _TOML, f'base_url = "{url}"\n')
+    _env_control_plane_creds(monkeypatch)
+
+    async with httpx.AsyncClient() as http_client:
+        auth = AnypointConnectedApp.from_config(DonkeyConfig.from_env(), http_client=http_client)
+        with pytest.raises(ConfigError, match="127.0.0.1"):
+            await auth.token()
+    assert received == []
+
+
+async def test_donkey_from_env_sends_nothing_to_a_project_loopback_base_url(
+    project: Path, monkeypatch: pytest.MonkeyPatch, listener: tuple[str, list[str]]
+) -> None:
+    """The original scenario: the project file points the control plane at a
+    local listener and the secrets are in env."""
+    pytest.importorskip("openai")
+    url, received = listener
+    _write(project / _TOML, f'base_url = "{url}"\n')
+    _env_control_plane_creds(monkeypatch)
+    _env_llm_creds(monkeypatch)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/proxy/")
+
+    real = httpx.AsyncHTTPTransport.handle_async_request
+
+    async def _route(self: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
+        if request.url.host == "127.0.0.1":
+            return await real(self, request)
+        return httpx.Response(599)  # the remote LLM proxy is not reachable in tests
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _route)
+
+    donkey = Donkey.from_env()
+    try:
+        with contextlib.suppress(Exception):
+            await donkey.openai().responses.create(model="m", input="ping")
+    finally:
+        await donkey.aclose()
+    assert received == []
+
+
+def test_donkey_llm_client_refuses_project_loopback_url_with_env_credentials(
+    project: Path, monkeypatch: pytest.MonkeyPatch, listener: tuple[str, list[str]]
+) -> None:
+    url, received = listener
+    _write(project / _TOML, f'llm_proxy_url = "{url}/proxy/"\n')
+    _env_llm_creds(monkeypatch)
+
+    donkey = Donkey.from_env()
+    try:
+        with pytest.raises(ConfigError, match="127.0.0.1"):
+            donkey.openai()
+    finally:
+        donkey.close()
+    assert received == []
+
+
+async def test_env_loopback_url_with_env_credentials_works_over_http(
+    project: Path, monkeypatch: pytest.MonkeyPatch, listener: tuple[str, list[str]]
+) -> None:
+    url, received = listener
+    _write(project / _TOML, 'application_name = "app"\n')
+    monkeypatch.setenv("ANYPOINT_BASE_URL", url)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", f"{url}/proxy/")
+    _env_control_plane_creds(monkeypatch)
     _env_llm_creds(monkeypatch)
 
     cfg = DonkeyConfig.from_env()
     assert cfg.validated(need="llm") is cfg
+    async with httpx.AsyncClient() as http_client:
+        auth = AnypointConnectedApp.from_config(cfg, http_client=http_client)
+        assert await auth.token() == "tok"
+    assert len(received) == 1
+
+
+async def test_code_loopback_url_with_env_credentials_works_over_http(
+    project: Path, monkeypatch: pytest.MonkeyPatch, listener: tuple[str, list[str]]
+) -> None:
+    url, received = listener
+    _write(project / _TOML, f'base_url = "{url}"\n')
+    _env_control_plane_creds(monkeypatch)
+
+    cfg = DonkeyConfig.from_env().with_overrides(base_url=url)
+    assert cfg.validated(need="control_plane") is cfg
+    async with httpx.AsyncClient() as http_client:
+        auth = AnypointConnectedApp.from_config(cfg, http_client=http_client)
+        assert await auth.token() == "tok"
+    assert len(received) == 1
+
+
+@pytest.mark.parametrize("credential_file", [_TOML, _LOCAL_TOML])
+async def test_project_loopback_url_with_file_credentials_works_over_http(
+    project: Path, listener: tuple[str, list[str]], credential_file: str
+) -> None:
+    url, received = listener
+    endpoints = f'org_id = "org"\nbase_url = "{url}"\nllm_proxy_url = "{url}/proxy/"\n'
+    creds = (
+        'client_id = "cid"\nclient_secret = "secret"\n'
+        'llm_proxy_client_id = "llm-cid"\nllm_proxy_client_secret = "llm-secret"\n'
+    )
+    if credential_file == _TOML:
+        _write(project / _TOML, endpoints + creds)
+    else:
+        _write(project / _TOML, endpoints)
+        _write(project / _LOCAL_TOML, creds)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="llm") is cfg
+    assert cfg.validated(need="control_plane") is cfg
+    async with httpx.AsyncClient() as http_client:
+        auth = AnypointConnectedApp.from_config(cfg, http_client=http_client)
+        assert await auth.token() == "tok"
+    assert len(received) == 1
+
+
+async def test_trust_opt_in_allows_a_project_loopback_url(
+    project: Path, monkeypatch: pytest.MonkeyPatch, listener: tuple[str, list[str]]
+) -> None:
+    url, received = listener
+    _write(project / _TOML, f'base_url = "{url}"\nllm_proxy_url = "{url}/proxy/"\n')
+    _env_control_plane_creds(monkeypatch)
+    _env_llm_creds(monkeypatch)
+    monkeypatch.setenv("DONKEY_TRUST_PROJECT_CONFIG", "1")
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="llm") is cfg
+    async with httpx.AsyncClient() as http_client:
+        auth = AnypointConnectedApp.from_config(cfg, http_client=http_client)
+        assert await auth.token() == "tok"
+    assert len(received) == 1
 
 
 def test_user_file_endpoint_with_env_credentials_is_allowed(

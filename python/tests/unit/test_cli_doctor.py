@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import httpx
@@ -158,6 +160,52 @@ def test_project_url_with_env_credentials_is_reported_without_sending(
     assert str(project / ".donkey-kit.toml") in out
     assert "Traceback" not in out
     assert sent == []
+
+
+def test_project_loopback_url_with_env_credentials_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A loopback proxy URL from the project file gets the same treatment as
+    any other host: doctor refuses and the local listener receives nothing."""
+    received: list[str] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            received.append(self.path)
+            self.send_response(500)
+            self.end_headers()
+
+        def log_message(self, *args: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        for var in list(os.environ):
+            if var.startswith(("ANYPOINT_", "DONKEY_")):
+                monkeypatch.delenv(var)
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        port = server.server_address[1]
+        (project / ".donkey-kit.toml").write_text(
+            f'[donkey]\nllm_proxy_url = "http://127.0.0.1:{port}/proxy/"\n'
+        )
+        monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+        monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+        result = runner.invoke(app, ["doctor"])
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert result.exit_code == 1
+    out = _combined(result)
+    assert "[!!] config" in out
+    assert str(project / ".donkey-kit.toml") in out
+    assert "Traceback" not in out
+    assert received == []
 
 
 def test_missing_llm_extra_prints_pip_install_and_exits_1(

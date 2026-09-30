@@ -249,6 +249,25 @@ def test_unused_control_plane_binding_is_reported_but_does_not_fail(
     assert not doctor.has_failure(checks)
 
 
+def test_project_loopback_control_plane_shows_binding_remediation(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (clean_project / ".donkey-kit.toml").write_text(
+        '[donkey]\nbase_url = "http://127.0.0.1:8081"\n'
+    )
+    monkeypatch.setenv("ANYPOINT_CLIENT_ID", "cid")
+    monkeypatch.setenv("ANYPOINT_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    cp = _by_name(checks, "control plane")
+    assert "127.0.0.1 (project file)" in cp.detail
+    assert "DONKEY_TRUST_PROJECT_CONFIG" in (cp.remediation or "")
+
+
 # --- budget staleness (AC3) ---------------------------------------------------
 
 
