@@ -61,8 +61,7 @@ class MaskedDict(dict[str, V]):
     def copy(self) -> MaskedDict[V]:
         return MaskedDict(self)
 
-    def __copy__(self) -> MaskedDict[V]:
-        return MaskedDict(self)
+    __copy__ = copy
 
     def __or__(self, other: Mapping[str, V]) -> MaskedDict[V]:  # type: ignore[override]
         merged = MaskedDict(self)
