@@ -202,21 +202,27 @@ class DonkeyConfig:
         """Build from env + optional ``.donkey-kit.toml``. Does not validate;
         call :meth:`validated` when you know which capability you need."""
 
-        layers = _load_layers()
+        table, file_sources = _load_config_files()
         sources: dict[str, ConfigSource] = {}
 
         def pick(env: str, key: str, default: object) -> object:
             if env in os.environ:
                 sources[key] = ConfigSource("env")
                 return os.environ[env]
-            for source, table in layers:
-                if key in table:
-                    sources[key] = source
-                    return table[key]
+            if key in table:
+                sources[key] = file_sources[key]
+                return table[key]
             sources[key] = ConfigSource("default")
             return default
 
-        toml_cost = next((table["cost"] for _, table in layers if "cost" in table), None)
+        toml_cost = table.get("cost")
+        for name, key, env in _COST_KEYS:
+            if env in os.environ:
+                sources[f"cost.{name}"] = ConfigSource("env")
+            elif isinstance(toml_cost, dict) and key in toml_cost:
+                sources[f"cost.{name}"] = file_sources[f"cost.{key}"]
+            else:
+                sources[f"cost.{name}"] = ConfigSource("default")
 
         region = str(pick("ANYPOINT_REGION", "region", "us"))
         if region not in REGION_HOSTS:
@@ -278,7 +284,7 @@ class DonkeyConfig:
                 pick("DONKEY_SEND_COST_HEADERS", "send_cost_headers", False)
             ),
         )
-        loaded = {name: _Loaded(src, getattr(cfg, name)) for name, src in sources.items()}
+        loaded = {name: _Loaded(src, cfg._value_at(name)) for name, src in sources.items()}
         return replace(cfg, _sources=loaded)
 
     # --------------------------------------------------------------- derived
@@ -293,9 +299,16 @@ class DonkeyConfig:
         through ``dataclasses.replace``, :meth:`with_overrides` or direct
         construction; copies that keep the value keep the label."""
         loaded = self._sources.get(name)
-        if loaded is None or getattr(self, name) != loaded.value:
+        if loaded is None or self._value_at(name) != loaded.value:
             return _EXPLICIT
         return loaded.source
+
+    def _value_at(self, name: str) -> object:
+        """The value of field ``name``; ``cost.team`` reads a cost dimension."""
+        value: object = self
+        for part in name.split("."):
+            value = getattr(value, part)
+        return value
 
     def with_overrides(self, **kw: object) -> DonkeyConfig:
         sources = {k: v for k, v in self._sources.items() if k not in kw}
@@ -452,12 +465,13 @@ def _opt(v: object) -> str | None:
     return None if v is None else str(v)
 
 
-# The four cost dimensions and the env var that overrides each, in field order.
-_COST_ENV_VARS: tuple[tuple[str, str], ...] = (
-    ("team", "DONKEY_COST_TEAM"),
-    ("project", "DONKEY_COST_PROJECT"),
-    ("env", "DONKEY_COST_ENV"),
-    ("enduser_id", "DONKEY_COST_ENDUSER_ID"),
+# The four cost dimensions: field name, [donkey.cost] key and the env var that
+# overrides each, in field order.
+_COST_KEYS: tuple[tuple[str, str, str], ...] = (
+    ("team", "team", "DONKEY_COST_TEAM"),
+    ("project", "project", "DONKEY_COST_PROJECT"),
+    ("env", "env", "DONKEY_COST_ENV"),
+    ("enduser_id", "enduser.id", "DONKEY_COST_ENDUSER_ID"),
 )
 
 
@@ -472,9 +486,7 @@ def _resolve_cost_tags(toml_cost: object) -> CostTags:
         base = CostTags.from_mapping(toml_cost, source="[donkey.cost]")
     else:
         raise ConfigError("[donkey.cost] must be a table of cost-attribution tags.")
-    env_over = {
-        field: os.environ[var] for field, var in _COST_ENV_VARS if var in os.environ
-    }
+    env_over = {name: os.environ[var] for name, _, var in _COST_KEYS if var in os.environ}
     return base.merge(CostTags(**env_over)) if env_over else base
 
 
@@ -520,32 +532,59 @@ def _as_llm_proxy_auth(v: object) -> LlmProxyAuth:
     return cast(LlmProxyAuth, token)
 
 
-def _load_layers() -> list[tuple[ConfigSource, dict[str, object]]]:
-    """The config file tables, highest precedence first.
+def _load_config_files() -> tuple[dict[str, object], dict[str, ConfigSource]]:
+    """The merged ``[donkey]`` table and the source of every key in it, by
+    dotted path (``cost.team``).
 
-    The working directory's ``.donkey-kit.local.toml`` over its
-    ``.donkey-kit.toml``; if neither exists, ``$XDG_CONFIG_HOME/.donkey-kit.toml``.
-    Missing files are fine; a malformed file raises."""
+    The working directory's ``.donkey-kit.local.toml`` is merged key by key over
+    its ``.donkey-kit.toml``; if neither exists, ``$XDG_CONFIG_HOME/.donkey-kit.toml``
+    is used alone. Missing files are fine; a malformed file raises."""
 
     cwd = Path.cwd()
     layers: list[tuple[ConfigSource, dict[str, object]]] = []
-    local = cwd / _LOCAL_TOML_NAME
-    if local.is_file():
-        layers.append((ConfigSource("local", local), _read_table(local)))
     project = cwd / _TOML_NAME
     if project.is_file():
         table = _read_table(project)
         _warn_on_secrets(project, table)
         layers.append((ConfigSource("project", project), table))
-    if layers:
-        return layers
+    local = cwd / _LOCAL_TOML_NAME
+    if local.is_file():
+        layers.append((ConfigSource("local", local), _read_table(local)))
+    if not layers:
+        xdg = os.environ.get("XDG_CONFIG_HOME")
+        user = Path(xdg) / _TOML_NAME if xdg else None
+        if user is not None and user.is_file():
+            layers.append((ConfigSource("user", user), _read_table(user)))
 
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        user = Path(xdg) / _TOML_NAME
-        if user.is_file():
-            return [(ConfigSource("user", user), _read_table(user))]
-    return []
+    merged: dict[str, object] = {}
+    sources: dict[str, ConfigSource] = {}
+    for source, table in layers:
+        _merge_table(merged, table, source, sources, prefix="")
+    return merged, sources
+
+
+def _merge_table(
+    into: dict[str, object],
+    table: dict[str, object],
+    source: ConfigSource,
+    sources: dict[str, ConfigSource],
+    *,
+    prefix: str,
+) -> None:
+    """Merge ``table`` over ``into``: tables merge recursively, anything else
+    (scalars, arrays) replaces. Records ``source`` for every key it sets."""
+    for key, value in table.items():
+        path = f"{prefix}{key}"
+        sources[path] = source
+        current = into.get(key)
+        if isinstance(value, dict):
+            nested = dict(current) if isinstance(current, dict) else {}
+            _merge_table(nested, value, source, sources, prefix=f"{path}.")
+            into[key] = nested
+        else:
+            for stale in [p for p in sources if p.startswith(f"{path}.")]:
+                del sources[stale]
+            into[key] = value
 
 
 def _read_table(path: Path) -> dict[str, object]:
