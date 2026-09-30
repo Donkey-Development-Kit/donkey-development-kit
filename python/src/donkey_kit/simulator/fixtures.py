@@ -189,6 +189,13 @@ SHAPES: dict[str, _Spec] = {
     "content-moderation": _Spec(
         "rejections", "reject.content-moderation.headers.txt", None, 400
     ),
+    # Agent Kill Switch (LIVE 2026-09-29, #694): nested error.code == "agent_killed".
+    "agent-killed": _Spec(
+        "rejections",
+        "reject.agent-killed.headers.txt",
+        "reject.agent-killed.body.json",
+        403,
+    ),
     "model-not-found": _Spec(
         # Captured body-only (no .headers.txt): matches test_row5's
         # httpx.Response(400, json=body) with no headers.

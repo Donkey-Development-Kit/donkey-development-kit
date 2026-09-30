@@ -236,14 +236,15 @@ point the SDK at it via the `cost_*_header` overrides.
 
 ## 4. Policy rejection response shapes (capture as fixtures, BG §1.5)
 
-**Seven rejection shapes** are now LIVE-VERIFIED: four from the `openai-sdk` proxy
+**Eight rejection shapes** are now LIVE-VERIFIED: four from the `openai-sdk` proxy
 (client-id-enforcement, upstream passthrough, PII, token-rate-limit; 2026-08-28),
 plus **Regex Prompt Guard** and **Azure Content Safety** — both `403` policy
 blocks confirmed 2026-09-22 against the deployed provisioning proxies
 `ddk-injection-guard` (instance 21179713) and `ddk-azure-content-safety`
 (instance 21180957), rows added to the policy table below (#253) — plus
 **Injection Protection**, confirmed 2026-09-27 against `ddk-injection-protection`
-(instance 21200898, #669).
+(instance 21200898, #669) — plus the **Agent Kill Switch**, confirmed 2026-09-29
+against `ddk-agent-kill-switch` (instance 21206201, #694).
 Fixtures in `tests/fixtures/anypoint/llm_proxy/reject.*` and
 `tests/fixtures/rejections/reject.*`. The critical lesson:
 **neither the status code nor the mere shape of the `error` value is a
@@ -273,11 +274,20 @@ headers.
 4. **Token rate limit** — `429` with an **empty body** (`content-length: 0`).
    Budget state is header-only: `x-token-limit`, `x-token-remaining`,
    `x-token-reset` (**milliseconds** to reset). There is **NO** `retry-after`.
+5. **Agent Kill Switch** — `403` **but NOT auth and NOT upstream**: nested object
+   `{"error":{"code":"agent_killed","message":"This agent has been blocked by an active kill switch."}}`,
+   **no** `type`, **no** `www-authenticate`, and **no** kill-reason field (#314).
+   Returned when the calling agent (the JWT's `act.sub`) is quarantined in
+   Governance > Security or listed in the policy's *Killed Agent IDs*; the
+   upstream is never called.
 
 `core/errors.classify()` implements this (tests: `test_llm_proxy_contract.py`,
 `test_rejection_contract.py`, `test_errors.py`): error `type == "pii_detected"` →
 `PIIDetected` (checked *before* the 401/403→auth rule; parses `entities` from the
-message); a top-level `matched_patterns` list → `PromptInjectionBlocked`
+message); a nested error `code == "agent_killed"` → `AgentKilled`
+(`policy="agent-kill-switch"`; keyed on the body code, checked *before* the auth
+and generic-4xx rules so it is not mis-typed as `UpstreamRequestError`; VERIFIED
+LIVE 2026-09-29, #694); a top-level `matched_patterns` list → `PromptInjectionBlocked`
 (`policy="regex-prompt-guard"`); a vendor `x-llm-proxy-<vendor>-…-action: reject`
 header (Azure Content Safety / Amazon Bedrock Guardrails) → `ContentSafetyBlocked`
 (parses `categories` from the sibling `…-reason` header) — both of these also
@@ -297,7 +307,7 @@ in either an OpenAI-style object envelope or a Gemini-style **list** envelope
 therefore *not* coerced to auth — it falls through to a generic `PolicyViolation`
 whose message names the observed status and any `x-llm-proxy-*` policy headers and
 states the **shape is unconfirmed** (#184), rather than being mis-typed. The full
-eight-shape taxonomy is indexed in `tests/fixtures/rejections/README.md`.
+nine-shape taxonomy is indexed in `tests/fixtures/rejections/README.md`.
 
 The committed rejection fixtures record only the **semantic header subset**
 each discriminator needs (plus `content-type` when the body is JSON) — not
@@ -395,6 +405,7 @@ the prose parser from #352) now populates identically from a simulated or a live
 | PII detection | interface `llm-pii-detection-policy` `1.0.0` (impl `-flex` `1.0.2`) | VERIFIED (LIVE) | `403`, nested `{"error":{message,type:"pii_detected"}}`, no `www-authenticate` | 2026-08-28 | applied + live probe |
 | Regex Prompt Guard | `regex-prompt-guard-policy` `1.0.0` | VERIFIED (LIVE) | `403`, flat-string `error` + top-level `matched_patterns` list; body matched the committed fixture byte-for-byte | 2026-09-22 | live probe, `ddk-injection-guard` instance 21179713 |
 | Azure Content Safety | `azure-content-safety-policy` `1.0.0` | VERIFIED (LIVE) | `403`, `x-llm-proxy-azure-content-safety-action: reject` + `-phase` + `-reason` headers; body `{"error":…,"categories":[…]}` (categories prompt-dependent, e.g. `severity_hate,severity_violence`, `prompt_shield`) | 2026-09-22 | live probe, `ddk-azure-content-safety` instance 21180957 (private-space gateway) |
+| Agent Kill Switch | applied to `ddk-agent-kill-switch` | VERIFIED (LIVE) | `403`, nested `{"error":{code:"agent_killed",message}}` — no `type`, no `www-authenticate`, no reason field (#314). Discriminator: nested `error.code == "agent_killed"` → `AgentKilled` | 2026-09-29 | live probe, `ddk-agent-kill-switch` instance 21206201 (shared-omni-gateway), quarantined agent `act.sub=21206128`, correlation id `e7641776-3160-4b59-814d-f6c354e7e177` (#694) |
 
 **Apply note (verified):** these LLM policies apply against the schema-bearing
 **interface** asset id/version (`llm-token-rate-limit` `1.0.2`,

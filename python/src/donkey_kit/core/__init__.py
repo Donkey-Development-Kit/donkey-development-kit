@@ -11,6 +11,7 @@ from .cachecontrol import CacheControls, CacheScope, cache_scope, current_cache_
 from .config import DonkeyConfig, Region
 from .cost import CostTags
 from .errors import (
+    AgentKilled,
     AuthError,
     BudgetReserveReached,
     ConfigError,
@@ -45,6 +46,7 @@ from .transport import (
 )
 
 __all__ = [
+    "AgentKilled",
     "AnypointConnectedApp",
     "AuthError",
     "AuthProvider",

@@ -25,6 +25,7 @@ from typing import Any, Protocol, cast
 import httpx
 
 from ..core.errors import (
+    AgentKilled,
     AuthError,
     ContentSafetyBlocked,
     DonkeyError,
@@ -56,6 +57,7 @@ _EXC_TO_SHAPE: dict[type[DonkeyError], str] = {
     PIIDetected: "pii-detected",
     PromptInjectionBlocked: "injection-protection",
     ContentSafetyBlocked: "content-safety",
+    AgentKilled: "agent-killed",
     UpstreamRequestError: "model-not-found",
     UpstreamModelError: "upstream-5xx",
     AuthError: "client-id-missing",

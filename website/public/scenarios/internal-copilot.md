@@ -86,9 +86,11 @@ an endpoint:
 
   **Agent identity and a kill switch** — a verifiable identity for the copilot,
   and the ability to disable it centrally — are platform capabilities the SDK's
-  job is to make *reachable and typed*, not to reimplement. Both are
-  [Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and gated on verifying the platform's own contract; see
-  [Identity](https://donkey-development-kit.github.io/donkey-development-kit/identity.md). Until then the SDK does not fabricate a stand-in.
+  job is to make *reachable and typed*, not to reimplement. The kill switch's
+  refusal is already typed: a blocked agent surfaces as
+  [`AgentKilled`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), never retried. Stopping a run cleanly on it, and
+  identity itself, are [Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); see [Identity](https://donkey-development-kit.github.io/donkey-development-kit/identity.md). Until
+  then the SDK does not fabricate a stand-in.
 
 ## Verification status
 

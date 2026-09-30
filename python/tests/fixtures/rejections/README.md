@@ -1,4 +1,4 @@
-# Rejection contracts — the eight documented shapes (#181, #289, docs/verified-apis.md §4)
+# Rejection contracts — the nine documented shapes (#181, #289, #694, docs/verified-apis.md §4)
 
 The canonical index of the gateway rejection shapes `core/errors.classify()`
 discriminates, one row per shape. These fixtures are **shared with the local
@@ -53,7 +53,18 @@ vendor `…-action: reject` header family), so, unlike every served fixture, it 
 deliberately **absent from `fixtures.lock`**; the contract test's assertions
 guard its bytes instead.
 
-## The eight rows
+**Agent Kill Switch capture (#694, 2026-09-29):** row 9 was live-captured
+against `ddk-agent-kill-switch` (DDK / Sandbox, API instance 21206201,
+shared-omni-gateway), called with a Keycloak JWT whose `act.sub` is a
+quarantined agent (`ddk-langgraph-agent`, `act.sub=21206128`; correlation id
+`e7641776-3160-4b59-814d-f6c354e7e177`). The gateway answered `403` with a
+nested `{"error":{"code":"agent_killed","message":…}}` body — no `type`, no
+`www-authenticate`, and no kill-reason field (#314). The body is the only
+discriminator, so `.headers.txt` records just the status line and
+`content-type`; the body is byte-faithful. No token or credential survived the
+capture (the JWT was a request header, never written to disk).
+
+## The nine rows
 
 | # | Shape | Fixture | classify() → | Discriminator | Provenance |
 |---|-------|---------|--------------|---------------|------------|
@@ -65,6 +76,7 @@ guard its bytes instead.
 | 6 | Upstream 5xx | `reject.upstream-5xx.{headers.txt,body.empty}` | `UpstreamModelError` (retryable) | 5xx status range (no competing discriminator) | **SYNTHETIC** — status-range classification only; no live capture, no invented body. |
 | 7 | Regex Prompt Guard | `reject.regex-prompt-guard.{headers.txt,body.json}` | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | 403 + top-level `matched_patterns` list (flat-string `error`) | **VERIFIED (LIVE), 2026-09-22 (#253)** — body matches the live capture byte-for-byte against `ddk-injection-guard` (instance 21179713). [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4). |
 | 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **VERIFIED (LIVE)** — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0). |
+| 9 | Agent Kill Switch | `reject.agent-killed.{headers.txt,body.json}` | `AgentKilled` (`policy="agent-kill-switch"`) | nested `error.code == "agent_killed"` (no `type`, no `www-authenticate`) | **VERIFIED (LIVE), 2026-09-29 (#694)** — captured against `ddk-agent-kill-switch` (instance 21206201) with a quarantined agent's JWT. |
 
 Rows 1, 2, 5 **alias** the existing live captures in `../anypoint/llm_proxy/`
 (referenced, not copied — moving them would break that directory's contract-test
@@ -90,7 +102,7 @@ row 3's discriminator is the header alone, so its body is carried on
 `err.response` without classify() reading it.
 
 Client-ID enforcement (401 + `www-authenticate` → `AuthError`) is a separate
-**consumer-auth** case, deliberately **not** one of the eight policy-rejection
+**consumer-auth** case, deliberately **not** one of the nine policy-rejection
 rows.
 
 ## Which headers each `.headers.txt` records (#670)

@@ -26,6 +26,7 @@ import pytest
 
 from donkey_kit.core import telemetry
 from donkey_kit.core.errors import (
+    AgentKilled,
     AuthError,
     ContentSafetyBlocked,
     DonkeyError,
@@ -230,6 +231,7 @@ def test_usage_detail_keys_are_in_the_span_allowlist() -> None:
         (PIIDetected("x", remediation="r"), "pii_detected"),
         (PromptInjectionBlocked("x", remediation="r"), "injection"),
         (ContentSafetyBlocked("x", remediation="r"), "content_safety"),
+        (AgentKilled("x", remediation="r"), "agent_killed"),
         (PolicyViolation("x", remediation="r"), "policy_violation"),
     ],
 )

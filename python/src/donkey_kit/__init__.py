@@ -23,6 +23,7 @@ from .core.cachecontrol import CacheControls
 from .core.config import DonkeyConfig, Region
 from .core.cost import CostTags
 from .core.errors import (
+    AgentKilled,
     AuthError,
     BudgetReserveReached,
     ConfigError,
@@ -57,6 +58,7 @@ __version__ = "0.1.1.dev0"
 
 __all__ = [
     "STRICT",
+    "AgentKilled",
     "AssetRef",
     "AssetType",
     "AuthError",
