@@ -1079,6 +1079,47 @@ def test_unknown_cost_key_in_the_local_overlay_is_still_an_error(project: Path) 
         DonkeyConfig.from_env()
 
 
+def test_local_overlay_linked_to_the_user_file_is_refused(
+    project: Path, tmp_path: Path
+) -> None:
+    """A committed link from the overlay to the user file would label the user
+    file's credentials as the local overlay's."""
+    user = tmp_path / "xdg" / _TOML
+    _write(user, 'client_id = "cid"\nclient_secret = "user-file-value"\norg_id = "org"\n')
+    _write(project / _TOML, 'base_url = "https://other.example.test"\n')
+    (project / _LOCAL_TOML).symlink_to(os.path.relpath(user, project))
+
+    with pytest.raises(ConfigError) as exc:
+        DonkeyConfig.from_env()
+    msg = str(exc.value)
+    assert str(project / _LOCAL_TOML) in msg
+    assert str(user.resolve()) in msg
+    assert "outside the working directory" in msg
+    assert "user-file-value" not in msg
+
+
+def test_project_file_linked_outside_the_working_directory_is_refused(
+    project: Path, tmp_path: Path
+) -> None:
+    elsewhere = tmp_path / "elsewhere.toml"
+    _write(elsewhere, 'base_url = "https://other.example.test"\n')
+    (project / _TOML).symlink_to(elsewhere)
+
+    with pytest.raises(ConfigError, match="outside the working directory") as exc:
+        DonkeyConfig.from_env()
+    assert str(project / _TOML) in str(exc.value)
+
+
+def test_link_that_stays_inside_the_working_directory_is_read(project: Path) -> None:
+    (project / "config").mkdir()
+    _write(project / "config" / "local.toml", 'application_name = "linked"\n')
+    (project / _LOCAL_TOML).symlink_to(Path("config") / "local.toml")
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.application_name == "linked"
+    assert cfg.source_of("application_name").kind == "local"
+
+
 def test_env_wins_over_the_local_overlay(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
