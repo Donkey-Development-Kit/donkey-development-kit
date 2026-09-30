@@ -1,9 +1,9 @@
 # Migration guide
 
-## Next release: credential handling and printed output
+## Next release: credential handling, endpoint trust and printed output
 
-Changes since `0.1.1.dev2` that can affect existing code. The first two change
-what goes on the wire; the rest change only what the SDK prints.
+Changes since `0.1.1.dev2` that can affect existing code. The first three
+change what the SDK sends or accepts; the rest change only what it prints.
 
 ### Each credential stays on its own plane
 
@@ -49,6 +49,80 @@ registry and tool discovery need `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET`
 
 `simulate()`, `donkey mock` and the conformance kit still act on the data-plane
 client, and `aclose()` closes both clients.
+
+### Config files: https endpoints and credential binding
+
+Two config checks now run before the SDK sends a credential, and the
+documented secrets file is now read. Full reference:
+[Config files, secrets and trust](website/content/reference/configuration.mdx).
+
+#### What changed
+
+1. **Endpoints must be `https://`.** `base_url` / `ANYPOINT_BASE_URL`,
+   `llm_proxy_url` / `DONKEY_LLM_PROXY_URL` and the connected-app token endpoint
+   must use `https://`. Plain `http://` is still accepted for loopback hosts
+   (`localhost`, `127.0.0.0/8`, `::1`), so the local simulator keeps working.
+   Anything else raises `ConfigError`.
+2. **A URL from the working directory's config files only receives credentials
+   from those files.** If `base_url` or `llm_proxy_url` is read from
+   `./.donkey-kit.toml` (or `./.donkey-kit.local.toml`) and a credential that
+   would be sent there comes from an environment variable, the user config file
+   or code, the SDK raises `ConfigError` before sending anything. The error names
+   the file, the key and the host. Loopback hosts and the standard Anypoint
+   control-plane hosts are exempt. In `jwt` mode the JWT always counts as coming
+   from outside the files.
+3. **`.donkey-kit.local.toml` is now read.** It is overlaid on
+   `./.donkey-kit.toml` with the same `[donkey]` keys; environment variables
+   still win over both. When the working directory has neither file,
+   `$XDG_CONFIG_HOME/.donkey-kit.toml` is used as before.
+4. **Secrets in `.donkey-kit.toml` warn.** `client_secret`,
+   `llm_proxy_client_secret` or `llm_proxy_key` in the committed file emit a
+   `ConfigWarning` pointing to `.donkey-kit.local.toml`.
+5. **`donkey doctor`** prints each endpoint's host and source, and reports a
+   binding error on its `config` line instead of making the probe call.
+
+#### Who is affected
+
+A setup is affected if it commits a URL in `.donkey-kit.toml` and keeps the
+matching secret in the environment, the most common split before this change
+(`donkey init` wrote the URL to the file and told you to keep secrets in env):
+
+```toml
+# .donkey-kit.toml
+[donkey]
+llm_proxy_url = "https://<ingress-gw>/<instance>/"
+llm_proxy_client_id = "…"
+```
+
+```bash
+export DONKEY_LLM_PROXY_CLIENT_SECRET=…   # now: ConfigError naming the file and host
+```
+
+Unaffected: URLs and credentials both in environment variables (the usual CI
+setup); config built in code with `DonkeyConfig(...)`; a `base_url` on a
+standard Anypoint host; loopback URLs; and the user config file.
+
+#### How to migrate
+
+Pick one:
+
+- **Move the secret next to the file** (recommended for local development):
+
+  ```toml
+  # .donkey-kit.local.toml — gitignored
+  [donkey]
+  llm_proxy_client_secret = "…"
+  ```
+
+- **Set the URL in the environment as well** (recommended for CI):
+  `DONKEY_LLM_PROXY_URL` / `ANYPOINT_BASE_URL`. The environment wins over the file.
+- **Opt in** if you trust the directory's config files:
+  `export DONKEY_TRUST_PROJECT_CONFIG=1`. It is read only from the
+  environment; a config file can't set it.
+
+Also replace any non-loopback `http://` endpoint with its `https://` address,
+and move secrets out of a committed `.donkey-kit.toml` into
+`.donkey-kit.local.toml` (make sure it is gitignored in your repo).
 
 ### Cost-tag headers are opt-in
 

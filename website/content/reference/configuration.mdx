@@ -7,7 +7,9 @@ import { Callout } from 'nextra/components'
 # Configuration
 
 `Donkey.from_env()` resolves configuration from, in precedence order: explicit
-kwargs → environment variables → `.donkey-kit.toml` → defaults.
+kwargs → environment variables → config files → defaults. See
+[Config files, secrets and trust](#config-files-secrets-and-trust) for which
+files are read and which credentials a URL from a file receives.
 
 ## Governed model access
 
@@ -15,7 +17,7 @@ The three required values for the LLM proxy:
 
 | Env var | Meaning |
 |---|---|
-| `DONKEY_LLM_PROXY_URL` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. |
+| `DONKEY_LLM_PROXY_URL` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted only for loopback hosts such as the [local simulator](/simulator). |
 | `DONKEY_LLM_PROXY_CLIENT_ID` | Consumer client ID (the per-agent identity). |
 | `DONKEY_LLM_PROXY_CLIENT_SECRET` | Consumer client secret. |
 
@@ -98,7 +100,7 @@ refresh the control-plane token.
 | Provider | Use it for |
 |---|---|
 | `StaticToken(token)` | A token injected out-of-band, for example from CI. Never refreshes. |
-| `AnypointConnectedApp(client_id=…, client_secret=…, control_plane_url=…, http_client=…)` | OAuth2 client credentials against the Anypoint token endpoint. Caches the token in memory and refreshes it 60 seconds before expiry. |
+| `AnypointConnectedApp(client_id=…, client_secret=…, control_plane_url=…, http_client=…)` | OAuth2 client credentials against the Anypoint token endpoint. Caches the token in memory and refreshes it 60 seconds before expiry. The token endpoint must be `https://` (loopback excepted). `AnypointConnectedApp.from_config(config, http_client=…)` builds one from a `DonkeyConfig` and also applies the [endpoint check](#which-credentials-a-url-receives) before the first token request. |
 | `ChainedAuth(*providers)` | Tries providers in order; the first that yields a token wins. |
 
 For a rotating JWT from your IdP, implement the two methods yourself and pass
@@ -186,6 +188,7 @@ trusted collector. See [Telemetry & cost](/telemetry).
 | `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](/telemetry#two-behaviours-worth-knowing). |
 | `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](/tool-access)) are cached in memory, in seconds. |
 | `DONKEY_NO_CACHE` | — | unset | Set to `1`, `true` or `yes` to bypass that in-memory registry cache. |
+| `DONKEY_TRUST_PROJECT_CONFIG` | — | unset | Set to `1` to let a URL from the working directory's config files receive credentials from elsewhere. Read only from the environment. See [Which credentials a URL receives](#which-credentials-a-url-receives). |
 
 ## Anypoint control plane
 
@@ -200,23 +203,84 @@ Anypoint control plane (for example, the connected-app token and the
 | `ANYPOINT_ORG_ID` | Anypoint organization ID. |
 | `ANYPOINT_ENV` | Anypoint environment (default `Sandbox`). |
 | `ANYPOINT_REGION` | Control-plane region: `us` (default), `eu`, `ca`, or `jp`. |
-| `ANYPOINT_BASE_URL` | Explicit control-plane base URL; overrides the region. |
+| `ANYPOINT_BASE_URL` | Explicit control-plane base URL; overrides the region. Must be `https://` (loopback hosts excepted). |
 
-## Config file
+## Config files, secrets and trust
 
-Instead of env vars you can put non-secret values in a `[donkey]` table in
-`.donkey-kit.toml`, read from the working directory (or `$XDG_CONFIG_HOME`).
-Keys are the `DonkeyConfig` field names:
+Instead of env vars you can put values in a `[donkey]` table. Keys are the
+`DonkeyConfig` field names.
+
+| File | Where | Meant for |
+|---|---|---|
+| `.donkey-kit.toml` | Working directory | Non-secret project config you commit: URLs, client IDs, attribution. |
+| `.donkey-kit.local.toml` | Next to `.donkey-kit.toml` | Secrets and personal overrides. Keep it gitignored. Same keys; overlaid on `.donkey-kit.toml`. |
+| `$XDG_CONFIG_HOME/.donkey-kit.toml` | Your user config directory | Used only when the working directory has neither file. |
+
+Precedence, highest first: kwargs → environment variables →
+`.donkey-kit.local.toml` → `.donkey-kit.toml` → defaults. With neither file in
+the working directory, the user file takes their place.
 
 ```toml
+# .donkey-kit.toml (committed)
 [donkey]
 llm_proxy_url = "https://<ingress-gw>/<instance>/"
 llm_proxy_client_id = "…"
 ```
 
-`donkey init` generates this file from your current environment. Keep secrets
-(`llm_proxy_client_secret`, `client_secret`) out of the committed file and
-supply them as environment variables.
+```toml
+# .donkey-kit.local.toml (gitignored)
+[donkey]
+llm_proxy_client_secret = "…"
+```
+
+`donkey init` generates `.donkey-kit.toml` from your current environment and
+never writes a secret into it. If `.donkey-kit.toml` contains `client_secret`,
+`llm_proxy_client_secret` or `llm_proxy_key`, the SDK emits a `ConfigWarning`
+(from `donkey_kit.core.config`) pointing you to `.donkey-kit.local.toml`.
+
+### Which credentials a URL receives
+
+Endpoints must use `https://`. Plain `http://` is accepted only for loopback
+hosts (`localhost`, `127.0.0.0/8`, `::1`), which the local simulator and local
+development use. Anything else raises `ConfigError`, both when the config is
+validated and again right before the connected-app token request.
+
+A `base_url` or `llm_proxy_url` read from the working directory's
+`.donkey-kit.toml` or `.donkey-kit.local.toml` only receives credentials read
+from those same two files. If a credential that would be sent there comes from
+anywhere else (an environment variable, the user config file, or code), the SDK
+raises `ConfigError` before sending anything. The error names the file, the key
+and the host.
+
+| Endpoint | Credentials sent to it |
+|---|---|
+| `base_url` (control plane) | `client_id`, `client_secret` |
+| `llm_proxy_url`, `client-id` mode | `llm_proxy_client_id`, `llm_proxy_client_secret`, `llm_proxy_key` |
+| `llm_proxy_url`, `jwt` mode | `llm_proxy_wallet_client_id`, and the JWT from `llm_auth`, which never comes from a config file |
+
+These are not affected:
+
+- loopback hosts;
+- a `base_url` on a standard Anypoint control-plane host
+  (`anypoint.mulesoft.com`, `eu1.anypoint.mulesoft.com`,
+  `ca1.anypoint.mulesoft.com`, `jp1.anypoint.mulesoft.com`);
+- URLs set in environment variables, the user config file, or code
+  (`DonkeyConfig(...)`, `with_overrides(...)`);
+- an endpoint you don't use. The check runs per capability, so a `base_url` in
+  the project file doesn't block LLM-only use; the control-plane check runs
+  before the first token request.
+
+To resolve the error, do one of the following:
+
+1. Set the URL in the environment too (`DONKEY_LLM_PROXY_URL` /
+   `ANYPOINT_BASE_URL`); the environment wins over the file.
+2. Keep the credential in `.donkey-kit.local.toml` next to the project file.
+3. Set `DONKEY_TRUST_PROJECT_CONFIG=1` in the environment if you trust this
+   directory's config files. A config file can't set this itself.
+
+`donkey doctor` prints each endpoint's host and where it came from (env,
+project file, local overlay, user file or default), and reports this error on
+its `config` line without sending a request. See [CLI](/cli#donkey-doctor).
 
 ## Programmatic
 

@@ -455,8 +455,14 @@ build plan; the load-bearing rules:
   descriptive, third-party SDK for *consuming* Agent Fabric, never as a
   first-party or official Salesforce product.
 - **Never commit secrets.** `.donkey-kit.local.toml`, `donkey.lock.local`, and
-  `.env` are gitignored. The LLM proxy authenticates on a `client_id`/`client_secret`
-  header pair (consumer auth), separate from any Anypoint control-plane credential.
+  `.env` are gitignored. Put secrets in `.donkey-kit.local.toml` (the SDK
+  overlays it on `.donkey-kit.toml`) or in environment variables, never in the
+  committed `.donkey-kit.toml`; the SDK warns if it finds one there. A URL read
+  from either working-directory file only receives credentials from those same
+  files, unless `DONKEY_TRUST_PROJECT_CONFIG=1` is set (see
+  `website/content/reference/configuration.mdx`). The LLM proxy authenticates on
+  a `client_id`/`client_secret` header pair (consumer auth), separate from any
+  Anypoint control-plane credential.
 
 Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .`,
 `lint-imports`, `pytest`), plus `verify_frameworks.py` if you touched adapters.

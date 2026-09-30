@@ -87,7 +87,7 @@ preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
 
 ### `donkey init`
 
-Resolves your current configuration (kwargs → env vars → `.donkey-kit.toml` →
+Resolves your current configuration (kwargs → env vars → config files →
 defaults) and writes a **commented** `.donkey-kit.toml` with the values it
 found.
 
@@ -95,7 +95,11 @@ found.
   proxy — using the same validation the SDK runs at call time, so `init` and a
   real request never disagree about what is required.
 - **Never writes a secret.** `client_secret`, `llm_proxy_client_secret`, and
-  `llm_proxy_key` are emitted as commented `env` pointers, not values.
+  `llm_proxy_key` are emitted as commented pointers, not values. Put them in a
+  gitignored `.donkey-kit.local.toml` next to the file, or in environment
+  variables. A URL in `.donkey-kit.toml` only receives credentials from those
+  two files unless you opt in; see
+  [Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
 - **Idempotent.** An existing file is left untouched unless you pass `--force`.
 
 ```bash
@@ -119,17 +123,28 @@ Each verdict prints the same remediation string the matching typed exception
 carries, so the fix is in the output rather than in a runbook. The budget line
 states how old the reading is, since the proxy has no budget endpoint.
 
+Before the call, `doctor` prints each endpoint's host and where it came from:
+`env`, `project file`, `local overlay`, `user file` or `default`. If the LLM
+proxy URL comes from the working directory's config files but its credentials
+don't, the `config` line fails with the
+[remediation](/reference/configuration#which-credentials-a-url-receives) and no
+request is sent. A control-plane endpoint with the same problem shows its
+remediation on the `control plane` line without failing the report, since
+`doctor` only calls the LLM proxy.
+
 ```bash
 donkey doctor
 ```
 
 <Output>
 ```text
-[ok] config       env (3 fields)
-[ok] gateway      reachable, responded
-[ok] credentials  client_id accepted
-[ok] model        accepted by the proxy
-[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+[ok] config         env (3 fields)
+[i]  llm endpoint   <ingress-gw> (env)
+[i]  control plane  anypoint.mulesoft.com (default)
+[ok] gateway        reachable, responded
+[ok] credentials    client_id accepted
+[ok] model          accepted by the proxy
+[i]  budget         99,000 / 100,000 remaining, resets in 59s, observed 0s ago
 ```
 </Output>
 
