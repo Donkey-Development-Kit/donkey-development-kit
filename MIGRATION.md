@@ -2,173 +2,285 @@
 
 ## Next release: credential handling, endpoint trust and printed output
 
-Changes since `0.1.1.dev2` that can affect existing code. The first three
-change what the SDK sends or accepts; the rest change only what it prints.
+Changes since `0.1.1.dev2` that can affect existing code, grouped by what you
+would notice. The first six change what the SDK sends or accepts; the last three
+change only what it prints. The reference for each rule is linked from its
+section.
 
-### Each credential stays on its own plane
+### 1. Non-loopback `http://` endpoints are refused
 
-`Donkey` now keeps one shared HTTP client per credential plane. The data-plane
-client (the LLM proxy: `donkey.llm` and every adapter) carries only the
-LLM-proxy credential. A separate control-plane client carries the Anypoint
-connected-app token (`Donkey(auth=…)`, or the default `AnypointConnectedApp`
-built from `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET`) and backs the
-registry and tool discovery. Model calls no longer fetch the connected-app
-token, so they also keep working when the Anypoint token endpoint is
-unreachable. Three things change:
+**Who:** anyone whose `llm_proxy_url` / `DONKEY_LLM_PROXY_URL`, `base_url` /
+`ANYPOINT_BASE_URL` or connected-app token endpoint uses `http://` on a host
+other than `localhost`, `127.0.0.0/8` or `::1`. This applies wherever the URL is
+set: environment, file or code. It includes a simulator reached from another
+machine or container (`http://<lan-ip>:8080`, `http://simulator:8080`,
+`http://0.0.0.0:8080`).
 
-**In client-id mode, a `401` from the LLM proxy is terminal.** With Anypoint
-credentials configured, the SDK used to refresh the platform token and retry
-once. That token is not what the proxy checks, so the retry could not succeed.
-The first `401` now surfaces as `AuthError`: check `DONKEY_LLM_PROXY_CLIENT_ID`
-/ `DONKEY_LLM_PROXY_CLIENT_SECRET` and the contract in API Manager. In `jwt`
-mode the wallet JWT is still refreshed and retried once.
+**Symptom:** building a client raises:
 
-**A token passed as `Donkey(auth=…)` no longer reaches the LLM proxy.** In
-client-id mode it used to go out as `Authorization: Bearer …` on model calls
-whose client set no `Authorization` of its own (for example the Anthropic and
-Gemini clients, or a raw request). If a proxy of yours authenticates model
-calls with a bearer token, supply it on the data plane instead: set
-`llm_proxy_auth="jwt"` and pass the provider as `Donkey(llm_auth=…)` (see the
-JWT / model-wallet section of the configuration reference), or, for a static
-key, set `llm_proxy_key` (`DONKEY_LLM_PROXY_KEY`), which the OpenAI SDK sends
-as `Authorization: Bearer <key>`:
-
-```diff
-- donkey = Donkey(cfg, auth=StaticToken(token))
-+ donkey = Donkey(
-+     replace(cfg, llm_proxy_auth="jwt", llm_proxy_wallet_client_id=wallet_id),
-+     llm_auth=StaticToken(token),
-+ )
+```text
+ConfigError: llm_proxy_url must be an https:// URL (got http scheme, llm.example.test). Plain http:// is accepted for loopback hosts (localhost, 127.0.0.0/8, ::1), such as the local gateway simulator. Change it to the https:// address of the service, or set DONKEY_ALLOW_HTTP=1 in the environment to allow plain http:// to other hosts.
 ```
 
-**In `jwt` mode, registry calls carry the connected-app token.** They used to go
-out on the data-plane client with the wallet JWT and the `X-Client-Id` wallet
-selector. They now carry the connected-app token and no `X-Client-Id`, so
-registry and tool discovery need `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET`
-(or your own `Donkey(auth=…)` provider) in `jwt` mode too.
+**Fix:** use the service's `https://` address. For the simulator, run the
+client on the same host and use `http://127.0.0.1:<port>`. If the endpoint is
+on a network you control and has no TLS (a simulator in another container, an
+in-cluster proxy), set `DONKEY_ALLOW_HTTP=1` (or `true`, `yes`, `on`) in the
+environment. It covers `base_url`, `llm_proxy_url` and the token endpoint.
+Credentials then travel unencrypted to that host, and the SDK emits a
+`ConfigWarning` naming the key and the host:
 
-`simulate()`, `donkey mock` and the conformance kit still act on the data-plane
-client, and `aclose()` closes both clients.
-
-### Config files: https endpoints and credential binding
-
-Two config checks now run before the SDK sends a credential, and the
-documented secrets file is now read. Full reference:
-[Config files, secrets and trust](website/content/reference/configuration.mdx).
-
-#### What changed
-
-1. **Endpoints must be `https://`.** `base_url` / `ANYPOINT_BASE_URL`,
-   `llm_proxy_url` / `DONKEY_LLM_PROXY_URL` and the connected-app token endpoint
-   must use `https://`. Plain `http://` is still accepted for loopback hosts
-   (`localhost`, `127.0.0.0/8`, `::1`), so the local simulator keeps working.
-   Anything else raises `ConfigError`.
-2. **A URL from the working directory's config files only receives credentials
-   from those files.** If `base_url` or `llm_proxy_url` is read from
-   `./.donkey-kit.toml` (or `./.donkey-kit.local.toml`) and a credential that
-   would be sent there comes from an environment variable, the user config file
-   or code, the SDK raises `ConfigError` before sending anything. The error names
-   the file, the key and the host. A `base_url` on a standard Anypoint
-   control-plane host is exempt. Loopback hosts are not: they are exempt from
-   the `https://` rule only, so a loopback URL in `.donkey-kit.toml` with the
-   secret in the environment is refused as well. Credentials supplied in code
-   count as coming from outside the files: a secret passed through
-   `with_overrides(client_secret=…)` or `DonkeyConfig(...)`, the token from a
-   provider passed as `Donkey(auth=…)`, and in `jwt` mode the JWT returned by
-   `llm_auth`.
-3. **`.donkey-kit.local.toml` is now read.** It is overlaid on
-   `./.donkey-kit.toml` with the same `[donkey]` keys; environment variables
-   still win over both. When the working directory has neither file,
-   `$XDG_CONFIG_HOME/.donkey-kit.toml` is used as before.
-4. **Secrets in `.donkey-kit.toml` warn.** `client_secret`,
-   `llm_proxy_client_secret` or `llm_proxy_key` in the committed file emit a
-   `ConfigWarning` pointing to `.donkey-kit.local.toml`.
-5. **`donkey doctor`** prints each endpoint's host and source, and reports a
-   binding error on its `config` line instead of making the probe call.
-
-#### Who is affected
-
-A setup is affected if it commits a URL in `.donkey-kit.toml` and keeps the
-matching secret in the environment, the most common split before this change
-(`donkey init` wrote the URL to the file and told you to keep secrets in env):
-
-```toml
-# .donkey-kit.toml
-[donkey]
-llm_proxy_url = "https://<ingress-gw>/<instance>/"
-llm_proxy_client_id = "…"
+```text
+ConfigWarning: llm_proxy_url uses plain http:// to llm.example.test because DONKEY_ALLOW_HTTP=1 is set. Credentials and data sent to it are not encrypted in transit.
 ```
 
-```bash
-export DONKEY_LLM_PROXY_CLIENT_SECRET=…   # now: ConfigError naming the file and host
+`DONKEY_ALLOW_HTTP` is read from the environment only; a config file can't set
+it. It applies to `http://` URLs with a host only (other schemes are still
+refused), and it doesn't relax the credential rule in section 2.
+
+### 2. A URL from the project's config files only gets credentials from those files
+
+Reference: [Which credentials a URL receives](website/content/reference/configuration.mdx#which-credentials-a-url-receives).
+
+**Who:** anyone with `llm_proxy_url` or a non-standard `base_url` in
+`./.donkey-kit.toml` or `./.donkey-kit.local.toml`, while a credential for that
+endpoint comes from somewhere else. Loopback URLs are included. The usual cases:
+
+- The URL is in `.donkey-kit.toml` and the secret is in an environment
+  variable. This is the split `donkey init` produced before this release.
+- The URL is in `.donkey-kit.toml` and the secret is set in code, for example
+  `with_overrides(llm_proxy_client_secret=vault.read(...))` or the same through
+  `dataclasses.replace(...)`.
+- A custom `base_url` in `.donkey-kit.toml` with a `Donkey(auth=…)` provider.
+  Its token never comes from a file. This one fails only at the first
+  control-plane call.
+- `jwt` mode with `llm_proxy_url` in either file. The JWT from `llm_auth`
+  never comes from a file, so this case always fails.
+- A `base_url` on a host other than the four standard Anypoint hosts in
+  `.donkey-kit.toml`, with `ANYPOINT_CLIENT_SECRET` in the environment. This
+  one fails only at the first control-plane call.
+
+**Not affected:** URL and credentials all in environment variables (the usual
+CI setup); config built entirely with `DonkeyConfig(...)`; URLs in the user
+config file; a `base_url` on `anypoint.mulesoft.com`, `eu1.`, `ca1.` or `jp1.`.
+
+**Symptom:** building a client (`donkey.llm.client()`, a framework factory,
+`connection_kwargs()`) raises, before anything is sent:
+
+```text
+ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the working directory's config files are only sent to hosts those files name when you opt in. To continue, do one of:
+  - set the URL in the environment instead (DONKEY_LLM_PROXY_URL=https://...)
+  - keep the credentials in /home/me/my-agent/.donkey-kit.local.toml, next to the project file
+  - trust this directory's config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
 ```
 
-Unaffected: URLs and credentials both in environment variables (the usual CI
-setup); config built in code with `DonkeyConfig(...)`; a `base_url` on a
-standard Anypoint host; and the user config file. The local simulator is
-unaffected when its URL is set in the environment (`DONKEY_LLM_PROXY_URL`) or in
-code, as the docs show; a simulator URL kept in `.donkey-kit.toml` needs its
-credentials in `.donkey-kit.local.toml` (or the URL moved to the environment).
+`donkey doctor` shows the same message on its `config` line (for `llm_proxy_url`) or its `control plane` line (for `base_url`).
 
-#### How to migrate
+**Fix:** pick one.
 
-Pick one:
+- **Move the secret next to the file** (local development; not possible in
+  `jwt` mode):
 
-- **Move the secret next to the file** (recommended for local development):
-
-  ```toml
-  # .donkey-kit.local.toml — gitignored
-  [donkey]
-  llm_proxy_client_secret = "…"
+  ```diff
+    # .donkey-kit.toml (committed)
+    [donkey]
+    llm_proxy_url = "https://llm-proxy.example.com/my-proxy/"
+    llm_proxy_client_id = "my-client-id"
   ```
 
-- **Set the URL in the environment as well** (recommended for CI):
-  `DONKEY_LLM_PROXY_URL` / `ANYPOINT_BASE_URL`. The environment wins over the file.
+  ```diff
+  - export DONKEY_LLM_PROXY_CLIENT_SECRET="<secret>"
+  + # .donkey-kit.local.toml (gitignored)
+  + [donkey]
+  + llm_proxy_client_secret = "<secret>"
+  ```
+
+- **Set the URL in the environment too** (CI, `jwt` mode, secrets set in
+  code). The environment wins over the file:
+
+  ```diff
+    export DONKEY_LLM_PROXY_CLIENT_SECRET="<secret>"
+  + export DONKEY_LLM_PROXY_URL="https://llm-proxy.example.com/my-proxy/"
+  ```
+
 - **Opt in** if you trust the directory's config files:
-  `export DONKEY_TRUST_PROJECT_CONFIG=1`. It is read only from the
-  environment; a config file can't set it.
+  `export DONKEY_TRUST_PROJECT_CONFIG=1`. It is read from the environment only;
+  a config file can't set it.
 
-Also replace any non-loopback `http://` endpoint with its `https://` address,
-and move secrets out of a committed `.donkey-kit.toml` into
-`.donkey-kit.local.toml` (make sure it is gitignored in your repo).
+A value you change on a resolved config counts as set in code (labelled `code`
+in the error), however you change it: `with_overrides(...)`,
+`dataclasses.replace(...)` or any other copy. A copy that keeps the value keeps
+its source. So a URL you override in code is no longer bound to the file's
+credentials, and a secret you override in code no longer passes as a file
+credential.
 
-### Cost-tag headers are opt-in
+### 3. `.donkey-kit.local.toml` is now read
 
-The cost tags (`team`, `project`, `env`, `enduser.id`) used to go out as
-`X-Anypoint-Cost-*` request headers on every call. The LLM Gateway reads none
-of them (`docs/verified-apis.md` §3), so they are now sent only when you opt in.
-The `donkey.cost.*` span attributes are unchanged and still carry every tag, so
-dashboards built on spans need no change. If something of your own reads those
-headers, turn them back on:
+**Who:** anyone with a `.donkey-kit.local.toml` in the working directory. The
+previous `donkey init` template suggested creating one, but the SDK didn't read
+it.
+
+**Symptom:** its values now apply. They merge into `.donkey-kit.toml` key by
+key, including nested tables such as `[donkey.cost]`; a scalar or array in the
+local file replaces the project file's value. Environment variables still win
+over both. While it exists, the user file `$XDG_CONFIG_HOME/.donkey-kit.toml`
+isn't read, even without a `.donkey-kit.toml`
+([#727](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/727)).
+`donkey doctor` labels values from it `local overlay`.
+
+**Fix:** review the file, and delete keys you don't want applied. Make sure it
+is gitignored.
+
+A secret (`client_secret`, `llm_proxy_client_secret`, `llm_proxy_key`) in the
+committed `.donkey-kit.toml` now emits a `ConfigWarning`
+(`donkey_kit.core.errors.ConfigWarning`). Under `-W error` or
+pytest `filterwarnings = error` that warning fails the run; move the secret to
+`.donkey-kit.local.toml`.
+
+### 4. Each credential stays on its own plane
+
+Reference: [What the SDK sends where](website/content/reference/configuration.mdx#what-the-sdk-sends-where).
+
+`Donkey` now keeps one HTTP client for the LLM proxy and one for the Anypoint
+platform. Model calls never request, send or refresh the connected-app token,
+so they keep working when the Anypoint token endpoint is unreachable. The
+features that use the control plane (registry, tool discovery, publication,
+governance, provisioning) are still on the roadmap, so in this release the
+token endpoint is contacted only if your own code calls
+`AnypointConnectedApp.token()`. See
+[Which features use the control plane](website/content/reference/configuration.mdx#which-features-use-the-control-plane).
+
+**4a. `Donkey(auth=…)` no longer reaches the LLM proxy.**
+
+*Who:* callers whose LLM proxy authenticated model calls with the bearer token
+from `Donkey(auth=…)`. The token went out only on requests whose client set no
+`Authorization` of its own: the Anthropic client, ADK's `gemini()`, and raw
+requests through the shared client. OpenAI-compatible clients were already
+sending their API-key slot instead.
+
+*Symptom:* the first model call raises `AuthError` (a `401` from the proxy),
+with no retry.
+
+*Fix:* supply the token on the data plane.
+
+- OpenAI-compatible clients, static key: set `llm_proxy_key` /
+  `DONKEY_LLM_PROXY_KEY`. It is sent as `Authorization: Bearer <key>`. (The
+  Anthropic client sends it as `x-api-key`, and ADK's `gemini()` as
+  `x-goog-api-key`.)
+- Any client with transport injection, rotating token: use `jwt` mode. This
+  requires `llm_proxy_wallet_client_id` (sent as `X-Client-Id`) and is
+  async-only:
+
+  ```diff
+  - donkey = Donkey(cfg, auth=StaticToken(token))
+  + donkey = Donkey(
+  +     replace(cfg, llm_proxy_auth="jwt", llm_proxy_wallet_client_id="my-wallet-id"),
+  +     llm_auth=StaticToken(token),
+  + )
+  ```
+
+  (`cfg.with_overrides(...)` works the same way.)
+- Anthropic client or ADK's `gemini()` against a proxy that expects a plain
+  bearer token, without a wallet: there's no dedicated setting yet
+  ([#836](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/836)).
+  Add the header to the client's headers yourself, keeping the SDK's own. It is
+  static, so it isn't refreshed, and the endpoint check doesn't cover it:
+
+  ```python
+  # Anthropic
+  headers = donkey.anthropic.connection_kwargs()["default_headers"]
+  client = donkey.anthropic.client(
+      default_headers={**headers, "Authorization": "Bearer <token>"},
+  )
+
+  # ADK gemini(): build the model from the governed kwargs
+  kw = donkey.adk.gemini_connection_kwargs()
+  kw["client_kwargs"]["http_options"]["headers"]["Authorization"] = "Bearer <token>"
+  model = Gemini(model="gemini-2.5-flash", **kw)
+  ```
+
+**4b. In client-id mode, a `401` from the LLM proxy is no longer retried.**
+
+*Who:* client-id mode with `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` set.
+*Symptom:* the same `AuthError` as before, one request sooner. The old retry
+refreshed a token the proxy doesn't check, so it could never succeed. *Fix:*
+none needed. If you see the error, check `DONKEY_LLM_PROXY_CLIENT_ID` /
+`DONKEY_LLM_PROXY_CLIENT_SECRET` and the contract in API Manager. In `jwt` mode
+the wallet JWT is still refreshed and retried once.
+
+**4c. In `jwt` mode, control-plane calls carry the connected-app token.** They
+no longer carry the wallet JWT or `X-Client-Id`, so registry and tool discovery
+need `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` (or your own
+`Donkey(auth=…)`) in `jwt` mode too. Those features still raise
+`NotImplementedError` before sending anything, so nothing changes on the wire
+in this release.
+
+`simulate()`, `donkey mock` and the conformance kit still act on the LLM-proxy
+client, and `aclose()` closes both clients.
+
+### 5. Cost-tag headers are off by default
+
+Reference: [Cost-attribution tags](website/content/telemetry.mdx#cost-attribution-tags).
+
+**Who:** anything of yours that reads `X-Anypoint-Cost-*` request headers. The
+LLM Gateway reads none of them (`docs/verified-apis.md` §3).
+
+**Symptom:** the headers are no longer sent. The `donkey.cost.*` span
+attributes are unchanged, so dashboards built on spans need no change.
+
+**Fix:** turn them back on with any one of these:
 
 ```diff
 + DONKEY_SEND_COST_HEADERS=true
 ```
 
-or `send_cost_headers = true` in the `[donkey]` table, or
-`DonkeyConfig(send_cost_headers=True)`. The `cost_*_header` name overrides
-apply as before.
+```toml
+[donkey]
+send_cost_headers = true
+```
 
-### `PIIDetected` messages no longer contain the flagged values
+```python
+cfg = DonkeyConfig.from_env().with_overrides(send_cost_headers=True)
+```
 
-`str(exc)` used to be the gateway's rejection text, which repeats each detected
-value. It now names the entity types, their count and their offsets, for
-example `… 1 entity (Email at chars 12-32) …`. `.entities` is unchanged. If you
-parsed the message, read the new `.gateway_message` attribute (the gateway's
-text) or `.response` (the raw body) instead. Both carry the blocked content.
+When they are on, the headers, including `X-Anypoint-Cost-Enduser-Id`, go on
+**every** request the SDK sends, including Anypoint control-plane requests and
+the connected-app token request. Limiting them, and the other LLM-proxy-only
+headers, to model requests is tracked in
+[#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
+The `cost_*_header` name overrides apply as before.
 
-### `repr()` / `str()` of `DonkeyConfig` omit the secrets
+### 6. `donkey doctor` output
 
-`client_secret`, `llm_proxy_client_secret` and `llm_proxy_key` no longer
-appear. Attribute access and equality are unchanged.
+`doctor` now prints `llm endpoint` and `control plane` lines (host and where the
+value came from) before the probe. It reports an endpoint error on the `config`
+line and skips the probe. With `DONKEY_ALLOW_HTTP=1` set it also shows:
 
-### Printed `connection_kwargs()` show `'***'` for secrets
+```text
+[i]  plain http     allowed to non-loopback hosts (DONKEY_ALLOW_HTTP=1 in env)
+```
 
-Every adapter's `connection_kwargs()`, ADK's `gemini_connection_kwargs()` and
-`proxy_auth_headers()` now return a `dict` subclass that masks `api_key`, the
-`client_secret` header and `Authorization` in `repr()`/`str()`, including in
-nested header mappings. Unpacking, lookups, equality and `json.dumps` are
-unchanged. If a test compared the printed text, compare the mapping instead.
+If you parse `donkey doctor --json`, expect the new entries named `llm endpoint`, `control plane` and, when the switch is on, `plain http`.
+
+### 7. `PIIDetected` messages no longer contain the flagged values
+
+**Who:** code that parses `str(exc)`. **Symptom:** the message now names the
+entity types, their count and their offsets, for example
+`… 1 entity (Email at chars 12-32) …`. **Fix:** read `.gateway_message` (the
+gateway's text) or `.response` (the raw body); both contain the flagged values.
+`.entities` is unchanged.
+
+### 8. `repr()` / `str()` of `DonkeyConfig` omit the secrets
+
+`client_secret`, `llm_proxy_client_secret` and `llm_proxy_key` no longer appear.
+Attribute access and equality are unchanged.
+
+### 9. Printed `connection_kwargs()` show `'***'` for secrets
+
+**Who:** tests that compare printed output. **Fix:** compare the mapping
+instead. Unpacking, lookups, equality and `json.dumps` are unchanged (and
+`json.dumps` writes the real values). Details:
+[What printed output hides](website/content/reference/configuration.mdx#what-printed-output-hides).
 
 ## `agent-fabric` → `donkey-kit` (the DDK rebrand)
 

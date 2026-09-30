@@ -456,11 +456,13 @@ build plan; the load-bearing rules:
   first-party or official Salesforce product.
 - **Never commit secrets.** `.donkey-kit.local.toml`, `donkey.lock.local`, and
   `.env` are gitignored. Put secrets in `.donkey-kit.local.toml` (the SDK
-  overlays it on `.donkey-kit.toml`) or in environment variables, never in the
+  merges it key by key into `.donkey-kit.toml`) or in environment variables, never in the
   committed `.donkey-kit.toml`; the SDK warns if it finds one there. A URL read
   from either working-directory file only receives credentials from those same
   files (loopback hosts included), unless `DONKEY_TRUST_PROJECT_CONFIG=1` is set (see
-  `website/content/reference/configuration.mdx`). The LLM proxy authenticates on
+  `website/content/reference/configuration.mdx`). In `jwt` mode an
+  `llm_proxy_url` from those files always needs the environment or the opt-in,
+  because the JWT never comes from a file. The LLM proxy authenticates on
   a `client_id`/`client_secret` header pair (consumer auth), separate from any
   Anypoint control-plane credential.
 

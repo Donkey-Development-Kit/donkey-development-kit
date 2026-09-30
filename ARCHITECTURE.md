@@ -92,6 +92,8 @@ framework that may not be installed.
     platform call, authenticated by the connected-app token (`Donkey(auth=…)`,
     or the default `AnypointConnectedApp`). It never carries the wallet JWT or
     the wallet selector, and data-plane calls never fetch or carry its token.
+    Both clients inject the same correlation, attribution, cache-control and
+    (opt-in) cost-tag headers; only the credentials differ.
 
   A framework built on `httpx2` that rejects `httpx` clients (`anthropic>=1.0`,
   #701) gets an `httpx2.AsyncClient` from `integrations/_httpx2_bridge.py`
@@ -104,16 +106,26 @@ framework that may not be installed.
   never a bare `ModuleNotFoundError`. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
-- **Configuration** resolves in a fixed precedence — constructor kwargs → env
-  vars → config files (`.donkey-kit.local.toml` over `.donkey-kit.toml` in the
-  working directory, else the user file) → default — and reports every missing
-  field at once rather than one failure per run. `Donkey.from_env()` is the
-  entry point. Each field records its source, so an endpoint read from the
-  working directory's files only receives credentials from those files
-  (`DonkeyConfig.check_endpoints`), loopback included, and every endpoint must
-  be `https://` except loopback. The check runs before a credential leaves on
-  either plane: in `validated()` for model calls and the registry, and before
-  each control-plane token fetch.
+- **Configuration** resolves per key: values set in code → env vars →
+  `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
+  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml` → default.
+  `DonkeyConfig(...)` built directly reads neither env nor files. It reports
+  every missing field at once rather than one failure per run.
+  `Donkey.from_env()` is the entry point. Each field records its source
+  (`DonkeyConfig.source_of`); a value that differs from the loaded one counts as
+  set in code, however it was changed. So `llm_proxy_url` or `base_url` read
+  from the working directory's files only receives credentials from those files
+  (`DonkeyConfig.check_endpoints`), loopback included. Those two URLs and the
+  token endpoint must be `https://` except loopback, unless `DONKEY_ALLOW_HTTP`
+  is set in the environment. The check runs before a credential leaves on
+  either plane: in `validated()` for model calls and the registry, before each
+  control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
+  requested. Governance `[targets.*].base_url` is not covered yet (#832).
+- **Printed output.** `core/masking.py` holds the one list of credential key
+  names (`SENSITIVE_NAMES`). Every `connection_kwargs()` and
+  `proxy_auth_headers()` returns a `MaskedDict` that prints `'***'` for them;
+  `DonkeyConfig` leaves its secret fields out of `repr`; `PIIDetected` rebuilds
+  its message without the flagged values.
 - **The transport is the attachment point.** `DonkeyAsyncClient` exposes four
   internal lifecycle hooks — no-op by default, **not** public API, mirrored on the
   sync twin `DonkeyClient` — so the six-piece minimum *attaches* rather than
@@ -122,10 +134,15 @@ framework that may not be installed.
 
   | Hook | When it fires | What attaches |
   | --- | --- | --- |
-  | `_on_request` | once, before the retry loop | correlation ID + opt-in cost-tag headers (`BG §1.7`); OTel span **start** (`BG §1.6`) |
+  | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
   | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); span **end**; classification |
   | `_on_refusal` | Phase-2 seam — no caller until `classify()` wires it (#181) | typed-refusal handlers (`BG §1.2`) |
   | `_swap_transport` | fixture seam | `simulate()` (#190) and `donkey mock` (#187) swap a fixture in (`BG §1.4`/`BG §1.5`) |
+
+  Correlation, attribution, cache-control and opt-in cost-tag headers
+  (`BG §1.7`) are set on every attempt by the `_inject_headers` request event
+  hook, not by `_on_request`. The OTel span (`BG §1.6`) opens in `send()` and
+  closes there, or in the stream wrapper for a streamed response.
 
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
