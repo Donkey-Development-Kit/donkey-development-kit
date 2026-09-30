@@ -24,6 +24,7 @@ status-code families it can defensibly infer and otherwise returns a generic
 
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -293,9 +294,17 @@ class PIIDetected(PolicyViolation):
         "list / action in API Manager."
     )
 
-    def __init__(self, message: str, *, entities: list[str] | None = None, **kw: Any) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        entities: list[str] | None = None,
+        gateway_message: str | None = None,
+        **kw: Any,
+    ) -> None:
         super().__init__(message, **kw)
         self.entities = entities or []
+        self.gateway_message = gateway_message
 
 
 class AgentKilled(PolicyViolation):
@@ -558,10 +567,12 @@ def classify(
     # Gateway PII policy: 403 + nested object, type == "pii_detected". Checked
     # BEFORE the 401/403 → auth rule because a PII block is not an auth failure.
     if error_type == "pii_detected":
-        message = _str_or_none(error_obj.get("message")) if error_obj else None
+        gateway_message = _str_or_none(error_obj.get("message")) if error_obj else None
+        spans = _pii_spans(gateway_message)
         return PIIDetected(
-            message or f"Request blocked: personally identifiable information detected ({status}).",
-            entities=_pii_entities(message),
+            _pii_summary(status, spans),
+            entities=[entity for entity, _start, _end in spans],
+            gateway_message=gateway_message,
             # remediation: PIIDetected's canonical class default (#182).
             **kw,
         )
@@ -763,10 +774,12 @@ def _retry_after(response: httpx.Response) -> float | None:
 _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
 
 
-def _pii_entities(message: str | None) -> list[str]:
-    """Best-effort extraction of the flagged PII entity types from the PII
-    policy's rejection message (a JSON-ish list of ``{"pii_type": "...", ...}``
-    objects; docs/verified-apis.md §4). Returns an empty list if none can be parsed.
+def _pii_spans(message: str | None) -> list[tuple[str, int | None, int | None]]:
+    """Best-effort ``(entity type, start, end)`` for each entity the PII policy
+    flagged, parsed from its rejection message (a JSON list of ``{"pii_type",
+    "value", "start", "end"}`` objects; docs/verified-apis.md §4). The ``value``
+    is never read. Offsets are ``None`` when the list does not parse; an empty
+    list means no ``pii_type`` markers were found.
 
     Deliberately best-effort (#289): the LLM PII Detection policy documents only
     the ``{"error":{"message","type":"pii_detected"}}`` envelope, not a structured
@@ -776,7 +789,42 @@ def _pii_entities(message: str | None) -> list[str]:
     against a documented entity field if one lands (#253)."""
     if not message:
         return []
-    return _PII_TYPE_RE.findall(message)
+    bracket = message.find("[")
+    if bracket != -1:
+        try:
+            parsed = json.loads(message[bracket:])
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, list):
+            spans = [
+                (item["pii_type"], _int_or_none(item.get("start")), _int_or_none(item.get("end")))
+                for item in parsed
+                if isinstance(item, dict) and isinstance(item.get("pii_type"), str)
+            ]
+            if spans:
+                return spans
+    return [(entity, None, None) for entity in _PII_TYPE_RE.findall(message)]
+
+
+def _pii_summary(status: int, spans: list[tuple[str, int | None, int | None]]) -> str:
+    """The :class:`PIIDetected` message: the entity types, their count and
+    offsets — never the flagged values the gateway echoes back."""
+    base = f"Request blocked: personally identifiable information detected ({status})"
+    if not spans:
+        return f"{base}."
+    parts = [
+        entity if start is None or end is None else f"{entity} at chars {start}-{end}"
+        for entity, start, end in spans
+    ]
+    noun = "entity" if len(spans) == 1 else "entities"
+    return (
+        f"{base}: {len(spans)} {noun} ({', '.join(parts)}). "
+        "Values withheld; the gateway's text is on .gateway_message."
+    )
+
+
+def _int_or_none(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _parse_json(response: httpx.Response) -> Any:

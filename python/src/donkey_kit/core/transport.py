@@ -171,7 +171,8 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
         headers[_verify.ATTRIBUTION_APP_HEADER.get()] = cfg.application_name
     if cfg.business_group:
         headers[_verify.ATTRIBUTION_BUSINESS_GROUP_HEADER.get()] = cfg.business_group
-    headers.update(cost_headers(cfg, cfg.cost))
+    if cfg.send_cost_headers:
+        headers.update(cost_headers(cfg, cfg.cost))
     return headers
 
 
@@ -252,7 +253,7 @@ def _apply_base_headers(
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
     run = current_cost_tags()
-    if run is not None:
+    if run is not None and cfg.send_cost_headers:
         for name, value in cost_headers(cfg, run).items():
             request.headers[name] = value
     # Per-request semantic-cache steering bound by ``donkey.cache(...)`` (#587).

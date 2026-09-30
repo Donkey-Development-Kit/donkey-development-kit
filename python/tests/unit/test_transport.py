@@ -1507,6 +1507,7 @@ _COST_CFG = DonkeyConfig(
     cost_project_header="x-cost-project",
     cost_env_header="x-cost-env",
     cost_enduser_header="x-cost-enduser",
+    send_cost_headers=True,
 )
 
 
@@ -1636,11 +1637,12 @@ def test_verified_inbound_attribution_headers_are_quiet() -> None:
 
 
 async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
-    """#522 AC: a default call under ``donkey.run(team=…)`` — cost tags set, no
+    """#522 AC: a call under ``donkey.run(team=…)`` — cost tags set, no
     header-name overrides, no application/business-group attribution — emits NONE of
     the six ``UnverifiedValueWarning``s that used to fire (``X-Correlation-Id`` /
     ``X-Donkey-Request-Id`` / ``X-Anypoint-Cost-*``). Unit-level mirror of the
-    acceptance group-1 quiet-path assertion."""
+    acceptance group-1 quiet-path assertion. Cost headers are opt-in
+    (``send_cost_headers``), so this opts in to read the placeholder names."""
     from donkey_kit.core import _verify
 
     seen: dict[str, str] = {}
@@ -1649,7 +1651,9 @@ async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
         seen.update(request.headers)
         return httpx.Response(200)
 
-    cfg = DonkeyConfig(cost=CostTags(team="support", project="triage", env="prod"))
+    cfg = DonkeyConfig(
+        cost=CostTags(team="support", project="triage", env="prod"), send_cost_headers=True
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         async with _client(handler, cfg) as client:

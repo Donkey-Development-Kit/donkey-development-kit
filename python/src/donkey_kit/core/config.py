@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Literal, cast
 
@@ -57,7 +57,7 @@ _TOML_NAME = ".donkey-kit.toml"
 class DonkeyConfig:
     # --- Anypoint control plane (registry + provisioning) ---
     client_id: str | None = None          # env: ANYPOINT_CLIENT_ID
-    client_secret: str | None = None      # env: ANYPOINT_CLIENT_SECRET
+    client_secret: str | None = field(default=None, repr=False)  # env: ANYPOINT_CLIENT_SECRET
     org_id: str | None = None             # env: ANYPOINT_ORG_ID
     environment: str = "Sandbox"          # env: ANYPOINT_ENV
     region: Region = "us"                 # env: ANYPOINT_REGION
@@ -68,11 +68,13 @@ class DonkeyConfig:
     # LIVE-VERIFIED — docs/verified-apis.md §2/§3. NOT a bearer token.
     llm_proxy_url: str | None = None            # env: DONKEY_LLM_PROXY_URL
     llm_proxy_client_id: str | None = None      # env: DONKEY_LLM_PROXY_CLIENT_ID
-    llm_proxy_client_secret: str | None = None  # env: DONKEY_LLM_PROXY_CLIENT_SECRET
+    llm_proxy_client_secret: str | None = field(  # env: DONKEY_LLM_PROXY_CLIENT_SECRET
+        default=None, repr=False
+    )
     # Optional: fills the OpenAI SDK's mandatory ``api_key`` slot only. The proxy
     # authenticates on the client_id/secret headers above and ignores the bearer,
     # so this is rarely needed; leave unset to use a sentinel.
-    llm_proxy_key: str | None = None            # env: DONKEY_LLM_PROXY_KEY
+    llm_proxy_key: str | None = field(default=None, repr=False)  # env: DONKEY_LLM_PROXY_KEY
 
     # --- LLM proxy auth mode (BG §1.1, #509) ---
     # Which data-plane ingress the proxy uses. Default ``"client-id"`` (the
@@ -125,6 +127,11 @@ class DonkeyConfig:
     # #309). Default "off" — the substitution is surfaced passively on
     # ``donkey.last_call``; "raise" opts into a hard ``ModelSubstituted`` error.
     on_model_substitution: OnModelSubstitution = "off"
+    # Send the cost tags as request headers too. Default FALSE: nothing on the
+    # gateway reads a cost-tag header (docs/verified-apis.md §3, #522), so the
+    # ``donkey.cost.*`` span attributes are the only consumer, and an
+    # ``enduser.id`` header would carry an end-user identifier for no reader.
+    send_cost_headers: bool = False  # env: DONKEY_SEND_COST_HEADERS
 
     # ----------------------------------------------------------------- factory
     @classmethod
@@ -196,6 +203,9 @@ class DonkeyConfig:
             ),
             on_model_substitution=_as_substitution(
                 pick("DONKEY_ON_MODEL_SUBSTITUTION", "on_model_substitution", "off")
+            ),
+            send_cost_headers=_as_bool(
+                pick("DONKEY_SEND_COST_HEADERS", "send_cost_headers", False)
             ),
         )
 
