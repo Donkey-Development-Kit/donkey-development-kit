@@ -76,7 +76,14 @@ donkey = Donkey(
 An `AuthProvider` (in `donkey_kit.core.auth`) is any object with two async
 methods: `token()` returns the current credential and `invalidate()` drops a
 cached one. The transport calls `invalidate()` and retries exactly once when a
-downstream call returns `401`.
+call on that provider's own plane returns `401`.
+
+Each provider is scoped to one credential plane. `Donkey(llm_auth=…)` supplies
+the data-plane credential, used only in `jwt` mode. `Donkey(auth=…)` supplies
+the Anypoint control-plane credential (by default an `AnypointConnectedApp`
+built from `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET`), used only for
+control-plane calls such as the registry. Model calls never fetch, send or
+refresh the control-plane token.
 
 | Provider | Use it for |
 |---|---|

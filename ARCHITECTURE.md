@@ -81,12 +81,22 @@ framework that may not be installed.
 
 - **`Donkey`** is the public surface and orchestrator. It owns one shared
   **`DonkeyAsyncClient`** (an `httpx.AsyncClient` subclass that injects the
-  governance/attribution headers) and hands that single client to the LLM
-  client, the registry, and every adapter — so there is exactly one transport and
-  one header-injection point. A framework built on `httpx2` that rejects `httpx`
-  clients (`anthropic>=1.0`, #701) gets an `httpx2.AsyncClient` from
-  `integrations/_httpx2_bridge.py` instead, whose transport forwards every
-  request through that same shared client, so it is still one transport.
+  governance/attribution headers) **per credential plane**, so each credential
+  only ever rides its own plane's requests (`BG §1.1`):
+  - the **data-plane** client goes to the LLM client and every adapter, so there
+    is exactly one transport and one header-injection point for model calls. It
+    carries only the LLM-proxy credential: the `client_id`/`client_secret` header
+    pair in the default client-id mode (no token provider), or the model-wallet
+    JWT from `Donkey(llm_auth=…)` in `jwt` mode;
+  - the **control-plane** client backs the registry and any other Anypoint
+    platform call, authenticated by the connected-app token (`Donkey(auth=…)`,
+    or the default `AnypointConnectedApp`). It never carries the wallet JWT or
+    the wallet selector, and data-plane calls never fetch or carry its token.
+
+  A framework built on `httpx2` that rejects `httpx` clients (`anthropic>=1.0`,
+  #701) gets an `httpx2.AsyncClient` from `integrations/_httpx2_bridge.py`
+  instead, whose transport forwards every request through the same data-plane
+  client, so it is still one transport.
 - **Adapters are lazy attributes.** `Donkey.__getattr__` resolves
   `donkey.<framework>` on first access through the `ADAPTERS` registry declared
   in `integrations/__init__.py`. Accessing an adapter whose optional extra is not

@@ -25,7 +25,9 @@ The client:
     includes 429: on this proxy a 429 is a token-budget refusal
     (TokenBudgetExceeded), and retrying it only burns the same exhausted window
     (BG §1.2, #183). retry_after is still surfaced for wait_for_reset() (#186).
-  * refreshes the token and retries exactly once on 401 (BG §1.1)
+  * refreshes the attached provider's token and retries exactly once on 401
+    (BG §1.1); a client-id data-plane client has no provider, so its 401 is
+    terminal
 
 For frameworks that only accept a ``default_headers`` dict (not a client), pass
 :func:`attribution_headers` — a snapshot — and accept that the correlation ID is
