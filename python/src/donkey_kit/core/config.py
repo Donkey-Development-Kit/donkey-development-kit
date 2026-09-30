@@ -357,7 +357,10 @@ class DonkeyConfig:
         """Where field ``name`` was resolved from. ``explicit`` (set in code) when
         :meth:`from_env` did not resolve it or its value has changed since, e.g.
         through ``dataclasses.replace``, :meth:`with_overrides` or direct
-        construction; copies that keep the value keep the label."""
+        construction; copies that keep the value keep the label, and so does
+        ``DonkeyConfig(**dataclasses.asdict(cfg))`` in the same process. A label
+        recorded in another process can't be checked against the value: an
+        endpoint keeps it and a credential counts as set in code."""
         loaded = self._sources.get(name)
         if loaded is None:
             return _EXPLICIT
