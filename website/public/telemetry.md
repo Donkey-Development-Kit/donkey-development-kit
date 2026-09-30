@@ -486,8 +486,8 @@ directly.
 
 ## Cost-attribution tags
 
-A small, fixed set of tags — `team`, `project`, `env`, `enduser.id` — set once
-and emitted on every call as `donkey.cost.*` span attributes:
+A small, fixed set of tags (`team`, `project`, `env`, `enduser.id`) set once
+and recorded on every model call's span:
 
 ```python
 donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
@@ -496,23 +496,46 @@ async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
     await triage_agent.run(ticket)
 ```
 
-The tags resolve along the standard precedence — `Donkey.from_env(team=…)`
-kwargs, then `DONKEY_COST_*` env vars, then a `[donkey.cost]` table in
-`.donkey-kit.toml`. Per-run overrides layer on top: `donkey.run(team=…,
-project=…, env=…, enduser_id=…)` wins **per field** for its block and the rest
-fall back to the configured tags. The key set is **fixed** — an unknown
-dimension is a configuration error, never a silently-dropped tag. Values are
-**validated** — fixed keys, bounded length — so nobody stuffs a JSON blob into a
-span attribute or header.
+The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
+`DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
+[Configuration](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#cost-attribution-tags)). Per-run
+overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
+wins **per field** for its block, and the rest fall back to the configured
+tags. The key set is **fixed**: an unknown dimension is a configuration error,
+never a silently dropped tag. Values are **validated** (fixed keys, bounded
+length), so nobody stuffs a JSON blob into a span attribute or header.
 
-  The Anypoint LLM Gateway does not ingest cost tags from request headers — it
-  meters cost from token usage per API instance and consuming client
-  application. The **authoritative** carrier is the `donkey.cost.*` OTel span
-  attribute, and by default DDK sends **no** cost-tag request header. Set
-  `DONKEY_SEND_COST_HEADERS=true` (`send_cost_headers`) to also send them as
-  `X-Anypoint-Cost-*` headers, whose names are overridable (`cost_*_header`),
-  for a receiver that reads them. The `enduser.id` header then carries the end
-  user's identifier on every request.
+### Where the tags go
+
+| Carrier | Names | When | Goes to |
+|---|---|---|---|
+| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so adapters with only header injection record none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
+| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Every request the SDK sends. See the warning below. |
+
+Each header carries the tag's value unchanged (for example
+`X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
+neither carrier.
+
+The Anypoint LLM Gateway doesn't read cost tags from request headers: it meters
+cost from token usage per API instance and consuming client application. So the
+span attributes are the carrier that matters. Turn the headers on only when
+something of your own reads them.
+
+  **With `send_cost_headers` on, the headers go on every request, not just model
+  calls.** That includes the connected-app token request and other Anypoint
+  control-plane requests, so the end-user ID reaches those hosts too. Adapters
+  with transport injection also send per-run `donkey.run(...)` values;
+  adapters that get only a `default_headers` snapshot send the configured tags.
+  Limiting these headers, and the other LLM-proxy-only headers, to model
+  requests is tracked in
+  [#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
+
+  **The end-user ID reaches your trace backend regardless of
+  `send_cost_headers`.** If `enduser_id` is set, every model-call span carries
+  `donkey.cost.enduser.id`, and any exporter you've configured receives it. To
+  keep it out of traces, don't set `enduser_id` (`DONKEY_COST_ENDUSER_ID`,
+  `"enduser.id"` in `[donkey.cost]`, or `donkey.run(enduser_id=…)`), drop the
+  attribute in your collector, or turn spans off with `DONKEY_TELEMETRY=false`.
 
 ### The question this answers
 
@@ -522,5 +545,5 @@ With tags it is a group-by.
 
 For compliance — *"prove the HR bot's answer to user X on date Y went through
 the content-safety policy"* — the correlation ID on the log line joins to the
-gateway record, and the span carries `enduser.id` and `donkey.policy.type`. An
+gateway record, and the span carries `donkey.cost.enduser.id` and `donkey.policy.type`. An
 EU AI Act Article 12 log request becomes one query, not an investigation.
