@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -28,12 +29,14 @@ class StrandsAdapter(Adapter):
         yourself. Strands forwards ``client_args`` to the underlying OpenAI
         client, so header AND transport injection are both available."""
         conn = self._openai_connection()
-        return {
-            "client_args": {
-                **conn,  # base_url, api_key, default_headers
-                "http_client": self._http_client(),
-            },
-        }
+        return masked(
+            {
+                "client_args": {
+                    **conn,  # base_url, api_key, default_headers
+                    "http_client": self._http_client(),
+                },
+            }
+        )
 
     def model(self, model: str, **kw: Any) -> OpenAIModel:
         from strands.models.openai import OpenAIModel  # VERIFY name/path: docs/verified-apis.md §8

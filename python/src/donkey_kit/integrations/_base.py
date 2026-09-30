@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, TypeVar, cast
 
 from ..core.config import DonkeyConfig
+from ..core.masking import masked
 from ..core.transport import (
     DonkeyAsyncClient,
     attribution_headers,
@@ -71,13 +72,19 @@ class Adapter:
         :meth:`connection_kwargs`; both the ``donkey.<framework>.<factory>()``
         methods and the module-level factories build on top of this so there is
         one source of truth for the governed connection.
+
+        Every ``connection_kwargs()`` returns its mapping through
+        :func:`~donkey_kit.core.masking.masked`, so printing it never shows the
+        ``api_key`` or the secret header.
         """
         cfg = self._require_proxy()
-        return {
-            "base_url": cfg.llm_proxy_url,
-            "api_key": self._proxy_api_key(),
-            "default_headers": self._proxy_headers(),
-        }
+        return masked(
+            {
+                "base_url": cfg.llm_proxy_url,
+                "api_key": self._proxy_api_key(),
+                "default_headers": self._proxy_headers(),
+            }
+        )
 
 
 A = TypeVar("A", bound=Adapter)

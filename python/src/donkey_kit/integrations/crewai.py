@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -52,11 +53,13 @@ class CrewAIAdapter(Adapter):
         own client, so the shared http client is not injected here (BG §1.8
         exemption; the conformance kit)."""
         conn = self._openai_connection()
-        return {
-            "base_url": conn["base_url"],
-            "api_key": conn["api_key"],
-            "extra_headers": conn["default_headers"],
-        }
+        return masked(
+            {
+                "base_url": conn["base_url"],
+                "api_key": conn["api_key"],
+                "extra_headers": conn["default_headers"],
+            }
+        )
 
     def llm(self, model: str, **kw: Any) -> BaseLLM:
         """Return a native CrewAI LLM pointed at the proxy (BG §1.8).

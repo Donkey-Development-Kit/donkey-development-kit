@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -51,11 +52,13 @@ class ADKAdapter(Adapter):
         ``base_url``/``default_headers``) and owns its own transport, so the
         shared http client is not injected here (BG §1.8 exemption; the conformance kit)."""
         conn = self._openai_connection()
-        return {
-            "api_base": conn["base_url"],
-            "api_key": conn["api_key"],
-            "extra_headers": conn["default_headers"],
-        }
+        return masked(
+            {
+                "api_base": conn["base_url"],
+                "api_key": conn["api_key"],
+                "extra_headers": conn["default_headers"],
+            }
+        )
 
     def gemini_connection_kwargs(self, *, base_url: str | None = None) -> dict[str, Any]:
         """Governed kwargs for a ``Gemini(model=<id>, **kwargs)`` you build
@@ -71,19 +74,21 @@ class ADKAdapter(Adapter):
         ``/v1beta`` segment."""
         conn = self._openai_connection()
         url = base_url or conn["base_url"]
-        return {
-            "base_url": url,
-            "client_kwargs": {
-                "api_key": conn["api_key"],
-                "http_options": {
-                    "base_url": url,
-                    "api_version": "",
-                    "headers": conn["default_headers"],
-                    "timeout": int(self._cfg.timeout_s * 1000),
-                    "httpx_async_client": self._http_client(),
+        return masked(
+            {
+                "base_url": url,
+                "client_kwargs": {
+                    "api_key": conn["api_key"],
+                    "http_options": {
+                        "base_url": url,
+                        "api_version": "",
+                        "headers": conn["default_headers"],
+                        "timeout": int(self._cfg.timeout_s * 1000),
+                        "httpx_async_client": self._http_client(),
+                    },
                 },
-            },
-        }
+            }
+        )
 
     def model(self, model: str, **kw: Any) -> LiteLlm:
         from google.adk.models.lite_llm import LiteLlm  # VERIFY name/path: docs/verified-apis.md §8

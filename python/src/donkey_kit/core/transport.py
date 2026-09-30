@@ -68,6 +68,7 @@ from .lastcall import (
     usage_from_response,
     usage_mapping,
 )
+from .masking import masked
 from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
@@ -195,9 +196,12 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
       injected per-send by :meth:`DonkeyAsyncClient._inject_headers` from the
       attached ``AuthProvider``, because a static snapshot cannot carry a
       credential that rotates.
+
+    Returns a :class:`~donkey_kit.core.masking.MaskedDict`: a plain ``dict`` in
+    use, but printing it shows ``'***'`` for the secret header.
     """
 
-    headers = attribution_headers(cfg)
+    headers = masked(attribution_headers(cfg))
     if cfg.llm_proxy_auth == "jwt":
         if cfg.llm_proxy_wallet_client_id:
             headers[_verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER] = cfg.llm_proxy_wallet_client_id

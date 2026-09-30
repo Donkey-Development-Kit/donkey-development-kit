@@ -30,6 +30,7 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -44,20 +45,22 @@ class LangGraphAdapter(Adapter):
         build yourself (BG §1.8). Same values the factory uses — one source of
         truth for the proxy connection."""
         conn = self._openai_connection()
-        return {
-            **conn,  # base_url, api_key, default_headers
-            "http_async_client": self._http_client(),  # our client, our hooks
-            "max_retries": 0,  # we retry in transport (BG §1.1)
-            # Target the proxy's LIVE-VERIFIED endpoint: the data plane is the
-            # OpenAI Responses API (``/responses``, docs/verified-apis.md §2) — the same route the
-            # raw ``donkey.llm`` client uses. Left at ChatOpenAI's chat-completions
-            # default, ``donkey.langgraph(...)`` would call an UNVERIFIED
-            # ``/chat/completions`` route and risk a 404 in a real sandbox (verification
-            # discipline).
-            # Override per call (``use_responses_api=False``) if a deployment
-            # exposes chat-completions instead.
-            "use_responses_api": True,
-        }
+        return masked(
+            {
+                **conn,  # base_url, api_key, default_headers
+                "http_async_client": self._http_client(),  # our client, our hooks
+                "max_retries": 0,  # we retry in transport (BG §1.1)
+                # Target the proxy's LIVE-VERIFIED endpoint: the data plane is the
+                # OpenAI Responses API (``/responses``, docs/verified-apis.md §2) — the
+                # same route the raw ``donkey.llm`` client uses. Left at ChatOpenAI's
+                # chat-completions default, ``donkey.langgraph(...)`` would call an
+                # UNVERIFIED ``/chat/completions`` route and risk a 404 in a real
+                # sandbox (verification discipline).
+                # Override per call (``use_responses_api=False``) if a deployment
+                # exposes chat-completions instead.
+                "use_responses_api": True,
+            }
+        )
 
     def chat_model(self, model: str, **kw: Any) -> ChatOpenAI:
         """Return a native ``ChatOpenAI`` pointed at the proxy (BG §1.8)."""

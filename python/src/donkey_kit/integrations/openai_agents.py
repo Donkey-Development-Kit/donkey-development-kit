@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -55,7 +56,7 @@ class OpenAIAgentsAdapter(Adapter):
         connection kwargs, so header AND transport injection travel as one object
         (BG §1.8). Same client the factory uses — one source of truth for the
         proxy connection."""
-        return {"openai_client": self._proxy_openai_client()}
+        return masked({"openai_client": self._proxy_openai_client()})
 
     def model(self, model: str, **kw: Any) -> OpenAIChatCompletionsModel:
         """Return a native ``OpenAIChatCompletionsModel`` pointed at the proxy,

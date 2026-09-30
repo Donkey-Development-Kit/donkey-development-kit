@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -32,13 +33,15 @@ class LlamaIndexAdapter(Adapter):
         docstring for the completions-endpoint gotcha). LlamaIndex uses
         ``api_base`` rather than ``base_url``."""
         conn = self._openai_connection()
-        return {
-            "api_base": conn["base_url"],
-            "api_key": conn["api_key"],
-            "default_headers": conn["default_headers"],
-            "is_chat_model": True,  # never omit — see module docstring
-            "is_function_calling_model": True,
-        }
+        return masked(
+            {
+                "api_base": conn["base_url"],
+                "api_key": conn["api_key"],
+                "default_headers": conn["default_headers"],
+                "is_chat_model": True,  # never omit — see module docstring
+                "is_function_calling_model": True,
+            }
+        )
 
     def llm(self, model: str, **kw: Any) -> OpenAILike:
         from llama_index.llms.openai_like import (

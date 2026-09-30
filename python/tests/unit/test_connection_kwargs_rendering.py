@@ -313,9 +313,8 @@ def test_every_sensitive_name_is_masked_case_insensitively(name: str) -> None:
 
 
 def test_sensitive_names_include_the_proxy_secret_and_jwt_headers() -> None:
-    from donkey_kit.core.masking import SENSITIVE_NAMES
-
     from donkey_kit.core import _verify
+    from donkey_kit.core.masking import SENSITIVE_NAMES
 
     assert _verify.LLM_PROXY_CLIENT_SECRET_HEADER.lower() in SENSITIVE_NAMES
     assert _verify.LLM_PROXY_WALLET_JWT_HEADER.lower() in SENSITIVE_NAMES

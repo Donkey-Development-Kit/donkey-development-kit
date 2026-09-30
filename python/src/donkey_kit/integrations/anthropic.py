@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from ..core.config import DonkeyConfig
+from ..core.masking import masked
 from ..core.transport import DonkeyAsyncClient
 from ._base import Adapter, default_adapter
 
@@ -95,13 +96,15 @@ class AnthropicAdapter(Adapter):
         the module docstring). The proxy's Anthropic-native route is
         LIVE-verified but requires a ``Format=Anthropic`` proxy."""
         conn = self._openai_connection()  # base_url, api_key, default_headers
-        return {
-            "base_url": conn["base_url"],
-            "api_key": conn["api_key"],
-            "default_headers": conn["default_headers"],
-            "http_client": self._anthropic_http_client(),
-            "max_retries": 0,  # we retry in transport (BG §1.1)
-        }
+        return masked(
+            {
+                "base_url": conn["base_url"],
+                "api_key": conn["api_key"],
+                "default_headers": conn["default_headers"],
+                "http_client": self._anthropic_http_client(),
+                "max_retries": 0,  # we retry in transport (BG §1.1)
+            }
+        )
 
     def client(self, **kw: Any) -> AsyncAnthropic:
         """Return a native ``anthropic.AsyncAnthropic`` pointed at the proxy. Pass
