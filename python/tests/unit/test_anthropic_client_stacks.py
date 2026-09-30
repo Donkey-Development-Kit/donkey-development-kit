@@ -1,0 +1,106 @@
+"""A real ``anthropic.AsyncAnthropic`` from ``donkey.anthropic``, end to end (#701).
+
+Runs against whichever ``anthropic`` is installed: on ``anthropic<1`` (``httpx``)
+the client gets the shared ``DonkeyAsyncClient`` itself, on ``anthropic>=1.0``
+(``httpx2``) a bridged client that sends through it. Either way the same governed
+request reaches the wire and the same ``donkey.last_call`` is recorded. CI runs
+this file on both majors (the ``anthropic-stacks`` job).
+
+The shared client sits on a mock transport replaying the live ``Format=Anthropic``
+capture, so no proxy is needed. Guarded by ``importorskip("anthropic")``.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+anthropic = pytest.importorskip("anthropic")
+
+import httpx  # noqa: E402
+from _anthropic_wire import (  # noqa: E402
+    BODY,
+    CFG,
+    SSE_CHUNKS,
+    Chunks,
+    shared_client,
+    sse_response,
+    success_response,
+)
+
+from donkey_kit.core.errors import GatewayUnavailable  # noqa: E402
+from donkey_kit.core.lastcall import LastCallStatus, current_last_call  # noqa: E402
+from donkey_kit.integrations.anthropic import AnthropicAdapter  # noqa: E402
+
+_ON_HTTPX2 = not issubclass(anthropic.DefaultAsyncHttpxClient, httpx.AsyncClient)
+
+
+def test_the_http_client_matches_the_installed_anthropic() -> None:
+    shared = shared_client(lambda request: success_response())
+    http_client = AnthropicAdapter(CFG, shared).connection_kwargs()["http_client"]
+    if _ON_HTTPX2:
+        assert type(http_client).__module__.split(".")[0] == "httpx2"
+    else:
+        assert http_client is shared
+
+
+async def test_a_governed_call_reaches_the_wire_and_last_call() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return success_response()
+
+    async with shared_client(handler) as shared:
+        llm = AnthropicAdapter(CFG, shared).client()
+        assert isinstance(llm, anthropic.AsyncAnthropic)
+        reply = await llm.messages.create(**BODY)
+
+    assert reply.content[0].text == "PONG"
+    (wire,) = seen
+    assert wire.url.path == "/ddk-anthropic-inbound/v1/messages"
+    assert wire.headers["client_id"] == "cid-123"
+    assert wire.headers["client_secret"] == "csecret-456"
+    assert wire.headers["x-correlation-id"]
+    assert wire.headers["x-donkey-request-id"]
+    record = current_last_call()
+    assert record is not None and record.status is LastCallStatus.OBSERVED
+    assert (record.input_tokens, record.output_tokens) == (16, 6)
+
+
+async def test_a_streamed_call_arrives_and_closes_the_shared_response() -> None:
+    upstream = Chunks(SSE_CHUNKS)
+
+    async with shared_client(lambda request: sse_response(upstream)) as shared:
+        llm = AnthropicAdapter(CFG, shared).client()
+        async with llm.messages.stream(**BODY) as stream:
+            text = "".join([delta async for delta in stream.text_stream])
+            final = await stream.get_final_message()
+
+    assert text == "PONG"
+    assert final.usage.output_tokens == 6
+    assert upstream.closed
+
+
+async def test_a_lost_gateway_is_a_connection_error_caused_by_gateway_unavailable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    async with shared_client(handler) as shared:
+        llm = AnthropicAdapter(CFG, shared).client()
+        with pytest.raises(anthropic.APIConnectionError) as info:
+            await llm.messages.create(**BODY)
+
+    assert isinstance(info.value.__cause__, GatewayUnavailable)
+
+
+async def test_closing_the_anthropic_client_leaves_the_shared_client_usable() -> None:
+    if not _ON_HTTPX2:
+        pytest.skip("anthropic<1 is given the shared client itself and closes it")
+    async with shared_client(lambda request: success_response()) as shared:
+        adapter = AnthropicAdapter(CFG, shared)
+        async with adapter.client() as llm:
+            await llm.messages.create(**BODY)
+        assert not shared.is_closed
+        reply = await adapter.client().messages.create(**BODY)
+
+    assert reply.content[0].text == "PONG"

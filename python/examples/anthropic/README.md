@@ -5,8 +5,8 @@ Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 **What this shows.** A one-line factory call gets you a *native*
 `anthropic.AsyncAnthropic` client already pointed at the governed Agent Fabric LLM
 proxy — `client_id`/`client_secret` header auth (not bearer), attribution
-headers, and the SDK's shared transport (retry/telemetry hooks). The returned
-object is Anthropic's own client, not a wrapper.
+headers, and the SDK's shared transport (retry/telemetry hooks), on `anthropic`
+0.x and 1.x alike. The returned object is Anthropic's own client, not a wrapper.
 
 **Divergence, by design — the framework wins (BG §1.8).** Anthropic's native surface is a *client*,
 and the model id is a per-call argument (`c.messages.create(model=..., ...)`),
@@ -47,7 +47,7 @@ The factory call is equivalent to building `AsyncAnthropic` yourself with the
 governed connection values (BG §1.8):
 
 ```python
-import httpx
+import httpx2  # anthropic 0.x is built on httpx: use httpx.AsyncClient there
 from anthropic import AsyncAnthropic
 
 c = AsyncAnthropic(
@@ -57,7 +57,7 @@ c = AsyncAnthropic(
         "client_id": DONKEY_LLM_PROXY_CLIENT_ID,
         "client_secret": DONKEY_LLM_PROXY_CLIENT_SECRET,
     },
-    http_client=httpx.AsyncClient(...),  # your own transport, retries, hooks
+    http_client=httpx2.AsyncClient(...),  # your own transport, retries, hooks
     max_retries=0,
 )
 ```
@@ -65,6 +65,12 @@ c = AsyncAnthropic(
 The factory (`donkey_kit.integrations.anthropic.client`) fills in `base_url`,
 `api_key`, `default_headers`, and the SDK's shared transport from one governed
 config source.
+
+**`anthropic` 0.x and 1.x (#701).** `anthropic` 1.0 moved from `httpx` to
+`httpx2` and rejects an `httpx` client, so the factory passes the shared
+`httpx.AsyncClient` on 0.x and, on 1.0 and later, an `httpx2.AsyncClient` whose
+transport sends every request through that same shared client. Governed
+headers, retries, telemetry and `donkey.last_call` behave the same on both.
 
 ## Links
 

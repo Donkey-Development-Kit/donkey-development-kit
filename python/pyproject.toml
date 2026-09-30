@@ -177,8 +177,18 @@ module = [
     # public return type is a framework-free Protocol, so no Any leaks out.
     "starlette.*",
     "uvicorn.*",
+    # httpx2 is typed, and arrives with openai>=3 or anthropic>=1.0; listed for
+    # absence only, under an older openai with no anthropic (#701).
+    "httpx2.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# The httpx2 bridge subclasses httpx2's transport and byte-stream bases. When
+# httpx2 is absent those bases are Any, so strict's disallow_subclassing_any would
+# fail the base typecheck; an inline ignore would go stale whenever it is present.
+module = ["donkey_kit.integrations._httpx2_bridge"]
+disallow_subclassing_any = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -83,7 +83,10 @@ framework that may not be installed.
   **`DonkeyAsyncClient`** (an `httpx.AsyncClient` subclass that injects the
   governance/attribution headers) and hands that single client to the LLM
   client, the registry, and every adapter — so there is exactly one transport and
-  one header-injection point.
+  one header-injection point. A framework built on `httpx2` that rejects `httpx`
+  clients (`anthropic>=1.0`, #701) gets an `httpx2.AsyncClient` from
+  `integrations/_httpx2_bridge.py` instead, whose transport forwards every
+  request through that same shared client, so it is still one transport.
 - **Adapters are lazy attributes.** `Donkey.__getattr__` resolves
   `donkey.<framework>` on first access through the `ADAPTERS` registry declared
   in `integrations/__init__.py`. Accessing an adapter whose optional extra is not

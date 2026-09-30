@@ -28,7 +28,8 @@ class Adapter:
 
     #: Whether a governed model call through this adapter reaches ``donkey.last_call``
     #: (#362). True when the adapter hands the framework our shared
-    #: :class:`DonkeyAsyncClient` (its ``_on_response`` observes the response);
+    #: :class:`DonkeyAsyncClient`, directly or through the ``_httpx2_bridge``
+    #: (its ``_on_response`` observes the response);
     #: False when the SDK does not own the transport — the framework builds its own
     #: client (ADK ``model()`` via LiteLLM, CrewAI via its native OpenAI provider) or the
     #: adapter is given only ``default_headers`` (LlamaIndex, MS Agent Framework).
