@@ -606,11 +606,6 @@ class Donkey:
         if cfg.client_id and cfg.client_secret:
             # token fetches need no auth
             http_client = build_http_client(cfg, None, control_plane=True)
-            auth = AnypointConnectedApp(
-                client_id=cfg.client_id,
-                client_secret=cfg.client_secret,
-                control_plane_url=cfg.control_plane_url,
-                http_client=http_client,
-            )
+            auth = AnypointConnectedApp.from_config(cfg, http_client=http_client)
             return auth, http_client
         return None, None

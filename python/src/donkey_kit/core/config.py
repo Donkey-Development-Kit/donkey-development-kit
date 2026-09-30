@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Literal, cast
@@ -24,6 +26,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
 
 from ._verify import REGION_HOSTS
 from .cost import CostTags
+from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, is_loopback, require_secure_url
 from .errors import ConfigError
 
 Region = Literal["us", "eu", "ca", "jp"]
@@ -51,6 +54,44 @@ OnModelSubstitution = Literal["off", "raise"]
 LlmProxyAuth = Literal["client-id", "jwt"]
 
 _TOML_NAME = ".donkey-kit.toml"
+_LOCAL_TOML_NAME = ".donkey-kit.local.toml"
+TRUST_PROJECT_CONFIG_ENV = "DONKEY_TRUST_PROJECT_CONFIG"
+
+SourceKind = Literal["explicit", "env", "project", "local", "user", "default"]
+
+_SOURCE_LABELS: dict[SourceKind, str] = {
+    "explicit": "explicit",
+    "env": "env",
+    "project": "project file",
+    "local": "local overlay",
+    "user": "user file",
+    "default": "default",
+}
+
+# The working-directory files. An endpoint read from one of these only receives
+# credentials read from one of these (see DonkeyConfig.check_endpoints).
+_WORKDIR_KINDS: frozenset[SourceKind] = frozenset({"project", "local"})
+
+# Keys that should never sit in the committed project file.
+_SECRET_KEYS = ("client_secret", "llm_proxy_client_secret", "llm_proxy_key")
+
+
+class ConfigWarning(UserWarning):
+    """A config file holds something that belongs elsewhere (config resolution)."""
+
+
+@dataclass(frozen=True)
+class ConfigSource:
+    """Where one resolved config field came from. ``path`` is set for file sources."""
+
+    kind: SourceKind
+    path: Path | None = None
+
+    def __str__(self) -> str:
+        return _SOURCE_LABELS[self.kind]
+
+
+_EXPLICIT = ConfigSource("explicit")
 
 
 @dataclass(frozen=True)
@@ -133,20 +174,34 @@ class DonkeyConfig:
     # ``enduser.id`` header would carry an end-user identifier for no reader.
     send_cost_headers: bool = False  # env: DONKEY_SEND_COST_HEADERS
 
+    # --- Provenance (config resolution) ---
+    # Where each field was resolved from, filled in by from_env(). A field with
+    # no entry was set in code and counts as explicit.
+    _sources: Mapping[str, ConfigSource] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+
     # ----------------------------------------------------------------- factory
     @classmethod
     def from_env(cls) -> DonkeyConfig:
         """Build from env + optional ``.donkey-kit.toml``. Does not validate;
         call :meth:`validated` when you know which capability you need."""
 
-        toml = _load_toml()
+        layers = _load_layers()
+        sources: dict[str, ConfigSource] = {}
 
         def pick(env: str, key: str, default: object) -> object:
             if env in os.environ:
+                sources[key] = ConfigSource("env")
                 return os.environ[env]
-            if key in toml:
-                return toml[key]
+            for source, table in layers:
+                if key in table:
+                    sources[key] = source
+                    return table[key]
+            sources[key] = ConfigSource("default")
             return default
+
+        toml_cost = next((table["cost"] for _, table in layers if "cost" in table), None)
 
         region = str(pick("ANYPOINT_REGION", "region", "us"))
         if region not in REGION_HOSTS:
@@ -155,7 +210,7 @@ class DonkeyConfig:
             )
 
         return cls(
-            cost=_resolve_cost_tags(toml.get("cost")),
+            cost=_resolve_cost_tags(toml_cost),
             client_id=_opt(pick("ANYPOINT_CLIENT_ID", "client_id", None)),
             client_secret=_opt(pick("ANYPOINT_CLIENT_SECRET", "client_secret", None)),
             org_id=_opt(pick("ANYPOINT_ORG_ID", "org_id", None)),
@@ -207,6 +262,7 @@ class DonkeyConfig:
             send_cost_headers=_as_bool(
                 pick("DONKEY_SEND_COST_HEADERS", "send_cost_headers", False)
             ),
+            _sources=sources,
         )
 
     # --------------------------------------------------------------- derived
@@ -215,8 +271,13 @@ class DonkeyConfig:
         """The Anypoint control-plane base URL — explicit override or region."""
         return self.base_url or REGION_HOSTS[self.region]
 
+    def source_of(self, name: str) -> ConfigSource:
+        """Where field ``name`` was resolved from (``explicit`` if set in code)."""
+        return self._sources.get(name, _EXPLICIT)
+
     def with_overrides(self, **kw: object) -> DonkeyConfig:
-        return replace(self, **kw)  # type: ignore[arg-type]
+        sources = {**self._sources, **dict.fromkeys(kw, _EXPLICIT)}
+        return replace(self, _sources=sources, **kw)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------- validation
     def validated(self, *, need: str = "control_plane") -> DonkeyConfig:
@@ -268,7 +329,69 @@ class DonkeyConfig:
                 f"Configuration for {need!r} is incomplete. Missing:\n  - {joined}\n"
                 f"Set them via kwargs, environment variables, or {_TOML_NAME}."
             )
+        self.check_endpoints(need=need)
         return self
+
+    def check_endpoints(self, *, need: str) -> None:
+        """Raise :class:`ConfigError` if ``need``'s endpoint may not receive the
+        credentials that would be sent to it.
+
+        The endpoint must be ``https://`` (``http://`` only for loopback). And an
+        endpoint read from the working directory's ``.donkey-kit.toml`` or its
+        ``.local`` overlay only receives credentials read from those same files,
+        unless the host is loopback, a standard Anypoint control-plane host, or
+        ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. In ``jwt``
+        auth mode the JWT comes from the caller's ``AuthProvider``, never from
+        those files, so it always counts as outside them.
+        """
+        runtime_credential: str | None = None
+        if need == "control_plane":
+            key, env_var, url = "base_url", "ANYPOINT_BASE_URL", self.control_plane_url
+            credentials: tuple[str, ...] = ("client_id", "client_secret")
+        elif need == "llm":
+            if not self.llm_proxy_url:
+                return
+            key, env_var, url = "llm_proxy_url", "DONKEY_LLM_PROXY_URL", self.llm_proxy_url
+            if self.llm_proxy_auth == "jwt":
+                credentials = ("llm_proxy_wallet_client_id",)
+                runtime_credential = "the JWT from the llm_auth provider"
+            else:
+                credentials = ("llm_proxy_client_id", "llm_proxy_client_secret", "llm_proxy_key")
+        else:
+            raise ConfigError(f"Unknown capability {need!r} passed to check_endpoints().")
+
+        require_secure_url(url, name=key)
+        origin = self.source_of(key)
+        if origin.kind not in _WORKDIR_KINDS or is_loopback(url):
+            return
+        if need == "control_plane" and host_of(url) in STANDARD_CONTROL_PLANE_HOSTS:
+            return
+        if _as_bool(os.environ.get(TRUST_PROJECT_CONFIG_ENV, "")):
+            return
+        outside = [
+            f"{name} (from {self.source_of(name)})"
+            for name in credentials
+            if getattr(self, name) and self.source_of(name).kind not in _WORKDIR_KINDS
+        ]
+        if runtime_credential:
+            outside.append(runtime_credential)
+        if not outside:
+            return
+
+        assert origin.path is not None  # file sources always carry their path
+        local = origin.path.parent / _LOCAL_TOML_NAME
+        options = [f"set the URL in the environment instead ({env_var}=https://...)"]
+        if runtime_credential is None:
+            options.append(f"keep the credentials in {local}, next to the project file")
+        options.append(
+            f"trust this directory's config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
+        )
+        raise ConfigError(
+            f"Not sending {', '.join(outside)} to {host_of(url)}: {key} is set in "
+            f"{origin.path}, and credentials from outside the working directory's "
+            f"config files are only sent to hosts those files name when you opt in. "
+            f"Either:\n  - " + "\n  - ".join(options)
+        )
 
 
 def _opt(v: object) -> str | None:
@@ -343,25 +466,54 @@ def _as_llm_proxy_auth(v: object) -> LlmProxyAuth:
     return cast(LlmProxyAuth, token)
 
 
-def _load_toml() -> dict[str, object]:
-    """Read ``[donkey]`` table from ``.donkey-kit.toml`` in cwd or
-    ``$XDG_CONFIG_HOME``. Missing file is fine; malformed file raises."""
+def _load_layers() -> list[tuple[ConfigSource, dict[str, object]]]:
+    """The config file tables, highest precedence first.
 
-    candidates = [Path.cwd() / _TOML_NAME]
+    The working directory's ``.donkey-kit.local.toml`` over its
+    ``.donkey-kit.toml``; if neither exists, ``$XDG_CONFIG_HOME/.donkey-kit.toml``.
+    Missing files are fine; a malformed file raises."""
+
+    cwd = Path.cwd()
+    layers: list[tuple[ConfigSource, dict[str, object]]] = []
+    local = cwd / _LOCAL_TOML_NAME
+    if local.is_file():
+        layers.append((ConfigSource("local", local), _read_table(local)))
+    project = cwd / _TOML_NAME
+    if project.is_file():
+        table = _read_table(project)
+        _warn_on_secrets(project, table)
+        layers.append((ConfigSource("project", project), table))
+    if layers:
+        return layers
+
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg:
-        candidates.append(Path(xdg) / _TOML_NAME)
+        user = Path(xdg) / _TOML_NAME
+        if user.is_file():
+            return [(ConfigSource("user", user), _read_table(user))]
+    return []
 
-    for path in candidates:
-        if path.is_file():
-            try:
-                data = tomllib.loads(path.read_text())
-            except tomllib.TOMLDecodeError as exc:
-                raise ConfigError(f"Malformed {path}: {exc}") from exc
-            table = data.get("donkey", {})
-            if not isinstance(table, dict):
-                raise ConfigError(f"{path}: [donkey] must be a table.")
-            # Only accept keys that are real config fields.
-            known = {f.name for f in fields(DonkeyConfig)}
-            return {k: v for k, v in table.items() if k in known}
-    return {}
+
+def _read_table(path: Path) -> dict[str, object]:
+    """Read the ``[donkey]`` table, keeping only keys that are real config fields."""
+    try:
+        data = tomllib.loads(path.read_text())
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"Malformed {path}: {exc}") from exc
+    table = data.get("donkey", {})
+    if not isinstance(table, dict):
+        raise ConfigError(f"{path}: [donkey] must be a table.")
+    known = {f.name for f in fields(DonkeyConfig) if not f.name.startswith("_")}
+    return {k: v for k, v in table.items() if k in known}
+
+
+def _warn_on_secrets(path: Path, table: dict[str, object]) -> None:
+    found = [key for key in _SECRET_KEYS if key in table]
+    if found:
+        warnings.warn(
+            f"{path} contains {', '.join(found)}. Keep secrets out of the committed "
+            f"project file: move them to {_LOCAL_TOML_NAME} next to it (and gitignore "
+            "it) or to environment variables.",
+            ConfigWarning,
+            stacklevel=4,
+        )

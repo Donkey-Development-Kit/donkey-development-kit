@@ -34,7 +34,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..core.config import _TOML_NAME, DonkeyConfig
+from ..core.config import _TOML_NAME, ConfigSource, DonkeyConfig
+from ..core.endpoints import host_of
 from ..core.errors import (
     AuthError,
     ConfigError,
@@ -131,6 +132,40 @@ def _config_check(cfg: DonkeyConfig) -> tuple[Check, bool]:
             False,
         )
     return Check("config", Level.OK, f"{source} ({resolved} fields)"), True
+
+
+def _endpoint_detail(url: str, source: ConfigSource) -> str:
+    return f"{host_of(url) or 'no host'} ({source})"
+
+
+def _endpoint_checks(cfg: DonkeyConfig) -> list[Check]:
+    """One line per resolved endpoint: its host and where it came from. The
+    probe only exercises the LLM proxy, so a control-plane problem is shown
+    with its remediation but does not fail the report."""
+    checks: list[Check] = []
+    if cfg.llm_proxy_url:
+        checks.append(
+            Check(
+                "llm endpoint",
+                Level.INFO,
+                _endpoint_detail(cfg.llm_proxy_url, cfg.source_of("llm_proxy_url")),
+            )
+        )
+    remediation: str | None = None
+    if cfg.client_id or cfg.client_secret:
+        try:
+            cfg.check_endpoints(need="control_plane")
+        except ConfigError as exc:
+            remediation = str(exc)
+    checks.append(
+        Check(
+            "control plane",
+            Level.INFO,
+            _endpoint_detail(cfg.control_plane_url, cfg.source_of("base_url")),
+            remediation,
+        )
+    )
+    return checks
 
 
 def _probe_checks(result: ProbeResult) -> list[Check]:
@@ -242,7 +277,7 @@ def run_diagnostics(model: str, *, probe: Probe | None = None) -> list[Check]:
     diagnosis without a gateway."""
     cfg = DonkeyConfig.from_env()
     config_check, can_probe = _config_check(cfg)
-    checks = [config_check]
+    checks = [config_check, *_endpoint_checks(cfg)]
     if not can_probe:
         nc = "not checked — config incomplete"
         checks += [Check(n, Level.SKIP, nc) for n in ("credentials", "gateway", "model")]
