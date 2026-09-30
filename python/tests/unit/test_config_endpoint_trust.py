@@ -40,6 +40,7 @@ import pytest
 from donkey_kit import Donkey
 from donkey_kit.core.auth import AnypointConnectedApp
 from donkey_kit.core.config import ConfigWarning, DonkeyConfig
+from donkey_kit.core.cost import CostTags
 from donkey_kit.core.errors import ConfigError
 
 _TOML = ".donkey-kit.toml"
@@ -933,6 +934,43 @@ def test_local_overlay_is_layered_over_the_project_file(project: Path) -> None:
     cfg = DonkeyConfig.from_env()
     assert cfg.application_name == "from-local"
     assert cfg.business_group == "bg"
+
+
+def test_local_overlay_merges_key_by_key_with_per_key_labels(project: Path) -> None:
+    _write(project / _TOML, 'application_name = "from-project"\nbusiness_group = "bg"\n')
+    _write(project / _LOCAL_TOML, 'application_name = "from-local"\ntimeout_s = 5\n')
+
+    cfg = DonkeyConfig.from_env()
+    assert (cfg.application_name, cfg.business_group, cfg.timeout_s) == ("from-local", "bg", 5.0)
+    assert cfg.source_of("application_name").kind == "local"
+    assert cfg.source_of("business_group").kind == "project"
+    assert cfg.source_of("timeout_s").kind == "local"
+    assert cfg.source_of("max_retries").kind == "default"
+
+
+def test_local_overlay_merges_nested_cost_table_recursively(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (project / _TOML).write_text(
+        '[donkey]\n[donkey.cost]\nteam = "t-project"\nproject = "p-project"\n'
+        '"enduser.id" = "u-project"\n'
+    )
+    (project / _LOCAL_TOML).write_text('[donkey.cost]\nproject = "p-local"\n')
+    monkeypatch.setenv("DONKEY_COST_ENDUSER_ID", "u-env")
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.cost == CostTags(team="t-project", project="p-local", enduser_id="u-env")
+    assert cfg.source_of("cost.team").kind == "project"
+    assert cfg.source_of("cost.project").kind == "local"
+    assert cfg.source_of("cost.enduser_id").kind == "env"
+    assert cfg.source_of("cost.env").kind == "default"
+
+
+def test_unknown_cost_key_in_the_local_overlay_is_still_an_error(project: Path) -> None:
+    (project / _TOML).write_text('[donkey.cost]\nteam = "t"\n')
+    (project / _LOCAL_TOML).write_text('[donkey.cost]\nteem = "t"\n')
+    with pytest.raises(ConfigError, match="teem"):
+        DonkeyConfig.from_env()
 
 
 def test_env_wins_over_the_local_overlay(
