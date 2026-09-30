@@ -1,0 +1,48 @@
+{
+  "_note": "GET https://anypoint.mulesoft.com/apimanager/api/v1/organizations/<orgId>/environments/<envId>/apis/21189395/policies, 2026-09-30 — the two policies the platform auto-attaches to a model proxy to enforce model wallets (not applied by hand). The wallet objects are materialised verbatim into mw-find-key-policy's clientKeys; enforcement is mw-token-rate-limit-policy, a DIFFERENT policy from the llm-token-rate-limit that emits the x-token-* trio. Neither config carries a threshold/alert/warning setting. Only the two mw- entries are shown.",
+  "policies": [
+    {
+      "policyId": 9300894,
+      "order": 7,
+      "assetId": "mw-find-key-policy",
+      "assetVersion": "1.0.3",
+      "configurationData": {
+        "clientKeys": [
+          {
+            "id": "ddk-model-wallet",
+            "priority": 10,
+            "status": "active",
+            "predicates": [
+              { "type": "jwtClaim", "claim": "group", "values": ["ddk"] },
+              { "type": "jwtClaim", "claim": "client_id", "values": ["ddk-model-wallet-client"] }
+            ],
+            "tokenRateLimits": [
+              { "limit": 2000, "timeWindow": "day", "provider": "openai", "model": "openai:gpt-5-mini" },
+              { "limit": 100000, "timeWindow": "day", "provider": "gemini", "model": "gemini:gemini-2.5-flash" }
+            ]
+          },
+          {
+            "id": "ddk-langgraph-agent-wallet",
+            "priority": 20,
+            "status": "active",
+            "predicates": [
+              { "type": "jwtClaim", "claim": "group", "values": ["ddk"] },
+              { "type": "jwtClaim", "claim": "client_id", "values": ["ddk-langgraph-agent"] }
+            ],
+            "tokenRateLimits": [
+              { "limit": 2000, "timeWindow": "day", "provider": "openai", "model": "openai:gpt-5-mini" },
+              { "limit": 100000, "timeWindow": "day", "provider": "gemini", "model": "gemini:gemini-2.5-flash" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "policyId": 9300897,
+      "order": 9,
+      "assetId": "mw-token-rate-limit-policy",
+      "assetVersion": "1.0.0",
+      "configurationData": { "bucketKeyPrefix": "aiml-rl:v3:ck-ledger" }
+    }
+  ]
+}
