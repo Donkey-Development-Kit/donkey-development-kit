@@ -213,6 +213,8 @@ class DonkeyConfig:
     # The gateway's inbound correlation/call-id header names are UNVERIFIED
     # (docs/verified-apis.md §3); these let a customer point them at the real names without a
     # release. Unset → the loud ``Unverified`` placeholders in ``core/_verify``.
+    # These and the ``cost_*_header`` names are checked on construction: see
+    # ``core/header_names`` for the names they may not use.
     correlation_header: str | None = None  # env: DONKEY_CORRELATION_HEADER
     call_id_header: str | None = None      # env: DONKEY_CALL_ID_HEADER
 
@@ -277,17 +279,10 @@ class DonkeyConfig:
                 if clash:
                     problem = f"{clash[0]} already uses it"
             if problem is not None:
-                source = self.source_of(key)
-                where = (
-                    str(source.path)
-                    if source.path is not None
-                    else f"the environment ({env_var})"
-                    if source.kind == "env"
-                    else "code"
-                )
                 raise ConfigError(
                     f"{key} names the header {name!r}, which can't be used: {problem}. "
-                    f"{key} is set in {where}. Choose a different header name."
+                    f"{key} is set in {_where(self.source_of(key), env_var)}. "
+                    "Choose a different header name."
                 )
 
     # ----------------------------------------------------------------- factory
@@ -559,6 +554,15 @@ def _binding_error(
         "files are only sent to hosts those files name when you opt in. To continue, "
         "do one of:\n  - " + "\n  - ".join(options)
     )
+
+
+def _where(source: ConfigSource, env_var: str) -> str:
+    """Where a key was set, for an error message: the file, env var, or code."""
+    if source.path is not None:
+        return str(source.path)
+    if source.kind == "env":
+        return f"the environment ({env_var})"
+    return "code"
 
 
 def _value_at(root: object, name: str) -> object:
