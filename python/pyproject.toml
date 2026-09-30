@@ -94,9 +94,14 @@ cli = ["typer>=0.12", "pyyaml>=6.0", "rich>=13.0"]
 # no upper pins.
 test = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
-# --- Everything, for convenience ---
+# --- Everything that installs together, for convenience ---
+# The framework-free extras plus the one deep adapter (BG §1.8). The seven
+# connection_kwargs()-only framework extras are deliberately NOT here: at their
+# current releases they are not co-installable upstream, and with floors-only
+# extras (§8.4) no floor makes them so — pip fails with resolution-too-deep.
+# Install those one at a time. See docs/verified-apis.md §8.1 (#697).
 all = [
-    "donkey-kit[llm,langgraph,adk,strands,agent_framework,openai-agents,anthropic,crewai,llamaindex,mcp,otel,cli,local,test]",
+    "donkey-kit[llm,langgraph,mcp,otel,cli,local,test]",
 ]
 
 dev = [
