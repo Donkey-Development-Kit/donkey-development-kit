@@ -652,7 +652,8 @@ def _load_config_files() -> tuple[dict[str, object], dict[str, ConfigSource]]:
 
     The working directory's ``.donkey-kit.local.toml`` is merged key by key over
     its ``.donkey-kit.toml``; if neither exists, ``$XDG_CONFIG_HOME/.donkey-kit.toml``
-    is used alone. Missing files are fine; a malformed file raises."""
+    is used alone. Missing files are fine; a malformed file raises, and so does
+    a working-directory file that resolves (through a link) outside it."""
 
     cwd = Path.cwd()
     layers: list[tuple[ConfigSource, dict[str, object]]] = []

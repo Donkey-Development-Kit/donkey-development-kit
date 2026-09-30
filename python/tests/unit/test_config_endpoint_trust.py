@@ -208,7 +208,7 @@ def test_allow_http_switch_lets_remote_http_through_with_a_warning(
     with pytest.warns(ConfigWarning) as record:
         assert cfg.validated(need=need) is cfg
     messages = [str(w.message) for w in record]
-    assert any(key in m and host in m and "DONKEY_ALLOW_HTTP" in m for m in messages)
+    assert any(key in m and host in m and f"DONKEY_ALLOW_HTTP={value}" in m for m in messages)
 
 
 async def test_allow_http_switch_lets_the_token_request_through(

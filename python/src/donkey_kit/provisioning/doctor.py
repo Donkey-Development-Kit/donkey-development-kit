@@ -21,7 +21,7 @@ Before any request, doctor prints each endpoint's host and where it came from
 (env, project file, local overlay, user file or default). An LLM-proxy endpoint
 that may not receive the configured credentials (see
 :meth:`DonkeyConfig.check_endpoints`) fails the ``config`` line, so the probe
-never runs. When ``DONKEY_ALLOW_HTTP=1`` is set, a ``plain http`` line says so.
+never runs. When ``DONKEY_ALLOW_HTTP`` is on, a ``plain http`` line shows the value set.
 
 Honest scope (verification discipline): the gateway's *allow-list* rejection (a model refused by
 API Manager policy rather than missing at the provider) has no captured 403
@@ -40,7 +40,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from ..core.config import ConfigSource, DonkeyConfig
-from ..core.endpoints import ALLOW_HTTP_ENV, allow_http_enabled, host_of
+from ..core.endpoints import allow_http_enabled, allow_http_setting, host_of
 from ..core.errors import (
     AuthError,
     ConfigError,
@@ -176,7 +176,7 @@ def _endpoint_checks(cfg: DonkeyConfig) -> list[Check]:
             Check(
                 "plain http",
                 Level.INFO,
-                f"allowed to non-loopback hosts ({ALLOW_HTTP_ENV}=1 in env)",
+                f"allowed to non-loopback hosts ({allow_http_setting()} in env)",
             )
         )
     return checks

@@ -265,10 +265,11 @@ def test_project_loopback_control_plane_shows_binding_remediation(
     assert "DONKEY_TRUST_PROJECT_CONFIG" in (cp.remediation or "")
 
 
+@pytest.mark.parametrize("value", ["1", "true"])
 def test_allow_http_switch_is_shown_when_on(
-    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", value)
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "http://llm.example.test/proxy/")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
@@ -278,7 +279,7 @@ def test_allow_http_switch_is_shown_when_on(
 
     line = _by_name(checks, "plain http")
     assert line.level is Level.INFO
-    assert line.detail == "allowed to non-loopback hosts (DONKEY_ALLOW_HTTP=1 in env)"
+    assert line.detail == f"allowed to non-loopback hosts (DONKEY_ALLOW_HTTP={value} in env)"
     assert _by_name(checks, "config").level is Level.OK
 
 

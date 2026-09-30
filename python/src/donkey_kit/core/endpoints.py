@@ -30,6 +30,11 @@ def allow_http_enabled() -> bool:
     return os.environ.get(ALLOW_HTTP_ENV, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def allow_http_setting() -> str:
+    """The switch as set, e.g. ``DONKEY_ALLOW_HTTP=true``, for messages."""
+    return f"{ALLOW_HTTP_ENV}={os.environ.get(ALLOW_HTTP_ENV, '').strip()}"
+
+
 def _split(url: str) -> SplitResult | None:
     try:
         parts = urlsplit(url)
@@ -60,7 +65,8 @@ def is_loopback(url: str) -> bool:
 def require_secure_url(url: str, *, name: str) -> None:
     """Raise :class:`ConfigError` unless ``url`` is ``https://`` with a host, or
     ``http://`` to a loopback host. ``http://`` to any other host passes with a
-    :class:`ConfigWarning` when ``DONKEY_ALLOW_HTTP=1`` is set in the environment."""
+    :class:`ConfigWarning` when ``DONKEY_ALLOW_HTTP`` is on (``1``, ``true``,
+    ``yes`` or ``on``) in the environment."""
     parts = _split(url)
     if parts is not None and parts.hostname:
         if parts.scheme == "https":
@@ -70,7 +76,7 @@ def require_secure_url(url: str, *, name: str) -> None:
         if parts.scheme == "http" and allow_http_enabled():
             warnings.warn(
                 f"{name} uses plain http:// to {parts.hostname} because "
-                f"{ALLOW_HTTP_ENV}=1 is set. Credentials and data sent to it are "
+                f"{allow_http_setting()} is set. Credentials and data sent to it are "
                 "not encrypted in transit.",
                 ConfigWarning,
                 stacklevel=2,
