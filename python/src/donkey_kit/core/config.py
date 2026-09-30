@@ -127,9 +127,10 @@ class DonkeyConfig:
     llm_proxy_client_secret: str | None = field(  # env: DONKEY_LLM_PROXY_CLIENT_SECRET
         default=None, repr=False
     )
-    # Optional: fills the OpenAI SDK's mandatory ``api_key`` slot only. The proxy
-    # authenticates on the client_id/secret headers above and ignores the bearer,
-    # so this is rarely needed; leave unset to use a sentinel.
+    # Optional: the value for the client's API-key slot, sent to the LLM proxy
+    # (``Authorization: Bearer`` from OpenAI-compatible clients, ``x-api-key`` from
+    # Anthropic, ``x-goog-api-key`` from ADK's gemini()). A client-id proxy ignores
+    # it; leave unset to send a sentinel.
     llm_proxy_key: str | None = field(default=None, repr=False)  # env: DONKEY_LLM_PROXY_KEY
 
     # --- LLM proxy auth mode (BG §1.1, #509) ---
@@ -187,6 +188,8 @@ class DonkeyConfig:
     # gateway reads a cost-tag header (docs/verified-apis.md §3, #522), so the
     # ``donkey.cost.*`` span attributes are the only consumer, and an
     # ``enduser.id`` header would carry an end-user identifier for no reader.
+    # When enabled, the headers currently go on every request the SDK's clients
+    # send, control-plane requests included (#833).
     send_cost_headers: bool = False  # env: DONKEY_SEND_COST_HEADERS
 
     # --- Provenance (config resolution) ---

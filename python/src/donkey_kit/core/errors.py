@@ -75,7 +75,10 @@ class DonkeyError(Exception):
 
 
 class ConfigError(DonkeyError):
-    """Configuration is missing or invalid. Reports ALL problems at once (config resolution)."""
+    """Configuration is missing or invalid, or an endpoint may not receive the
+    credentials that would be sent to it (see ``DonkeyConfig.check_endpoints``).
+    Raised locally before any request; reports ALL missing fields at once
+    (config resolution)."""
 
 
 class ConfigWarning(UserWarning):
