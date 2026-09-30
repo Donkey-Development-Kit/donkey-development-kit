@@ -24,11 +24,13 @@ developer's real config is never read.
 from __future__ import annotations
 
 import contextlib
+import copy
+import dataclasses
 import json
 import os
 import threading
 import warnings
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -794,6 +796,131 @@ def test_config_built_in_code_is_trusted() -> None:
     )
     assert cfg.validated(need="control_plane") is cfg
     assert cfg.validated(need="llm") is cfg
+
+
+# --- sources follow values: a value changed in code counts as set in code ----
+
+_CODE_SECRET = "code-set-placeholder-4f1c"
+
+
+def _project_endpoints_with_local_credentials(project: Path) -> DonkeyConfig:
+    """Both endpoints in the project file, every credential in the local
+    overlay: a combination the binding rule accepts."""
+    _write(
+        project / _TOML,
+        'org_id = "org"\nbase_url = "https://cp.example.test"\n'
+        'llm_proxy_url = "https://llm.example.test/"\n',
+    )
+    _write(
+        project / _LOCAL_TOML,
+        'client_id = "cid"\nclient_secret = "file-secret"\n'
+        'llm_proxy_client_id = "llm-cid"\nllm_proxy_client_secret = "llm-file-secret"\n'
+        'llm_proxy_key = "file-key"\n',
+    )
+    cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="control_plane") is cfg
+    assert cfg.validated(need="llm") is cfg
+    return cfg
+
+
+@pytest.mark.parametrize(
+    ("secret", "need"),
+    [
+        ("client_secret", "control_plane"),
+        ("llm_proxy_client_secret", "llm"),
+        ("llm_proxy_key", "llm"),
+    ],
+)
+def test_secret_replaced_in_code_is_not_sent_to_a_project_url(
+    project: Path, secret: str, need: str
+) -> None:
+    cfg = dataclasses.replace(
+        _project_endpoints_with_local_credentials(project), **{secret: _CODE_SECRET}
+    )
+
+    assert cfg.source_of(secret).kind == "explicit"
+    with pytest.raises(ConfigError) as exc:
+        cfg.validated(need=need)
+    msg = str(exc.value)
+    assert f"{secret} (from " in msg
+    assert str(project / _TOML) in msg
+    assert _CODE_SECRET not in msg
+
+
+@pytest.mark.parametrize(
+    ("key", "url", "need"),
+    [
+        ("llm_proxy_url", "https://llm.code.test/", "llm"),
+        ("base_url", "https://cp.code.test", "control_plane"),
+    ],
+)
+def test_url_replaced_in_code_is_trusted(
+    project: Path, monkeypatch: pytest.MonkeyPatch, key: str, url: str, need: str
+) -> None:
+    _write(
+        project / _TOML,
+        'base_url = "https://cp.example.test"\nllm_proxy_url = "https://llm.example.test/"\n',
+    )
+    _env_control_plane_creds(monkeypatch)
+    _env_llm_creds(monkeypatch)
+    loaded = DonkeyConfig.from_env()
+    with pytest.raises(ConfigError):
+        loaded.validated(need=need)
+
+    cfg = dataclasses.replace(loaded, **{key: url})
+
+    assert cfg.source_of(key).kind == "explicit"
+    assert cfg.validated(need=need) is cfg
+
+
+@pytest.mark.parametrize(
+    "derive",
+    [
+        lambda c: dataclasses.replace(c, timeout_s=5.0),
+        lambda c: dataclasses.replace(c, llm_proxy_url=c.llm_proxy_url),
+        copy.copy,
+        copy.deepcopy,
+    ],
+    ids=["replace-other-field", "replace-same-value", "copy", "deepcopy"],
+)
+def test_unchanged_values_keep_their_file_label(
+    project: Path, monkeypatch: pytest.MonkeyPatch, derive: Callable[[DonkeyConfig], DonkeyConfig]
+) -> None:
+    _write(project / _TOML, 'llm_proxy_url = "https://llm.example.test/"\n')
+    _write(project / _LOCAL_TOML, 'llm_proxy_client_id = "llm-cid"\n')
+    _env_llm_creds(monkeypatch)
+    monkeypatch.delenv("DONKEY_LLM_PROXY_CLIENT_ID")
+
+    cfg = derive(DonkeyConfig.from_env())
+
+    assert cfg.source_of("llm_proxy_url").kind == "project"
+    assert cfg.source_of("llm_proxy_client_id").kind == "local"
+    assert cfg.source_of("llm_proxy_client_secret").kind == "env"
+    with pytest.raises(ConfigError, match="llm_proxy_client_secret"):
+        cfg.validated(need="llm")
+
+
+def test_with_overrides_still_marks_every_given_key_as_code(project: Path) -> None:
+    loaded = _project_endpoints_with_local_credentials(project)
+
+    same = loaded.with_overrides(client_secret=loaded.client_secret)
+    assert same.source_of("client_secret").kind == "explicit"
+    with pytest.raises(ConfigError, match="client_secret"):
+        same.validated(need="control_plane")
+
+    moved = loaded.with_overrides(base_url="https://cp.code.test")
+    assert moved.validated(need="control_plane") is moved
+
+
+def test_value_tracking_keeps_secrets_out_of_repr_and_equality(project: Path) -> None:
+    loaded = _project_endpoints_with_local_credentials(project)
+    cfg = dataclasses.replace(loaded, client_secret=_CODE_SECRET)
+
+    for text in (repr(cfg), str(cfg), repr(cfg.source_of("client_secret"))):
+        assert _CODE_SECRET not in text
+        assert "file-secret" not in text
+        assert "_sources" not in text
+    assert dataclasses.replace(loaded, _sources={}) == loaded
 
 
 # --- the .local.toml overlay ------------------------------------------------
