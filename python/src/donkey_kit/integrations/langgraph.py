@@ -120,6 +120,11 @@ def typed_refusals() -> Iterator[None]:
     (``APIConnectionError``/``APITimeoutError``, which are *not*
     ``APIStatusError``) are transport failures, not gateway refusals, and pass
     through untouched.
+
+    The typed error is raised without a chained cause: the framework error's
+    message repeats the gateway's rejection text, which for a PII block holds
+    the blocked values, and a traceback or ``logger.exception()`` renders every
+    chained exception. It stays reachable on ``exc.framework_error``.
     """
     import openai  # lazy: only the framework path needs it (the layered architecture)
 
@@ -130,10 +135,12 @@ def typed_refusals() -> Iterator[None]:
     except openai.APIStatusError as exc:
         # ``APIStatusError`` always carries the originating response; classify()
         # maps it (and reads back the sent correlation/call ids) into the typed
-        # taxonomy. ``from exc`` keeps the framework wrapper as the cause.
-        # openai>=3 vendors its own httpx, so ``exc.response`` is statically a
-        # distinct-but-duck-identical Response type; cast erases it to the one
-        # classify wants. `cast(Any, …)` (not `cast("httpx.Response", …)`) so this
-        # typechecks clean under BOTH majors: under openai<3 ``exc.response`` is
-        # already ``httpx.Response`` and a cast to it is `redundant-cast` (#597).
-        raise classify(cast(Any, exc.response)) from exc
+        # taxonomy. openai>=3 vendors its own httpx, so ``exc.response`` is
+        # statically a distinct-but-duck-identical Response type; cast erases it
+        # to the one classify wants. `cast(Any, …)` (not `cast("httpx.Response", …)`)
+        # so this typechecks clean under BOTH majors: under openai<3
+        # ``exc.response`` is already ``httpx.Response`` and a cast to it is
+        # `redundant-cast` (#597).
+        typed = classify(cast(Any, exc.response))
+        typed.framework_error = exc
+        raise typed from None

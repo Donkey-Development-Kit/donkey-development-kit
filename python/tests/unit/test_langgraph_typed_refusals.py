@@ -77,8 +77,10 @@ def test_typed_refusals_converts_openai_status_error_to_typed() -> None:
         with typed_refusals():
             raise err
 
-    # The framework error is preserved as the cause (raise ... from exc).
-    assert excinfo.value.__cause__ is err
+    # The framework error is kept on .framework_error, not chained: its message
+    # repeats the gateway text, which tracebacks would render.
+    assert excinfo.value.framework_error is err
+    assert excinfo.value.__cause__ is None
     assert "EMAIL" in excinfo.value.entities
 
 

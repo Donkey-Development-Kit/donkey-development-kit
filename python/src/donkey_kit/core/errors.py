@@ -58,6 +58,11 @@ class DonkeyError(Exception):
       client-sent ids above. The gateway-side join key is ``correlation_id``.
     """
 
+    #: The framework exception this error was mapped from, if any. Kept here
+    #: rather than chained as ``__cause__`` because its message can repeat
+    #: request content, and a traceback renders every chained exception.
+    framework_error: BaseException | None = None
+
     def __init__(
         self,
         message: str,
