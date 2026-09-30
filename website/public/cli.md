@@ -90,8 +90,8 @@ found.
 - **Never writes a secret.** `client_secret`, `llm_proxy_client_secret`, and
   `llm_proxy_key` are emitted as commented pointers, not values. Put them in a
   gitignored `.donkey-kit.local.toml` next to the file, or in environment
-  variables. A URL in `.donkey-kit.toml` only receives credentials from those
-  two files unless you opt in; see
+  variables. A URL in `.donkey-kit.toml`, including a loopback one, only
+  receives credentials from those two files unless you opt in; see
   [Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
 - **Idempotent.** An existing file is left untouched unless you pass `--force`.
 
@@ -119,7 +119,8 @@ states how old the reading is, since the proxy has no budget endpoint.
 Before the call, `doctor` prints each endpoint's host and where it came from:
 `env`, `project file`, `local overlay`, `user file` or `default`. If the LLM
 proxy URL comes from the working directory's config files but its credentials
-don't, the `config` line fails with the
+don't (a loopback URL such as the simulator's included), the `config` line
+fails with the
 [remediation](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives) and no
 request is sent. A control-plane endpoint with the same problem shows its
 remediation on the `control plane` line without failing the report, since

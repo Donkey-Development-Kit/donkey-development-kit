@@ -110,8 +110,8 @@ framework that may not be installed.
   field at once rather than one failure per run. `Donkey.from_env()` is the
   entry point. Each field records its source, so an endpoint read from the
   working directory's files only receives credentials from those files
-  (`DonkeyConfig.check_endpoints`), and every endpoint must be `https://`
-  except loopback.
+  (`DonkeyConfig.check_endpoints`), loopback included, and every endpoint must
+  be `https://` except loopback.
 - **The transport is the attachment point.** `DonkeyAsyncClient` exposes four
   internal lifecycle hooks — no-op by default, **not** public API, mirrored on the
   sync twin `DonkeyClient` — so the six-piece minimum *attaches* rather than

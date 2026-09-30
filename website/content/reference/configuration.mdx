@@ -250,7 +250,12 @@ A `base_url` or `llm_proxy_url` read from the working directory's
 from those same two files. If a credential that would be sent there comes from
 anywhere else (an environment variable, the user config file, or code), the SDK
 raises `ConfigError` before sending anything. The error names the file, the key
-and the host.
+and the host. Credentials supplied in code count as coming from outside the
+files: a secret passed through `with_overrides(client_secret=…)` or
+`DonkeyConfig(...)`, and in `jwt` mode the JWT returned by `llm_auth`. The same
+rule applies to loopback hosts: they are exempt from the `https://` rule only,
+so a `http://127.0.0.1:…` URL in `.donkey-kit.toml` with the secret in the
+environment is refused too.
 
 | Endpoint | Credentials sent to it |
 |---|---|
@@ -260,7 +265,6 @@ and the host.
 
 These are not affected:
 
-- loopback hosts;
 - a `base_url` on a standard Anypoint control-plane host
   (`anypoint.mulesoft.com`, `eu1.anypoint.mulesoft.com`,
   `ca1.anypoint.mulesoft.com`, `jp1.anypoint.mulesoft.com`);

@@ -66,6 +66,12 @@ Whatever you choose, point your client at the same address: set
 environment variable or `.donkey-kit.toml` — the `--port`/`--host` flags (or the
 `serve()` keyword arguments below) are the only way to change it.
 
+Set the simulator URL in the environment (or in code), as above. If you keep it
+in `.donkey-kit.toml` instead, put the credentials in `.donkey-kit.local.toml`
+next to it: a URL from the working directory's config files, loopback included,
+only receives credentials from those files. See
+[Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+
   If you run the simulator's ASGI app under `uvicorn` yourself instead of
   through `donkey mock`, remember uvicorn's own default port is `8000`, not
   `8080`. Using `donkey mock` (or `serve()`) gives you the documented `8080`

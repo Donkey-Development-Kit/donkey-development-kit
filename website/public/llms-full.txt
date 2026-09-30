@@ -3338,6 +3338,12 @@ Whatever you choose, point your client at the same address: set
 environment variable or `.donkey-kit.toml` — the `--port`/`--host` flags (or the
 `serve()` keyword arguments below) are the only way to change it.
 
+Set the simulator URL in the environment (or in code), as above. If you keep it
+in `.donkey-kit.toml` instead, put the credentials in `.donkey-kit.local.toml`
+next to it: a URL from the working directory's config files, loopback included,
+only receives credentials from those files. See
+[Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+
   If you run the simulator's ASGI app under `uvicorn` yourself instead of
   through `donkey mock`, remember uvicorn's own default port is `8000`, not
   `8080`. Using `donkey mock` (or `serve()`) gives you the documented `8080`
@@ -3710,8 +3716,8 @@ found.
 - **Never writes a secret.** `client_secret`, `llm_proxy_client_secret`, and
   `llm_proxy_key` are emitted as commented pointers, not values. Put them in a
   gitignored `.donkey-kit.local.toml` next to the file, or in environment
-  variables. A URL in `.donkey-kit.toml` only receives credentials from those
-  two files unless you opt in; see
+  variables. A URL in `.donkey-kit.toml`, including a loopback one, only
+  receives credentials from those two files unless you opt in; see
   [Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
 - **Idempotent.** An existing file is left untouched unless you pass `--force`.
 
@@ -3739,7 +3745,8 @@ states how old the reading is, since the proxy has no budget endpoint.
 Before the call, `doctor` prints each endpoint's host and where it came from:
 `env`, `project file`, `local overlay`, `user file` or `default`. If the LLM
 proxy URL comes from the working directory's config files but its credentials
-don't, the `config` line fails with the
+don't (a loopback URL such as the simulator's included), the `config` line
+fails with the
 [remediation](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives) and no
 request is sent. A control-plane endpoint with the same problem shows its
 remediation on the `control plane` line without failing the report, since
@@ -9198,7 +9205,12 @@ A `base_url` or `llm_proxy_url` read from the working directory's
 from those same two files. If a credential that would be sent there comes from
 anywhere else (an environment variable, the user config file, or code), the SDK
 raises `ConfigError` before sending anything. The error names the file, the key
-and the host.
+and the host. Credentials supplied in code count as coming from outside the
+files: a secret passed through `with_overrides(client_secret=…)` or
+`DonkeyConfig(...)`, and in `jwt` mode the JWT returned by `llm_auth`. The same
+rule applies to loopback hosts: they are exempt from the `https://` rule only,
+so a `http://127.0.0.1:…` URL in `.donkey-kit.toml` with the secret in the
+environment is refused too.
 
 | Endpoint | Credentials sent to it |
 |---|---|
@@ -9208,7 +9220,6 @@ and the host.
 
 These are not affected:
 
-- loopback hosts;
 - a `base_url` on a standard Anypoint control-plane host
   (`anypoint.mulesoft.com`, `eu1.anypoint.mulesoft.com`,
   `ca1.anypoint.mulesoft.com`, `jp1.anypoint.mulesoft.com`);

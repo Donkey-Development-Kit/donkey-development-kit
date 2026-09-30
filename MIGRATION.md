@@ -68,9 +68,13 @@ documented secrets file is now read. Full reference:
    `./.donkey-kit.toml` (or `./.donkey-kit.local.toml`) and a credential that
    would be sent there comes from an environment variable, the user config file
    or code, the SDK raises `ConfigError` before sending anything. The error names
-   the file, the key and the host. Loopback hosts and the standard Anypoint
-   control-plane hosts are exempt. In `jwt` mode the JWT always counts as coming
-   from outside the files.
+   the file, the key and the host. A `base_url` on a standard Anypoint
+   control-plane host is exempt. Loopback hosts are not: they are exempt from
+   the `https://` rule only, so a loopback URL in `.donkey-kit.toml` with the
+   secret in the environment is refused as well. Credentials supplied in code
+   count as coming from outside the files: a secret passed through
+   `with_overrides(client_secret=…)` or `DonkeyConfig(...)`, and in `jwt` mode
+   the JWT returned by `llm_auth`.
 3. **`.donkey-kit.local.toml` is now read.** It is overlaid on
    `./.donkey-kit.toml` with the same `[donkey]` keys; environment variables
    still win over both. When the working directory has neither file,
@@ -100,7 +104,10 @@ export DONKEY_LLM_PROXY_CLIENT_SECRET=…   # now: ConfigError naming the file a
 
 Unaffected: URLs and credentials both in environment variables (the usual CI
 setup); config built in code with `DonkeyConfig(...)`; a `base_url` on a
-standard Anypoint host; loopback URLs; and the user config file.
+standard Anypoint host; and the user config file. The local simulator is
+unaffected when its URL is set in the environment (`DONKEY_LLM_PROXY_URL`) or in
+code, as the docs show; a simulator URL kept in `.donkey-kit.toml` needs its
+credentials in `.donkey-kit.local.toml` (or the URL moved to the environment).
 
 #### How to migrate
 
