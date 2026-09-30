@@ -2,7 +2,8 @@
 
 Resolution order: explicit kwarg → env var → config file → default. The config
 file is the working directory's ``.donkey-kit.toml`` with its gitignored
-``.donkey-kit.local.toml`` overlaid on top; if neither exists,
+``.donkey-kit.local.toml`` merged over it key by key (nested tables such as
+``[donkey.cost]`` recursively; scalars and arrays replace); if neither exists,
 ``$XDG_CONFIG_HOME/.donkey-kit.toml``. We never read ``.env`` implicitly — the
 user calls ``load_dotenv()`` themselves.
 
@@ -199,8 +200,10 @@ class DonkeyConfig:
     # ----------------------------------------------------------------- factory
     @classmethod
     def from_env(cls) -> DonkeyConfig:
-        """Build from env + optional ``.donkey-kit.toml``. Does not validate;
-        call :meth:`validated` when you know which capability you need."""
+        """Build from env + the optional config files (see the module docstring).
+        Does not validate; call :meth:`validated` when you know which capability
+        you need. Each field, and each cost dimension as ``cost.<name>``, records
+        its source for :meth:`source_of`."""
 
         table, file_sources = _load_config_files()
         sources: dict[str, ConfigSource] = {}
