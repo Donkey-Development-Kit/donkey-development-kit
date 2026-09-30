@@ -21,7 +21,10 @@ abandonment (config resolution).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import secrets
 import sys
 import warnings
 from collections.abc import Mapping
@@ -81,6 +84,7 @@ _SOURCE_LABELS: dict[SourceKind, str] = {
 # The working-directory files. An endpoint read from one of these only receives
 # credentials read from one of these (see DonkeyConfig.check_endpoints).
 _WORKDIR_KINDS: frozenset[SourceKind] = frozenset({"project", "local"})
+_FILE_KINDS: frozenset[SourceKind] = _WORKDIR_KINDS | {"user"}
 
 # Keys that should never sit in the committed project file.
 _SECRET_KEYS = ("client_secret", "llm_proxy_client_secret", "llm_proxy_key")
@@ -100,13 +104,55 @@ class ConfigSource:
 _EXPLICIT = ConfigSource("explicit")
 
 
+# Provenance holds a keyed digest of each loaded value, never the value. The key
+# is random per process, so a digest can be checked here and says nothing
+# about the value anywhere else.
+_PROCESS_KEY = secrets.token_bytes(32)
+
+# When provenance can't be checked (it was recorded under another process's
+# key), an endpoint keeps its recorded label and a credential counts as set in
+# code: the binding rule then refuses at least what it refused at load time.
+_ENDPOINT_KEYS = frozenset({"base_url", "llm_proxy_url"})
+
+
+def _key_id() -> str:
+    return hmac.new(_PROCESS_KEY, b"key id", hashlib.sha256).hexdigest()[:16]
+
+
+def _digest(value: object) -> str:
+    return hmac.new(_PROCESS_KEY, repr(value).encode(), hashlib.sha256).hexdigest()
+
+
 @dataclass(frozen=True)
 class _Loaded:
-    """A field's source plus the value it resolved to there. The value stays
-    out of repr and equality because it may be a secret."""
+    """A field's source plus a keyed digest of the value it resolved to there."""
 
     source: ConfigSource
-    value: object = field(repr=False, compare=False)
+    digest: str
+    key_id: str
+
+
+def _as_loaded(name: str, entry: object) -> _Loaded:
+    """``entry`` as a :class:`_Loaded`, also accepting the plain mapping
+    ``dataclasses.asdict`` turns one into. Anything else is refused."""
+    if isinstance(entry, _Loaded):
+        return entry
+    if isinstance(entry, Mapping):
+        source, digest, key_id = entry.get("source"), entry.get("digest"), entry.get("key_id")
+        if isinstance(source, Mapping) and source.get("kind") in _SOURCE_LABELS:
+            path = source.get("path")
+            source = ConfigSource(source["kind"], None if path is None else Path(path))
+        if (
+            isinstance(source, ConfigSource)
+            and (source.path is not None or source.kind not in _FILE_KINDS)
+            and isinstance(digest, str)
+            and isinstance(key_id, str)
+        ):
+            return _Loaded(source, digest, key_id)
+    raise ConfigError(
+        f"The recorded source of {name!r} is unreadable. Build the config with "
+        "DonkeyConfig.from_env(), or in code without _sources."
+    )
 
 
 @dataclass(frozen=True)
@@ -193,12 +239,16 @@ class DonkeyConfig:
     send_cost_headers: bool = False  # env: DONKEY_SEND_COST_HEADERS
 
     # --- Provenance (config resolution) ---
-    # Where each field was resolved from and the value it had there, filled in
-    # by from_env(). A field with no entry, or whose value no longer matches,
-    # was set in code and counts as explicit.
+    # Where each field was resolved from and a keyed digest of the value it had
+    # there, filled in by from_env(). A field with no entry, or whose value no
+    # longer matches, was set in code and counts as explicit.
     _sources: Mapping[str, _Loaded] = field(
         default_factory=dict, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        loaded = {name: _as_loaded(name, entry) for name, entry in self._sources.items()}
+        object.__setattr__(self, "_sources", loaded)
 
     # ----------------------------------------------------------------- factory
     @classmethod
@@ -236,7 +286,7 @@ class DonkeyConfig:
                 f"Unknown region {region!r}. Expected one of {sorted(REGION_HOSTS)}."
             )
 
-        cfg = cls(
+        values: dict[str, object] = dict(
             cost=_resolve_cost_tags(toml_cost),
             client_id=_opt(pick("ANYPOINT_CLIENT_ID", "client_id", None)),
             client_secret=_opt(pick("ANYPOINT_CLIENT_SECRET", "client_secret", None)),
@@ -290,8 +340,12 @@ class DonkeyConfig:
                 pick("DONKEY_SEND_COST_HEADERS", "send_cost_headers", False)
             ),
         )
-        loaded = {name: _Loaded(src, cfg._value_at(name)) for name, src in sources.items()}
-        return replace(cfg, _sources=loaded)
+        key_id = _key_id()
+        loaded = {
+            name: _Loaded(src, _digest(_value_at(values, name)), key_id)
+            for name, src in sources.items()
+        }
+        return cls(**values, _sources=loaded)  # type: ignore[arg-type]
 
     # --------------------------------------------------------------- derived
     @property
@@ -305,16 +359,13 @@ class DonkeyConfig:
         through ``dataclasses.replace``, :meth:`with_overrides` or direct
         construction; copies that keep the value keep the label."""
         loaded = self._sources.get(name)
-        if loaded is None or self._value_at(name) != loaded.value:
+        if loaded is None:
+            return _EXPLICIT
+        if loaded.key_id != _key_id():
+            return loaded.source if name in _ENDPOINT_KEYS else _EXPLICIT
+        if not hmac.compare_digest(_digest(_value_at(self, name)), loaded.digest):
             return _EXPLICIT
         return loaded.source
-
-    def _value_at(self, name: str) -> object:
-        """The value of field ``name``; ``cost.team`` reads a cost dimension."""
-        value: object = self
-        for part in name.split("."):
-            value = getattr(value, part)
-        return value
 
     def with_overrides(self, **kw: object) -> DonkeyConfig:
         sources = {k: v for k, v in self._sources.items() if k not in kw}
@@ -465,6 +516,16 @@ def _binding_error(
         "files are only sent to hosts those files name when you opt in. To continue, "
         "do one of:\n  - " + "\n  - ".join(options)
     )
+
+
+def _value_at(root: object, name: str) -> object:
+    """The value of field ``name`` on a config or a mapping of field values;
+    ``cost.team`` reads a cost dimension."""
+    first, *rest = name.split(".")
+    value = root[first] if isinstance(root, Mapping) else getattr(root, first)
+    for part in rest:
+        value = getattr(value, part)
+    return value
 
 
 def _opt(v: object) -> str | None:
