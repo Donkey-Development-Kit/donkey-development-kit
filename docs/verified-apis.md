@@ -228,8 +228,10 @@ them, and cost/usage is metered by the `llm-proxy-core` policy from token usage,
 attributed by API instance + consuming client application. The fixed dimensions
 (`team` / `project` / `env` / `enduser.id`, set once via `Donkey.from_env(team=…)`
 / `[donkey.cost]` / `DONKEY_COST_*`, overridable per run via `donkey.run(team=…)`)
-are still emitted as `X-Anypoint-Cost-*` request headers (harmless — nothing reads
-them) *and*, authoritatively, as `donkey.cost.*` **span** attributes. Because the
+are emitted as `donkey.cost.*` **span** attributes, the authoritative carrier, and
+as `X-Anypoint-Cost-*` request headers only when `send_cost_headers` /
+`DONKEY_SEND_COST_HEADERS` is enabled (default off; nothing on the gateway reads
+them). Because the
 SDK controls the span end to end, cost attribution works in tracing regardless of
 the header question; a customer whose own gateway *does* read a cost header can
 point the SDK at it via the `cost_*_header` overrides.
