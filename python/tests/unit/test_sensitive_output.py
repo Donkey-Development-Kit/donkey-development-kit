@@ -80,9 +80,9 @@ def test_config_rendering_omits_secret_values(render: Callable[[object], str]) -
 
 def test_config_rendering_keeps_non_secret_fields_for_debugging() -> None:
     text = repr(_secret_cfg())
-    assert "cp-client-id" in text
-    assert "proxy-client-id" in text
-    assert "https://proxy.example.internal" in text
+    assert "client_id='cp-client-id'" in text
+    assert "llm_proxy_client_id='proxy-client-id'" in text
+    assert "llm_proxy_url='https://proxy.example.internal'" in text
 
 
 def test_config_secret_fields_stay_readable_and_comparable() -> None:

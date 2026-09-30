@@ -153,8 +153,8 @@ def test_rendering_keeps_non_secret_keys_and_values(kwargs: Mapping[str, Any]) -
 def test_proxy_url_and_client_id_stay_visible() -> None:
     kw = _SURFACES["langgraph.connection_kwargs"]()
     text = repr(kw)
-    assert "https://proxy.example.internal" in text
-    assert "proxy-client-id" in text
+    assert "'base_url': 'https://proxy.example.internal'" in text
+    assert "'client_id': 'proxy-client-id'" in text
 
 
 # --- unchanged behaviour ----------------------------------------------------------------

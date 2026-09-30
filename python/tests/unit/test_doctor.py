@@ -166,12 +166,8 @@ def test_endpoint_lines_name_host_and_source(
 
     checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
 
-    llm = _by_name(checks, "llm endpoint")
-    assert "llm.example.test" in llm.detail
-    assert "project file" in llm.detail
-    cp = _by_name(checks, "control plane")
-    assert "anypoint.mulesoft.com" in cp.detail
-    assert "default" in cp.detail
+    assert _by_name(checks, "llm endpoint").detail == "llm.example.test (project file)"
+    assert _by_name(checks, "control plane").detail == "anypoint.mulesoft.com (default)"
     assert not doctor.has_failure(checks)
 
 
