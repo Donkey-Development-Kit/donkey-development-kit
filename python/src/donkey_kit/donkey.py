@@ -22,7 +22,7 @@ from contextlib import AbstractContextManager, AsyncExitStack
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 from .core import _verify
-from .core.auth import AnypointConnectedApp, AuthProvider
+from .core.auth import AnypointConnectedApp, AuthProvider, EndpointCheckedAuth
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope, cache_scope
 from .core.config import DonkeyConfig, OnModelSubstitution
@@ -157,8 +157,20 @@ class Donkey:
         self._http: DonkeyAsyncClient = build_http_client(
             self._cfg, data_plane_auth, budget=self._budget
         )
+        control_plane_auth = self._auth
+        if auth is not None:
+            # A caller-supplied provider is set in code, so its token counts as
+            # coming from outside the project config files (config resolution).
+            control_plane_auth = EndpointCheckedAuth(
+                auth,
+                functools.partial(
+                    self._cfg.check_endpoints,
+                    need="control_plane",
+                    code_credential="the token from the Donkey(auth=...) provider",
+                ),
+            )
         self._control_http: DonkeyAsyncClient = build_http_client(
-            self._cfg, self._auth, control_plane=True
+            self._cfg, control_plane_auth, control_plane=True
         )
         # Built only if someone asks for a blocking client, so the common async
         # path never opens a connection pool it will not use.

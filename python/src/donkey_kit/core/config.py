@@ -347,7 +347,7 @@ class DonkeyConfig:
             raise ConfigError(f"Unknown capability {need!r} passed to validated().")
         return missing
 
-    def check_endpoints(self, *, need: str) -> None:
+    def check_endpoints(self, *, need: str, code_credential: str | None = None) -> None:
         """Raise :class:`ConfigError` if ``need``'s endpoint may not receive the
         credentials that would be sent to it.
 
@@ -358,9 +358,11 @@ class DonkeyConfig:
         ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. Loopback
         hosts are exempt from the ``https://`` rule only. In ``jwt``
         auth mode the JWT comes from the caller's ``AuthProvider``, never from
-        those files, so it always counts as outside them.
+        those files, so it always counts as outside them. ``code_credential``
+        names another credential supplied in code, such as the token of a
+        ``Donkey(auth=...)`` provider, which counts as outside them too.
         """
-        runtime_credential: str | None = None
+        runtime_credential = code_credential
         if need == "control_plane":
             key, env_var, url = "base_url", "ANYPOINT_BASE_URL", self.control_plane_url
             credentials: tuple[str, ...] = ("client_id", "client_secret")

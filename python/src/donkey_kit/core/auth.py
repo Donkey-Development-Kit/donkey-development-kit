@@ -170,6 +170,22 @@ class AnypointConnectedApp(AuthProvider):
         return token
 
 
+class EndpointCheckedAuth(AuthProvider):
+    """Runs ``endpoint_check`` before each ``token()`` of ``provider``, so a
+    :class:`ConfigError` stops the token before it is fetched or sent."""
+
+    def __init__(self, provider: AuthProvider, endpoint_check: Callable[[], None]) -> None:
+        self._provider = provider
+        self._endpoint_check = endpoint_check
+
+    async def token(self) -> str:
+        self._endpoint_check()
+        return await self._provider.token()
+
+    async def invalidate(self) -> None:
+        await self._provider.invalidate()
+
+
 class ChainedAuth(AuthProvider):
     """Try providers in order; the first that yields a token wins."""
 
