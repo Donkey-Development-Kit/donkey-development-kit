@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from donkey_kit.core.budget import Budget
+from donkey_kit.core.config import ConfigWarning
 from donkey_kit.core.errors import (
     AuthError,
     GatewayUnavailable,
@@ -266,6 +267,35 @@ def test_project_loopback_control_plane_shows_binding_remediation(
     cp = _by_name(checks, "control plane")
     assert "127.0.0.1 (project file)" in cp.detail
     assert "DONKEY_TRUST_PROJECT_CONFIG" in (cp.remediation or "")
+
+
+def test_allow_http_switch_is_shown_when_on(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "http://llm.example.test/proxy/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    with pytest.warns(ConfigWarning):
+        checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    line = _by_name(checks, "plain http")
+    assert line.level is Level.INFO
+    assert line.detail == "allowed to non-loopback hosts (DONKEY_ALLOW_HTTP=1 in env)"
+    assert _by_name(checks, "config").level is Level.OK
+
+
+def test_allow_http_line_is_absent_when_off(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/proxy/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    assert "plain http" not in [c.name for c in checks]
 
 
 # --- budget staleness (AC3) ---------------------------------------------------

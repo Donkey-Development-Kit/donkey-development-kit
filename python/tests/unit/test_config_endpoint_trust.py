@@ -36,7 +36,7 @@ import pytest
 
 from donkey_kit import Donkey
 from donkey_kit.core.auth import AnypointConnectedApp
-from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.config import ConfigWarning, DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 
 _TOML = ".donkey-kit.toml"
@@ -161,6 +161,136 @@ async def test_token_request_allows_plain_http_loopback_endpoint() -> None:
         )
         assert await auth.token() == "tok"
     assert len(seen) == 1
+
+
+# --- DONKEY_ALLOW_HTTP: env-only switch for plain http to other hosts ---------
+
+
+def _remote_http_config() -> DonkeyConfig:
+    return DonkeyConfig(
+        client_id="cid",
+        client_secret="secret",
+        org_id="org",
+        base_url="http://cp.example.test",
+        llm_proxy_url="http://llm.example.test/proxy/",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+    )
+
+
+def test_plain_http_error_names_the_allow_http_switch(project: Path) -> None:
+    with pytest.raises(ConfigError) as exc:
+        _remote_http_config().validated(need="llm")
+    msg = str(exc.value)
+    assert "https://" in msg
+    assert "DONKEY_ALLOW_HTTP=1" in msg
+
+
+@pytest.mark.parametrize("value", ["1", "true"])
+@pytest.mark.parametrize(
+    ("need", "key", "host"),
+    [
+        ("llm", "llm_proxy_url", "llm.example.test"),
+        ("control_plane", "base_url", "cp.example.test"),
+    ],
+)
+def test_allow_http_switch_lets_remote_http_through_with_a_warning(
+    project: Path, monkeypatch: pytest.MonkeyPatch, value: str, need: str, key: str, host: str
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", value)
+    cfg = _remote_http_config()
+
+    with pytest.warns(ConfigWarning) as record:
+        assert cfg.validated(need=need) is cfg
+    messages = [str(w.message) for w in record]
+    assert any(key in m and host in m and "DONKEY_ALLOW_HTTP" in m for m in messages)
+
+
+async def test_allow_http_switch_lets_the_token_request_through(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    seen: list[httpx.Request] = []
+    async with _recording_client(seen) as http_client:
+        auth = AnypointConnectedApp(
+            client_id="cid",
+            client_secret="secret",
+            control_plane_url="http://cp.example.test",
+            http_client=http_client,
+        )
+        with pytest.warns(ConfigWarning, match="token endpoint"):
+            assert await auth.token() == "tok"
+    assert [r.url.host for r in seen] == ["cp.example.test"]
+
+
+def test_allow_http_switch_off_values_keep_the_check(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "0")
+    with pytest.raises(ConfigError, match="https://"):
+        _remote_http_config().validated(need="llm")
+
+
+def test_allow_http_switch_does_not_accept_other_schemes(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    cfg = DonkeyConfig(
+        llm_proxy_url="ftp://llm.example.test",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+    )
+    with pytest.raises(ConfigError, match="https://"):
+        cfg.validated(need="llm")
+
+
+def test_loopback_http_does_not_warn_with_the_switch_on(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    cfg = DonkeyConfig(
+        llm_proxy_url="http://127.0.0.1:8080",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert cfg.validated(need="llm") is cfg
+
+
+@pytest.mark.parametrize("filename", [_TOML, _LOCAL_TOML])
+@pytest.mark.parametrize("line", ['allow_http = true\n', 'DONKEY_ALLOW_HTTP = "1"\n'])
+def test_allow_http_switch_cannot_come_from_a_config_file(
+    project: Path, filename: str, line: str
+) -> None:
+    body = (
+        'llm_proxy_url = "http://llm.example.test/proxy/"\n'
+        'llm_proxy_client_id = "cid"\n'
+        'llm_proxy_client_secret = "secret"\n'
+    )
+    _write(project / filename, body + line)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cfg = DonkeyConfig.from_env()
+    with pytest.raises(ConfigError, match="https://"):
+        cfg.validated(need="llm")
+
+
+def test_allow_http_switch_does_not_change_the_binding_rule(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    _write(project / _TOML, 'llm_proxy_url = "http://llm.example.test/proxy/"\n')
+    _env_llm_creds(monkeypatch)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(ConfigError) as exc:
+            DonkeyConfig.from_env().validated(need="llm")
+    msg = str(exc.value)
+    assert str(project / _TOML) in msg
+    assert "DONKEY_TRUST_PROJECT_CONFIG" in msg
 
 
 # --- binding: project-file endpoints vs. credentials from elsewhere ---------
