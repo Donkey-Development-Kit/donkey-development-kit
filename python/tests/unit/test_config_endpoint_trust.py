@@ -1,0 +1,519 @@
+"""Endpoint scheme checks and credential-to-endpoint binding (config resolution).
+
+Three layers of behaviour, each exercised through the documented surfaces
+(``DonkeyConfig.from_env()`` / ``validated()``, ``Donkey.from_env()``, and the
+connected-app token fetch):
+
+* **Scheme** — ``base_url``, ``llm_proxy_url`` and the token endpoint must be
+  ``https://``; plain ``http://`` is accepted only for loopback hosts (the local
+  simulator and local development).
+* **Binding** — an endpoint read from the working directory's
+  ``.donkey-kit.toml`` (or its ``.local`` overlay) only receives credentials
+  from that same file pair, unless the host is loopback, a standard Anypoint
+  control-plane host, or ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set.
+* **Overlay** — ``.donkey-kit.local.toml`` is layered over ``.donkey-kit.toml``;
+  environment variables still win over both.
+
+Every test runs in a temp working directory with ``XDG_CONFIG_HOME`` pointed at
+a temp dir and every ``ANYPOINT_*`` / ``DONKEY_*`` variable cleared, so the
+developer's real config is never read.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import warnings
+from pathlib import Path
+
+import httpx
+import pytest
+
+from donkey_kit import Donkey
+from donkey_kit.core.auth import AnypointConnectedApp
+from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.errors import ConfigError
+
+_TOML = ".donkey-kit.toml"
+_LOCAL_TOML = ".donkey-kit.local.toml"
+
+
+@pytest.fixture
+def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """An empty project dir as cwd, an empty user config dir, and a clean env."""
+    for var in list(os.environ):
+        if var.startswith(("ANYPOINT_", "DONKEY_")):
+            monkeypatch.delenv(var)
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    xdg = tmp_path / "xdg"
+    xdg.mkdir()
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    return project_dir
+
+
+def _write(path: Path, body: str) -> None:
+    path.write_text("[donkey]\n" + body)
+
+
+def _env_control_plane_creds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANYPOINT_CLIENT_ID", "env-cid")
+    monkeypatch.setenv("ANYPOINT_CLIENT_SECRET", "env-secret")
+    monkeypatch.setenv("ANYPOINT_ORG_ID", "org")
+
+
+def _env_llm_creds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "env-llm-cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "env-llm-secret")
+
+
+def _recording_client(seen: list[httpx.Request]) -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+# --- scheme -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url", ["http://llm.example.test/proxy/", "ftp://llm.example.test", "llm.example.test"]
+)
+def test_non_https_remote_llm_proxy_url_is_rejected(url: str) -> None:
+    cfg = DonkeyConfig(
+        llm_proxy_url=url, llm_proxy_client_id="cid", llm_proxy_client_secret="secret"
+    )
+    with pytest.raises(ConfigError) as exc:
+        cfg.validated(need="llm")
+    msg = str(exc.value)
+    assert "llm_proxy_url" in msg
+    assert "https://" in msg
+
+
+def test_plain_http_remote_base_url_is_rejected() -> None:
+    cfg = DonkeyConfig(
+        client_id="cid",
+        client_secret="secret",
+        org_id="org",
+        base_url="http://cp.example.test",
+    )
+    with pytest.raises(ConfigError) as exc:
+        cfg.validated(need="control_plane")
+    assert "base_url" in str(exc.value)
+    assert "https://" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:8080",
+        "http://LOCALHOST:8080/",
+        "http://127.0.0.1:8080",
+        "http://127.10.20.30:9000/proxy/",
+        "http://[::1]:8080",
+    ],
+)
+def test_plain_http_loopback_endpoints_are_allowed(url: str) -> None:
+    cfg = DonkeyConfig(
+        client_id="cid",
+        client_secret="secret",
+        org_id="org",
+        base_url=url,
+        llm_proxy_url=url,
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+    )
+    assert cfg.validated(need="llm") is cfg
+    assert cfg.validated(need="control_plane") is cfg
+
+
+async def test_token_request_refuses_plain_http_remote_endpoint() -> None:
+    seen: list[httpx.Request] = []
+    async with _recording_client(seen) as http_client:
+        auth = AnypointConnectedApp(
+            client_id="cid",
+            client_secret="secret",
+            control_plane_url="http://cp.example.test",
+            http_client=http_client,
+        )
+        with pytest.raises(ConfigError) as exc:
+            await auth.token()
+    assert "https://" in str(exc.value)
+    assert seen == []  # the credentials were never posted
+
+
+async def test_token_request_allows_plain_http_loopback_endpoint() -> None:
+    seen: list[httpx.Request] = []
+    async with _recording_client(seen) as http_client:
+        auth = AnypointConnectedApp(
+            client_id="cid",
+            client_secret="secret",
+            control_plane_url="http://127.0.0.1:8081",
+            http_client=http_client,
+        )
+        assert await auth.token() == "tok"
+    assert len(seen) == 1
+
+
+# --- binding: project-file endpoints vs. credentials from elsewhere ---------
+
+
+def test_project_base_url_with_env_credentials_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'base_url = "https://cp.example.test"\n')
+    _env_control_plane_creds(monkeypatch)
+
+    cfg = DonkeyConfig.from_env()
+    with pytest.raises(ConfigError) as exc:
+        cfg.validated(need="control_plane")
+
+    msg = str(exc.value)
+    assert str(project / _TOML) in msg
+    assert "base_url" in msg
+    assert "cp.example.test" in msg
+    # The three ways out.
+    assert "ANYPOINT_BASE_URL" in msg
+    assert _LOCAL_TOML in msg
+    assert "DONKEY_TRUST_PROJECT_CONFIG=1" in msg
+
+
+async def test_project_base_url_with_env_credentials_sends_no_token_request(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'base_url = "https://cp.example.test"\n')
+    _env_control_plane_creds(monkeypatch)
+
+    seen: list[httpx.Request] = []
+    async with _recording_client(seen) as http_client:
+        auth = AnypointConnectedApp.from_config(DonkeyConfig.from_env(), http_client=http_client)
+        with pytest.raises(ConfigError, match="cp.example.test"):
+            await auth.token()
+    assert seen == []
+
+
+async def test_donkey_from_env_sends_no_credentials_to_a_project_base_url(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end through ``Donkey.from_env()``: whatever path would first need a
+    control-plane token, nothing reaches the project file's host."""
+    pytest.importorskip("openai")
+    _write(project / _TOML, 'base_url = "https://cp.example.test"\n')
+    _env_control_plane_creds(monkeypatch)
+    _env_llm_creds(monkeypatch)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/proxy/")
+
+    seen: list[httpx.Request] = []
+
+    async def _no_network(
+        self: httpx.AsyncHTTPTransport, request: httpx.Request
+    ) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(599)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _no_network)
+
+    donkey = Donkey.from_env()
+    try:
+        with contextlib.suppress(Exception):
+            await donkey.openai().responses.create(model="m", input="ping")
+    finally:
+        await donkey.aclose()
+    assert [r.url.host for r in seen if r.url.host == "cp.example.test"] == []
+
+
+def test_project_llm_proxy_url_with_env_credentials_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'llm_proxy_url = "https://llm.example.test/proxy/"\n')
+    _env_llm_creds(monkeypatch)
+
+    with pytest.raises(ConfigError) as exc:
+        DonkeyConfig.from_env().validated(need="llm")
+    msg = str(exc.value)
+    assert str(project / _TOML) in msg
+    assert "llm_proxy_url" in msg
+    assert "llm.example.test" in msg
+    assert "DONKEY_LLM_PROXY_URL" in msg
+
+
+def test_donkey_llm_client_refuses_project_url_with_env_credentials(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'llm_proxy_url = "https://llm.example.test/proxy/"\n')
+    _env_llm_creds(monkeypatch)
+
+    donkey = Donkey.from_env()
+    try:
+        with pytest.raises(ConfigError, match="llm.example.test"):
+            donkey.openai()
+    finally:
+        donkey.close()
+
+
+def test_project_llm_proxy_url_with_mixed_scope_credentials_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The id may live in the project file; a secret from the env still binds."""
+    _write(
+        project / _TOML,
+        'llm_proxy_url = "https://llm.example.test/"\nllm_proxy_client_id = "cid"\n',
+    )
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "env-llm-secret")
+
+    with pytest.raises(ConfigError, match="llm_proxy_client_secret"):
+        DonkeyConfig.from_env().validated(need="llm")
+
+
+def test_project_llm_proxy_url_in_jwt_mode_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """In jwt mode the bearer JWT comes from the caller's AuthProvider, which is
+    never part of the project file's scope."""
+    _write(
+        project / _TOML,
+        'llm_proxy_url = "https://llm.example.test/"\n'
+        'llm_proxy_auth = "jwt"\n'
+        'llm_proxy_wallet_client_id = "wallet"\n',
+    )
+    with pytest.raises(ConfigError, match="llm.example.test"):
+        DonkeyConfig.from_env().validated(need="llm")
+
+
+def test_project_base_url_does_not_block_llm_only_use(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'base_url = "https://cp.example.test"\n')
+    _env_control_plane_creds(monkeypatch)
+    _env_llm_creds(monkeypatch)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/")
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="llm") is cfg
+
+
+def test_trust_opt_in_allows_project_endpoints(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(
+        project / _TOML,
+        'base_url = "https://cp.example.test"\nllm_proxy_url = "https://llm.example.test/"\n',
+    )
+    _env_control_plane_creds(monkeypatch)
+    _env_llm_creds(monkeypatch)
+    monkeypatch.setenv("DONKEY_TRUST_PROJECT_CONFIG", "1")
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="control_plane") is cfg
+    assert cfg.validated(need="llm") is cfg
+
+
+async def test_trust_opt_in_lets_the_token_request_through(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'base_url = "https://cp.example.test"\n')
+    _env_control_plane_creds(monkeypatch)
+    monkeypatch.setenv("DONKEY_TRUST_PROJECT_CONFIG", "1")
+
+    seen: list[httpx.Request] = []
+    async with _recording_client(seen) as http_client:
+        auth = AnypointConnectedApp.from_config(DonkeyConfig.from_env(), http_client=http_client)
+        assert await auth.token() == "tok"
+    assert [r.url.host for r in seen] == ["cp.example.test"]
+
+
+def test_trust_opt_in_cannot_come_from_the_project_file(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(
+        project / _TOML,
+        'base_url = "https://cp.example.test"\ntrust_project_config = true\n',
+    )
+    _env_control_plane_creds(monkeypatch)
+    with pytest.raises(ConfigError):
+        DonkeyConfig.from_env().validated(need="control_plane")
+
+
+def test_credentials_in_local_overlay_are_allowed(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(
+        project / _TOML,
+        'org_id = "org"\nbase_url = "https://cp.example.test"\n'
+        'llm_proxy_url = "https://llm.example.test/"\n',
+    )
+    _write(
+        project / _LOCAL_TOML,
+        'client_id = "cid"\nclient_secret = "secret"\n'
+        'llm_proxy_client_id = "llm-cid"\nllm_proxy_client_secret = "llm-secret"\n',
+    )
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.client_secret == "secret"
+    assert cfg.validated(need="control_plane") is cfg
+    assert cfg.validated(need="llm") is cfg
+
+
+def test_endpoint_in_local_overlay_with_env_credentials_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The overlay lives in the working directory too, so it gets the same rule."""
+    _write(project / _LOCAL_TOML, 'llm_proxy_url = "https://llm.example.test/"\n')
+    _env_llm_creds(monkeypatch)
+
+    with pytest.raises(ConfigError) as exc:
+        DonkeyConfig.from_env().validated(need="llm")
+    assert str(project / _LOCAL_TOML) in str(exc.value)
+
+
+def test_env_url_with_env_credentials_is_allowed(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(
+        project / _TOML,
+        'base_url = "https://cp.example.test"\nllm_proxy_url = "https://llm.example.test/"\n',
+    )
+    _env_control_plane_creds(monkeypatch)
+    _env_llm_creds(monkeypatch)
+    monkeypatch.setenv("ANYPOINT_BASE_URL", "https://cp.env.test")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.env.test/")
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="control_plane") is cfg
+    assert cfg.validated(need="llm") is cfg
+
+
+@pytest.mark.parametrize(
+    "host", ["https://anypoint.mulesoft.com", "https://eu1.anypoint.mulesoft.com/"]
+)
+def test_project_base_url_on_a_standard_anypoint_host_is_allowed(
+    project: Path, monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    _write(project / _TOML, f'base_url = "{host}"\n')
+    _env_control_plane_creds(monkeypatch)
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="control_plane") is cfg
+
+
+def test_lookalike_anypoint_host_is_not_treated_as_standard(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'base_url = "https://anypoint.mulesoft.com.example.test"\n')
+    _env_control_plane_creds(monkeypatch)
+    with pytest.raises(ConfigError):
+        DonkeyConfig.from_env().validated(need="control_plane")
+
+
+def test_project_loopback_endpoint_with_env_credentials_is_allowed(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'llm_proxy_url = "http://127.0.0.1:8080"\n')
+    _env_llm_creds(monkeypatch)
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="llm") is cfg
+
+
+def test_user_file_endpoint_with_env_credentials_is_allowed(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(tmp_path / "xdg" / _TOML, 'llm_proxy_url = "https://llm.example.test/"\n')
+    _env_llm_creds(monkeypatch)
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.llm_proxy_url == "https://llm.example.test/"
+    assert cfg.validated(need="llm") is cfg
+
+
+def test_project_file_credentials_with_project_endpoint_are_allowed(
+    project: Path,
+) -> None:
+    _write(
+        project / _TOML,
+        'llm_proxy_url = "https://llm.example.test/"\n'
+        'llm_proxy_client_id = "cid"\nllm_proxy_client_secret = "secret"\n',
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cfg = DonkeyConfig.from_env()
+    assert cfg.validated(need="llm") is cfg
+
+
+def test_explicit_endpoint_override_is_trusted(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'llm_proxy_url = "https://llm.example.test/"\n')
+    _env_llm_creds(monkeypatch)
+
+    cfg = DonkeyConfig.from_env().with_overrides(llm_proxy_url="https://llm.code.test/")
+    assert cfg.validated(need="llm") is cfg
+
+
+def test_config_built_in_code_is_trusted() -> None:
+    cfg = DonkeyConfig(
+        client_id="cid",
+        client_secret="secret",
+        org_id="org",
+        base_url="https://cp.example.test",
+        llm_proxy_url="https://llm.example.test/",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+    )
+    assert cfg.validated(need="control_plane") is cfg
+    assert cfg.validated(need="llm") is cfg
+
+
+# --- the .local.toml overlay ------------------------------------------------
+
+
+def test_local_overlay_is_layered_over_the_project_file(project: Path) -> None:
+    _write(project / _TOML, 'application_name = "from-project"\nbusiness_group = "bg"\n')
+    _write(project / _LOCAL_TOML, 'application_name = "from-local"\n')
+
+    cfg = DonkeyConfig.from_env()
+    assert cfg.application_name == "from-local"
+    assert cfg.business_group == "bg"
+
+
+def test_env_wins_over_the_local_overlay(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(project / _TOML, 'application_name = "from-project"\n')
+    _write(project / _LOCAL_TOML, 'application_name = "from-local"\n')
+    monkeypatch.setenv("DONKEY_APP_NAME", "from-env")
+
+    assert DonkeyConfig.from_env().application_name == "from-env"
+
+
+def test_malformed_local_overlay_is_a_config_error(project: Path) -> None:
+    (project / _LOCAL_TOML).write_text("[donkey\n")
+    with pytest.raises(ConfigError, match=_LOCAL_TOML):
+        DonkeyConfig.from_env()
+
+
+def test_user_file_is_still_used_when_the_project_has_no_config(
+    project: Path, tmp_path: Path
+) -> None:
+    _write(tmp_path / "xdg" / _TOML, 'application_name = "from-user"\n')
+    assert DonkeyConfig.from_env().application_name == "from-user"
+
+
+# --- secrets in the committed file ------------------------------------------
+
+
+def test_secret_in_project_file_warns_and_points_to_local_overlay(project: Path) -> None:
+    _write(project / _TOML, 'client_secret = "s"\n')
+    with pytest.warns(UserWarning, match=r"\.donkey-kit\.local\.toml") as record:
+        DonkeyConfig.from_env()
+    assert "client_secret" in str(record[0].message)
+
+
+def test_secret_in_local_overlay_does_not_warn(project: Path) -> None:
+    _write(project / _LOCAL_TOML, 'client_secret = "s"\nllm_proxy_key = "k"\n')
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        DonkeyConfig.from_env()
