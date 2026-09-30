@@ -99,6 +99,15 @@ _EXPLICIT = ConfigSource("explicit")
 
 
 @dataclass(frozen=True)
+class _Loaded:
+    """A field's source plus the value it resolved to there. The value stays
+    out of repr and equality because it may be a secret."""
+
+    source: ConfigSource
+    value: object = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True)
 class DonkeyConfig:
     # --- Anypoint control plane (registry + provisioning) ---
     client_id: str | None = None          # env: ANYPOINT_CLIENT_ID
@@ -179,9 +188,10 @@ class DonkeyConfig:
     send_cost_headers: bool = False  # env: DONKEY_SEND_COST_HEADERS
 
     # --- Provenance (config resolution) ---
-    # Where each field was resolved from, filled in by from_env(). A field with
-    # no entry was set in code and counts as explicit.
-    _sources: Mapping[str, ConfigSource] = field(
+    # Where each field was resolved from and the value it had there, filled in
+    # by from_env(). A field with no entry, or whose value no longer matches,
+    # was set in code and counts as explicit.
+    _sources: Mapping[str, _Loaded] = field(
         default_factory=dict, repr=False, compare=False
     )
 
@@ -213,7 +223,7 @@ class DonkeyConfig:
                 f"Unknown region {region!r}. Expected one of {sorted(REGION_HOSTS)}."
             )
 
-        return cls(
+        cfg = cls(
             cost=_resolve_cost_tags(toml_cost),
             client_id=_opt(pick("ANYPOINT_CLIENT_ID", "client_id", None)),
             client_secret=_opt(pick("ANYPOINT_CLIENT_SECRET", "client_secret", None)),
@@ -266,8 +276,9 @@ class DonkeyConfig:
             send_cost_headers=_as_bool(
                 pick("DONKEY_SEND_COST_HEADERS", "send_cost_headers", False)
             ),
-            _sources=sources,
         )
+        loaded = {name: _Loaded(src, getattr(cfg, name)) for name, src in sources.items()}
+        return replace(cfg, _sources=loaded)
 
     # --------------------------------------------------------------- derived
     @property
@@ -277,10 +288,13 @@ class DonkeyConfig:
 
     def source_of(self, name: str) -> ConfigSource:
         """Where field ``name`` was resolved from (``explicit`` if set in code)."""
-        return self._sources.get(name, _EXPLICIT)
+        loaded = self._sources.get(name)
+        if loaded is None or getattr(self, name) != loaded.value:
+            return _EXPLICIT
+        return loaded.source
 
     def with_overrides(self, **kw: object) -> DonkeyConfig:
-        sources = {**self._sources, **dict.fromkeys(kw, _EXPLICIT)}
+        sources = {k: v for k, v in self._sources.items() if k not in kw}
         return replace(self, _sources=sources, **kw)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------- validation
