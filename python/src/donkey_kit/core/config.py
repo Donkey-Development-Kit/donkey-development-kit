@@ -6,7 +6,8 @@ file is the working directory's ``.donkey-kit.toml`` with its gitignored
 ``$XDG_CONFIG_HOME/.donkey-kit.toml``. We never read ``.env`` implicitly — the
 user calls ``load_dotenv()`` themselves.
 
-Every resolved field records its source, and :meth:`DonkeyConfig.check_endpoints`
+Every resolved field records its source (a value changed in code afterwards
+counts as set in code), and :meth:`DonkeyConfig.check_endpoints`
 uses it so an endpoint read from the working directory's files only receives
 credentials read from those same files (``DONKEY_TRUST_PROJECT_CONFIG=1`` opts
 out). Endpoints must be ``https://``, except loopback hosts, or any host when
@@ -68,7 +69,7 @@ TRUST_PROJECT_CONFIG_ENV = "DONKEY_TRUST_PROJECT_CONFIG"
 SourceKind = Literal["explicit", "env", "project", "local", "user", "default"]
 
 _SOURCE_LABELS: dict[SourceKind, str] = {
-    "explicit": "explicit",
+    "explicit": "code",
     "env": "env",
     "project": "project file",
     "local": "local overlay",
@@ -287,7 +288,10 @@ class DonkeyConfig:
         return self.base_url or REGION_HOSTS[self.region]
 
     def source_of(self, name: str) -> ConfigSource:
-        """Where field ``name`` was resolved from (``explicit`` if set in code)."""
+        """Where field ``name`` was resolved from. ``explicit`` (set in code) when
+        :meth:`from_env` did not resolve it or its value has changed since, e.g.
+        through ``dataclasses.replace``, :meth:`with_overrides` or direct
+        construction; copies that keep the value keep the label."""
         loaded = self._sources.get(name)
         if loaded is None or getattr(self, name) != loaded.value:
             return _EXPLICIT

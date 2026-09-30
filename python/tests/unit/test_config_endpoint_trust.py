@@ -842,7 +842,7 @@ def test_secret_replaced_in_code_is_not_sent_to_a_project_url(
     with pytest.raises(ConfigError) as exc:
         cfg.validated(need=need)
     msg = str(exc.value)
-    assert f"{secret} (from " in msg
+    assert f"{secret} (from code)" in msg
     assert str(project / _TOML) in msg
     assert _CODE_SECRET not in msg
 
