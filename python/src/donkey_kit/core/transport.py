@@ -651,9 +651,11 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         auth: AuthProvider | None,
         *,
         budget: Budget | None = None,
+        control_plane: bool = False,
         **kw: object,
     ) -> None:
         self._cfg = cfg
+        self._control_plane = control_plane
         # The two correlation request-header NAMES, resolved once (config override
         # → UNVERIFIED placeholder). The one-time verification-discipline warning
         # for an un-overridden
@@ -690,7 +692,8 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # wallet-selector ``X-Client-Id`` on every data-plane send (not just the
         # default_headers snapshot), so adapters routed through this shared client
         # carry it too. The name is VERIFIED (docs/verified-apis.md §2/§3).
-        if self._cfg.llm_proxy_auth == "jwt" and self._cfg.llm_proxy_wallet_client_id:
+        wallet = self._cfg.llm_proxy_auth == "jwt" and not self._control_plane
+        if wallet and self._cfg.llm_proxy_wallet_client_id:
             request.headers.setdefault(
                 _verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER,
                 self._cfg.llm_proxy_wallet_client_id,
@@ -705,7 +708,7 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             # source; the control-plane token happens to use the identical shape.
             header = _verify.LLM_PROXY_WALLET_JWT_HEADER
             value = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
-            if self._cfg.llm_proxy_auth == "jwt":
+            if wallet:
                 # The OpenAI SDK pre-sets ``Authorization: Bearer <api_key>`` from
                 # its mandatory key slot; a wallet proxy READS this header as the
                 # JWT, so we must OVERRIDE that sentinel with the fresh per-send
@@ -1125,11 +1128,12 @@ def build_http_client(
     auth: AuthProvider | None,
     *,
     budget: Budget | None = None,
+    control_plane: bool = False,
 ) -> DonkeyAsyncClient:
     """Factory for the shared client (BG §1.1). Pass ``budget`` to track the in-band
     token window on every response (BG §1.3, #185); omit it for the control-plane
     token-fetch client, which observes no budget."""
-    return DonkeyAsyncClient(cfg, auth, budget=budget)
+    return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
 
 
 def build_sync_http_client(cfg: DonkeyConfig, *, budget: Budget | None = None) -> DonkeyClient:

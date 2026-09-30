@@ -149,18 +149,21 @@ class Donkey:
         # provider (or None) rides the client exactly as before, and the CIE proxy
         # ignores its bearer. So an existing client-id config is byte-identical.
         self._llm_auth = llm_auth
-        data_plane_auth = llm_auth if self._cfg.llm_proxy_auth == "jwt" else self._auth
+        data_plane_auth = llm_auth if self._cfg.llm_proxy_auth == "jwt" else None
         # One Budget per Donkey (never global, BG §1.3 / #185): both transports feed
         # it in-band from every response's x-token-* headers.
         self._budget = Budget()
         self._http: DonkeyAsyncClient = build_http_client(
             self._cfg, data_plane_auth, budget=self._budget
         )
+        self._control_http: DonkeyAsyncClient = build_http_client(
+            self._cfg, self._auth, control_plane=True
+        )
         # Built only if someone asks for a blocking client, so the common async
         # path never opens a connection pool it will not use.
         self._sync_http: DonkeyClient | None = None
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
-        self._registry = ExchangeRegistry(self._cfg, self._http)
+        self._registry = ExchangeRegistry(self._cfg, self._control_http)
         self._tools = _ToolsFacade(self._registry)
         self._adapter_cache: dict[str, Adapter] = {}
 
@@ -539,10 +542,13 @@ class Donkey:
             await self._http.aclose()
         finally:
             try:
-                if auth_http is not None:
-                    await auth_http.aclose()
+                await self._control_http.aclose()
             finally:
-                self.close()
+                try:
+                    if auth_http is not None:
+                        await auth_http.aclose()
+                finally:
+                    self.close()
 
     async def __aenter__(self) -> Donkey:
         return self
@@ -597,7 +603,8 @@ class Donkey:
         """Build control-plane auth when credentials are present. The LLM proxy
         credential is separate and handled by the OpenAI client (`BG §1.1`)."""
         if cfg.client_id and cfg.client_secret:
-            http_client = build_http_client(cfg, None)  # token fetches need no auth
+            # token fetches need no auth
+            http_client = build_http_client(cfg, None, control_plane=True)
             auth = AnypointConnectedApp(
                 client_id=cfg.client_id,
                 client_secret=cfg.client_secret,
