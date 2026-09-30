@@ -43,6 +43,9 @@ class AgentFrameworkAdapter(Adapter):
         return self._openai_connection()  # base_url, api_key, default_headers
 
     def chat_client(self, model: str, **kw: Any) -> Any:
+        """Return a native ``OpenAIChatClient`` at the proxy. A ``base_url``
+        override must pass the https check."""
+        self._allow_endpoints(kw, "base_url")
         self._require_proxy()
         try:
             from agent_framework.openai import (

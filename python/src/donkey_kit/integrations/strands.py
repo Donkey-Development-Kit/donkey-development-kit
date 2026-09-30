@@ -12,6 +12,7 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from ..core.masking import masked
@@ -39,6 +40,11 @@ class StrandsAdapter(Adapter):
         )
 
     def model(self, model: str, **kw: Any) -> OpenAIModel:
+        """Return a native ``OpenAIModel`` at the proxy. A ``base_url`` in a
+        ``client_args`` override must pass the https check."""
+        client_args = kw.get("client_args")
+        if isinstance(client_args, Mapping):
+            self._allow_endpoints(client_args, "base_url")
         from strands.models.openai import OpenAIModel  # VERIFY name/path: docs/verified-apis.md §8
 
         return OpenAIModel(model_id=model, **{**self.connection_kwargs(), **kw})

@@ -545,7 +545,9 @@ class Donkey:
         if self._sync_http is None:
             # Same Budget object as the async client, so a blocking caller updates
             # donkey.budget on identical terms (BG §1.3, #185).
-            self._sync_http = build_sync_http_client(self._cfg, budget=self._budget)
+            self._sync_http = build_sync_http_client(
+                self._cfg, budget=self._budget, origins=self._http.checked_origins
+            )
         return self._sync_http
 
     async def aclose(self) -> None:

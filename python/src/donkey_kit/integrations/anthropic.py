@@ -109,7 +109,9 @@ class AnthropicAdapter(Adapter):
     def client(self, **kw: Any) -> AsyncAnthropic:
         """Return a native ``anthropic.AsyncAnthropic`` pointed at the proxy. Pass
         the model id per call (``messages.create(model=..., ...)``), per the
-        Anthropic SDK's own surface (BG §1.8)."""
+        Anthropic SDK's own surface (BG §1.8). A ``base_url`` override must pass
+        the https check."""
+        self._allow_endpoints(kw, "base_url")
         from anthropic import AsyncAnthropic  # VERIFY name/path: docs/verified-apis.md §8
 
         return AsyncAnthropic(**{**self.connection_kwargs(), **kw})

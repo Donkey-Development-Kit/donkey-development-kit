@@ -160,7 +160,7 @@ async def test_jwt_mode_injects_fresh_bearer_overriding_preset() -> None:
 
     async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
         # Simulate the OpenAI SDK's pre-set sentinel bearer on the request.
-        await client.get("https://x", headers={"Authorization": "Bearer sentinel"})
+        await client.get("https://proxy", headers={"Authorization": "Bearer sentinel"})
 
     assert seen["authorization"] == "Bearer jwt-1"  # overridden, not the sentinel
     assert seen["x-client-id"] == "wallet-42"
@@ -176,8 +176,8 @@ async def test_jwt_token_refreshed_per_send() -> None:
         return httpx.Response(200)
 
     async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
-        await client.get("https://x")
-        await client.get("https://x")
+        await client.get("https://proxy")
+        await client.get("https://proxy")
 
     assert seen == ["Bearer jwt-1", "Bearer jwt-2"]
 
@@ -192,7 +192,7 @@ async def test_jwt_401_refreshes_and_retries_once() -> None:
         return httpx.Response(401) if len(seen) == 1 else httpx.Response(200)
 
     async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
-        resp = await client.get("https://x")
+        resp = await client.get("https://proxy")
 
     assert resp.status_code == 200
     # First send jwt-1 (401) → invalidate advances → re-send with a fresh token.
@@ -211,7 +211,8 @@ async def test_client_id_mode_authorization_setdefault_preserves_preset() -> Non
         return httpx.Response(200)
 
     # Default client-id mode, but a token provider is attached (control-plane).
-    async with _client(handler, DonkeyConfig(), StaticToken("cp-token")) as client:
+    cfg = DonkeyConfig(llm_proxy_url="https://x")
+    async with _client(handler, cfg, StaticToken("cp-token")) as client:
         await client.get("https://x", headers={"Authorization": "Bearer preset"})
 
     assert seen["authorization"] == "Bearer preset"  # preserved, not overridden

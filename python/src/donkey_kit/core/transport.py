@@ -51,6 +51,7 @@ from .budget import Budget
 from .cachecontrol import current_cache_controls
 from .config import DonkeyConfig
 from .cost import CostTags
+from .endpoints import require_secure_url
 from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
 from .lastcall import (
     LLM_MODEL_HEADER,
@@ -68,7 +69,7 @@ from .lastcall import (
     usage_from_response,
     usage_mapping,
 )
-from .masking import masked
+from .masking import SENSITIVE_NAMES, masked
 from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
@@ -218,6 +219,83 @@ def proxy_api_key(cfg: DonkeyConfig) -> str:
     configured key if any, else :data:`PROXY_API_KEY_SENTINEL` (the proxy ignores
     it and enforces the client_id/secret headers instead)."""
     return cfg.llm_proxy_key or PROXY_API_KEY_SENTINEL
+
+
+#: An origin: scheme, lower-cased host, and port (the scheme's default when absent).
+Origin = tuple[str, str, int]
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+#: Lower-cased request-header names that carry or identify a credential: the
+#: masked names plus the proxy client-id and wallet-selector headers. A shared
+#: client never sends them to an origin it was not checked for.
+CREDENTIAL_HEADERS: frozenset[str] = SENSITIVE_NAMES | frozenset(
+    {
+        _verify.LLM_PROXY_CLIENT_ID_HEADER.lower(),
+        _verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER.lower(),
+    }
+)
+
+
+def origin_of(url: str | httpx.URL) -> Origin | None:
+    """The :data:`Origin` of ``url``, or ``None`` when it has no scheme or host."""
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL:
+        return None
+    port = parsed.port or _DEFAULT_PORTS.get(parsed.scheme)
+    if not parsed.host or port is None:
+        return None
+    return (parsed.scheme, parsed.host.lower(), port)
+
+
+def strip_credential_headers(request: httpx.Request) -> None:
+    """Remove every :data:`CREDENTIAL_HEADERS` header from ``request``."""
+    for name in [n for n in request.headers if n.lower() in CREDENTIAL_HEADERS]:
+        del request.headers[name]
+
+
+class _CheckedEndpoints:
+    """The origins a shared client sends credentials to.
+
+    Seeded with the plane's configured endpoint — the LLM proxy URL on the data
+    plane, the control-plane URL on the control plane — which config validation
+    checks. A URL passed in code joins through :meth:`allow_endpoint` once it
+    passes the same https check. A request to any other origin, a redirect hop
+    included (httpx runs request hooks on every hop), is sent without the SDK's
+    credentials and with the credential headers a framework set removed.
+    """
+
+    _origins: set[Origin]
+
+    def _init_origins(self, endpoint: str | None, origins: set[Origin] | None) -> None:
+        self._origins = origins if origins is not None else set()
+        seeded = origin_of(endpoint) if endpoint else None
+        if seeded is not None:
+            self._origins.add(seeded)
+
+    @property
+    def checked_origins(self) -> set[Origin]:
+        """The live set of origins this client sends credentials to. Pass it as
+        ``origins=`` to another client of the same plane to share it."""
+        return self._origins
+
+    def allow_endpoint(self, url: str, *, name: str) -> None:
+        """Let this client send credentials to ``url``'s origin, a URL passed in
+        code. Raises :class:`~donkey_kit.core.errors.ConfigError` unless it passes
+        the config's https check (``https://``, a loopback host, or any host with
+        ``DONKEY_ALLOW_HTTP=1`` in the environment); ``name`` labels the error."""
+        require_secure_url(url, name=name)
+        origin = origin_of(url)
+        if origin is not None:
+            self._origins.add(origin)
+
+    def _guard(self, request: httpx.Request) -> bool:
+        """Whether ``request`` may carry credentials. When not, strip any it has."""
+        if origin_of(request.url) in self._origins:
+            return True
+        strip_credential_headers(request)
+        return False
 
 
 def _resolve_header_names(cfg: DonkeyConfig) -> tuple[str, str]:
@@ -654,7 +732,7 @@ class _SpanClosingSyncStream(_SpanClosingStream, httpx.SyncByteStream):
             self._inner.close()
 
 
-class DonkeyAsyncClient(httpx.AsyncClient):
+class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
     """An ``httpx.AsyncClient`` that injects attribution/correlation/auth headers
     and applies the SDK's retry policy. Every adapter that accepts a custom HTTP
     client MUST be given one of these.
@@ -664,7 +742,11 @@ class DonkeyAsyncClient(httpx.AsyncClient):
     the model-wallet JWT provider in ``jwt`` mode and ``None`` in client-id mode.
     ``control_plane=True`` marks a client for Anypoint platform calls: ``auth``
     is then the connected-app provider, and the ``jwt``-mode wallet headers are
-    never stamped on its requests."""
+    never stamped on its requests.
+
+    Credentials go only to the plane's checked endpoints (see
+    :class:`_CheckedEndpoints`); ``origins`` shares that set with another client.
+    Redirects are not followed unless a caller asks for it per request."""
 
     def __init__(
         self,
@@ -673,10 +755,12 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         *,
         budget: Budget | None = None,
         control_plane: bool = False,
+        origins: set[Origin] | None = None,
         **kw: object,
     ) -> None:
         self._cfg = cfg
         self._control_plane = control_plane
+        self._init_origins(cfg.control_plane_url if control_plane else cfg.llm_proxy_url, origins)
         # The two correlation request-header NAMES, resolved once (config override
         # → UNVERIFIED placeholder). The one-time verification-discipline warning
         # for an un-overridden
@@ -709,6 +793,8 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             ensure_correlation_id(),
             correlation_header=self._correlation_header,
         )
+        if not self._guard(request):
+            return
         # jwt auth mode (model-wallet ingress, #509/#372): stamp the durable
         # wallet-selector ``X-Client-Id`` on every data-plane send (not just the
         # default_headers snapshot), so adapters routed through this shared client
@@ -969,7 +1055,7 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         return response
 
 
-class DonkeyClient(httpx.Client):
+class DonkeyClient(_CheckedEndpoints, httpx.Client):
     """The blocking twin of :class:`DonkeyAsyncClient`, for ``donkey.llm.client(
     sync=True)``.
 
@@ -986,10 +1072,21 @@ class DonkeyClient(httpx.Client):
     a fetched token. It does mean the control-plane surfaces — ``registry`` and
     ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.
+
+    Like its async twin it sends credentials only to the checked endpoints; pass
+    the async client's :attr:`checked_origins` as ``origins`` to share them.
     """
 
-    def __init__(self, cfg: DonkeyConfig, *, budget: Budget | None = None, **kw: object) -> None:
+    def __init__(
+        self,
+        cfg: DonkeyConfig,
+        *,
+        budget: Budget | None = None,
+        origins: set[Origin] | None = None,
+        **kw: object,
+    ) -> None:
         self._cfg = cfg
+        self._init_origins(cfg.llm_proxy_url, origins)
         # Resolved once; see DonkeyAsyncClient.__init__ (BG §1.1, #195).
         self._correlation_header, self._call_id_header = _resolve_header_names(cfg)
         self._budget = budget  # see DonkeyAsyncClient.__init__ (BG §1.3, #185)
@@ -1006,6 +1103,7 @@ class DonkeyClient(httpx.Client):
             request_correlation_id(),
             correlation_header=self._correlation_header,
         )
+        self._guard(request)
 
     # --- lifecycle hooks (BG §1.1) ------------------------------------------
     # Synchronous twins of the async seams, kept in lockstep so a blocking caller
@@ -1160,8 +1258,14 @@ def build_http_client(
     return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
 
 
-def build_sync_http_client(cfg: DonkeyConfig, *, budget: Budget | None = None) -> DonkeyClient:
+def build_sync_http_client(
+    cfg: DonkeyConfig,
+    *,
+    budget: Budget | None = None,
+    origins: set[Origin] | None = None,
+) -> DonkeyClient:
     """Factory for the shared blocking client (BG §1.1). See :class:`DonkeyClient`
     for why it takes no :class:`AuthProvider`. Pass ``budget`` to share one budget
-    object with the async client (BG §1.3, #185)."""
-    return DonkeyClient(cfg, budget=budget)
+    object with the async client (BG §1.3, #185), and ``origins`` to share its
+    checked endpoints."""
+    return DonkeyClient(cfg, budget=budget, origins=origins)

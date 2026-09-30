@@ -71,7 +71,8 @@ class ADKAdapter(Adapter):
         google-genai requires for the Gemini API backend, and the SDK timeout —
         google-genai otherwise sends ``timeout=None``, which disables the
         client's. ``api_version=""`` because the proxy route has no
-        ``/v1beta`` segment."""
+        ``/v1beta`` segment. A ``base_url`` passed here must pass the https check."""
+        self._allow_endpoints({"base_url": base_url}, "base_url")
         conn = self._openai_connection()
         url = base_url or conn["base_url"]
         return masked(
@@ -91,6 +92,9 @@ class ADKAdapter(Adapter):
         )
 
     def model(self, model: str, **kw: Any) -> LiteLlm:
+        """Return ADK's ``LiteLlm`` at the proxy. An ``api_base``/``base_url``
+        override must pass the https check."""
+        self._allow_endpoints(kw, "api_base", "base_url")
         from google.adk.models.lite_llm import LiteLlm  # VERIFY name/path: docs/verified-apis.md §8
 
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
@@ -100,9 +104,10 @@ class ADKAdapter(Adapter):
         """Return ADK's native ``google.adk.models.Gemini`` bound to a
         ``Format=Gemini`` proxy, with the shared http client injected (#691).
         Pass the bare model id (``"gemini-2.5-flash"``) — no provider prefix."""
+        conn = self.gemini_connection_kwargs(base_url=base_url)
         from google.adk.models import Gemini  # VERIFY name/path: docs/verified-apis.md §8
 
-        native = Gemini(model=model, **{**self.gemini_connection_kwargs(base_url=base_url), **kw})
+        native = Gemini(model=model, **{**conn, **kw})
         self.observes_last_call = True
         return native
 

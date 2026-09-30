@@ -56,7 +56,9 @@ class LLMClient:
 
     def _own_sync_client(self) -> DonkeyClient:
         if self._owned_sync is None:
-            self._owned_sync = build_sync_http_client(self._cfg)
+            self._owned_sync = build_sync_http_client(
+                self._cfg, origins=self._http.checked_origins
+            )
         return self._owned_sync
 
     @overload
@@ -77,6 +79,9 @@ class LLMClient:
         The two are declared as overloads on ``Literal`` rather than returning a
         union, so the call site narrows to one concrete class and editors keep
         offering completions on the result.
+
+        A ``base_url`` override must pass the same https check as the configured
+        proxy URL; it then receives the configured credentials.
         """
 
         self._cfg.validated(need="llm")
@@ -104,6 +109,9 @@ class LLMClient:
                     "Donkey, e.g. `Donkey(llm_auth=StaticToken(jwt))` or a custom "
                     "AuthProvider that refreshes the token (see donkey_kit.core.auth)."
                 )
+        http = self._sync_http() if sync else self._http
+        if kw.get("base_url") is not None:
+            http.allow_endpoint(str(kw["base_url"]), name="base_url")
         try:
             from openai import AsyncOpenAI, OpenAI
         except ImportError as exc:  # pragma: no cover - install-time guidance
@@ -133,8 +141,8 @@ class LLMClient:
         # this typechecks clean under BOTH majors: a bare `# type: ignore` is
         # `unused-ignore` under openai<3 where the types already match (#597).
         if sync:
-            return OpenAI(http_client=cast(Any, self._sync_http()), **shared)
-        return AsyncOpenAI(http_client=cast(Any, self._http), **shared)
+            return OpenAI(http_client=cast(Any, http), **shared)
+        return AsyncOpenAI(http_client=cast(Any, http), **shared)
 
     async def list_models(self, *, live: bool = False) -> list[ModelHandle]:
         """List logical models the proxy exposes.

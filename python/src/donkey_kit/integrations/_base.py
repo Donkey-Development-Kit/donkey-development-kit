@@ -7,6 +7,7 @@ Each adapter depends on exactly one framework. Nothing here may be imported by
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, TypeVar, cast
 
 from ..core.config import DonkeyConfig
@@ -62,6 +63,17 @@ class Adapter:
 
     def _require_proxy(self) -> DonkeyConfig:
         return self._cfg.validated(need="llm")
+
+    def _allow_endpoints(self, overrides: Mapping[str, Any], *names: str) -> None:
+        """Check each URL override in ``overrides`` under ``names`` — a URL passed
+        in code to a factory — with the config's https check, then let the
+        shared client send the proxy credentials to it. Called before the
+        framework is imported, so a refused URL fails the same with or without
+        the framework installed."""
+        for name in names:
+            url = overrides.get(name)
+            if url is not None:
+                self._http.allow_endpoint(str(url), name=name)
 
     def _openai_connection(self) -> dict[str, Any]:
         """The three governed values every OpenAI-compatible client needs to

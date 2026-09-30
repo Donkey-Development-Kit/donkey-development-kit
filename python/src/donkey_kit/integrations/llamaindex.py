@@ -44,6 +44,9 @@ class LlamaIndexAdapter(Adapter):
         )
 
     def llm(self, model: str, **kw: Any) -> OpenAILike:
+        """Return a native ``OpenAILike`` at the proxy. An ``api_base`` override
+        must pass the https check."""
+        self._allow_endpoints(kw, "api_base")
         from llama_index.llms.openai_like import (
             OpenAILike,  # VERIFY name/path: docs/verified-apis.md §8
         )
