@@ -30,7 +30,7 @@ import json
 import os
 import threading
 import warnings
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -38,6 +38,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey
+from donkey_kit.core import config as config_module
 from donkey_kit.core.auth import AnypointConnectedApp
 from donkey_kit.core.config import ConfigWarning, DonkeyConfig
 from donkey_kit.core.cost import CostTags
@@ -922,6 +923,111 @@ def test_value_tracking_keeps_secrets_out_of_repr_and_equality(project: Path) ->
         assert "file-secret" not in text
         assert "_sources" not in text
     assert dataclasses.replace(loaded, _sources={}) == loaded
+
+
+# --- provenance survives asdict() and never copies a value --------------------
+
+
+def _project_url_env_secret(project: Path, monkeypatch: pytest.MonkeyPatch) -> DonkeyConfig:
+    """A project-file proxy URL with env credentials: refused by the binding rule."""
+    _write(project / _TOML, 'llm_proxy_url = "https://llm.example.test/"\n')
+    _env_llm_creds(monkeypatch)
+    cfg = DonkeyConfig.from_env()
+    with pytest.raises(ConfigError):
+        cfg.validated(need="llm")
+    return cfg
+
+
+def _strings(value: object) -> list[str]:
+    """Every string anywhere inside ``value`` (mappings, sequences, dataclasses)."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Mapping):
+        return [s for k, v in value.items() for s in _strings(k) + _strings(v)]
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [s for item in value for s in _strings(item)]
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _strings(dataclasses.asdict(value))
+    return []
+
+
+def test_asdict_round_trip_validates(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/")
+    _env_llm_creds(monkeypatch)
+    cfg = DonkeyConfig.from_env()
+
+    again = DonkeyConfig(**dataclasses.asdict(cfg))
+
+    assert again.validated(need="llm") is again
+    assert again.source_of("llm_proxy_url").kind == "env"
+
+
+def test_asdict_round_trip_keeps_the_binding_refusal(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _project_url_env_secret(project, monkeypatch)
+
+    again = DonkeyConfig(**dataclasses.asdict(cfg))
+
+    assert again.source_of("llm_proxy_url").kind == "project"
+    assert again.source_of("llm_proxy_client_secret").kind == "env"
+    with pytest.raises(ConfigError, match="llm_proxy_client_secret"):
+        again.validated(need="llm")
+
+
+def test_asdict_holds_no_second_copy_of_any_value(project: Path) -> None:
+    cfg = _project_endpoints_with_local_credentials(project)
+    as_dict = dataclasses.asdict(cfg)
+
+    provenance = _strings(as_dict["_sources"])
+    for name in ("client_secret", "llm_proxy_client_secret", "llm_proxy_key", "llm_proxy_url"):
+        value = getattr(cfg, name)
+        assert value
+        assert not [s for s in provenance if value in s], name
+
+
+def test_provenance_recorded_in_another_process_does_not_make_a_url_trusted(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Provenance that can't be checked here (it was recorded under another
+    process's key) keeps an endpoint's file label and counts every credential as
+    set in code, so the config is never more trusted than when it was loaded."""
+    as_dict = dataclasses.asdict(_project_url_env_secret(project, monkeypatch))
+    monkeypatch.setattr(config_module, "_PROCESS_KEY", os.urandom(32))
+
+    again = DonkeyConfig(**as_dict)
+
+    assert again.source_of("llm_proxy_url").kind == "project"
+    assert again.source_of("llm_proxy_client_secret").kind == "explicit"
+    with pytest.raises(ConfigError, match="llm_proxy_client_secret"):
+        again.validated(need="llm")
+
+
+def test_unreadable_provenance_is_refused(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    as_dict = dataclasses.asdict(_project_url_env_secret(project, monkeypatch))
+    as_dict["_sources"] = {**as_dict["_sources"], "llm_proxy_url": "project"}
+
+    with pytest.raises(ConfigError, match="llm_proxy_url"):
+        DonkeyConfig(**as_dict)
+
+
+def test_dropping_all_provenance_counts_everything_as_set_in_code(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no provenance at all the config is one built in code: endpoints and
+    credentials alike count as code, never a mix of code URLs and file secrets."""
+    as_dict = dataclasses.asdict(_project_url_env_secret(project, monkeypatch))
+    del as_dict["_sources"]
+
+    again = DonkeyConfig(**as_dict)
+
+    assert {again.source_of(n).kind for n in ("llm_proxy_url", "llm_proxy_client_secret")} == {
+        "explicit"
+    }
 
 
 # --- the .local.toml overlay ------------------------------------------------
