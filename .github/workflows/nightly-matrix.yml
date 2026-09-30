@@ -70,6 +70,24 @@ jobs:
       - run: lint-imports
       - run: pytest -q
 
+  # `[all]` must stay installable as upstream releases land (#697). No floor can
+  # stop an upstream release from breaking the resolve, so re-check it nightly
+  # against the newest releases; ci.yml runs the same check per PR.
+  all-extra-resolves:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade pip
+      - name: pip resolves donkey-kit[all]
+        run: timeout 300 pip install --dry-run ".[all]"
+
   matrix:
     runs-on: ubuntu-latest
     # Don't let one framework's upstream break cancel the others — we want the
