@@ -1,0 +1,18 @@
+HTTP/1.1 429 Too Many Requests
+retry-after: 86400
+content-length: 37
+content-type: text/plain
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: openai
+x-llm-proxy-llm-model: gpt-5-mini
+x-llm-proxy-input-tokens-cost-per-1m: 0.25
+x-llm-proxy-output-tokens-cost-per-1m: 2
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: openai, Model: gpt-5-mini.
+x-model-wallet-selected: ddk-model-wallet
+date: Wed, 30 Sep 2026 08:04:09 GMT
+server: Anypoint Flex Gateway
+x-envoy-decorator-operation: api-instance-21189395.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
+x-correlation-id: 4c91de06-7107-4b96-8734-215282553a7a
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive

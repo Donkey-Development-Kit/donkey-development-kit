@@ -396,6 +396,27 @@ the prose parser from #352) now populates identically from a simulated or a live
 `200`. Nothing in `core/`/`llm/` depends on the simulator emitting it; only
 `simulator/app.py` (`SimulatorConfig`) renders it.
 
+**Model-wallet budget emission (LIVE-VERIFIED 2026-09-30, #301).** A model
+wallet's budget is a **separate mechanism** from the token window above. The
+platform auto-attaches two policies to every matching model proxy —
+`mw-find-key-policy` (the wallet objects, verbatim) and
+`mw-token-rate-limit-policy` — and neither is the `llm-token-rate-limit` policy
+that emits the `x-token-*` trio or the prose `x-llm-proxy-ratelimit`. Probed by
+driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
+21189395 to refusal: 45 consecutive `200`s, then `429`s. Fixtures in
+`tests/fixtures/anypoint/model_wallet/` (`probe.exhaustion-run.json`,
+`responses.exhaustion-run.{first,last}.headers.txt`,
+`reject.wallet-exhausted.*`, `mw-policies.json`); pinned by
+`test_model_wallet_contract.py`.
+
+| Item | Where used | Status | Verified value | Date | Source |
+|---|---|---|---|---|---|
+| Wallet state in-band on a `200` | `core/budget.py` (not consumed — nothing to consume) | VERIFIED (LIVE) | **negative** — the only wallet header is `x-model-wallet-selected: <wallet clientId>`. No limit / remaining / spent value, no currency, and neither the `x-token-*` trio nor `x-llm-proxy-ratelimit`. The header set was identical on all 45 `200`s. So like the token window (upstream gap #248), wallet state is not queryable in-band either; a wallet's first observable signal is its refusal. | 2026-09-30 | `probe.exhaustion-run.json`, `responses.exhaustion-run.{first,last}.headers.txt` |
+| Spend denomination | — (#315) | VERIFIED (LIVE) for tokens; doc-read for spend | Chosen **per budget**: `resource: tokens` or `spend` in the omni `model-wallet` API (UI "Metric": Tokens / Spend (USD)); the docs name USD as the only currency. The gateway materialises a tokens budget as `tokenRateLimits[] {limit, timeWindow: day\|week\|month, provider, model}` in `mw-find-key-policy`. **Nothing on the wire reports spend** for either metric. The only money signal is the per-model **rate** (`x-llm-proxy-input-tokens-cost-per-1m` / `-output-tokens-cost-per-1m`), which is a price, not a running total. This agrees with the #315 constraint: the SDK must not compute cost locally. A `spend` budget's refusal shape was **not** exercised live. | 2026-09-30 | `mw-policies.json` + [model wallets doc](https://docs.mulesoft.com/general/exp-model-wallets-manage#add-a-budget-to-a-wallet) |
+| Claim dimensions a wallet keys on | — (#315) | VERIFIED (LIVE) | No fixed dimension set. `predicates[]` are `{type: "jwtClaim", claim: <any claim key>, values: [...]}`, AND-ed, and `jwtClaim` is the only `type` observed. "Employee", "user", "team" and "cost centre" are whatever claims the IdP emits (DDK: `group`, `client_id`). When several wallets match, the highest `priority` wins. | 2026-09-30 | `mw-policies.json`, `wallet.definition.json` |
+| Pre-refusal threshold warning | — (#315) | VERIFIED (LIVE) | **negative** — no warning on the wire. The header keys on the last `200` before the refusal match the first `200` exactly, and neither `mw-` policy config has a threshold / alert setting. The roadmap's "Budget Alerts for Model Wallets" is not an in-band signal today. Budgets are approximate: this run was refused only after 3403 response `total_tokens` against the 2000 limit. | 2026-09-30 | `probe.exhaustion-run.json`, `mw-policies.json` |
+| Wallet-exhaustion refusal | `core/errors.classify()` (generic `429` branch → `TokenBudgetExceeded`); a typed sibling is #315 | VERIFIED (LIVE) | `429`, body `{"error":"token rate limit exceeded"}` served as **`content-type: text/plain`**, **`retry-after: 86400`** (seconds; identical on two refusals 1 s apart, i.e. equal to the `day` window length — whether it counts down to the actual reset is unconfirmed), `x-model-wallet-selected`, and the routing headers. There are **no** `x-token-*` headers. **Distinguishable** from the token-window `429` (item 4 above: empty body, the `x-token-*` trio, no `retry-after`) by `x-model-wallet-selected` plus the missing `x-token-*` headers. Today `classify()` returns `TokenBudgetExceeded(retry_after=86400.0)`, and `Budget.observe()` makes no change. The upstream is not called. If a fallback route exists, the proxy reroutes instead of refusing (doc). | 2026-09-30 | `reject.wallet-exhausted.{headers.txt,body.json}` (correlation id `4c91de06-7107-4b96-8734-215282553a7a`) |
+
 | Policy | Exchange asset (verified) | Status | Rejection shape | Date | Source |
 |---|---|---|---|---|---|
 | client-id-enforcement | `client-id-enforcement` `1.3.3` | VERIFIED (LIVE) | `401` + `www-authenticate: Client-ID-Enforcement`, `{"error":"Client ID is not present"}` | 2026-08-28 | live probe |
@@ -406,6 +427,7 @@ the prose parser from #352) now populates identically from a simulated or a live
 | Regex Prompt Guard | `regex-prompt-guard-policy` `1.0.0` | VERIFIED (LIVE) | `403`, flat-string `error` + top-level `matched_patterns` list; body matched the committed fixture byte-for-byte | 2026-09-22 | live probe, `ddk-injection-guard` instance 21179713 |
 | Azure Content Safety | `azure-content-safety-policy` `1.0.0` | VERIFIED (LIVE) | `403`, `x-llm-proxy-azure-content-safety-action: reject` + `-phase` + `-reason` headers; body `{"error":…,"categories":[…]}` (categories prompt-dependent, e.g. `severity_hate,severity_violence`, `prompt_shield`) | 2026-09-22 | live probe, `ddk-azure-content-safety` instance 21180957 (private-space gateway) |
 | Agent Kill Switch | applied to `ddk-agent-kill-switch` | VERIFIED (LIVE) | `403`, nested `{"error":{code:"agent_killed",message}}` — no `type`, no `www-authenticate`, no reason field (#314). Discriminator: nested `error.code == "agent_killed"` → `AgentKilled` | 2026-09-29 | live probe, `ddk-agent-kill-switch` instance 21206201 (shared-omni-gateway), quarantined agent `act.sub=21206128`, correlation id `e7641776-3160-4b59-814d-f6c354e7e177` (#694) |
+| Model wallet budget | `mw-find-key-policy` `1.0.3` + `mw-token-rate-limit-policy` `1.0.0`, auto-attached, not applied by hand | VERIFIED (LIVE) | `429`, flat-string `{"error":"token rate limit exceeded"}` (`text/plain`), `retry-after: 86400`, `x-model-wallet-selected`; no `x-token-*`. See "Model-wallet budget emission" above. | 2026-09-30 | live probe, `ddk-model-wallet` instance 21189395 (#301) |
 
 **Apply note (verified):** these LLM policies apply against the schema-bearing
 **interface** asset id/version (`llm-token-rate-limit` `1.0.2`,

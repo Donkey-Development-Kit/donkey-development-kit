@@ -79,6 +79,37 @@ live confirmation of the model-wallet rows in `docs/verified-apis.md` §2/§3
 `401` audience rejection — see the `ddk-configure-llm-proxy-model-wallet` skill's
 matrix; not re-captured here.)
 
+## Wallet spend state and exhaustion — LIVE capture 2026-09-30 (#301)
+
+Captured from the **recreated** proxy (same base path, API Manager instance
+**`21189395`**, now two routes: `openai:gpt-5-mini` + `gemini:gemini-2.5-flash`)
+with the wallet at 2000 tokens/day on `openai:gpt-5-mini`. The same caller
+(`ddk-model-wallet-client` / `ddk-test-user`, realm `ddk`) sent consecutive
+`openai/gpt-5-mini` completions, each with a freshly minted JWT, until the wallet
+refused. See the "Model-wallet budget emission" rows in `docs/verified-apis.md` §4.
+
+- `probe.exhaustion-run.json` — per call: status, `usage.total_tokens`, running
+  sum, and the response header **keys**. There were 45 `200`s (3403 tokens, against a
+  2000 limit, because budgets are approximate), then two `429`s. Every `200`
+  has the same header keys, so **no threshold warning** appears as the budget runs down.
+- `responses.exhaustion-run.first.headers.txt` / `.last.headers.txt` — the first
+  and the last `200` of the run. The only wallet header is
+  `x-model-wallet-selected`. There is **no** wallet limit/remaining/spent value,
+  and neither `x-token-*` nor `x-llm-proxy-ratelimit`.
+- `reject.wallet-exhausted.{headers.txt,body.json}` — the wallet refusal: `429`,
+  `{"error":"token rate limit exceeded"}` served as `content-type: text/plain`,
+  `retry-after: 86400`, `x-model-wallet-selected`, and the routing headers. It has
+  **no** `x-token-*` headers, which is what separates it from the token-window
+  `429` in `../llm_proxy/reject.token-rate-limit.headers.txt`.
+- `mw-policies.json` — the two auto-attached wallet policies from API Manager.
+  `mw-find-key-policy` carries the wallet objects (`jwtClaim` predicates +
+  `tokenRateLimits`) and `mw-token-rate-limit-policy` enforces them. Neither has
+  a threshold/alert setting.
+
+Running this probe **spends the shared wallet's daily openai budget**, so the
+`ddk-model-wallet` openai route stays refused until the window resets. The gemini
+route is unaffected.
+
 ## Auth / secrets
 
 The JWT is minted per-call from the DDK reference Keycloak IdP and is **never
