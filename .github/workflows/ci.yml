@@ -115,6 +115,34 @@ jobs:
       - name: local gateway simulator boot (BG §1.4)
         run: pytest -q -m local_gateway
 
+  anthropic-stacks:
+    # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
+    # so donkey.anthropic hands it a bridged httpx2 client instead, while
+    # anthropic<1 still gets the shared client itself. No other job installs
+    # anthropic, so its tests run on both majors here. The `<1` pin tests the
+    # older major only; the extra keeps its floor and no ceiling (§8.4).
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        anthropic: ["anthropic>=1", "anthropic<1"]
+    name: anthropic-stacks (${{ matrix.anthropic }})
+    env:
+      # Bind the matrix value to an env var so it is never interpolated into a
+      # run: body directly (injection hardening).
+      ANTHROPIC_SPEC: ${{ matrix.anthropic }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,llm,anthropic]" "$ANTHROPIC_SPEC"
+      - run: >-
+          pytest -q
+          tests/unit/test_anthropic_client_stacks.py
+          tests/unit/test_anthropic_httpx2_bridge.py
+          tests/unit/test_adapter_ergonomics.py
+
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The
     # `benchmark`-marked test is deselected from the default run (addopts), so it

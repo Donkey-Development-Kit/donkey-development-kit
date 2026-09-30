@@ -14,7 +14,7 @@ straight into the client constructor.
 **What you get**
 
 - A native `anthropic.AsyncAnthropic` client.
-- Full header **and** transport injection.
+- Full header **and** transport injection, on `anthropic` 0.x and 1.x.
 - Supported at `connection_kwargs()`.
 
 <Callout type="warning">
@@ -31,6 +31,9 @@ straight into the client constructor.
 ```bash
 pip install "donkey-kit[anthropic]"
 ```
+
+This installs the newest `anthropic` release. `anthropic` 0.x (from 0.40) works
+too, so a project that holds it below 1.0 needs no change.
 
 ## Quickstart
 
@@ -123,13 +126,26 @@ llm = AsyncAnthropic(
     base_url=...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,   # client_id / client_secret header pair
-    http_client=...,       # the SDK's shared httpx client
+    http_client=...,       # sends through the SDK's shared transport (see below)
     max_retries=0,         # the SDK retries in its own transport layer
 )
 ```
 
 `connection_kwargs()` returns exactly these keys, so you can drop the factory
 and construct `AsyncAnthropic` by hand at any time.
+
+Which `http_client` you get depends on the installed `anthropic`:
+
+| `anthropic` | Built on | `http_client` |
+| --- | --- | --- |
+| 0.x | `httpx` | The SDK's shared `httpx.AsyncClient`. |
+| 1.0 and later | `httpx2` | An `httpx2.AsyncClient` whose transport sends every request through the shared client. |
+
+`anthropic` 1.0 moved to `httpx2`, Pydantic's continuation of `httpx`, and
+rejects any `httpx` client with a `TypeError`. The bridged `httpx2` client keeps
+one HTTP stack: the governed headers, retries, the GenAI span, budget tracking
+and `donkey.last_call` all run in the shared client either way. If you bring
+your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
 
 ## Notes
 
@@ -145,5 +161,12 @@ and construct `AsyncAnthropic` by hand at any time.
   the same `client_id` / `client_secret` header pair as every other proxy.
   To use the native surface, set `DONKEY_LLM_PROXY_URL` (or `llm_proxy_url`)
   to a `Format=Anthropic` proxy.
+- **Closing the client.** `AsyncAnthropic.close()`, and leaving
+  `async with AsyncAnthropic(...)`, closes its `http_client`. On `anthropic`
+  1.0 and later that is the bridged client: the shared client stays open, and
+  the next `client()` call gets a fresh bridge. On `anthropic` 0.x it is the
+  shared client itself, which every adapter and `donkey.llm` also use, so don't
+  close the Anthropic client there; close the `Donkey` instead
+  (`async with Donkey.from_env()` or `await donkey.aclose()`).
 
 <AdapterErrorTaxonomyNote />
