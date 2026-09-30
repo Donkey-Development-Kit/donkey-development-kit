@@ -658,11 +658,13 @@ def _load_config_files() -> tuple[dict[str, object], dict[str, ConfigSource]]:
     layers: list[tuple[ConfigSource, dict[str, object]]] = []
     project = cwd / _TOML_NAME
     if project.is_file():
+        _require_inside(project, cwd)
         table = _read_table(project)
         _warn_on_secrets(project, table)
         layers.append((ConfigSource("project", project), table))
     local = cwd / _LOCAL_TOML_NAME
     if local.is_file():
+        _require_inside(local, cwd)
         layers.append((ConfigSource("local", local), _read_table(local)))
     if not layers:
         xdg = os.environ.get("XDG_CONFIG_HOME")
@@ -675,6 +677,18 @@ def _load_config_files() -> tuple[dict[str, object], dict[str, ConfigSource]]:
     for source, table in layers:
         _merge_table(merged, table, source, sources, prefix="")
     return merged, sources
+
+
+def _require_inside(path: Path, cwd: Path) -> None:
+    """Refuse a working-directory config file whose real location is elsewhere:
+    its keys would be labelled as the working directory's."""
+    target = path.resolve()
+    if not target.is_relative_to(cwd.resolve()):
+        raise ConfigError(
+            f"{path} links to {target}, outside the working directory. Replace the "
+            "link with a regular file in the working directory, or set those "
+            "values in the environment."
+        )
 
 
 def _merge_table(
