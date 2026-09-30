@@ -18,7 +18,7 @@ import importlib
 import importlib.util
 import inspect
 from collections.abc import Callable
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, AsyncExitStack
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 from .core import _verify
@@ -142,16 +142,17 @@ class Donkey:
             self._auth, self._owned_auth_http = self._default_auth(self._cfg)
         else:
             self._auth = auth
-        # The data-plane (LLM proxy) credential is SEPARATE from the control-plane
-        # one (BG §1.1). In jwt/model-wallet mode (#509) the rotating JWT enters
-        # through this caller-supplied AuthProvider and drives the shared data-plane
-        # client; in the default client-id mode nothing changes — the control-plane
-        # provider (or None) rides the client exactly as before, and the CIE proxy
-        # ignores its bearer. So an existing client-id config is byte-identical.
+        # One shared client per credential plane (BG §1.1). The data-plane (LLM
+        # proxy) client carries only the data-plane credential: the rotating
+        # model-wallet JWT from ``llm_auth`` in jwt mode (#509), and no token
+        # provider in the default client-id mode, which authenticates on the
+        # client_id/client_secret header pair. The control-plane provider never
+        # rides it; it drives a separate client for the registry and other
+        # Anypoint platform calls.
         self._llm_auth = llm_auth
         data_plane_auth = llm_auth if self._cfg.llm_proxy_auth == "jwt" else None
-        # One Budget per Donkey (never global, BG §1.3 / #185): both transports feed
-        # it in-band from every response's x-token-* headers.
+        # One Budget per Donkey (never global, BG §1.3 / #185): both data-plane
+        # transports feed it in-band from every response's x-token-* headers.
         self._budget = Budget()
         self._http: DonkeyAsyncClient = build_http_client(
             self._cfg, data_plane_auth, budget=self._budget
@@ -496,7 +497,7 @@ class Donkey:
     ) -> AbstractContextManager[None]:
         """Inject a real gateway refusal in-process, no server (#190, BG §1.5).
 
-        Swaps a fixture-returning transport onto this Donkey's HTTP client(s) for
+        Swaps a fixture-returning transport onto this Donkey's data-plane HTTP client(s) for
         the next ``times`` calls, so the branch of your agent that handles a typed
         refusal runs with no network and no gateway::
 
@@ -536,19 +537,19 @@ class Donkey:
         return self._sync_http
 
     async def aclose(self) -> None:
+        """Close every transport this Donkey owns: the data-plane and
+        control-plane clients, the connected-app token-fetch client it built (a
+        caller-supplied ``auth`` provider stays caller-owned), and the blocking
+        client. Each one is closed even if an earlier close raises."""
         auth_http = self._owned_auth_http
         self._owned_auth_http = None
-        try:
-            await self._http.aclose()
-        finally:
-            try:
-                await self._control_http.aclose()
-            finally:
-                try:
-                    if auth_http is not None:
-                        await auth_http.aclose()
-                finally:
-                    self.close()
+        async with AsyncExitStack() as stack:
+            # Callbacks unwind last-in, first-out: data plane first, blocking last.
+            stack.callback(self.close)
+            if auth_http is not None:
+                stack.push_async_callback(auth_http.aclose)
+            stack.push_async_callback(self._control_http.aclose)
+            stack.push_async_callback(self._http.aclose)
 
     async def __aenter__(self) -> Donkey:
         return self
@@ -559,9 +560,9 @@ class Donkey:
     def close(self) -> None:
         """Close the blocking transport.
 
-        This sync method cannot close either async transport. A sync-only caller
+        This sync method cannot close the async transports. A sync-only caller
         never opens them; mixed or async callers must use :meth:`aclose`, which
-        closes both async transports and calls this method for the blocking one.
+        closes every async transport and calls this method for the blocking one.
         """
         if self._sync_http is not None:
             self._sync_http.close()

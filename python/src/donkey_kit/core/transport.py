@@ -2,7 +2,9 @@
 
 This is the most important piece of engineering in the SDK. Every framework has
 a different mechanism for setting request headers, and several have none. The
-solution is one shared HTTP client that every adapter is handed.
+solution is one shared HTTP client per credential plane: every adapter is handed
+the data-plane (LLM proxy) client, and Anypoint platform calls use a separate
+control-plane client, so neither credential ever rides the other's requests.
 
 The client:
   * injects, via a request event hook, on every outbound request:
@@ -643,7 +645,14 @@ class _SpanClosingSyncStream(_SpanClosingStream, httpx.SyncByteStream):
 class DonkeyAsyncClient(httpx.AsyncClient):
     """An ``httpx.AsyncClient`` that injects attribution/correlation/auth headers
     and applies the SDK's retry policy. Every adapter that accepts a custom HTTP
-    client MUST be given one of these."""
+    client MUST be given one of these.
+
+    A client serves exactly one credential plane (BG §1.1). The default is the
+    data plane (the LLM proxy): ``auth`` is the data-plane credential, which is
+    the model-wallet JWT provider in ``jwt`` mode and ``None`` in client-id mode.
+    ``control_plane=True`` marks a client for Anypoint platform calls: ``auth``
+    is then the connected-app provider, and the ``jwt``-mode wallet headers are
+    never stamped on its requests."""
 
     def __init__(
         self,
@@ -691,7 +700,8 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         # jwt auth mode (model-wallet ingress, #509/#372): stamp the durable
         # wallet-selector ``X-Client-Id`` on every data-plane send (not just the
         # default_headers snapshot), so adapters routed through this shared client
-        # carry it too. The name is VERIFIED (docs/verified-apis.md §2/§3).
+        # carry it too — and never on a control-plane send. The name is VERIFIED
+        # (docs/verified-apis.md §2/§3).
         wallet = self._cfg.llm_proxy_auth == "jwt" and not self._control_plane
         if wallet and self._cfg.llm_proxy_wallet_client_id:
             request.headers.setdefault(
@@ -700,12 +710,13 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             )
         if self._token_provider is not None:
             token = await self._token_provider.token()
-            # Two token-bearing ingresses ride here, both as ``Authorization:
-            # Bearer`` (VERIFIED): the control-plane OAuth2 client_credentials token
-            # (docs/verified-apis.md §12.1) and — when jwt auth mode is selected — the
-            # data-plane model-wallet JWT (docs/verified-apis.md §2/§3, #372). The header
-            # name/scheme come from the verified wallet constants so there is one
-            # source; the control-plane token happens to use the identical shape.
+            # Two token-bearing ingresses ride here, each on its own client and both
+            # as ``Authorization: Bearer`` (VERIFIED): the control-plane OAuth2
+            # client_credentials token (docs/verified-apis.md §12.1) and — when jwt
+            # auth mode is selected — the data-plane model-wallet JWT
+            # (docs/verified-apis.md §2/§3, #372). The header name/scheme come from
+            # the verified wallet constants so there is one source; the
+            # control-plane token happens to use the identical shape.
             header = _verify.LLM_PROXY_WALLET_JWT_HEADER
             value = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
             if wallet:
@@ -715,9 +726,8 @@ class DonkeyAsyncClient(httpx.AsyncClient):
                 # token. ``setdefault`` would yield to the sentinel and 401.
                 request.headers[header] = value
             else:
-                # Control plane: the OpenAI SDK is not in this path, and on a CIE
-                # data-plane call the proxy ignores Authorization — so yield to any
-                # call-site Authorization rather than clobber it.
+                # Control plane: the OpenAI SDK is not in this path, so yield to
+                # any call-site Authorization rather than clobber it.
                 request.headers.setdefault(header, value)
 
     # --- lifecycle hooks (the skeleton's attachment points, BG §1.1) --------
@@ -1130,9 +1140,11 @@ def build_http_client(
     budget: Budget | None = None,
     control_plane: bool = False,
 ) -> DonkeyAsyncClient:
-    """Factory for the shared client (BG §1.1). Pass ``budget`` to track the in-band
-    token window on every response (BG §1.3, #185); omit it for the control-plane
-    token-fetch client, which observes no budget."""
+    """Factory for a shared client, one per credential plane (BG §1.1). Pass
+    ``budget`` to track the in-band token window on every response (BG §1.3,
+    #185); omit it on the control plane, which observes no budget. Pass
+    ``control_plane=True`` for a client that calls the Anypoint platform (see
+    :class:`DonkeyAsyncClient`)."""
     return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
 
 

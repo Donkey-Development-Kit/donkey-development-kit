@@ -201,7 +201,7 @@ async def test_jwt_401_refreshes_and_retries_once() -> None:
 
 
 async def test_client_id_mode_authorization_setdefault_preserves_preset() -> None:
-    """In the DEFAULT client-id mode the CIE proxy ignores Authorization, so the
+    """Outside jwt mode a token provider is a control-plane credential, so the
     transport must NOT clobber a caller-set bearer — setdefault, not override.
     (The override behaviour above is jwt-mode-only.)"""
     seen: dict[str, str] = {}
