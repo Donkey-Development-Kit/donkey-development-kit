@@ -31,6 +31,9 @@ SENSITIVE_NAMES: frozenset[str] = frozenset(
         "api_key",  # the OpenAI-compatible SDK slot (llm_proxy_key)
         "apikey",
         "x-api-key",
+        "api-key",
+        "x-goog-api-key",  # google-genai's API-key header
+        "cookie",
         _verify.LLM_PROXY_CLIENT_SECRET_HEADER,  # client-id enforcement pair
         _verify.LLM_PROXY_WALLET_JWT_HEADER,  # Authorization: Bearer <JWT>
         "proxy-authorization",

@@ -37,10 +37,12 @@ if sys.version_info >= (3, 11):
 else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
     import tomli as tomllib
 
+from . import _verify
 from ._verify import REGION_HOSTS
 from .cost import CostTags
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
+from .header_names import header_name_problem
 
 Region = Literal["us", "eu", "ca", "jp"]
 
@@ -85,6 +87,16 @@ _SOURCE_LABELS: dict[SourceKind, str] = {
 # credentials read from one of these (see DonkeyConfig.check_endpoints).
 _WORKDIR_KINDS: frozenset[SourceKind] = frozenset({"project", "local"})
 _FILE_KINDS: frozenset[SourceKind] = _WORKDIR_KINDS | {"user"}
+
+# The keys that name a request header: key, env var, and the default name.
+_HEADER_KEYS: tuple[tuple[str, str, _verify.Unverified], ...] = (
+    ("correlation_header", "DONKEY_CORRELATION_HEADER", _verify.CORRELATION_ID_HEADER),
+    ("call_id_header", "DONKEY_CALL_ID_HEADER", _verify.CALL_ID_HEADER),
+    ("cost_team_header", "DONKEY_COST_TEAM_HEADER", _verify.COST_TEAM_HEADER),
+    ("cost_project_header", "DONKEY_COST_PROJECT_HEADER", _verify.COST_PROJECT_HEADER),
+    ("cost_env_header", "DONKEY_COST_ENV_HEADER", _verify.COST_ENV_HEADER),
+    ("cost_enduser_header", "DONKEY_COST_ENDUSER_HEADER", _verify.COST_ENDUSER_HEADER),
+)
 
 # Keys that should never sit in the committed project file.
 _SECRET_KEYS = ("client_secret", "llm_proxy_client_secret", "llm_proxy_key")
@@ -249,6 +261,34 @@ class DonkeyConfig:
     def __post_init__(self) -> None:
         loaded = {name: _as_loaded(name, entry) for name, entry in self._sources.items()}
         object.__setattr__(self, "_sources", loaded)
+        self._check_header_names()
+
+    def _check_header_names(self) -> None:
+        """Refuse a configurable header name that isn't safe to send, or that
+        two keys share (see :mod:`donkey_kit.core.header_names`)."""
+        in_use = {key: getattr(self, key) or dflt.placeholder for key, _, dflt in _HEADER_KEYS}
+        for key, env_var, _ in _HEADER_KEYS:
+            name = getattr(self, key)
+            if name is None:
+                continue
+            problem = header_name_problem(name)
+            if problem is None:
+                clash = [k for k, n in in_use.items() if k != key and n.lower() == name.lower()]
+                if clash:
+                    problem = f"{clash[0]} already uses it"
+            if problem is not None:
+                source = self.source_of(key)
+                where = (
+                    str(source.path)
+                    if source.path is not None
+                    else f"the environment ({env_var})"
+                    if source.kind == "env"
+                    else "code"
+                )
+                raise ConfigError(
+                    f"{key} names the header {name!r}, which can't be used: {problem}. "
+                    f"{key} is set in {where}. Choose a different header name."
+                )
 
     # ----------------------------------------------------------------- factory
     @classmethod
