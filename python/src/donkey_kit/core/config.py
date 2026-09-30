@@ -1,8 +1,15 @@
 """Configuration.
 
-Resolution order: explicit kwarg → env var → ``.donkey-kit.toml`` (cwd or
-``$XDG_CONFIG_HOME``) → default. We never read ``.env`` implicitly — the user
-calls ``load_dotenv()`` themselves.
+Resolution order: explicit kwarg → env var → config file → default. The config
+file is the working directory's ``.donkey-kit.toml`` with its gitignored
+``.donkey-kit.local.toml`` overlaid on top; if neither exists,
+``$XDG_CONFIG_HOME/.donkey-kit.toml``. We never read ``.env`` implicitly — the
+user calls ``load_dotenv()`` themselves.
+
+Every resolved field records its source, and :meth:`DonkeyConfig.check_endpoints`
+uses it so an endpoint read from the working directory's files only receives
+credentials read from those same files (``DONKEY_TRUST_PROJECT_CONFIG=1`` opts
+out). Endpoints must be ``https://``, except loopback hosts.
 
 ``validated()`` reports ALL missing fields in one error, not one per run — the
 one-missing-variable-per-run loop is the most common first-five-minutes
@@ -327,7 +334,8 @@ class DonkeyConfig:
             joined = "\n  - ".join(missing)
             raise ConfigError(
                 f"Configuration for {need!r} is incomplete. Missing:\n  - {joined}\n"
-                f"Set them via kwargs, environment variables, or {_TOML_NAME}."
+                f"Set them via kwargs, environment variables, or {_TOML_NAME} "
+                f"(secrets in {_LOCAL_TOML_NAME})."
             )
         self.check_endpoints(need=need)
         return self
@@ -375,23 +383,42 @@ class DonkeyConfig:
         ]
         if runtime_credential:
             outside.append(runtime_credential)
-        if not outside:
-            return
+        if outside:
+            raise _binding_error(
+                key=key,
+                env_var=env_var,
+                url=url,
+                origin=origin,
+                credentials=outside,
+                offer_local_file=runtime_credential is None,
+            )
 
-        assert origin.path is not None  # file sources always carry their path
+
+def _binding_error(
+    *,
+    key: str,
+    env_var: str,
+    url: str,
+    origin: ConfigSource,
+    credentials: list[str],
+    offer_local_file: bool,
+) -> ConfigError:
+    """The error for a working-directory endpoint paired with outside credentials:
+    names the file, key and host, and lists the ways to resolve it."""
+    assert origin.path is not None  # file sources always carry their path
+    options = [f"set the URL in the environment instead ({env_var}=https://...)"]
+    if offer_local_file:
         local = origin.path.parent / _LOCAL_TOML_NAME
-        options = [f"set the URL in the environment instead ({env_var}=https://...)"]
-        if runtime_credential is None:
-            options.append(f"keep the credentials in {local}, next to the project file")
-        options.append(
-            f"trust this directory's config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
-        )
-        raise ConfigError(
-            f"Not sending {', '.join(outside)} to {host_of(url)}: {key} is set in "
-            f"{origin.path}, and credentials from outside the working directory's "
-            f"config files are only sent to hosts those files name when you opt in. "
-            f"Either:\n  - " + "\n  - ".join(options)
-        )
+        options.append(f"keep the credentials in {local}, next to the project file")
+    options.append(
+        f"trust this directory's config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
+    )
+    return ConfigError(
+        f"Not sending {', '.join(credentials)} to {host_of(url)}: {key} is set in "
+        f"{origin.path}, and credentials from outside the working directory's config "
+        "files are only sent to hosts those files name when you opt in. To continue, "
+        "do one of:\n  - " + "\n  - ".join(options)
+    )
 
 
 def _opt(v: object) -> str | None:

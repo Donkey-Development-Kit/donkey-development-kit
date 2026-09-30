@@ -17,6 +17,12 @@ wording). The budget line always states ``observed_at`` staleness — the proxy
 has no budget-query endpoint (upstream gap #2), so a budget is only ever as
 fresh as the last response, and doctor never implies otherwise (AC3).
 
+Before any request, doctor prints each endpoint's host and where it came from
+(env, project file, local overlay, user file or default). An LLM-proxy endpoint
+that may not receive the configured credentials (see
+:meth:`DonkeyConfig.check_endpoints`) fails the ``config`` line, so the probe
+never runs.
+
 Honest scope (verification discipline): the gateway's *allow-list* rejection (a model refused by
 API Manager policy rather than missing at the provider) has no captured 403
 shape yet, and enumerating the allowed alternatives needs the discovery
@@ -31,10 +37,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..core.config import _TOML_NAME, ConfigSource, DonkeyConfig
+from ..core.config import ConfigSource, DonkeyConfig
 from ..core.endpoints import host_of
 from ..core.errors import (
     AuthError,
@@ -114,9 +119,10 @@ def _humanize(seconds: float) -> str:
 def _config_check(cfg: DonkeyConfig) -> tuple[Check, bool]:
     """Resolve config without any network call and report llm-proxy completeness.
     Returns the check plus whether it's safe to probe (all required fields set)."""
-    resolved = sum(1 for f in _LLM_FIELDS if getattr(cfg, f))
-    toml_present = (Path.cwd() / _TOML_NAME).is_file()
-    source = f"{_TOML_NAME} + env" if toml_present else "env"
+    set_fields = [f for f in _LLM_FIELDS if getattr(cfg, f)]
+    resolved = len(set_fields)
+    labels = dict.fromkeys(str(cfg.source_of(f)) for f in set_fields)
+    source = " + ".join(labels) or "nothing set"
     try:
         cfg.validated(need="llm")
     except ConfigError as exc:
@@ -279,7 +285,7 @@ def run_diagnostics(model: str, *, probe: Probe | None = None) -> list[Check]:
     config_check, can_probe = _config_check(cfg)
     checks = [config_check, *_endpoint_checks(cfg)]
     if not can_probe:
-        nc = "not checked — config incomplete"
+        nc = "not checked — config check failed"
         checks += [Check(n, Level.SKIP, nc) for n in ("credentials", "gateway", "model")]
         checks.append(_budget_check(None))
         return checks
