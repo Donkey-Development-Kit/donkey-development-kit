@@ -78,6 +78,11 @@ class ConfigError(DonkeyError):
     """Configuration is missing or invalid. Reports ALL problems at once (config resolution)."""
 
 
+class ConfigWarning(UserWarning):
+    """A config file holds something that belongs elsewhere, or an env switch
+    relaxes a config check (config resolution)."""
+
+
 class AuthError(DonkeyError):
     """Rejected credentials on the Anypoint control plane or LLM-proxy data plane.
 

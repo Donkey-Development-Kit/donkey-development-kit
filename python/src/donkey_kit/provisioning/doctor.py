@@ -40,7 +40,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from ..core.config import ConfigSource, DonkeyConfig
-from ..core.endpoints import host_of
+from ..core.endpoints import ALLOW_HTTP_ENV, allow_http_enabled, host_of
 from ..core.errors import (
     AuthError,
     ConfigError,
@@ -171,6 +171,14 @@ def _endpoint_checks(cfg: DonkeyConfig) -> list[Check]:
             remediation,
         )
     )
+    if allow_http_enabled():
+        checks.append(
+            Check(
+                "plain http",
+                Level.INFO,
+                f"allowed to non-loopback hosts ({ALLOW_HTTP_ENV}=1 in env)",
+            )
+        )
     return checks
 
 

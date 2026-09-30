@@ -34,7 +34,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
 from ._verify import REGION_HOSTS
 from .cost import CostTags
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
-from .errors import ConfigError
+from .errors import ConfigError, ConfigWarning
 
 Region = Literal["us", "eu", "ca", "jp"]
 
@@ -81,10 +81,6 @@ _WORKDIR_KINDS: frozenset[SourceKind] = frozenset({"project", "local"})
 
 # Keys that should never sit in the committed project file.
 _SECRET_KEYS = ("client_secret", "llm_proxy_client_secret", "llm_proxy_key")
-
-
-class ConfigWarning(UserWarning):
-    """A config file holds something that belongs elsewhere (config resolution)."""
 
 
 @dataclass(frozen=True)
