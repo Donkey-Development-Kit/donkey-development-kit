@@ -252,14 +252,15 @@ anywhere else (an environment variable, the user config file, or code), the SDK
 raises `ConfigError` before sending anything. The error names the file, the key
 and the host. Credentials supplied in code count as coming from outside the
 files: a secret passed through `with_overrides(client_secret=…)` or
-`DonkeyConfig(...)`, and in `jwt` mode the JWT returned by `llm_auth`. The same
+`DonkeyConfig(...)`, the token from a provider passed as `Donkey(auth=…)`, and
+in `jwt` mode the JWT returned by `llm_auth`. The same
 rule applies to loopback hosts: they are exempt from the `https://` rule only,
 so a `http://127.0.0.1:…` URL in `.donkey-kit.toml` with the secret in the
 environment is refused too.
 
 | Endpoint | Credentials sent to it |
 |---|---|
-| `base_url` (control plane) | `client_id`, `client_secret` |
+| `base_url` (control plane) | `client_id`, `client_secret`, or the token from a `Donkey(auth=…)` provider, which never comes from a config file |
 | `llm_proxy_url`, `client-id` mode | `llm_proxy_client_id`, `llm_proxy_client_secret`, `llm_proxy_key` |
 | `llm_proxy_url`, `jwt` mode | `llm_proxy_wallet_client_id`, and the JWT from `llm_auth`, which never comes from a config file |
 
@@ -272,7 +273,7 @@ These are not affected:
   (`DonkeyConfig(...)`, `with_overrides(...)`);
 - an endpoint you don't use. The check runs per capability, so a `base_url` in
   the project file doesn't block LLM-only use; the control-plane check runs
-  before the first token request.
+  before a control-plane token is fetched.
 
 To resolve the error, do one of the following:
 

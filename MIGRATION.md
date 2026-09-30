@@ -73,8 +73,9 @@ documented secrets file is now read. Full reference:
    the `https://` rule only, so a loopback URL in `.donkey-kit.toml` with the
    secret in the environment is refused as well. Credentials supplied in code
    count as coming from outside the files: a secret passed through
-   `with_overrides(client_secret=…)` or `DonkeyConfig(...)`, and in `jwt` mode
-   the JWT returned by `llm_auth`.
+   `with_overrides(client_secret=…)` or `DonkeyConfig(...)`, the token from a
+   provider passed as `Donkey(auth=…)`, and in `jwt` mode the JWT returned by
+   `llm_auth`.
 3. **`.donkey-kit.local.toml` is now read.** It is overlaid on
    `./.donkey-kit.toml` with the same `[donkey]` keys; environment variables
    still win over both. When the working directory has neither file,

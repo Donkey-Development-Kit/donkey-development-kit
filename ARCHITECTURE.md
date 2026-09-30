@@ -111,7 +111,9 @@ framework that may not be installed.
   entry point. Each field records its source, so an endpoint read from the
   working directory's files only receives credentials from those files
   (`DonkeyConfig.check_endpoints`), loopback included, and every endpoint must
-  be `https://` except loopback.
+  be `https://` except loopback. The check runs before a credential leaves on
+  either plane: in `validated()` for model calls and the registry, and before
+  each control-plane token fetch.
 - **The transport is the attachment point.** `DonkeyAsyncClient` exposes four
   internal lifecycle hooks — no-op by default, **not** public API, mirrored on the
   sync twin `DonkeyClient` — so the six-piece minimum *attaches* rather than
