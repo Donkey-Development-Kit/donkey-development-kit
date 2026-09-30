@@ -83,8 +83,8 @@ ATTRIBUTION_BUSINESS_GROUP_HEADER = Unverified(
 
 # --- Cost-attribution tag headers (docs/verified-apis.md §3, #196) ---
 # The fixed cost dimensions (team / project / env / enduser.id) are emitted as
-# request headers AND as ``donkey.cost.*`` span attributes (the SDK controls the
-# span end to end, #196 AC #4).
+# ``donkey.cost.*`` span attributes (the SDK controls the span end to end, #196
+# AC #4), and as request headers only when ``send_cost_headers`` is enabled.
 #
 # NEGATIVE result — VERIFIED (LIVE 2026-09-22, #522): the deployed Omni Gateway
 # LLM proxy has NO inbound cost-tag ingestion. A live probe sending
@@ -97,10 +97,11 @@ ATTRIBUTION_BUSINESS_GROUP_HEADER = Unverified(
 # response headers) and attributed by API instance + consuming client application
 # — never by a client-sent header. So the gateway-side names are confirmed to be
 # a NON-CONTRACT; the authoritative carrier is the ``donkey.cost.*`` span
-# attribute. The SDK still emits these ``X-Anypoint-Cost-*`` names as a
-# forward-looking, overridable (``cost_*_header``) convention — harmless because
-# nothing reads them — so each is ``verified=True``: there is nothing left to
-# discover, and leaving the warning on would lie by silence.
+# attribute. The SDK keeps these ``X-Anypoint-Cost-*`` names as a
+# forward-looking, overridable (``cost_*_header``) convention, sent only when a
+# caller opts in with ``send_cost_headers`` — by default nothing is sent to a
+# gateway that reads nothing — so each is ``verified=True``: there is nothing
+# left to discover, and leaving the warning on would lie by silence.
 COST_TEAM_HEADER = Unverified(
     key="cost.team_header",
     placeholder="X-Anypoint-Cost-Team",

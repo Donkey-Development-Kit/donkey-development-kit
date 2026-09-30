@@ -127,7 +127,9 @@ def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
     names are a VERIFIED-NEGATIVE result (docs/verified-apis.md §3): the LLM
     Gateway ingests no cost-tag header, so the name is a forward-looking
     convention and reading the placeholder emits no warning — the authoritative
-    carrier is the ``donkey.cost.*`` span attribute. Values are pre-validated by
+    carrier is the ``donkey.cost.*`` span attribute. The transport therefore
+    sends these only when ``DonkeyConfig.send_cost_headers`` is enabled; this
+    builder itself does not check the flag. Values are pre-validated by
     :class:`CostTags`, so they are always header-safe."""
     override = {
         field: getattr(cfg, attr) for field, attr, _placeholder in _COST_HEADER_SOURCES
@@ -159,8 +161,9 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
     remain loud, overridable placeholders. The verified per-agent attribution
     unit is the ``client_id`` credential — see :func:`proxy_auth_headers`.
 
-    Includes the CONFIG-LEVEL cost tags (docs/verified-apis.md §3, #196). A static
-    ``default_headers``
+    Includes the CONFIG-LEVEL cost tags only when ``cfg.send_cost_headers`` is
+    enabled (docs/verified-apis.md §3, #196): nothing on the gateway reads them.
+    A static ``default_headers``
     snapshot cannot see a later ``donkey.run(...)`` override — that binding is a
     contextvar the live client reads per send — so the snapshot path carries the
     set-once tags only, a documented degradation (like the per-run correlation
@@ -242,9 +245,11 @@ def _apply_base_headers(
     random, it must be pinned once before the retry loop
     (:func:`_apply_call_id_header`), never re-rolled per send.
 
-    ``attribution_headers`` already carries the CONFIG-LEVEL cost tags; any
-    ``donkey.run(...)`` per-run overrides are applied on top here (read from the
-    contextvar per send), so a run-scope dimension wins for its block (#196)."""
+    With ``cfg.send_cost_headers`` enabled, ``attribution_headers`` already
+    carries the CONFIG-LEVEL cost tags and any ``donkey.run(...)`` per-run
+    overrides are applied on top here (read from the contextvar per send), so a
+    run-scope dimension wins for its block (#196). Disabled (the default), no
+    cost header is sent; the span attributes still carry every tag."""
     request.headers[correlation_header] = correlation_id
     # Stamp the resolved name so read-back (errors._sent_ids) honours a
     # header-name override without core/errors importing DonkeyConfig (#363).

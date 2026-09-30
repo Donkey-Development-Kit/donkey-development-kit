@@ -286,6 +286,18 @@ class ContentSafetyBlocked(PolicyViolation):
 
 
 class PIIDetected(PolicyViolation):
+    """The PII-detection policy blocked the request or response.
+
+    ``entities`` lists the flagged entity types (e.g. ``["Email"]``). The message
+    (``str(exc)``, ``exc.args``, ``repr(exc)``) names those types with their count
+    and character offsets but never the flagged values, so logging the exception
+    or printing it in ``donkey doctor`` does not re-emit what the policy blocked.
+
+    ``gateway_message`` is the gateway's own rejection text, which echoes every
+    flagged value verbatim; it is kept for callers that need it and is not
+    rendered by ``str()`` or ``repr()``. The raw body is also on ``.response``.
+    Treat both as carrying the blocked content."""
+
     policy = "pii-detection"
     remediation: str = (
         "The PII-detection policy blocked this request because the prompt "
@@ -483,7 +495,9 @@ def classify(
     * **PII detection** rejects with **403** and a *nested* error object whose
       ``type`` is ``"pii_detected"`` (and, unlike a genuine auth failure, NO
       ``www-authenticate`` header). So a 403 is NOT automatically an auth error —
-      the error ``type`` is checked first.
+      the error ``type`` is checked first. The gateway's message echoes each
+      flagged value, so the exception message is rebuilt from the entity types
+      and offsets and the original is kept on ``PIIDetected.gateway_message``.
     * **Agent Kill Switch** rejects with **403** and a *nested* error object whose
       ``code`` is ``"agent_killed"`` (no ``type``, no ``www-authenticate``) →
       :class:`AgentKilled`. Keyed on the body ``code``, not the status, and
@@ -773,8 +787,11 @@ def _retry_after(response: httpx.Response) -> float | None:
 
 _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
 
+#: One flagged PII entity: ``(entity type, start offset, end offset)``.
+_PiiSpan = tuple[str, int | None, int | None]
 
-def _pii_spans(message: str | None) -> list[tuple[str, int | None, int | None]]:
+
+def _pii_spans(message: str | None) -> list[_PiiSpan]:
     """Best-effort ``(entity type, start, end)`` for each entity the PII policy
     flagged, parsed from its rejection message (a JSON list of ``{"pii_type",
     "value", "start", "end"}`` objects; docs/verified-apis.md §4). The ``value``
@@ -806,7 +823,7 @@ def _pii_spans(message: str | None) -> list[tuple[str, int | None, int | None]]:
     return [(entity, None, None) for entity in _PII_TYPE_RE.findall(message)]
 
 
-def _pii_summary(status: int, spans: list[tuple[str, int | None, int | None]]) -> str:
+def _pii_summary(status: int, spans: list[_PiiSpan]) -> str:
     """The :class:`PIIDetected` message: the entity types, their count and
     offsets — never the flagged values the gateway echoes back."""
     base = f"Request blocked: personally identifiable information detected ({status})"
