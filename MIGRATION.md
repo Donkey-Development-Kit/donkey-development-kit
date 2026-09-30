@@ -1,15 +1,61 @@
 # Migration guide
 
-## Cost-tag headers are opt-in; secrets and blocked values stay out of output
+## Next release: credential handling and printed output
 
-Four changes to what the SDK renders and sends. Only the first changes
-anything on the wire.
+Changes since `0.1.1.dev2` that can affect existing code. The first two change
+what goes on the wire; the rest change only what the SDK prints.
 
-**Cost-tag request headers are off by default.** The cost tags (`team`,
-`project`, `env`, `enduser.id`) used to go out as `X-Anypoint-Cost-*` request
-headers on every call. The LLM Gateway reads none of them
-(`docs/verified-apis.md` §3), so they are now sent only when you opt in. The
-`donkey.cost.*` span attributes are unchanged and still carry every tag, so
+### Each credential stays on its own plane
+
+`Donkey` now keeps one shared HTTP client per credential plane. The data-plane
+client (the LLM proxy: `donkey.llm` and every adapter) carries only the
+LLM-proxy credential. A separate control-plane client carries the Anypoint
+connected-app token (`Donkey(auth=…)`, or the default `AnypointConnectedApp`
+built from `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET`) and backs the
+registry and tool discovery. Model calls no longer fetch the connected-app
+token, so they also keep working when the Anypoint token endpoint is
+unreachable. Three things change:
+
+**In client-id mode, a `401` from the LLM proxy is terminal.** With Anypoint
+credentials configured, the SDK used to refresh the platform token and retry
+once. That token is not what the proxy checks, so the retry could not succeed.
+The first `401` now surfaces as `AuthError`: check `DONKEY_LLM_PROXY_CLIENT_ID`
+/ `DONKEY_LLM_PROXY_CLIENT_SECRET` and the contract in API Manager. In `jwt`
+mode the wallet JWT is still refreshed and retried once.
+
+**A token passed as `Donkey(auth=…)` no longer reaches the LLM proxy.** In
+client-id mode it used to go out as `Authorization: Bearer …` on model calls
+whose client set no `Authorization` of its own (for example the Anthropic and
+Gemini clients, or a raw request). If a proxy of yours authenticates model
+calls with a bearer token, supply it on the data plane instead: set
+`llm_proxy_auth="jwt"` and pass the provider as `Donkey(llm_auth=…)` (see the
+JWT / model-wallet section of the configuration reference), or, for a static
+key, set `llm_proxy_key` (`DONKEY_LLM_PROXY_KEY`), which the OpenAI SDK sends
+as `Authorization: Bearer <key>`:
+
+```diff
+- donkey = Donkey(cfg, auth=StaticToken(token))
++ donkey = Donkey(
++     replace(cfg, llm_proxy_auth="jwt", llm_proxy_wallet_client_id=wallet_id),
++     llm_auth=StaticToken(token),
++ )
+```
+
+**In `jwt` mode, registry calls carry the connected-app token.** They used to go
+out on the data-plane client with the wallet JWT and the `X-Client-Id` wallet
+selector. They now carry the connected-app token and no `X-Client-Id`, so
+registry and tool discovery need `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET`
+(or your own `Donkey(auth=…)` provider) in `jwt` mode too.
+
+`simulate()`, `donkey mock` and the conformance kit still act on the data-plane
+client, and `aclose()` closes both clients.
+
+### Cost-tag headers are opt-in
+
+The cost tags (`team`, `project`, `env`, `enduser.id`) used to go out as
+`X-Anypoint-Cost-*` request headers on every call. The LLM Gateway reads none
+of them (`docs/verified-apis.md` §3), so they are now sent only when you opt in.
+The `donkey.cost.*` span attributes are unchanged and still carry every tag, so
 dashboards built on spans need no change. If something of your own reads those
 headers, turn them back on:
 
@@ -21,19 +67,22 @@ or `send_cost_headers = true` in the `[donkey]` table, or
 `DonkeyConfig(send_cost_headers=True)`. The `cost_*_header` name overrides
 apply as before.
 
-**`PIIDetected` messages no longer contain the flagged values.** `str(exc)`
-used to be the gateway's rejection text, which repeats each detected value. It
-now names the entity types, their count and their offsets, for example
-`… 1 entity (Email at chars 12-32) …`. `.entities` is unchanged. If you parsed
-the message, read the new `.gateway_message` attribute (the gateway's text) or
-`.response` (the raw body) instead. Both carry the blocked content.
+### `PIIDetected` messages no longer contain the flagged values
 
-**`repr()` / `str()` of `DonkeyConfig` omit the secrets.** `client_secret`,
-`llm_proxy_client_secret` and `llm_proxy_key` no longer appear. Attribute
-access and equality are unchanged.
+`str(exc)` used to be the gateway's rejection text, which repeats each detected
+value. It now names the entity types, their count and their offsets, for
+example `… 1 entity (Email at chars 12-32) …`. `.entities` is unchanged. If you
+parsed the message, read the new `.gateway_message` attribute (the gateway's
+text) or `.response` (the raw body) instead. Both carry the blocked content.
 
-**Printed `connection_kwargs()` show `'***'` for secrets.** Every adapter's
-`connection_kwargs()`, ADK's `gemini_connection_kwargs()` and
+### `repr()` / `str()` of `DonkeyConfig` omit the secrets
+
+`client_secret`, `llm_proxy_client_secret` and `llm_proxy_key` no longer
+appear. Attribute access and equality are unchanged.
+
+### Printed `connection_kwargs()` show `'***'` for secrets
+
+Every adapter's `connection_kwargs()`, ADK's `gemini_connection_kwargs()` and
 `proxy_auth_headers()` now return a `dict` subclass that masks `api_key`, the
 `client_secret` header and `Authorization` in `repr()`/`str()`, including in
 nested header mappings. Unpacking, lookups, equality and `json.dumps` are
