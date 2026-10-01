@@ -3115,14 +3115,23 @@ correlation id. They do **not** carry prompt or completion text.
 Turn it on only when your collector is a trusted sink and you have accepted
 responsibility for the content that lands there:
 
-```python
-# kwarg, or DONKEY_TELEMETRY_CAPTURE_CONTENT=true, or
-# telemetry_capture_content = true in .donkey-kit.toml
-donkey = Donkey.from_env(telemetry_capture_content=True)
+```bash
+export DONKEY_TELEMETRY_CAPTURE_CONTENT=true
+# or: telemetry_capture_content = true under [donkey] in .donkey-kit.toml
 ```
 
-`telemetry_capture_content` resolves along the standard precedence
-(kwarg → env → `.donkey-kit.toml` → default) and **defaults to `False`**. When
+In code, layer it over the resolved config. It isn't a `Donkey.from_env()`
+kwarg:
+
+```python
+from donkey_kit import Donkey, DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_capture_content=True))
+```
+
+`telemetry_capture_content` resolves along the standard
+[precedence](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#precedence) (set in code → env → config
+files → default) and **defaults to `False`**. When
 enabled, content is emitted under the pinned semconv attribute names —
 `gen_ai.prompt` and `gen_ai.completion` — and no others. When off, those
 attributes never reach a span, and the allowlist that builds every span drops
@@ -4384,7 +4393,9 @@ Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`,
 are cached with a configurable TTL (default 300 seconds):
 
 ```python
-donkey = Donkey.from_env(registry_cache_ttl_s=300)
+from donkey_kit import Donkey, DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(registry_cache_ttl_s=60))
 ```
 
 - `donkey.registry.refresh()` invalidates the cache and re-fetches on next use —
@@ -9116,11 +9127,42 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/referenc
 # Configuration
 
 `Donkey.from_env()` builds its configuration from environment variables, then
-the config files, then defaults. Values you set in code sit on top of that. See
+the config files, then defaults. `Donkey(DonkeyConfig(...))` uses only what you
+pass. See [Building a config](#building-a-config) for both paths,
 [Precedence](#precedence) for the exact order,
 [What the SDK sends where](#what-the-sdk-sends-where) for which credential goes
 to which host, and [Which credentials a URL receives](#which-credentials-a-url-receives)
 for the rule that ties a URL from a config file to credentials from the same files.
+
+## Building a config
+
+There are two ways to build a `Donkey`, and they resolve values differently:
+
+| You write | What it reads |
+|---|---|
+| `Donkey.from_env(...)` or `Donkey()` | Environment variables, then the [config files](#config-files-secrets-and-trust), then defaults. `Donkey.from_env()` takes only the cost tags (`team`, `project`, `env`, `enduser_id`) and `on_model_substitution` as kwargs, and applies them on top. |
+| `Donkey(DonkeyConfig(...))` | Only the values you pass. Every other field is its default. No environment variable and no config file is read. |
+
+Building `DonkeyConfig(...)` yourself does not fill the gaps from the
+environment. With `DONKEY_TIMEOUT_S=5` set,
+`Donkey(DonkeyConfig(llm_proxy_url=…))` still uses the default `timeout_s` of
+`60.0`. To change a few fields and keep everything else from the environment
+and the files, resolve first and then override:
+
+```python
+from donkey_kit import Donkey, DonkeyConfig
+
+donkey = Donkey(
+    DonkeyConfig.from_env().with_overrides(
+        telemetry_capture_content=True,
+        registry_cache_ttl_s=60,
+    )
+)
+```
+
+`DonkeyConfig.from_env()` takes no arguments. `with_overrides(...)` accepts any
+`DonkeyConfig` field name, the names in the "`DonkeyConfig` field" columns
+below, and returns a new config.
 
 ## Governed model access
 
@@ -9338,7 +9380,7 @@ kwarg; in code, use
 
 ## Telemetry
 
-| Env var | `Donkey.from_env` kwarg | Meaning |
+| Env var | `DonkeyConfig` field | Meaning |
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
 | `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |

@@ -1,6 +1,9 @@
 """Configuration.
 
-Resolution order: explicit kwarg → env var → config file → default. The config
+Resolution order (:meth:`DonkeyConfig.from_env`): value set in code → env var →
+config file → default. ``from_env()`` takes no arguments; a value set in code is
+one changed afterwards (``with_overrides``, ``dataclasses.replace``). A
+``DonkeyConfig(...)`` built directly reads neither env nor files. The config
 file is the working directory's ``.donkey-kit.toml`` with its gitignored
 ``.donkey-kit.local.toml`` merged over it key by key (nested tables such as
 ``[donkey.cost]`` recursively; scalars and arrays replace); if neither exists,

@@ -97,7 +97,7 @@ def test_unknown_region_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # --- telemetry_capture_content resolution (#306, BG §1.6) -------------------
 # Safe by default: content is emitted on spans only when the developer opts in,
-# through the normal kwarg → env → toml → default precedence.
+# through the normal set-in-code → env → toml → default precedence.
 
 
 def test_capture_content_defaults_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:

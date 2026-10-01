@@ -8,11 +8,42 @@ import { Badge } from '../../components'
 # Configuration
 
 `Donkey.from_env()` builds its configuration from environment variables, then
-the config files, then defaults. Values you set in code sit on top of that. See
+the config files, then defaults. `Donkey(DonkeyConfig(...))` uses only what you
+pass. See [Building a config](#building-a-config) for both paths,
 [Precedence](#precedence) for the exact order,
 [What the SDK sends where](#what-the-sdk-sends-where) for which credential goes
 to which host, and [Which credentials a URL receives](#which-credentials-a-url-receives)
 for the rule that ties a URL from a config file to credentials from the same files.
+
+## Building a config
+
+There are two ways to build a `Donkey`, and they resolve values differently:
+
+| You write | What it reads |
+|---|---|
+| `Donkey.from_env(...)` or `Donkey()` | Environment variables, then the [config files](#config-files-secrets-and-trust), then defaults. `Donkey.from_env()` takes only the cost tags (`team`, `project`, `env`, `enduser_id`) and `on_model_substitution` as kwargs, and applies them on top. |
+| `Donkey(DonkeyConfig(...))` | Only the values you pass. Every other field is its default. No environment variable and no config file is read. |
+
+Building `DonkeyConfig(...)` yourself does not fill the gaps from the
+environment. With `DONKEY_TIMEOUT_S=5` set,
+`Donkey(DonkeyConfig(llm_proxy_url=…))` still uses the default `timeout_s` of
+`60.0`. To change a few fields and keep everything else from the environment
+and the files, resolve first and then override:
+
+```python
+from donkey_kit import Donkey, DonkeyConfig
+
+donkey = Donkey(
+    DonkeyConfig.from_env().with_overrides(
+        telemetry_capture_content=True,
+        registry_cache_ttl_s=60,
+    )
+)
+```
+
+`DonkeyConfig.from_env()` takes no arguments. `with_overrides(...)` accepts any
+`DonkeyConfig` field name, the names in the "`DonkeyConfig` field" columns
+below, and returns a new config.
 
 ## Governed model access
 
@@ -236,7 +267,7 @@ kwarg; in code, use
 
 ## Telemetry
 
-| Env var | `Donkey.from_env` kwarg | Meaning |
+| Env var | `DonkeyConfig` field | Meaning |
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
 | `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
