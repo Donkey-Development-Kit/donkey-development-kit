@@ -28,6 +28,8 @@ The client:
   * refreshes the attached provider's token and retries exactly once on 401
     (BG §1.1); a client-id data-plane client has no provider, so its 401 is
     terminal
+  * keeps one connection pool per event loop, so a sync app that wraps each
+    call in ``asyncio.run()`` can reuse one client (#807)
 
 For frameworks that only accept a ``default_headers`` dict (not a client), pass
 :func:`attribution_headers` — a snapshot — and accept that the correlation ID is
@@ -37,11 +39,14 @@ per-client rather than per-run. Document that degradation per adapter (BG §1.8)
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import random
 import re
+import threading
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from typing import Any
 
 import httpx
 
@@ -732,6 +737,65 @@ class _SpanClosingSyncStream(_SpanClosingStream, httpx.SyncByteStream):
             self._inner.close()
 
 
+class _LoopLocalTransport(httpx.AsyncBaseTransport):
+    """One connection pool per event loop (#807).
+
+    An httpx pool's keep-alive connections belong to the loop that opened them.
+    A sync app that wraps each call in ``asyncio.run()`` (a Flask or Django
+    view, a CLI, a per-test pytest-asyncio loop) gets a new loop per call, and
+    reusing the old loop's pool fails with a raw ``RuntimeError: Event loop is
+    closed``. This wrapper takes the place of each pool httpx builds for a
+    :class:`DonkeyAsyncClient`, and sends each request through the pool of the
+    running loop. The pool httpx built goes to the first loop that sends. Each
+    later loop gets a fresh pool from ``build``, with the same settings, so
+    loops in different threads never share connections. A closed loop's pool
+    is dropped when the next new loop arrives, so one ``asyncio.run()`` per
+    request does not pile up dead pools.
+
+    It wraps the pool rather than overriding the client, so a transport swapped
+    in on top (``simulate()``, the conformance probe) still delegates to the
+    right pool when it passes a request through.
+    """
+
+    def __init__(
+        self, first: httpx.AsyncBaseTransport, build: Callable[[], httpx.AsyncBaseTransport]
+    ) -> None:
+        self._first: httpx.AsyncBaseTransport | None = first
+        self._build = build
+        # A plain dict, not a WeakKeyDictionary: a pool's connections hold
+        # their loop, so the loop key would never be collected anyway.
+        self._pools: dict[asyncio.AbstractEventLoop, httpx.AsyncBaseTransport] = {}
+        self._lock = threading.Lock()
+
+    def _pool(self) -> httpx.AsyncBaseTransport:
+        loop = asyncio.get_running_loop()
+        pool = self._pools.get(loop)
+        if pool is None:
+            with self._lock:
+                pool = self._pools.get(loop)
+                if pool is None:
+                    for closed in [old for old in self._pools if old.is_closed()]:
+                        del self._pools[closed]
+                    pool, self._first = self._first or self._build(), None
+                    self._pools[loop] = pool
+        return pool
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return await self._pool().handle_async_request(request)
+
+    async def aclose(self) -> None:
+        # Close only the running loop's pool. A pool on another loop is dropped
+        # unclosed: that loop is closed (``asyncio.run`` returned) or runs in
+        # another thread, and closing its sockets from here would fail.
+        loop = asyncio.get_running_loop()
+        with self._lock:
+            pool = self._pools.get(loop) or self._first
+            self._pools.clear()
+            self._first = None
+        if pool is not None:
+            await pool.aclose()
+
+
 class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
     """An ``httpx.AsyncClient`` that injects attribution/correlation/auth headers
     and applies the SDK's retry policy. Every adapter that accepts a custom HTTP
@@ -778,6 +842,32 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             event_hooks={"request": [self._inject_headers]},
             **kw,  # type: ignore[arg-type]
         )
+        self._pool_per_loop(kw)
+
+    def _pool_per_loop(self, kw: dict[str, object]) -> None:
+        """Give each event loop its own connection pool (#807). Wraps every pool
+        httpx built here: the default transport and the env-proxy mounts. A
+        later loop's pool comes from an httpx client built with the same
+        ``kw``. A ``transport`` or ``mounts`` the caller passed is theirs, so it
+        is left as given."""
+
+        def fresh() -> httpx.AsyncClient:
+            return httpx.AsyncClient(**kw)  # type: ignore[arg-type]
+
+        if "transport" not in kw:
+            self._transport = _LoopLocalTransport(self._transport, lambda: fresh()._transport)
+        if "mounts" not in kw:
+
+            def build_mount(pattern: Any) -> httpx.AsyncBaseTransport:
+                client = fresh()
+                return client._mounts.get(pattern) or client._transport
+
+            self._mounts = {
+                pattern: None
+                if mount is None
+                else _LoopLocalTransport(mount, functools.partial(build_mount, pattern))
+                for pattern, mount in self._mounts.items()
+            }
 
     @property
     def token_provider(self) -> AuthProvider | None:
