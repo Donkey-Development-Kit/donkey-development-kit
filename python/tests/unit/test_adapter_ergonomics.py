@@ -349,6 +349,8 @@ class _F(NamedTuple):
     args: tuple[str, ...]  # positional args the factory takes (model id, if any)
     override_key: str  # connection kwarg the caller can replace
     override_value: Any
+    # Further (dotted module, attr) pairs the factory imports lazily
+    also_stub: tuple[tuple[str, str], ...] = ()
 
 
 # Every adapter whose connection_kwargs() is a plain value dict spread straight
@@ -364,6 +366,8 @@ _FACTORIES = [
         ("gpt-4o",),
         "use_responses_api",
         False,
+        # chat_model() attaches a last_call callback handler (#850)
+        (("langchain_core.callbacks", "BaseCallbackHandler"),),
     ),
     _F(
         "adk",
@@ -477,6 +481,8 @@ def test_factory_and_connection_kwargs_do_not_drift(
     adapter_cls: type[Adapter] = getattr(mod, f.adapter_cls)
 
     captured = _install_native_stub(monkeypatch, f.native_module, f.native_attr)
+    for dotted, attr in f.also_stub:
+        _install_native_stub(monkeypatch, dotted, attr)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # suppress any one-time adapter construction warnings
         factory(*f.args)
@@ -519,6 +525,8 @@ def test_factory_caller_kwargs_override_connection_defaults(
     mod = importlib.import_module(f"donkey_kit.integrations.{f.module}")
     factory = getattr(mod, f.factory)
     captured = _install_native_stub(monkeypatch, f.native_module, f.native_attr)
+    for dotted, attr in f.also_stub:
+        _install_native_stub(monkeypatch, dotted, attr)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

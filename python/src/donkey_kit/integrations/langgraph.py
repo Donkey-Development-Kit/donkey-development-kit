@@ -29,6 +29,7 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID
 
 from ..core.masking import masked
 from ._base import Adapter, default_adapter
@@ -71,6 +72,7 @@ class LangGraphAdapter(Adapter):
         with self._native_import():
             from langchain_openai import ChatOpenAI  # VERIFY name/path: docs/verified-apis.md §8
 
+        kw["callbacks"] = _with_last_call_handler(kw.get("callbacks"))
         return ChatOpenAI(model=model, **{**self.connection_kwargs(), **kw})
 
     def __call__(self, model: str, **kw: Any) -> ChatOpenAI:
@@ -88,6 +90,67 @@ class LangGraphAdapter(Adapter):
         to ``donkey.langgraph("gpt-4o")``. Carries no per-adapter state — the
         bridge is pure ``classify()`` — so it is a plain delegate."""
         return typed_refusals()
+
+
+def _last_call_handler() -> Any:
+    """A LangChain callback handler that brings ``donkey.last_call`` back to the
+    caller of ``ainvoke()`` (#850).
+
+    ``BaseChatModel.agenerate`` sends the request from a task that
+    ``asyncio.gather`` spawns with a copy of the caller's context, so the record
+    the transport sets never reaches the caller. LangChain awaits a
+    ``run_inline`` handler's ``on_chat_model_start`` in the caller's own context,
+    before that gather, so the handler opens a
+    :class:`~donkey_kit.core.lastcall.LastCallBridge` there and closes it when
+    the call ends. A batch (``batch_size > 1``) sends its requests side by side,
+    so it gets no bridge (hazard #2): each request's record stays in its own
+    task."""
+    from langchain_core.callbacks import BaseCallbackHandler
+
+    from ..core.lastcall import LastCallBridge, open_last_call_bridge
+
+    class _LastCallHandler(BaseCallbackHandler):
+        run_inline = True
+
+        def __init__(self) -> None:
+            self._bridges: dict[UUID, LastCallBridge] = {}
+
+        def on_chat_model_start(
+            self,
+            serialized: dict[str, Any],
+            messages: list[list[Any]],
+            *,
+            run_id: UUID,
+            **kwargs: Any,
+        ) -> None:
+            if kwargs.get("batch_size", 1) == 1:
+                self._bridges[run_id] = open_last_call_bridge()
+
+        def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:
+            self._close(run_id)
+
+        def on_llm_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
+            self._close(run_id)
+
+        def _close(self, run_id: UUID) -> None:
+            bridge = self._bridges.pop(run_id, None)
+            if bridge is not None:
+                bridge.close()
+
+    return _LastCallHandler()
+
+
+def _with_last_call_handler(callbacks: Any) -> Any:
+    """``callbacks`` (a list, a callback manager or ``None``) plus the
+    :func:`_last_call_handler`, without mutating the caller's object."""
+    handler = _last_call_handler()
+    if callbacks is None:
+        return [handler]
+    if isinstance(callbacks, (list, tuple)):
+        return [*callbacks, handler]
+    manager = callbacks.copy()
+    manager.add_handler(handler, inherit=False)
+    return manager
 
 
 def chat_model(model: str, **kw: Any) -> ChatOpenAI:

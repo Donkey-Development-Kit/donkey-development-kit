@@ -29,7 +29,10 @@ framework-spawned ``asyncio`` task copies the current context at creation, so a
 model call inside it sets *its own* task's record and never clobbers a sibling's
 (and never leaks back to the parent that scattered the tasks). Each task reads
 the call it actually made. This matches how ``core.telemetry`` already scopes the
-correlation id.
+correlation id. The one exception is a framework that spawns a task for a
+*single* call, such as LangChain's ``ainvoke`` (#850). There the caller made the
+call, so an adapter opens a :class:`LastCallBridge` for it: the record reaches
+the caller, and nothing written after the call ends does.
 
 **Three honest states (hazard #3).** A bare ``request_id is None`` is a lie of
 omission on the adapters where the SDK does not own the transport (ADK ``model()``, CrewAI,
@@ -644,18 +647,75 @@ def unavailable(surface: str) -> LastCall:
     return LastCall(status=LastCallStatus.UNAVAILABLE, surface=surface)
 
 
+class LastCallBridge:
+    """Carries one logical model call's record back to the context that started
+    it, across a task the framework spawns for that call (#850).
+
+    LangChain's ``BaseChatModel.agenerate`` runs the request inside
+    ``asyncio.gather``, so the transport records into a *copy* of the caller's
+    context and ``donkey.last_call`` stays a cold read. An adapter that sees the
+    call start in the caller's context opens a bridge there with
+    :func:`open_last_call_bridge`. The spawned task inherits it, and the
+    transport records through it, so the caller and the task read the same
+    record.
+
+    It is closed when the call ends, so a task the caller spawns *later* (which
+    also inherits the bridge) can never write through it. That keeps the
+    hazard #2 rule: a fan-out never leaks a sibling's record back to the parent.
+    One bridge serves one call; an adapter must not open one for a batch whose
+    requests run side by side.
+    """
+
+    __slots__ = ("record", "_open")
+
+    def __init__(self, record: LastCall | None) -> None:
+        #: The newest record for this context. Starts as the record the context
+        #: held before the call, so a read mid-call is not a false cold read.
+        self.record = record
+        self._open = True
+
+    def close(self) -> None:
+        """Stop accepting records. Idempotent."""
+        self._open = False
+
+
 # Contextvar-scoped, never instance-scoped (hazard #2): the record for the call
 # made in *this* context. Set by the transport's ``_on_response`` on every
 # governed model response; read by ``donkey.last_call``. ``None`` means no call
 # has been observed in this context — a cold read, surfaced as :data:`UNOBSERVED`.
-_last_call: ContextVar[LastCall | None] = ContextVar("donkey_last_call", default=None)
+# It holds a :class:`LastCallBridge` instead while a bridged call is in flight
+# (or until the next record is observed in this context).
+_last_call: ContextVar[LastCall | LastCallBridge | None] = ContextVar(
+    "donkey_last_call", default=None
+)
 
 
 def current_last_call() -> LastCall | None:
     """The record observed in this context, or ``None`` for a cold read. The
     ``donkey.last_call`` accessor turns a ``None`` into :data:`UNOBSERVED` or an
     :func:`unavailable` record depending on which adapters have been used."""
-    return _last_call.get()
+    current = _last_call.get()
+    return current.record if isinstance(current, LastCallBridge) else current
+
+
+def open_last_call_bridge() -> LastCallBridge:
+    """Open a :class:`LastCallBridge` in this context and return it. Call this in
+    the caller's own context, before the framework spawns the call's task, and
+    :meth:`~LastCallBridge.close` it when the call ends."""
+    bridge = LastCallBridge(current_last_call())
+    _last_call.set(bridge)
+    return bridge
+
+
+def _record(record: LastCall) -> None:
+    """Make ``record`` this context's last call. While the context holds an open
+    bridge, write through it, so a later usage merge in the same task reaches the
+    caller too. A closed bridge is replaced by the plain record."""
+    current = _last_call.get()
+    if isinstance(current, LastCallBridge) and current._open:
+        current.record = record
+    else:
+        _last_call.set(record)
 
 
 def observe_last_call(
@@ -670,7 +730,7 @@ def observe_last_call(
     model it already parsed from the request body. Returns the record it set, for
     tests. ``now`` is injectable; production uses the wall clock (UTC)."""
     record = LastCall.from_response(response, requested_model=requested_model, now=now)
-    _last_call.set(record)
+    _record(record)
     return record
 
 
@@ -685,7 +745,7 @@ def observe_usage(counts: dict[str, int | None]) -> LastCall | None:
     seen, so a partial terminal event never overwrites a known count with ``None``.
     A no-op — returning ``None`` — when there is no ``OBSERVED`` record to merge
     into (the transport always sets one before the stream is consumed)."""
-    current = _last_call.get()
+    current = current_last_call()
     if current is None or current.status is not LastCallStatus.OBSERVED:
         return None
 
@@ -706,5 +766,5 @@ def observe_usage(counts: dict[str, int | None]) -> LastCall | None:
         cache_write_tokens=_pick("cache_write_tokens", current.cache_write_tokens),
         reasoning_tokens=_pick("reasoning_tokens", current.reasoning_tokens),
     )
-    _last_call.set(merged)
+    _record(merged)
     return merged
