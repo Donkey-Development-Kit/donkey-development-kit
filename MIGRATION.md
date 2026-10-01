@@ -476,16 +476,19 @@ only the package and instance name changed.
 
 ### 3. CLI
 
-```diff
-- agent-fabric validate
-- agent-fabric plan
-+ donkey validate
-+ donkey plan
+The top-level command is now `donkey`. `donkey --help` lists four commands:
+
+```bash
+donkey init      # write a commented .donkey-kit.toml from the resolved config
+donkey doctor    # diagnose config, credentials, gateway, model and budget
+donkey mock      # run the local gateway simulator
+donkey test --agent=myagent:build   # run the conformance suite against your agent
 ```
 
-All subcommands (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`,
-`status`, `init`, `publish`, `verify`) are unchanged apart from the top-level
-command name.
+The provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
+`generate`, `status`, `publish`, `verify`) are hidden from `--help`. All of
+them except `validate` exit with status 3 and a `blocked on verification`
+message.
 
 ### 4. Configuration file
 
@@ -540,7 +543,7 @@ their names:
 
 ```diff
 - pytest --fabric-conformance --fabric-agent=myagent:build
-+ pytest --donkey-conformance --donkey-agent=myagent:build
++ pytest --donkey-conformance --agent=myagent:build
 ```
 
 The pytest plugin's entry-point key is now `donkey_kit_conformance`. If you had
@@ -558,18 +561,15 @@ appearing the moment you upgrade.
 
 **What did *not* change:** the OpenTelemetry `gen_ai.*` semantic-convention
 attributes (`gen_ai.system`, `gen_ai.request.model`,
-`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, …) and any
-`mulesoft.*` attributes are untouched — they are not ours to rename. A governed
-model call still opens **one** span carrying both namespaces at once.
+`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, …) are untouched —
+they are not ours to rename. A governed model call still opens **one** span
+carrying both namespaces at once.
 
-Span names:
+Span name (the SDK emits one span, for each governed model call):
 
 | Was | Now |
 | --- | --- |
 | `fabric.llm.chat` | `donkey.llm.chat` |
-| `fabric.registry.resolve` | `donkey.registry.resolve` |
-| `fabric.tool.call` | `donkey.tool.call` |
-| `fabric.provision.apply` | `donkey.provision.apply` |
 
 Attribute keys:
 
@@ -593,5 +593,5 @@ at `donkey.*`. Queries that only use the `gen_ai.*` attributes need no change.
   header pair, streaming, and the typed rejection shapes.
 - The Anypoint CLI plugin literal `mulesoft-anypoint-cli-agent-fabric-plugin`
   and the Maven coordinate `com.mulesoft.agents:agent-fabric-transformation`.
-- The `gen_ai.*` / `mulesoft.*` OpenTelemetry attributes and `x-anypoint-*` /
+- The `gen_ai.*` OpenTelemetry attributes and `x-anypoint-*` /
   `x-correlation-id` headers.
