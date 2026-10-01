@@ -14,9 +14,9 @@ const withNextra = nextra({
   },
 })
 
-// Project sub-path for GitHub Pages (e.g. "/donkey-development-kit"). Left empty for
-// `npm run dev` and for a future custom domain, so local/root hosting is
-// unaffected; the Pages workflow sets DOCS_BASE_PATH=/donkey-development-kit.
+// Optional sub-path (e.g. "/donkey-development-kit") for hosting the export under
+// a project prefix. Left empty for `npm run dev` and for the deployed site, which
+// GitHub Pages serves from the root of the docs.donkey-kit.dev custom domain.
 const basePath = process.env.DOCS_BASE_PATH ?? ''
 
 export default withNextra({
