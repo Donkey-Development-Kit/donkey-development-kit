@@ -83,6 +83,11 @@ carries the SDK's HTTP client in the form that framework takes: `http_client`
 and `http_async_client` (LangGraph), `http_client` and `async_http_client`
 (LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
 or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
+Each HTTP client is a non-owning view of the SDK's shared client: it sends
+through the shared client, and closing it (as Strands does after every call, or
+`async with` on an OpenAI client) leaves the shared client open. Only
+`donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
+returns the same view if you build a framework client by hand.
 
 ```python
 kwargs = donkey.llamaindex.connection_kwargs()
