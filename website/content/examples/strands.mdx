@@ -16,7 +16,8 @@ the governed client is passed in, the SDK owns the transport: run id,
 <Callout type="info">
   **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
   client per request from `client_args`. That closes the shared transport
-  after the first call, and the second fails with "client has been closed". A
+  after the first call, and the second fails with a `ConfigError` saying the
+  HTTP client is closed. A
   pre-built `client=` is reused and left open.
 </Callout>
 
