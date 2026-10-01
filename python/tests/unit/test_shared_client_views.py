@@ -222,10 +222,12 @@ def test_with_donkey_openai_sync_leaves_the_donkey_usable() -> None:
 # --- the adapter contract: every transport-routed adapter ----------------------
 
 
-def _http_clients(value: Any) -> list[httpx.AsyncClient | httpx.Client]:
+def _http_clients(value: Any) -> list[Any]:
     """Every httpx client in a ``connection_kwargs()`` mapping, including the one
-    inside a pre-built OpenAI client (``openai_agents``)."""
-    if isinstance(value, httpx.AsyncClient | httpx.Client):
+    inside a pre-built OpenAI client (``openai_agents``) and the bridged ``httpx2``
+    client anthropic>=1 gets (#701, #903). The bridge is recognised by its
+    transport, so this module never imports ``httpx2``."""
+    if isinstance(value, httpx.AsyncClient | httpx.Client) or _is_bridged(value):
         return [value]
     if isinstance(value, dict):
         return [c for v in value.values() for c in _http_clients(v)]
@@ -235,7 +237,11 @@ def _http_clients(value: Any) -> list[httpx.AsyncClient | httpx.Client]:
     return []
 
 
-def _handed_clients(adapter: Adapter, attr: str) -> list[httpx.AsyncClient | httpx.Client]:
+def _is_bridged(value: Any) -> bool:
+    return type(getattr(value, "_transport", None)).__name__ == "DonkeyForwardingTransport"
+
+
+def _handed_clients(adapter: Adapter, attr: str) -> list[Any]:
     kwargs: list[dict[str, Any]] = [adapter.connection_kwargs()]  # type: ignore[attr-defined]
     if attr == "adk":
         kwargs.append(adapter.gemini_connection_kwargs())  # type: ignore[attr-defined]
@@ -270,10 +276,10 @@ async def test_closing_what_an_adapter_hands_out_never_closes_the_shared_client(
         assert not isinstance(client, DonkeyAsyncClient | DonkeyClient), (
             f"{attr} hands a framework the owning shared client"
         )
-        if isinstance(client, httpx.AsyncClient):
-            await client.aclose()
-        else:
+        if isinstance(client, httpx.Client):
             client.close()
+        else:
+            await client.aclose()
 
     assert not donkey._http.is_closed
     assert not donkey._sync_http_client().is_closed
