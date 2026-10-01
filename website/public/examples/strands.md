@@ -4,7 +4,11 @@ Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
 the governed client is passed in, the SDK owns the transport: run id,
 `last_call` and typed refusals all work. The calls go to
 **`/chat/completions`, which is not live-verified on the DDK proxies**
-(`/responses` is), so use a proxy whose upstream serves that route.
+(`/responses` is), so use a proxy whose upstream serves that route. The
+scripts use `gpt-4o`. If you point them at a model the proxy routes to Gemini,
+add `stream=False` to `OpenAIModel(...)`: Strands streams by default, and a
+Gemini-routed stream has no chunk deltas, so every turn fails (see
+[Streaming chat completions to a Gemini upstream](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)).
 
   **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
   client per request from `client_args`. That closes the shared transport
