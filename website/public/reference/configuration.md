@@ -81,17 +81,18 @@ donkey = Donkey(
   `complete()`, go through the blocking client, so they raise the same
   `ConfigError` as `sync=True` before sending anything.
 
-  These send **no JWT**, so a wallet proxy answers `401`:
+  These can't send the JWT, so they raise `ConfigError` before sending anything,
+  rather than sending the `client-id-enforced` placeholder as the bearer:
 
-  - CrewAI, which gets only a header snapshot: its `Authorization` header
-    carries `llm_proxy_key` or the `client-id-enforced` placeholder;
-  - the module-level factories (for example
+  - CrewAI, in `jwt` mode at all: its native OpenAI provider builds its own
+    HTTP clients, which the SDK can't add the JWT to. Use client-id auth with
+    CrewAI;
+  - every adapter on a `Donkey` without `llm_auth`, and the module-level
+    factories (for example
     `from donkey_kit.integrations.langgraph import chat_model`), which have no
     `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.
 
   See [Injection depth](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#injection-depth-differs-by-framework).
-  Making these forms raise `ConfigError` in `jwt` mode is tracked in
-  [#835](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/835).
 
 ### Auth providers
 
