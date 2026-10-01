@@ -153,6 +153,10 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   object already bound to a model ID, because their native constructors accept
   `model`. `AsyncAnthropic` is a bare client and the model ID is an argument to
   `.messages.create()`, so `donkey.anthropic.client()` takes no model argument.
+- **Async only.** The adapter returns `AsyncAnthropic`; there is no governed
+  sync `anthropic.Anthropic`. `connection_kwargs()` carries the SDK's async
+  client, so spread it only into `AsyncAnthropic`. A sync `Anthropic` you build
+  yourself does not go through the SDK's transport.
 - **Proxy Format.** MuleSoft Model Proxy offers three ingress Formats (OpenAI /
   Gemini / Anthropic), fixed when the proxy is created
   ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)). A

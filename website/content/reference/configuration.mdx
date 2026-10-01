@@ -85,13 +85,16 @@ donkey = Donkey(
   the proxy only from async calls through adapters with **transport injection**
   built from a `Donkey` that has `llm_auth`: the raw client, LangGraph, Strands,
   OpenAI Agents SDK, the Anthropic SDK, ADK's `model()` and `gemini()`,
-  LlamaIndex and MS Agent Framework. These send **no JWT**, so a wallet proxy
-  answers `401`:
+  LlamaIndex and MS Agent Framework.
+
+  Sync calls through an adapter, such as LangGraph's `invoke()` or LlamaIndex's
+  `complete()`, go through the blocking client, so they raise the same
+  `ConfigError` as `sync=True` before sending anything.
+
+  These send **no JWT**, so a wallet proxy answers `401`:
 
   - CrewAI, which gets only a header snapshot: its `Authorization` header
     carries `llm_proxy_key` or the `client-id-enforced` placeholder;
-  - sync calls such as LangGraph's `invoke()` or LlamaIndex's `complete()`,
-    which go through the blocking client;
   - the module-level factories (for example
     `from donkey_kit.integrations.langgraph import chat_model`), which have no
     `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.

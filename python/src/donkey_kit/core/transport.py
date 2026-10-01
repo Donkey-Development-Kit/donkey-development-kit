@@ -43,7 +43,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Iterable, Iterator, Sized
 from types import TracebackType
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -54,7 +54,13 @@ from .cachecontrol import current_cache_controls
 from .config import DonkeyConfig
 from .cost import CostTags
 from .endpoints import require_secure_url
-from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
+from .errors import (
+    ConfigError,
+    GatewayUnavailable,
+    ModelSubstituted,
+    classify,
+    gateway_unavailable,
+)
 from .lastcall import (
     LLM_MODEL_HEADER,
     LLM_PROVIDER_HEADER,
@@ -1198,6 +1204,13 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.
 
+    In jwt / model-wallet auth mode (``llm_proxy_auth='jwt'``) the credential is
+    exactly such a fetched token, so every request raises :func:`sync_jwt_error`
+    instead of going out unauthenticated (#509, #736). The check sits in
+    :meth:`build_request`, which the OpenAI SDK calls outside the ``try`` that
+    turns transport errors into ``APIConnectionError``, so a framework's sync
+    call (``ChatOpenAI.invoke()``) raises the ``ConfigError`` itself.
+
     Like its async twin it sends credentials only to the checked endpoints; pass
     the async client's :attr:`checked_origins` as ``origins`` to share them.
     """
@@ -1223,6 +1236,11 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         if self._mounts:  # see DonkeyAsyncClient.__init__ (#801)
             self._transport = _SyncMountRouter(self._transport, self._mounts.items())
             self._mounts = {}
+
+    def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
+        if self._cfg.llm_proxy_auth == "jwt":
+            raise sync_jwt_error()
+        return super().build_request(*args, **kwargs)
 
     def _inject_headers(self, request: httpx.Request) -> None:
         _apply_base_headers(
@@ -1385,6 +1403,20 @@ def build_http_client(
     ``control_plane=True`` for a client that calls the Anypoint platform (see
     :class:`DonkeyAsyncClient`)."""
     return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
+
+
+def sync_jwt_error() -> ConfigError:
+    """The error for a blocking call in jwt / model-wallet auth mode, shared by
+    ``donkey.llm.client(sync=True)`` and every sync call through
+    :class:`DonkeyClient` (#509, #736), so both surfaces fail the same way."""
+    return ConfigError(
+        "JWT / model-wallet auth mode (llm_proxy_auth='jwt') is async-only: "
+        "the credential is a rotating JWT fetched from an async AuthProvider, "
+        "and the blocking client cannot await it. Use the async surface — "
+        "`donkey.llm.client()` / `donkey.openai()` without sync=True, or a "
+        "framework's async call (`ainvoke()` / `astream()`, not `invoke()`) — or "
+        "switch to client-id auth for a synchronous caller."
+    )
 
 
 def build_sync_http_client(

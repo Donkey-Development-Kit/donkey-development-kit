@@ -15,6 +15,10 @@ shared client (``_httpx2_bridge``). Both stacks get the same governed headers,
 retries, span, budget and ``donkey.last_call``; the installed release decides
 which one ``connection_kwargs()`` returns.
 
+ASYNC ONLY (#736): there is no governed sync ``anthropic.Anthropic``. The
+``http_client`` in ``connection_kwargs()`` is the async client (or its async
+bridge), so it fits only ``AsyncAnthropic``; a sync caller has no governed path.
+
 Divergence, by design (BG §1.8 — the framework wins): Anthropic's native surface
 is a *client*, and the model id is a per-call argument, not a constructor one.
 So this adapter exposes ``client()`` rather than the ``model(...)`` factory the

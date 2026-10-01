@@ -558,9 +558,10 @@ class Donkey:
         ``times``+1 onward proceeds normally. Nesting composes and the previous
         transport is restored on exit, even if the block raises.
 
-        Swaps the async client always, and the blocking client only if it has
-        already been built (``client(sync=True)`` was called earlier); a sync
-        client created *inside* the block is not retro-swapped. Raises
+        Swaps both the async and the blocking client, building the blocking one
+        if nothing has yet, so a sync call — ``client(sync=True)``, or
+        ``ChatOpenAI.invoke()`` on a model built inside the block — is injected
+        into too (#736). Raises
         ``ValueError`` for a refusal type with no captured fixture (e.g.
         :class:`~donkey_kit.core.errors.GatewayUnavailable`, which no gateway
         response produces). Body-shaping (specific PII entities, a custom
@@ -568,9 +569,7 @@ class Donkey:
         """
         from .simulator.inject import simulate as _simulate
 
-        clients: list[Any] = [self._http]
-        if self._sync_http is not None:
-            clients.append(self._sync_http)
+        clients: list[Any] = [self._http, self._sync_http_client()]
         return _simulate(clients, error, times=times)
 
     def _sync_http_client(self) -> DonkeyClient:
