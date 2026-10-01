@@ -2,7 +2,7 @@
 
 DDK is open source under the Apache-2.0 licence, and contributions of every
 size are welcome. This page is the short version; the full runbook is
-[`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/CONTRIBUTING.md)
+[`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/CONTRIBUTING.md)
 in the repository.
 
 ## Ways to help
@@ -95,4 +95,4 @@ npm run generate:llms
   **Verification discipline.** DDK never documents or codes against an
   endpoint, header or class name that has not been confirmed against the real
   platform. If you can't confirm one, say so in the issue rather than guessing
-  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md).
+  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md).

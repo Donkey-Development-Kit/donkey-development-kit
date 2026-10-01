@@ -40,8 +40,8 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 > MuleSoft Agent Fabric") appears in prose — the package does not represent itself
 > as a first-party, official-status SDK.
 >
-> Licensed under [Apache-2.0](LICENSE). See
-> [`docs/unsupported-boundary.md`](docs/unsupported-boundary.md) for exactly
+> Licensed under [Apache-2.0](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/LICENSE). See
+> [`docs/unsupported-boundary.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/unsupported-boundary.md) for exactly
 > which platform APIs this SDK calls and their support classification.
 
 ## Documentation
@@ -57,13 +57,13 @@ Two audiences, two doc sets:
   the framework-free client, native framework objects, the governed error
   taxonomy, and the screen-recording scripts.
 - **Understand or contribute to the repo:**
-  - [`ARCHITECTURE.md`](ARCHITECTURE.md) — how the SDK is built: the layered
+  - [`ARCHITECTURE.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md) — how the SDK is built: the layered
     stack, the framework-free core, verification discipline, the error taxonomy,
     and framework tiering.
-  - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to work in the repo: the
+  - [`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/CONTRIBUTING.md) — how to work in the repo: the
     branch/PR/release workflow, the testing strategy, coding conventions, and
     the docs-sync rule.
-  - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger:
+  - [`docs/verified-apis.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) — the verification ledger:
     the single source of truth for what is confirmed against a real sandbox and
     what is still blocked.
 
@@ -121,8 +121,8 @@ currently includes Exchange→MCP tool discovery, the provisioning control-plane
 and the exact framework adapter class names/kwargs.
 
 The discipline behind this is documented in
-[`ARCHITECTURE.md` → Verification discipline](ARCHITECTURE.md#verification-discipline);
-the row-by-row worklist is [`docs/verified-apis.md`](docs/verified-apis.md).
+[`ARCHITECTURE.md` → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline);
+the row-by-row worklist is [`docs/verified-apis.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md).
 
 ## Conformance exemptions
 

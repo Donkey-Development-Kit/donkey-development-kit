@@ -5,6 +5,7 @@ import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
 import { cloudflareBeacon } from '../lib/analytics.mjs'
+import { EDIT_REF, REPO_URL } from '../lib/repo.mjs'
 import '../styles/globals.css'
 
 const SITE_NAME = 'Donkey Development Kit'
@@ -66,7 +67,7 @@ const navbar = (
         {SITE_NAME}
       </span>
     }
-    projectLink="https://github.com/Donkey-Development-Kit/donkey-development-kit"
+    projectLink={REPO_URL}
   >
     <a
       href="https://pypi.org/project/donkey-kit/"
@@ -137,7 +138,8 @@ export default async function RootLayout({
           navbar={navbar}
           footer={footer}
           pageMap={pageMap}
-          docsRepositoryBase="https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/website/content"
+          // Nextra appends the page's path from the website root (content/…).
+          docsRepositoryBase={`${REPO_URL}/tree/${EDIT_REF}/website`}
           sidebar={{ defaultMenuCollapseLevel: 1, toggleButton: true }}
           toc={{ backToTop: 'Scroll to top' }}
         >

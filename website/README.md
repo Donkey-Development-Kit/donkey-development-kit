@@ -137,6 +137,6 @@ npm run generate:roadmap
 ## Editing rules (inherited from the SDK — verification discipline)
 
 **Never document an endpoint, header, or class name that isn't verified.** Where
-a value is unconfirmed, say so on the page (see the "Verification policy" page).
+a value is unconfirmed, say so on the page itself rather than omitting it.
 The engineering source of truth for what is verified is
 [`../docs/verified-apis.md`](../docs/verified-apis.md).
