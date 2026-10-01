@@ -76,8 +76,8 @@ from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
     GenAiSpan,
+    current_correlation_id,
     current_cost_tags,
-    ensure_correlation_id,
     genai_span,
     new_call_id,
     policy_type_slug,
@@ -312,9 +312,9 @@ def _apply_base_headers(
 ) -> None:
     """The run correlation ID + attribution — everything both transports inject
     on EVERY send without needing to await anything. The correlation ID is
-    passed in because the two transports source it differently (see
-    :func:`request_correlation_id`); it is deterministic per run (a contextvar),
-    so re-setting it on each retry is idempotent. The header NAME is resolved
+    passed in, resolved by :func:`_request_correlation_id`: the bound run's ID,
+    or one pinned per logical request, so re-setting it on each retry is
+    idempotent (#803). The header NAME is resolved
     once by the client. The per-call ID is deliberately NOT set here — being
     random, it must be pinned once before the retry loop
     (:func:`_apply_call_id_header`), never re-rolled per send.
@@ -346,12 +346,28 @@ def _apply_base_headers(
             request.headers[name] = value
 
 
+def _request_correlation_id(request: httpx.Request) -> str:
+    """The correlation ID for one send of ``request`` — never bound (#803).
+
+    Inside a ``donkey.run()`` block this is the run's ID. Outside one,
+    :func:`request_correlation_id` mints a fresh, unbound ID; it is pinned on
+    the request's extensions on the first send, so the retries and 401 refresh
+    of the same logical request reuse it rather than each minting another."""
+    pinned = request.extensions.get("donkey_correlation_id")
+    if pinned is not None and current_correlation_id() is None:
+        return str(pinned)
+    rid = request_correlation_id()
+    request.extensions["donkey_correlation_id"] = rid
+    return rid
+
+
 def _apply_call_id_header(request: httpx.Request, call_id_header: str) -> None:
     """Pin a FRESH per-call ID on the request, ONCE, before the retry loop
     (BG §1.1, #195).
 
-    The run/correlation id is deterministic per run (a contextvar), so the
-    per-send event hook can safely re-set it on every retry. The call id is
+    The run/correlation id is stable per request (the bound run's, or one pinned
+    on first send — :func:`_request_correlation_id`), so the per-send event hook
+    can safely re-set it on every retry. The call id is
     random and must be UNIQUE per logical request yet STABLE across that
     request's retries and 401 refresh — so it is pinned here, on the single
     request object that is re-sent, exactly once. It is therefore already on the
@@ -900,7 +916,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         _apply_base_headers(
             self._cfg,
             request,
-            ensure_correlation_id(),
+            _request_correlation_id(request),
             correlation_header=self._correlation_header,
         )
         if not self._guard(request):
@@ -1041,7 +1057,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         the context-manager lifecycle."""
         # Pin the per-call id ONCE, before the loop, so it is stable across
         # retries and the 401 refresh (BG §1.1, #195). The run correlation id is set
-        # per-send by the event hook (deterministic, so idempotent).
+        # per-send by the event hook (stable per request, so idempotent, #803).
         _apply_call_id_header(request, self._call_id_header)
         await self._on_request(request)
         attempts = self._cfg.max_retries + 1
@@ -1218,7 +1234,7 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         _apply_base_headers(
             self._cfg,
             request,
-            request_correlation_id(),
+            _request_correlation_id(request),
             correlation_header=self._correlation_header,
         )
         self._guard(request)
