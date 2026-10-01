@@ -112,6 +112,23 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   Gateway LLM proxy. `connection_kwargs()` always sets it (and
   `is_function_calling_model=True`); set it yourself if you construct
   `OpenAILike` outside the adapter.
+- **`llm()` sets model defaults from the bare name.** LlamaIndex looks models
+  up by their exact OpenAI name, so a provider-prefixed name like
+  `openai/gpt-5-mini` would miss its reasoning-model handling and its
+  context-window table. `llm()` strips one `<provider>/` prefix before both
+  lookups, and still sends the prefixed name to the proxy:
+  - `context_window` comes from LlamaIndex's table (400,000 for `gpt-5-mini`).
+    For a name the table doesn't list, such as a Gemini or Bedrock model, it
+    stays at `OpenAILike`'s default of 3,900 tokens. That default also caps
+    agent memory and RAG prompt packing, so pass `context_window=` for those
+    models.
+  - A prefixed reasoning model (gpt-5, o-series) gets `temperature=1.0`, sends
+    `max_tokens` as `max_completion_tokens`, and sends `reasoning_effort`.
+    LlamaIndex already does the same for the bare name.
+
+  Any `temperature=`, `context_window=` or `additional_kwargs=` you pass takes
+  precedence. `connection_kwargs()` carries no model, so if you build
+  `OpenAILike` yourself, set these yourself.
 - **`donkey.last_call` is set in the context that made the call.** A cold read
   (no call yet in this context) on a `Donkey` that resolved only adapters like
   this one still reports `status == LastCallStatus.UNAVAILABLE` rather than
