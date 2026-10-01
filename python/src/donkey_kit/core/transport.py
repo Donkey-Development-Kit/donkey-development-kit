@@ -771,9 +771,10 @@ class _SseUsageScanner:
 
 
 class _SpanClosingStream:
-    """Shared finalize logic for the stream wrappers: record the scanned usage
-    onto the detached span and end it, exactly once and best-effort — telemetry
-    must never break stream teardown."""
+    """Shared finalize logic for the stream wrappers: merge the scanned usage
+    into ``donkey.last_call``, record it onto the detached span and end it,
+    exactly once. The span recording is best-effort — telemetry must never break
+    stream teardown, nor drop the usage ``last_call`` reports (#817)."""
 
     def __init__(self, gspan: GenAiSpan) -> None:
         self._gspan = gspan
@@ -784,9 +785,9 @@ class _SpanClosingStream:
         if self._finalized:
             return
         self._finalized = True
+        self._scanner.close()
+        counts = self._scanner.counts
         try:
-            self._scanner.close()
-            counts = self._scanner.counts
             self._gspan.record(
                 input_tokens=counts["input_tokens"],
                 output_tokens=counts["output_tokens"],
@@ -794,13 +795,14 @@ class _SpanClosingStream:
                 cache_write_tokens=counts["cache_write_tokens"],
                 reasoning_tokens=counts["reasoning_tokens"],
             )
-            # The record set in _on_response had no usage (the body was unread on
-            # a stream); merge the terminal event's counts into it now (#307). The
-            # stream is consumed in the same context that set the record, so this
-            # updates the caller's own donkey.last_call.
-            observe_usage(counts)
         except Exception:  # noqa: BLE001 — telemetry must never break teardown
-            pass
+            _log.debug("recording streamed usage on the span failed", exc_info=True)
+        # The record set in _on_response had no usage (the body was unread on a
+        # stream); merge the terminal event's counts into it now (#307). The stream
+        # is consumed in the same context that set the record, so this updates the
+        # caller's own donkey.last_call. Outside the telemetry guard: a failing
+        # span recorder must not drop the usage (#817).
+        observe_usage(counts)
         self._gspan.end()
 
 
@@ -1122,10 +1124,12 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         # lands in the terminal SSE event, read by the caller long after send()
         # returns. That span must OUTLIVE the ``with`` block, so it is detached
         # (started here, ended by the stream wrapper in ``_finish``); a buffered
-        # call keeps the auto-closing context manager (#192).
-        if enabled and bool(kwargs.get("stream")):
+        # call keeps the auto-closing context manager (#192). A model stream takes
+        # this path even with telemetry off — the span is then inert, but the
+        # wrapper still scans the terminal event into ``donkey.last_call`` (#817).
+        if model is not None and bool(kwargs.get("stream")):
             gspan = start_genai_span(
-                enabled=True, capture_content=self._cfg.telemetry_capture_content
+                enabled=enabled, capture_content=self._cfg.telemetry_capture_content
             )
             try:
                 gspan.record(request_model=model)
@@ -1401,11 +1405,11 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
         model = _request_model(request)
         enabled = self._cfg.telemetry and model is not None  # see DonkeyAsyncClient.send
-        if enabled and bool(kwargs.get("stream")):
-            # Streaming: a detached span the stream wrapper ends (see
-            # DonkeyAsyncClient.send, #193).
+        if model is not None and bool(kwargs.get("stream")):
+            # Streaming: a detached span the stream wrapper ends, inert with
+            # telemetry off (see DonkeyAsyncClient.send, #193, #817).
             gspan = start_genai_span(
-                enabled=True, capture_content=self._cfg.telemetry_capture_content
+                enabled=enabled, capture_content=self._cfg.telemetry_capture_content
             )
             try:
                 gspan.record(request_model=model)
