@@ -54,8 +54,30 @@ SDK_SET = [
     "Content-Type",
     "X-Donkey-Request-Id",  # the call-id header's default name
 ]
-RESERVED = ROUTING_AND_FRAMING + CREDENTIALS + SDK_SET
+OVERRIDES = [
+    "X-HTTP-Method-Override",
+    "X-HTTP-Method",
+    "X-Method-Override",
+    "X-Original-URL",
+    "X-Original-URI",
+    "X-Rewrite-URL",
+    "x-stainless-retry-count",  # set by the OpenAI and Anthropic SDKs
+]
+RESERVED = ROUTING_AND_FRAMING + CREDENTIALS + SDK_SET + OVERRIDES
 NOT_A_TOKEN = ["Bad Header", "X:Y", "", "X-Tab\tHere", "X-Ümlaut"]
+WITHOUT_X_PREFIX = [
+    "Team",
+    "Content-Encoding",
+    "Via",
+    "Origin",
+    "Keep-Alive",
+    "Proxy-Connection",
+    "Range",
+    "If-Match",
+    "Max-Forwards",
+    "anthropic-version",
+    "OpenAI-Organization",
+]
 
 
 @pytest.fixture
@@ -97,6 +119,24 @@ def test_reserved_or_invalid_name_from_env_is_refused(
     assert "correlation_header" in msg
     assert "DONKEY_CORRELATION_HEADER" in msg
     assert repr(name) in msg
+
+
+@pytest.mark.parametrize("name", WITHOUT_X_PREFIX)
+def test_name_without_the_x_prefix_is_refused_from_any_source(
+    project: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    (project / _TOML).write_text(f'[donkey]\ncost_team_header = "{name}"\n')
+    with pytest.raises(ConfigError, match="must start with X-") as exc:
+        DonkeyConfig.from_env()
+    assert repr(name) in str(exc.value)
+
+    (project / _TOML).unlink()
+    monkeypatch.setenv("DONKEY_CALL_ID_HEADER", name)
+    with pytest.raises(ConfigError, match="call_id_header"):
+        DonkeyConfig.from_env()
+
+    with pytest.raises(ConfigError, match="correlation_header"):
+        DonkeyConfig(correlation_header=name)
 
 
 @pytest.mark.parametrize(
@@ -187,6 +227,34 @@ async def test_refused_names_send_nothing(project: Path, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _record)
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _record_sync)
+
+    with pytest.raises(ConfigError, match="cost_team_header"):
+        Donkey.from_env()
+    assert seen == []
+
+
+async def test_method_and_url_override_names_send_nothing(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (project / _TOML).write_text(
+        "[donkey]\n"
+        "send_cost_headers = true\n"
+        'cost_team_header = "X-HTTP-Method-Override"\n'
+        'cost_project_header = "X-Original-URL"\n'
+        "[donkey.cost]\n"
+        'team = "DELETE"\n'
+        'project = "/admin/other"\n'
+    )
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/proxy/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "placeholder-value")
+    seen: list[httpx.Request] = []
+
+    async def _record(self: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _record)
 
     with pytest.raises(ConfigError, match="cost_team_header"):
         Donkey.from_env()
