@@ -11,7 +11,8 @@ const PYPI_README = resolve(WEBSITE, '..', 'python', 'README.md')
 
 // `${REPO_URL}/blob/<ref>/…` or `/tree/<ref>/…`; the trailing `/` keeps the
 // sibling `-demos` repository out of the match.
-const SDK_LINK = new RegExp(`${REPO_URL.replace(/[.]/g, '\\.')}/(?:blob|tree)/([^/\\s)"'>]+)`, 'g')
+const escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const SDK_LINK = new RegExp(`${escapeRegExp(REPO_URL)}/(?:blob|tree)/([^/\\s)"'>]+)`, 'g')
 
 async function readerFacingFiles() {
   const files = []
