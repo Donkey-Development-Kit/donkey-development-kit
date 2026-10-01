@@ -6,7 +6,7 @@ retry policy apply. ``client(sync=True)`` returns the blocking ``OpenAI`` with
 the same governance. This is the framework-free surface; the per-framework
 adapters live in ``integrations/``.
 
-VERIFICATION NOTES (LIVE-VERIFIED 2026-08-28, docs/verified-apis.md §2/§3):
+VERIFICATION NOTES (docs/verified-apis.md §2/§3):
   * The proxy base URL does **NOT** include ``/v1``; it is
     ``https://<ingress-gw>/<instance>/`` (e.g. ``…/openai-sdk/``) and the OpenAI
     SDK appends the route (``/responses`` etc.) directly.
@@ -31,6 +31,7 @@ from ..core.transport import (
     build_sync_http_client,
     proxy_api_key,
     proxy_auth_headers,
+    sync_jwt_error,
 )
 from .catalog import ModelHandle, heuristic_capabilities
 
@@ -94,13 +95,7 @@ class LLMClient:
                 # DonkeyClient takes no AuthProvider (the protocol is async-only),
                 # so a sync client could only send a stale or absent token — never
                 # hand one back silently unauthenticated.
-                raise ConfigError(
-                    "JWT / model-wallet auth mode (llm_proxy_auth='jwt') is async-only: "
-                    "the credential is a rotating JWT fetched from an async AuthProvider, "
-                    "and the blocking client cannot await it. Use the async client — "
-                    "`donkey.llm.client()` / `donkey.openai()` without sync=True — or switch "
-                    "to client-id auth for a synchronous caller."
-                )
+                raise sync_jwt_error()
             if self._http.token_provider is None:
                 # AC 1: jwt mode with no provider attached fails with actionable guidance.
                 raise ConfigError(
@@ -148,7 +143,7 @@ class LLMClient:
         """List logical models the proxy exposes.
 
         The governed proxy has **no** catalog endpoint — ``GET /models`` returns
-        ``404`` (LIVE-VERIFIED, docs/verified-apis.md §2): model-based-routing only routes requests
+        ``404`` (docs/verified-apis.md §2): model-based-routing only routes requests
         that carry ``model`` in the body. So ``live=True`` cannot be satisfied,
         and we say so plainly rather than guess a path. Use :meth:`resolve` for a
         heuristic :class:`ModelHandle` from a known model id, or source the

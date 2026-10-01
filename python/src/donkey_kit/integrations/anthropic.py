@@ -15,6 +15,10 @@ shared client (``_httpx2_bridge``). Both stacks get the same governed headers,
 retries, span, budget and ``donkey.last_call``; the installed release decides
 which one ``connection_kwargs()`` returns.
 
+ASYNC ONLY (#736): there is no governed sync ``anthropic.Anthropic``. The
+``http_client`` in ``connection_kwargs()`` is the async client (or its async
+bridge), so it fits only ``AsyncAnthropic``; a sync caller has no governed path.
+
 Divergence, by design (BG §1.8 — the framework wins): Anthropic's native surface
 is a *client*, and the model id is a per-call argument, not a constructor one.
 So this adapter exposes ``client()`` rather than the ``model(...)`` factory the
@@ -22,8 +26,8 @@ OpenAI-compatible adapters use.
 
 PROXY ROUTE (docs/verified-apis.md §2, #304): MuleSoft Model Proxy offers a
 native **Anthropic** ingress Format — one of three selectable ingress Formats
-(OpenAI / Gemini / Anthropic), fixed at proxy creation. That route is now
-**LIVE-verified**: a ``Format=Anthropic`` proxy serves the Anthropic Messages API
+(OpenAI / Gemini / Anthropic), fixed at proxy creation. A
+``Format=Anthropic`` proxy serves the Anthropic Messages API
 natively at ``POST /<base-path>/v1/messages`` (200 with a native Anthropic body;
 an OpenAI-shaped ``/chat/completions`` request 404s). Captured in
 ``python/tests/fixtures/anypoint/anthropic_inbound/``.
@@ -88,7 +92,8 @@ class AnthropicAdapter(Adapter):
         if not _anthropic_uses_httpx2():
             return self._http_client()
         if self._bridged is None or self._bridged.is_closed:
-            from ._httpx2_bridge import bridged_client
+            with self._native_import():  # the bridge imports httpx2
+                from ._httpx2_bridge import bridged_client
 
             self._bridged = bridged_client(self._http_client())
         return self._bridged
@@ -99,8 +104,8 @@ class AnthropicAdapter(Adapter):
         ``http_client`` that sends through the shared transport, and the
         ``api_key`` slot. ``http_client`` is the shared ``httpx`` client on
         ``anthropic<1`` and a bridged ``httpx2`` client on ``anthropic>=1.0`` (see
-        the module docstring). The proxy's Anthropic-native route is
-        LIVE-verified but requires a ``Format=Anthropic`` proxy."""
+        the module docstring). The proxy's Anthropic-native route requires a
+        ``Format=Anthropic`` proxy (docs/verified-apis.md §2)."""
         conn = self._openai_connection()  # base_url, api_key, default_headers
         return masked(
             {
@@ -118,7 +123,8 @@ class AnthropicAdapter(Adapter):
         Anthropic SDK's own surface (BG §1.8). A ``base_url`` override must pass
         the https check."""
         self._allow_endpoints(kw, "base_url")
-        from anthropic import AsyncAnthropic  # VERIFY name/path: docs/verified-apis.md §8
+        with self._native_import():
+            from anthropic import AsyncAnthropic  # VERIFY name/path: docs/verified-apis.md §8
 
         return AsyncAnthropic(**{**self.connection_kwargs(), **kw})
 

@@ -87,6 +87,8 @@ jobs:
       - run: ruff check .
       - name: import-linter (framework-free core, §1.1)
         run: lint-imports
+      - name: no verification-status claims in src/ outside core/_verify.py (#718)
+        run: python scripts/check_verification_claims.py
 
   test:
     runs-on: ubuntu-latest
@@ -114,6 +116,17 @@ jobs:
       # off, needing real Anypoint creds).
       - name: local gateway simulator boot (BG §1.4)
         run: pytest -q -m local_gateway
+      # #801: the offline seams (simulate(), the conformance harness) must stay
+      # offline behind a corporate proxy. Every proxy variable points at a dead
+      # port, so a request that escapes the swapped-in fixture fails the run.
+      - name: offline seams stay offline under HTTP(S)_PROXY (#801)
+        env:
+          HTTPS_PROXY: http://127.0.0.1:9
+          HTTP_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+        run: >-
+          pytest -q tests/unit/test_simulate.py tests/unit/test_conformance.py
+          tests/unit/test_conformance_plugin.py tests/unit/test_transport_proxy_mounts.py
 
   anthropic-stacks:
     # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
@@ -169,6 +182,21 @@ jobs:
           pytest -q
           tests/unit/test_adapter_ergonomics.py
           tests/unit/test_framework_redirects.py
+
+  agent-framework-middleware:
+    # #739: policy_middleware() is only meaningful on a real Agent Framework
+    # Agent, which no other job installs. Run its tests with the extra present.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,llm,agent_framework]"
+      - run: >-
+          pytest -q
+          tests/unit/test_agent_framework_policy_middleware.py
+          tests/unit/test_adapter_ergonomics.py
 
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The

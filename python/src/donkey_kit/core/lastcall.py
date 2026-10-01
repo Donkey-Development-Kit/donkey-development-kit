@@ -9,7 +9,7 @@ into an OTel span attribute that needs a backend to read, or dropped. So
 "which gateway instance served this, and what id do I quote in a ticket?" was
 answerable after a failure and unanswerable after a success. This record closes
 that asymmetry — one named container, populated on every governed model call
-from the LIVE-VERIFIED docs/verified-apis.md §3 response headers, reachable at ``donkey.last_call``.
+from the docs/verified-apis.md §3 response headers, reachable at ``donkey.last_call``.
 
 **One container, defined once (#362).** #307 (cached/reasoning token counts) and
 #309 (gateway routing + fallback) each sketched a *different* accessor for the
@@ -50,8 +50,8 @@ it ``correlation_id`` here would collide with the run id on ``DonkeyError`` and
 bake that ambiguity into the public API, so the field is not added until #300
 lands and settles the semantics under an unambiguous name.
 
-Every field traces to the LIVE-VERIFIED docs/verified-apis.md §3 "Gateway identity on response" row
-(``responses.success.headers.txt``, 2026-08-28), so this is a consumption task,
+Every field traces to the docs/verified-apis.md §3 "Gateway identity on response" row
+(``responses.success.headers.txt``), so this is a consumption task,
 not a verification one: no ``_verify.Unverified(...)`` guard, no
 ``UnverifiedValueWarning``. Unparseable or absent headers leave a field ``None``
 and never raise on the caller's request path (verification discipline).
@@ -71,7 +71,7 @@ from ._verify import SEMANTIC_CACHE_SCORE_HEADER, SEMANTIC_CACHE_STATUS_HEADER
 if TYPE_CHECKING:
     import httpx
 
-# VERIFIED (LIVE, docs/verified-apis.md §3, 2026-08-28 / 2026-09-23). The request
+# docs/verified-apis.md §3. The request
 # id is the UPSTREAM PROVIDER's own id, passed through by the gateway unchanged —
 # NOT a value the gateway mints, so the header NAME differs by provider and there
 # is no single header that is present on every route (#542):
@@ -94,8 +94,8 @@ REQUEST_ID_HEADERS: tuple[str, ...] = (
 )
 DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 
-# VERIFIED (LIVE, docs/verified-apis.md §3 "Gateway identity on response",
-# 2026-08-28, ``responses.success.headers.txt``). The gateway states what it did
+# docs/verified-apis.md §3 "Gateway identity on response"
+# (``responses.success.headers.txt``). The gateway states what it did
 # with the request: which provider/model actually served it, whether that was a
 # routing FALLBACK (the "Enhanced Resilience for Intelligent Routing" failover),
 # and the routing strategy. All four are consumed here on the success path
@@ -107,8 +107,8 @@ ROUTING_FALLBACK_HEADER = "x-llm-proxy-routing-fallback"
 LLM_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
 LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 
-# VERIFIED (LIVE, docs/verified-apis.md §3 semantic-routing row, 2026-09-24,
-# ``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
+# docs/verified-apis.md §3 semantic-routing row
+# (``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
 # SEMANTIC-routing proxy (``routing_type == "Semantic"``) additionally states
 # WHICH topic the prompt matched and how confident the match was, in a single
 # prose header. The four routing headers above are emitted identically to
@@ -122,8 +122,8 @@ LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 # provider/model portion never loses the topic or the score (verification discipline).
 SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
 
-# VERIFIED (LIVE, docs/verified-apis.md §2 "Semantic caching", 2026-09-24,
-# ``python/tests/fixtures/anypoint/semantic_cache/``, #587/#588). A proxy fronted
+# docs/verified-apis.md §2 "Semantic caching"
+# (``python/tests/fixtures/anypoint/semantic_cache/``, #587/#588). A proxy fronted
 # by the semantic-caching policy states its outcome on every response: the STATUS
 # — one of ``hit`` / ``miss`` / ``bypass`` / ``no-store`` — and, on a ``hit``
 # ONLY, the similarity SCORE (a four-dp string, e.g. ``0.9518``; absent on
@@ -343,10 +343,10 @@ def is_fallback(response: httpx.Response) -> bool:
 
 
 # --- per-call usage token counts (#307, BG §1.3) ----------------------------
-# LIVE-VERIFIED (docs/verified-apis.md §3, ``responses.success.body.json``,
-# 2026-08-28): the gateway returns token counts in the response BODY's ``usage``
-# object, not a header. So unlike the identity fields these are parsed from the
-# parsed JSON body, and only for a buffered 2xx — a streaming body carries its
+# docs/verified-apis.md §3 (``responses.success.body.json``): the gateway returns
+# token counts in the response BODY's ``usage`` object, not a header. So unlike
+# the identity fields these are parsed from the parsed JSON body, and only for a
+# buffered 2xx — a streaming body carries its
 # usage in a terminal SSE event read later (filled by :func:`observe_usage`), and
 # a refusal carries none. The six fields, and why cached/reasoning matter:
 #   * ``cached_tokens`` — input tokens served from the prompt cache, typically

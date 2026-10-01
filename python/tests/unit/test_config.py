@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import fields
 from typing import get_type_hints
 
 import pytest
 
-from donkey_kit.core.config import ConfigOverrides, DonkeyConfig
+from donkey_kit.core import _verify
+from donkey_kit.core._verify import UnverifiedValueWarning
+from donkey_kit.core.config import ConfigOverrides, DonkeyConfig, Region
 from donkey_kit.core.cost import CostTags
 from donkey_kit.core.errors import ConfigError
 
@@ -46,6 +49,7 @@ def test_validated_llm_requires_client_id_and_secret_not_bearer() -> None:
     assert "llm_proxy_client_secret" in msg
 
 
+@pytest.mark.usefixtures("fresh_unverified_warnings")
 def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANYPOINT_CLIENT_ID", "cid")
     monkeypatch.setenv("ANYPOINT_REGION", "eu")
@@ -54,7 +58,35 @@ def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.client_id == "cid"
     assert cfg.region == "eu"
     assert cfg.telemetry is False
-    assert cfg.control_plane_url.startswith("https://eu1")
+    with pytest.warns(UnverifiedValueWarning, match="docs/verified-apis.md §1"):
+        assert cfg.control_plane_url.startswith("https://eu1")
+
+
+@pytest.fixture
+def fresh_unverified_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the one-time ``Unverified`` dedup so each test sees the first read."""
+    monkeypatch.setattr(_verify, "_warned", set())
+
+
+@pytest.mark.usefixtures("fresh_unverified_warnings")
+@pytest.mark.parametrize("region", ["eu", "ca", "jp"])
+def test_unconfirmed_region_host_warns_once(region: Region) -> None:
+    # docs/verified-apis.md §1: only the US host is confirmed.
+    cfg = DonkeyConfig(region=region)
+    with pytest.warns(UnverifiedValueWarning, match=f"anypoint.region_host.{region}"):
+        assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
+
+
+@pytest.mark.usefixtures("fresh_unverified_warnings")
+def test_us_region_and_base_url_override_are_quiet() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        assert DonkeyConfig().control_plane_url == "https://anypoint.mulesoft.com"
+        override = DonkeyConfig(region="eu", base_url="https://eu1.example.test")
+        assert override.control_plane_url == "https://eu1.example.test"
 
 
 def test_unknown_region_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

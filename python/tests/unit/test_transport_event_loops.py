@@ -25,7 +25,11 @@ import pytest
 from donkey_kit import Donkey
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import PIIDetected
-from donkey_kit.core.transport import DonkeyAsyncClient, _LoopLocalTransport
+from donkey_kit.core.transport import (
+    DonkeyAsyncClient,
+    _AsyncMountRouter,
+    _LoopLocalTransport,
+)
 from donkey_kit.integrations._base import Adapter, default_adapter
 
 pytestmark = pytest.mark.filterwarnings("ignore::donkey_kit.core._verify.UnverifiedValueWarning")
@@ -160,9 +164,12 @@ def test_concurrent_loops_in_threads_get_separate_pools(url: str) -> None:
 def test_env_proxy_mounts_also_get_a_pool_per_loop(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
     client = DonkeyAsyncClient(DonkeyConfig(), None)
-    assert isinstance(client._transport, _LoopLocalTransport)
-    assert client._mounts
-    assert all(isinstance(m, _LoopLocalTransport) for m in client._mounts.values())
+    # The proxy mounts are folded into one router (#801); each route it
+    # dispatches to is a per-loop pool.
+    router = client._transport
+    assert isinstance(router, _AsyncMountRouter)
+    assert router._routes
+    assert all(isinstance(t, _LoopLocalTransport) for t in router._children())
 
 
 def test_a_caller_supplied_transport_is_left_as_given() -> None:

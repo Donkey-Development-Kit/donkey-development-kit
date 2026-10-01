@@ -41,12 +41,14 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
+import logging
 import random
 import re
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Iterator
-from typing import Any
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Sized
+from types import TracebackType
+from typing import Any, Protocol
 
 import httpx
 
@@ -57,7 +59,13 @@ from .cachecontrol import current_cache_controls
 from .config import DonkeyConfig
 from .cost import CostTags
 from .endpoints import require_secure_url
-from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
+from .errors import (
+    ConfigError,
+    GatewayUnavailable,
+    ModelSubstituted,
+    classify,
+    gateway_unavailable,
+)
 from .lastcall import (
     LLM_MODEL_HEADER,
     LLM_PROVIDER_HEADER,
@@ -79,8 +87,8 @@ from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
     GenAiSpan,
+    current_correlation_id,
     current_cost_tags,
-    ensure_correlation_id,
     genai_span,
     new_call_id,
     policy_type_slug,
@@ -88,17 +96,14 @@ from .telemetry import (
     start_genai_span,
 )
 
-# Default request-header NAMES for the two correlation ids (BG §1.1, #195). Both are
-# UNVERIFIED placeholders: the gateway ECHOES ``x-correlation-id`` on RESPONSES
-# (verified), but whether it READS an inbound correlation/call-id header — and
-# under what name — is not. A customer overrides them per-Donkey via config
-# (``DonkeyConfig.correlation_header`` / ``.call_id_header``), resolved by each
-# client at construction (see :func:`_resolve_header_names`). Referencing the
-# placeholder VALUE (not ``.get()``) keeps these in sync with ``core/_verify``
-# without emitting the one-time unverified warning at import; the warning fires
-# once, at client construction, when a name is left un-overridden.
-CORRELATION_HEADER = _verify.CORRELATION_ID_HEADER.placeholder
-CALL_ID_HEADER = _verify.CALL_ID_HEADER.placeholder
+# Default request-header NAMES for the two correlation ids (BG §1.1, #195;
+# docs/verified-apis.md §3): the gateway reads and echoes ``X-Correlation-Id``,
+# and ``X-Donkey-Request-Id`` is the SDK's own per-call id. A customer overrides
+# them per-Donkey via config (``DonkeyConfig.correlation_header`` /
+# ``.call_id_header``), resolved by each client at construction (see
+# :func:`_resolve_header_names`).
+CORRELATION_HEADER = _verify.CORRELATION_ID_HEADER
+CALL_ID_HEADER = _verify.CALL_ID_HEADER
 # The OpenAI-compatible SDKs reject an empty ``api_key``. The governed proxy
 # authenticates on the client_id/client_secret headers (client-id-enforcement,
 # docs/verified-apis.md §2/§3) and ignores the bearer, so we fill the slot with a harmless sentinel
@@ -111,13 +116,18 @@ PROXY_API_KEY_SENTINEL = "client-id-enforced"
 _RETRYABLE_STATUS = frozenset({502, 503, 504})
 _BACKOFF_BASE_S = 0.5
 _BACKOFF_CAP_S = 30.0
+# A non-2xx body on a stream request is read up to this many bytes before the
+# span is recorded, so classify() sees the same JSON a buffered refusal has
+# (#805). Proxy error envelopes are a few hundred bytes; past the cap the body is
+# left for the caller and the span falls back to what the headers say.
+_ERROR_BODY_CAP = 64 * 1024
+
+_log = logging.getLogger(__name__)
 
 
 # The four cost dimensions → the config field that overrides that header name →
-# the UNVERIFIED placeholder used when there is no override (docs/verified-apis.md §3, #196). The
-# gateway-side names are the highest-priority unknown, so each is a loud,
-# overridable placeholder resolved here.
-_COST_HEADER_SOURCES: tuple[tuple[str, str, _verify.Unverified], ...] = (
+# the default name used when there is no override (docs/verified-apis.md §3, #196).
+_COST_HEADER_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("team", "cost_team_header", _verify.COST_TEAM_HEADER),
     ("project", "cost_project_header", _verify.COST_PROJECT_HEADER),
     ("env", "cost_env_header", _verify.COST_ENV_HEADER),
@@ -130,21 +140,19 @@ def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
     (docs/verified-apis.md §3, BG §1.7, #196).
 
     Each header NAME is the config override (``cost_*_header``) if set, else the
-    placeholder from ``core/_verify``. As of #522 the gateway-side cost header
-    names are a VERIFIED-NEGATIVE result (docs/verified-apis.md §3): the LLM
-    Gateway ingests no cost-tag header, so the name is a forward-looking
-    convention and reading the placeholder emits no warning — the authoritative
-    carrier is the ``donkey.cost.*`` span attribute. The transport therefore
+    default from ``core/_verify``. The LLM Gateway ingests no cost-tag header
+    (docs/verified-apis.md §3), so the name is a forward-looking convention — the
+    authoritative carrier is the ``donkey.cost.*`` span attribute. The transport therefore
     sends these only when ``DonkeyConfig.send_cost_headers`` is enabled; this
     builder itself does not check the flag. Values are pre-validated by
     :class:`CostTags`, so they are always header-safe."""
     override = {
-        field: getattr(cfg, attr) for field, attr, _placeholder in _COST_HEADER_SOURCES
+        field: getattr(cfg, attr) for field, attr, _default in _COST_HEADER_SOURCES
     }
-    placeholder = {field: ph for field, _attr, ph in _COST_HEADER_SOURCES}
+    default = {field: name for field, _attr, name in _COST_HEADER_SOURCES}
     headers: dict[str, str] = {}
     for field, value in tags.items():
-        name = override[field] or placeholder[field].get()
+        name = override[field] or default[field]
         headers[name] = value
     return headers
 
@@ -193,7 +201,7 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
     client. Missing credentials are simply omitted — :meth:`DonkeyConfig.validated`
     is where the absence is reported with actionable guidance.
 
-    * ``client-id`` mode (default): the LIVE-VERIFIED ``client_id`` +
+    * ``client-id`` mode (default): the ``client_id`` +
       ``client_secret`` pair enforced by ``client-id-enforcement``
       (docs/verified-apis.md §2/§3). This pair IS the per-agent attribution identity.
     * ``jwt`` mode (model-wallet ingress, #372/#509): the durable wallet-selector
@@ -305,14 +313,11 @@ class _CheckedEndpoints:
 
 def _resolve_header_names(cfg: DonkeyConfig) -> tuple[str, str]:
     """The ``(correlation, call_id)`` request-header NAMES for this config (BG §1.1,
-    #195): each is the config override if set, else the placeholder from
-    ``core/_verify``. As of #522 both are verified (docs/verified-apis.md §3): the
-    gateway reads the inbound ``X-Correlation-Id`` (echoed verbatim), and
-    ``X-Donkey-Request-Id`` is a confirmed client-owned per-call id the gateway
-    does not consume — so neither placeholder warns. Called ONCE per client at
+    #195): each is the config override if set, else the default from
+    ``core/_verify`` (docs/verified-apis.md §3). Called ONCE per client at
     construction, not on every request."""
-    correlation = cfg.correlation_header or _verify.CORRELATION_ID_HEADER.get()
-    call_id = cfg.call_id_header or _verify.CALL_ID_HEADER.get()
+    correlation = cfg.correlation_header or _verify.CORRELATION_ID_HEADER
+    call_id = cfg.call_id_header or _verify.CALL_ID_HEADER
     return correlation, call_id
 
 
@@ -325,9 +330,9 @@ def _apply_base_headers(
 ) -> None:
     """The run correlation ID + attribution — everything both transports inject
     on EVERY send without needing to await anything. The correlation ID is
-    passed in because the two transports source it differently (see
-    :func:`request_correlation_id`); it is deterministic per run (a contextvar),
-    so re-setting it on each retry is idempotent. The header NAME is resolved
+    passed in, resolved by :func:`_request_correlation_id`: the bound run's ID,
+    or one pinned per logical request, so re-setting it on each retry is
+    idempotent (#803). The header NAME is resolved
     once by the client. The per-call ID is deliberately NOT set here — being
     random, it must be pinned once before the retry loop
     (:func:`_apply_call_id_header`), never re-rolled per send.
@@ -359,12 +364,28 @@ def _apply_base_headers(
             request.headers[name] = value
 
 
+def _request_correlation_id(request: httpx.Request) -> str:
+    """The correlation ID for one send of ``request`` — never bound (#803).
+
+    Inside a ``donkey.run()`` block this is the run's ID. Outside one,
+    :func:`request_correlation_id` mints a fresh, unbound ID; it is pinned on
+    the request's extensions on the first send, so the retries and 401 refresh
+    of the same logical request reuse it rather than each minting another."""
+    pinned = request.extensions.get("donkey_correlation_id")
+    if pinned is not None and current_correlation_id() is None:
+        return str(pinned)
+    rid = request_correlation_id()
+    request.extensions["donkey_correlation_id"] = rid
+    return rid
+
+
 def _apply_call_id_header(request: httpx.Request, call_id_header: str) -> None:
     """Pin a FRESH per-call ID on the request, ONCE, before the retry loop
     (BG §1.1, #195).
 
-    The run/correlation id is deterministic per run (a contextvar), so the
-    per-send event hook can safely re-set it on every retry. The call id is
+    The run/correlation id is stable per request (the bound run's, or one pinned
+    on first send — :func:`_request_correlation_id`), so the per-send event hook
+    can safely re-set it on every retry. The call id is
     random and must be UNIQUE per logical request yet STABLE across that
     request's retries and 401 refresh — so it is pinned here, on the single
     request object that is re-sent, exactly once. It is therefore already on the
@@ -423,9 +444,9 @@ def _gateway_unavailable(
 # --- GenAI span extraction (#192, BG §1.6) ----------------------------------
 # Shared by both transports (sync + async). Each takes a plain response/request,
 # so the span-recording logic lives in one place and cannot drift between the
-# two clients. The response header carrying the resolved upstream provider is
-# VERIFIED (LIVE) — docs/verified-apis.md §2 "Model routing" and §3 "Gateway
-# identity on response" — and is the SOLE source of gen_ai.system; absent → the
+# two clients. The response header carrying the resolved upstream provider
+# (docs/verified-apis.md §2 "Model routing" and §3 "Gateway identity on
+# response") is the SOLE source of gen_ai.system; absent → the
 # attribute is omitted, never guessed (verification discipline), because the proxy routes to
 # several providers and defaulting one would misattribute the call. The header
 # NAME is defined once in ``lastcall`` (which also parses it onto ``last_call``)
@@ -456,7 +477,7 @@ def _body_model(request: httpx.Request) -> str | None:
 
 # A Format=Gemini proxy carries the model in the URL path, never the body
 # (docs/verified-apis.md §2, #540/#691): ``/models/<model>:generateContent``
-# (LIVE-verified) and its SSE twin ``:streamGenerateContent``. The ingress ignores
+# and its SSE twin ``:streamGenerateContent``. The ingress ignores
 # a body ``model``, so this is read for the SDK's own bookkeeping only — the
 # request on the wire is never changed.
 _GEMINI_MODEL_PATH = re.compile(r"/models/([^/:]+):(?:generateContent|streamGenerateContent)$")
@@ -552,7 +573,9 @@ def _record_response(
         if decision == POLICY_DECISION_REFUSE:
             gspan.set_error()
     except Exception:  # noqa: BLE001 — telemetry must never break the request
-        pass
+        # Never raised, but never silent either: a swallowed failure here once
+        # hid every streamed refusal from the span (#805).
+        _log.debug("recording the GenAI span response attributes failed", exc_info=True)
 
 
 def _substitution_error(
@@ -611,6 +634,94 @@ def _is_streaming_success(response: httpx.Response) -> bool:
     if response.status_code // 100 != 2:
         return False
     return _STREAM_CONTENT_TYPE in response.headers.get("content-type", "")
+
+
+# A refusal on a stream request arrives unread: classify() would hit
+# ``ResponseNotRead`` and the span would lose its decision, policy type and ERROR
+# status (#805). The SDKs read an error body anyway, so the transport reads it
+# first — bounded by _ERROR_BODY_CAP, and replayed untouched when it overflows.
+
+
+def _is_read(response: httpx.Response) -> bool:
+    try:
+        response.content  # noqa: B018 — raises ResponseNotRead on an unread body
+    except httpx.ResponseNotRead:
+        return False
+    return True
+
+
+class _ReplayAsyncStream(httpx.AsyncByteStream):
+    """An over-cap error body: the chunks already read, then the rest, unchanged."""
+
+    def __init__(
+        self, head: list[bytes], rest: AsyncIterator[bytes], inner: httpx.AsyncByteStream
+    ) -> None:
+        self._head, self._rest, self._inner = head, rest, inner
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self._head:
+            yield chunk
+        async for chunk in self._rest:
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
+class _ReplaySyncStream(httpx.SyncByteStream):
+    """Blocking twin of :class:`_ReplayAsyncStream`."""
+
+    def __init__(
+        self, head: list[bytes], rest: Iterator[bytes], inner: httpx.SyncByteStream
+    ) -> None:
+        self._head, self._rest, self._inner = head, rest, inner
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield from self._head
+        yield from self._rest
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+async def _aread_error_body(response: httpx.Response) -> None:
+    """Read an unread non-2xx stream body of at most :data:`_ERROR_BODY_CAP`
+    bytes, leaving the response as if it had been buffered. A larger body is put
+    back as a replay stream, still unread."""
+    inner = response.stream
+    if not isinstance(inner, httpx.AsyncByteStream) or _is_read(response):
+        return
+    rest = inner.__aiter__()
+    head: list[bytes] = []
+    size = 0
+    async for chunk in rest:
+        head.append(chunk)
+        size += len(chunk)
+        if size > _ERROR_BODY_CAP:
+            response.stream = _ReplayAsyncStream(head, rest, inner)
+            return
+    await inner.aclose()
+    response.stream = httpx.ByteStream(b"".join(head))
+    await response.aread()
+
+
+def _read_error_body(response: httpx.Response) -> None:
+    """Blocking twin of :func:`_aread_error_body`."""
+    inner = response.stream
+    if not isinstance(inner, httpx.SyncByteStream) or _is_read(response):
+        return
+    rest = iter(inner)
+    head: list[bytes] = []
+    size = 0
+    for chunk in rest:
+        head.append(chunk)
+        size += len(chunk)
+        if size > _ERROR_BODY_CAP:
+            response.stream = _ReplaySyncStream(head, rest, inner)
+            return
+    inner.close()
+    response.stream = httpx.ByteStream(b"".join(head))
+    response.read()
 
 
 class _SseUsageScanner:
@@ -796,6 +907,119 @@ class _LoopLocalTransport(httpx.AsyncBaseTransport):
             await pool.aclose()
 
 
+class _UrlPattern(Protocol):
+    """The one method of httpx's (private) mount-key ``URLPattern`` we use."""
+
+    def matches(self, other: httpx.URL) -> bool: ...
+
+
+class _AsyncMountRouter(httpx.AsyncBaseTransport):
+    """The client's base transport and its proxy mounts, folded into one
+    transport (#801).
+
+    httpx turns ``HTTP(S)_PROXY`` / ``ALL_PROXY`` (``trust_env``), ``proxy=`` and
+    ``mounts=`` into ``client._mounts``, which it checks *before*
+    ``client._transport``. A swap that replaces only ``_transport`` is bypassed
+    by them, so ``simulate()`` and the conformance probe went online behind a
+    corporate proxy. Folding the mounts in here leaves ``_mounts`` empty, so
+    ``_transport`` is the only route: a swap takes every request, and a
+    fixture's pass-through to this router still honours the proxy settings.
+    Routing mirrors httpx's ``_transport_for_url``: the first matching pattern
+    wins, and a ``None`` mount (a ``NO_PROXY`` entry) means the default."""
+
+    def __init__(
+        self,
+        default: httpx.AsyncBaseTransport,
+        mounts: Iterable[tuple[_UrlPattern, httpx.AsyncBaseTransport | None]],
+    ) -> None:
+        self._default = default
+        self._routes = list(mounts)
+
+    def _children(self) -> list[httpx.AsyncBaseTransport]:
+        return [self._default, *(t for _, t in self._routes if t is not None)]
+
+    def _route(self, url: httpx.URL) -> httpx.AsyncBaseTransport:
+        for pattern, transport in self._routes:
+            if pattern.matches(url):
+                return self._default if transport is None else transport
+        return self._default
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return await self._route(request.url).handle_async_request(request)
+
+    async def __aenter__(self) -> _AsyncMountRouter:
+        for transport in self._children():
+            await transport.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
+    ) -> None:
+        for transport in self._children():
+            await transport.__aexit__(exc_type, exc_value, traceback)
+
+    async def aclose(self) -> None:
+        for transport in self._children():
+            await transport.aclose()
+
+
+class _SyncMountRouter(httpx.BaseTransport):
+    """Blocking twin of :class:`_AsyncMountRouter`."""
+
+    def __init__(
+        self,
+        default: httpx.BaseTransport,
+        mounts: Iterable[tuple[_UrlPattern, httpx.BaseTransport | None]],
+    ) -> None:
+        self._default = default
+        self._routes = list(mounts)
+
+    def _children(self) -> list[httpx.BaseTransport]:
+        return [self._default, *(t for _, t in self._routes if t is not None)]
+
+    def _route(self, url: httpx.URL) -> httpx.BaseTransport:
+        for pattern, transport in self._routes:
+            if pattern.matches(url):
+                return self._default if transport is None else transport
+        return self._default
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        return self._route(request.url).handle_request(request)
+
+    def __enter__(self) -> _SyncMountRouter:
+        for transport in self._children():
+            transport.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
+    ) -> None:
+        for transport in self._children():
+            transport.__exit__(exc_type, exc_value, traceback)
+
+    def close(self) -> None:
+        for transport in self._children():
+            transport.close()
+
+
+def _refuse_swap_past_mounts(mounts: Sized) -> None:
+    """Fail closed (#801): with a mount in place, httpx would route some
+    requests past a swapped-in fixture to a real connection. The constructors
+    fold every mount into the base transport, so a mount here was added later."""
+    if mounts:
+        raise RuntimeError(
+            "cannot swap the transport: this client has httpx mounts that would "
+            "bypass it and open real connections. Pass proxies via mounts=/proxy= "
+            "at construction so the client folds them into its transport."
+        )
+
+
 class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
     """An ``httpx.AsyncClient`` that injects attribution/correlation/auth headers
     and applies the SDK's retry policy. Every adapter that accepts a custom HTTP
@@ -843,6 +1067,11 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             **kw,  # type: ignore[arg-type]
         )
         self._pool_per_loop(kw)
+        # Fold env/``proxy=``/``mounts=`` mounts into the base transport so the
+        # swap seam below covers every route (#801).
+        if self._mounts:
+            self._transport = _AsyncMountRouter(self._transport, self._mounts.items())
+            self._mounts = {}
 
     def _pool_per_loop(self, kw: dict[str, object]) -> None:
         """Give each event loop its own connection pool (#807). Wraps every pool
@@ -880,7 +1109,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         _apply_base_headers(
             self._cfg,
             request,
-            ensure_correlation_id(),
+            _request_correlation_id(request),
             correlation_header=self._correlation_header,
         )
         if not self._guard(request):
@@ -958,9 +1187,14 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
 
     def _swap_transport(self, transport: httpx.AsyncBaseTransport) -> None:
         """Replace the underlying transport on a live client. httpx resolves the
-        transport per-send from ``self._transport`` (we mount nothing), so the
-        next request uses ``transport`` with no reconstruction. This is the seam
-        ``simulate()`` (#190) and ``donkey mock`` (#187) swap a fixture into."""
+        transport per-send from ``self._mounts`` and then ``self._transport``;
+        the constructor folds every mount (including ``HTTP(S)_PROXY`` /
+        ``ALL_PROXY`` proxies from the environment) into ``self._transport``, so
+        the next request uses ``transport`` with no reconstruction and no
+        route around it (#801). This is the seam ``simulate()`` (#190) and the
+        conformance harness (#191) swap a fixture into. Raises ``RuntimeError``
+        rather than swap while a mount could bypass the fixture."""
+        _refuse_swap_past_mounts(self._mounts)
         self._transport = transport
 
     async def send(
@@ -1016,7 +1250,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         the context-manager lifecycle."""
         # Pin the per-call id ONCE, before the loop, so it is stable across
         # retries and the 401 refresh (BG §1.1, #195). The run correlation id is set
-        # per-send by the event hook (deterministic, so idempotent).
+        # per-send by the event hook (stable per request, so idempotent, #803).
         _apply_call_id_header(request, self._call_id_header)
         await self._on_request(request)
         attempts = self._cfg.max_retries + 1
@@ -1114,7 +1348,21 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         when the stream closes — on drain, mid-iteration abandonment, or exception.
         A buffered 2xx or a refusal on a stream request has no SSE body to scan, so
         the span is ended inline (``_record_response`` already set its decision,
-        usage and — for a refusal — ERROR status)."""
+        usage and — for a refusal — ERROR status). A non-2xx stream body is read
+        first (bounded, #805) so the refusal is classified exactly as a buffered
+        one; a transport failure mid-read surfaces as :class:`GatewayUnavailable`,
+        as it would have on the buffered path's own body read."""
+        if streaming and response.status_code // 100 != 2:
+            try:
+                await _aread_error_body(response)
+            except httpx.TransportError as exc:
+                await response.aclose()
+                raise _gateway_unavailable(
+                    request,
+                    exc,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                ) from exc
         await self._on_response(request, response)
         _record_response(
             gspan,
@@ -1157,11 +1405,18 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     It takes **no** :class:`AuthProvider`: that protocol is async-only
     (``async def token()``), and there is no correct way to await it from here.
     That costs nothing on the LLM data plane, which authenticates with the
-    ``client_id``/``client_secret`` header pair (LIVE-VERIFIED
-    docs/verified-apis.md §2/§3) rather than
+    ``client_id``/``client_secret`` header pair (docs/verified-apis.md §2/§3)
+    rather than
     a fetched token. It does mean the control-plane surfaces — ``registry`` and
     ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.
+
+    In jwt / model-wallet auth mode (``llm_proxy_auth='jwt'``) the credential is
+    exactly such a fetched token, so every request raises :func:`sync_jwt_error`
+    instead of going out unauthenticated (#509, #736). The check sits in
+    :meth:`build_request`, which the OpenAI SDK calls outside the ``try`` that
+    turns transport errors into ``APIConnectionError``, so a framework's sync
+    call (``ChatOpenAI.invoke()``) raises the ``ConfigError`` itself.
 
     Like its async twin it sends credentials only to the checked endpoints; pass
     the async client's :attr:`checked_origins` as ``origins`` to share them.
@@ -1185,12 +1440,20 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
             event_hooks={"request": [self._inject_headers]},
             **kw,  # type: ignore[arg-type]
         )
+        if self._mounts:  # see DonkeyAsyncClient.__init__ (#801)
+            self._transport = _SyncMountRouter(self._transport, self._mounts.items())
+            self._mounts = {}
+
+    def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
+        if self._cfg.llm_proxy_auth == "jwt":
+            raise sync_jwt_error()
+        return super().build_request(*args, **kwargs)
 
     def _inject_headers(self, request: httpx.Request) -> None:
         _apply_base_headers(
             self._cfg,
             request,
-            request_correlation_id(),
+            _request_correlation_id(request),
             correlation_header=self._correlation_header,
         )
         self._guard(request)
@@ -1221,6 +1484,7 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     def _swap_transport(self, transport: httpx.BaseTransport) -> None:
         """Replace the underlying transport on a live client; the next request
         uses it (see :meth:`DonkeyAsyncClient._swap_transport`)."""
+        _refuse_swap_past_mounts(self._mounts)
         self._transport = transport
 
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
@@ -1307,7 +1571,19 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         then record the response attributes on the GenAI span. Streaming (#193)
         hands a 2xx SSE body to a :class:`_SpanClosingSyncStream` that ends the
         detached span on close; a buffered/refused stream response ends it inline
-        (see :meth:`DonkeyAsyncClient._finish`)."""
+        (see :meth:`DonkeyAsyncClient._finish`, including the bounded read of a
+        non-2xx stream body, #805)."""
+        if streaming and response.status_code // 100 != 2:
+            try:
+                _read_error_body(response)
+            except httpx.TransportError as exc:
+                response.close()
+                raise _gateway_unavailable(
+                    request,
+                    exc,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                ) from exc
         self._on_response(request, response)
         _record_response(
             gspan,
@@ -1346,6 +1622,20 @@ def build_http_client(
     ``control_plane=True`` for a client that calls the Anypoint platform (see
     :class:`DonkeyAsyncClient`)."""
     return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
+
+
+def sync_jwt_error() -> ConfigError:
+    """The error for a blocking call in jwt / model-wallet auth mode, shared by
+    ``donkey.llm.client(sync=True)`` and every sync call through
+    :class:`DonkeyClient` (#509, #736), so both surfaces fail the same way."""
+    return ConfigError(
+        "JWT / model-wallet auth mode (llm_proxy_auth='jwt') is async-only: "
+        "the credential is a rotating JWT fetched from an async AuthProvider, "
+        "and the blocking client cannot await it. Use the async surface — "
+        "`donkey.llm.client()` / `donkey.openai()` without sync=True, or a "
+        "framework's async call (`ainvoke()` / `astream()`, not `invoke()`) — or "
+        "switch to client-id auth for a synchronous caller."
+    )
 
 
 def build_sync_http_client(

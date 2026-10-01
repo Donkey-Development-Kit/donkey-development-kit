@@ -14,9 +14,9 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   ``gateway_identity_observed`` and ``donkey.last_call`` stays unpopulated.
   ADK requires ``litellm>=1.84`` (floor, not ceiling).
 * ``gemini()`` — ADK's native ``google.adk.models.Gemini`` for a
-  ``Format=Gemini`` proxy (#691). The LIVE-verified native route is
+  ``Format=Gemini`` proxy (#691). The native route is
   ``POST <proxy>/models/<model>:generateContent`` (#540); the model travels in
-  the URL only, and the ingress ignores a body ``model`` (probed 2026-09-29).
+  the URL only, and the ingress ignores a body ``model`` (docs/verified-apis.md §2).
   ``google-genai`` accepts ``HttpOptions.httpx_async_client``, so we hand it the
   shared :class:`~donkey_kit.core.transport.DonkeyAsyncClient`: full injection —
   per-run correlation, SDK retries, rotating JWTs and ``donkey.last_call`` all
@@ -28,6 +28,7 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
@@ -43,9 +44,10 @@ class ADKAdapter(Adapter):
     extra = "adk"
     # Kept False for ``model()`` while the conformance kit lists its
     # correlation_id_propagated exemption (#362), although its calls now go
-    # through the shared client. ``gemini()`` flips this on the instance that
-    # built it (#691).
+    # through the shared client. ``gemini()`` observes (#691), recorded per
+    # factory rather than set on the instance (#741).
     observes_last_call = False
+    factory_observes_last_call = MappingProxyType({"gemini": True})
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``LiteLlm(model="openai/<id>", **kwargs)`` you
@@ -99,7 +101,10 @@ class ADKAdapter(Adapter):
         """Return ADK's ``LiteLlm`` at the proxy. An ``api_base``/``base_url``
         override must pass the https check."""
         self._allow_endpoints(kw, "api_base", "base_url")
-        from google.adk.models.lite_llm import LiteLlm  # VERIFY name/path: docs/verified-apis.md §8
+        with self._native_import():
+            from google.adk.models.lite_llm import (
+                LiteLlm,  # VERIFY name/path: docs/verified-apis.md §8
+            )
 
         conn = self.connection_kwargs()
         override = kw.get("api_base") or kw.get("base_url")
@@ -114,7 +119,8 @@ class ADKAdapter(Adapter):
         ``Format=Gemini`` proxy, with the shared http client injected (#691).
         Pass the bare model id (``"gemini-2.5-flash"``) — no provider prefix."""
         conn = self.gemini_connection_kwargs(base_url=base_url)
-        from google.adk.models import Gemini  # VERIFY name/path: docs/verified-apis.md §8
+        with self._native_import():
+            from google.adk.models import Gemini  # VERIFY name/path: docs/verified-apis.md §8
 
         # ADK's pydantic config ignores unknown fields, so on google-adk < 2.4 (no
         # ``client_kwargs``; no ``base_url`` before 2.0) both kwargs are dropped
@@ -132,7 +138,7 @@ class ADKAdapter(Adapter):
                 "Upgrade with: pip install -U 'donkey-kit[adk]'"
             )
         native = Gemini(model=model, **{**conn, **kw})
-        self.observes_last_call = True
+        self._record_factory("gemini")
         return native
 
 
