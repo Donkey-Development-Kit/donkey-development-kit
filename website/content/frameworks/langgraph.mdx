@@ -98,7 +98,8 @@ llm = ChatOpenAI(
     base_url=...,             # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,      # client_id / client_secret header pair, not bearer
-    http_async_client=...,    # the SDK's shared httpx async client
+    http_async_client=...,    # the SDK's shared httpx async client (ainvoke)
+    http_client=...,          # the SDK's shared blocking client (invoke)
     max_retries=0,            # the SDK retries in its own transport layer
     use_responses_api=True,   # the proxy's data plane is /responses
 )
@@ -107,7 +108,9 @@ llm = ChatOpenAI(
 `connection_kwargs()` returns exactly these keys, so you can drop the factory
 and construct `ChatOpenAI` by hand at any time. Pass `use_responses_api=False`
 to `chat_model(...)` only if your deployment exposes chat-completions instead
-of the Responses API (`/responses`).
+of the Responses API (`/responses`). A `base_url` / `openai_api_base` passed to
+`chat_model(...)` must pass the
+[`https://` rule](/reference/configuration#endpoints-must-use-https).
 
 ## Graph-level features
 
@@ -149,6 +152,12 @@ A PII block now propagates out of `graph.ainvoke(...)` as `PIIDetected`, a
 budget block as `TokenBudgetExceeded`, and so on — each carrying the
 correlation and call IDs the client sent. Transport-level errors with no HTTP
 response (connection failures, timeouts) pass through unchanged.
+
+The typed error is raised without a chained cause, because LangChain's error
+message repeats the gateway's rejection text, which for a PII block includes
+the flagged values, and a traceback prints every chained exception. The
+original LangChain error is on `err.framework_error`; `err.__cause__` is
+`None`.
 
 ### `interrupt()` composes with typed refusals
 
@@ -235,9 +244,13 @@ own fields instead of the span will still show `openai`.
 
 ## Notes
 
-- `base_url`, `api_key`, `default_headers`, and a custom `http_async_client`
-  are all forwarded, so proxy auth headers and the SDK's transport (retries,
-  correlation IDs) reach every request.
+- `base_url`, `api_key`, `default_headers`, `http_async_client` and
+  `http_client` are all forwarded, so proxy auth headers and the SDK's
+  transport (retries, correlation IDs) reach every request, from `ainvoke()`
+  and `invoke()` alike. In `jwt` mode only `ainvoke()` carries the JWT.
+- Printing the model shows `client_secret`: `ChatOpenAI`'s own `repr()` /
+  `str()` include `default_headers`. Don't print or log it; see
+  [What printed output hides](/reference/configuration#what-printed-output-hides).
 - `max_retries=0` is intentional: retries live in the SDK's transport layer,
   so the SDK and the OpenAI client don't both retry.
 - The proxy is OpenAI-compatible but not the full OpenAI API: the base URL has

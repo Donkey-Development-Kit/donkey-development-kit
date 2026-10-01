@@ -131,8 +131,9 @@ remediation on the `control plane` line without failing the report, since
 files always fails the `config` line, because the JWT never comes from a file:
 set the URL in the environment or opt in.
 
-With `DONKEY_ALLOW_HTTP` set in the environment, a `plain http` line says so
-(in `--json` output, the entry with `"name": "plain http"`):
+With `DONKEY_ALLOW_HTTP` on in the environment, a `plain http` line says so and
+quotes the value as set, for example `DONKEY_ALLOW_HTTP=true` (in `--json`
+output, the entry with `"name": "plain http"`):
 
 ```text
 [i]  plain http     allowed to non-loopback hosts (DONKEY_ALLOW_HTTP=1 in env)

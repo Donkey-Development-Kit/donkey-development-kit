@@ -352,26 +352,27 @@ through every field.
 ### When `last_call` is unavailable
 
 `donkey.last_call` is populated only when the governed response passes through
-the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
-outside that response path: ADK's `model()` sends requests through LiteLLM and
-CrewAI through its native OpenAI provider, while LlamaIndex and Microsoft Agent
-Framework receive only `default_headers`. ADK's `gemini()` uses the shared
-client, so once it has been called the ADK adapter observes calls (see
-[Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini) for reading `last_call` inside an
-ADK run).
-That static snapshot excludes the correlation ID bound later by
-`donkey.run(id=...)`, so those two adapters also do not propagate the run's
-correlation ID.
+the SDK's shared HTTP client, and only in the context that made the call.
+CrewAI routes outside that client: its native OpenAI provider builds its own,
+so no response reaches the record and the run's correlation ID isn't sent.
 
-When every adapter resolved on a `Donkey` is one of those four, a cold read
-reports the limitation explicitly. For a `Donkey` that resolved only ADK's
-`model()`:
+LlamaIndex, Microsoft Agent Framework and ADK's `model()` send through the
+shared client, so a call populates the record in its own context and carries
+the run's correlation ID. They are still listed as not observing calls, so a
+cold read on a `Donkey` that resolved only these adapters or CrewAI reports
+`UNAVAILABLE` rather than `UNOBSERVED`. Aligning that is tracked in
+[#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+ADK's `gemini()` uses the shared client and observes calls once it has been
+called (see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini) for reading
+`last_call` inside an ADK run).
+
+For a `Donkey` that resolved only CrewAI:
 
 ```python
 r = donkey.last_call
 r.status       # LastCallStatus.UNAVAILABLE
 r.available    # False
-r.surface      # "adk"
+r.surface      # "crewai"
 ```
 
 This is different from `UNOBSERVED`, which means the current context has not
@@ -509,7 +510,7 @@ length), so nobody stuffs a JSON blob into a span attribute or header.
 
 | Carrier | Names | When | Goes to |
 |---|---|---|---|
-| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so adapters with only header injection record none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
+| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
 | Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Every request the SDK sends. See the warning below. |
 
 Each header carries the tag's value unchanged (for example

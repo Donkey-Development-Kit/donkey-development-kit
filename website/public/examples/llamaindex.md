@@ -3,9 +3,10 @@
 LlamaIndex with `donkey.llamaindex.llm("…")`, an `OpenAILike`. The adapter sets
 `is_chat_model=True` — the `OpenAILike` default of `False` hits
 `/completions` — so calls go to **`/chat/completions`, which is not
-live-verified on the DDK proxies**. Only `default_headers` are handed over:
-there is **no run id and no `last_call`**. `OpenAILike` re-raises the openai
-error unchanged, so `classify()` still types refusals.
+live-verified on the DDK proxies**. Sync and async calls send through the
+SDK's HTTP clients, so the run id reaches the proxy and `last_call` is
+populated. `OpenAILike` re-raises the openai error unchanged, so `classify()`
+types refusals.
 
 Both scripts need a live gateway; there is no offline LlamaIndex script.
 
@@ -41,8 +42,8 @@ print("total tokens", reply.raw.usage.total_tokens)
 print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
 ```
 
-**You should see:** two greetings, `total tokens`, and `last_call unavailable
-…`. A `404 … /completions` means `is_chat_model` was overridden back to
+**You should see:** two greetings, `total tokens`, and `last_call observed
+None`. A `404 … /completions` means `is_chat_model` was overridden back to
 `False`.
 
 ## 02 — Typed refusals, live

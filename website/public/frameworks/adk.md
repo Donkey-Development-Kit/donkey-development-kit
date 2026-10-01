@@ -16,9 +16,10 @@ of two ways, depending on the proxy's ingress **Format**:
 - A native `google.adk.models.lite_llm.LiteLlm` or `google.adk.models.Gemini`,
   with the proxy auth and attribution headers set.
 - For `model()`: the `openai/` model prefix and LiteLLM kwarg names handled
-  automatically. Supported at `connection_kwargs()`. LiteLLM makes the HTTP
-  calls itself, so correlation is per client and `donkey.last_call` is not
-  populated (see [Notes](#notes)).
+  automatically. Supported at `connection_kwargs()`. LiteLLM gets a pre-built
+  OpenAI `client` that sends through the SDK's shared HTTP client, so per-run
+  correlation, retries, spans, `donkey.last_call` and the `jwt`-mode JWT apply
+  (see [Notes](#notes)).
 - For `gemini()`: the shared client injected through
   `HttpOptions.httpx_async_client`, round-trip verified live against a
   `Format=Gemini` proxy.
@@ -104,11 +105,17 @@ llm = LiteLlm(
     api_base=...,       # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     extra_headers=...,  # client_id / client_secret header pair
+    client=...,         # an AsyncOpenAI on the SDK's shared client
 )
 ```
 
 LiteLLM uses `api_base` and `extra_headers`, not `base_url` /
 `default_headers` — `connection_kwargs()` already translates for you.
+`client` is present when the `openai` package is installed; LiteLLM's OpenAI
+route uses it in place of the client it would build. An `api_base` /
+`base_url` passed to `model()` must pass the
+[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https), and the
+adapter builds `client` on that URL.
 
 ## Native Gemini
 
@@ -143,7 +150,8 @@ llm = gemini("gemini-2.5-flash")
 **Pointing at the Gemini proxy.** `DONKEY_LLM_PROXY_URL` usually names a
 `Format=OpenAI` proxy. If your Gemini proxy is a different one, pass its URL
 as `base_url`; the `client_id`/`client_secret` pair must be contracted on that
-proxy:
+proxy, and the URL must pass the
+[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https):
 
 ```python
 llm = donkey.adk.gemini("gemini-2.5-flash", base_url="https://…/ddk-gemini-inbound/")
@@ -233,19 +241,19 @@ models — inside the loop that runs them (`async with Donkey.from_env()` in you
 
 ## Notes
 
-- **Correlation IDs are per-client, not per-run (`model()` only).** `model()`
-  sends requests through ADK's built-in LiteLLM model layer rather than the
-  SDK's shared HTTP client, so the correlation ID is set once per client instead
-  of per `donkey.run()`. Every governance header is still sent on every request.
-  The conformance suite checks this as a documented behaviour. `gemini()` uses
-  the shared client, so its correlation ID is per run.
-- **`donkey.last_call` is unavailable (`model()` only).** Because the response
-  is handled by LiteLLM, gateway identity, routing, and usage fields can't be
-  observed. When every adapter resolved on a `Donkey` is like this one,
-  `donkey.last_call` reports `status == LastCallStatus.UNAVAILABLE` and
-  `available == False`, and names the resolved adapters in `surface`. Once
-  `gemini()` has been called on a `Donkey`, the ADK adapter observes calls, so an
-  empty record reads `UNOBSERVED` instead.
+- **Both factories send through the SDK's shared HTTP client**, so the
+  correlation ID bound by `donkey.run()` reaches every request.
+- **`donkey.last_call` is set in the context that made the call.** ADK's
+  `Runner` calls the model in a task of its own, so read it in an
+  `after_model_callback` (see [Native Gemini](#native-gemini)). Until
+  `gemini()` has been called on a `Donkey`, a cold read on a `Donkey` that
+  resolved only ADK reports `UNAVAILABLE` rather than `UNOBSERVED`, because
+  `model()` is still listed as not observing calls. Aligning that, and the
+  matching conformance exemptions, is tracked in
+  [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+- **Refusals on the `model()` path aren't typed.** LiteLLM raises its own
+  error without the response headers, so `classify()` has nothing to read; see
+  the [ADK examples](https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md).
 - `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
   own upper bound if you need one.
 

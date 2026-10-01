@@ -187,6 +187,13 @@ Request blocked: personally identifiable information detected (403): 1 entity (E
 prompt itself. The other refusal messages are built from status codes,
 headers, category names and policy pattern names, never from the request.
 
+A traceback also prints every chained exception, and a framework's own error
+usually repeats the gateway's text. So when the SDK maps a framework error to
+a typed one, as LangGraph's
+[`typed_refusals()`](/frameworks/langgraph#typed-refusals-inside-a-node) does,
+it raises it without a chained cause: `exc.__cause__` is `None`, and the
+framework error is on `exc.framework_error` (`None` when there was none).
+
 This applies to policy refusals. `UpstreamRequestError` messages include the
 upstream provider's own error text, which can quote parts of your request. For
 everything the SDK does and doesn't hide in printed output, see

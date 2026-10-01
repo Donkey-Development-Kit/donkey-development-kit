@@ -71,9 +71,18 @@ constructor call the factory makes for you.
 `connection_kwargs()` returns a `dict` that prints `'***'` in place of
 `api_key`, the `client_secret` header, `Authorization` and other credential
 keys, including inside nested header mappings. The framework still receives the
-real values, and `json.dumps` or `dict(...)` still expose them. See
+real values, and `json.dumps`, `dict(...)`, `{**kwargs}` or `kwargs.items()`
+still expose the top-level `api_key`. Some framework objects built from the
+kwargs (LangGraph's `ChatOpenAI`, LlamaIndex's `OpenAILike`, CrewAI's
+`OpenAICompletion`) print credentials themselves. See
 [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides)
 for exactly what is and isn't masked.
+
+Where the framework's dependencies are installed, `connection_kwargs()` also
+carries the SDK's HTTP client in the form that framework takes: `http_client`
+and `http_async_client` (LangGraph), `http_client` and `async_http_client`
+(LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
+or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
 
 ```python
 kwargs = donkey.llamaindex.connection_kwargs()
@@ -122,25 +131,32 @@ calls.
 How much of the SDK's HTTP layer reaches the request depends on what each
 framework's constructor accepts. With **header injection**, the proxy auth and
 attribution headers are sent. With **transport injection**, the SDK's shared
-HTTP client is also used, which adds per-run correlation IDs and
-`donkey.last_call`.
+HTTP client is also used, which adds per-run correlation IDs, retries, spans,
+`donkey.last_call`, the `jwt`-mode JWT, and
+[credentials only to checked endpoints](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#credentials-go-only-to-checked-endpoints).
 
 | Framework | Header injection | Transport injection | Notes |
 |---|---|---|---|
-| LangGraph | ✅ | ✅ | `default_headers` plus a custom async client. |
+| LangGraph | ✅ | ✅ | `default_headers` plus the SDK's async client (`ainvoke`) and blocking client (`invoke`). |
 | Strands | ✅ | ✅ | Via `client_args`. |
 | OpenAI Agents SDK | ✅ | ✅ | The adapter builds the `AsyncOpenAI` client itself. |
 | Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object. On `anthropic` 1.0 and later, transport injection goes through a bridged `httpx2` client — see the [Anthropic page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
-| LlamaIndex | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. `is_chat_model=True` is forced. |
-| MS Agent Framework | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. |
-| Google ADK — `model()` | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
+| LlamaIndex | ✅ | ✅ | Via `http_client` (sync) and `async_http_client`. `is_chat_model=True` is forced. |
+| MS Agent Framework | ✅ | ✅ | Via an `async_client` built on the SDK's client. |
+| Google ADK — `model()` | ✅ (`extra_headers`) | ✅ | LiteLLM gets a pre-built OpenAI `client` that sends through the SDK's client. |
 | Google ADK — `gemini()` | ✅ | ✅ | Via `HttpOptions.httpx_async_client`, on a `Format=Gemini` proxy. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's native OpenAI provider, which builds its own HTTP client: same behaviour as ADK's `model()`. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | CrewAI's native OpenAI provider builds its own HTTP client: correlation is per client and `donkey.last_call` is not populated. An `interceptor` keeps credentials to checked endpoints. |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
-attached only by the SDK's shared client. Adapters marked ❌ send
-`X-Client-Id` but no JWT, so a wallet proxy answers `401`. See the
+attached only by the SDK's shared async client. CrewAI, and sync calls such as
+LangGraph's `invoke()`, send `X-Client-Id` but no JWT, so a wallet proxy
+answers `401`. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
+
+A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
+or Strands' `client_args["base_url"]`) must pass the same
+[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https) as the
+configured proxy URL; it then receives the configured credentials.
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.

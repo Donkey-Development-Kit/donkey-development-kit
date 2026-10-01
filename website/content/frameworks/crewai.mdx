@@ -20,9 +20,8 @@ model-string and kwarg conventions for you.
   headers are set.
 - The `openai/` model prefix and CrewAI's kwarg names handled automatically.
 - Supported at `connection_kwargs()`. CrewAI's native provider builds its own
-  HTTP client rather than using the SDK's, so correlation is per client and
-  `donkey.last_call` is not populated — the same as
-  [Google ADK](/frameworks/adk) (see [Notes](#notes)).
+  HTTP client rather than using the SDK's, so there is no run correlation ID
+  and `donkey.last_call` is not populated (see [Notes](#notes)).
 
 ## Install
 
@@ -101,15 +100,26 @@ model = LLM(
 ```
 
 `connection_kwargs()` fills in `base_url`, `api_key`, and `extra_headers` (the
-`client_id` / `client_secret` header pair) for you.
+`client_id` / `client_secret` header pair) for you. When CrewAI is installed it
+also adds an `interceptor`: with one set, CrewAI's provider builds HTTP clients
+that don't follow redirects, and the interceptor removes the credential headers
+from any request to an origin other than the proxy (see
+[Credentials go only to checked endpoints](/reference/configuration#credentials-go-only-to-checked-endpoints)).
+A `base_url` / `api_base` passed to `llm()` must pass the
+[`https://` rule](/reference/configuration#endpoints-must-use-https).
 
 ## Notes
 
-- **Correlation IDs are per-client, not per-run.** CrewAI sends requests through
-  its native OpenAI provider's own HTTP client rather than the SDK's shared one,
-  so the correlation ID is set once per client instead of per `donkey.run()`.
-  Every governance header is still sent on every request. The conformance suite
-  checks this as a documented behaviour.
+- **No run correlation ID.** CrewAI sends requests through its native OpenAI
+  provider's own HTTP client rather than the SDK's shared one, so the
+  correlation ID bound by `donkey.run()` doesn't reach the request. The auth
+  and attribution headers are still sent on every request. The conformance
+  suite checks this as a documented behaviour.
+- **No JWT in `jwt` mode.** The JWT is added only by the SDK's shared client,
+  so a wallet proxy answers `401`; see the
+  [`jwt` mode note](/reference/configuration#jwt--model-wallet-auth-mode).
+- **Printing the model shows the API key.** `OpenAICompletion`'s own `repr()` /
+  `str()` include `api_key`. Don't print or log it.
 - **`donkey.last_call` is unavailable.** Because the response is handled by
   CrewAI's own client, gateway identity, routing, and usage fields can't be
   observed. When every adapter resolved on a `Donkey` is like this one,

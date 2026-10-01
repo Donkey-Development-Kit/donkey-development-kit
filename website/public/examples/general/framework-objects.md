@@ -141,6 +141,7 @@ Run context
     default_headers.client_id      <redacted> (36 chars)
     default_headers.client_secret  <redacted> (40 chars)
     http_async_client              <donkey_kit.core.transport.DonkeyAsyncClient object at 0x10aac2a50>
+    http_client                    <donkey_kit.core.transport.DonkeyClient object at 0x10aac2c10>
     max_retries                    0
     use_responses_api              True
 

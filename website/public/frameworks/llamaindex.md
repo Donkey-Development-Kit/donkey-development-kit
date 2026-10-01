@@ -7,9 +7,10 @@ proxy, with the chat-model flag a chat-only gateway requires already set.
 
 - A native `llama_index.llms.openai_like.OpenAILike`.
 - `is_chat_model=True` and `is_function_calling_model=True` set for you.
-- Supported at `connection_kwargs()`. The client receives a static
-  `default_headers` snapshot, so per-run correlation and `donkey.last_call` are
-  not available (see [Notes](#notes)).
+- Supported at `connection_kwargs()`. Sync and async calls send through the
+  SDK's HTTP clients (`http_client`, `async_http_client`), so per-run
+  correlation, retries, spans and `donkey.last_call` apply (see
+  [Notes](#notes)).
 
 ## Install
 
@@ -92,11 +93,14 @@ model = OpenAILike(
     default_headers=...,              # client_id / client_secret header pair
     is_chat_model=True,               # required — see below
     is_function_calling_model=True,
+    http_client=...,                  # the SDK's blocking client
+    async_http_client=...,            # the SDK's async client
 )
 ```
 
 LlamaIndex uses `api_base` rather than `base_url`; `connection_kwargs()`
-already translates for you.
+already translates for you. An `api_base` passed to `llm()` must pass the
+[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
 
 ## Notes
 
@@ -106,14 +110,16 @@ already translates for you.
   Gateway LLM proxy. `connection_kwargs()` always sets it (and
   `is_function_calling_model=True`); set it yourself if you construct
   `OpenAILike` outside the adapter.
-- **No per-run correlation or `donkey.last_call`.** The client receives a
-  static `default_headers` snapshot, which excludes the correlation ID bound
-  later by `donkey.run(id=...)`, and the SDK's httpx client is not used. No
-  response reaches the SDK, so gateway identity, routing, and usage fields
-  can't be observed. When every adapter resolved on a `Donkey` is like this
-  one, `donkey.last_call` reports `status == LastCallStatus.UNAVAILABLE` and
-  `available == False`, and names the resolved adapters in `surface`. The
-  conformance suite asserts both as documented exemptions.
+- **`donkey.last_call` is set in the context that made the call.** A cold read
+  (no call yet in this context) on a `Donkey` that resolved only adapters like
+  this one still reports `status == LastCallStatus.UNAVAILABLE` rather than
+  `UNOBSERVED`, because LlamaIndex is still listed as not observing calls. Aligning
+  that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+- **`jwt` mode is async-only.** `acomplete()` / `achat()` carry the JWT; sync
+  `complete()` / `chat()` go through the blocking client, which carries none.
+- **Printing the model shows credentials.** `OpenAILike`'s own `repr()` /
+  `str()` include `client_secret` and `api_key`. Don't print or log it; see
+  [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
