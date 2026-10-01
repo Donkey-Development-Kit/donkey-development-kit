@@ -29,6 +29,7 @@ from ..core.transport import (
     DonkeyAsyncClient,
     DonkeyClient,
     build_sync_http_client,
+    missing_jwt_provider_error,
     proxy_api_key,
     proxy_auth_headers,
     sync_jwt_error,
@@ -98,12 +99,7 @@ class LLMClient:
                 raise sync_jwt_error()
             if self._http.token_provider is None:
                 # AC 1: jwt mode with no provider attached fails with actionable guidance.
-                raise ConfigError(
-                    "llm_proxy_auth='jwt' requires an AuthProvider that supplies the "
-                    "model-wallet JWT, but none is attached. Pass one when constructing "
-                    "Donkey, e.g. `Donkey(llm_auth=StaticToken(jwt))` or a custom "
-                    "AuthProvider that refreshes the token (see donkey_kit.core.auth)."
-                )
+                raise missing_jwt_provider_error()
         http = self._sync_http() if sync else self._http
         if kw.get("base_url") is not None:
             http.allow_endpoint(str(kw["base_url"]), name="base_url")

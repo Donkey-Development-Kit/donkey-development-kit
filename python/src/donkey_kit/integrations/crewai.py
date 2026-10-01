@@ -52,6 +52,9 @@ class CrewAIAdapter(Adapter):
     # CrewAI's provider owns the transport, so no response reaches donkey.last_call
     # (#362, the same reason as the conformance kit's correlation_id_propagated exemption).
     observes_last_call = False
+    # The provider sends a header snapshot, never the per-send JWT, so jwt mode
+    # raises ConfigError rather than reaching the proxy unauthenticated (#835).
+    carries_jwt = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``crewai.LLM(model="openai/<id>", **kwargs)`` you

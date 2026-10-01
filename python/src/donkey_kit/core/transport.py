@@ -1549,6 +1549,22 @@ def sync_jwt_error() -> ConfigError:
     )
 
 
+def missing_jwt_provider_error() -> ConfigError:
+    """The error for jwt / model-wallet auth mode with no data-plane
+    :class:`AuthProvider` on the shared client, shared by ``donkey.llm.client()``
+    and every adapter (#509, #835), so a request never goes out without the JWT."""
+    return ConfigError(
+        "llm_proxy_auth='jwt' requires an AuthProvider that supplies the "
+        "model-wallet JWT, but none is attached. Pass one when constructing "
+        "Donkey, e.g. `Donkey(llm_auth=StaticToken(jwt))` or a custom "
+        "AuthProvider that refreshes the token (see donkey_kit.core.auth). "
+        "The module-level adapter factories (e.g. "
+        "`donkey_kit.integrations.langgraph.chat_model`) run on an env-configured "
+        "default runtime that never has one; use `Donkey(llm_auth=...)` and its "
+        "adapters instead."
+    )
+
+
 def build_sync_http_client(
     cfg: DonkeyConfig,
     *,

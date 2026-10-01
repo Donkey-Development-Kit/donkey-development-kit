@@ -16,12 +16,14 @@ from typing import Any, ClassVar, TypeVar, cast
 
 from ..core import runtime
 from ..core.config import DonkeyConfig
+from ..core.errors import ConfigError
 from ..core.masking import masked
 from ..core.transport import (
     DonkeyAsyncClient,
     DonkeyClient,
     attribution_headers,
     build_sync_http_client,
+    missing_jwt_provider_error,
     proxy_api_key,
     proxy_auth_headers,
 )
@@ -55,6 +57,13 @@ class Adapter(ABC):
     #: Per-factory overrides of :attr:`observes_last_call`, keyed by method name
     #: (ADK ``gemini()`` observes where ``model()`` does not). Read-only.
     factory_observes_last_call: ClassVar[Mapping[str, bool]] = MappingProxyType({})
+
+    #: Whether this adapter's requests can carry the rotating model-wallet JWT
+    #: in jwt auth mode (#509): true when every governed call sends through the
+    #: shared client, which adds it per send. False when the framework builds its
+    #: own client from a static header snapshot (CrewAI), so in jwt mode every
+    #: factory and :meth:`connection_kwargs` raise ``ConfigError`` instead (#835).
+    carries_jwt: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -164,7 +173,25 @@ class Adapter(ABC):
             return {}
 
     def _require_proxy(self) -> DonkeyConfig:
-        return self._cfg.validated(need="llm")
+        """Validate the proxy config, and in jwt mode refuse before any request
+        a form that would send without the JWT (#835): one that cannot carry it,
+        or a shared client with no provider to supply it (the module-level
+        factories' default runtime, or a ``Donkey`` built without ``llm_auth``)."""
+        cfg = self._cfg.validated(need="llm")
+        if cfg.llm_proxy_auth == "jwt":
+            if not self.carries_jwt:
+                raise ConfigError(
+                    f"The {self.extra} adapter cannot carry the rotating model-wallet "
+                    "JWT in llm_proxy_auth='jwt' mode: the framework builds its own "
+                    "HTTP client from a static header snapshot, so its requests would "
+                    "reach the proxy without the JWT. Use a surface that sends through "
+                    "the SDK's shared client — `donkey.llm.client()`, LangGraph, "
+                    "Strands, OpenAI Agents, Anthropic, ADK, LlamaIndex or Agent "
+                    "Framework (async calls) — or switch to client-id auth."
+                )
+            if self._http.token_provider is None:
+                raise missing_jwt_provider_error()
+        return cfg
 
     def _allow_endpoints(self, overrides: Mapping[str, Any], *names: str) -> None:
         """Check each URL override in ``overrides`` under ``names`` — a URL passed
