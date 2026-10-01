@@ -87,6 +87,8 @@ jobs:
       - run: ruff check .
       - name: import-linter (framework-free core, §1.1)
         run: lint-imports
+      - name: no verification-status claims in src/ outside core/_verify.py (#718)
+        run: python scripts/check_verification_claims.py
 
   test:
     runs-on: ubuntu-latest

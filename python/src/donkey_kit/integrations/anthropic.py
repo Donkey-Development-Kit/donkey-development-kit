@@ -22,8 +22,8 @@ OpenAI-compatible adapters use.
 
 PROXY ROUTE (docs/verified-apis.md §2, #304): MuleSoft Model Proxy offers a
 native **Anthropic** ingress Format — one of three selectable ingress Formats
-(OpenAI / Gemini / Anthropic), fixed at proxy creation. That route is now
-**LIVE-verified**: a ``Format=Anthropic`` proxy serves the Anthropic Messages API
+(OpenAI / Gemini / Anthropic), fixed at proxy creation. A
+``Format=Anthropic`` proxy serves the Anthropic Messages API
 natively at ``POST /<base-path>/v1/messages`` (200 with a native Anthropic body;
 an OpenAI-shaped ``/chat/completions`` request 404s). Captured in
 ``python/tests/fixtures/anypoint/anthropic_inbound/``.
@@ -99,8 +99,8 @@ class AnthropicAdapter(Adapter):
         ``http_client`` that sends through the shared transport, and the
         ``api_key`` slot. ``http_client`` is the shared ``httpx`` client on
         ``anthropic<1`` and a bridged ``httpx2`` client on ``anthropic>=1.0`` (see
-        the module docstring). The proxy's Anthropic-native route is
-        LIVE-verified but requires a ``Format=Anthropic`` proxy."""
+        the module docstring). The proxy's Anthropic-native route requires a
+        ``Format=Anthropic`` proxy (docs/verified-apis.md §2)."""
         conn = self._openai_connection()  # base_url, api_key, default_headers
         return masked(
             {

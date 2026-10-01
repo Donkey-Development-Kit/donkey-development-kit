@@ -103,7 +103,7 @@ class Governance:
     def simulate(self) -> SimulationContext:
         """Start an ephemeral local Omni Gateway harness (BG §1.4).
 
-        Requires the ``[local]`` extra (docker). Whether Local Mode can run the
+        Requires the ``[local]`` extra (the simulator's ASGI server). Whether Local Mode can run the
         LLM Proxy / MCP Bridge at all is a gate in the Verification milestone; if not, LLM traffic
         is served by a clearly-labelled local mock proxy. Either way, skipped
         connected-only policies are reported loudly and non-suppressibly.

@@ -83,17 +83,14 @@ from .telemetry import (
     start_genai_span,
 )
 
-# Default request-header NAMES for the two correlation ids (BG §1.1, #195). Both are
-# UNVERIFIED placeholders: the gateway ECHOES ``x-correlation-id`` on RESPONSES
-# (verified), but whether it READS an inbound correlation/call-id header — and
-# under what name — is not. A customer overrides them per-Donkey via config
-# (``DonkeyConfig.correlation_header`` / ``.call_id_header``), resolved by each
-# client at construction (see :func:`_resolve_header_names`). Referencing the
-# placeholder VALUE (not ``.get()``) keeps these in sync with ``core/_verify``
-# without emitting the one-time unverified warning at import; the warning fires
-# once, at client construction, when a name is left un-overridden.
-CORRELATION_HEADER = _verify.CORRELATION_ID_HEADER.placeholder
-CALL_ID_HEADER = _verify.CALL_ID_HEADER.placeholder
+# Default request-header NAMES for the two correlation ids (BG §1.1, #195;
+# docs/verified-apis.md §3): the gateway reads and echoes ``X-Correlation-Id``,
+# and ``X-Donkey-Request-Id`` is the SDK's own per-call id. A customer overrides
+# them per-Donkey via config (``DonkeyConfig.correlation_header`` /
+# ``.call_id_header``), resolved by each client at construction (see
+# :func:`_resolve_header_names`).
+CORRELATION_HEADER = _verify.CORRELATION_ID_HEADER
+CALL_ID_HEADER = _verify.CALL_ID_HEADER
 # The OpenAI-compatible SDKs reject an empty ``api_key``. The governed proxy
 # authenticates on the client_id/client_secret headers (client-id-enforcement,
 # docs/verified-apis.md §2/§3) and ignores the bearer, so we fill the slot with a harmless sentinel
@@ -109,10 +106,8 @@ _BACKOFF_CAP_S = 30.0
 
 
 # The four cost dimensions → the config field that overrides that header name →
-# the UNVERIFIED placeholder used when there is no override (docs/verified-apis.md §3, #196). The
-# gateway-side names are the highest-priority unknown, so each is a loud,
-# overridable placeholder resolved here.
-_COST_HEADER_SOURCES: tuple[tuple[str, str, _verify.Unverified], ...] = (
+# the default name used when there is no override (docs/verified-apis.md §3, #196).
+_COST_HEADER_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("team", "cost_team_header", _verify.COST_TEAM_HEADER),
     ("project", "cost_project_header", _verify.COST_PROJECT_HEADER),
     ("env", "cost_env_header", _verify.COST_ENV_HEADER),
@@ -125,21 +120,19 @@ def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
     (docs/verified-apis.md §3, BG §1.7, #196).
 
     Each header NAME is the config override (``cost_*_header``) if set, else the
-    placeholder from ``core/_verify``. As of #522 the gateway-side cost header
-    names are a VERIFIED-NEGATIVE result (docs/verified-apis.md §3): the LLM
-    Gateway ingests no cost-tag header, so the name is a forward-looking
-    convention and reading the placeholder emits no warning — the authoritative
-    carrier is the ``donkey.cost.*`` span attribute. The transport therefore
+    default from ``core/_verify``. The LLM Gateway ingests no cost-tag header
+    (docs/verified-apis.md §3), so the name is a forward-looking convention — the
+    authoritative carrier is the ``donkey.cost.*`` span attribute. The transport therefore
     sends these only when ``DonkeyConfig.send_cost_headers`` is enabled; this
     builder itself does not check the flag. Values are pre-validated by
     :class:`CostTags`, so they are always header-safe."""
     override = {
-        field: getattr(cfg, attr) for field, attr, _placeholder in _COST_HEADER_SOURCES
+        field: getattr(cfg, attr) for field, attr, _default in _COST_HEADER_SOURCES
     }
-    placeholder = {field: ph for field, _attr, ph in _COST_HEADER_SOURCES}
+    default = {field: name for field, _attr, name in _COST_HEADER_SOURCES}
     headers: dict[str, str] = {}
     for field, value in tags.items():
-        name = override[field] or placeholder[field].get()
+        name = override[field] or default[field]
         headers[name] = value
     return headers
 
@@ -188,7 +181,7 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
     client. Missing credentials are simply omitted — :meth:`DonkeyConfig.validated`
     is where the absence is reported with actionable guidance.
 
-    * ``client-id`` mode (default): the LIVE-VERIFIED ``client_id`` +
+    * ``client-id`` mode (default): the ``client_id`` +
       ``client_secret`` pair enforced by ``client-id-enforcement``
       (docs/verified-apis.md §2/§3). This pair IS the per-agent attribution identity.
     * ``jwt`` mode (model-wallet ingress, #372/#509): the durable wallet-selector
@@ -300,14 +293,11 @@ class _CheckedEndpoints:
 
 def _resolve_header_names(cfg: DonkeyConfig) -> tuple[str, str]:
     """The ``(correlation, call_id)`` request-header NAMES for this config (BG §1.1,
-    #195): each is the config override if set, else the placeholder from
-    ``core/_verify``. As of #522 both are verified (docs/verified-apis.md §3): the
-    gateway reads the inbound ``X-Correlation-Id`` (echoed verbatim), and
-    ``X-Donkey-Request-Id`` is a confirmed client-owned per-call id the gateway
-    does not consume — so neither placeholder warns. Called ONCE per client at
+    #195): each is the config override if set, else the default from
+    ``core/_verify`` (docs/verified-apis.md §3). Called ONCE per client at
     construction, not on every request."""
-    correlation = cfg.correlation_header or _verify.CORRELATION_ID_HEADER.get()
-    call_id = cfg.call_id_header or _verify.CALL_ID_HEADER.get()
+    correlation = cfg.correlation_header or _verify.CORRELATION_ID_HEADER
+    call_id = cfg.call_id_header or _verify.CALL_ID_HEADER
     return correlation, call_id
 
 
@@ -418,9 +408,9 @@ def _gateway_unavailable(
 # --- GenAI span extraction (#192, BG §1.6) ----------------------------------
 # Shared by both transports (sync + async). Each takes a plain response/request,
 # so the span-recording logic lives in one place and cannot drift between the
-# two clients. The response header carrying the resolved upstream provider is
-# VERIFIED (LIVE) — docs/verified-apis.md §2 "Model routing" and §3 "Gateway
-# identity on response" — and is the SOLE source of gen_ai.system; absent → the
+# two clients. The response header carrying the resolved upstream provider
+# (docs/verified-apis.md §2 "Model routing" and §3 "Gateway identity on
+# response") is the SOLE source of gen_ai.system; absent → the
 # attribute is omitted, never guessed (verification discipline), because the proxy routes to
 # several providers and defaulting one would misattribute the call. The header
 # NAME is defined once in ``lastcall`` (which also parses it onto ``last_call``)
@@ -451,7 +441,7 @@ def _body_model(request: httpx.Request) -> str | None:
 
 # A Format=Gemini proxy carries the model in the URL path, never the body
 # (docs/verified-apis.md §2, #540/#691): ``/models/<model>:generateContent``
-# (LIVE-verified) and its SSE twin ``:streamGenerateContent``. The ingress ignores
+# and its SSE twin ``:streamGenerateContent``. The ingress ignores
 # a body ``model``, so this is read for the SDK's own bookkeeping only — the
 # request on the wire is never changed.
 _GEMINI_MODEL_PATH = re.compile(r"/models/([^/:]+):(?:generateContent|streamGenerateContent)$")
@@ -1067,8 +1057,8 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     It takes **no** :class:`AuthProvider`: that protocol is async-only
     (``async def token()``), and there is no correct way to await it from here.
     That costs nothing on the LLM data plane, which authenticates with the
-    ``client_id``/``client_secret`` header pair (LIVE-VERIFIED
-    docs/verified-apis.md §2/§3) rather than
+    ``client_id``/``client_secret`` header pair (docs/verified-apis.md §2/§3)
+    rather than
     a fetched token. It does mean the control-plane surfaces — ``registry`` and
     ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.

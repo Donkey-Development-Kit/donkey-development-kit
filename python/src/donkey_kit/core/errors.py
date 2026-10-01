@@ -15,11 +15,11 @@ Two design points that matter:
    #182). That default is the single source ``donkey doctor`` (#202) reuses, so
    a diagnosis and the exception it stands for can never disagree.
 
-The concrete HTTP-response → exception mapping lives in :func:`classify`, which
-is driven by a table that MUST be populated from real captured fixtures (BG §1.5),
-not hand-written guesses. Until fixtures exist, :func:`classify` maps only the
-status-code families it can defensibly infer and otherwise returns a generic
-:class:`DonkeyError`.
+The concrete HTTP-response → exception mapping lives in :func:`classify`: an
+ordered series of discriminators, each keyed on a rejection shape captured from
+a real gateway (docs/verified-apis.md §4, ``tests/fixtures/anypoint/llm_proxy/``,
+BG §1.5) rather than a hand-written guess. A shape it does not recognise falls
+through to a generic :class:`PolicyViolation` or :class:`DonkeyError`.
 """
 
 from __future__ import annotations
@@ -362,7 +362,7 @@ class UpstreamRequestError(DonkeyError):
     caller can act (fix the model, the params, etc.).
 
     ``remediation`` is a class attribute so ``donkey doctor`` (#202) has one
-    canonical wording for a model-rejected diagnosis (the LIVE-VERIFIED
+    canonical wording for a model-rejected diagnosis (the
     ``model_not_found`` passthrough, docs/verified-apis.md §4) rather than a
     second copy."""
 
@@ -515,8 +515,7 @@ def classify(
       ``code`` is ``"agent_killed"`` (no ``type``, no ``www-authenticate``) →
       :class:`AgentKilled`. Keyed on the body ``code``, not the status, and
       checked BEFORE the auth and generic-4xx rules so a killed agent is not
-      mis-typed as an :class:`UpstreamRequestError`. Live-verified 2026-09-29
-      against ``ddk-agent-kill-switch`` (#694).
+      mis-typed as an :class:`UpstreamRequestError` (#694).
     * **Token rate limit** rejects with **429** and an **empty body**; the budget
       state is entirely in headers (``x-token-limit`` / ``x-token-remaining`` /
       ``x-token-reset`` in ms). There is NO standard ``retry-after``.
@@ -537,19 +536,10 @@ def classify(
       (flagged reasons parsed from the sibling ``...-reason`` header). Also
       checked before the auth rule.
 
-    All three provider-backed guardrail shapes are now **live-verified**: Regex
-    Prompt Guard against ``ddk-injection-guard`` and Azure Content Safety against
-    ``ddk-azure-content-safety`` (both 2026-09-22, #253), and Amazon Bedrock
-    Guardrails against ``ddk-bedrock-guardrails`` (2026-09-24, #568) — the same
-    ``...-action: reject`` header family, now confirmed against a real Bedrock
-    upstream (docs/verified-apis.md §4). These shapes have no ``_verify.py``
-    constant — ``classify()`` reads them straight from the response — so the
-    record is the §4 rows, not a ``verified=True`` flip. The Injection Protection
-    body (``x-injection-protection: blocked``, a distinct policy) is the only
-    content-moderation shape that stays documented-only — no proxy running it is
-    deployed to capture (#253). Any other content-moderation / federated-guardrail
-    shape still falls
-    through to a generic
+    These shapes have no ``_verify.py`` constant — ``classify()`` reads them
+    straight from the response — so their verification record is the
+    docs/verified-apis.md §4 rows. Any other content-moderation /
+    federated-guardrail shape falls through to a generic
     :class:`PolicyViolation` whose message names what was observed and says the
     shape is unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate``
     shape (docs/verified-apis.md §4), a **403 carrying no ``www-authenticate`` header** and matching
@@ -605,9 +595,9 @@ def classify(
         )
 
     # Agent Kill Switch: 403 + nested object, code == "agent_killed" (no `type`).
-    # Verified LIVE 2026-09-29 against ddk-agent-kill-switch (#694). Keyed on the
-    # body code, not the status, and checked before the auth and generic-4xx
-    # rules: a killed agent is neither an auth failure nor an upstream mistake.
+    # docs/verified-apis.md §4 (#694). Keyed on the body code, not the status, and
+    # checked before the auth and generic-4xx rules: a killed agent is neither an
+    # auth failure nor an upstream mistake.
     if error_obj is not None and error_obj.get("code") == "agent_killed":
         message = _str_or_none(error_obj.get("message"))
         return AgentKilled(
@@ -617,8 +607,8 @@ def classify(
         )
 
     # Content-safety / guardrails policy: 403 + a vendor `...-action: reject`
-    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4).
-    # Azure verified LIVE 2026-09-22, Bedrock verified LIVE 2026-09-24 (#253/#568).
+    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4,
+    # #253/#568).
     # Checked before the 401/403 → auth rule because a moderation block is not an
     # auth failure. Keyed on the header, not the body, so a reject with an
     # unexpected or absent body is still caught.
@@ -639,8 +629,7 @@ def classify(
 
     # Regex Prompt Guard policy: 403 + a top-level `matched_patterns` list
     # (flat-string `error`, so NOT the nested upstream envelope; docs/verified-apis.md §4).
-    # Verified LIVE 2026-09-22 against ddk-injection-guard (#253); body matched
-    # the committed fixture byte-for-byte. Checked before the 401/403 → auth
+    # #253. Checked before the 401/403 → auth
     # rule so a deny-list block is not mis-typed as an auth failure.
     matched = body.get("matched_patterns") if body is not None else None
     if isinstance(matched, list):
@@ -757,9 +746,7 @@ def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     importing ``DonkeyConfig`` — it only reads a plain dict carried on the same
     object ``response.request`` returns. When the stamp is absent (a response not
     produced by our transport — e.g. a hand-built stock-client response), the
-    placeholder names are used directly, **not** ``Unverified.get()``, so reading
-    an id back never emits the verification discipline's unverified warning; that warning belongs at
-    injection time, in the transport.
+    default names from ``core/_verify`` are used.
 
     Returns ``(None, None)`` when the request is unavailable (httpx raises if it
     was never set on the response)."""
@@ -770,11 +757,11 @@ def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     headers = request.headers
     corr_name = (
         request.extensions.get("donkey_correlation_header")
-        or _verify.CORRELATION_ID_HEADER.placeholder
+        or _verify.CORRELATION_ID_HEADER
     )
     call_name = (
         request.extensions.get("donkey_call_id_header")
-        or _verify.CALL_ID_HEADER.placeholder
+        or _verify.CALL_ID_HEADER
     )
     return headers.get(corr_name), headers.get(call_name)
 
@@ -914,10 +901,8 @@ def _code_str(value: Any) -> str | None:
 
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
-# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4).
-# Azure Content Safety verified LIVE 2026-09-22 against ddk-azure-content-safety
-# (#253); Amazon Bedrock Guardrails verified LIVE 2026-09-24 against
-# ddk-bedrock-guardrails (#568).
+# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
+# #253/#568).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
     (
         "x-llm-proxy-azure-content-safety-action",

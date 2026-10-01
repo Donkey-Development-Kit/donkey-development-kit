@@ -38,7 +38,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
     import tomli as tomllib
 
 from . import _verify
-from ._verify import REGION_HOSTS
+from ._verify import REGION_HOSTS, UNVERIFIED_REGION_HOSTS
 from .cost import CostTags
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
@@ -56,7 +56,7 @@ Region = Literal["us", "eu", "ca", "jp"]
 OnModelSubstitution = Literal["off", "raise"]
 
 # How the caller authenticates to the LLM proxy DATA plane (BG §1.1, #509).
-# ``"client-id"`` (default): the LIVE-VERIFIED ``client_id``/``client_secret``
+# ``"client-id"`` (default): the ``client_id``/``client_secret``
 # request-header pair (client-id-enforcement, docs/verified-apis.md §2/§3). ``"jwt"``:
 # a wallet-backed proxy where Client ID Enforcement is disabled and the caller is
 # identified from an IdP-issued JWT validated by the JWT Validation policy, with
@@ -89,7 +89,7 @@ _WORKDIR_KINDS: frozenset[SourceKind] = frozenset({"project", "local"})
 _FILE_KINDS: frozenset[SourceKind] = _WORKDIR_KINDS | {"user"}
 
 # The keys that name a request header: key, env var, and the default name.
-_HEADER_KEYS: tuple[tuple[str, str, _verify.Unverified], ...] = (
+_HEADER_KEYS: tuple[tuple[str, str, str], ...] = (
     ("correlation_header", "DONKEY_CORRELATION_HEADER", _verify.CORRELATION_ID_HEADER),
     ("call_id_header", "DONKEY_CALL_ID_HEADER", _verify.CALL_ID_HEADER),
     ("cost_team_header", "DONKEY_COST_TEAM_HEADER", _verify.COST_TEAM_HEADER),
@@ -179,7 +179,7 @@ class DonkeyConfig:
 
     # --- LLM proxy (data plane) — SEPARATE credential from the control plane ---
     # Auth is a client_id/client_secret REQUEST-header pair (client-id-enforcement),
-    # LIVE-VERIFIED — docs/verified-apis.md §2/§3. NOT a bearer token.
+    # docs/verified-apis.md §2/§3. NOT a bearer token.
     llm_proxy_url: str | None = None            # env: DONKEY_LLM_PROXY_URL
     llm_proxy_client_id: str | None = None      # env: DONKEY_LLM_PROXY_CLIENT_ID
     llm_proxy_client_secret: str | None = field(  # env: DONKEY_LLM_PROXY_CLIENT_SECRET
@@ -193,7 +193,7 @@ class DonkeyConfig:
 
     # --- LLM proxy auth mode (BG §1.1, #509) ---
     # Which data-plane ingress the proxy uses. Default ``"client-id"`` (the
-    # LIVE-VERIFIED CIE header pair above). ``"jwt"`` selects the model-wallet
+    # CIE header pair above). ``"jwt"`` selects the model-wallet
     # ingress: no ``client_secret``, an IdP JWT supplied dynamically via an
     # ``AuthProvider`` (``Donkey(llm_auth=...)``), and a durable wallet-selector
     # client ID sent as the ``X-Client-Id`` header (docs/verified-apis.md §2/§3, #372).
@@ -210,9 +210,8 @@ class DonkeyConfig:
     business_group: str | None = None     # env: DONKEY_BUSINESS_GROUP
 
     # --- Correlation request-header NAME overrides (BG §1.1, #195) ---
-    # The gateway's inbound correlation/call-id header names are UNVERIFIED
-    # (docs/verified-apis.md §3); these let a customer point them at the real names without a
-    # release. Unset → the loud ``Unverified`` placeholders in ``core/_verify``.
+    # Override the correlation/call-id request-header names (docs/verified-apis.md
+    # §3) without a release. Unset → the defaults in ``core/_verify``.
     # These and the ``cost_*_header`` names are checked on construction: see
     # ``core/header_names`` for the names they may not use.
     correlation_header: str | None = None  # env: DONKEY_CORRELATION_HEADER
@@ -220,9 +219,9 @@ class DonkeyConfig:
 
     # --- Cost-attribution tags + request-header NAME overrides (docs/verified-apis.md §3, #196) ---
     # The fixed dimensions (team/project/env/enduser.id), set once and emitted on
-    # every call. The gateway-side header names are the highest-priority unknown
-    # (docs/verified-apis.md §3); the ``cost_*_header`` overrides let a customer point them at the
-    # real names — unset → the loud ``Unverified`` placeholders in ``core/_verify``.
+    # every call. The gateway ingests no cost-tag header (docs/verified-apis.md
+    # §3), so these are sent only with ``send_cost_headers``; the ``cost_*_header``
+    # overrides rename them — unset → the defaults in ``core/_verify``.
     cost: CostTags = CostTags()            # env: DONKEY_COST_{TEAM,PROJECT,ENV,ENDUSER_ID}
     cost_team_header: str | None = None    # env: DONKEY_COST_TEAM_HEADER
     cost_project_header: str | None = None  # env: DONKEY_COST_PROJECT_HEADER
@@ -268,7 +267,7 @@ class DonkeyConfig:
     def _check_header_names(self) -> None:
         """Refuse a configurable header name that isn't safe to send, or that
         two keys share (see :mod:`donkey_kit.core.header_names`)."""
-        in_use = {key: getattr(self, key) or dflt.placeholder for key, _, dflt in _HEADER_KEYS}
+        in_use = {key: getattr(self, key) or dflt for key, _, dflt in _HEADER_KEYS}
         for key, env_var, _ in _HEADER_KEYS:
             name = getattr(self, key)
             if name is None:
@@ -385,8 +384,14 @@ class DonkeyConfig:
     # --------------------------------------------------------------- derived
     @property
     def control_plane_url(self) -> str:
-        """The Anypoint control-plane base URL — explicit override or region."""
-        return self.base_url or REGION_HOSTS[self.region]
+        """The Anypoint control-plane base URL — explicit override or region.
+
+        A region whose host is unconfirmed (docs/verified-apis.md §1) warns once
+        with an ``UnverifiedValueWarning``; set ``base_url`` to silence it."""
+        if self.base_url:
+            return self.base_url
+        unconfirmed = UNVERIFIED_REGION_HOSTS.get(self.region)
+        return unconfirmed.get() if unconfirmed else REGION_HOSTS[self.region]
 
     def source_of(self, name: str) -> ConfigSource:
         """Where field ``name`` was resolved from. ``explicit`` (set in code) when
@@ -459,7 +464,7 @@ class DonkeyConfig:
                         "— the wallet-selector X-Client-Id, required in jwt auth mode"
                     )
             else:
-                # client-id enforcement (default): the LIVE-VERIFIED CIE pair.
+                # client-id enforcement (default): the CIE pair.
                 if not self.llm_proxy_client_id:
                     missing.append("llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)")
                 if not self.llm_proxy_client_secret:

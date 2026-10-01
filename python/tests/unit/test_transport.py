@@ -453,8 +453,8 @@ async def test_default_header_names_survive_classify_round_trip() -> None:
 
 async def test_classify_round_trip_emits_no_unverified_warning() -> None:
     """#363 AC4 / verification discipline: read-back must never emit an ``UnverifiedValueWarning`` —
-    that warning belongs at injection time. The extensions fallback touches
-    ``.placeholder``, never ``Unverified.get()``. Covers both the stamped path
+    that warning belongs at injection time. The extensions fallback reads the
+    plain ``_verify`` default names. Covers both the stamped path
     and a response with no stamp at all (a hand-built stock-client response)."""
     captured: dict[str, httpx.Request] = {}
 
@@ -1601,25 +1601,26 @@ def test_cost_headers_use_placeholder_name_without_warning() -> None:
     # #522: the gateway-side cost header names are a VERIFIED-NEGATIVE result — the
     # deployed proxy has no inbound cost-tag ingestion, so the name is a
     # forward-looking convention, not an open unknown. With no config override the
-    # header NAME is the placeholder AND the quiet default path emits NO
-    # UnverifiedValueWarning (verified=True). Escalate the warning to an error so a
-    # regression that re-arms it is caught here.
+    # header NAME is the ``_verify`` default AND the quiet default path emits NO
+    # UnverifiedValueWarning. Escalate the warning to an error so a regression
+    # that re-arms it is caught here.
     from donkey_kit.core import _verify
 
     cfg = DonkeyConfig(cost=CostTags(team="support"))
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         headers = cost_headers(cfg, cfg.cost)
-    assert headers[_verify.COST_TEAM_HEADER.placeholder] == "support"
+    assert headers[_verify.COST_TEAM_HEADER] == "support"
 
 
 def test_verified_inbound_attribution_headers_are_quiet() -> None:
     """#522: the six inbound correlation / cost / per-call-id request-header names
     are live-verified — ``X-Correlation-Id`` is read by the gateway, and the cost
     + per-call-id names are confirmed as a client-side / non-contract shape (the
-    gateway ingests no such header). All six placeholders are ``verified=True``, so
-    reading any of them emits NO ``UnverifiedValueWarning``. Pins the quiet path so
-    a regression that re-arms the warning is caught in CI."""
+    gateway ingests no such header). All six are plain ``str`` constants, not
+    ``Unverified`` placeholders, so reading them can never emit an
+    ``UnverifiedValueWarning``. Pins the quiet path so a regression that re-wraps
+    one is caught in CI."""
     from donkey_kit.core import _verify
 
     quiet = (
@@ -1630,11 +1631,8 @@ def test_verified_inbound_attribution_headers_are_quiet() -> None:
         _verify.COST_ENV_HEADER,
         _verify.COST_ENDUSER_HEADER,
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", UnverifiedValueWarning)
-        for placeholder in quiet:
-            assert placeholder.verified is True
-            assert placeholder.get()  # reading it must not warn/raise
+    for name in quiet:
+        assert isinstance(name, str) and name
 
 
 async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
@@ -1662,7 +1660,7 @@ async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
                 await client.get("https://x/thing")
 
     assert seen[CORRELATION_HEADER.lower()] == "run-522"
-    assert seen[_verify.COST_TEAM_HEADER.placeholder.lower()] == "support"
+    assert seen[_verify.COST_TEAM_HEADER.lower()] == "support"
 
 
 def test_effective_cost_tags_merges_run_over_config() -> None:

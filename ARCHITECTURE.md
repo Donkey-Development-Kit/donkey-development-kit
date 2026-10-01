@@ -213,10 +213,12 @@ Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 **How a value flips to verified.** When a value is confirmed against a sandbox,
 two edits move together, never apart: flip its row in
-[`docs/verified-apis.md`](docs/verified-apis.md) to `VERIFIED`, **and** set
-`verified=True` on its `Unverified(...)` entry in `core/_verify.py` so the warning
-stops firing. `docs/verified-apis.md` is the single source of truth for what is
-verified and the worklist of what is still blocked.
+[`docs/verified-apis.md`](docs/verified-apis.md) to `VERIFIED`, **and** replace
+its `Unverified(...)` entry in `core/_verify.py` with a plain constant so the
+warning stops firing. `docs/verified-apis.md` is the single source of truth for
+what is verified and the worklist of what is still blocked. Code outside
+`core/_verify.py` cites it (`docs/verified-apis.md §N`) and never restates a
+status or a date; `scripts/check_verification_claims.py` enforces that in CI.
 
 What is verified today: the LLM-proxy data plane (its base-URL shape — note there
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,

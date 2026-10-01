@@ -67,7 +67,7 @@ class Adapter:
 
     def _proxy_headers(self) -> dict[str, str]:
         """Default headers for a native OpenAI-compatible client pointed at the
-        proxy: the LIVE-VERIFIED client_id/client_secret consumer-auth pair plus
+        proxy: the client_id/client_secret consumer-auth pair plus
         any attribution headers (docs/verified-apis.md §2/§3)."""
         return proxy_auth_headers(self._cfg)
 
