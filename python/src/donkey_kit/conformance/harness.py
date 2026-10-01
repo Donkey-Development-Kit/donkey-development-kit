@@ -23,10 +23,12 @@ sibling, kept out of the five production layers by an import-linter contract.
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import inspect
 import logging
-from collections.abc import Callable
-from contextlib import nullcontext
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from typing import Any
 
@@ -56,9 +58,10 @@ __all__ = [
 # a real string.
 DEFAULT_RUN_INPUT = "This is a Donkey conformance probe. Reply briefly."
 
-# Filled in only when the customer's environment does not already supply the LLM
-# proxy config. The harness never connects (the transport is swapped for every
-# scenario), so these just need to be non-empty to satisfy validated(need="llm").
+# Always used in place of the customer's LLM proxy config (#737). The harness
+# never connects (the transport is swapped for every scenario), so these just need
+# to be non-empty to satisfy validated(need="llm"). The ``.invalid`` TLD (RFC 2606)
+# never resolves, so even a client the agent builds itself cannot reach a real host.
 _PLACEHOLDER = "donkey-conformance"
 _PLACEHOLDER_URL = "https://donkey-conformance.invalid"
 
@@ -72,20 +75,28 @@ class ConformanceUsageError(Exception):
 
 
 def _offline_config() -> DonkeyConfig:
-    """The customer's own config, with placeholder LLM credentials filled in
-    only where absent. Real config (base URL, model catalog) is preserved so the
-    agent is built as it would be in production; the placeholders exist purely so
-    ``donkey.openai()`` constructs without live credentials, since nothing here
-    ever reaches the network."""
+    """The customer's own config with every endpoint credential replaced (#737).
+
+    Non-secret settings (model catalog, attribution, header names) are kept so
+    the agent is built as it would be in production. The proxy URL and its
+    credentials are *always* the placeholders, whatever the environment says: an
+    agent that builds its own client from the config it was handed then points at
+    a host that cannot resolve, not at the customer's live gateway. The
+    control-plane pair is cleared too, so ``Donkey`` builds no Anypoint token
+    fetcher, and the auth mode is pinned to client-id so a model-wallet JWT is
+    never needed."""
     cfg = DonkeyConfig.from_env()
-    # Replace with named str fields (not **dict) so the types stay checkable;
-    # ``x or <placeholder>`` keeps any value the customer has set and fills only
-    # the ones they have not.
+    # Replace with named fields (not **dict) so the types stay checkable.
     return replace(
         cfg,
-        llm_proxy_url=cfg.llm_proxy_url or _PLACEHOLDER_URL,
-        llm_proxy_client_id=cfg.llm_proxy_client_id or _PLACEHOLDER,
-        llm_proxy_client_secret=cfg.llm_proxy_client_secret or _PLACEHOLDER,
+        llm_proxy_url=_PLACEHOLDER_URL,
+        llm_proxy_client_id=_PLACEHOLDER,
+        llm_proxy_client_secret=_PLACEHOLDER,
+        llm_proxy_key=None,
+        llm_proxy_auth="client-id",
+        llm_proxy_wallet_client_id=None,
+        client_id=None,
+        client_secret=None,
     )
 
 
@@ -139,6 +150,69 @@ class _ProbeTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         return self._serve(request)
+
+
+# The httpx-family stacks whose real network transports the harness blocks.
+# ``httpx2`` is Pydantic's continuation of httpx with its own classes; openai 3.x
+# and anthropic 1.x build their clients on it, so blocking httpx alone would let
+# a stock OpenAI client straight through (#737).
+_HTTP_STACKS = ("httpx", "httpx2")
+
+
+def _installed_http_stacks() -> list[Any]:
+    """The httpx-family modules that are installed, imported now so a client the
+    agent builds later in the scenario gets the patched classes."""
+    stacks: list[Any] = []
+    for name in _HTTP_STACKS:
+        if importlib.util.find_spec(name) is not None:
+            stacks.append(importlib.import_module(name))
+    return stacks
+
+
+@contextmanager
+def _block_real_transports(attempts: list[str]) -> Iterator[None]:
+    """Refuse every send that reaches a real network transport (#737).
+
+    The Donkey's own clients are swapped onto the counting probe, so anything
+    that arrives at ``HTTPTransport`` / ``AsyncHTTPTransport`` (of httpx, or of
+    httpx2 when installed) came from a client the agent built itself: a
+    framework that owns its transport, or a stock ``httpx``/OpenAI client. Each
+    one is recorded in ``attempts`` and failed with that stack's own
+    ``ConnectError``, the error the agent would see if the host were down, so
+    nothing leaves the process. The patch is on the classes, so it also covers
+    clients built in other threads, and it is removed on exit."""
+    restore: list[tuple[type, str, Any]] = []
+
+    def block(stack: Any) -> None:
+        def refuse(request: Any) -> Exception:
+            attempts.append(f"{request.method} {request.url}")
+            error: Exception = stack.ConnectError(
+                "blocked by the Donkey conformance harness: this request did not "
+                "go through the Donkey client",
+                request=request,
+            )
+            return error
+
+        def blocked_sync(self: Any, request: Any) -> Any:
+            raise refuse(request)
+
+        async def blocked_async(self: Any, request: Any) -> Any:
+            raise refuse(request)
+
+        for cls, method, blocked in (
+            (stack.HTTPTransport, "handle_request", blocked_sync),
+            (stack.AsyncHTTPTransport, "handle_async_request", blocked_async),
+        ):
+            restore.append((cls, method, cls.__dict__[method]))
+            setattr(cls, method, blocked)
+
+    try:
+        for stack in _installed_http_stacks():
+            block(stack)
+        yield
+    finally:
+        for cls, method, original in reversed(restore):
+            setattr(cls, method, original)
 
 
 # Standard LogRecord attribute names, so :func:`_render_records` can tell an
@@ -207,18 +281,24 @@ class ConformanceHarness:
         self._donkey: Donkey | None = None
         self._agent: Any = None
         self._probe: _ProbeTransport | None = None
+        self._bypass_attempts: list[str] = []
 
     async def run_scenario(self, scenario: Scenario) -> Outcome:
         """Build a fresh ``Donkey`` + agent, run the scenario's check against
         this harness, and tear the ``Donkey`` down — so no transport swap, budget
-        state, or agent state leaks between scenarios."""
+        state, or agent state leaks between scenarios. Real network transports
+        are blocked from before the agent is built until it is torn down."""
         self._donkey = Donkey(_offline_config())
         self._probe = None
+        self._bypass_attempts = []
         try:
-            self._agent = _build_agent(self._factory, self._donkey)
-            return await scenario.check(self)
+            with _block_real_transports(self._bypass_attempts):
+                try:
+                    self._agent = _build_agent(self._factory, self._donkey)
+                    return await scenario.check(self)
+                finally:
+                    await self._donkey.aclose()
         finally:
-            await self._donkey.aclose()
             self._donkey = None
             self._agent = None
             self._probe = None
@@ -272,6 +352,23 @@ class ConformanceHarness:
             raised=raised,
             wire_sends=self._probe.wire_sends if self._probe is not None else 0,
             log_text=_render_records(records),
+            bypass_attempts=len(self._bypass_attempts),
+            unobservable_adapters=self._unobservable_adapters(),
+        )
+
+    def _unobservable_adapters(self) -> tuple[str, ...]:
+        """The adapters the agent resolved on this ``Donkey`` whose model calls
+        do not pass through its transport (``observes_last_call`` is False), so
+        the probe can never see them."""
+        donkey = self._donkey
+        if donkey is None:
+            return ()
+        return tuple(
+            sorted(
+                name
+                for name, adapter in donkey._adapter_cache.items()
+                if not adapter.observes_last_call
+            )
         )
 
     def _arm(self, responder: Callable[[httpx.Request], httpx.Response]) -> None:
