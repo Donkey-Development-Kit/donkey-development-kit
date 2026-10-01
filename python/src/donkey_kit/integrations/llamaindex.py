@@ -7,6 +7,13 @@ routes to the completions endpoint and fails against a chat-only proxy. We
 always set it True. This is the single most common LlamaIndex-with-a-gateway
 bug.
 
+GOTCHA (#829): LlamaIndex keys its reasoning-model handling (``O1_MODELS``) and
+its context-window table on the exact bare OpenAI name. The
+``<provider>/<model>`` names a model-based proxy routes on miss both, and
+``OpenAILike`` gives every model a 3,900-token window. ``llm()`` resolves the
+bare name after one provider prefix and applies both. ``connection_kwargs()``
+carries no model, so an ``OpenAILike`` you build yourself gets neither.
+
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
 
@@ -50,14 +57,65 @@ class LlamaIndexAdapter(Adapter):
 
     def llm(self, model: str, **kw: Any) -> OpenAILike:
         """Return a native ``OpenAILike`` at the proxy. An ``api_base`` override
-        must pass the https check."""
+        must pass the https check.
+
+        Model defaults come from the bare name after one ``<provider>/`` prefix
+        (#829). ``context_window`` comes from LlamaIndex's own table, or stays at
+        its 3,900 default for a name the table doesn't know. A prefixed reasoning
+        model gets ``temperature=1.0``, and ``max_tokens`` / ``reasoning_effort``
+        are sent the way LlamaIndex sends them for the bare name. Caller kwargs
+        win."""
         self._allow_endpoints(kw, "api_base")
         with self._native_import():
             from llama_index.llms.openai_like import (
                 OpenAILike,  # VERIFY name/path: docs/verified-apis.md §8
             )
 
+        kw = _model_defaults(model, kw)
         return OpenAILike(model=model, **{**self.connection_kwargs(), **kw})
+
+
+def _model_defaults(model: str, kw: dict[str, Any]) -> dict[str, Any]:
+    """``kw`` plus the defaults LlamaIndex would pick for the bare name after one
+    ``<provider>/`` prefix (#829). ``llama-index-llms-openai`` is a dependency of
+    ``-openai-like``, so its tables are present in any real install; without
+    them, ``kw`` is returned as is."""
+    try:
+        from llama_index.llms.openai.utils import (  # VERIFY: docs/verified-apis.md §8
+            O1_MODELS,
+            openai_modelname_to_contextsize,
+        )
+    except ImportError:
+        return kw
+    _, sep, rest = model.partition("/")
+    bare = rest if sep else model
+    if "context_window" not in kw:
+        try:
+            kw["context_window"] = openai_modelname_to_contextsize(bare)
+        except ValueError:
+            pass  # not an OpenAI name: keep OpenAILike's default
+    if sep and bare in O1_MODELS:
+        kw = _reasoning_model_kwargs(kw)
+    return kw
+
+
+def _reasoning_model_kwargs(kw: dict[str, Any]) -> dict[str, Any]:
+    """Apply to a prefixed reasoning-model name what LlamaIndex already does for
+    the bare name. ``temperature`` becomes 1.0, because LlamaIndex otherwise
+    sends 0.1, which gpt-5 rejects. ``max_tokens`` is sent as
+    ``max_completion_tokens``, and ``reasoning_effort`` is sent instead of
+    dropped. Both go through ``additional_kwargs``, which LlamaIndex merges into
+    the request body. An explicit entry there wins."""
+    kw = {"temperature": 1.0, **kw}
+    extra = dict(kw.get("additional_kwargs") or {})
+    max_tokens = kw.pop("max_tokens", None)
+    if max_tokens is not None:
+        extra.setdefault("max_completion_tokens", max_tokens)
+    if kw.get("reasoning_effort") is not None:
+        extra.setdefault("reasoning_effort", kw["reasoning_effort"])
+    if extra:
+        kw["additional_kwargs"] = extra
+    return kw
 
 
 def llm(model: str, **kw: Any) -> OpenAILike:
