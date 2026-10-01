@@ -16,6 +16,9 @@ things so the exemption stays honest:
 3. Header-only adapters do not receive the active run correlation ID in their
    static ``default_headers`` snapshot, and both record the corresponding
    ``correlation_id_propagated`` exemption.
+4. Only CrewAI records the ``jwt_token_refreshed`` exemption, and ADK's
+   ``model()``, LlamaIndex and Agent Framework really do send the rotating JWT
+   per call through the shared client (#783).
 
 Reading ``observes_last_call`` off each adapter class imports only the adapter
 modules, which import their framework lazily inside methods — so this needs no
@@ -27,13 +30,16 @@ from __future__ import annotations
 
 import importlib
 
+import httpx
+import pytest
+
 # Sibling data module: tests/conformance/ is not a package, so pytest's prepend
 # import mode puts this directory on sys.path and ``suite`` resolves to it.
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS
 
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.telemetry import run_context
-from donkey_kit.core.transport import build_http_client
+from donkey_kit.core.transport import DonkeyAsyncClient, build_http_client
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.integrations._base import Adapter
 
@@ -56,20 +62,90 @@ def test_scenario_is_registered() -> None:
     )
 
 
-def test_jwt_exemption_recorded_for_transport_detached_adapters() -> None:
-    # A rotating model-wallet JWT can only be refreshed per-send by our transport
-    # (#509). The adapters whose framework owns the transport (ADK's LiteLLM,
-    # CrewAI's native OpenAI provider) or that take only a one-time
-    # default_headers snapshot pin the token at construction, so jwt auth
-    # mode is unsupported on them — asserted here, exactly like the last_call and
-    # correlation-id exemptions, never a silent skip. That is the SAME set of four
-    # non-transport-routed adapters.
+def test_jwt_exemption_recorded_only_for_crewai() -> None:
+    # A rotating model-wallet JWT is attached only by our transport, per send
+    # (#509). CrewAI's native OpenAI provider takes a header snapshot that never
+    # carries it (#828), so it alone records the exemption; the adapters below
+    # send through the shared client and must not (#783).
     exempted = {
         adapter
         for adapter, limits in KNOWN_LIMITATIONS.items()
         if _JWT_SCENARIO in limits
     }
-    assert exempted == {"adk", "crewai", "llamaindex", "agent_framework"}
+    assert exempted == {"crewai"}
+
+
+class _RotatingToken:
+    def __init__(self) -> None:
+        self.sent = 0
+
+    async def token(self) -> str:
+        self.sent += 1
+        return f"jwt-{self.sent}"
+
+    async def invalidate(self) -> None:
+        return None
+
+
+_COMPLETION = {
+    "id": "c",
+    "object": "chat.completion",
+    "created": 0,
+    "model": "m",
+    "choices": [
+        {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {"role": "assistant", "content": "ok"},
+        }
+    ],
+}
+
+
+@pytest.mark.parametrize("attr", ["adk", "agent_framework"])
+async def test_jwt_refreshed_through_adapter_openai_client(attr: str) -> None:
+    # ADK's model() and Agent Framework take a pre-built AsyncOpenAI; the one the
+    # adapter builds sends through the shared client, so each send carries the
+    # provider's current JWT, not the client-id-enforced placeholder.
+    pytest.importorskip("openai")
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("authorization"))
+        return httpx.Response(200, json=_COMPLETION)
+
+    cfg = DonkeyConfig(
+        llm_proxy_url="https://proxy.example.com/",
+        llm_proxy_auth="jwt",
+        llm_proxy_wallet_client_id="wallet",
+    )
+    client = DonkeyAsyncClient(cfg, _RotatingToken(), transport=httpx.MockTransport(handler))
+    try:
+        openai_client = _adapter_class(attr)(cfg, client)._proxy_openai_client()
+        for _ in range(2):
+            await openai_client.chat.completions.create(
+                model="m", messages=[{"role": "user", "content": "hi"}]
+            )
+    finally:
+        await client.aclose()
+
+    assert seen == ["Bearer jwt-1", "Bearer jwt-2"]
+
+
+async def test_llamaindex_async_calls_use_the_shared_client() -> None:
+    # LlamaIndex is handed the shared async client itself, so its async calls get
+    # the per-send JWT refresh pinned in tests/unit/test_transport.py.
+    cfg = DonkeyConfig(
+        llm_proxy_url="https://proxy.example.com/",
+        llm_proxy_auth="jwt",
+        llm_proxy_wallet_client_id="wallet",
+    )
+    client = build_http_client(cfg, _RotatingToken())
+    try:
+        kw = _adapter_class("llamaindex")(cfg, client).connection_kwargs()
+        assert kw["async_http_client"] is client
+    finally:
+        await client.aclose()
 
 
 def test_every_known_limitation_names_a_real_scenario() -> None:
