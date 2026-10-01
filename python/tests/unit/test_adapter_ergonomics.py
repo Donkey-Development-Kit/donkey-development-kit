@@ -577,7 +577,7 @@ def test_adk_gemini_connection_kwargs_inject_the_shared_client() -> None:
     opts = kw["client_kwargs"]["http_options"]
     assert kw["base_url"] == opts["base_url"] == "https://proxy"
     assert opts["api_version"] == ""  # the proxy route has no /v1beta segment
-    assert opts["httpx_async_client"] is http
+    assert opts["httpx_async_client"] is http.view()
     assert opts["headers"]["client_id"] == "cid"
     assert opts["timeout"] == int(cfg.timeout_s * 1000)  # genai sends None otherwise
     assert kw["client_kwargs"]["api_key"]  # google-genai requires the slot

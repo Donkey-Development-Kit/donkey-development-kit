@@ -95,7 +95,11 @@ framework that may not be installed.
     is exactly one transport and one header-injection point for model calls. It
     carries only the LLM-proxy credential: the `client_id`/`client_secret` header
     pair in the default client-id mode (no token provider), or the model-wallet
-    JWT from `Donkey(llm_auth=…)` in `jwt` mode;
+    JWT from `Donkey(llm_auth=…)` in `jwt` mode. Frameworks never get this
+    client itself: they get its non-owning view (`DonkeyAsyncClient.view()`,
+    public as `Donkey.http_client()`), which sends through it and whose close
+    is a no-op, so a framework that closes its client (Strands, `async with`)
+    can't end the pool. Only `Donkey.aclose()`/`close()` do (#733);
   - the **control-plane** client backs the registry and any other Anypoint
     platform call, authenticated by the connected-app token (`Donkey(auth=…)`,
     or the default `AnypointConnectedApp`). It never carries the wallet JWT or

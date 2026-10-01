@@ -274,7 +274,7 @@ async def test_every_adapter_without_a_provider_refuses_bearer_mode(name: str) -
     cls = getattr(importlib.import_module(spec.module, "donkey_kit.integrations"), spec.cls)
     http = DonkeyAsyncClient(cfg, None)
     try:
-        with pytest.raises(ConfigError, match="AuthProvider|can't send the token"):
+        with pytest.raises(ConfigError, match="AuthProvider|CrewAI does not support"):
             cls(cfg, http).connection_kwargs()
     finally:
         await http.aclose()
@@ -301,7 +301,7 @@ async def test_crewai_refuses_bearer_mode_even_with_a_provider() -> None:
     from donkey_kit.integrations.crewai import CrewAIAdapter
 
     async with Donkey(_bearer_cfg(), llm_auth=StaticToken(_TOKEN)) as donkey:
-        with pytest.raises(ConfigError, match="CrewAI can't send the token"):
+        with pytest.raises(ConfigError, match="CrewAI does not support llm_proxy_auth='bearer'"):
             CrewAIAdapter(donkey.config, donkey._http).connection_kwargs()
 
 

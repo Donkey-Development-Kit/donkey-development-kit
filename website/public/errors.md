@@ -28,6 +28,7 @@ specific headers.
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
+| Bare model name on a multi-provider proxy | `400` | flat `{"error":"…"}` saying the model "is not in the known unique model map" | `ModelNotRoutable` (`.model`) |
 
 `PIIDetected`, `AgentKilled`, the regex-prompt-guard check, and the content-safety
 check are all evaluated **before** the generic 401/403→auth rule, because each is
@@ -60,6 +61,7 @@ DonkeyError                     # base of the whole tree
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
+├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
@@ -92,6 +94,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
+| `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md). |
 
@@ -273,3 +276,8 @@ Any content-moderation or federated-guardrail response that matches none of the
 discriminators above falls through to a generic `PolicyViolation` rather than an
 invented type. DDK only types a refusal by a discriminator it can identify
 reliably; everything else stays inspectable via `.response`.
+
+One `400` that used to land here is now typed: a bare model name (`gpt-5-mini`)
+sent to a model-based proxy with more than one provider. The gateway rejects it
+before any upstream call, and `classify()` returns `ModelNotRoutable`. It keeps
+the gateway's text and is not a `PolicyViolation`.

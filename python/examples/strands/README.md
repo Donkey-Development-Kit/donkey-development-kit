@@ -52,6 +52,7 @@ m = OpenAIModel(
         },
         "http_client": httpx.AsyncClient(...),
     },
+    stream=False,  # a Gemini-routed proxy sends no chunk deltas when streaming
 )
 ```
 

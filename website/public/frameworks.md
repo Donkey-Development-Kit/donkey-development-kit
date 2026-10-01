@@ -83,6 +83,11 @@ carries the SDK's HTTP client in the form that framework takes: `http_client`
 and `http_async_client` (LangGraph), `http_client` and `async_http_client`
 (LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
 or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
+Each HTTP client is a non-owning view of the SDK's shared client: it sends
+through the shared client, and closing it (as Strands does after every call, or
+`async with` on an OpenAI client) leaves the shared client open. Only
+`donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
+returns the same view if you build a framework client by hand.
 
 ```python
 kwargs = donkey.llamaindex.connection_kwargs()
@@ -148,9 +153,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 | CrewAI | ✅ (`extra_headers`) | ❌ | CrewAI's native OpenAI provider builds its own HTTP client: correlation is per client and `donkey.last_call` is not populated. An `interceptor` keeps credentials to checked endpoints. |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
-attached only by the SDK's shared async client. CrewAI sends `X-Client-Id` but
-no JWT, so a wallet proxy answers `401`. Sync calls such as LangGraph's
-`invoke()` raise `ConfigError` instead of sending. See the
+attached only by the SDK's shared async client. CrewAI can't carry it, so it
+raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
+also raise `ConfigError` instead of sending. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 [`bearer` mode](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#bearer-token-auth-mode) has the same
 reach; there, CrewAI raises `ConfigError` instead of sending no token.

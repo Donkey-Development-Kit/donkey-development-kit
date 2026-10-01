@@ -25,7 +25,12 @@ import pytest
 from donkey_kit import Donkey
 from donkey_kit.core import runtime
 from donkey_kit.core.auth import AnypointConnectedApp
-from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient
+from donkey_kit.core.transport import (
+    DonkeyAsyncClient,
+    DonkeyAsyncClientView,
+    DonkeyClient,
+    DonkeyClientView,
+)
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.integrations._base import Adapter, default_adapter
 
@@ -60,7 +65,7 @@ def test_every_default_adapter_shares_the_default_runtime(env: pytest.MonkeyPatc
     rt = runtime.default()
     adapters = [default_adapter(_adapter_cls(name)) for name in ADAPTERS]
     assert all(a._http is rt.http for a in adapters)
-    assert all(a._sync_http_client() is rt.sync_http() for a in adapters)
+    assert all(a._sync_http() is rt.sync_http() for a in adapters)
 
 
 @pytest.mark.parametrize("name", list(ADAPTERS))
@@ -75,7 +80,7 @@ def test_default_adapter_is_wired_like_donkey_from_env(name: str, env: pytest.Mo
     # Budget: the shared clients feed the runtime's one Budget, as on a Donkey.
     assert adapter._http._budget is rt.budget
     assert donkey._http._budget is donkey.budget
-    assert adapter._sync_http_client()._budget is rt.budget
+    assert adapter._sync_http()._budget is rt.budget
     # Auth: the connected-app provider is built on the control plane, and the
     # data plane carries no token provider in client-id mode — on both forms.
     assert isinstance(rt.auth, AnypointConnectedApp)
@@ -117,11 +122,13 @@ async def test_default_runtime_sends_the_same_headers_as_donkey(
 
 
 def _normalised(value: Any) -> Any:
-    """``connection_kwargs()`` with each client replaced by what identifies its
-    governance, since the two forms hold distinct (but identically built)
-    client objects."""
+    """``connection_kwargs()`` with each client (or view of one, #733) replaced
+    by what identifies its governance, since the two forms hold distinct (but
+    identically built) client objects."""
     if isinstance(value, Mapping):
         return {k: _normalised(v) for k, v in value.items()}
+    if isinstance(value, (DonkeyAsyncClientView, DonkeyClientView)):
+        return (type(value).__name__, _normalised(value._shared))
     if isinstance(value, (DonkeyAsyncClient, DonkeyClient)):
         return (type(value).__name__, value._cfg, getattr(value, "_control_plane", False))
     if type(value).__name__ == "AsyncOpenAI":

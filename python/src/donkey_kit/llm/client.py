@@ -101,6 +101,9 @@ class LLMClient:
                 # AC 1: a token mode with no provider attached fails with actionable guidance.
                 raise missing_llm_auth_error(mode)
         http = self._sync_http() if sync else self._http
+        # The client gets a non-owning view, so closing it (``async with
+        # donkey.openai()``) leaves the shared client open (#733).
+        view = http.view()
         if kw.get("base_url") is not None:
             http.allow_endpoint(str(kw["base_url"]), name="base_url")
         try:
@@ -132,8 +135,8 @@ class LLMClient:
         # this typechecks clean under BOTH majors: a bare `# type: ignore` is
         # `unused-ignore` under openai<3 where the types already match (#597).
         if sync:
-            return OpenAI(http_client=cast(Any, http), **shared)
-        return AsyncOpenAI(http_client=cast(Any, http), **shared)
+            return OpenAI(http_client=cast(Any, view), **shared)
+        return AsyncOpenAI(http_client=cast(Any, view), **shared)
 
     async def list_models(self, *, live: bool = False) -> list[ModelHandle]:
         """List logical models the proxy exposes.
