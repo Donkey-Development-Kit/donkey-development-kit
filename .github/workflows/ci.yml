@@ -114,6 +114,17 @@ jobs:
       # off, needing real Anypoint creds).
       - name: local gateway simulator boot (BG §1.4)
         run: pytest -q -m local_gateway
+      # #801: the offline seams (simulate(), the conformance harness) must stay
+      # offline behind a corporate proxy. Every proxy variable points at a dead
+      # port, so a request that escapes the swapped-in fixture fails the run.
+      - name: offline seams stay offline under HTTP(S)_PROXY (#801)
+        env:
+          HTTPS_PROXY: http://127.0.0.1:9
+          HTTP_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+        run: >-
+          pytest -q tests/unit/test_simulate.py tests/unit/test_conformance.py
+          tests/unit/test_conformance_plugin.py tests/unit/test_transport_proxy_mounts.py
 
   anthropic-stacks:
     # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
