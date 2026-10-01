@@ -248,6 +248,35 @@ trusted collector. See [Telemetry & cost](https://donkey-development-kit.github.
 | `DONKEY_TRUST_PROJECT_CONFIG` | — | unset | Set to `1` (or `true`, `yes`, `on`) to let a URL from the working directory's config files receive credentials from elsewhere. Read only from the environment. See [Which credentials a URL receives](#which-credentials-a-url-receives). |
 | `DONKEY_ALLOW_HTTP` | — | unset | Set to `1` (or `true`, `yes`, `on`) to allow plain `http://` endpoints on non-loopback hosts. Read only from the environment. See [Endpoints must use `https://`](#endpoints-must-use-https). |
 
+### Invalid values
+
+Every `DonkeyConfig` is checked when it is built, including by
+`with_overrides()`, and an invalid value raises `ConfigError` before any
+request is sent. One error lists every bad field and where each was set:
+
+| Field | Accepted |
+|---|---|
+| `timeout_s` | A number greater than `0` |
+| `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
+| `telemetry`, `telemetry_capture_content`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
+| `region` | `us`, `eu`, `ca` or `jp` |
+| `llm_proxy_auth` | `client-id` or `jwt` (any case in the environment or a config file) |
+| `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |
+
+A misspelt switch such as `DONKEY_TELEMETRY=flase` is an error, not `false`:
+
+```text
+ConfigError: Configuration is invalid:
+  - timeout_s is 'abc', set in the environment (DONKEY_TIMEOUT_S); expected a number
+  - telemetry is 'flase', set in the environment (DONKEY_TELEMETRY); expected one of 1, true, yes, on, 0, false, no, off
+  - max_retries is -1, set in the environment (DONKEY_MAX_RETRIES); expected a whole number, 0 or more
+Fix each value where it is set: in code, an environment variable, or .donkey-kit.toml.
+```
+
+The environment-only switches above (`DONKEY_NO_CACHE`,
+`DONKEY_TRUST_PROJECT_CONFIG`, `DONKEY_ALLOW_HTTP`) are not checked: any value
+other than the ones listed leaves them off.
+
 ## Anypoint control plane
 
 A separate credential from the LLM proxy, for features that call the Anypoint
