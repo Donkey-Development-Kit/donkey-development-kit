@@ -98,10 +98,10 @@ held to the full conformance bar, the rest supported through the three-line
 `connection_kwargs()` escape hatch. Every framework below returns its framework's
 **own native object** — never a wrapper.
 
-| Tier | Frameworks | What it means |
+| Tier | Frameworks | Status ([`docs/verified-apis.md` §8](docs/verified-apis.md)) |
 | --- | --- | --- |
-| **Conformance-tested** | The raw client (`donkey.llm.client()`) and **LangGraph** | Held to the conformance suite in CI — the governed contract is proven end to end. |
-| **Supported via `connection_kwargs()`** | Google ADK, Strands, Microsoft Agent Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex | Governed kwargs verified at the `connection_kwargs()` level, not conformance-tested. |
+| **Deep** | The raw client (`donkey.llm.client()`) and **LangGraph** | **Conformance-tested against the simulator** in CI. LangGraph's `ChatOpenAI` constructor is signature-confirmed offline; it has had no live round-trip. |
+| **Supported via `connection_kwargs()`** | Google ADK, Strands, Microsoft Agent Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex | **Signature-confirmed offline**: each factory builds its native object against the installed framework (`scripts/verify_frameworks.py`), with no live round-trip and no conformance run. The exception is ADK's `gemini()`, which is **live-verified** through a `Format=Gemini` proxy. |
 
 `connection_kwargs()` works for all eight; a second deep adapter is promoted from
 demand evidence, one at a time (#223/#244) — never guessed up front. See the
@@ -111,14 +111,18 @@ for each.
 ## What's verified (verification discipline)
 
 The **LLM data plane** — governed model access through the Omni Gateway proxy —
-is live-verified against a real Anypoint sandbox, and both the framework-free
-client and the framework adapters are wired to that verified contract — LangGraph
-is held to the conformance suite, the other seven are supported at the
-`connection_kwargs()` level (see [Framework support](#framework-support)).
+is live-verified against a real Anypoint sandbox. The framework-free client and
+the framework adapters are wired to that contract, but the adapters themselves
+are not live-verified: the raw client and LangGraph are conformance-tested
+against the simulator, ADK's `gemini()` is live-verified, and every other
+adapter constructor is signature-confirmed offline (see
+[Framework support](#framework-support)).
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
 rather than guessing at an unverified endpoint, header, or class name — that
-currently includes Exchange→MCP tool discovery, the provisioning control-plane,
-and the exact framework adapter class names/kwargs.
+currently includes Exchange→MCP tool discovery and the provisioning
+control-plane. The adapters build their framework's native object directly; they
+refuse only when the installed framework version lacks the class or field the
+adapter depends on.
 
 The discipline behind this is documented in
 [`ARCHITECTURE.md` → Verification discipline](ARCHITECTURE.md#verification-discipline);

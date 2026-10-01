@@ -1,7 +1,5 @@
 # Model access
 
-Live
-
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
@@ -21,11 +19,23 @@ seven are **supported at `connection_kwargs()`**: the governed connection
 settings are tested, and each exposes factory methods that return the native
 object.
 
+Each card shows what has been proven about that adapter, in the terms the
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) uses:
+
+| Status | Means |
+|---|---|
+| Conformance-tested | Runs the conformance suite against the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) in CI. |
+| Live-verified | Has made a real round-trip through a governed proxy. |
+| Signature-confirmed | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
+
+The proxy data plane every adapter calls (base URL, credential headers,
+streaming, rejection shapes) is live-verified.
+
   
     `chat_model()` → `langchain_openai.ChatOpenAI`
   
   
-    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
+    `model()` → `google.adk … LiteLlm` (signature-confirmed); `gemini()` → `google.adk.models.Gemini` (live-verified)
   
   
     `model()` → `strands … OpenAIModel`
