@@ -65,6 +65,9 @@ def test_every_default_adapter_shares_the_default_runtime(env: pytest.MonkeyPatc
 
 @pytest.mark.parametrize("name", list(ADAPTERS))
 def test_default_adapter_is_wired_like_donkey_from_env(name: str, env: pytest.MonkeyPatch) -> None:
+    if name == "openai_agents":
+        # Its only governed value is a pre-built AsyncOpenAI (no base-only install).
+        pytest.importorskip("openai")
     rt = runtime.default()
     adapter = default_adapter(_adapter_cls(name))
     donkey = Donkey.from_env()
