@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import warnings
 
 import httpx
@@ -1424,30 +1425,98 @@ async def test_streaming_span_closes_on_exception_during_iteration(monkeypatch) 
     assert dict(span.attributes)["gen_ai.request.model"] == "gpt-4o"
 
 
+def _streamed_pii_403(stream) -> httpx.Response:
+    # A refusal whose body is genuinely unread when send() returns: `json=` would
+    # buffer it (MockTransport then pre-reads it), which is what hid #805.
+    return httpx.Response(
+        403,
+        headers={"content-type": "application/json", _PROVIDER_HEADER: "openai"},
+        stream=stream,
+    )
+
+
 async def test_streaming_refusal_produces_one_span_with_error_status(monkeypatch) -> None:
-    # A refused stream request (stream=True but the proxy returns a buffered 403)
-    # is NOT an SSE body: the span closes immediately with decision=refuse and
-    # status ERROR — exactly one span, no wrapper, nothing to drain.
+    # A refused stream request (stream=True, the proxy returns an unread 403 body)
+    # is NOT an SSE body: the transport reads it (bounded, #805) so the span closes
+    # immediately with the same decision, policy type, system and ERROR status a
+    # buffered refusal records — exactly one span, no wrapper, nothing to drain.
     StatusCode = _span_status_code()
     exporter = _use_tracer(monkeypatch)
+    body = _AsyncSSE([json.dumps(_PII_403).encode()])
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(403, json=_PII_403)
-
-    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    client = DonkeyAsyncClient(
+        _LLM_CFG, None, transport=httpx.MockTransport(lambda r: _streamed_pii_403(body))
+    )
     async with client:
         req = client.build_request(
             "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
         )
         resp = await client.send(req, stream=True)
-        # Refusal is buffered and terminal: the span is already closed.
+        # Refusal is terminal: the span is already closed.
         (span,) = exporter.get_finished_spans()
+        # The caller still reads the same body (the SDKs do, to build their error).
+        assert (await resp.aread()) == json.dumps(_PII_403).encode()
         await resp.aclose()
+    assert body.closed  # the underlying stream was closed, not leaked
+    attrs = dict(span.attributes)
+    assert attrs["donkey.policy.decision"] == "refuse"
+    assert attrs["donkey.policy.type"] == "pii_detected"
+    assert attrs["gen_ai.system"] == "openai"
+    assert span.status.status_code is StatusCode.ERROR
+    assert len(exporter.get_finished_spans()) == 1  # still exactly one
+
+
+def test_sync_streaming_refusal_is_classified_on_the_span(monkeypatch) -> None:
+    # The blocking twin of the above (#805).
+    StatusCode = _span_status_code()
+    exporter = _use_tracer(monkeypatch)
+    body = _SyncSSE([json.dumps(_PII_403).encode()])
+
+    client = DonkeyClient(
+        _LLM_CFG, transport=httpx.MockTransport(lambda r: _streamed_pii_403(body))
+    )
+    with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = client.send(req, stream=True)
+        assert resp.json() == _PII_403
+        resp.close()
+    assert body.closed
+    (span,) = exporter.get_finished_spans()
     attrs = dict(span.attributes)
     assert attrs["donkey.policy.decision"] == "refuse"
     assert attrs["donkey.policy.type"] == "pii_detected"
     assert span.status.status_code is StatusCode.ERROR
-    assert len(exporter.get_finished_spans()) == 1  # still exactly one
+
+
+async def test_streaming_error_body_over_cap_is_replayed_unread(monkeypatch) -> None:
+    # Past the read cap the body is handed back intact and unread — the caller
+    # gets every byte, and the span falls back to the status-only classification
+    # rather than a type read from a body it never parsed (#805).
+    monkeypatch.setattr("donkey_kit.core.transport._ERROR_BODY_CAP", 8)
+    exporter = _use_tracer(monkeypatch)
+    chunks = [b'{"error":', b' {"type": "pii_detected",', b' "message": "x"}}']
+    body = _AsyncSSE(chunks)
+
+    client = DonkeyAsyncClient(
+        _LLM_CFG, None, transport=httpx.MockTransport(lambda r: _streamed_pii_403(body))
+    )
+    async with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = await client.send(req, stream=True)
+        assert (await resp.aread()) == b"".join(chunks)
+    assert body.closed
+    (span,) = exporter.get_finished_spans()
+    assert dict(span.attributes)["donkey.policy.type"] == "policy_violation"
+
+
+def test_parse_json_treats_an_unread_stream_as_no_body() -> None:
+    # classify() never raises on an unread streamed body (#805).
+    resp = httpx.Response(403, stream=_SyncSSE([json.dumps(_PII_403).encode()]))
+    assert classify(resp) is not None
 
 
 def test_sync_streaming_span_captures_usage_from_terminal_chunk(monkeypatch) -> None:
