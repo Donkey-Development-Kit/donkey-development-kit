@@ -100,6 +100,15 @@ framework that may not be installed.
   instead, whose transport forwards every request through the same data-plane
   client, so it is still one transport.
 
+  `Donkey` builds these through a **`Runtime`** (`core/runtime.py`), which owns
+  the config, the OTLP bootstrap, the auth providers, the `Budget`, both clients
+  and their close; it is the only place shared clients are built. The
+  module-level factories (`donkey_kit.integrations.<framework>.<factory>()`) run
+  on the process-default runtime from `runtime.default()`: built lazily under a
+  lock from the environment, exactly as `Donkey.from_env()` would be, shared by
+  every factory, and closed at interpreter exit. It lives in `core` because
+  `integrations` may not import the top package (#725).
+
   Each client attaches credentials only to its **checked endpoints**
   (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
   port: the plane's configured URL, plus any URL override a factory accepted

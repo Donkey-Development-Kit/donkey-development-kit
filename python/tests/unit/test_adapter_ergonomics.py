@@ -23,10 +23,10 @@ from typing import Any, NamedTuple
 
 import pytest
 
+from donkey_kit.core import runtime
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.transport import DonkeyAsyncClient, build_http_client
-from donkey_kit.integrations import _base
 from donkey_kit.integrations._base import Adapter, default_adapter
 from donkey_kit.integrations.langgraph import LangGraphAdapter
 
@@ -81,7 +81,7 @@ def test_default_adapter_is_cached_per_class(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
     a1 = default_adapter(LangGraphAdapter)
     a2 = default_adapter(LangGraphAdapter)
@@ -94,7 +94,7 @@ def test_module_level_factory_matches_method(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
     from donkey_kit.integrations.langgraph import chat_model
 
@@ -467,7 +467,7 @@ def _set_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
 
 @pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)
