@@ -300,8 +300,7 @@ def test_sync_correlation_and_attribution_headers_injected() -> None:
 
 def test_sync_requests_do_not_pin_a_correlation_id_to_the_process() -> None:
     """A blocking call outside run_context() must not bind its ID to the ambient
-    context: doing so would make every later unrelated call report the same run.
-    Async gets away with binding because asyncio.run() isolates the Context."""
+    context: doing so would make every later unrelated call report the same run."""
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -314,6 +313,79 @@ def test_sync_requests_do_not_pin_a_correlation_id_to_the_process() -> None:
 
     assert seen[0] != seen[1]  # each call is its own run
     assert current_correlation_id() is None  # nothing leaked out
+
+
+async def test_async_requests_do_not_pin_a_correlation_id_to_the_context() -> None:
+    """#803: the async twin of the test above. A long-lived ``asyncio.run(main())``
+    (queue consumer, bot) is one Context, so binding on first use would report
+    the first request's ID for the rest of the process — and hand it to every
+    task spawned afterwards."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers[CORRELATION_HEADER])
+        return httpx.Response(200)
+
+    async with _client(handler) as client:
+        await client.get("https://x")
+        await client.get("https://x")
+        assert current_correlation_id() is None  # nothing bound by the calls
+        await asyncio.create_task(client.get("https://x"))
+
+    assert len(set(seen)) == 3  # each call is its own run
+    assert current_correlation_id() is None
+
+
+async def test_async_requests_share_one_id_inside_a_run_scope() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers[CORRELATION_HEADER])
+        return httpx.Response(200)
+
+    async with _client(handler) as client:
+        async with run_scope("run-a"):
+            await client.get("https://x")
+            await asyncio.create_task(client.get("https://x"))
+
+    assert seen == ["run-a", "run-a"]
+
+
+async def test_unbound_correlation_id_is_stable_across_retries() -> None:
+    """#803: outside a run the ID is unbound, but one logical request still
+    carries ONE correlation id across its retries — it is pinned on the request,
+    not re-minted per send."""
+    calls = {"n": 0}
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        seen.append(request.headers[CORRELATION_HEADER])
+        return httpx.Response(503) if calls["n"] < 3 else httpx.Response(200)
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as client:
+        await client.get("https://x")
+
+    assert calls["n"] == 3
+    assert len(set(seen)) == 1
+    assert current_correlation_id() is None
+
+
+def test_sync_unbound_correlation_id_is_stable_across_retries() -> None:
+    calls = {"n": 0}
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        seen.append(request.headers[CORRELATION_HEADER])
+        return httpx.Response(503) if calls["n"] < 3 else httpx.Response(200)
+
+    with _sync_client(handler, DonkeyConfig(max_retries=3)) as client:
+        client.get("https://x")
+
+    assert calls["n"] == 3
+    assert len(set(seen)) == 1
+    assert current_correlation_id() is None
 
 
 def test_sync_requests_share_one_id_inside_a_run_context() -> None:
