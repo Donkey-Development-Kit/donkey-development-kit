@@ -63,6 +63,7 @@ from .errors import (
     ModelSubstituted,
     classify,
     gateway_unavailable,
+    parse_retry_after,
 )
 from .lastcall import (
     LLM_MODEL_HEADER,
@@ -186,7 +187,7 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
     Header NAMES are UNVERIFIED (verification discipline / docs/verified-apis.md §3):
     the live direct-proxy path did NOT
     surface application/business-group as request headers (docs/verified-apis.md §3), so these
-    remain loud, overridable placeholders. The verified per-agent attribution
+    remain loud placeholders with no config override. The verified per-agent attribution
     unit is the ``client_id`` credential — see :func:`proxy_auth_headers`.
 
     Includes the CONFIG-LEVEL cost tags only when ``cfg.send_cost_headers`` is
@@ -411,19 +412,26 @@ def _apply_call_id_header(request: httpx.Request, call_id_header: str) -> None:
 
 
 def _retry_delay(attempt: int, response: httpx.Response) -> float:
-    retry_after = response.headers.get("retry-after")
+    # Floored at 0 by the parser: a negative Retry-After (e.g. "-1") must retry
+    # immediately, never become a negative sleep — asyncio.sleep()/time.sleep()
+    # raise ValueError on a negative argument, which would turn the retryable
+    # status the loop exists to absorb into an unhandled exception (#286). The
+    # HTTP-date form parses to None and falls through to backoff.
+    retry_after = parse_retry_after(response.headers.get("retry-after"))
     if retry_after is not None:
-        try:
-            # Floor at 0: a malformed/negative Retry-After (e.g. "-1") must retry
-            # immediately, never become a negative sleep — asyncio.sleep()/
-            # time.sleep() raise ValueError on a negative argument, which would
-            # turn the retryable status the loop exists to absorb into an
-            # unhandled exception (#286).
-            return max(0.0, min(float(retry_after), _BACKOFF_CAP_S))
-        except ValueError:
-            pass  # HTTP-date form not handled here; fall through to backoff
+        return min(retry_after, _BACKOFF_CAP_S)
     exp = min(_BACKOFF_BASE_S * (2.0**attempt), _BACKOFF_CAP_S)
     return exp * (0.5 + random.random() / 2.0)  # full-ish jitter
+
+
+def _no_attempts(max_retries: object) -> ConfigError:
+    """The error for a retry loop that sent nothing: ``max_retries`` is below 0.
+    ``DonkeyConfig`` refuses that value, so only a config altered after
+    construction gets here (#809)."""
+    return ConfigError(
+        f"max_retries is {max_retries!r}, so no request was sent; expected a whole "
+        "number, 0 or more."
+    )
 
 
 def _gateway_unavailable(
@@ -449,6 +457,52 @@ def _gateway_unavailable(
     return gateway_unavailable(
         base_url=f"{url.scheme}://{host}" if host else None,
         cause=exc,
+        correlation_id=request.headers.get(correlation_header),
+        call_id=request.headers.get(call_id_header),
+    )
+
+
+def _lifecycle_error(
+    request: httpx.Request,
+    exc: RuntimeError,
+    *,
+    client_closed: bool,
+    correlation_header: str,
+    call_id_header: str,
+) -> ConfigError | None:
+    """Type the two lifecycle ``RuntimeError``s a send can hit (#813), or return
+    ``None`` to let any other ``RuntimeError`` through unchanged.
+
+    * The client is closed: httpx refuses the send. Detected from the client's
+      own state, not httpx's message wording.
+    * The event loop is closed: a pooled connection belongs to a loop that has
+      since closed, typically a second ``asyncio.run()`` on one ``Donkey``."""
+    if client_closed:
+        message = (
+            "Cannot send: this Donkey's HTTP client is closed. It was closed by "
+            "Donkey.aclose()/close() or by a framework that closed the client it "
+            "was given."
+        )
+        remediation = (
+            "Make the call on an open client: create a new Donkey, or keep the "
+            "Donkey open (do not close it, or the client it hands a framework, "
+            "until its last call)."
+        )
+    elif str(exc) == "Event loop is closed":
+        message = (
+            "Cannot send: the async client's connections belong to an event loop "
+            "that has closed (for example, a second asyncio.run() on the same "
+            "Donkey)."
+        )
+        remediation = (
+            "Use the Donkey within one event loop: create it inside the "
+            "asyncio.run() that uses it, or make every call from the same loop."
+        )
+    else:
+        return None
+    return ConfigError(
+        message,
+        remediation=remediation,
         correlation_id=request.headers.get(correlation_header),
         call_id=request.headers.get(call_id_header),
     )
@@ -1204,6 +1258,17 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
                     correlation_header=self._correlation_header,
                     call_id_header=self._call_id_header,
                 ) from exc
+            except RuntimeError as exc:
+                typed = _lifecycle_error(
+                    request,
+                    exc,
+                    client_closed=self.is_closed,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                )
+                if typed is None:
+                    raise
+                raise typed from exc
             last_response = response
 
             provider = self._token_provider
@@ -1240,7 +1305,8 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
 
             return await self._finish(request, response, gspan, streaming=streaming)
 
-        assert last_response is not None  # attempts >= 1
+        if last_response is None:
+            raise _no_attempts(self._cfg.max_retries)
         return await self._finish(request, last_response, gspan, streaming=streaming)
 
     async def _finish(
@@ -1467,6 +1533,17 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
                     correlation_header=self._correlation_header,
                     call_id_header=self._call_id_header,
                 ) from exc
+            except RuntimeError as exc:  # a closed client; see the async twin (#813)
+                typed = _lifecycle_error(
+                    request,
+                    exc,
+                    client_closed=self.is_closed,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                )
+                if typed is None:
+                    raise
+                raise typed from exc
             last_response = response
 
             # No 401-refresh branch: with no token provider there is nothing to
@@ -1485,7 +1562,8 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
 
             return self._finish(request, response, gspan, streaming=streaming)
 
-        assert last_response is not None  # attempts >= 1
+        if last_response is None:
+            raise _no_attempts(self._cfg.max_retries)
         return self._finish(request, last_response, gspan, streaming=streaming)
 
     def _finish(
