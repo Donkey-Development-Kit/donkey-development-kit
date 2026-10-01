@@ -1398,6 +1398,11 @@ models — inside the loop that runs them (`async with Donkey.from_env()` in you
 - **Refusals on the `model()` path aren't typed.** LiteLLM raises its own
   error without the response headers, so `classify()` has nothing to read; see
   the [ADK examples](https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md).
+- **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
+  accepts `client_kwargs`; the `adk` extra declares that floor. On an older
+  ADK, `Gemini` drops the governed client without an error and talks to Google
+  directly, so `gemini()` raises `NotImplementedError` instead of returning a
+  model that bypasses the gateway.
 - `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
   own upper bound if you need one.
 
