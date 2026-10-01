@@ -128,8 +128,12 @@ jobs:
             exit 1
           fi
 
+      # `local` + `otel` match ci.yml's langgraph-demo: the example smoke boots the
+      # simulator (uvicorn, from `local`) and flushes spans (opentelemetry, from
+      # `otel`). Without them the smoke step dies on ModuleNotFoundError and the
+      # unit suites never run (#834).
       - name: Install SDK + framework extra
-        run: pip install -e ".[dev,llm,${FRAMEWORK}]"
+        run: pip install -e ".[dev,llm,${FRAMEWORK},local,otel]"
 
       - name: Signature verification (§8)
         run: python scripts/verify_frameworks.py --only "${FRAMEWORK}"
