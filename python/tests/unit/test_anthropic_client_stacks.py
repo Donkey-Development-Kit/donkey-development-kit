@@ -16,11 +16,14 @@ import pytest
 
 anthropic = pytest.importorskip("anthropic")
 
+import json  # noqa: E402
+
 import httpx  # noqa: E402
 from _anthropic_wire import (  # noqa: E402
     BODY,
     CFG,
     SSE_CHUNKS,
+    SSE_REQUEST_ID,
     Chunks,
     refusal_response,
     shared_client,
@@ -73,6 +76,32 @@ async def test_a_governed_call_reaches_the_wire_and_last_call() -> None:
     record = current_last_call()
     assert record is not None and record.status is LastCallStatus.OBSERVED
     assert (record.input_tokens, record.output_tokens) == (16, 6)
+    # Anthropic's id rides `request-id`; its cache counts are flat on `usage` (#827).
+    assert record.request_id == "req_011CfMnBEhyZATzuKEENjEo6"
+    assert (record.cached_tokens, record.cache_write_tokens) == (0, 0)
+
+
+async def test_anthropic_cache_counts_reach_last_call() -> None:
+    body = json.loads(success_response().content)
+    body["usage"].update(
+        input_tokens=12, cache_read_input_tokens=2000, cache_creation_input_tokens=100
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        response = success_response()
+        return httpx.Response(200, json=body, headers=response.headers)
+
+    async with shared_client(handler) as shared:
+        await AnthropicAdapter(CFG, shared).client().messages.create(**BODY)
+
+    record = current_last_call()
+    assert record is not None
+    # input_tokens is taken as Anthropic reports it: EXCLUDING the cache counts.
+    assert (record.input_tokens, record.cached_tokens, record.cache_write_tokens) == (
+        12,
+        2000,
+        100,
+    )
 
 
 async def test_a_streamed_call_arrives_and_closes_the_shared_response() -> None:
@@ -87,6 +116,13 @@ async def test_a_streamed_call_arrives_and_closes_the_shared_response() -> None:
     assert text == "PONG"
     assert final.usage.output_tokens == 6
     assert upstream.closed
+    # input_tokens and the cache counts arrive only on message_start, nested
+    # under `message`; output_tokens on the later message_delta (#827).
+    record = current_last_call()
+    assert record is not None and record.status is LastCallStatus.OBSERVED
+    assert record.request_id == SSE_REQUEST_ID
+    assert (record.input_tokens, record.output_tokens) == (16, 6)
+    assert (record.cached_tokens, record.cache_write_tokens) == (2000, 100)
 
 
 async def test_a_lost_gateway_is_a_connection_error_caused_by_gateway_unavailable() -> None:

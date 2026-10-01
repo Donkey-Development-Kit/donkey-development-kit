@@ -227,7 +227,7 @@ logs and to the gateway's own record:
 | --- | --- | --- |
 | `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](/telemetry#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
 | `.call_id` | The **per-call** id, unique per logical request and stable across that request's retries | The `X-Donkey-Request-Id` request header the client sent. Present **even when the request fails before any response** (a transport error). |
-| `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
+| `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
 `classify(response)` fills `.correlation_id` and `.call_id` from the response's
 own request, so bridging an `openai` error (below) needs no extra wiring — the

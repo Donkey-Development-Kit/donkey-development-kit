@@ -175,9 +175,13 @@ there is no single header present on every route (live probe, 2026-09-23,
 DDK/Sandbox): `openai-model-routing` returns `x-request-id` (OpenAI's own
 `req_…` format); `azure-openai-model-routing` returns `x-request-id` (a UUID)
 plus `apim-request-id`; `bedrock-anthropic-model-routing` returns **no
-`x-request-id` at all** (0/5 calls) and only `x-amzn-requestid`. So both
+`x-request-id` at all** (0/5 calls) and only `x-amzn-requestid`. The native
+`Format=Anthropic` ingress (`ddk-anthropic-inbound`, 2026-09-24 capture) passes
+Anthropic's own id through as **`request-id`** (`req_…`), again with no
+`x-request-id` (#827). So both
 `LastCall.from_response` and `classify()` resolve `request_id` from an ordered
-list — `x-request-id`, then `x-amzn-requestid`, then `apim-request-id` — via one
+list — `x-request-id`, then `x-amzn-requestid`, then `apim-request-id`, then
+`request-id` — via one
 shared `core/lastcall.py:request_id` helper, failing open to `None`. This is the
 id a provider's support team needs; the gateway-side join key is instead
 `x-correlation-id` / `correlation_id`.
@@ -187,8 +191,16 @@ from the response *body* (the already-VERIFIED `usage` block, §2) and surfaces
 them on the same record: `input_tokens` / `output_tokens` / `total_tokens`, plus
 the cost-relevant `cached_tokens` / `cache_write_tokens` (from
 `usage.input_tokens_details`) and `reasoning_tokens` (from
-`usage.output_tokens_details`). Both the Responses-API (`input_tokens*`) and
-Chat-Completions (`prompt_tokens*` / `completion_tokens*`) shapes are read. An
+`usage.output_tokens_details`). The Responses-API (`input_tokens*`),
+Chat-Completions (`prompt_tokens*` / `completion_tokens*`), Gemini
+`usageMetadata` and Anthropic Messages shapes are read. Anthropic carries its
+cache counts flat on `usage`, as `cache_read_input_tokens` (→ `cached_tokens`)
+and `cache_creation_input_tokens` (→ `cache_write_tokens`), and sends no total;
+on a stream its `input_tokens` and cache counts arrive only on `message_start`,
+nested under `message.usage` (#827, `anthropic_inbound/responses.success.body.json`).
+Every count is taken **as the provider reports it**: Anthropic's `input_tokens`
+*excludes* both cache counts, while OpenAI's includes `cached_tokens`, so a
+cross-provider cost rollup must add Anthropic's cache counts back in. An
 absent detail field (or an absent `usage` object entirely) leaves the field
 `None`, **never a fabricated `0`** — a real `0` is a distinct, kept observation.
 On a streamed response the counts land once the terminal SSE `usage` event has
@@ -204,7 +216,7 @@ no `UnverifiedValueWarning`.
 | Per-agent attribution unit (direct proxy) | `core/config.py`, transport | VERIFIED (LIVE) | the `client_id`/`client_secret` credential pair = the agent identity; issued per client application | 2026-08-28 | live probe + `policy:list` |
 | Per-agent attribution unit (model-wallet ingress, #372) | `core/config.py`, transport — SDK wiring landed in #509 | VERIFIED (LIVE) | under a **model wallet**, the caller is identified by the JWT `client_id` claim (`ddk-model-wallet-client`) **and** the wallet's `X-Client-Id` request header (`ddk-model-wallet`), matched against the wallet's `predicates` (`group=ddk` AND `client_id=…`) — not the `client_id`/`client_secret` pair. Requires an org IdP. Budget counts against the matched wallet's `modelId` (`openai:gpt-5-mini`); see the §2 "model-wallet ingress" row for the full auth shape. | 2026-09-21 | live probe — `tests/fixtures/anypoint/model_wallet/` (`wallet.definition.json`, `jwt.claims.json`, `responses.success.headers.txt` → `x-model-wallet-selected`) |
 | Gateway identity on response | `core/transport.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192); `core/lastcall.py` **parses** `x-envoy-decorator-operation` and the upstream request id (#362) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.3e6ce455-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type` | 2026-08-28 | `responses.success.headers.txt` |
-| Upstream request id on response (per provider, #542) | `core/lastcall.py:request_id` (shared by `LastCall` + `classify()`) | VERIFIED (LIVE) | provider's own id, passed through — header name varies: OpenAI `x-request-id` (`req_…`); Azure OpenAI `x-request-id` (UUID) + `apim-request-id`; Bedrock **only** `x-amzn-requestid` (no `x-request-id`). Resolved in that order, failing open to `None`. | 2026-09-23 | live probe (DDK/Sandbox): `openai-`/`azure-openai-`/`bedrock-anthropic-model-routing` |
+| Upstream request id on response (per provider, #542) | `core/lastcall.py:request_id` (shared by `LastCall` + `classify()`) | VERIFIED (LIVE) | provider's own id, passed through — header name varies: OpenAI `x-request-id` (`req_…`); Azure OpenAI `x-request-id` (UUID) + `apim-request-id`; Bedrock **only** `x-amzn-requestid` (no `x-request-id`); native `Format=Anthropic` ingress **only** `request-id` (`req_…`, #827). Resolved in that order, failing open to `None`. | 2026-09-24 | live probe (DDK/Sandbox): `openai-`/`azure-openai-`/`bedrock-anthropic-model-routing`; `anthropic_inbound/responses.success.headers.txt` |
 | Agent→agent egress attribution header | `core/_verify.py` → transport | VERIFIED (build) | `x-anypoint-api-instance-id` → `agent-connection-telemetry` policy `sourceAgentId`; `tracing` labels `mulesoft.api.instance.id`, `mulesoft.api.type=llm` | 2026-08-28 | built `connection.json` (§12.6) |
 | Business-group attribution header name | `core/_verify.py` → transport | UNVERIFIED | not surfaced as a request header in the direct-proxy path | — | — |
 | Run correlation id **request** header (`X-Correlation-Id`, #195, #522) | `core/_verify.py` `CORRELATION_ID_HEADER` → transport | VERIFIED (LIVE) | the gateway **reads** the inbound `X-Correlation-Id` and echoes it **verbatim** on the response `x-correlation-id` — a probe sending `X-Correlation-Id: ddk522-corr` got `ddk522-corr` back on both the 200 and 400 paths. So this IS the client→gateway run/trace join key. Overridable via `correlation_header` / `DONKEY_CORRELATION_HEADER`. | 2026-09-22 | live probe against `ddk-multi-route-fallback` (instance 21179672, DDK/Sandbox) |

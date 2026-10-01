@@ -2100,6 +2100,14 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   the same `client_id` / `client_secret` header pair as every other proxy.
   To use the native surface, set `DONKEY_LLM_PROXY_URL` (or `llm_proxy_url`)
   to a `Format=Anthropic` proxy.
+- **What `donkey.last_call` reads.** On a native Anthropic proxy,
+  `request_id` is Anthropic's own `request-id` header. `cached_tokens` and
+  `cache_write_tokens` come from `cache_read_input_tokens` and
+  `cache_creation_input_tokens`. Streamed calls fill `input_tokens` and the
+  cache counts from `message_start` and `output_tokens` from `message_delta`.
+  Anthropic reports no total, so `total_tokens` is `None`. Its `input_tokens`
+  excludes both cache counts, while OpenAI's includes `cached_tokens`. Add the
+  cache counts back in before you compare cost across providers.
 - **Closing the client.** `AsyncAnthropic.close()`, and leaving
   `async with AsyncAnthropic(...)`, closes its `http_client`. On both stacks
   that is not the shared client (the bridge on 1.0 and later, the view on 0.x),
@@ -2617,7 +2625,7 @@ logs and to the gateway's own record:
 | --- | --- | --- |
 | `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
 | `.call_id` | The **per-call** id, unique per logical request and stable across that request's retries | The `X-Donkey-Request-Id` request header the client sent. Present **even when the request fails before any response** (a transport error). |
-| `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
+| `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
 `classify(response)` fills `.correlation_id` and `.call_id` from the response's
 own request, so bridging an `openai` error (below) needs no extra wiring — the
@@ -7490,7 +7498,8 @@ except Exception as err:
   through the SDK's transport.
 - **`request_id` is the upstream provider's id, passed through by the
   gateway** — `x-request-id` for OpenAI, `x-amzn-requestid` for Amazon Bedrock,
-  `apim-request-id` for Azure OpenAI. Quote it to the provider's support team.
+  `apim-request-id` for Azure OpenAI, `request-id` for a native Anthropic
+  proxy. Quote it to the provider's support team.
   It is the same field `classify()` puts on a refusal, now present on a 200 too,
   and `None` on a route whose provider forwards no id.
 - **Absent counts are `None`, never `0`.** `cached_tokens` are billed at the
@@ -10228,7 +10237,7 @@ for quoting to a provider's support team.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id`). `None` when the gateway forwarded none. |
+| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id` / Anthropic's `request-id`). `None` when the gateway forwarded none. |
 | `api_instance_id` | `str \| None` | The API Manager instance id that served the call. |
 | `environment_id` | `str \| None` | The Anypoint environment id that served the call. |
 
@@ -10264,7 +10273,7 @@ Each is `None` (never `0`) when unobserved or absent.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call. |
+| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call, as the provider reports them. OpenAI's count includes `cached_tokens`. Anthropic's excludes both `cached_tokens` and `cache_write_tokens`. |
 | `output_tokens` | `int \| None` | Completion/output tokens produced (includes `reasoning_tokens`). |
 | `total_tokens` | `int \| None` | Total tokens the gateway attributed to this call. |
 | `cached_tokens` | `int \| None` | Input tokens served from the prompt cache (billed at the cached rate). |

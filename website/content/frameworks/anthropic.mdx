@@ -165,6 +165,14 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   the same `client_id` / `client_secret` header pair as every other proxy.
   To use the native surface, set `DONKEY_LLM_PROXY_URL` (or `llm_proxy_url`)
   to a `Format=Anthropic` proxy.
+- **What `donkey.last_call` reads.** On a native Anthropic proxy,
+  `request_id` is Anthropic's own `request-id` header. `cached_tokens` and
+  `cache_write_tokens` come from `cache_read_input_tokens` and
+  `cache_creation_input_tokens`. Streamed calls fill `input_tokens` and the
+  cache counts from `message_start` and `output_tokens` from `message_delta`.
+  Anthropic reports no total, so `total_tokens` is `None`. Its `input_tokens`
+  excludes both cache counts, while OpenAI's includes `cached_tokens`. Add the
+  cache counts back in before you compare cost across providers.
 - **Closing the client.** `AsyncAnthropic.close()`, and leaving
   `async with AsyncAnthropic(...)`, closes its `http_client`. On both stacks
   that is not the shared client (the bridge on 1.0 and later, the view on 0.x),

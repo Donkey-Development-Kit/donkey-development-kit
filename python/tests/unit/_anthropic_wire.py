@@ -39,7 +39,8 @@ _SSE_EVENTS = [
     ("message_start", {"type": "message_start", "message": {
         "id": "msg_1", "type": "message", "role": "assistant", "model": MODEL,
         "content": [], "stop_reason": None, "stop_sequence": None,
-        "usage": {"input_tokens": 16, "output_tokens": 1}}}),
+        "usage": {"input_tokens": 16, "cache_creation_input_tokens": 100,
+                  "cache_read_input_tokens": 2000, "output_tokens": 1}}}),
     ("content_block_start", {"type": "content_block_start", "index": 0,
                              "content_block": {"type": "text", "text": ""}}),
     ("content_block_delta", {"type": "content_block_delta", "index": 0,
@@ -99,8 +100,17 @@ class Chunks(httpx.AsyncByteStream):
         self.closed = True
 
 
+#: Anthropic's own request id, as the ``Format=Anthropic`` ingress passes it
+#: through (``request-id``, the live capture's header; #827).
+SSE_REQUEST_ID = "req_011CfStream"
+
+
 def sse_response(stream: httpx.AsyncByteStream) -> httpx.Response:
-    return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=stream)
+    return httpx.Response(
+        200,
+        headers={"content-type": "text/event-stream", "request-id": SSE_REQUEST_ID},
+        stream=stream,
+    )
 
 
 def shared_client(handler: Callable[[httpx.Request], httpx.Response]) -> DonkeyAsyncClient:
