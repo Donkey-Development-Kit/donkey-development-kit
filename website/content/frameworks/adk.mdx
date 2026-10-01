@@ -105,13 +105,16 @@ llm = LiteLlm(
     api_key=...,
     extra_headers=...,  # client_id / client_secret header pair
     client=...,         # an AsyncOpenAI on the SDK's shared client
+    max_retries=0,      # the SDK retries in its own transport layer
 )
 ```
 
 LiteLLM uses `api_base` and `extra_headers`, not `base_url` /
 `default_headers` — `connection_kwargs()` already translates for you.
 `client` is present when the `openai` package is installed; LiteLLM's OpenAI
-route uses it in place of the client it would build. An `api_base` /
+route uses it in place of the client it would build. `max_retries=0` has to
+be passed to LiteLLM itself: LiteLLM sets the client's retry count on every
+call, and its default is 2. An `api_base` /
 `base_url` passed to `model()` must pass the
 [`https://` rule](/reference/configuration#endpoints-must-use-https), and the
 adapter builds `client` on that URL.

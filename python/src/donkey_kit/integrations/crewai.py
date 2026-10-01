@@ -36,6 +36,13 @@ go out as the bearer and every call would 401. The interceptor cannot add it
 either, since the provider's sync client cannot await the async
 ``AuthProvider``.
 
+Retries (#734): ``max_retries=0`` turns the provider's OpenAI client retries
+off, so a 5xx is not retried at all (the transport is not in the path). CrewAI
+itself wraps every ``BaseLLM.call``/``acall`` in a rate-limit retry (3
+attempts) that takes any 429 for a throttle and has no setting to turn it off,
+so a budget refusal is sent 3 times: an asserted exemption in
+``tests/unit/test_framework_retries.py``.
+
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
 
@@ -84,6 +91,7 @@ class CrewAIAdapter(Adapter):
                 "base_url": conn["base_url"],
                 "api_key": conn["api_key"],
                 "extra_headers": conn["default_headers"],
+                "max_retries": 0,
                 **self._interceptor_kwarg(),
             }
         )

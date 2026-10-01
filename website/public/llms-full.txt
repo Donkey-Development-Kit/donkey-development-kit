@@ -872,6 +872,25 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 | Google ADK — `gemini()` | ✅ | ✅ | Via `HttpOptions.httpx_async_client`, on a `Format=Gemini` proxy. |
 | CrewAI | ✅ (`extra_headers`) | ❌ | CrewAI's native OpenAI provider builds its own HTTP client: correlation is per client and `donkey.last_call` is not populated. An `interceptor` keeps credentials to checked endpoints. |
 
+## Retries happen once, in the SDK
+
+The SDK's transport retries `502`, `503` and `504` with backoff, up to
+`max_retries` times, and never retries a `4xx`. On the proxy a `429` is a
+token-budget refusal (`TokenBudgetExceeded`), so sending it again would only
+spend more of a budget that is already gone. Every adapter therefore turns off
+the provider SDK's own retries (`max_retries=0`). The transport also marks every
+final `4xx` with `x-should-retry: false`, which the `openai` and `anthropic`
+SDKs honour, so a client you build yourself from `connection_kwargs()` with its
+own retry setting doesn't re-send a refusal either.
+
+Some frameworks retry above the provider SDK, where the SDK can't reach:
+
+| Framework | A budget `429` is sent | A persistent `503` is sent | What to do |
+|---|---|---|---|
+| LangGraph, OpenAI Agents SDK, Anthropic SDK, LlamaIndex, MS Agent Framework, Google ADK | once | `max_retries + 1` times | Nothing. |
+| Strands | once from the model; up to 6 times from a default `Agent` | `max_retries + 1` times | Build the agent with `Agent(retry_strategy=None)`. |
+| CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md#notes). |
+
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
 attached only by the SDK's shared async client. CrewAI can't carry it, so it
 raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
@@ -1282,13 +1301,16 @@ llm = LiteLlm(
     api_key=...,
     extra_headers=...,  # client_id / client_secret header pair
     client=...,         # an AsyncOpenAI on the SDK's shared client
+    max_retries=0,      # the SDK retries in its own transport layer
 )
 ```
 
 LiteLLM uses `api_base` and `extra_headers`, not `base_url` /
 `default_headers` — `connection_kwargs()` already translates for you.
 `client` is present when the `openai` package is installed; LiteLLM's OpenAI
-route uses it in place of the client it would build. An `api_base` /
+route uses it in place of the client it would build. `max_retries=0` has to
+be passed to LiteLLM itself: LiteLLM sets the client's retry count on every
+call, and its default is 2. An `api_base` /
 `base_url` passed to `model()` must pass the
 [`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https), and the
 adapter builds `client` on that URL.
@@ -1537,6 +1559,7 @@ llm = OpenAIModel(
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
         "http_client": ...,       # a non-owning view of the SDK's shared client
+        "max_retries": 0,         # the SDK retries in its own transport layer
     },
     stream=False,                 # see Notes
 )
@@ -1547,6 +1570,19 @@ Strands forwards to its internal OpenAI client.
 
 ## Notes
 
+- **Build the agent with `retry_strategy=None`.** A Strands `Agent` retries a
+  throttled model call by default (up to 6 attempts), and Strands treats every
+  `429` as throttling. On the proxy a `429` is a budget refusal, so turn the
+  agent's retry off and let the SDK's transport handle the transient `5xx`:
+
+  ```python
+  from strands import Agent
+
+  agent = Agent(model=donkey.strands.model("gpt-4o"), retry_strategy=None)
+  ```
+
+  The model itself has `max_retries=0`, so the OpenAI client under it doesn't
+  retry either.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
@@ -2149,11 +2185,12 @@ model = LLM(
     base_url=...,       # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     extra_headers=...,  # client_id / client_secret header pair
+    max_retries=0,      # don't let the OpenAI client retry a refusal
 )
 ```
 
-`connection_kwargs()` fills in `base_url`, `api_key`, and `extra_headers` (the
-`client_id` / `client_secret` header pair) for you. When CrewAI is installed it
+`connection_kwargs()` fills in `base_url`, `api_key`, `extra_headers` (the
+`client_id` / `client_secret` header pair), and `max_retries=0` for you. When CrewAI is installed it
 also adds an `interceptor`: with one set, CrewAI's provider builds HTTP clients
 that don't follow redirects, and the interceptor removes the credential headers
 from any request to an origin other than the proxy (see
@@ -2173,6 +2210,12 @@ A `base_url` / `api_base` passed to `llm()` must pass the
   `connection_kwargs()` raise `ConfigError` in `jwt` mode. Use client-id auth
   with CrewAI; see the
   [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
+- **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
+  rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as
+  a rate limit. On the proxy a `429` is a budget refusal, so CrewAI re-sends it
+  twice before raising. CrewAI has no setting to turn this retry off. The
+  OpenAI client underneath has `max_retries=0`, and transient `5xx` errors are
+  not retried at all, because the SDK's transport isn't used.
 - **Printing the model shows the API key.** `OpenAICompletion`'s own `repr()` /
   `str()` include `api_key`. Don't print or log it.
 - **`donkey.last_call` is unavailable.** Because the response is handled by

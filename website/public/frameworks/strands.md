@@ -92,6 +92,7 @@ llm = OpenAIModel(
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
         "http_client": ...,       # a non-owning view of the SDK's shared client
+        "max_retries": 0,         # the SDK retries in its own transport layer
     },
     stream=False,                 # see Notes
 )
@@ -102,6 +103,19 @@ Strands forwards to its internal OpenAI client.
 
 ## Notes
 
+- **Build the agent with `retry_strategy=None`.** A Strands `Agent` retries a
+  throttled model call by default (up to 6 attempts), and Strands treats every
+  `429` as throttling. On the proxy a `429` is a budget refusal, so turn the
+  agent's retry off and let the SDK's transport handle the transient `5xx`:
+
+  ```python
+  from strands import Agent
+
+  agent = Agent(model=donkey.strands.model("gpt-4o"), retry_strategy=None)
+  ```
+
+  The model itself has `max_retries=0`, so the OpenAI client under it doesn't
+  retry either.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.

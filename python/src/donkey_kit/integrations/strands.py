@@ -14,6 +14,11 @@ one whole ``chat.completion`` instead of chunk deltas, and Strands, which stream
 by default, fails on every turn. Pass ``stream=True`` to stream on a route that
 sends deltas.
 
+Retries (#734): ``client_args`` sets ``max_retries=0``, so the transport alone
+retries. A Strands ``Agent`` adds its own throttle retry on top (6 attempts by
+default) and takes every 429 for a throttle, while a 429 here is a budget
+refusal (BG §1.2). Build it with ``Agent(retry_strategy=None)``.
+
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
 
@@ -43,6 +48,7 @@ class StrandsAdapter(Adapter):
                 "client_args": {
                     **conn,  # base_url, api_key, default_headers
                     "http_client": self.http_client(),
+                    "max_retries": 0,  # we retry in transport (BG §1.1)
                 },
                 "stream": False,
             }
