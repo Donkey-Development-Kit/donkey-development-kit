@@ -33,6 +33,7 @@ from donkey_kit.core.lastcall import (
     current_last_call,
     observe_last_call,
     observe_usage,
+    open_last_call_bridge,
     parse_usage,
     unavailable,
     usage_from_response,
@@ -285,6 +286,63 @@ async def test_fan_out_reads_each_task_s_own_call() -> None:
 
     assert a == "rid-a"  # each task saw its own call, not the sibling's
     assert b == "rid-b"
+
+
+# --- LastCallBridge: one call's record crosses a spawned task (#850) --------
+
+
+def _observe_rid(rid: str) -> LastCall:
+    return observe_last_call(httpx.Response(200, headers={"x-request-id": rid}))
+
+
+async def _async_observe(rid: str) -> None:
+    _observe_rid(rid)
+    observe_usage({"input_tokens": 3})
+
+
+async def test_bridge_carries_a_spawned_task_s_record_to_the_caller() -> None:
+    # Without the bridge, the task gather() spawns records into a copy of this
+    # context and the caller still reads a cold record.
+    await asyncio.gather(_async_observe("unbridged"))
+    assert current_last_call() is None
+
+    bridge = open_last_call_bridge()
+    await asyncio.gather(_async_observe("child"))
+    bridge.close()
+    record = current_last_call()
+    assert record is not None and record.request_id == "child"
+
+
+async def test_bridge_carries_the_usage_merged_later_in_the_task() -> None:
+    bridge = open_last_call_bridge()
+    await asyncio.create_task(_async_observe("child"))
+    bridge.close()
+    record = current_last_call()
+    assert record is not None and record.input_tokens == 3
+
+
+async def test_closed_bridge_ignores_tasks_spawned_after_the_call() -> None:
+    bridge = open_last_call_bridge()
+    await asyncio.create_task(_async_observe("call"))
+    bridge.close()
+    await asyncio.gather(_async_observe("late-a"), _async_observe("late-b"))
+    record = current_last_call()
+    assert record is not None and record.request_id == "call"
+
+
+def test_bridge_starts_from_the_previous_record_and_yields_to_the_next() -> None:
+    def body() -> None:
+        _observe_rid("before")
+        bridge = open_last_call_bridge()
+        record = current_last_call()
+        assert record is not None and record.request_id == "before"
+        bridge.close()
+        _observe_rid("after")
+        assert lastcall._last_call.get() is current_last_call()  # bridge replaced
+        record = current_last_call()
+        assert record is not None and record.request_id == "after"
+
+    contextvars.copy_context().run(body)
 
 
 # --- Donkey.last_call derived states (AC1, AC8) -----------------------------

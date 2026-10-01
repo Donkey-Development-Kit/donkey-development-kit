@@ -11,6 +11,8 @@ Skipped where the ``langgraph`` extra is absent.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -25,6 +27,7 @@ from donkey_kit.integrations.langgraph import typed_refusals
 from donkey_kit.simulator.fixtures import load, replay_headers
 
 pytest.importorskip("langchain_openai")
+from langchain_core.messages import HumanMessage  # noqa: E402
 
 
 def _cfg(**kw: Any) -> DonkeyConfig:
@@ -103,11 +106,58 @@ async def test_simulated_refusal_is_typed_with_no_network(
     assert network_sends == []
 
 
-async def test_last_call_observed_after_invoke() -> None:
+def _sse(*events: dict[str, Any]) -> bytes:
+    return b"".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n".encode() for e in events)
+
+
+# The committed stream sample stops after ``response.created``, so a streamed
+# call needs a complete (if minimal) Responses API event sequence.
+_RESPONSE = {
+    "id": "resp_1",
+    "object": "response",
+    "created_at": 0,
+    "model": "gpt-4o",
+    "status": "completed",
+    "output": [],
+}
+_STREAM = _sse(
+    {"type": "response.created", "sequence_number": 0, "response": _RESPONSE},
+    {
+        "type": "response.output_text.delta",
+        "sequence_number": 1,
+        "item_id": "msg_1",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "hi",
+    },
+    {
+        "type": "response.completed",
+        "sequence_number": 2,
+        "response": {
+            **_RESPONSE,
+            "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        },
+    },
+)
+
+
+def _success_or_stream(request: httpx.Request) -> httpx.Response:
+    if not json.loads(request.content).get("stream"):
+        return _success(request)
+    headers = replay_headers(load("stream"))
+    headers["content-type"] = "text/event-stream"
+    return httpx.Response(200, headers=headers, content=_STREAM, request=request)
+
+
+@pytest.mark.parametrize("call", _ALL, ids=_ALL_IDS)
+async def test_last_call_observed_after_call(call: _Call) -> None:
+    # ainvoke() runs the request in a task asyncio.gather() spawns with a copy
+    # of this context; the record must still reach the caller (#850).
     donkey = Donkey(_cfg())
-    donkey._sync_http_client()._swap_transport(httpx.MockTransport(_success))
+    donkey._http._swap_transport(httpx.MockTransport(_success_or_stream))
+    donkey._sync_http_client()._swap_transport(httpx.MockTransport(_success_or_stream))
     async with donkey:
-        donkey.langgraph("gpt-4o").invoke("hi")
+        await call(donkey.langgraph("gpt-4o"))
         assert donkey.last_call.status is LastCallStatus.OBSERVED
 
 
@@ -147,3 +197,83 @@ async def test_jwt_async_call_still_works() -> None:
         await donkey.langgraph("gpt-4o").ainvoke("hi")
 
     assert [r.headers.get("authorization") for r in seen] == ["Bearer jwt"]
+
+
+# --- ainvoke() reaches last_call without breaking fan-out isolation (#850) ---
+
+
+def _echo_rid(request: httpx.Request) -> httpx.Response:
+    """The success fixture, with ``x-request-id`` set to the prompt text, so each
+    call's record names the call that made it."""
+    response = _success(request)
+    rid = json.loads(request.content)["input"][0]["content"]
+    response.headers["x-request-id"] = rid if isinstance(rid, str) else rid[0]["text"]
+    return response
+
+
+def _echo_donkey() -> Donkey:
+    donkey = Donkey(_cfg())
+    donkey._http._swap_transport(httpx.MockTransport(_echo_rid))
+    return donkey
+
+
+async def test_ainvoke_reports_the_call_it_made() -> None:
+    donkey = _echo_donkey()
+    async with donkey:
+        model = donkey.langgraph("gpt-4o")
+        await model.ainvoke("first")
+        assert donkey.last_call.request_id == "first"
+        await model.ainvoke("second")
+        assert donkey.last_call.request_id == "second"
+
+
+async def test_concurrent_ainvokes_each_read_their_own_call() -> None:
+    donkey = _echo_donkey()
+    async with donkey:
+        model = donkey.langgraph("gpt-4o")
+
+        async def one(rid: str) -> str | None:
+            await model.ainvoke(rid)
+            await asyncio.sleep(0)
+            return donkey.last_call.request_id
+
+        assert await asyncio.gather(one("a"), one("b")) == ["a", "b"]
+        # The parent scattered the calls and made none itself (hazard #2).
+        assert donkey.last_call.status is LastCallStatus.UNOBSERVED
+
+
+async def test_a_later_fan_out_does_not_overwrite_the_caller_s_record() -> None:
+    donkey = _echo_donkey()
+    async with donkey:
+        model = donkey.langgraph("gpt-4o")
+        await model.ainvoke("mine")
+        await asyncio.gather(model.ainvoke("child-a"), model.ainvoke("child-b"))
+        assert donkey.last_call.request_id == "mine"
+
+
+async def test_a_batch_does_not_report_a_sibling_s_call() -> None:
+    donkey = _echo_donkey()
+    async with donkey:
+        model = donkey.langgraph("gpt-4o")
+        await model.agenerate([[HumanMessage("a")], [HumanMessage("b")]])
+        assert donkey.last_call.status is LastCallStatus.UNOBSERVED
+
+
+async def test_caller_callbacks_are_kept() -> None:
+    from langchain_core.callbacks import BaseCallbackHandler
+
+    seen: list[str] = []
+
+    class Spy(BaseCallbackHandler):
+        def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+            seen.append("end")
+
+    spy = Spy()
+    callbacks = [spy]
+    donkey = _echo_donkey()
+    async with donkey:
+        model = donkey.langgraph("gpt-4o", callbacks=callbacks)
+        await model.ainvoke("hi")
+        assert donkey.last_call.request_id == "hi"
+    assert seen == ["end"]
+    assert callbacks == [spy]  # the caller's list is not mutated
