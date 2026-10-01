@@ -61,6 +61,7 @@ from .errors import (
     ModelSubstituted,
     classify,
     gateway_unavailable,
+    parse_retry_after,
 )
 from .lastcall import (
     LLM_MODEL_HEADER,
@@ -394,17 +395,14 @@ def _apply_call_id_header(request: httpx.Request, call_id_header: str) -> None:
 
 
 def _retry_delay(attempt: int, response: httpx.Response) -> float:
-    retry_after = response.headers.get("retry-after")
+    # Floored at 0 by the parser: a negative Retry-After (e.g. "-1") must retry
+    # immediately, never become a negative sleep — asyncio.sleep()/time.sleep()
+    # raise ValueError on a negative argument, which would turn the retryable
+    # status the loop exists to absorb into an unhandled exception (#286). The
+    # HTTP-date form parses to None and falls through to backoff.
+    retry_after = parse_retry_after(response.headers.get("retry-after"))
     if retry_after is not None:
-        try:
-            # Floor at 0: a malformed/negative Retry-After (e.g. "-1") must retry
-            # immediately, never become a negative sleep — asyncio.sleep()/
-            # time.sleep() raise ValueError on a negative argument, which would
-            # turn the retryable status the loop exists to absorb into an
-            # unhandled exception (#286).
-            return max(0.0, min(float(retry_after), _BACKOFF_CAP_S))
-        except ValueError:
-            pass  # HTTP-date form not handled here; fall through to backoff
+        return min(retry_after, _BACKOFF_CAP_S)
     exp = min(_BACKOFF_BASE_S * (2.0**attempt), _BACKOFF_CAP_S)
     return exp * (0.5 + random.random() / 2.0)  # full-ish jitter
 
