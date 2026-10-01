@@ -100,13 +100,16 @@ class AgentFrameworkAdapter(Adapter):
         # A missing module (the package or a dependency of it) is the curated
         # install hint; a missing name in a module that imports is a rename.
         with self._native_import():
-            client_cls: type[Any]
             try:
                 # Both class paths confirmed offline: docs/verified-apis.md §8 (1.19.0).
                 if api == "chat_completions":
-                    from agent_framework.openai import OpenAIChatCompletionClient as client_cls
+                    from agent_framework.openai import OpenAIChatCompletionClient as _completions
+
+                    client_cls: type[Any] = _completions
                 else:
-                    from agent_framework.openai import OpenAIChatClient as client_cls
+                    from agent_framework.openai import OpenAIChatClient as _responses
+
+                    client_cls = _responses
             except ImportError as exc:
                 if isinstance(exc, ModuleNotFoundError):
                     raise
