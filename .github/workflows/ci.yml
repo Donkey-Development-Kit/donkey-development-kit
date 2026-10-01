@@ -89,6 +89,8 @@ jobs:
         run: lint-imports
       - name: no verification-status claims in src/ outside core/_verify.py (#718)
         run: python scripts/check_verification_claims.py
+      - name: no doc links to untracked paths, no committed plan files (#785)
+        run: python scripts/check_doc_links.py
 
   test:
     runs-on: ubuntu-latest
