@@ -390,6 +390,17 @@ observe any response-derived `last_call` field, including gateway identity,
 routing, fallback, and usage. If multiple non-observing adapters were resolved,
 `surface` lists their names.
 
+An agent runner that sends the model call from a task of its own leaves its
+caller reading `UNOBSERVED`, even though the SDK observed the call: the record
+lands in that task. The OpenAI Agents SDK's `Runner` sends a run's first turn
+that way (and every turn of `run_streamed`), and ADK's `Runner` runs the whole
+agent that way. Read `last_call` in the framework's model hook, which runs in the
+call's own task: `RunHooks.on_llm_end` for the
+[OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md#donkeylast_call), `after_model_callback`
+for [ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
+`Agent.invoke_async`, `AsyncAnthropic.messages.create`, a model's own async
+method) records in the caller's context.
+
 ### Two behaviours worth knowing
 
 **The SDK never double-retries a fallback.** DDK retries `502/503/504` with

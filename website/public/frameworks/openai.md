@@ -106,6 +106,27 @@ llm = OpenAIChatCompletionsModel(
 `connection_kwargs()` returns exactly one key, `openai_client`, holding this
 pre-built `AsyncOpenAI` instance.
 
+## `donkey.last_call`
+
+Every model call goes through the SDK's shared HTTP client, so the SDK records
+it. `last_call` is contextvar-scoped, though, and `Runner` sends a run's first
+turn from a task of its own (`run_streamed` sends every turn that way). After a
+one-turn `Runner.run`, or any `run_streamed`, the caller reads `UNOBSERVED`.
+After a longer `Runner.run` it reads the last turn's call. To read every call,
+use `RunHooks.on_llm_end`, which runs in the same task as the call:
+
+```python
+from agents import Agent, RunHooks, Runner
+
+class LastCallHooks(RunHooks):
+    async def on_llm_end(self, context, agent, response):
+        r = donkey.last_call
+        print(r.request_id, r.input_tokens, r.output_tokens)
+
+agent = Agent(name="assistant", model=donkey.openai_agents.model("gpt-4o"))
+await Runner.run(agent, "hello", hooks=LastCallHooks())
+```
+
 ## Notes
 
 - **A pre-built client is the preferred integration point.** When a framework

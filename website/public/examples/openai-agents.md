@@ -54,8 +54,10 @@ print("last_call   ", donkey.last_call.status.value)
 
 **Live only** — the simulator never calls tools. **You should see:** the final
 answer, `model calls 2`, total tokens from the Agents SDK's own usage, and
-`last_call unobserved`. The runner calls the model on its own task, so trust
-the SDK usage line here.
+`last_call observed`. That record is the second call only: the runner sends the
+first turn from a task of its own, where the caller can't see it (see
+[`donkey.last_call`](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md#donkeylast_call)). The SDK usage line
+counts both calls.
 
 ## 02 — Typed refusals, simulated
 
