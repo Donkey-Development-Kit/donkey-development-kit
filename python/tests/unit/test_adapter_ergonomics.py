@@ -127,6 +127,48 @@ def test_strands_connection_kwargs_inject_client_and_headers() -> None:
     assert args["http_client"] is not None  # full transport injection
 
 
+async def test_strands_real_model_is_built_and_called_through_our_transport() -> None:
+    """With strands installed: ``model()`` builds the native ``OpenAIModel`` and
+    a streamed call goes through the shared DonkeyAsyncClient. The OpenAI module
+    is imported directly, not skipped: the strands extra must pull in openai
+    itself (``strands-agents[openai]``), or this fails (#743)."""
+    pytest.importorskip("strands")
+    import httpx
+    import strands.models.openai  # noqa: F401 — must import under the strands extra alone
+
+    from donkey_kit.integrations.strands import StrandsAdapter
+
+    seen: list[httpx.Request] = []
+    chunks = [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": "PONG"}}]},
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        seen.append(request)
+        base = {"id": "c1", "object": "chat.completion.chunk", "created": 0, "model": "gpt-4o"}
+        sse = "".join(f"data: {json.dumps({**base, **c})}\n\n" for c in chunks)
+        return httpx.Response(
+            200,
+            content=(sse + "data: [DONE]\n\n").encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    cfg = _cfg()
+    http = DonkeyAsyncClient(cfg, None, transport=httpx.MockTransport(handler))
+    m = StrandsAdapter(cfg, http).model("gpt-4o")
+    events = [e async for e in m.stream([{"role": "user", "content": [{"text": "hi"}]}])]
+
+    assert any(
+        e.get("contentBlockDelta", {}).get("delta", {}).get("text") == "PONG" for e in events
+    )
+    sent = seen[0]
+    assert sent.url.path == "/chat/completions"
+    assert sent.headers["client_id"] == "cid"
+
+
 def test_agent_framework_connection_kwargs_are_the_openai_connection() -> None:
     from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 
