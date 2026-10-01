@@ -89,7 +89,7 @@ def test_main_reports_donkey_error_without_traceback(
 
     assert excinfo.value.code == 1
     err = capsys.readouterr().err
-    assert "Unknown region 'mars'" in err
+    assert "region is 'mars'" in err
     assert "Traceback" not in err
 
 
