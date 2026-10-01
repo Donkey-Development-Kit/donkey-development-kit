@@ -26,8 +26,8 @@ docs/verified-apis.md §8.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, cast
 
 from ..core.masking import masked
@@ -97,8 +97,46 @@ def chat_model(model: str, **kw: Any) -> ChatOpenAI:
     return default_adapter(LangGraphAdapter).chat_model(model, **kw)
 
 
-@contextmanager
-def typed_refusals() -> Iterator[None]:
+class _TypedRefusals(AbstractContextManager[None]):
+    """The context manager behind :func:`typed_refusals`.
+
+    A class, not ``@contextmanager``: a generator-based manager leaves
+    ``contextlib``'s ``__exit__`` frame, whose locals hold the framework error,
+    in the typed error's traceback, and reporters that render frame locals
+    (Sentry, ``pytest -l``) would print its message. This ``__exit__`` drops its
+    own references before raising.
+    """
+
+    def __enter__(self) -> None:
+        import openai  # noqa: F401  # lazy: only the framework path needs it
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        import openai
+
+        from ..core.errors import classify
+
+        if not isinstance(exc, openai.APIStatusError):
+            return None
+        # ``APIStatusError`` always carries the originating response; classify()
+        # maps it (and reads back the sent correlation/call ids) into the typed
+        # taxonomy. openai>=3 vendors its own httpx, so ``exc.response`` is
+        # statically a distinct-but-duck-identical Response type; cast erases it
+        # to the one classify wants. `cast(Any, …)` (not `cast("httpx.Response", …)`)
+        # so this typechecks clean under BOTH majors: under openai<3
+        # ``exc.response`` is already ``httpx.Response`` and a cast to it is
+        # `redundant-cast` (#597).
+        typed = classify(cast(Any, exc.response))
+        typed.framework_error = exc
+        del exc, exc_type, tb
+        raise typed from None
+
+
+def typed_refusals() -> AbstractContextManager[None]:
     """Surface a proxy refusal raised *inside a node* as the SDK's typed
     exception, not a framework-wrapped generic error (#198 AC3).
 
@@ -129,23 +167,7 @@ def typed_refusals() -> Iterator[None]:
     The typed error is raised without a chained cause: the framework error's
     message repeats the gateway's rejection text, which for a PII block holds
     the blocked values, and a traceback or ``logger.exception()`` renders every
-    chained exception. It stays reachable on ``exc.framework_error``.
+    chained exception. It stays reachable on ``exc.framework_error``, and no
+    frame in the typed error's traceback holds it as a local variable.
     """
-    import openai  # lazy: only the framework path needs it (the layered architecture)
-
-    from ..core.errors import classify
-
-    try:
-        yield
-    except openai.APIStatusError as exc:
-        # ``APIStatusError`` always carries the originating response; classify()
-        # maps it (and reads back the sent correlation/call ids) into the typed
-        # taxonomy. openai>=3 vendors its own httpx, so ``exc.response`` is
-        # statically a distinct-but-duck-identical Response type; cast erases it
-        # to the one classify wants. `cast(Any, …)` (not `cast("httpx.Response", …)`)
-        # so this typechecks clean under BOTH majors: under openai<3
-        # ``exc.response`` is already ``httpx.Response`` and a cast to it is
-        # `redundant-cast` (#597).
-        typed = classify(cast(Any, exc.response))
-        typed.framework_error = exc
-        raise typed from None
+    return _TypedRefusals()
