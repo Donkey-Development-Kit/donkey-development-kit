@@ -408,7 +408,10 @@ example `openai/gpt-5-mini`), and the gateway reports the served model without
 the prefix (`gpt-5-mini`), with the provider in its own header. A prefix that
 names the served provider is not counted as a difference, so asking for
 `openai/gpt-5-mini` and being served `gpt-5-mini` by `openai` is not a
-substitution. The same model served by a different provider still is.
+substitution. The same model served by a different provider still is. On a
+proxy with more than one provider, a bare name the gateway cannot pin to one
+provider is rejected with a `400` before any upstream call, and DDK raises
+[`ModelNotRoutable`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
 
 ### Semantic caching & semantic routing Live
 
