@@ -122,7 +122,10 @@ framework that may not be installed.
   `donkey.<framework>` on first access through the `ADAPTERS` registry declared
   in `integrations/__init__.py`. Accessing an adapter whose optional extra is not
   installed raises an `ImportError` carrying the exact `pip install` command —
-  never a bare `ModuleNotFoundError`. Each adapter returns the framework's own
+  never a bare `ModuleNotFoundError`. The registry probes every module an
+  adapter needs, not just the framework's own, and each factory wraps its lazy
+  import in `Adapter._native_import()`, so the adapter method and the
+  module-level factory raise the same error. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
 - **Configuration** resolves per key: values set in code → env vars →
@@ -167,7 +170,7 @@ framework that may not be installed.
   | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
   | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); span **end**; classification |
   | `_on_refusal` | Phase-2 seam — no caller until `classify()` wires it (#181) | typed-refusal handlers (`BG §1.2`) |
-  | `_swap_transport` | fixture seam | `simulate()` (#190) and `donkey mock` (#187) swap a fixture in (`BG §1.4`/`BG §1.5`) |
+  | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
 
   Correlation, attribution, cache-control and opt-in cost-tag headers
   (`BG §1.7`) are set on every attempt by the `_inject_headers` request event

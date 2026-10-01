@@ -40,7 +40,7 @@ def test_uninstalled_adapter_raises_curated_import_error(
     # the dev env, so the assertion is deterministic: access must raise
     # ImportError with the exact install command, never a bare
     # ModuleNotFoundError (BG §1.8).
-    monkeypatch.setattr("donkey_kit.donkey._framework_installed", lambda _probe: False)
+    monkeypatch.setattr("donkey_kit.donkey._missing_module", lambda probe: probe[0])
     fab = Donkey(_cfg())
     with pytest.raises(ImportError) as exc:
         _ = fab.langgraph
@@ -58,7 +58,7 @@ def test_openai_agents_adapter_import_error_names_the_new_extra(
 ) -> None:
     """The Agents SDK adapter lives at ``donkey.openai_agents`` and its curated
     ImportError points at ``donkey-kit[openai-agents]`` (#277)."""
-    monkeypatch.setattr("donkey_kit.donkey._framework_installed", lambda _probe: False)
+    monkeypatch.setattr("donkey_kit.donkey._missing_module", lambda probe: probe[0])
     fab = Donkey(_cfg())
     with pytest.raises(ImportError) as exc:
         _ = fab.openai_agents
@@ -81,7 +81,7 @@ def test_openai_never_probes_the_agents_sdk(monkeypatch: pytest.MonkeyPatch) -> 
     Agents SDK 'not installed', it still returns a client rather than raising the
     curated ImportError for ``donkey-kit[openai-agents]`` (#277)."""
     openai = pytest.importorskip("openai")
-    monkeypatch.setattr("donkey_kit.donkey._framework_installed", lambda _probe: False)
+    monkeypatch.setattr("donkey_kit.donkey._missing_module", lambda probe: probe[0])
 
     with Donkey(_cfg()) as fab:
         assert isinstance(fab.openai(), openai.AsyncOpenAI)

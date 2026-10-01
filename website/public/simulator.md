@@ -69,6 +69,11 @@ example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
 environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
 [Endpoints must use `https://`](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
 
+  Behind an HTTP proxy (`HTTP_PROXY` or `ALL_PROXY` set, as on many corporate
+  machines and CI runners), the client sends loopback requests to the proxy
+  too, and the proxy usually cannot reach your simulator. Add the simulator's
+  host to `NO_PROXY`, for example `NO_PROXY=127.0.0.1,localhost`.
+
 The simulator's port is **not** read from an environment variable or
 `.donkey-kit.toml` — the `--port`/`--host` flags (or the `serve()` keyword
 arguments below) are the only way to change it.

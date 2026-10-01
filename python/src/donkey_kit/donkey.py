@@ -32,7 +32,7 @@ from .core.runtime import Runtime
 from .core.telemetry import RunScope, run_scope
 from .core.toolspec import register_tool
 from .core.transport import DonkeyAsyncClient, DonkeyClient
-from .integrations import ADAPTERS
+from .integrations import ADAPTERS, missing_framework_error
 from .llm.client import LLMClient
 from .registry.exchange import ExchangeRegistry
 from .registry.governance import GovernanceCriteria
@@ -58,13 +58,16 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
-def _framework_installed(probe: str) -> bool:
-    """Whether a framework's representative module can be located, without
-    importing it. Any error locating it means 'not installed'."""
-    try:
-        return importlib.util.find_spec(probe) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
+def _missing_module(probe: tuple[str, ...]) -> str | None:
+    """The first of a framework's required modules that cannot be located, or
+    ``None`` when all of them can. Any error locating one means 'not installed'."""
+    for module in probe:
+        try:
+            if importlib.util.find_spec(module) is None:
+                return module
+        except (ImportError, ValueError):
+            return module
+    return None
 
 
 class _ToolsFacade:
@@ -246,7 +249,7 @@ class Donkey:
         # an indistinguishable UNOBSERVED (hazard #3). An empty cache (raw client
         # / not used yet) is a cold read, not UNAVAILABLE.
         used = list(self._adapter_cache.values())
-        if used and all(not a.observes_last_call for a in used):
+        if used and all(not a.observing_last_call() for a in used):
             return unavailable(", ".join(sorted(self._adapter_cache)))
         return UNOBSERVED
 
@@ -583,11 +586,9 @@ class Donkey:
             raise AttributeError(f"{type(self).__name__!r} has no attribute {name!r}")
         if name in self._adapter_cache:
             return self._adapter_cache[name]
-        if not _framework_installed(spec.probe):
-            raise ImportError(
-                f"The {name!r} integration is not installed. Install it with:\n"
-                f'    pip install "donkey-kit[{spec.extra}]"'
-            )
+        missing = _missing_module(spec.probe)
+        if missing is not None:
+            raise missing_framework_error(spec.extra, missing)
         module = importlib.import_module(spec.module, package="donkey_kit.integrations")
         adapter_cls = getattr(module, spec.cls)
         adapter: Adapter = adapter_cls(self._cfg, self._http, self._sync_http_client)
