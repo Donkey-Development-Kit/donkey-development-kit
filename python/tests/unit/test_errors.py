@@ -55,6 +55,19 @@ def test_429_is_token_budget_with_retry_after() -> None:
     assert err.retry_after == 42.0
 
 
+@pytest.mark.parametrize(
+    "headers",
+    [{"retry-after": "-1"}, {"x-token-reset": "-5000"}],
+    ids=["retry-after", "x-token-reset"],
+)
+def test_negative_retry_after_is_floored_at_zero(headers: dict[str, str]) -> None:
+    """#815: classify() shares the transport's Retry-After parser (the #286
+    floor), so a raised error never advertises a negative wait."""
+    err = classify(_resp(429, headers))
+    assert isinstance(err, TokenBudgetExceeded)
+    assert err.retry_after == 0.0
+
+
 def test_injection_protection_header_is_prompt_injection_blocked() -> None:
     """#181 row 3: a 400 carrying ``x-injection-protection: blocked`` is the
     injection-protection policy refusal, wired to the (previously dead)
