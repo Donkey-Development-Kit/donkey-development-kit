@@ -121,6 +121,29 @@ def test_closing_the_sync_view_leaves_the_shared_client_open() -> None:
     assert shared.is_closed
 
 
+def test_the_sync_view_refuses_in_jwt_mode_like_the_shared_client() -> None:
+    from donkey_kit.core.auth import StaticToken
+    from donkey_kit.core.errors import ConfigError
+
+    cfg = DonkeyConfig(
+        llm_proxy_url="https://proxy.example.com/p/",
+        llm_proxy_auth="jwt",
+        llm_proxy_wallet_client_id="wallet-42",
+    )
+    donkey = Donkey(cfg, llm_auth=StaticToken("jwt"))
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={})
+
+    donkey._sync_http_client()._swap_transport(httpx.MockTransport(handler))
+
+    with pytest.raises(ConfigError):
+        donkey.http_client(sync=True).post("https://proxy.example.com/p/x", json={})
+    assert not seen
+
+
 async def test_one_cached_view_per_shared_client() -> None:
     donkey = _donkey()
     assert donkey.http_client() is donkey.http_client() is donkey._http.view()

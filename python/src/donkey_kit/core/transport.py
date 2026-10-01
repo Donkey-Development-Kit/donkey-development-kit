@@ -1691,6 +1691,12 @@ class DonkeyClientView(httpx.Client):
     def is_closed(self) -> bool:
         return self._shared.is_closed
 
+    def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
+        # The shared client refuses here in jwt mode; a view must refuse too.
+        if self._shared._cfg.llm_proxy_auth == "jwt":
+            raise sync_jwt_error()
+        return super().build_request(*args, **kwargs)
+
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
         for hook in self.event_hooks["request"]:
             hook(request)
