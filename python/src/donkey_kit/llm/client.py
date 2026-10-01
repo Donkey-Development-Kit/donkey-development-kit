@@ -6,7 +6,7 @@ retry policy apply. ``client(sync=True)`` returns the blocking ``OpenAI`` with
 the same governance. This is the framework-free surface; the per-framework
 adapters live in ``integrations/``.
 
-VERIFICATION NOTES (LIVE-VERIFIED 2026-08-28, docs/verified-apis.md §2/§3):
+VERIFICATION NOTES (docs/verified-apis.md §2/§3):
   * The proxy base URL does **NOT** include ``/v1``; it is
     ``https://<ingress-gw>/<instance>/`` (e.g. ``…/openai-sdk/``) and the OpenAI
     SDK appends the route (``/responses`` etc.) directly.
@@ -148,7 +148,7 @@ class LLMClient:
         """List logical models the proxy exposes.
 
         The governed proxy has **no** catalog endpoint — ``GET /models`` returns
-        ``404`` (LIVE-VERIFIED, docs/verified-apis.md §2): model-based-routing only routes requests
+        ``404`` (docs/verified-apis.md §2): model-based-routing only routes requests
         that carry ``model`` in the body. So ``live=True`` cannot be satisfied,
         and we say so plainly rather than guess a path. Use :meth:`resolve` for a
         heuristic :class:`ModelHandle` from a known model id, or source the

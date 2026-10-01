@@ -189,7 +189,7 @@ SHAPES: dict[str, _Spec] = {
     "content-moderation": _Spec(
         "rejections", "reject.content-moderation.headers.txt", None, 400
     ),
-    # Agent Kill Switch (LIVE 2026-09-29, #694): nested error.code == "agent_killed".
+    # Agent Kill Switch (docs/verified-apis.md §4, #694): nested error.code == "agent_killed".
     "agent-killed": _Spec(
         "rejections",
         "reject.agent-killed.headers.txt",
@@ -220,7 +220,7 @@ SHAPES: dict[str, _Spec] = {
         "responses.success.body.json",
         200,
     ),
-    # A SEMANTIC-routing 200 (LIVE, docs/verified-apis.md §3 semantic-routing row,
+    # A SEMANTIC-routing 200 (docs/verified-apis.md §3 semantic-routing row,
     # #589/#590). The 'Finance' topic capture (openai/gpt-5-mini, score 0.62):
     # routing_type Semantic plus the semantic-only
     # ``x-llm-proxy-semantic-routing-success`` prose that ``LastCall`` parses for

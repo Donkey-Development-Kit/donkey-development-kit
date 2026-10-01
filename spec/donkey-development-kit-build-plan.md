@@ -107,12 +107,12 @@ whole package. Two mechanisms in `core/_verify.py` enforce it:
   `NotImplementedError("blocked on verification: …")`, used where there is
   no defensible placeholder at all. **Do not replace these with guesses.**
 - `Unverified(...)` placeholders emit a one-time `UnverifiedValueWarning`
-  when read and are overridable via config/env. A value flips to
-  `verified=True` only after confirmation against a real sandbox.
+  when read and are overridable via config/env. A placeholder becomes a
+  plain constant only after confirmation against a real sandbox.
 
 `docs/verified-apis.md` is the single source of truth for what is verified.
-When you confirm a value: flip its row there **and** set `verified=True` in
-`_verify.py`. The `Verification` milestone is the worklist.
+When you confirm a value: flip its row there **and** replace its placeholder
+in `_verify.py` with a plain constant. The `Verification` milestone is the worklist.
 
 ### Layered architecture (`§1.1`) — enforced by `lint-imports`
 

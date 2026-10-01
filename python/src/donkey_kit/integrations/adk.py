@@ -14,9 +14,9 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   ``gateway_identity_observed`` and ``donkey.last_call`` stays unpopulated.
   ADK requires ``litellm>=1.84`` (floor, not ceiling).
 * ``gemini()`` — ADK's native ``google.adk.models.Gemini`` for a
-  ``Format=Gemini`` proxy (#691). The LIVE-verified native route is
+  ``Format=Gemini`` proxy (#691). The native route is
   ``POST <proxy>/models/<model>:generateContent`` (#540); the model travels in
-  the URL only, and the ingress ignores a body ``model`` (probed 2026-09-29).
+  the URL only, and the ingress ignores a body ``model`` (docs/verified-apis.md §2).
   ``google-genai`` accepts ``HttpOptions.httpx_async_client``, so we hand it the
   shared :class:`~donkey_kit.core.transport.DonkeyAsyncClient`: full injection —
   per-run correlation, SDK retries, rotating JWTs and ``donkey.last_call`` all

@@ -195,8 +195,8 @@ scripts/verify_frameworks.py` (no `--live`). The `sandbox` suite needs a real
 Anypoint sandbox you likely don't have, and `local_gateway` needs the optional
 `[local]` extra installed (no Docker, no Omni/Flex Gateway — donkey-development-kit
 does not support Local Mode as a test surface, #661); both clean-skip when their
-prerequisite is absent, which is correct (Section 2). And **never flip a `docs/verified-apis.md` row or `verified=True`
-from a fork** — that requires a real sandbox round-trip only a maintainer can run
+prerequisite is absent, which is correct (Section 2). And **never flip a `docs/verified-apis.md` row or promote an `Unverified(...)`
+placeholder from a fork** — that requires a real sandbox round-trip only a maintainer can run
 (verification discipline). What you *can* contribute from a fork is the
 **fixture** for a new shape: capture it in your own sandbox following the
 provenance and byte-exact rules in
@@ -429,8 +429,11 @@ build plan; the load-bearing rules:
 - **Verification guards.** Never invent an endpoint, header, or class
   name. Use `core/_verify.py`: `blocked("…")` where there's no defensible
   placeholder, `Unverified(...)` for an overridable best-guess that warns once.
-  Flip `verified=True` **and** the row in `docs/verified-apis.md` together, never
-  one without the other. Details in
+  When a placeholder is confirmed, flip its row in `docs/verified-apis.md` **and**
+  replace it with a plain constant together, never one without the other.
+  Outside `core/_verify.py`, cite the ledger (`docs/verified-apis.md §N`) rather
+  than restating a status or date; `scripts/check_verification_claims.py`
+  enforces this in CI. Details in
   [`ARCHITECTURE.md`](ARCHITECTURE.md#verification-discipline).
 - **Extras are floors, never ceilings.** No upper version pins in
   `pyproject.toml` — add `foo>=X`, never `foo<Y`. Known incompatibilities are
