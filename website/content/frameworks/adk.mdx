@@ -231,12 +231,10 @@ except genai_errors.APIError as exc:
     err = classify(exc.response)  # e.g. AuthError on 401, UpstreamRequestError on 404
 ```
 
-**One `Donkey` per event loop.** The shared HTTP client's connection pool is
-bound to the event loop that first uses it. Build the `Donkey` — and the
-models — inside the loop that runs them (`async with Donkey.from_env()` in your
-`main`), and don't reuse the module-level `gemini()` across separate
-`asyncio.run(...)` calls: the second run fails with
-`RuntimeError: Event loop is closed`.
+**Reusing a model across `asyncio.run(...)` calls works.** The shared HTTP
+client keeps one connection pool per event loop, so a sync app that wraps each
+run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
+`gemini()`) once and reuse it.
 
 ## Notes
 

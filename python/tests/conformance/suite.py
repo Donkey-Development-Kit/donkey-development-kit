@@ -45,9 +45,9 @@ CONFORMANCE_SCENARIOS = [
     # In jwt / model-wallet auth mode (#509) the rotating JWT is injected per-send
     # from the attached AuthProvider, so an expired token is refreshed on the next
     # request (and on a 401, via the transport's invalidate→retry-once loop).
-    # Holds only for adapters routed through our httpx client; the frameworks that
-    # build their own transport from a one-time default_headers snapshot pin the
-    # token at construction and record an asserted exemption below (BG §1.8).
+    # Holds only for adapters routed through our httpx client. CrewAI's provider
+    # builds its own transport, never sees the JWT, and refuses jwt mode with a
+    # ConfigError; it records an asserted exemption below (BG §1.8, #828).
     "jwt_token_refreshed",
 ]
 
@@ -91,28 +91,16 @@ _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
     "gateway identity and reports UNAVAILABLE (#362)."
 )
 
-# jwt_token_refreshed has the SAME structural cause as the correlation-id and
-# last-call exemptions (#509): a rotating model-wallet JWT can only be refreshed
-# per-send by our transport. A framework that owns its transport (LiteLLM for
-# ADK, the native OpenAI provider for CrewAI) or is handed only a one-time
-# default_headers snapshot pins whatever token existed at construction and
-# starts 401-ing after it expires — so jwt auth mode is unsupported on those
-# adapters, asserted here rather than silently skipped.
-_LITELLM_JWT_EXEMPTION = (
-    "adk.model() only: LiteLLM owns the transport; we cannot inject our httpx client, so a "
-    "rotating model-wallet JWT cannot be refreshed per-send and would expire. Use client-id "
-    "auth with this adapter, or route the raw/LangGraph client for jwt mode (#509)."
-)
+# jwt_token_refreshed: a rotating model-wallet JWT is added per-send only by our
+# transport (#509). Every adapter that sends through it carries the JWT; CrewAI's
+# native OpenAI provider builds its own clients, so it would send the api-key
+# placeholder as the bearer. The adapter refuses jwt mode with a ConfigError
+# instead (#828) — asserted here rather than silently skipped.
 _CREWAI_JWT_EXEMPTION = (
-    "CrewAI's native OpenAI provider owns the transport and takes the auth headers "
-    "once, at construction, so a rotating model-wallet JWT cannot be refreshed "
-    "per-send and would expire. Use client-id auth with this adapter, or route the "
-    "raw/LangGraph client for jwt mode (#509)."
-)
-_DEFAULT_HEADERS_JWT_EXEMPTION = (
-    "The adapter is handed only a static default_headers snapshot, which pins the "
-    "JWT at construction; without our httpx client the token cannot be refreshed "
-    "and 401s after expiry. jwt auth mode is async-only through our transport (#509)."
+    "CrewAI's native OpenAI provider owns the transport, so the rotating model-wallet "
+    "JWT, which only our httpx client adds per-send, never reaches its requests. "
+    "donkey.crewai raises ConfigError in jwt auth mode; use client-id auth with this "
+    "adapter, or a transport-injected adapter for jwt mode (#509, #828)."
 )
 
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
@@ -122,25 +110,21 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     "adk": {
         "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
-        "jwt_token_refreshed": _LITELLM_JWT_EXEMPTION,
     },
     "crewai": {
         "correlation_id_propagated": _CREWAI_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _CREWAI_LAST_CALL_EXEMPTION,
         "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
     },
-    # LlamaIndex and MS Agent Framework get only a static default_headers snapshot,
-    # no httpx client (BG §1.8). The snapshot deliberately excludes the per-run
-    # correlation ID, cannot observe last_call responses, and cannot carry a
-    # rotating JWT (it pins the token at construction).
+    # LlamaIndex and MS Agent Framework now send through our httpx client, so they
+    # carry the jwt-mode JWT per-send and record no jwt_token_refreshed exemption
+    # (#828). Their correlation-id and last-call rows are #740's to retire.
     "llamaindex": {
         "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
         "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,
-        "jwt_token_refreshed": _DEFAULT_HEADERS_JWT_EXEMPTION,
     },
     "agent_framework": {
         "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
         "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,
-        "jwt_token_refreshed": _DEFAULT_HEADERS_JWT_EXEMPTION,
     },
 }

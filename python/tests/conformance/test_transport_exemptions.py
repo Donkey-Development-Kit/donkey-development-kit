@@ -56,20 +56,18 @@ def test_scenario_is_registered() -> None:
     )
 
 
-def test_jwt_exemption_recorded_for_transport_detached_adapters() -> None:
-    # A rotating model-wallet JWT can only be refreshed per-send by our transport
-    # (#509). The adapters whose framework owns the transport (ADK's LiteLLM,
-    # CrewAI's native OpenAI provider) or that take only a one-time
-    # default_headers snapshot pin the token at construction, so jwt auth
-    # mode is unsupported on them — asserted here, exactly like the last_call and
-    # correlation-id exemptions, never a silent skip. That is the SAME set of four
-    # non-transport-routed adapters.
+def test_jwt_exemption_recorded_only_for_crewai() -> None:
+    # A rotating model-wallet JWT is added per-send only by our transport (#509).
+    # Every adapter that sends through it carries the JWT, including LlamaIndex,
+    # Agent Framework and ADK model(). CrewAI's native OpenAI provider builds its
+    # own clients and refuses jwt mode with a ConfigError (#828) — asserted here,
+    # never a silent skip.
     exempted = {
         adapter
         for adapter, limits in KNOWN_LIMITATIONS.items()
         if _JWT_SCENARIO in limits
     }
-    assert exempted == {"adk", "crewai", "llamaindex", "agent_framework"}
+    assert exempted == {"crewai"}
 
 
 def test_every_known_limitation_names_a_real_scenario() -> None:
@@ -117,7 +115,7 @@ async def test_adk_gemini_is_not_exempt() -> None:
     try:
         adapter = _adapter_class("adk")(cfg, client)
         kw = adapter.gemini_connection_kwargs()  # type: ignore[attr-defined]
-        assert kw["client_kwargs"]["http_options"]["httpx_async_client"] is client
+        assert kw["client_kwargs"]["http_options"]["httpx_async_client"] is client.view()
     finally:
         await client.aclose()
     for reason in KNOWN_LIMITATIONS["adk"].values():

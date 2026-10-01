@@ -91,7 +91,7 @@ class ADKAdapter(Adapter):
                         "api_version": "",
                         "headers": conn["default_headers"],
                         "timeout": int(self._cfg.timeout_s * 1000),
-                        "httpx_async_client": self._http_client(),
+                        "httpx_async_client": self.http_client(),
                     },
                 },
             }

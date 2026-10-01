@@ -26,6 +26,7 @@ from donkey_kit.core.errors import (
     AuthError,
     ConfigError,
     ContentSafetyBlocked,
+    ModelNotRoutable,
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
@@ -65,6 +66,7 @@ _ROUND_TRIP = [
     (ContentSafetyBlocked, "content-safety"),
     (AgentKilled, "agent-killed"),
     (UpstreamRequestError, "model-not-found"),
+    (ModelNotRoutable, "model-not-routable"),
     (UpstreamModelError, "upstream-5xx"),
     (AuthError, "client-id-missing"),
     (PolicyViolation, "content-moderation"),
@@ -83,6 +85,18 @@ async def test_injected_refusal_replays_fixture_and_classifies_back(
             resp = await _post(donkey)
         assert resp.content == fx.load(shape).body
         assert isinstance(classify(resp), exc)
+
+
+async def test_injected_model_not_routable_carries_the_echoed_model() -> None:
+    # #891: the bare-model-name 400 (#825) is rehearsable offline, and the
+    # captured gateway prose still yields the model name it echoed back.
+    donkey = _donkey()
+    async with donkey:
+        with donkey.simulate(ModelNotRoutable):
+            resp = await _post(donkey)
+        err = classify(resp)
+        assert isinstance(err, ModelNotRoutable)
+        assert err.model == "gpt-5-mini"
 
 
 async def test_injected_response_is_honesty_stamped() -> None:
@@ -176,16 +190,15 @@ async def test_sync_client_swapped_when_already_built() -> None:
         assert sync.post(_URL, json={}).status_code == 299  # restored
 
 
-async def test_sync_client_built_inside_block_is_not_retro_swapped() -> None:
-    # Documented limitation: a sync client created INSIDE the block was not a
-    # target at enter time, so it is not injected into.
+async def test_sync_client_is_built_and_swapped_on_enter() -> None:
+    # A blocking client first asked for INSIDE the block (e.g. by a ChatOpenAI
+    # built there, #736) is the one simulate() already built and swapped.
     donkey = _donkey()
     assert donkey._sync_http is None
     async with donkey:
         with donkey.simulate(PIIDetected):
             sync = donkey._sync_http_client()
-            sync._swap_transport(_sentinel())  # avoid touching the network
-            assert sync.post(_URL, json={}).status_code == 299  # NOT injected
+            assert sync.post(_URL, json={}).status_code == 403
 
 
 async def test_unmapped_donkey_error_raises_value_error() -> None:

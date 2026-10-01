@@ -52,14 +52,22 @@ registry/       Exchange discovery, typed governed-state assets
       ↓
 llm/            framework-free OpenAI-compatible client factory + model catalog
       ↓
-core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx + pydantic only)
+core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but core imports none)
 ```
 
-**Not in the stack — `provisioning/`.** The declarative control plane
-(specs · plan/diff/apply · governance lint · CLI) is on the build plan's
-*Do not build* list — it must not compete with API Manager/Terraform — and its
-endpoints are `_verify.blocked`. Treat it as legacy scaffolding: reachable, but
-do not deepen it (see "Still blocked", below).
+**Not in the stack — `provisioning/`.** The package holds two different things:
+
+- **The refused declarative control plane** (specs · plan/diff/apply · drift ·
+  governance lint · publish). It is on the build plan's *Do not build* list —
+  it must not compete with API Manager/Terraform — and its CLI commands
+  (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`, `status`,
+  `publish`, `verify`) are hidden and `_verify.blocked`. Treat this half as
+  legacy scaffolding: reachable, but do not deepen it (see "Still blocked",
+  below).
+- **The supported `donkey` CLI.** The console script points at
+  `donkey_kit.provisioning.cli:app`, and its visible commands — `init`, `test`,
+  `mock`, `doctor` — are live. Moving them to their own `donkey_kit/cli`
+  package and quarantining the legacy half is #730.
 
 **The hard rule (the layered architecture):** `core/` has no dependency on any agent framework.
 Each `integrations/*` adapter may depend on exactly one framework, and nothing
@@ -87,7 +95,11 @@ framework that may not be installed.
     is exactly one transport and one header-injection point for model calls. It
     carries only the LLM-proxy credential: the `client_id`/`client_secret` header
     pair in the default client-id mode (no token provider), or the model-wallet
-    JWT from `Donkey(llm_auth=…)` in `jwt` mode;
+    JWT from `Donkey(llm_auth=…)` in `jwt` mode. Frameworks never get this
+    client itself: they get its non-owning view (`DonkeyAsyncClient.view()`,
+    public as `Donkey.http_client()`), which sends through it and whose close
+    is a no-op, so a framework that closes its client (Strands, `async with`)
+    can't end the pool. Only `Donkey.aclose()`/`close()` do (#733);
   - the **control-plane** client backs the registry and any other Anypoint
     platform call, authenticated by the connected-app token (`Donkey(auth=…)`,
     or the default `AnypointConnectedApp`). It never carries the wallet JWT or
@@ -130,10 +142,12 @@ framework that may not be installed.
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
 - **Configuration** resolves per key: values set in code → env vars →
   `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
-  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml` → default.
+  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml`, or
+  `~/.config/.donkey-kit.toml` when that variable is unset or empty → default.
   `DonkeyConfig(...)` built directly reads neither env nor files. It reports
   every missing field at once rather than one failure per run.
-  `Donkey.from_env()` is the entry point. Each field records its source
+  `Donkey.from_env()` is the entry point. This is what the code does today;
+  the precedence the build plan specifies (§2.1) is #727. Each field records its source
   (`DonkeyConfig.source_of`); a value that differs from the loaded one counts as
   set in code, however it was changed. So `llm_proxy_url` or `base_url` read
   from the working directory's files only receives credentials from those files
@@ -168,20 +182,24 @@ framework that may not be installed.
   | Hook | When it fires | What attaches |
   | --- | --- | --- |
   | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
-  | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); span **end**; classification |
-  | `_on_refusal` | Phase-2 seam — no caller until `classify()` wires it (#181) | typed-refusal handlers (`BG §1.2`) |
+  | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
+  | `_on_refusal` | never — no caller today; `classify()` raises the typed error directly, and the LangGraph bridge maps it without the hook | typed-refusal reaction handlers (`BG §1.2`, #208); the framework-agnostic typed-refusal bridge is #724 |
   | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
 
   Correlation, attribution, cache-control and opt-in cost-tag headers
   (`BG §1.7`) are set on every attempt by the `_inject_headers` request event
   hook, not by `_on_request`. The OTel span (`BG §1.6`) opens in `send()` and
-  closes there, or in the stream wrapper for a streamed response.
+  closes there, or in the stream wrapper for a streamed response. Its response
+  attributes, including the `classify()`-derived policy decision, are recorded
+  by `_record_response`, which `_finish()` calls right after `_on_response`.
 
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
   tracking silently breaks; and because a transport-level error escapes before
-  `_finish` runs, a span opened in `_on_request` has **no paired `_on_response`**
-  — span consumers must close in a `finally`, never relying on the response hook.
+  `_finish` runs, anything opened in `_on_request` has **no paired
+  `_on_response`** on that path — such a consumer must close in a `finally`,
+  never relying on the response hook (the OTel span avoids this by living in
+  `send()`).
   A hookless client behaves exactly as it did before the hooks were added. The
   full contracts live in the `core/transport.py` docstrings.
 - **`Governance`** (`governance.py`) is legacy scaffolding outside the linear
@@ -198,7 +216,11 @@ framework that may not be installed.
 
 Every governed surface ships in three ergonomic forms that must stay in lockstep:
 the `donkey.<framework>` factory, a `connection_kwargs()` accessor, and a
-module-level factory.
+module-level factory. Nothing checks this structurally yet: the lockstep is held
+by hand-written tests in `tests/unit/test_adapter_ergonomics.py`
+(`test_factory_and_connection_kwargs_do_not_drift` and its per-adapter
+siblings), whose `_FACTORIES` table a new adapter must be added to by hand.
+Formalising the adapter contract and its roster is #726.
 
 ---
 
@@ -236,8 +258,11 @@ What is verified today: the LLM-proxy data plane (its base-URL shape — note th
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
-discovery, the provisioning control plane, and the exact framework-adapter class
-names/kwargs (the conformance kit and the build plan phases).
+discovery and the provisioning control plane. The framework adapters are not
+blocked. They build their native object directly, and their constructor rows in
+§8 of the ledger read **signature-confirmed offline**, except ADK's `gemini()`,
+which is **live-verified**. An adapter refuses with `blocked(...)` only when the
+installed framework version lacks the class or field it depends on.
 
 ---
 
@@ -296,12 +321,15 @@ Not every framework gets the same CI guarantee, and the roster is deliberately
 scoped rather than exhaustive. The former Tier 1 / Tier 2 split is **retired**
 along with the eight-adapter roster (#197):
 
-- **Deep — conformance-tested:** LangGraph, and only LangGraph. Held to the
-  conformance suite; the `ADAPTERS` registry marks it `conformance_tested=True`.
+- **Deep — conformance-tested against the simulator:** LangGraph, and only
+  LangGraph (alongside the raw client). Held to the conformance suite; the
+  `ADAPTERS` registry marks it `conformance_tested=True`. Its `ChatOpenAI`
+  constructor is signature-confirmed offline, not live-verified.
 - **Supported at `connection_kwargs()`:** Google ADK, Strands, Microsoft Agent
-  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. Verified at
-  the kwargs level rather than the constructor level, and no longer carried in
-  the nightly framework matrix — a demoted framework returns with its own
+  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. Each
+  constructor is **signature-confirmed offline** (`scripts/verify_frameworks.py`),
+  except ADK's `gemini()`, which is **live-verified**. None is conformance-tested,
+  and none is carried in the nightly framework matrix — a demoted framework returns with its own
   conformance run when demand justifies it.
 - **Out of scope:** AutoGen and Semantic Kernel — Microsoft positions Agent
   Framework as their direct successor, so carrying all three would mean
@@ -330,12 +358,6 @@ The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
 pytest plugin** users run against their own agent (#191).
 
-Four adapters carry documented conformance exemptions for per-run correlation
-and gateway-identity observation: CrewAI, whose native OpenAI provider owns the
-transport, and LlamaIndex, Microsoft Agent Framework and ADK's `model()`, whose
-exemptions predate their move to the shared client and are due to be removed
-in #740.
-
 ---
 
 ## Related documents
@@ -347,12 +369,9 @@ in #740.
 - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch/PR/release flow, testing surfaces,
-  coding conventions.
-- [`CLAUDE.md`](CLAUDE.md) — repo guidance for Claude Code: the invariants, the
-  layer rule, and the skill index in operational form.
-- [`.claude/skills/README.md`](.claude/skills/README.md) — the `ddk-*` skill
-  index; the trigger-based path into the rules above (including
-  `ddk-implementing-features`, the implement-stage skill).
+  coding conventions, and the docs-sync map. It is the canonical contributor
+  guide; maintainers' optional AI-agent tooling is not part of this repository
+  and never outranks it.
 - `website/` — the consumer "how to use the SDK" documentation.
 
 ---

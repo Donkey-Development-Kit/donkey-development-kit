@@ -71,6 +71,9 @@ FRAMEWORKS: list[tuple[str, str, str, str, str]] = [
      "strands.models.openai.OpenAIModel", "strands-agents"),
     ("agent_framework", "donkey_kit.integrations.agent_framework", "chat_client",
      "agent_framework.openai.OpenAIChatClient", "agent-framework"),
+    # The same factory with api="chat_completions" (#826).
+    ("agent_framework.chat_completions", "donkey_kit.integrations.agent_framework",
+     "chat_client", "agent_framework.openai.OpenAIChatCompletionClient", "agent-framework"),
     ("openai_agents", "donkey_kit.integrations.openai_agents", "model",
      "agents.OpenAIChatCompletionsModel", "openai-agents"),
     ("anthropic", "donkey_kit.integrations.anthropic", "client",
@@ -198,6 +201,8 @@ def check_signature(
             obj = fn()
         elif res.framework == "adk.gemini":
             obj = fn(GEMINI_MODEL, base_url=os.environ.get(GEMINI_PROXY_ENV) or None)
+        elif res.framework == "agent_framework.chat_completions":
+            obj = fn(MODEL, api="chat_completions")
         else:
             obj = fn(MODEL)
     except NotImplementedError as exc:  # blocked on verification
