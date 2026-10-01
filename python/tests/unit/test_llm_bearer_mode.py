@@ -297,9 +297,12 @@ def test_a_module_level_factory_refuses_bearer_mode(
 
 
 async def test_crewai_refuses_bearer_mode_even_with_a_provider() -> None:
+    # Built directly, so the refusal is checked without the crewai extra.
+    from donkey_kit.integrations.crewai import CrewAIAdapter
+
     async with Donkey(_bearer_cfg(), llm_auth=StaticToken(_TOKEN)) as donkey:
         with pytest.raises(ConfigError, match="CrewAI can't send the token"):
-            donkey.crewai.connection_kwargs()
+            CrewAIAdapter(donkey.config, donkey._http).connection_kwargs()
 
 
 async def test_client_id_mode_attaches_no_data_plane_token() -> None:
