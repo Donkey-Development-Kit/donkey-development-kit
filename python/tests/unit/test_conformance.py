@@ -17,20 +17,30 @@ alone the whole module skips.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
+import httpx
 import pytest
 
 pytest.importorskip("openai")
 
 import openai  # noqa: E402 — after importorskip
 
+from donkey_kit.conformance import harness as harness_module  # noqa: E402
 from donkey_kit.conformance import run_conformance, validate_known_limitations  # noqa: E402
 from donkey_kit.conformance.harness import (  # noqa: E402
+    _PLACEHOLDER,
+    _PLACEHOLDER_URL,
     ConformanceUsageError,
     _build_agent,
     _offline_config,
 )
-from donkey_kit.conformance.suite import SCENARIOS  # noqa: E402
+from donkey_kit.conformance.suite import (  # noqa: E402
+    NO_MODEL_CALL,
+    SCENARIOS,
+    Observation,
+    _no_model_call,
+)
 from donkey_kit.core.errors import classify  # noqa: E402
 from donkey_kit.core.telemetry import current_correlation_id  # noqa: E402
 from donkey_kit.donkey import Donkey  # noqa: E402
@@ -317,3 +327,190 @@ async def test_harness_runs_scenarios_in_canonical_order() -> None:
     results = await run_conformance(GoodAgent)
     assert [r.scenario for r in results] == [s.name for s in SCENARIOS]
     assert all(isinstance(r.title, str) and r.title for r in results)
+
+
+# --- agents that bypass the Donkey client never pass (#737) ------------------
+# The suite observes the Donkey's transport, so an agent whose model calls do not
+# go through it must fail every scenario, never pass by default. And whatever
+# client it builds itself must not reach the network.
+
+_ELSEWHERE = "https://not-the-donkey.invalid/v1"
+
+
+class NoCallAgent:
+    """Makes no model call at all: logs the correlation id and returns a canned
+    string. Before #737 this passed every scenario but the PII one."""
+
+    def __init__(self, donkey: Donkey) -> None:
+        pass
+
+    async def run(self, prompt: str) -> str:
+        _LOG.info("run complete correlation_id=%s", current_correlation_id())
+        return "canned"
+
+
+class OwnHttpxAgent:
+    """Calls the model through a stock httpx client of its own and swallows the
+    outage, so it never raises."""
+
+    def __init__(self, donkey: Donkey) -> None:
+        self._client = httpx.AsyncClient(base_url=_ELSEWHERE)
+
+    async def run(self, prompt: str) -> str:
+        _LOG.info("run correlation_id=%s", current_correlation_id())
+        try:
+            resp = await self._client.post("/responses", json={"input": prompt})
+        except httpx.HTTPError:
+            return "fallback answer"
+        finally:
+            await self._client.aclose()
+        return resp.text
+
+
+class OwnOpenAIAgent:
+    """Calls the model through a stock OpenAI client it built itself, pointed
+    somewhere other than the Donkey."""
+
+    def __init__(self, donkey: Donkey) -> None:
+        self._client = openai.AsyncOpenAI(base_url=_ELSEWHERE, api_key="sk-own", max_retries=0)
+
+    async def run(self, prompt: str) -> str:
+        _LOG.info("run correlation_id=%s", current_correlation_id())
+        resp = await self._client.responses.create(model=_MODEL, input=prompt)
+        return resp.output_text
+
+
+@pytest.fixture
+def real_transport_spy(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Record any request that reaches httpx's real network transports. The
+    harness swaps its own blocker in for the run, so a send that gets past it
+    lands here; the spy fails the request too, so a test never goes online."""
+    sent: list[str] = []
+
+    def spy_sync(self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
+        sent.append(str(request.url))
+        raise httpx.ConnectError("test spy", request=request)
+
+    async def spy_async(self: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
+        sent.append(str(request.url))
+        raise httpx.ConnectError("test spy", request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", spy_sync)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", spy_async)
+    return sent
+
+
+@pytest.mark.parametrize(
+    ("agent", "reason"),
+    [
+        (NoCallAgent, "made no model call"),
+        (OwnHttpxAgent, "client other than the Donkey's"),
+        (OwnOpenAIAgent, "client other than the Donkey's"),
+    ],
+)
+async def test_agent_bypassing_the_donkey_fails_every_scenario(
+    agent: type, reason: str, real_transport_spy: list[str]
+) -> None:
+    results = await run_conformance(agent)
+    assert _statuses(results) == {s.name: "fail" for s in SCENARIOS}
+    for r in results:
+        assert r.detail.startswith(NO_MODEL_CALL), r.detail
+        assert reason in r.detail
+    # The harness blocked every send, so nothing reached a real transport.
+    assert real_transport_spy == []
+
+
+async def test_harness_restores_real_transports_after_the_run(
+    real_transport_spy: list[str],
+) -> None:
+    spy_sync = httpx.HTTPTransport.handle_request
+    spy_async = httpx.AsyncHTTPTransport.handle_async_request
+    await run_conformance(OwnHttpxAgent)
+    assert httpx.HTTPTransport.handle_request is spy_sync
+    assert httpx.AsyncHTTPTransport.handle_async_request is spy_async
+
+
+def test_unobservable_adapter_is_named_with_the_exemption_route() -> None:
+    # A header-only adapter (CrewAI, LlamaIndex, MAF, ADK model()) builds its own
+    # client, so the finding names the adapter and the KNOWN_LIMITATIONS route
+    # rather than telling the developer to use the donkey they already used.
+    obs = Observation(
+        returned=None,
+        raised=None,
+        wire_sends=0,
+        log_text="",
+        bypass_attempts=3,
+        unobservable_adapters=("crewai",),
+    )
+    outcome = _no_model_call(obs)
+    assert outcome is not None and not outcome.passed
+    assert outcome.detail.startswith(NO_MODEL_CALL)
+    assert "donkey.crewai" in outcome.detail
+    assert "3 request(s) blocked" in outcome.detail
+    assert "KNOWN_LIMITATIONS" in outcome.detail
+
+
+def test_a_call_through_the_donkey_is_not_flagged() -> None:
+    obs = Observation(returned="ok", raised=None, wire_sends=1, log_text="")
+    assert _no_model_call(obs) is None
+
+
+# --- configured credentials are never used (#737) ----------------------------
+
+_REAL_ENV = {
+    "DONKEY_LLM_PROXY_URL": "https://real-gateway.example.com/",
+    "DONKEY_LLM_PROXY_CLIENT_ID": "real-client-id",
+    "DONKEY_LLM_PROXY_CLIENT_SECRET": "real-client-secret",
+    "DONKEY_LLM_PROXY_KEY": "real-proxy-key",
+    "DONKEY_LLM_PROXY_WALLET_CLIENT_ID": "real-wallet-id",
+    "ANYPOINT_CLIENT_ID": "real-anypoint-id",
+    "ANYPOINT_CLIENT_SECRET": "real-anypoint-secret",
+}
+
+
+@pytest.fixture
+def real_credentials(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    for key, value in _REAL_ENV.items():
+        monkeypatch.setenv(key, value)
+    return _REAL_ENV
+
+
+def test_offline_config_replaces_configured_credentials(
+    real_credentials: dict[str, str],
+) -> None:
+    cfg = _offline_config()
+    assert cfg.llm_proxy_url == _PLACEHOLDER_URL
+    assert cfg.llm_proxy_client_id == _PLACEHOLDER
+    assert cfg.llm_proxy_client_secret == _PLACEHOLDER
+    assert cfg.llm_proxy_auth == "client-id"
+    for unset in ("llm_proxy_key", "llm_proxy_wallet_client_id", "client_id", "client_secret"):
+        assert getattr(cfg, unset) is None, unset
+
+
+async def test_harness_never_sends_configured_credentials(
+    real_credentials: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Record every request the probe serves, then run a well-behaved agent with
+    # real-looking credentials in the environment: none of them may appear.
+    seen: list[httpx.Request] = []
+    responder = harness_module._fixture_responder
+
+    def recording(*args: Any, **kwargs: Any) -> Any:
+        respond = responder(*args, **kwargs)
+
+        def wrapped(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return respond(request)
+
+        return wrapped
+
+    monkeypatch.setattr(harness_module, "_fixture_responder", recording)
+    results = await run_conformance(GoodAgent)
+
+    assert _statuses(results) == {s.name: "pass" for s in SCENARIOS}
+    assert seen
+    for request in seen:
+        assert request.url.host == httpx.URL(_PLACEHOLDER_URL).host
+        sent = " ".join(f"{k}={v}" for k, v in request.headers.items())
+        for value in real_credentials.values():
+            assert value not in sent
