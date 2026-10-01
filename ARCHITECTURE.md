@@ -338,12 +338,9 @@ in #740.
 - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch/PR/release flow, testing surfaces,
-  coding conventions.
-- [`CLAUDE.md`](CLAUDE.md) — repo guidance for Claude Code: the invariants, the
-  layer rule, and the skill index in operational form.
-- [`.claude/skills/README.md`](.claude/skills/README.md) — the `ddk-*` skill
-  index; the trigger-based path into the rules above (including
-  `ddk-implementing-features`, the implement-stage skill).
+  coding conventions, and the docs-sync map. It is the canonical contributor
+  guide; maintainers' optional AI-agent tooling is not part of this repository
+  and never outranks it.
 - `website/` — the consumer "how to use the SDK" documentation.
 
 ---
