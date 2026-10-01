@@ -84,7 +84,10 @@ pip install -e ".[llm,langgraph]"
 Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
 `openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `mcp`, `a2a`, `otel`, `cli`,
 `local`, `test` (the [conformance pytest plugin](https://donkey-development-kit.github.io/donkey-development-kit/testing) —
-`pytest --donkey-conformance --agent=my_app.agent:build`), and `all`. `all` is
+`pytest --donkey-conformance --agent=my_app.agent:build`), and `all`. `mcp` and `a2a`
+are placeholders for **Roadmap** features (governed tool access, A2A agents): today they
+only install the upstream `mcp` / `a2a-sdk` packages, and nothing in `donkey_kit` uses
+them yet. `all` is
 everything that installs together — `llm`, `langgraph`, `mcp`, `otel`, `cli`, `local`,
 `test` — and leaves out the seven other framework extras, whose current upstream releases
 cannot all be installed together. Add the one framework you use: `donkey-kit[all,crewai]`.
@@ -138,4 +141,4 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 | LlamaIndex, Microsoft Agent Framework | correlation ID propagated | These adapters receive a static `default_headers` snapshot, which deliberately excludes the per-run correlation ID. Without the SDK's `httpx` client, `donkey.run(id=...)` cannot update their request headers. |
 | ADK `model()`, CrewAI | gateway identity observed | The framework owns the transport (LiteLLM for ADK's `model()`, CrewAI's native OpenAI provider for CrewAI), so no response reaches the SDK's `_on_response` hook. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
 | LlamaIndex, Microsoft Agent Framework | gateway identity observed | These adapters receive `default_headers`, not the SDK's `httpx` client, so no response reaches `_on_response`. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
-| CrewAI | JWT refreshed per send | CrewAI's native OpenAI provider owns the transport and takes the auth headers once, from a snapshot that never contains the JWT, so a model-wallet proxy answers `401` in `jwt` mode. Use client-id auth with CrewAI. ADK's `model()` and `gemini()`, LlamaIndex and Microsoft Agent Framework send through the SDK's client and carry the rotating JWT on async calls ([`jwt` mode](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration#jwt--model-wallet-auth-mode)). |
+| CrewAI | JWT refreshed per send | CrewAI's native OpenAI provider owns the transport and builds its own clients, so the rotating JWT the SDK adds per send never reaches its requests. `donkey.crewai.llm()` and `connection_kwargs()` raise `ConfigError` in `jwt` mode; use client-id auth with CrewAI. ADK's `model()` and `gemini()`, LlamaIndex and Microsoft Agent Framework send through the SDK's client and carry the rotating JWT on async calls ([`jwt` mode](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration#jwt--model-wallet-auth-mode)). |

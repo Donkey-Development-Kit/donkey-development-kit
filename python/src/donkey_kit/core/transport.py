@@ -324,6 +324,7 @@ def _apply_base_headers(
     correlation_id: str,
     *,
     correlation_header: str,
+    control_plane: bool,
 ) -> None:
     """The run correlation ID + attribution — everything both transports inject
     on EVERY send without needing to await anything. The correlation ID is
@@ -338,12 +339,19 @@ def _apply_base_headers(
     carries the CONFIG-LEVEL cost tags and any ``donkey.run(...)`` per-run
     overrides are applied on top here (read from the contextvar per send), so a
     run-scope dimension wins for its block (#196). Disabled (the default), no
-    cost header is sent; the span attributes still carry every tag."""
+    cost header is sent; the span attributes still carry every tag.
+
+    On a ``control_plane`` client only the correlation ID is set: the
+    attribution, cost-tag and ``x-cache-*`` headers are meant for the LLM proxy
+    (docs/verified-apis.md §3) and no Anypoint platform API reads them
+    (docs/verified-apis.md §12.2), so they are not sent there (#833)."""
     request.headers[correlation_header] = correlation_id
     # Stamp the resolved name so read-back (errors._sent_ids) honours a
     # header-name override without core/errors importing DonkeyConfig (#363).
     # Idempotent across retries — same name each send.
     request.extensions["donkey_correlation_header"] = correlation_header
+    if control_plane:
+        return
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
     run = current_cost_tags()
@@ -440,6 +448,52 @@ def _gateway_unavailable(
     return gateway_unavailable(
         base_url=f"{url.scheme}://{host}" if host else None,
         cause=exc,
+        correlation_id=request.headers.get(correlation_header),
+        call_id=request.headers.get(call_id_header),
+    )
+
+
+def _lifecycle_error(
+    request: httpx.Request,
+    exc: RuntimeError,
+    *,
+    client_closed: bool,
+    correlation_header: str,
+    call_id_header: str,
+) -> ConfigError | None:
+    """Type the two lifecycle ``RuntimeError``s a send can hit (#813), or return
+    ``None`` to let any other ``RuntimeError`` through unchanged.
+
+    * The client is closed: httpx refuses the send. Detected from the client's
+      own state, not httpx's message wording.
+    * The event loop is closed: a pooled connection belongs to a loop that has
+      since closed, typically a second ``asyncio.run()`` on one ``Donkey``."""
+    if client_closed:
+        message = (
+            "Cannot send: this Donkey's HTTP client is closed. It was closed by "
+            "Donkey.aclose()/close() or by a framework that closed the client it "
+            "was given."
+        )
+        remediation = (
+            "Make the call on an open client: create a new Donkey, or keep the "
+            "Donkey open (do not close it, or the client it hands a framework, "
+            "until its last call)."
+        )
+    elif str(exc) == "Event loop is closed":
+        message = (
+            "Cannot send: the async client's connections belong to an event loop "
+            "that has closed (for example, a second asyncio.run() on the same "
+            "Donkey)."
+        )
+        remediation = (
+            "Use the Donkey within one event loop: create it inside the "
+            "asyncio.run() that uses it, or make every call from the same loop."
+        )
+    else:
+        return None
+    return ConfigError(
+        message,
+        remediation=remediation,
         correlation_id=request.headers.get(correlation_header),
         call_id=request.headers.get(call_id_header),
     )
@@ -1006,6 +1060,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         # response hook feeds it; when None the hook stays a byte-identical no-op,
         # so the control-plane token-fetch client tracks no budget.
         self._budget = budget
+        self._view: DonkeyAsyncClientView | None = None
         super().__init__(
             timeout=cfg.timeout_s,
             event_hooks={"request": [self._inject_headers]},
@@ -1016,6 +1071,13 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         if self._mounts:
             self._transport = _AsyncMountRouter(self._transport, self._mounts.items())
             self._mounts = {}
+
+    def view(self) -> DonkeyAsyncClientView:
+        """The non-owning view of this client, the one to hand a framework (#733).
+        It sends through this client, and closing it leaves this client open."""
+        if self._view is None:
+            self._view = DonkeyAsyncClientView(self)
+        return self._view
 
     @property
     def token_provider(self) -> AuthProvider | None:
@@ -1030,6 +1092,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             request,
             _request_correlation_id(request),
             correlation_header=self._correlation_header,
+            control_plane=self._control_plane,
         )
         if not self._guard(request):
             return
@@ -1195,6 +1258,17 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
                     correlation_header=self._correlation_header,
                     call_id_header=self._call_id_header,
                 ) from exc
+            except RuntimeError as exc:
+                typed = _lifecycle_error(
+                    request,
+                    exc,
+                    client_closed=self.is_closed,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                )
+                if typed is None:
+                    raise
+                raise typed from exc
             last_response = response
 
             provider = self._token_provider
@@ -1355,6 +1429,7 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         # Resolved once; see DonkeyAsyncClient.__init__ (BG §1.1, #195).
         self._correlation_header, self._call_id_header = _resolve_header_names(cfg)
         self._budget = budget  # see DonkeyAsyncClient.__init__ (BG §1.3, #185)
+        self._view: DonkeyClientView | None = None
         super().__init__(
             timeout=cfg.timeout_s,
             event_hooks={"request": [self._inject_headers]},
@@ -1369,12 +1444,19 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
             raise sync_jwt_error()
         return super().build_request(*args, **kwargs)
 
+    def view(self) -> DonkeyClientView:
+        """The non-owning view of this client (see :meth:`DonkeyAsyncClient.view`)."""
+        if self._view is None:
+            self._view = DonkeyClientView(self)
+        return self._view
+
     def _inject_headers(self, request: httpx.Request) -> None:
         _apply_base_headers(
             self._cfg,
             request,
             _request_correlation_id(request),
             correlation_header=self._correlation_header,
+            control_plane=False,
         )
         self._guard(request)
 
@@ -1458,6 +1540,17 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
                     correlation_header=self._correlation_header,
                     call_id_header=self._call_id_header,
                 ) from exc
+            except RuntimeError as exc:  # a closed client; see the async twin (#813)
+                typed = _lifecycle_error(
+                    request,
+                    exc,
+                    client_closed=self.is_closed,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                )
+                if typed is None:
+                    raise
+                raise typed from exc
             last_response = response
 
             # No 401-refresh branch: with no token provider there is nothing to
@@ -1530,6 +1623,108 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         return response
 
 
+# --- non-owning views (#733) --------------------------------------------------
+# Every adapter and ``donkey.llm`` share one client per plane, but several
+# frameworks own the lifecycle of the client they are given: Strands runs
+# ``async with AsyncOpenAI(**client_args)`` per request, and ``async with
+# donkey.openai()`` closes its ``http_client`` on exit. Handing them the shared
+# client itself lets one framework close it for the whole ``Donkey``. A view sends
+# through the shared client, so every hook, retry, span, ``simulate()`` swap and
+# ``donkey.last_call`` still applies, but closing it never closes the pool; only
+# ``Donkey.aclose()``/``close()`` does.
+
+
+class _NoTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
+    """A view's own transport. Never used, because a view's ``send()`` delegates;
+    passing it keeps httpx from building a connection pool for the view."""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("a DonkeyClientView sends through its shared client")
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("a DonkeyAsyncClientView sends through its shared client")
+
+
+class DonkeyAsyncClientView(httpx.AsyncClient):
+    """A non-owning ``httpx.AsyncClient`` over a shared :class:`DonkeyAsyncClient`.
+
+    ``send()`` hands each request to the shared client. ``aclose()`` and leaving
+    ``async with`` do nothing, and :attr:`is_closed` reports the shared client's
+    state. Event hooks added to the view run for requests sent through it, around
+    the shared client's own. Get one from :meth:`DonkeyAsyncClient.view`."""
+
+    def __init__(self, shared: DonkeyAsyncClient) -> None:
+        self._shared = shared
+        super().__init__(
+            timeout=shared.timeout,
+            follow_redirects=shared.follow_redirects,
+            trust_env=False,
+            transport=_NoTransport(),
+        )
+
+    @property
+    def is_closed(self) -> bool:
+        return self._shared.is_closed
+
+    async def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
+        for hook in self.event_hooks["request"]:
+            await hook(request)
+        response = await self._shared.send(request, **kwargs)
+        for hook in self.event_hooks["response"]:
+            await hook(response)
+        return response
+
+    async def aclose(self) -> None:
+        """Leave the shared client open; ``Donkey.aclose()`` owns it."""
+
+    async def __aenter__(self) -> DonkeyAsyncClientView:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        """Leave the shared client open (see :meth:`aclose`)."""
+
+
+class DonkeyClientView(httpx.Client):
+    """The blocking twin of :class:`DonkeyAsyncClientView`, over a shared
+    :class:`DonkeyClient`. Get one from :meth:`DonkeyClient.view`."""
+
+    def __init__(self, shared: DonkeyClient) -> None:
+        self._shared = shared
+        super().__init__(
+            timeout=shared.timeout,
+            follow_redirects=shared.follow_redirects,
+            trust_env=False,
+            transport=_NoTransport(),
+        )
+
+    @property
+    def is_closed(self) -> bool:
+        return self._shared.is_closed
+
+    def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
+        # The shared client refuses here in jwt mode; a view must refuse too.
+        if self._shared._cfg.llm_proxy_auth == "jwt":
+            raise sync_jwt_error()
+        return super().build_request(*args, **kwargs)
+
+    def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
+        for hook in self.event_hooks["request"]:
+            hook(request)
+        response = self._shared.send(request, **kwargs)
+        for hook in self.event_hooks["response"]:
+            hook(response)
+        return response
+
+    def close(self) -> None:
+        """Leave the shared client open; ``Donkey.close()`` owns it."""
+
+    def __enter__(self) -> DonkeyClientView:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Leave the shared client open (see :meth:`close`)."""
+
+
 def build_http_client(
     cfg: DonkeyConfig,
     auth: AuthProvider | None,
@@ -1556,6 +1751,20 @@ def sync_jwt_error() -> ConfigError:
         "`donkey.llm.client()` / `donkey.openai()` without sync=True, or a "
         "framework's async call (`ainvoke()` / `astream()`, not `invoke()`) — or "
         "switch to client-id auth for a synchronous caller."
+    )
+
+
+def missing_jwt_provider_error() -> ConfigError:
+    """The error for jwt / model-wallet auth mode with no ``AuthProvider`` on the
+    data-plane client, shared by ``donkey.llm.client()`` and every adapter
+    (#509, #828). Without one the request would carry the api-key placeholder as
+    its bearer, and a wallet proxy refuses every call."""
+    return ConfigError(
+        "llm_proxy_auth='jwt' requires an AuthProvider that supplies the "
+        "model-wallet JWT, but none is attached. Pass one when constructing "
+        "Donkey, e.g. `Donkey(llm_auth=StaticToken(jwt))` or a custom "
+        "AuthProvider that refreshes the token (see donkey_kit.core.auth). The "
+        "module-level factories have no provider; use a Donkey in jwt mode."
     )
 
 

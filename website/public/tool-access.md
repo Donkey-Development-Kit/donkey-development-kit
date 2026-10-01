@@ -22,21 +22,20 @@ hold up in production.
 
 ## Discover and filter
 
-`donkey.tools.discover(...)` is also the search and filter entry point. One call
-narrows the catalog by name/description glob, governance, domain, tags, and
-asset type, so an agent binds only the tools it needs:
+`donkey.tools.discover(...)` is also the filter entry point. One call narrows
+the catalog by governance, domain and tags, so an agent binds only the tools it
+needs:
 
 ```python
 tools = await donkey.tools.discover(
-    search="*accounts*",     # glob over asset name + description
-    governed_only=True,      # default criteria, or a GovernanceCriteria
     domain="hr",
     tags=["approved"],
-    asset_types=["mcp"],
-    environment="Production",
-    limit=50,
+    governed=True,           # default criteria, or a GovernanceCriteria
 )
 ```
+
+Name search, asset type and environment filters live one layer down, on
+`donkey.registry.search()`.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
 Exchange — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md).
@@ -44,7 +43,7 @@ Exchange — see [Discovery, search & filter](https://donkey-development-kit.git
 ## In this section
 
   
-    Narrow the catalog by name, governance, domain, tags, and asset type.
+    Narrow the catalog by governance, domain and tags, or search it by name and asset type.
   
   
     Turn a `ToolSet` into each framework's own native tool objects.

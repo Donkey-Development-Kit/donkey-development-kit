@@ -107,7 +107,9 @@ class ConfigError(DonkeyError):
     """Configuration is missing or invalid, or an endpoint may not receive the
     credentials that would be sent to it (see ``DonkeyConfig.check_endpoints``).
     Raised locally before any request; reports ALL missing fields at once
-    (config resolution)."""
+    (config resolution). The transport also raises it, with its own
+    remediation, for a send on a closed client or from a closed event loop
+    (#813)."""
 
     remediation: str = (
         "Fix the configuration the message names — set each missing or invalid "
@@ -407,6 +409,34 @@ class UpstreamRequestError(DonkeyError):
         self.param = param
 
 
+class ModelNotRoutable(DonkeyError):
+    """The gateway could not pick a provider for the requested model, so it
+    rejected the request before any upstream call (#825).
+
+    Seen on a model-based-routing proxy with more than one provider configured:
+    a bare model name (``gpt-5-mini``) is ambiguous unless the gateway knows it
+    from exactly one provider, so it answers ``400`` with a flat-string
+    ``error`` asking for ``provider/model`` (docs/verified-apis.md §4). This is a
+    client configuration mistake, NOT a gateway policy refusal (so it is not a
+    :class:`PolicyViolation`) and NOT an upstream rejection (the provider was
+    never called, so it is not an :class:`UpstreamRequestError`). Terminal,
+    never retried.
+
+    ``model`` is the name the gateway echoed back, or ``None`` when it could not
+    be read from the message."""
+
+    #: Single source of next-step wording for the bare-model-name rejection.
+    remediation: str = (
+        "This proxy routes to more than one provider, so it cannot resolve a bare "
+        "model name. Use the 'provider/model' form for the model, e.g. "
+        "openai/gpt-5-mini instead of gpt-5-mini."
+    )
+
+    def __init__(self, message: str, *, model: str | None = None, **kw: Any) -> None:
+        super().__init__(message, **kw)
+        self.model = model
+
+
 class GatewayUnavailable(DonkeyError):
     """The gateway could not be reached at all — a transport-level failure (DNS,
     refused connection, TLS error, timeout) with NO HTTP response behind it
@@ -579,6 +609,10 @@ def classify(
       and a ``www-authenticate`` header → auth.
     * **Upstream provider passthrough** (e.g. OpenAI ``model_not_found``) is a
       non-429 4xx with a nested error object carrying ``code``/``type``/``param``.
+    * **Bare model name on a multi-provider proxy** rejects with **400** and a
+      *flat-string* ``error`` saying the model "is not in the known unique model
+      map" → :class:`ModelNotRoutable` (a client mistake, not a policy refusal;
+      #825). Keyed on that gateway sentence.
     * **Injection protection** rejects with the ``x-injection-protection:
       blocked`` header (the header, not the status, is the discriminator; #181)
       → :class:`PromptInjectionBlocked`.
@@ -754,6 +788,20 @@ def classify(
                 param=_str_or_none(error_obj.get("param")),
                 **kw,
             )
+        # Model-based routing could not resolve a bare model name on a
+        # multi-provider proxy: a flat-string ``error`` naming the model and
+        # asking for ``provider/model`` (docs/verified-apis.md §4, #825). Keyed on
+        # the gateway's own sentence, since the status and envelope match the
+        # unconfirmed fall-through below.
+        flat_error = _str_or_none(body.get("error")) if body is not None else None
+        unroutable = _MODEL_NOT_ROUTABLE_RE.search(flat_error) if flat_error else None
+        if unroutable is not None:
+            return ModelNotRoutable(
+                f"The gateway could not route the requested model ({status}): {flat_error}",
+                model=unroutable.group("model"),
+                # remediation: ModelNotRoutable's canonical class default.
+                **kw,
+            )
         # An unrecognised non-429 4xx with no nested provider envelope: a refusal
         # whose contract we cannot pin (content-moderation / federated-guardrail
         # shapes are still under-documented, #253). Surface it honestly — name what
@@ -850,6 +898,14 @@ def parse_retry_after(raw: str | None) -> float | None:
     except ValueError:
         return None  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
 
+
+# The model-based-routing rejection for a bare model name on a multi-provider
+# proxy (docs/verified-apis.md §4, #825). Live text: "Failed to parse model from
+# request: Model 'gpt-5-mini' is not in the known unique model map and multiple
+# providers are configured. Use 'provider/model' format."
+_MODEL_NOT_ROUTABLE_RE = re.compile(
+    r"Model '(?P<model>[^']*)' is not in the known unique model map"
+)
 
 _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
 

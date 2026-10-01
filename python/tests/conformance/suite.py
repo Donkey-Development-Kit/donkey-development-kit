@@ -45,9 +45,9 @@ CONFORMANCE_SCENARIOS = [
     # In jwt / model-wallet auth mode (#509) the rotating JWT is injected per-send
     # from the attached AuthProvider, so an expired token is refreshed on the next
     # request (and on a 401, via the transport's invalidate→retry-once loop).
-    # Holds only for adapters that send through our httpx client; CrewAI builds its
-    # own transport from a header snapshot that never carries the JWT and records
-    # an asserted exemption below (BG §1.8, #828).
+    # Holds only for adapters routed through our httpx client. CrewAI's provider
+    # builds its own transport, never sees the JWT, and refuses jwt mode with a
+    # ConfigError; it records an asserted exemption below (BG §1.8, #828).
     "jwt_token_refreshed",
 ]
 
@@ -91,17 +91,16 @@ _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
     "gateway identity and reports UNAVAILABLE (#362)."
 )
 
-# jwt_token_refreshed (#509): the rotating model-wallet JWT is attached only by
-# our transport, per send. ADK's model(), LlamaIndex and Agent Framework now send
-# through the shared client, so they carry it and record no exemption (#783).
-# CrewAI's native OpenAI provider still owns its transport and takes the auth
-# headers once, as a snapshot that never contains the JWT (#828).
+# jwt_token_refreshed: a rotating model-wallet JWT is added per-send only by our
+# transport (#509). Every adapter that sends through it carries the JWT; CrewAI's
+# native OpenAI provider builds its own clients, so it would send the api-key
+# placeholder as the bearer. The adapter refuses jwt mode with a ConfigError
+# instead (#828) — asserted here rather than silently skipped.
 _CREWAI_JWT_EXEMPTION = (
-    "CrewAI's native OpenAI provider owns the transport and takes the auth headers "
-    "once, at construction, from a snapshot that never contains the JWT: its "
-    "Authorization header carries llm_proxy_key or the client-id-enforced "
-    "placeholder, so a wallet proxy answers 401. Use client-id auth with this "
-    "adapter (#509, #828)."
+    "CrewAI's native OpenAI provider owns the transport, so the rotating model-wallet "
+    "JWT, which only our httpx client adds per-send, never reaches its requests. "
+    "donkey.crewai raises ConfigError in jwt auth mode; use client-id auth with this "
+    "adapter, or a transport-injected adapter for jwt mode (#509, #828)."
 )
 
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
@@ -117,11 +116,9 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "gateway_identity_observed": _CREWAI_LAST_CALL_EXEMPTION,
         "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
     },
-    # LlamaIndex and MS Agent Framework get only a static default_headers snapshot,
-    # no httpx client (BG §1.8). The snapshot deliberately excludes the per-run
-    # correlation ID and cannot observe last_call responses. They now send through
-    # the shared client, which carries the rotating JWT, so jwt_token_refreshed
-    # holds; retiring the other two rows is #740.
+    # LlamaIndex and MS Agent Framework now send through our httpx client, so they
+    # carry the jwt-mode JWT per-send and record no jwt_token_refreshed exemption
+    # (#828). Their correlation-id and last-call rows are #740's to retire.
     "llamaindex": {
         "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
         "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,

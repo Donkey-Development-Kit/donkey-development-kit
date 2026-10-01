@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import parse_qs
 
 import httpx
@@ -174,3 +175,87 @@ async def test_chained_auth_failure_uses_provider_neutral_remediation() -> None:
     assert exc_info.value.remediation is AuthError.provider_chain_remediation
     assert "each provider's credentials or token source" in exc_info.value.remediation
     assert "ANYPOINT_CLIENT_ID" not in exc_info.value.remediation
+
+
+async def test_concurrent_first_calls_share_one_token_fetch() -> None:
+    # Without a lock, N concurrent first calls each POST the token endpoint (#813).
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        await asyncio.sleep(0.01)  # hold the fetch open so the callers overlap
+        return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        auth = AnypointConnectedApp(
+            client_id="client-id",
+            client_secret="client-secret",
+            control_plane_url="https://anypoint.example",
+            http_client=http_client,
+            token_path="/oauth/token",
+        )
+        tokens = await asyncio.gather(*(auth.token() for _ in range(10)))
+
+    assert tokens == ["tok"] * 10
+    assert len(requests) == 1
+
+
+def test_connected_app_token_works_across_event_loops() -> None:
+    # The lock must not tie the provider to the first event loop it ran on.
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"access_token": f"tok-{calls}", "expires_in": 3600})
+
+    auth = AnypointConnectedApp(
+        client_id="client-id",
+        client_secret="client-secret",
+        control_plane_url="https://anypoint.example",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        token_path="/oauth/token",
+    )
+
+    async def fetch_fresh() -> str:
+        await auth.invalidate()
+        return await auth.token()
+
+    assert asyncio.run(fetch_fresh()) == "tok-1"
+    assert asyncio.run(fetch_fresh()) == "tok-2"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"<html>not json</html>",
+        b"[]",
+        b'"a string"',
+        b'{"access_token": "tok", "expires_in": "soon"}',
+        b'{"access_token": "tok", "expires_in": null}',
+        b'{"access_token": 42}',
+    ],
+    ids=["not-json", "list", "string", "bad-expires", "null-expires", "non-str-token"],
+)
+async def test_malformed_token_body_raises_auth_error(body: bytes) -> None:
+    response: httpx.Response | None = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal response
+        response = httpx.Response(200, content=body)
+        return response
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        auth = AnypointConnectedApp(
+            client_id="client-id",
+            client_secret="client-secret",
+            control_plane_url="https://anypoint.example",
+            http_client=http_client,
+            token_path="/oauth/token",
+        )
+
+        with pytest.raises(AuthError, match="malformed token response") as exc_info:
+            await auth.token()
+
+    assert exc_info.value.response is response
+    _assert_control_plane_remediation(exc_info.value)
