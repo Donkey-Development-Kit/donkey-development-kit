@@ -78,6 +78,18 @@ async def test_raw_client_refusal_log_record_omits_the_blocked_value(
     assert _BLOCKED_VALUE not in text
 
 
+async def test_traceback_with_frame_locals_omits_the_blocked_value() -> None:
+    """Error reporters that show each frame's local variables (Sentry, ``pytest
+    -l``, rich/structlog tracebacks) must not find the framework error there."""
+    exc = await _refusal_from_raw_client()
+
+    rendered = "".join(
+        traceback.TracebackException.from_exception(exc, capture_locals=True).format()
+    )
+
+    assert _BLOCKED_VALUE not in rendered
+
+
 async def test_the_framework_error_stays_reachable_but_unchained() -> None:
     openai = pytest.importorskip("openai")
     exc = await _refusal_from_raw_client()
