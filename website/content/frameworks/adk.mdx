@@ -235,8 +235,8 @@ except genai_errors.APIError as exc:
 bound to the event loop that first uses it. Build the `Donkey` — and the
 models — inside the loop that runs them (`async with Donkey.from_env()` in your
 `main`), and don't reuse the module-level `gemini()` across separate
-`asyncio.run(...)` calls: the second run fails with
-`RuntimeError: Event loop is closed`.
+`asyncio.run(...)` calls: the second run fails with a `ConfigError` saying the
+client's connections belong to an event loop that has closed.
 
 ## Notes
 

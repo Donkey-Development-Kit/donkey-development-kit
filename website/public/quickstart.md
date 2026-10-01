@@ -10,7 +10,8 @@ Omni Gateway later is an environment change, not a code change.
 
 | Capability | Status | Learn more |
 |---|---|---|
-| Governed model access for 8 frameworks | Live | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) |
+| Governed model access (the raw client, through the proxy data plane) | Live | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) |
+| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified ADK `gemini()` · Signature-confirmed the rest | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#supported-frameworks) |
 | Typed refusals | Live | [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) |
 | Budget & pacing | Live | [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) |
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) |
