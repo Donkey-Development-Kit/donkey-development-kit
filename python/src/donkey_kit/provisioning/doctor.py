@@ -252,10 +252,10 @@ def _budget_check(budget: Budget | None) -> Check:
 
 def _live_probe(cfg: DonkeyConfig, model: str) -> ProbeResult:
     """Make one real governed call and normalise every failure into a typed
-    :class:`DonkeyError`. Transport failures already arrive as
-    :class:`GatewayUnavailable` from our transport (BG §1.2); an HTTP error
-    arrives from the raw client as ``openai.APIStatusError``, which we bridge
-    through :func:`classify` exactly as a caller would."""
+    :class:`DonkeyError`. A transport failure is raised by our transport as
+    :class:`GatewayUnavailable` (BG §1.2) but reaches here wrapped in the OpenAI
+    SDK's ``APIConnectionError``; an HTTP error arrives as
+    ``openai.APIStatusError``. :func:`_bridge` unwraps or classifies both."""
     from ..donkey import Donkey
 
     donkey = Donkey(cfg)
@@ -264,8 +264,6 @@ def _live_probe(cfg: DonkeyConfig, model: str) -> ProbeResult:
         try:
             client.responses.create(model=model, input="ping", max_output_tokens=16)
             return ProbeResult(None, donkey.budget)
-        except GatewayUnavailable as exc:
-            return ProbeResult(exc, donkey.budget)
         except DonkeyError as exc:
             return ProbeResult(exc, donkey.budget)
         except Exception as exc:  # noqa: BLE001 - bridge the raw client's errors
@@ -275,9 +273,18 @@ def _live_probe(cfg: DonkeyConfig, model: str) -> ProbeResult:
 
 
 def _bridge(exc: Exception, cfg: DonkeyConfig) -> DonkeyError:
-    """Map a raw-client exception into the taxonomy: an HTTP error via
+    """Map a raw-client exception into the taxonomy. A typed error our transport
+    raised inside ``send()`` (an outage, a closed client) arrives wrapped by the
+    OpenAI SDK as ``APIConnectionError`` with the typed error on ``__cause__``
+    (#813), so the cause chain is checked first. Otherwise: an HTTP error via
     :func:`classify`, a transport error into :class:`GatewayUnavailable`."""
     from ..core.errors import classify, gateway_unavailable
+
+    cause = exc.__cause__
+    while cause is not None:
+        if isinstance(cause, DonkeyError):
+            return cause
+        cause = cause.__cause__
 
     response = getattr(exc, "response", None)
     if response is not None:

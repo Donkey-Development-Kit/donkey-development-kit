@@ -18,6 +18,7 @@ verification-blocked error where it is needed.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import time
 from collections.abc import Callable
@@ -86,6 +87,8 @@ class AnypointConnectedApp(AuthProvider):
         self._endpoint_check = endpoint_check
         self._cached: str | None = None
         self._expires_at: float = 0.0
+        self._lock: asyncio.Lock | None = None
+        self._lock_loop: asyncio.AbstractEventLoop | None = None
 
     @classmethod
     def from_config(
@@ -115,9 +118,31 @@ class AnypointConnectedApp(AuthProvider):
         )
 
     async def token(self) -> str:
+        cached = self._fresh()
+        if cached is not None:
+            return cached
+        # Concurrent callers wait on one fetch instead of each POSTing (#813);
+        # the first to get the lock fetches, the rest find the fresh token.
+        async with self._fetch_lock():
+            cached = self._fresh()
+            if cached is not None:
+                return cached
+            return await self._fetch()
+
+    def _fresh(self) -> str | None:
         if self._cached is not None and self._clock() < self._expires_at:
             return self._cached
-        return await self._fetch()
+        return None
+
+    def _fetch_lock(self) -> asyncio.Lock:
+        """The lock for the running event loop. An ``asyncio.Lock`` binds to the
+        first loop that waits on it, so one provider used from successive
+        ``asyncio.run()`` calls gets a fresh lock per loop."""
+        loop = asyncio.get_running_loop()
+        if self._lock is None or self._lock_loop is not loop:
+            self._lock = asyncio.Lock()
+            self._lock_loop = loop
+        return self._lock
 
     async def invalidate(self) -> None:
         self._cached = None
@@ -154,8 +179,25 @@ class AnypointConnectedApp(AuthProvider):
                 remediation=AuthError.connected_app_remediation,
                 response=resp,
             )
-        body = resp.json()
-        token: str | None = body.get("access_token")
+        try:
+            body = resp.json()
+            token = body.get("access_token")
+            expires_in = float(body.get("expires_in", 3600))
+            if token is not None and not isinstance(token, str):
+                raise TypeError("access_token is not a string")
+        except (ValueError, TypeError, AttributeError) as exc:
+            # A body that is not JSON, not an object, or carries mistyped fields
+            # (#813). The response is attached; the parse error is not chained,
+            # since its message can repeat the body (see DonkeyError.framework_error).
+            raise AuthError(
+                f"Anypoint token endpoint returned a malformed token response "
+                f"({type(exc).__name__}). The expected response is a JSON object "
+                "with a string access_token and a numeric expires_in (see "
+                "docs/verified-apis.md §1 and §12.1); capture the unexpected "
+                "response as a fixture (BG §1.5).",
+                remediation=AuthError.connected_app_remediation,
+                response=resp,
+            ) from None
         if not token:
             raise AuthError(
                 "Token endpoint returned no access_token. The expected response shape "
@@ -164,7 +206,6 @@ class AnypointConnectedApp(AuthProvider):
                 remediation=AuthError.connected_app_remediation,
                 response=resp,
             )
-        expires_in = float(body.get("expires_in", 3600))
         self._cached = token
         self._expires_at = self._clock() + max(0.0, expires_in - _EXPIRY_SAFETY_MARGIN_S)
         return token

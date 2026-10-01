@@ -54,7 +54,13 @@ from .cachecontrol import current_cache_controls
 from .config import DonkeyConfig
 from .cost import CostTags
 from .endpoints import require_secure_url
-from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
+from .errors import (
+    ConfigError,
+    GatewayUnavailable,
+    ModelSubstituted,
+    classify,
+    gateway_unavailable,
+)
 from .lastcall import (
     LLM_MODEL_HEADER,
     LLM_PROVIDER_HEADER,
@@ -412,6 +418,52 @@ def _gateway_unavailable(
     return gateway_unavailable(
         base_url=f"{url.scheme}://{host}" if host else None,
         cause=exc,
+        correlation_id=request.headers.get(correlation_header),
+        call_id=request.headers.get(call_id_header),
+    )
+
+
+def _lifecycle_error(
+    request: httpx.Request,
+    exc: RuntimeError,
+    *,
+    client_closed: bool,
+    correlation_header: str,
+    call_id_header: str,
+) -> ConfigError | None:
+    """Type the two lifecycle ``RuntimeError``s a send can hit (#813), or return
+    ``None`` to let any other ``RuntimeError`` through unchanged.
+
+    * The client is closed: httpx refuses the send. Detected from the client's
+      own state, not httpx's message wording.
+    * The event loop is closed: a pooled connection belongs to a loop that has
+      since closed, typically a second ``asyncio.run()`` on one ``Donkey``."""
+    if client_closed:
+        message = (
+            "Cannot send: this Donkey's HTTP client is closed. It was closed by "
+            "Donkey.aclose()/close() or by a framework that closed the client it "
+            "was given."
+        )
+        remediation = (
+            "Make the call on an open client: create a new Donkey, or keep the "
+            "Donkey open (do not close it, or the client it hands a framework, "
+            "until its last call)."
+        )
+    elif str(exc) == "Event loop is closed":
+        message = (
+            "Cannot send: the async client's connections belong to an event loop "
+            "that has closed (for example, a second asyncio.run() on the same "
+            "Donkey)."
+        )
+        remediation = (
+            "Use the Donkey within one event loop: create it inside the "
+            "asyncio.run() that uses it, or make every call from the same loop."
+        )
+    else:
+        return None
+    return ConfigError(
+        message,
+        remediation=remediation,
         correlation_id=request.headers.get(correlation_header),
         call_id=request.headers.get(call_id_header),
     )
@@ -1077,6 +1129,17 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
                     correlation_header=self._correlation_header,
                     call_id_header=self._call_id_header,
                 ) from exc
+            except RuntimeError as exc:
+                typed = _lifecycle_error(
+                    request,
+                    exc,
+                    client_closed=self.is_closed,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                )
+                if typed is None:
+                    raise
+                raise typed from exc
             last_response = response
 
             provider = self._token_provider
@@ -1313,6 +1376,17 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
                     correlation_header=self._correlation_header,
                     call_id_header=self._call_id_header,
                 ) from exc
+            except RuntimeError as exc:  # a closed client; see the async twin (#813)
+                typed = _lifecycle_error(
+                    request,
+                    exc,
+                    client_closed=self.is_closed,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                )
+                if typed is None:
+                    raise
+                raise typed from exc
             last_response = response
 
             # No 401-refresh branch: with no token provider there is nothing to
