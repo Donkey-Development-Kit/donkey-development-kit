@@ -4,101 +4,101 @@
 
 ## Get started
 
-- [Introduction](https://donkey-development-kit.github.io/donkey-development-kit/index.md): Governed by the gateway, understood by your code. DDK brings Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
-- [Quickstart](https://donkey-development-kit.github.io/donkey-development-kit/quickstart.md): From pip install to a governed model call, a typed refusal, a budget and an OpenTelemetry span — locally, with no gateway and no credentials.
-- [Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md): Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by pillar.
+- [Introduction](https://docs.donkey-kit.dev/index.md): Governed by the gateway, understood by your code. DDK brings Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
+- [Quickstart](https://docs.donkey-kit.dev/quickstart.md): From pip install to a governed model call, a typed refusal, a budget and an OpenTelemetry span — locally, with no gateway and no credentials.
+- [Feature overview](https://docs.donkey-kit.dev/feature-overview.md): Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by pillar.
 
 ## Frameworks
 
-- [Overview](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md): Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
-- [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md): Use a governed LangChain ChatOpenAI in LangGraph, pointed at your Omni Gateway LLM proxy with full header and transport injection, typed refusals, and conformance testing.
-- [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md): Use a governed LiteLlm model, or ADK's native Gemini model on a Format=Gemini proxy, in Google's Agent Development Kit (ADK), pointed at your Omni Gateway LLM proxy.
-- [Strands](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/strands.md): Use a governed OpenAIModel in Strands Agents, pointed at your Omni Gateway LLM proxy with full header and transport injection.
-- [MS Agent Framework](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/agent-framework.md): Use a governed OpenAIChatClient in Microsoft Agent Framework, pointed at your Omni Gateway LLM proxy, with policy middleware that ends a run on a typed governance refusal.
-- [OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md): Use a governed OpenAIChatCompletionsModel in the OpenAI Agents SDK, backed by a pre-built AsyncOpenAI client pointed at your Omni Gateway LLM proxy.
-- [Anthropic SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md): Use a governed AsyncAnthropic client with the Anthropic SDK, pointed at a Format=Anthropic Omni Gateway LLM proxy with full header and transport injection.
-- [CrewAI](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md): Use a governed CrewAI LLM, served by CrewAI's native OpenAI provider and pointed at your Omni Gateway LLM proxy.
-- [LlamaIndex](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/llamaindex.md): Use a governed OpenAILike LLM in LlamaIndex, pointed at your Omni Gateway LLM proxy with is_chat_model forced on.
+- [Overview](https://docs.donkey-kit.dev/frameworks.md): Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
+- [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md): Use a governed LangChain ChatOpenAI in LangGraph, pointed at your Omni Gateway LLM proxy with full header and transport injection, typed refusals, and conformance testing.
+- [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md): Use a governed LiteLlm model, or ADK's native Gemini model on a Format=Gemini proxy, in Google's Agent Development Kit (ADK), pointed at your Omni Gateway LLM proxy.
+- [Strands](https://docs.donkey-kit.dev/frameworks/strands.md): Use a governed OpenAIModel in Strands Agents, pointed at your Omni Gateway LLM proxy with full header and transport injection.
+- [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md): Use a governed OpenAIChatClient in Microsoft Agent Framework, pointed at your Omni Gateway LLM proxy, with policy middleware that ends a run on a typed governance refusal.
+- [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md): Use a governed OpenAIChatCompletionsModel in the OpenAI Agents SDK, backed by a pre-built AsyncOpenAI client pointed at your Omni Gateway LLM proxy.
+- [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md): Use a governed AsyncAnthropic client with the Anthropic SDK, pointed at a Format=Anthropic Omni Gateway LLM proxy with full header and transport injection.
+- [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md): Use a governed CrewAI LLM, served by CrewAI's native OpenAI provider and pointed at your Omni Gateway LLM proxy.
+- [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md): Use a governed OpenAILike LLM in LlamaIndex, pointed at your Omni Gateway LLM proxy with is_chat_model forced on.
 
 ## Governance
 
-- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md): Typed exceptions for every governance refusal, each with a discriminator, a retry rule, and a next step.
-- [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md): Remaining token budget as a first-class object, with pacing that slows down before it hits the wall.
-- [Identity](https://donkey-development-kit.github.io/donkey-development-kit/identity.md): On-behalf-of token exchange, so the gateway can enforce per-user policy instead of seeing only the service.
-- [Human-in-the-loop](https://donkey-development-kit.github.io/donkey-development-kit/hitl.md): One vocabulary for pause-and-ask-a-human, mapped onto each framework's native interrupt.
-- [Policy handshake](https://donkey-development-kit.github.io/donkey-development-kit/policies.md): Read the in-force policy set to avoid calls that will be refused — advisory only; the gateway always wins.
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md): Typed exceptions for every governance refusal, each with a discriminator, a retry rule, and a next step.
+- [Budget & pacing](https://docs.donkey-kit.dev/budget.md): Remaining token budget as a first-class object, with pacing that slows down before it hits the wall.
+- [Identity](https://docs.donkey-kit.dev/identity.md): On-behalf-of token exchange, so the gateway can enforce per-user policy instead of seeing only the service.
+- [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md): One vocabulary for pause-and-ask-a-human, mapped onto each framework's native interrupt.
+- [Policy handshake](https://docs.donkey-kit.dev/policies.md): Read the in-force policy set to avoid calls that will be refused — advisory only; the gateway always wins.
 
 ## Observability
 
-- [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md): OpenTelemetry GenAI spans, per-run correlation IDs, and cost-attribution tags — in the dashboard you already run.
+- [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md): OpenTelemetry GenAI spans, per-run correlation IDs, and cost-attribution tags — in the dashboard you already run.
 
 ## Developer tooling
 
-- [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md): Run a local server that replays real gateway rejections, so you can build and test failure handling without a governed gateway.
-- [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md): Test your agent's failure handling — in-process refusal injection, a pytest conformance suite you run against your own agent, and an out-of-process gateway fixture.
-- [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md): The @donkey.governed and @donkey.tool decorators, and the donkey CLI — init, doctor, mock, and test.
-- [Use with your coding agent](https://donkey-development-kit.github.io/donkey-development-kit/use-with-your-agent.md): Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md): Run a local server that replays real gateway rejections, so you can build and test failure handling without a governed gateway.
+- [Testing & conformance](https://docs.donkey-kit.dev/testing.md): Test your agent's failure handling — in-process refusal injection, a pytest conformance suite you run against your own agent, and an out-of-process gateway fixture.
+- [CLI & decorators](https://docs.donkey-kit.dev/cli.md): The @donkey.governed and @donkey.tool decorators, and the donkey CLI — init, doctor, mock, and test.
+- [Use with your coding agent](https://docs.donkey-kit.dev/use-with-your-agent.md): Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
 
 ## Tool access
 
-- [Overview](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md): Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
-- [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md): Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
-- [Framework binding](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md): Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
-- [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md): Pin governed tool versions and content digests in a donkey.lock so catalog changes become reviewable diffs, not runtime surprises.
-- [A2A agent tools](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/a2a.md): Bind a governed A2A agent from the registry as a native tool, so your agent can delegate to it without learning the A2A protocol.
+- [Overview](https://docs.donkey-kit.dev/tool-access.md): Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
+- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md): Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
+- [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
+- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md): Pin governed tool versions and content digests in a donkey.lock so catalog changes become reviewable diffs, not runtime surprises.
+- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md): Bind a governed A2A agent from the registry as a native tool, so your agent can delegate to it without learning the A2A protocol.
 
 ## Registry & catalog
 
-- [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md): Make your agent callable by other agents over A2A — serve it locally, expose it through the gateway, and develop against a gateway on your laptop.
-- [Scan & publish](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md): Derive a manifest and agent card from your code, then register them with Exchange / Agent Registry from CI — the Agent Scanner for your git repo.
+- [A2A agents](https://docs.donkey-kit.dev/a2a.md): Make your agent callable by other agents over A2A — serve it locally, expose it through the gateway, and develop against a gateway on your laptop.
+- [Scan & publish](https://docs.donkey-kit.dev/publishing.md): Derive a manifest and agent card from your code, then register them with Exchange / Agent Registry from CI — the Agent Scanner for your git repo.
 
 ## Scenarios
 
-- [Overview](https://donkey-development-kit.github.io/donkey-development-kit/scenarios.md): Three end-to-end walkthroughs — support triage, an overnight batch job, and an internal copilot — each showing the governance layer a bare base_url cannot give you.
-- [Support triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md): Draft replies to a queue of support tickets, one carrying PII, with typed refusals, correlation IDs, and OTel spans — the shipped LangGraph demo, end to end, no gateway.
-- [Nightly batch](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/nightly-batch.md): Enrich tens of thousands of records overnight against a windowed token budget, unattended — pacing before the wall and resuming after the window resets, tested end to end against the simulator.
-- [Internal copilot](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md): An internal assistant whose output must clear a content-safety guardrail — the ContentSafetyBlocked branch driven by the simulator, with per-run correlation joining the refusal to your logs.
+- [Overview](https://docs.donkey-kit.dev/scenarios.md): Three end-to-end walkthroughs — support triage, an overnight batch job, and an internal copilot — each showing the governance layer a bare base_url cannot give you.
+- [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md): Draft replies to a queue of support tickets, one carrying PII, with typed refusals, correlation IDs, and OTel spans — the shipped LangGraph demo, end to end, no gateway.
+- [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md): Enrich tens of thousands of records overnight against a windowed token budget, unattended — pacing before the wall and resuming after the window resets, tested end to end against the simulator.
+- [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md): An internal assistant whose output must clear a content-safety guardrail — the ContentSafetyBlocked branch driven by the simulator, with per-run correlation joining the refusal to your logs.
 
 ## Examples
 
-- [Overview](https://donkey-development-kit.github.io/donkey-development-kit/examples.md): Runnable DDK examples from the companion demos repo — narrative demos that run offline against the local simulator, and short per-framework scripts for a live gateway.
+- [Overview](https://docs.donkey-kit.dev/examples.md): Runnable DDK examples from the companion demos repo — narrative demos that run offline against the local simulator, and short per-framework scripts for a live gateway.
 
 ## General
 
-- [Governed client](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/governed-client.md): A stock OpenAI client next to a governed one, the same PII refusal through both, and the @donkey.governed / @donkey.tool decorators.
-- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/typed-refusals.md): Every captured gateway rejection shape mapped to a typed exception with classify(), live refusals on a blocking client, and GatewayUnavailable when nothing answers.
-- [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/budget-and-pacing.md): The gateway's token window as an object, pace(reserve=) refusing locally before a request would cross your reserve, and wait_for_reset().
-- [Simulating refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/simulating-refusals.md): Run the refusal branch of your agent without a gateway — donkey.simulate() in-process, and donkey mock --scenario for a stock client.
-- [Conformance suite](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/conformance.md): pytest --donkey-conformance grading an agent's refusal handling, budget retries and correlation logging — first a naive agent, then the fixed one, then exemptions.
-- [Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/telemetry.md): OpenTelemetry GenAI spans with no instrumentation code, one correlation id per donkey.run(), refusal spans, and zero-config OTLP export.
-- [Framework objects & model handles](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/framework-objects.md): Framework adapters that return your framework's own objects, connection_kwargs() for the rest, local model capability handles, and config validation that reports everything at once.
-- [LangGraph agent](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/langgraph-agent.md): A real LangGraph tool-calling agent governed end to end — LangChain's own ChatOpenAI, one run id around the loop, and typed refusals out of astream.
-- [Gateway identity (last_call)](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md): donkey.last_call on a successful call — which gateway served it, what it routed to, per-call token usage — and on_model_substitution="raise" turning a silent model swap into ModelSubstituted.
+- [Governed client](https://docs.donkey-kit.dev/examples/general/governed-client.md): A stock OpenAI client next to a governed one, the same PII refusal through both, and the @donkey.governed / @donkey.tool decorators.
+- [Typed refusals](https://docs.donkey-kit.dev/examples/general/typed-refusals.md): Every captured gateway rejection shape mapped to a typed exception with classify(), live refusals on a blocking client, and GatewayUnavailable when nothing answers.
+- [Budget & pacing](https://docs.donkey-kit.dev/examples/general/budget-and-pacing.md): The gateway's token window as an object, pace(reserve=) refusing locally before a request would cross your reserve, and wait_for_reset().
+- [Simulating refusals](https://docs.donkey-kit.dev/examples/general/simulating-refusals.md): Run the refusal branch of your agent without a gateway — donkey.simulate() in-process, and donkey mock --scenario for a stock client.
+- [Conformance suite](https://docs.donkey-kit.dev/examples/general/conformance.md): pytest --donkey-conformance grading an agent's refusal handling, budget retries and correlation logging — first a naive agent, then the fixed one, then exemptions.
+- [Telemetry](https://docs.donkey-kit.dev/examples/general/telemetry.md): OpenTelemetry GenAI spans with no instrumentation code, one correlation id per donkey.run(), refusal spans, and zero-config OTLP export.
+- [Framework objects & model handles](https://docs.donkey-kit.dev/examples/general/framework-objects.md): Framework adapters that return your framework's own objects, connection_kwargs() for the rest, local model capability handles, and config validation that reports everything at once.
+- [LangGraph agent](https://docs.donkey-kit.dev/examples/general/langgraph-agent.md): A real LangGraph tool-calling agent governed end to end — LangChain's own ChatOpenAI, one run id around the loop, and typed refusals out of astream.
+- [Gateway identity (last_call)](https://docs.donkey-kit.dev/examples/general/gateway-identity.md): donkey.last_call on a successful call — which gateway served it, what it routed to, per-call token usage — and on_model_substitution="raise" turning a silent model swap into ModelSubstituted.
 
 ## Examples
 
-- [OpenAI](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md): Sixteen straight-line scripts for the stock openai client governed by donkey.openai() — last_call, typed refusals, budget pacing, spans, decorators, streaming, guardrails, JWT wallets and the local simulator.
-- [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md): Nine LangGraph scripts — a real ChatOpenAI on /responses, typed refusals out of create_agent, the run id reaching tools, streaming, spans and the local simulator.
-- [OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai-agents.md): Three OpenAI Agents SDK scripts — an OpenAIResponsesModel on the governed client, a tool-calling Runner, typed refusals and the local simulator.
-- [MS Agent Framework](https://donkey-development-kit.github.io/donkey-development-kit/examples/agent-framework.md): Three Microsoft Agent Framework scripts — an OpenAIChatClient built by donkey.agent_framework, typed refusals unwrapped from ChatClientException, and the local simulator.
-- [Strands](https://donkey-development-kit.github.io/donkey-development-kit/examples/strands.md): Four Strands Agents scripts — OpenAIModel on a pre-built governed client, the run id reaching a tool, typed refusals simulated and live.
-- [CrewAI](https://donkey-development-kit.github.io/donkey-development-kit/examples/crewai.md): Two CrewAI scripts — donkey.crewai.llm() for a direct call and a one-agent crew, and typed refusals from CrewAI's native OpenAI provider.
-- [LlamaIndex](https://donkey-development-kit.github.io/donkey-development-kit/examples/llamaindex.md): Two LlamaIndex scripts — an OpenAILike from donkey.llamaindex.llm() for complete() and chat(), and typed refusals from its unchanged openai errors.
-- [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md): Two Google ADK scripts — a LiteLlm model from donkey.adk.model() in an InMemoryRunner, and why a PII refusal is not typed on the LiteLLM path.
-- [Anthropic](https://donkey-development-kit.github.io/donkey-development-kit/examples/anthropic.md): Two scripts for the native anthropic client from donkey.anthropic.client() — /v1/messages on a Format=Anthropic proxy with last_call, and typed refusals simulated in-process.
-- [Gemini](https://donkey-development-kit.github.io/donkey-development-kit/examples/gemini.md): Two plain-httpx scripts against a Format=Gemini proxy — native generateContent, and an OpenAI-shaped request classified as UpstreamRequestError.
+- [OpenAI](https://docs.donkey-kit.dev/examples/openai.md): Sixteen straight-line scripts for the stock openai client governed by donkey.openai() — last_call, typed refusals, budget pacing, spans, decorators, streaming, guardrails, JWT wallets and the local simulator.
+- [LangGraph](https://docs.donkey-kit.dev/examples/langgraph.md): Nine LangGraph scripts — a real ChatOpenAI on /responses, typed refusals out of create_agent, the run id reaching tools, streaming, spans and the local simulator.
+- [OpenAI Agents SDK](https://docs.donkey-kit.dev/examples/openai-agents.md): Three OpenAI Agents SDK scripts — an OpenAIResponsesModel on the governed client, a tool-calling Runner, typed refusals and the local simulator.
+- [MS Agent Framework](https://docs.donkey-kit.dev/examples/agent-framework.md): Three Microsoft Agent Framework scripts — an OpenAIChatClient built by donkey.agent_framework, typed refusals unwrapped from ChatClientException, and the local simulator.
+- [Strands](https://docs.donkey-kit.dev/examples/strands.md): Four Strands Agents scripts — OpenAIModel on a pre-built governed client, the run id reaching a tool, typed refusals simulated and live.
+- [CrewAI](https://docs.donkey-kit.dev/examples/crewai.md): Two CrewAI scripts — donkey.crewai.llm() for a direct call and a one-agent crew, and typed refusals from CrewAI's native OpenAI provider.
+- [LlamaIndex](https://docs.donkey-kit.dev/examples/llamaindex.md): Two LlamaIndex scripts — an OpenAILike from donkey.llamaindex.llm() for complete() and chat(), and typed refusals from its unchanged openai errors.
+- [Google ADK](https://docs.donkey-kit.dev/examples/adk.md): Two Google ADK scripts — a LiteLlm model from donkey.adk.model() in an InMemoryRunner, and why a PII refusal is not typed on the LiteLLM path.
+- [Anthropic](https://docs.donkey-kit.dev/examples/anthropic.md): Two scripts for the native anthropic client from donkey.anthropic.client() — /v1/messages on a Format=Anthropic proxy with last_call, and typed refusals simulated in-process.
+- [Gemini](https://docs.donkey-kit.dev/examples/gemini.md): Two plain-httpx scripts against a Format=Gemini proxy — native generateContent, and an OpenAI-shaped request classified as UpstreamRequestError.
 
 ## Roadmap
 
-- [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md): Where DDK is going — five phases in order, each with its goal, live progress and the issues in its milestone.
+- [Roadmap](https://docs.donkey-kit.dev/roadmap.md): Where DDK is going — five phases in order, each with its goal, live progress and the issues in its milestone.
 
 ## Community
 
-- [Team](https://donkey-development-kit.github.io/donkey-development-kit/community/team.md): The people behind the Donkey Development Kit — its creators and contributors.
-- [Contribute](https://donkey-development-kit.github.io/donkey-development-kit/community/contribute.md): How to contribute to DDK — issues, docs, examples and code — from filing an issue to a merged pull request.
+- [Team](https://docs.donkey-kit.dev/community/team.md): The people behind the Donkey Development Kit — its creators and contributors.
+- [Contribute](https://docs.donkey-kit.dev/community/contribute.md): How to contribute to DDK — issues, docs, examples and code — from filing an issue to a merged pull request.
 
 ## Reference
 
-- [Configuration](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md): Every DDK configuration value — LLM proxy URL and credentials, JWT model-wallet auth, attribution, cost tags, telemetry, and Anypoint control-plane settings — as env vars, config file, or code.
-- [last_call fields](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md): Every field on donkey.last_call — the observability status, the gateway identity, the routing and fallback signals, the per-call token usage, and the semantic-cache outcome the gateway reported about the most recent governed model call.
-- [Unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md): Which MuleSoft platform APIs DDK calls, whether each is documented for third-party use, and the project's support statement.
+- [Configuration](https://docs.donkey-kit.dev/reference/configuration.md): Every DDK configuration value — LLM proxy URL and credentials, JWT model-wallet auth, attribution, cost tags, telemetry, and Anypoint control-plane settings — as env vars, config file, or code.
+- [last_call fields](https://docs.donkey-kit.dev/reference/last-call.md): Every field on donkey.last_call — the observability status, the gateway identity, the routing and fallback signals, the per-call token usage, and the semantic-cache outcome the gateway reported about the most recent governed model call.
+- [Unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md): Which MuleSoft platform APIs DDK calls, whether each is documented for third-party use, and the project's support statement.

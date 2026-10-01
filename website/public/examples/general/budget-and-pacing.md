@@ -149,7 +149,7 @@ terminal, while this is a local signal you are expected to recover from. If you
 do cross the window, the resulting `TokenBudgetExceeded` is not retried by the
 transport — retrying only burns the same window.
 
-**Learn more:** [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md)
+**Learn more:** [Budget & pacing](https://docs.donkey-kit.dev/budget.md)
 
 **Source:**
 [narrative demo 03](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/03_budget_and_pacing) ·

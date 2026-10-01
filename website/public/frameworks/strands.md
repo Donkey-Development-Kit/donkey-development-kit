@@ -128,6 +128,6 @@ Strands forwards to its internal OpenAI client.
   `chat.completion` and no chunk deltas, and Strands fails on it. Pass
   `donkey.strands.model("gpt-4o", stream=True)` on routes that stream.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

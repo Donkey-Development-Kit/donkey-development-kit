@@ -206,7 +206,7 @@ except Exception as err:
 - **A `provider/` prefix is not a substitution.** On a model-based routing
   proxy the gateway reports the served model without the `provider/` prefix;
   `substituted` ignores a prefix that names the served provider (see
-  [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing)).
+  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing)).
 
   The simulator's captured success response was recorded against `gpt-5.1`, so
   asking for any other model id shows up as a substitution in narrative demo
@@ -232,7 +232,7 @@ the same way — only these two are added.
 
 You can exercise this branch offline: point the simulator at the captured
 `Semantic` response by requesting the `donkey-sim/success-semantic` model id
-(the same sentinel mechanism the [simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) uses to force a
+(the same sentinel mechanism the [simulator](https://docs.donkey-kit.dev/simulator.md) uses to force a
 refusal shape, here forcing a happy-path variant).
 
 ```python
@@ -252,7 +252,7 @@ print("routing_score", last.routing_score)  # 0.62
   `x-llm-proxy-semantic-routing-success` header is semantic-only. An unparseable
   message leaves each field `None` rather than guessing a value.
 
-**Learn more:** [Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md) · [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)
+**Learn more:** [Feature overview](https://docs.donkey-kit.dev/feature-overview.md) · [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md)
 
 **Source:**
 [narrative demo 10](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/10_last_call) ·

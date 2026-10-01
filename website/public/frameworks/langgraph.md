@@ -114,7 +114,7 @@ simulator, which the conformance suite runs against, serves only that route.
 Pass `use_responses_api=False` to `chat_model(...)` to call
 `/chat/completions` instead. A `base_url` / `openai_api_base` passed to
 `chat_model(...)` must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
 ## Graph-level features
 
@@ -141,7 +141,7 @@ async with donkey.run(id=ticket.id):
 On a proxy refusal, LangChain raises its own wrapped
 `OpenAIPermissionDeniedError`, not the SDK's typed exception. Wrap the model
 call in `typed_refusals()` and a gateway refusal comes back through the
-[error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) instead:
+[error taxonomy](https://docs.donkey-kit.dev/errors.md) instead:
 
 ```python
 from donkey_kit.integrations.langgraph import typed_refusals
@@ -190,7 +190,7 @@ pytest --donkey-conformance --agent=my_app:build
 it doesn't retry a budget refusal, surfaces `PIIDetected` typed, carries the
 correlation ID into its logs, and tolerates a response with no budget headers.
 The [`examples/langgraph`](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/langgraph)
-factory has exactly this shape. See [Testing](https://donkey-development-kit.github.io/donkey-development-kit/testing.md).
+factory has exactly this shape. See [Testing](https://docs.donkey-kit.dev/testing.md).
 
 ### Which provider served this?
 
@@ -227,7 +227,7 @@ has no such callback: after its `ainvoke` (but not `invoke` or `astream`),
 `last_call` stays `UNOBSERVED`. A batch (`abatch`, or `agenerate` with several
 inputs) runs its requests side by side, so it leaves no record in the caller
 either. See the
-[full field reference](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#routing--fallback) for every
+[full field reference](https://docs.donkey-kit.dev/reference/last-call.md#routing--fallback) for every
 field.
 
 **Per message — opt-in headers.** For attribution that needs to travel with
@@ -259,7 +259,7 @@ shape tracks that package's version:
 
 **Traces.** The OTel GenAI span for the call already carries the served
 provider and model under `gen_ai.system` / `gen_ai.response.model` (see
-[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)) — but a LangSmith-style tracer that reads LangChain's
+[Telemetry](https://docs.donkey-kit.dev/telemetry.md)) — but a LangSmith-style tracer that reads LangChain's
 own fields instead of the span will still show `openai`.
 
 ## Notes
@@ -272,14 +272,14 @@ own fields instead of the span will still show `openai`.
   and `stream()` raise `ConfigError` before sending anything.
 - Printing the model shows `client_secret`: `ChatOpenAI`'s own `repr()` /
   `str()` include `default_headers`. Don't print or log it; see
-  [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
+  [What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides).
 - `max_retries=0` is intentional: retries live in the SDK's transport layer,
   so the SDK and the OpenAI client don't both retry.
 - The proxy is OpenAI-compatible but not the full OpenAI API: the base URL has
   no `/v1` prefix, there is no `/models` endpoint, and auth is a
   `client_id`/`client_secret` header pair rather than a bearer token.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and [Which provider served this?](#which-provider-served-this)
 for reading the served provider/model instead of LangChain's own
 `model_provider`.

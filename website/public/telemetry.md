@@ -300,7 +300,7 @@ donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_capture_content
 ```
 
 `telemetry_capture_content` resolves along the standard
-[precedence](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#precedence) (set in code → env → config
+[precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence) (set in code → env → config
 files → default) and **defaults to `False`**. When
 enabled, content is emitted under the pinned semconv attribute names —
 `gen_ai.prompt` and `gen_ai.completion` — and no others. When off, those
@@ -350,12 +350,12 @@ routed normally or recovered from a degraded provider.
 
 For the complete list of `last_call` fields — observability status, gateway
 identity, routing, and token usage — see the [`last_call` field
-reference](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md).
+reference](https://docs.donkey-kit.dev/reference/last-call.md).
 
 The same record also carries the call's identity and usage: `request_id` (the
 upstream provider's id), `api_instance_id` and `environment_id` (which gateway
 instance served it), and the token counts including cached and reasoning
-tokens. The [gateway identity example](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md) walks
+tokens. The [gateway identity example](https://docs.donkey-kit.dev/examples/general/gateway-identity.md) walks
 through every field.
 
 ### When `last_call` is unavailable
@@ -372,7 +372,7 @@ cold read on a `Donkey` that resolved only these adapters or CrewAI reports
 `UNAVAILABLE` rather than `UNOBSERVED`. Aligning that is tracked in
 [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 ADK's `gemini()` uses the shared client and observes calls once it has been
-called (see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini) for reading
+called (see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini) for reading
 `last_call` inside an ADK run).
 
 For a `Donkey` that resolved only CrewAI:
@@ -396,8 +396,8 @@ lands in that task. The OpenAI Agents SDK's `Runner` sends a run's first turn
 that way (and every turn of `run_streamed`), and ADK's `Runner` runs the whole
 agent that way. Read `last_call` in the framework's model hook, which runs in the
 call's own task: `RunHooks.on_llm_end` for the
-[OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md#donkeylast_call), `after_model_callback`
-for [ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
+[OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md#donkeylast_call), `after_model_callback`
+for [ADK](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
 `Agent.invoke_async`, `AsyncAnthropic.messages.create`, a model's own async
 method) records in the caller's context.
 
@@ -431,7 +431,7 @@ names the served provider is not counted as a difference, so asking for
 substitution. The same model served by a different provider still is. On a
 proxy with more than one provider, a bare name the gateway cannot pin to one
 provider is rejected with a `400` before any upstream call, and DDK raises
-[`ModelNotRoutable`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+[`ModelNotRoutable`](https://docs.donkey-kit.dev/errors.md).
 
 ### Semantic caching & semantic routing Live
 
@@ -441,7 +441,7 @@ can **route semantically** (pick the model by matching the prompt to a
 topic). Both happen at the gateway. DDK caches nothing and computes no
 embeddings itself; it lets you steer the gateway's cache per request — skip it,
 not store a response, or override the TTL or similarity threshold via
-[`donkey.cache(...)`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md#semantic-cache-steering) — and reports what
+[`donkey.cache(...)`](https://docs.donkey-kit.dev/budget.md#semantic-cache-steering) — and reports what
 happened:
 
 - the cache outcome (`hit`, `miss`, `bypass`, `no-store`) and similarity score
@@ -450,7 +450,7 @@ happened:
 - the matched routing topic and its score, beside the routing fields above.
 
 A cache `hit` is a verbatim replay with no provider round-trip, so it never
-advances the [token budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) — the replayed `usage` is not fresh spend.
+advances the [token budget](https://docs.donkey-kit.dev/budget.md) — the replayed `usage` is not fresh spend.
 
 ### TypeScript parity Roadmap
 
@@ -522,7 +522,7 @@ async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
 
 The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
 `DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
-[Configuration](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#cost-attribution-tags)). Per-run
+[Configuration](https://docs.donkey-kit.dev/reference/configuration.md#cost-attribution-tags)). Per-run
 overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
 wins **per field** for its block, and the rest fall back to the configured
 tags. The key set is **fixed**: an unknown dimension is a configuration error,

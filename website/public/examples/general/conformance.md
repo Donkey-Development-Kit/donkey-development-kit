@@ -217,7 +217,7 @@ The naive agent in the same file retries three times and re-raises a bare
 `RuntimeError`. The suite flags the retried `TokenBudgetExceeded`, the lost
 `PIIDetected` type, and the missing correlation id in its logs.
 
-**Learn more:** [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md)
+**Learn more:** [Testing & conformance](https://docs.donkey-kit.dev/testing.md)
 
 **Source:**
 [narrative demo 05](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/05_conformance)

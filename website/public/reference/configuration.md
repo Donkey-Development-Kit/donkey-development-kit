@@ -44,7 +44,7 @@ The three required values for the LLM proxy:
 
 | Env var | Meaning |
 |---|---|
-| `DONKEY_LLM_PROXY_URL` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), and for other hosts only with [`DONKEY_ALLOW_HTTP`](#endpoints-must-use-https). |
+| `DONKEY_LLM_PROXY_URL` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](https://docs.donkey-kit.dev/simulator.md), and for other hosts only with [`DONKEY_ALLOW_HTTP`](#endpoints-must-use-https). |
 | `DONKEY_LLM_PROXY_CLIENT_ID` | Consumer client ID (the per-agent identity). |
 | `DONKEY_LLM_PROXY_CLIENT_SECRET` | Consumer client secret. |
 
@@ -57,7 +57,7 @@ The three required values for the LLM proxy:
   `apikey: <client_id>:<client_secret>` — which its
   `dataweave-headers-transformation` policy splits back into the pair. DDK doesn't use that form: it always
   sends the two-header pair, because `client_id` is the per-agent
-  [attribution](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) unit. The colon-joined value is not an
+  [attribution](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) unit. The colon-joined value is not an
   alternative once a `client_id` header is present — the policy ignores it.
 
 Missing required fields are reported **all at once** with their env-var names,
@@ -123,7 +123,7 @@ donkey = Donkey(
     `from donkey_kit.integrations.langgraph import chat_model`), which have no
     `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.
 
-  See [Injection depth](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#injection-depth-differs-by-framework).
+  See [Injection depth](https://docs.donkey-kit.dev/frameworks.md#injection-depth-differs-by-framework).
 
 ## Bearer-token auth mode
 
@@ -220,7 +220,7 @@ attribution.
 
 Per-call and per-run correlation IDs ride on request headers. The IDs also
 appear on spans and exceptions regardless of the header names. See
-[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids).
+[Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#correlation-ids).
 
 - `X-Correlation-Id` carries the run ID. The gateway reads this header and
   echoes it on the response `x-correlation-id`, so a client log line joins to
@@ -264,7 +264,7 @@ A fixed set of dimensions set once and emitted on every call as `donkey.cost.*`
 span attributes (and, only if you opt in, as request headers). Override them per run with
 `donkey.run(team=…, project=…, env=…, enduser_id=…)`. The key set is fixed — an
 unknown dimension is a configuration error, not a silently dropped tag. See
-[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
+[Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
 
 | Env var | `Donkey.from_env` kwarg | Meaning |
 |---|---|---|
@@ -311,7 +311,7 @@ kwarg; in code, use
   With `send_cost_headers` on, the headers, including the end-user ID, go only
   on model requests to the LLM proxy, never to the Anypoint platform. Where the
   tags go is described in
-  [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags).
+  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags).
 
 ## Telemetry
 
@@ -323,7 +323,7 @@ kwarg; in code, use
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
 content re-exports the very text the platform masks. Enable it only for a
-trusted collector. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
+trusted collector. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
 
 ## Behaviour
 
@@ -331,8 +331,8 @@ trusted collector. See [Telemetry & cost](https://donkey-development-kit.github.
 |---|---|---|---|
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `60.0` | HTTP timeout for governed calls, in seconds. |
 | `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. Policy refusals are never retried, and a gateway fallback is never retried twice. |
-| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing). |
-| `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md)) are cached in memory, in seconds. |
+| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing). |
+| `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://docs.donkey-kit.dev/tool-access.md)) are cached in memory, in seconds. |
 | `DONKEY_NO_CACHE` | — | unset | Set to `1`, `true` or `yes` to bypass that in-memory registry cache. |
 | `DONKEY_TRUST_PROJECT_CONFIG` | — | unset | Set to `1` (or `true`, `yes`, `on`) to let a URL from the working directory's config files receive credentials from elsewhere. Read only from the environment. See [Which credentials a URL receives](#which-credentials-a-url-receives). |
 | `DONKEY_ALLOW_HTTP` | — | unset | Set to `1` (or `true`, `yes`, `on`) to allow plain `http://` endpoints on non-loopback hosts. Read only from the environment. See [Endpoints must use `https://`](#endpoints-must-use-https). |
@@ -476,7 +476,7 @@ never carry them.
 | `X-Donkey-Request-Id` (`call_id_header`) | A per-call ID | Always | Both planes |
 | `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy only |
 | `X-Anypoint-Business-Group` | `business_group` | When set | The LLM proxy only |
-| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
+| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
 | `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache only |
 
 CrewAI, which gets only a header snapshot, sends the auth headers, the
@@ -613,7 +613,7 @@ ConfigWarning: llm_proxy_url uses plain http:// to llm.example.test because DONK
 The warning quotes the value as you set it, for example
 `DONKEY_ALLOW_HTTP=true is set`. `donkey doctor` adds a `plain http` line while
 it is on. See
-[CLI](https://donkey-development-kit.github.io/donkey-development-kit/cli.md#donkey-doctor).
+[CLI](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
 
 #### A URL from the project files gets credentials from the project files only
 
@@ -685,7 +685,7 @@ those two.
 `donkey doctor` prints each endpoint's host and where it came from (`env`,
 `project file`, `local overlay`, `user file` or `default`), and reports this
 error on its `config` line without sending a request. See
-[CLI](https://donkey-development-kit.github.io/donkey-development-kit/cli.md#donkey-doctor).
+[CLI](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
 
 ## Programmatic
 
@@ -722,7 +722,7 @@ sends the real values.
 |---|---|---|
 | `DonkeyConfig` | `client_secret`, `llm_proxy_client_secret` and `llm_proxy_key` are left out | Every other field, including client IDs, `llm_proxy_wallet_client_id`, URLs and `cost=CostTags(…, enduser_id=…)` |
 | Every adapter's `connection_kwargs()`, ADK's `gemini_connection_kwargs()`, `donkey_kit.core.transport.proxy_auth_headers()` | The value under any key named `api_key`, `apikey`, `api-key`, `x-api-key`, `x-goog-api-key`, `client_secret`, `authorization`, `proxy-authorization` or `cookie` (any case), at any depth, shows as `'***'` | `base_url`, `client_id`, `X-Client-Id`, attribution headers, and `X-Anypoint-Cost-*` headers including the end-user ID |
-| `PIIDetected` (`str`, `repr`, `.args`) | The flagged values | Entity types, count and character offsets; see [Errors](https://donkey-development-kit.github.io/donkey-development-kit/errors.md#refusal-messages-dont-repeat-blocked-content) |
+| `PIIDetected` (`str`, `repr`, `.args`) | The flagged values | Entity types, count and character offsets; see [Errors](https://docs.donkey-kit.dev/errors.md#refusal-messages-dont-repeat-blocked-content) |
 
 The masked mappings are ordinary `dict`s. The table shows how common operations behave:
 

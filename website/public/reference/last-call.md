@@ -7,7 +7,7 @@ always sees one internally-consistent call. It is contextvar-scoped, so a
 fan-out of concurrent calls each reads its own record. When a framework sends a
 single call from a task of its own, as LangChain's `ainvoke` does, the
 `donkey.langgraph(...)` model still brings that call's record back to the caller
-(see [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#which-provider-served-this)).
+(see [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md#which-provider-served-this)).
 
 ```python
 donkey = Donkey.from_env()
@@ -43,7 +43,7 @@ even on a cold read.
   routes outside it. A cold read on a `Donkey` that resolved only CrewAI,
   LlamaIndex, MS Agent Framework or ADK's `model()` reports `UNAVAILABLE` with
   the surface named. See
-  [When `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
+  [When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
 
 ## Gateway identity
 
@@ -61,8 +61,8 @@ for quoting to a provider's support team.
 What the gateway *did* with the request — which provider and model served it, how
 it routed, and whether that was a failover. Read live off the shared transport,
 so the raw `donkey.llm.client()` path gets them with no framework required. See
-[Routing & resilience](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#routing--resilience) for the operational story,
-or [Which provider served this?](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#which-provider-served-this)
+[Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience) for the operational story,
+or [Which provider served this?](https://docs.donkey-kit.dev/frameworks/langgraph.md#which-provider-served-this)
 for why a LangGraph message's own `model_provider` field disagrees with these.
 
 | Field | Type | Meaning |
@@ -99,13 +99,13 @@ Each is `None` (never `0`) when unobserved or absent.
 
 When the proxy is fronted by the Anypoint **semantic-caching** policy, the
 gateway reports what it did with each request. Steer it per block with
-[`donkey.cache(...)`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md#semantic-cache-steering); read the outcome here.
+[`donkey.cache(...)`](https://docs.donkey-kit.dev/budget.md#semantic-cache-steering); read the outcome here.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `cache_status` | `str \| None` | What the caching policy did (`x-semantic-cache-status`): `"hit"` / `"miss"` / `"bypass"` / `"no-store"`. `None` on a proxy with no caching policy (the header is absent) or a simulated response. |
 | `cache_score` | `float \| None` | On a cache **hit**, the similarity score of the matched entry (`x-semantic-cache-score`). `None` on miss/bypass/no-store (the header is hit-only) or when the score did not parse. |
-| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) (a replay is no fresh spend). |
+| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](https://docs.donkey-kit.dev/budget.md) (a replay is no fresh spend). |
 
   A cache **hit** replays a stored completion byte-for-byte, including its
   original `usage` block — so the token counts above describe the *cached*
@@ -121,4 +121,4 @@ for each governed call, under the pinned `gen_ai.*` keys and the stable
 `donkey.routing.matched_topic` / `donkey.routing.score`, and — on a cached
 proxy — `donkey.cache.status` / `donkey.cache.score`, alongside the usage
 counts. A field that is `None` is omitted from the span entirely. See
-[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) for the full attribute list.
+[Telemetry](https://docs.donkey-kit.dev/telemetry.md) for the full attribute list.

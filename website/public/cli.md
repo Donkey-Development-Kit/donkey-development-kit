@@ -10,7 +10,7 @@ testing.
 
 ### `@donkey.governed`
 
-Runs a function inside a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) scope:
+Runs a function inside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md) scope:
 
 ```python
 @donkey.governed(team="support")
@@ -45,8 +45,8 @@ process-global registry you read with `registered_tools()`. Both `ToolSpec` and
 A tool with **no docstring is rejected at decoration time** (`ValueError`) — an
 undescribed tool is useless to a model and to a registry.
 
-The same markers are what the planned [scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) and
-[A2A](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) agent-card generator read, so marking tools now carries forward.
+The same markers are what the planned [scanner](https://docs.donkey-kit.dev/publishing.md) and
+[A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator read, so marking tools now carries forward.
 
 ## The CLI
 
@@ -87,7 +87,7 @@ preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
 ### `donkey init`
 
 Resolves your current configuration (env vars → config files → defaults; see
-[Precedence](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#precedence)) and writes a **commented** `.donkey-kit.toml` with the values it
+[Precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence)) and writes a **commented** `.donkey-kit.toml` with the values it
 found.
 
 - **Names every missing required field at once** — control plane *and* LLM
@@ -98,7 +98,7 @@ found.
   gitignored `.donkey-kit.local.toml` next to the file, or in environment
   variables. A URL in `.donkey-kit.toml`, including a loopback one, only
   receives credentials from those two files unless you opt in; see
-  [Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+  [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
   The file's comments also say that URLs must use `https://`, that `localhost`
   is accepted over plain `http://`, and that `DONKEY_ALLOW_HTTP=1` in the
   environment (not in the file) allows plain `http://` to other hosts.
@@ -130,7 +130,7 @@ Before the call, `doctor` prints each endpoint's host and where it came from:
 proxy URL comes from the working directory's config files but its credentials
 don't (a loopback URL such as the simulator's included), the `config` line
 fails with the
-[remediation](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives) and no
+[remediation](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives) and no
 request is sent. A control-plane endpoint with the same problem shows its
 remediation on the `control plane` line without failing the report, since
 `doctor` only calls the LLM proxy. In `jwt` mode, an LLM proxy URL from those
@@ -166,7 +166,7 @@ donkey doctor --json             # machine-readable checks
 
 ### `donkey mock`
 
-Runs the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), which replays captured gateway
+Runs the [local simulator](https://docs.donkey-kit.dev/simulator.md), which replays captured gateway
 rejections. Needs the `[local]` extra.
 
 ```bash
@@ -179,11 +179,11 @@ donkey mock --port 8080 --host 127.0.0.1 \
 |---|---|---|
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
-| `--scenario` | none | Fault-injection rule, repeatable. See [Scenario scripting](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting). |
+| `--scenario` | none | Fault-injection rule, repeatable. See [Scenario scripting](https://docs.donkey-kit.dev/simulator.md#scenario-scripting). |
 
 The port isn't read from an environment variable or `.donkey-kit.toml`; these
 flags (or the `serve()` keyword arguments) are the only way to change it. See
-[Choosing a port or host](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#choosing-a-port-or-host) for the
+[Choosing a port or host](https://docs.donkey-kit.dev/simulator.md#choosing-a-port-or-host) for the
 programmatic entry point and the `0.0.0.0` caveat.
 
 An invalid `--scenario` exits with code `2`.
@@ -199,16 +199,16 @@ straight through; pytest's exit code becomes `donkey test`'s own. Needs the
 donkey test --agent my.pkg:make_agent -k governance -x
 ```
 
-See [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) for what the suite checks.
+See [Testing & conformance](https://docs.donkey-kit.dev/testing.md) for what the suite checks.
 
 ## Planned commands Roadmap
 
-These commands are part of the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and are not available in the
+These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
 - `donkey scan` and `donkey publish` — derive a manifest and agent card from
-  your code and register them with Exchange. See [Scan & publish](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md).
+  your code and register them with Exchange. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md).
 - `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
-  A2A and expose it through the gateway. See [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md).
+  A2A and expose it through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
   Run `donkey --help` to see the commands available in your installed version.

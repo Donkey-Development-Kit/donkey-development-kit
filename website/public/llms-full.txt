@@ -2,11 +2,11 @@
 
 > An SDK for consuming Agent Fabric governance from Python agent code, without adopting Mule.
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/  ·  Index: https://donkey-development-kit.github.io/donkey-development-kit/llms.txt
+Source: https://docs.donkey-kit.dev/  ·  Index: https://docs.donkey-kit.dev/llms.txt
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/index.md
+Source: https://docs.donkey-kit.dev/index.md
 
 <strong>Governed by the gateway. Understood by your code.</strong> DDK
       brings Omni Gateway awareness into the agents you already write — in
@@ -82,14 +82,14 @@ agents in production.
   an official Salesforce or MuleSoft product** and is not supported by
   Salesforce. "Agent Fabric", "Anypoint", "MuleSoft" and "Omni Gateway" are
   Salesforce trademarks; DDK uses them only to describe the platform it
-  connects to. Meet the people behind it on the [Team](https://donkey-development-kit.github.io/donkey-development-kit/community/team.md) page.
+  connects to. Meet the people behind it on the [Team](https://docs.donkey-kit.dev/community/team.md) page.
 
 ## Architecture
 
 DDK sits inside your agent process. Today it speaks to the platform on two
 fronts: governed calls through the gateway, and telemetry to your
 observability stack. A third front, publishing assets to the control plane,
-is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
 
 **The AI control plane** is where the platform team manages the AI estate:
 the agent registry, cost control, gateway federation, and governance and
@@ -235,7 +235,7 @@ curl "${DONKEY_LLM_PROXY_URL}chat/completions" \
 `donkey.llamaindex.llm("gpt-4o")` returns a real `OpenAILike`. Hand them
 straight to `create_agent`, a LlamaIndex query engine or a Strands `Agent`.
 And if you ever want to drop DDK, you eject to three lines of native
-constructor code — every [framework page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) shows exactly which
+constructor code — every [framework page](https://docs.donkey-kit.dev/frameworks.md) shows exactly which
 three.
 
 A stock client with a `base_url` and two headers can reach the gateway. What
@@ -266,7 +266,7 @@ wiring each one.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/quickstart.md
+Source: https://docs.donkey-kit.dev/quickstart.md
 
 # Quickstart
 
@@ -280,20 +280,20 @@ Omni Gateway later is an environment change, not a code change.
 
 | Capability | Status | Learn more |
 |---|---|---|
-| Governed model access (the raw client, through the proxy data plane) | Live | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) |
-| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified ADK `gemini()` · Signature-confirmed the rest | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#supported-frameworks) |
-| Typed refusals | Live | [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) |
-| Budget & pacing | Live | [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) |
-| OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) |
-| Local simulator & `simulate()` | Live | [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) |
-| Conformance testing with pytest | Live | [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `test`) & decorators | Live | [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) |
-| Governed tool access (MCP) | Roadmap | [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md) |
-| A2A agents (`serve`, `expose`, `dev`) | Roadmap | [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) |
-| On-behalf-of identity | Roadmap | [Identity](https://donkey-development-kit.github.io/donkey-development-kit/identity.md) |
-| Human-in-the-loop | Roadmap | [Human-in-the-loop](https://donkey-development-kit.github.io/donkey-development-kit/hitl.md) |
-| Scan & publish to the registry | Roadmap | [Scan & publish](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) |
-| Policy handshake | Roadmap | [Policy handshake](https://donkey-development-kit.github.io/donkey-development-kit/policies.md) |
+| Governed model access (the raw client, through the proxy data plane) | Live | [Frameworks](https://docs.donkey-kit.dev/frameworks.md) |
+| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified ADK `gemini()` · Signature-confirmed the rest | [Frameworks](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) |
+| Typed refusals | Live | [Typed refusals](https://docs.donkey-kit.dev/errors.md) |
+| Budget & pacing | Live | [Budget & pacing](https://docs.donkey-kit.dev/budget.md) |
+| OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
+| Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
+| Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
+| CLI (`init`, `doctor`, `mock`, `test`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| Governed tool access (MCP) | Roadmap | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
+| A2A agents (`serve`, `expose`, `dev`) | Roadmap | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| On-behalf-of identity | Roadmap | [Identity](https://docs.donkey-kit.dev/identity.md) |
+| Human-in-the-loop | Roadmap | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
+| Scan & publish to the registry | Roadmap | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
 ## Your first governed call
 
@@ -319,11 +319,11 @@ including every refusal shape. It enforces no policy and ignores
 credentials, and every response carries `x-donkey-simulator: true`.
 
 Port `8080` already taken? Run `donkey mock --port 9000` — see
-[Choosing a port or host](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#choosing-a-port-or-host).
+[Choosing a port or host](https://docs.donkey-kit.dev/simulator.md#choosing-a-port-or-host).
 
   "Local gateway" here means DDK's pure-Python simulator, not Omni/Flex
   Gateway running in Local Mode — that deployment target isn't supported
-  (see the [unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)).
+  (see the [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)).
 
 ### Point DDK at it
 
@@ -394,7 +394,7 @@ blocked, entities: ['Email']
 
 A PII block is not an auth error, and a policy `429` must never be retried —
 typed refusals let the agent react correctly. The framework adapters
-(`donkey.langgraph`, …) classify for you. See [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+(`donkey.langgraph`, …) classify for you. See [Typed refusals](https://docs.donkey-kit.dev/errors.md).
 
 ## Pace against the budget Live
 
@@ -414,7 +414,7 @@ async with Donkey.from_env() as donkey:
             await donkey.budget.wait_for_reset()
 ```
 
-See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+See [Budget & pacing](https://docs.donkey-kit.dev/budget.md).
 
 ## See a span Live
 
@@ -469,7 +469,7 @@ story, the console prints the span:
 Each `donkey.llm.chat` span carries `gen_ai.usage.*` token counts,
 `donkey.policy.decision`, `donkey.budget.remaining` and the correlation ID.
 Set `OTEL_EXPORTER_OTLP_ENDPOINT` and DDK exports over OTLP with no code at
-all. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
+all. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
 
 ## Attribute cost to a run Live
 
@@ -489,7 +489,7 @@ Or fold it into one line with a decorator:
 async def handle_ticket(ticket): ...
 ```
 
-See [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md).
+See [CLI & decorators](https://docs.donkey-kit.dev/cli.md).
 
 ## Test the refusal branch Live
 
@@ -503,7 +503,7 @@ with donkey.simulate(PIIDetected):
 ```
 
 Then grade your own agent against every refusal shape with the pytest
-conformance suite. See [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md).
+conformance suite. See [Testing & conformance](https://docs.donkey-kit.dev/testing.md).
 
 ## Connect to your Omni Gateway
 
@@ -547,16 +547,16 @@ not on the proxy's allow-list, instead of one opaque failure.
 
 ## Next steps
 
-- **[Pick your framework](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)** — get a native LangGraph, ADK,
+- **[Pick your framework](https://docs.donkey-kit.dev/frameworks.md)** — get a native LangGraph, ADK,
   Strands, LlamaIndex, CrewAI, OpenAI Agents SDK, Anthropic SDK or Agent
   Framework object in three lines.
-- **[Examples](https://donkey-development-kit.github.io/donkey-development-kit/examples.md)** — runnable demos for every capability on this page.
-- **[Scenarios](https://donkey-development-kit.github.io/donkey-development-kit/scenarios.md)** — support triage, a nightly batch and an internal
+- **[Examples](https://docs.donkey-kit.dev/examples.md)** — runnable demos for every capability on this page.
+- **[Scenarios](https://docs.donkey-kit.dev/scenarios.md)** — support triage, a nightly batch and an internal
   copilot, built end to end.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md
+Source: https://docs.donkey-kit.dev/feature-overview.md
 
 # Feature overview
 
@@ -702,11 +702,11 @@ reproduce them. Policy enforcement, semantic caching, provisioning, agent
 scanners, kill switch, trusted agent identity, approval UIs and evaluation all
 stay with Agent Fabric and Omni Gateway. Where the platform exposes a signal,
 such as a semantic-cache hit or the routing decision, DDK surfaces it to your
-code. See the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md#what-ddk-will-not-build) for the full list.
+code. See the [Roadmap](https://docs.donkey-kit.dev/roadmap.md#what-ddk-will-not-build) for the full list.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md
+Source: https://docs.donkey-kit.dev/frameworks.md
 
 # Model access
 
@@ -734,7 +734,7 @@ Each card shows what has been proven about that adapter, in the terms the
 
 | Status | Means |
 |---|---|
-| Conformance-tested | Runs the conformance suite against the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) in CI. |
+| Conformance-tested | Runs the conformance suite against the [local simulator](https://docs.donkey-kit.dev/simulator.md) in CI. |
 | Live-verified | Has made a real round-trip through a governed proxy. |
 | Signature-confirmed | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
 
@@ -795,7 +795,7 @@ real values, and `json.dumps`, `dict(...)`, `{**kwargs}` or `kwargs.items()`
 still expose the top-level `api_key`. Some framework objects built from the
 kwargs (LangGraph's `ChatOpenAI`, LlamaIndex's `OpenAILike`, CrewAI's
 `OpenAICompletion`) print credentials themselves. See
-[What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides)
+[What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides)
 for exactly what is and isn't masked.
 
 Where the framework's dependencies are installed, `connection_kwargs()` also
@@ -827,7 +827,7 @@ for it: pick the adapter that matches your proxy.
 |---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter. Default DDK proxies are `Format=OpenAI`. |
 | **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`). The proxy serves the native Messages route at `POST /<base-path>/v1/messages`; OpenAI-shape `/chat/completions` returns 404. |
-| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
+| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
 
   **Ingress Format is not the same as the upstream provider.** The ingress
   Format is the wire protocol *your request* speaks to the proxy. The upstream
@@ -858,14 +858,14 @@ framework's constructor accepts. With **header injection**, the proxy auth and
 attribution headers are sent. With **transport injection**, the SDK's shared
 HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 `donkey.last_call`, the `jwt`-mode JWT, and
-[credentials only to checked endpoints](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#credentials-go-only-to-checked-endpoints).
+[credentials only to checked endpoints](https://docs.donkey-kit.dev/reference/configuration.md#credentials-go-only-to-checked-endpoints).
 
 | Framework | Header injection | Transport injection | Notes |
 |---|---|---|---|
 | LangGraph | ✅ | ✅ | `default_headers` plus the SDK's async client (`ainvoke`) and blocking client (`invoke`). |
 | Strands | ✅ | ✅ | Via `client_args`. |
 | OpenAI Agents SDK | ✅ | ✅ | The adapter builds the `AsyncOpenAI` client itself. |
-| Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object. On `anthropic` 1.0 and later, transport injection goes through a bridged `httpx2` client — see the [Anthropic page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
+| Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object. On `anthropic` 1.0 and later, transport injection goes through a bridged `httpx2` client — see the [Anthropic page](https://docs.donkey-kit.dev/frameworks/anthropic.md). |
 | LlamaIndex | ✅ | ✅ | Via `http_client` (sync) and `async_http_client`. `is_chat_model=True` is forced. |
 | MS Agent Framework | ✅ | ✅ | Via an `async_client` built on the SDK's client. |
 | Google ADK — `model()` | ✅ (`extra_headers`) | ✅ | LiteLLM gets a pre-built OpenAI `client` that sends through the SDK's client. |
@@ -889,19 +889,19 @@ Some frameworks retry above the provider SDK, where the SDK can't reach:
 |---|---|---|---|
 | LangGraph, OpenAI Agents SDK, Anthropic SDK, LlamaIndex, MS Agent Framework, Google ADK | once | `max_retries + 1` times | Nothing. |
 | Strands | once from the model; up to 6 times from a default `Agent` | `max_retries + 1` times | Build the agent with `Agent(retry_strategy=None)`. |
-| CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md#notes). |
+| CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://docs.donkey-kit.dev/frameworks/crewai.md#notes). |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
 attached only by the SDK's shared async client. CrewAI can't carry it, so it
 raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
 also raise `ConfigError` instead of sending. See the
-[`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
-[`bearer` mode](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#bearer-token-auth-mode) has the same
+[`jwt` mode note](https://docs.donkey-kit.dev/reference/configuration.md#jwt--model-wallet-auth-mode).
+[`bearer` mode](https://docs.donkey-kit.dev/reference/configuration.md#bearer-token-auth-mode) has the same
 reach; there, CrewAI raises `ConfigError` instead of sending no token.
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
 or Strands' `client_args["base_url"]`) must pass the same
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https) as the
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) as the
 configured proxy URL; it then receives the configured credentials.
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for how each constructor
@@ -909,7 +909,7 @@ signature the adapters depend on is checked.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md
+Source: https://docs.donkey-kit.dev/frameworks/langgraph.md
 
 # LangGraph
 
@@ -1027,7 +1027,7 @@ simulator, which the conformance suite runs against, serves only that route.
 Pass `use_responses_api=False` to `chat_model(...)` to call
 `/chat/completions` instead. A `base_url` / `openai_api_base` passed to
 `chat_model(...)` must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
 ## Graph-level features
 
@@ -1054,7 +1054,7 @@ async with donkey.run(id=ticket.id):
 On a proxy refusal, LangChain raises its own wrapped
 `OpenAIPermissionDeniedError`, not the SDK's typed exception. Wrap the model
 call in `typed_refusals()` and a gateway refusal comes back through the
-[error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) instead:
+[error taxonomy](https://docs.donkey-kit.dev/errors.md) instead:
 
 ```python
 from donkey_kit.integrations.langgraph import typed_refusals
@@ -1103,7 +1103,7 @@ pytest --donkey-conformance --agent=my_app:build
 it doesn't retry a budget refusal, surfaces `PIIDetected` typed, carries the
 correlation ID into its logs, and tolerates a response with no budget headers.
 The [`examples/langgraph`](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/langgraph)
-factory has exactly this shape. See [Testing](https://donkey-development-kit.github.io/donkey-development-kit/testing.md).
+factory has exactly this shape. See [Testing](https://docs.donkey-kit.dev/testing.md).
 
 ### Which provider served this?
 
@@ -1140,7 +1140,7 @@ has no such callback: after its `ainvoke` (but not `invoke` or `astream`),
 `last_call` stays `UNOBSERVED`. A batch (`abatch`, or `agenerate` with several
 inputs) runs its requests side by side, so it leaves no record in the caller
 either. See the
-[full field reference](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#routing--fallback) for every
+[full field reference](https://docs.donkey-kit.dev/reference/last-call.md#routing--fallback) for every
 field.
 
 **Per message — opt-in headers.** For attribution that needs to travel with
@@ -1172,7 +1172,7 @@ shape tracks that package's version:
 
 **Traces.** The OTel GenAI span for the call already carries the served
 provider and model under `gen_ai.system` / `gen_ai.response.model` (see
-[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)) — but a LangSmith-style tracer that reads LangChain's
+[Telemetry](https://docs.donkey-kit.dev/telemetry.md)) — but a LangSmith-style tracer that reads LangChain's
 own fields instead of the span will still show `openai`.
 
 ## Notes
@@ -1185,21 +1185,21 @@ own fields instead of the span will still show `openai`.
   and `stream()` raise `ConfigError` before sending anything.
 - Printing the model shows `client_secret`: `ChatOpenAI`'s own `repr()` /
   `str()` include `default_headers`. Don't print or log it; see
-  [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
+  [What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides).
 - `max_retries=0` is intentional: retries live in the SDK's transport layer,
   so the SDK and the OpenAI client don't both retry.
 - The proxy is OpenAI-compatible but not the full OpenAI API: the base URL has
   no `/v1` prefix, there is no `/models` endpoint, and auth is a
   `client_id`/`client_secret` header pair rather than a bearer token.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and [Which provider served this?](#which-provider-served-this)
 for reading the served provider/model instead of LangChain's own
 `model_provider`.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md
+Source: https://docs.donkey-kit.dev/frameworks/adk.md
 
 # Google ADK
 
@@ -1320,7 +1320,7 @@ route uses it in place of the client it would build. `max_retries=0` has to
 be passed to LiteLLM itself: LiteLLM sets the client's retry count on every
 call, and its default is 2. An `api_base` /
 `base_url` passed to `model()` must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https), and the
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https), and the
 adapter builds `client` on that URL.
 
 ## Native Gemini
@@ -1357,7 +1357,7 @@ llm = gemini("gemini-2.5-flash")
 `Format=OpenAI` proxy. If your Gemini proxy is a different one, pass its URL
 as `base_url`; the `client_id`/`client_secret` pair must be contracted on that
 proxy, and the URL must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https):
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https):
 
 ```python
 llm = donkey.adk.gemini("gemini-2.5-flash", base_url="https://…/ddk-gemini-inbound/")
@@ -1457,7 +1457,7 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 - **Refusals on the `model()` path aren't typed.** LiteLLM raises its own
   error without the response headers, so `classify()` has nothing to read; see
-  the [ADK examples](https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md).
+  the [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
 - **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
   accepts `client_kwargs`; the `adk` extra declares that floor. On an older
   ADK, `Gemini` drops the governed client without an error and talks to Google
@@ -1466,12 +1466,12 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
 - `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
   own upper bound if you need one.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface through
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface through
 ADK's `LiteLlm` model, and [Native Gemini](#native-gemini) for `gemini()`.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks/strands.md
+Source: https://docs.donkey-kit.dev/frameworks/strands.md
 
 # Strands Agents
 
@@ -1603,13 +1603,13 @@ Strands forwards to its internal OpenAI client.
   `chat.completion` and no chunk deltas, and Strands fails on it. Pass
   `donkey.strands.model("gpt-4o", stream=True)` on routes that stream.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks/agent-framework.md
+Source: https://docs.donkey-kit.dev/frameworks/agent-framework.md
 
 # Microsoft Agent Framework
 
@@ -1717,7 +1717,7 @@ llm = OpenAIChatClient(
 `async_client` is present when the `openai` package is installed. The
 constructor uses it as given, so a `base_url` passed to `chat_client()` gets a
 client built on that URL; the URL must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 The same kwargs work with `OpenAIChatCompletionClient`, the Chat Completions
 client.
 
@@ -1795,12 +1795,12 @@ missing from your installed version, `policy_middleware()` raises a
   `UNOBSERVED`, because MS Agent Framework is still listed as not observing calls. Aligning
   that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for the full `PolicyViolation` hierarchy
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for the full `PolicyViolation` hierarchy
 that `policy_middleware()` raises.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md
+Source: https://docs.donkey-kit.dev/frameworks/openai.md
 
 # OpenAI Agents SDK
 
@@ -1943,13 +1943,13 @@ await Runner.run(agent, "hello", hooks=LastCallHooks())
   `donkey-kit[openai-agents]` pulls it in for you. For the raw governed client
   with no framework, use `donkey.openai()` (from `donkey-kit[llm]`) instead.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md
+Source: https://docs.donkey-kit.dev/frameworks/anthropic.md
 
 # Anthropic SDK
 
@@ -1968,7 +1968,7 @@ straight into the client constructor.
   the Anthropic ingress Format. Default DDK proxies are `Format=OpenAI`: there,
   `/v1/messages` returns 404 and Claude is reachable only as an upstream
   provider through the OpenAI-compatible adapters. See
-  [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) for how ingress Format works.
+  [Model access](https://docs.donkey-kit.dev/frameworks.md) for how ingress Format works.
 
 ## Install
 
@@ -2115,13 +2115,13 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   end the connection pool, close the `Donkey` (`async with Donkey.from_env()`
   or `await donkey.aclose()`).
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md
+Source: https://docs.donkey-kit.dev/frameworks/crewai.md
 
 # CrewAI
 
@@ -2231,9 +2231,9 @@ model = LLM(
 also adds an `interceptor`: with one set, CrewAI's provider builds HTTP clients
 that don't follow redirects, and the interceptor removes the credential headers
 from any request to an origin other than the proxy (see
-[Credentials go only to checked endpoints](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#credentials-go-only-to-checked-endpoints)).
+[Credentials go only to checked endpoints](https://docs.donkey-kit.dev/reference/configuration.md#credentials-go-only-to-checked-endpoints)).
 A `base_url` / `api_base` passed to `llm()` must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
 ## Notes
 
@@ -2246,7 +2246,7 @@ A `base_url` / `api_base` passed to `llm()` must pass the
   client, which CrewAI's provider doesn't use, so `donkey.crewai.llm()` and
   `connection_kwargs()` raise `ConfigError` in `jwt` mode. Use client-id auth
   with CrewAI; see the
-  [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
+  [`jwt` mode note](https://docs.donkey-kit.dev/reference/configuration.md#jwt--model-wallet-auth-mode).
 - **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
   rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as
   a rate limit. On the proxy a `429` is a budget refusal, so CrewAI re-sends it
@@ -2262,12 +2262,12 @@ A `base_url` / `api_base` passed to `llm()` must pass the
   `status == LastCallStatus.UNAVAILABLE` and `available == False`, and names the
   resolved adapters in `surface`.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface through
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface through
 CrewAI.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/frameworks/llamaindex.md
+Source: https://docs.donkey-kit.dev/frameworks/llamaindex.md
 
 # LlamaIndex
 
@@ -2373,7 +2373,7 @@ model = OpenAILike(
 
 LlamaIndex uses `api_base` rather than `base_url`; `connection_kwargs()`
 already translates for you. An `api_base` passed to `llm()` must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
 ## Notes
 
@@ -2410,15 +2410,15 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   one, so they raise `ConfigError` before sending anything.
 - **Printing the model shows credentials.** `OpenAILike`'s own `repr()` /
   `str()` include `client_secret` and `api_key`. Don't print or log it; see
-  [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
+  [What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides).
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/errors.md
+Source: https://docs.donkey-kit.dev/errors.md
 
 # Governed error taxonomy
 
@@ -2518,11 +2518,11 @@ never burn an exhausted budget or replay a blocked prompt.
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
-| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md). |
+| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli.md). |
 
 Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
 they sit outside the retry question. `BudgetReserveReached` is raised *before* a
-call by [`donkey.budget.pace()`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and is meant to be recovered from
+call by [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) and is meant to be recovered from
 (`await donkey.budget.wait_for_reset()`, then continue) when its `.reset_at` is
 known. If `.reset_at` is `None`, propagate or handle it instead — waiting returns
 immediately and an unconditional retry would spin. Its `.remediation` carries
@@ -2533,7 +2533,7 @@ different model than requested (opt-in via `on_model_substitution="raise"`).
 field at once, and it also reports an endpoint that may not receive the
 configured credentials: a non-`https://` URL, or a URL from the project's config
 files paired with credentials from elsewhere. See
-[Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+[Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 Fix the config and re-run. The transport raises `ConfigError` for two lifecycle
 mistakes as well, so neither escapes as a bare `RuntimeError`: a call on a
 `Donkey` whose HTTP client is closed (after `aclose()`, or after a framework
@@ -2547,7 +2547,7 @@ the `ConfigError` from `e.__cause__`.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
-[`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) also prints. Control-plane token failures override that
+[`donkey doctor`](https://docs.donkey-kit.dev/cli.md) also prints. Control-plane token failures override that
 default with guidance for the provider that failed: connected-app errors point
 to the Anypoint credentials and scopes, while an exhausted `ChainedAuth` points
 to each configured provider's credential or token source.
@@ -2596,7 +2596,7 @@ a canonical default. For the refusals:
 
 The text names the **action you can take**, not the policy that fired. Because
 each default lives on the exception class, it is a single source of wording that
-[`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) reuses for its own failure output, so the CLI and the
+[`donkey doctor`](https://docs.donkey-kit.dev/cli.md) reuses for its own failure output, so the CLI and the
 exception never disagree.
 
 ## Refusal messages don't repeat blocked content
@@ -2605,7 +2605,7 @@ The PII policy's rejection text repeats every value it flagged. `PIIDetected`
 builds its own message instead, from the entity types, their count and their
 character offsets. So `str(exc)`, `repr(exc)` and `exc.args` never contain the
 blocked value, and neither does a log line, a traceback or
-[`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md):
+[`donkey doctor`](https://docs.donkey-kit.dev/cli.md):
 
 ```
 Request blocked: personally identifiable information detected (403): 1 entity (Email at chars 12-32). Values withheld; the gateway's text is on .gateway_message.
@@ -2620,7 +2620,7 @@ headers, category names and policy pattern names, never from the request.
 A traceback also prints every chained exception, and a framework's own error
 usually repeats the gateway's text. So when the SDK maps a framework error to
 a typed one, as LangGraph's
-[`typed_refusals()`](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#typed-refusals-inside-a-node) does,
+[`typed_refusals()`](https://docs.donkey-kit.dev/frameworks/langgraph.md#typed-refusals-inside-a-node) does,
 it raises it without a chained cause: `exc.__cause__` is `None`, and the
 framework error is on `exc.framework_error` (`None` when there was none). No
 frame in the traceback holds the framework error as a local variable, so error
@@ -2631,7 +2631,7 @@ Python still keeps it on the suppressed `exc.__context__`, so treat
 This applies to policy refusals. `UpstreamRequestError` messages include the
 upstream provider's own error text, which can quote parts of your request. For
 everything the SDK does and doesn't hide in printed output, see
-[What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
+[What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides).
 
 ## The ids every `DonkeyError` carries
 
@@ -2640,7 +2640,7 @@ logs and to the gateway's own record:
 
 | Attribute | What it is | Provenance |
 | --- | --- | --- |
-| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
+| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
 | `.call_id` | The **per-call** id, unique per logical request and stable across that request's retries | The `X-Donkey-Request-Id` request header the client sent. Present **even when the request fails before any response** (a transport error). |
 | `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
@@ -2692,7 +2692,7 @@ retries **once** on a 401. In the default client-id mode the data-plane client
 holds no token, so a 401 is terminal, as it is on the blocking client, and
 surfaces immediately as `AuthError`. The Anypoint control-plane credential
 lives on a separate client: model calls never fetch, send or refresh it. See
-[What the SDK sends where](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-the-sdk-sends-where).
+[What the SDK sends where](https://docs.donkey-kit.dev/reference/configuration.md#what-the-sdk-sends-where).
 
 ## Unrecognised shapes
 
@@ -2708,7 +2708,7 @@ the gateway's text and is not a `PolicyViolation`.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/budget.md
+Source: https://docs.donkey-kit.dev/budget.md
 
 # Budget & pacing
 
@@ -2805,7 +2805,7 @@ peak — rather than explaining an outage afterwards.
 This is why `observed_at` is part of the public surface: a dashboard reading
 `remaining` without checking `observed_at` is reporting history, not state.
 A budget-query endpoint on the gateway would make this object live rather than
-last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+last-known-good — see [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
 
 ## Semantic cache steering
 
@@ -2815,7 +2815,7 @@ When the proxy is fronted by the Anypoint **semantic-caching** policy, the
 gateway can answer a request from a stored completion when a semantically
 similar prompt was seen before — no provider round-trip, no fresh token spend.
 DDK caches nothing and computes no embeddings itself (that stays on the
-[do-not-build](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) list); it lets you **steer** the gateway's cache per
+[do-not-build](https://docs.donkey-kit.dev/roadmap.md) list); it lets you **steer** the gateway's cache per
 block and **surfaces** the outcome.
 
 ```python
@@ -2829,7 +2829,7 @@ async with donkey.cache(threshold=0.9, ttl=60):
 ```
 
 `donkey.cache(...)` is a dual sync/async context manager — like
-[`donkey.run(...)`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids), the controls bind to a context variable, so they
+[`donkey.run(...)`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids), the controls bind to a context variable, so they
 reach every governed call in the block (including calls on framework-spawned
 `asyncio` tasks) with no threading through framework state. The five controls:
 
@@ -2849,9 +2849,9 @@ doesn't leave the data plane.
 An invalid control (a negative `ttl`, a `threshold` outside `[0.0, 1.0]`, a
 `principal_id` with a control character) raises `ConfigError` **at the call
 site**, not on the first request. The **outcome** of each call is on
-[`donkey.last_call.cache_status`](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#semantic-cache) /
+[`donkey.last_call.cache_status`](https://docs.donkey-kit.dev/reference/last-call.md#semantic-cache) /
 `.cache_score` and the OTel span. The same
-[degradation](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) as `donkey.run(...)` applies: a
+[degradation](https://docs.donkey-kit.dev/frameworks.md) as `donkey.run(...)` applies: a
 `connection_kwargs()`-only adapter that does not route through the shared
 transport does not see the context variable, so its calls are not steered.
 
@@ -2872,13 +2872,13 @@ transport does not see the context variable, so its calls are not steered.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/identity.md
+Source: https://docs.donkey-kit.dev/identity.md
 
 # Identity
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design.
 
 By default the gateway sees your **service**, not the person the agent is
@@ -2910,7 +2910,7 @@ make the call it is already able to make.
   **DDK does not implement authorisation logic.** Trusted Agent Identity is a
   MuleSoft gateway feature. DDK does the token-exchange plumbing and header
   placement — nothing more. "Check the user's role in the SDK" is client-side
-  enforcement, and it is on the [will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md): code in your
+  enforcement, and it is on the [will-not-build list](https://docs.donkey-kit.dev/roadmap.md): code in your
   process can be bypassed by code in your process.
 
 ## No silent fallback
@@ -2924,13 +2924,13 @@ degrades to the service identity without telling you.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/hitl.md
+Source: https://docs.donkey-kit.dev/hitl.md
 
 # Human-in-the-loop
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design.
 
 Refunds over €100 need a human. Today that is bespoke code, per team, per
@@ -2971,7 +2971,7 @@ none of which is a new mechanism:
 1. **Normalisation** — one vocabulary across frameworks, so approval policy is
    not rewritten when a team switches from ADK to LangGraph.
 2. **Auditability** — the pending approval appears in the
-   [span](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md), and the approver's identity lands in the audit trail
+   [span](https://docs.donkey-kit.dev/telemetry.md), and the approver's identity lands in the audit trail
    next to the correlation ID. "Who approved this refund?" becomes a query.
 3. **Gateway routing** — a high-risk approval can be routed through the
    gateway's identity layer for step-up MFA, rather than trusting a click in
@@ -2980,7 +2980,7 @@ none of which is a new mechanism:
 ## Out of scope
 
   DDK will not ship an approval queue or an approval UI — both are on the
-  [will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md). It integrates with whatever you already run:
+  [will-not-build list](https://docs.donkey-kit.dev/roadmap.md). It integrates with whatever you already run:
   Slack, ServiceNow, or LangGraph's own checkpointer.
 
 A queue would mean owning a durable store, an escalation model, and a
@@ -2988,13 +2988,13 @@ notification system — a product rather than a feature.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/policies.md
+Source: https://docs.donkey-kit.dev/policies.md
 
 # Policy handshake
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design. It depends on a policy-discovery endpoint on the gateway, which does not
 exist today.
 
@@ -3022,7 +3022,7 @@ reject — so your bot can say *"some details were redacted"* instead of
 *"request failed."* Same gateway behaviour, a very different experience, and
 today the client has no way to know which mode is in force.
 
-**Warm start.** It also makes [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) live rather than
+**Warm start.** It also makes [budget](https://docs.donkey-kit.dev/budget.md) live rather than
 last-known-good: a fresh process currently knows nothing about its budget until
 its first response comes back.
 
@@ -3034,7 +3034,7 @@ its first response comes back.
 If the client's cached view and the gateway disagree, **the gateway wins** and
 the client learns from the refusal. Skipping a gateway call *"because the
 handshake said it's fine"* is client-side enforcement, which is on the
-[will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+[will-not-build list](https://docs.donkey-kit.dev/roadmap.md).
 
 This is also why `observed_at` is part of the surface, as it is on the budget
 object: a policy view is a snapshot, and code that cannot tell a snapshot from
@@ -3042,7 +3042,7 @@ live state will eventually make a decision it should not have.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md
+Source: https://docs.donkey-kit.dev/telemetry.md
 
 # Telemetry & cost
 
@@ -3346,7 +3346,7 @@ donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_capture_content
 ```
 
 `telemetry_capture_content` resolves along the standard
-[precedence](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#precedence) (set in code → env → config
+[precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence) (set in code → env → config
 files → default) and **defaults to `False`**. When
 enabled, content is emitted under the pinned semconv attribute names —
 `gen_ai.prompt` and `gen_ai.completion` — and no others. When off, those
@@ -3396,12 +3396,12 @@ routed normally or recovered from a degraded provider.
 
 For the complete list of `last_call` fields — observability status, gateway
 identity, routing, and token usage — see the [`last_call` field
-reference](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md).
+reference](https://docs.donkey-kit.dev/reference/last-call.md).
 
 The same record also carries the call's identity and usage: `request_id` (the
 upstream provider's id), `api_instance_id` and `environment_id` (which gateway
 instance served it), and the token counts including cached and reasoning
-tokens. The [gateway identity example](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md) walks
+tokens. The [gateway identity example](https://docs.donkey-kit.dev/examples/general/gateway-identity.md) walks
 through every field.
 
 ### When `last_call` is unavailable
@@ -3418,7 +3418,7 @@ cold read on a `Donkey` that resolved only these adapters or CrewAI reports
 `UNAVAILABLE` rather than `UNOBSERVED`. Aligning that is tracked in
 [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 ADK's `gemini()` uses the shared client and observes calls once it has been
-called (see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini) for reading
+called (see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini) for reading
 `last_call` inside an ADK run).
 
 For a `Donkey` that resolved only CrewAI:
@@ -3442,8 +3442,8 @@ lands in that task. The OpenAI Agents SDK's `Runner` sends a run's first turn
 that way (and every turn of `run_streamed`), and ADK's `Runner` runs the whole
 agent that way. Read `last_call` in the framework's model hook, which runs in the
 call's own task: `RunHooks.on_llm_end` for the
-[OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md#donkeylast_call), `after_model_callback`
-for [ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
+[OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md#donkeylast_call), `after_model_callback`
+for [ADK](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
 `Agent.invoke_async`, `AsyncAnthropic.messages.create`, a model's own async
 method) records in the caller's context.
 
@@ -3477,7 +3477,7 @@ names the served provider is not counted as a difference, so asking for
 substitution. The same model served by a different provider still is. On a
 proxy with more than one provider, a bare name the gateway cannot pin to one
 provider is rejected with a `400` before any upstream call, and DDK raises
-[`ModelNotRoutable`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+[`ModelNotRoutable`](https://docs.donkey-kit.dev/errors.md).
 
 ### Semantic caching & semantic routing Live
 
@@ -3487,7 +3487,7 @@ can **route semantically** (pick the model by matching the prompt to a
 topic). Both happen at the gateway. DDK caches nothing and computes no
 embeddings itself; it lets you steer the gateway's cache per request — skip it,
 not store a response, or override the TTL or similarity threshold via
-[`donkey.cache(...)`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md#semantic-cache-steering) — and reports what
+[`donkey.cache(...)`](https://docs.donkey-kit.dev/budget.md#semantic-cache-steering) — and reports what
 happened:
 
 - the cache outcome (`hit`, `miss`, `bypass`, `no-store`) and similarity score
@@ -3496,7 +3496,7 @@ happened:
 - the matched routing topic and its score, beside the routing fields above.
 
 A cache `hit` is a verbatim replay with no provider round-trip, so it never
-advances the [token budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) — the replayed `usage` is not fresh spend.
+advances the [token budget](https://docs.donkey-kit.dev/budget.md) — the replayed `usage` is not fresh spend.
 
 ### TypeScript parity Roadmap
 
@@ -3568,7 +3568,7 @@ async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
 
 The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
 `DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
-[Configuration](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#cost-attribution-tags)). Per-run
+[Configuration](https://docs.donkey-kit.dev/reference/configuration.md#cost-attribution-tags)). Per-run
 overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
 wins **per field** for its block, and the rest fall back to the configured
 tags. The key set is **fixed**: an unknown dimension is a configuration error,
@@ -3618,7 +3618,7 @@ EU AI Act Article 12 log request becomes one query, not an investigation.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/simulator.md
+Source: https://docs.donkey-kit.dev/simulator.md
 
 # Local simulator
 
@@ -3658,14 +3658,14 @@ multi-provider proxy (`ModelNotRoutable`). One happy-path
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see
-[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
+[Gateway identity](https://docs.donkey-kit.dev/examples/general/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
 Any other `model` value gets the default model-based happy path. The
 `donkey-sim/` prefix is a simulator-only control surface; the real gateway never
 interprets it.
 
 Because each body is the *same fixture* the SDK's error classifier is tested
 against, a sentinel request surfaces in your agent as the typed exception — a
-[`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), not a raw `403`.
+[`PIIDetected`](https://docs.donkey-kit.dev/errors.md), not a raw `403`.
 
 ## Choosing a port or host
 
@@ -3691,7 +3691,7 @@ Point your client at the same address: set
 simulator from another machine or container by LAN address or hostname (for
 example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
 environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
-[Endpoints must use `https://`](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[Endpoints must use `https://`](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
   Behind an HTTP proxy (`HTTP_PROXY` or `ALL_PROXY` set, as on many corporate
   machines and CI runners), the client sends loopback requests to the proxy
@@ -3706,7 +3706,7 @@ Set the simulator URL in the environment (or in code), as above. If you keep it
 in `.donkey-kit.toml` instead, put the credentials in `.donkey-kit.local.toml`
 next to it: a URL from the working directory's config files, loopback included,
 only receives credentials from those files. See
-[Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+[Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 
   If you run the simulator's ASGI app under `uvicorn` yourself instead of
   through `donkey mock`, remember uvicorn's own default port is `8000`, not
@@ -3734,7 +3734,7 @@ scenarios the `--scenario` flag builds. If the `[local]` extra is missing,
 
 Happy-path `200` responses carry a synthesised `x-llm-proxy-ratelimit` budget
 window that decrements on every call, so the pacing logic from
-[Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) runs end-to-end against the simulator. For a real
+[Budget & pacing](https://docs.donkey-kit.dev/budget.md) runs end-to-end against the simulator. For a real
 windowed counter that resets and emits the `429` on exhaustion, use the
 [`budget` scenario](#scenario-scripting).
 
@@ -3769,13 +3769,13 @@ other calls get the happy path.
 donkey mock --scenario pii_block:every=5
 ```
 
-Every fifth call raises a typed [`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) in your agent, so your
+Every fifth call raises a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md) in your agent, so your
 masking logic runs in your own terminal before the pull request is opened.
 
 ### `budget:limit=<tokens>,window=<duration>`
 
 Runs a **real, wall-clock-windowed token counter**. Shrink an hour-long window
-to a minute and your [pacing and resume logic](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) is exercised in ninety
+to a minute and your [pacing and resume logic](https://docs.donkey-kit.dev/budget.md) is exercised in ninety
 seconds.
 
 ```bash
@@ -3803,7 +3803,7 @@ Serves the `injection-protection` **400** on any request whose `input`,
 donkey mock --scenario injection:on-pattern="ignore previous"
 ```
 
-The request surfaces as a typed [`PromptInjectionBlocked`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) (via the
+The request surfaces as a typed [`PromptInjectionBlocked`](https://docs.donkey-kit.dev/errors.md) (via the
 `x-injection-protection: blocked` discriminator), so the refusal branch of a
 guardrailed bot is exercised before it faces a real attack.
 
@@ -3824,25 +3824,25 @@ guardrailed bot is exercised before it faces a real attack.
   byte-identical rejection bodies and exact discriminator headers.
 - **Its fixtures are the SDK's test fixtures.** The simulator serves the same
   files the error classifier is tested against, so the simulator and the
-  [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) cannot drift apart. The wheel ships a sha256
+  [error taxonomy](https://docs.donkey-kit.dev/errors.md) cannot drift apart. The wheel ships a sha256
   integrity manifest of every fixture, so a changed byte fails loudly rather
   than silently altering what the simulator replays.
 - **It is pure Python — not Omni/Flex Gateway running in Local Mode.**
   `pip install "donkey-kit[local]"` adds Starlette and Uvicorn; no Docker
   required. DDK does not support Local Mode as a deployment target (see the
-  [unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)); real-gateway
+  [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)); real-gateway
   behavior is exercised against a hosted (Connected Mode) proxy instead.
 
 ## Related
 
-- [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) — `simulate()` for in-process unit tests,
+- [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
   and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
-- [Error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) — the typed exceptions each shape maps to.
-- [CLI](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) — the full `donkey` command reference.
+- [Error taxonomy](https://docs.donkey-kit.dev/errors.md) — the typed exceptions each shape maps to.
+- [CLI](https://docs.donkey-kit.dev/cli.md) — the full `donkey` command reference.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/testing.md
+Source: https://docs.donkey-kit.dev/testing.md
 
 # Testing & conformance
 
@@ -3866,7 +3866,7 @@ pip install "donkey-kit[test,local]"    # add the gateway fixture
 
 A context manager that makes the next N calls through a `Donkey` return a
 chosen refusal. It injects the **same captured rejection fixture** the error
-classifier and the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) use, so your agent sees exactly
+classifier and the [local simulator](https://docs.donkey-kit.dev/simulator.md) use, so your agent sees exactly
 that typed refusal — not a hand-rolled stand-in. No network, no server, fast
 enough for unit tests:
 
@@ -3901,7 +3901,7 @@ Asking for a refusal no gateway response produces — for example a client-side
   `simulate()` injects the fixture verbatim. For scripted behaviour such as
   every-Nth-call PII blocks or a shrinking budget window, use the
   [`gateway` fixture](#the-gateway-fixture) with
-  `set_scenarios(...)`, or [`donkey mock --scenario`](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting).
+  `set_scenarios(...)`, or [`donkey mock --scenario`](https://docs.donkey-kit.dev/simulator.md#scenario-scripting).
 
 ## The conformance plugin — run it against your agent
 
@@ -3940,7 +3940,7 @@ The factory is called once per scenario and receives the `donkey` fixture if it
 declares one. With `--donkey-conformance`, the plugin runs the suite
 exclusively in place of normal test collection; without the flag it is inert.
 You can also run it through the CLI with `donkey test --agent my_app.agent:build`
-(see [CLI](https://donkey-development-kit.github.io/donkey-development-kit/cli.md#donkey-test)).
+(see [CLI](https://docs.donkey-kit.dev/cli.md#donkey-test)).
 
 ### Exemptions
 
@@ -3961,7 +3961,7 @@ manual `curl`. Those need a real listener on a real port — and often you need
 to know *what the gateway actually received*. "Did my agent stop after the
 refusal, or retry four more times?" is answerable only from the gateway's side.
 
-The `gateway` fixture boots the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) on an ephemeral
+The `gateway` fixture boots the [local simulator](https://docs.donkey-kit.dev/simulator.md) on an ephemeral
 port, hands your test its `.url`, and records every request:
 
 ```python
@@ -3978,7 +3978,7 @@ async def test_agent_stops_after_a_refusal(gateway):
 - The port is bound to `0`, so parallel `pytest -n` runs never collide.
 - `gateway.requests_received` counts requests; `gateway.requests` exposes each
   one's method, path, and headers, with `client_secret` **redacted**.
-- `gateway.set_scenarios(...)` arms [scenario scripting](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting)
+- `gateway.set_scenarios(...)` arms [scenario scripting](https://docs.donkey-kit.dev/simulator.md#scenario-scripting)
   (`pii_block`, `injection`, `budget`) **per test**.
 - Every response carries `x-donkey-simulator: true`.
 - The server is torn down when the test exits, including on failure.
@@ -3988,7 +3988,7 @@ without that extra raises an `ImportError` naming the exact `pip install`.
 
 ## Choosing a tool
 
-| | [`donkey mock`](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) | `gateway` fixture | `simulate()` |
+| | [`donkey mock`](https://docs.donkey-kit.dev/simulator.md) | `gateway` fixture | `simulate()` |
 |---|---|---|---|
 | Shape | A **server** you run | A **server** a test starts | **In-process** context manager |
 | Port | You pick it (`--port`) | Ephemeral (`0`), on `.url` | None |
@@ -4001,7 +4001,7 @@ All three read the **same rejection fixtures**, so they cannot drift apart.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/cli.md
+Source: https://docs.donkey-kit.dev/cli.md
 
 # CLI & decorators
 
@@ -4015,7 +4015,7 @@ testing.
 
 ### `@donkey.governed`
 
-Runs a function inside a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) scope:
+Runs a function inside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md) scope:
 
 ```python
 @donkey.governed(team="support")
@@ -4050,8 +4050,8 @@ process-global registry you read with `registered_tools()`. Both `ToolSpec` and
 A tool with **no docstring is rejected at decoration time** (`ValueError`) — an
 undescribed tool is useless to a model and to a registry.
 
-The same markers are what the planned [scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) and
-[A2A](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) agent-card generator read, so marking tools now carries forward.
+The same markers are what the planned [scanner](https://docs.donkey-kit.dev/publishing.md) and
+[A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator read, so marking tools now carries forward.
 
 ## The CLI
 
@@ -4092,7 +4092,7 @@ preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
 ### `donkey init`
 
 Resolves your current configuration (env vars → config files → defaults; see
-[Precedence](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#precedence)) and writes a **commented** `.donkey-kit.toml` with the values it
+[Precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence)) and writes a **commented** `.donkey-kit.toml` with the values it
 found.
 
 - **Names every missing required field at once** — control plane *and* LLM
@@ -4103,7 +4103,7 @@ found.
   gitignored `.donkey-kit.local.toml` next to the file, or in environment
   variables. A URL in `.donkey-kit.toml`, including a loopback one, only
   receives credentials from those two files unless you opt in; see
-  [Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+  [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
   The file's comments also say that URLs must use `https://`, that `localhost`
   is accepted over plain `http://`, and that `DONKEY_ALLOW_HTTP=1` in the
   environment (not in the file) allows plain `http://` to other hosts.
@@ -4135,7 +4135,7 @@ Before the call, `doctor` prints each endpoint's host and where it came from:
 proxy URL comes from the working directory's config files but its credentials
 don't (a loopback URL such as the simulator's included), the `config` line
 fails with the
-[remediation](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives) and no
+[remediation](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives) and no
 request is sent. A control-plane endpoint with the same problem shows its
 remediation on the `control plane` line without failing the report, since
 `doctor` only calls the LLM proxy. In `jwt` mode, an LLM proxy URL from those
@@ -4171,7 +4171,7 @@ donkey doctor --json             # machine-readable checks
 
 ### `donkey mock`
 
-Runs the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), which replays captured gateway
+Runs the [local simulator](https://docs.donkey-kit.dev/simulator.md), which replays captured gateway
 rejections. Needs the `[local]` extra.
 
 ```bash
@@ -4184,11 +4184,11 @@ donkey mock --port 8080 --host 127.0.0.1 \
 |---|---|---|
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
-| `--scenario` | none | Fault-injection rule, repeatable. See [Scenario scripting](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting). |
+| `--scenario` | none | Fault-injection rule, repeatable. See [Scenario scripting](https://docs.donkey-kit.dev/simulator.md#scenario-scripting). |
 
 The port isn't read from an environment variable or `.donkey-kit.toml`; these
 flags (or the `serve()` keyword arguments) are the only way to change it. See
-[Choosing a port or host](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#choosing-a-port-or-host) for the
+[Choosing a port or host](https://docs.donkey-kit.dev/simulator.md#choosing-a-port-or-host) for the
 programmatic entry point and the `0.0.0.0` caveat.
 
 An invalid `--scenario` exits with code `2`.
@@ -4204,23 +4204,23 @@ straight through; pytest's exit code becomes `donkey test`'s own. Needs the
 donkey test --agent my.pkg:make_agent -k governance -x
 ```
 
-See [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) for what the suite checks.
+See [Testing & conformance](https://docs.donkey-kit.dev/testing.md) for what the suite checks.
 
 ## Planned commands Roadmap
 
-These commands are part of the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and are not available in the
+These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
 - `donkey scan` and `donkey publish` — derive a manifest and agent card from
-  your code and register them with Exchange. See [Scan & publish](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md).
+  your code and register them with Exchange. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md).
 - `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
-  A2A and expose it through the gateway. See [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md).
+  A2A and expose it through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
   Run `donkey --help` to see the commands available in your installed version.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/use-with-your-agent.md
+Source: https://docs.donkey-kit.dev/use-with-your-agent.md
 
 # Use these docs with your agent
 
@@ -4239,13 +4239,13 @@ build, so they never drift from what you see here:
 
 | Artifact | What it is | URL |
 | --- | --- | --- |
-| `llms.txt` | A curated **index** — one link per page, grouped by section. Best when your tool ingests a doc index and fetches pages on demand. | [`/llms.txt`](https://donkey-development-kit.github.io/donkey-development-kit/llms.txt) |
-| `llms-full.txt` | **Every page inlined** into one file. Best for pasting straight into an assistant — no fetching required. | [`/llms-full.txt`](https://donkey-development-kit.github.io/donkey-development-kit/llms-full.txt) |
-| Per-page `.md` | The raw markdown for any page, served next to its HTML. Append `.md` to any page URL. | e.g. [`/quickstart.md`](https://donkey-development-kit.github.io/donkey-development-kit/quickstart.md) |
+| `llms.txt` | A curated **index** — one link per page, grouped by section. Best when your tool ingests a doc index and fetches pages on demand. | [`/llms.txt`](https://docs.donkey-kit.dev/llms.txt) |
+| `llms-full.txt` | **Every page inlined** into one file. Best for pasting straight into an assistant — no fetching required. | [`/llms-full.txt`](https://docs.donkey-kit.dev/llms-full.txt) |
+| Per-page `.md` | The raw markdown for any page, served next to its HTML. Append `.md` to any page URL. | e.g. [`/quickstart.md`](https://docs.donkey-kit.dev/quickstart.md) |
 
   The site is served under a project sub-path today
   (`/donkey-development-kit`), so the files live at
-  `https://donkey-development-kit.github.io/donkey-development-kit/llms.txt`
+  `https://docs.donkey-kit.dev/llms.txt`
   rather than a bare domain-root `/llms.txt`. Use the full URLs above.
 
 ## Point your assistant at them
@@ -4253,7 +4253,7 @@ build, so they never drift from what you see here:
 Ask Claude Code to read the full docs, then build:
 
 ```text
-Read https://donkey-development-kit.github.io/donkey-development-kit/llms-full.txt,
+Read https://docs.donkey-kit.dev/llms-full.txt,
 then write a governed LangGraph model call using the donkey-kit SDK.
 ```
 
@@ -4261,7 +4261,7 @@ In Cursor, add the docs as a source (**Settings → Features → Docs → Add**)
 the index URL, then `@Docs` it in chat:
 
 ```text
-https://donkey-development-kit.github.io/donkey-development-kit/llms.txt
+https://docs.donkey-kit.dev/llms.txt
 ```
 
 For any assistant, paste the contents of `llms-full.txt` into the conversation,
@@ -4270,7 +4270,7 @@ full context without following links:
 
 ```text
 <paste the contents of
- https://donkey-development-kit.github.io/donkey-development-kit/llms-full.txt>
+ https://docs.donkey-kit.dev/llms-full.txt>
 
 Now write a governed OpenAI Agents SDK setup that handles a TokenBudgetExceeded
 refusal.
@@ -4280,28 +4280,28 @@ If your tool follows a doc index, give it `llms.txt`. Each entry links to the
 page's `.md`, so the tool fetches only the pages it needs:
 
 ```text
-https://donkey-development-kit.github.io/donkey-development-kit/llms.txt
+https://docs.donkey-kit.dev/llms.txt
 ```
 
-  These docs cover both live capabilities and ones on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+  These docs cover both live capabilities and ones on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
   Roadmap pages show the planned API, which is not callable yet. When you ask an
   assistant to write code, tell it to use only capabilities marked **Live**, and
   review generated code before running it against a real gateway.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md
+Source: https://docs.donkey-kit.dev/tool-access.md
 
 # Tool access
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 Governed tool access lets an agent discover the MCP tools your organisation has
 published and governed, filter them down to what it actually needs, and bind
 them into any of the eight supported frameworks as that framework's **native
-tool objects** — the same "no wrapper" approach as [model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md).
+tool objects** — the same "no wrapper" approach as [model access](https://docs.donkey-kit.dev/frameworks.md).
 
 ## Two lines from catalog to agent
 
@@ -4332,7 +4332,7 @@ Name search, asset type and environment filters live one layer down, on
 `donkey.registry.search()`.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
-Exchange — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md).
+Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
 
 ## In this section
 
@@ -4350,18 +4350,18 @@ Exchange — see [Discovery, search & filter](https://donkey-development-kit.git
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md
+Source: https://docs.donkey-kit.dev/tool-access/discovery.md
 
 # Discovery, search & filter
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance**, domain and tags, so an agent
 binds only the tools it needs rather than the entire catalog. It returns a
-[`ToolSet`](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md) whose per-framework methods hand back native
+[`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding.md) whose per-framework methods hand back native
 tool objects. Name search, asset type and environment are filters on the
 lower-level [`donkey.registry.search()`](#registry-search).
 
@@ -4395,7 +4395,7 @@ tools = await donkey.tools.discover(
 | `tags` | `list[str] \| None` | All listed tags must be present. |
 | `governed` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered (the default). |
 | `governance` | `Any \| None` | Reserved in the signature; no behaviour is defined for it yet. |
-| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md)). Default `False`. |
+| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Default `False`. |
 
 ## Registry search
 
@@ -4489,20 +4489,20 @@ message points you to `explain()`.
 
 ## Related
 
-- [Framework binding](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md) — turn a `ToolSet` into native tools.
-- [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md) — pin resolved versions for production.
+- [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md) — turn a `ToolSet` into native tools.
+- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md) — pin resolved versions for production.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md
+Source: https://docs.donkey-kit.dev/tool-access/binding.md
 
 # Framework binding
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
-Once [discovery](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md) hands you a `ToolSet`, binding turns
+Once [discovery](https://docs.donkey-kit.dev/tool-access/discovery.md) hands you a `ToolSet`, binding turns
 governed MCP servers into a framework's own tool objects — nothing wrapped,
 nothing re-implemented.
 
@@ -4572,23 +4572,23 @@ docstring calls out the difference.
 | Strands | `MCPClient(lambda: streamablehttp_client(url, headers=...))` — implements `ToolProvider`, so it can be passed directly into `Agent(tools=[...])` with automatic lifecycle management. |
 
 A binding failure or a `401` surfaces as a typed exception from the
-[error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+[error taxonomy](https://docs.donkey-kit.dev/errors.md).
 
 ## Related
 
-- [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md) — produce the `ToolSet`.
-- [A2A agent tools](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/a2a.md) — bind a remote agent the same way.
-- [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) — governed model access per framework.
+- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md) — produce the `ToolSet`.
+- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — bind a remote agent the same way.
+- [Frameworks](https://docs.donkey-kit.dev/frameworks.md) — governed model access per framework.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md
+Source: https://docs.donkey-kit.dev/tool-access/lockfile.md
 
 # Pinning & lockfile
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 Governed tool catalogs change under you. A platform team edits an MCP server's
 tool schema, bumps a policy, or republishes an asset — and if your agent
@@ -4645,7 +4645,7 @@ tools = await donkey.tools.discover(domain="hr", locked=True)
 ## Registry caching
 
 Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`,
-`resolve_agent()` — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md))
+`resolve_agent()` — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md))
 are cached with a configurable TTL (default 300 seconds):
 
 ```python
@@ -4666,13 +4666,13 @@ allowed to change under a running agent at all.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/tool-access/a2a.md
+Source: https://docs.donkey-kit.dev/tool-access/a2a.md
 
 # A2A agent tools
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 Agent Broker is an A2A server, and A2A-compliant agents in the registry can be
 consumed directly from Python. `AgentHandle.as_tool()` wraps a remote A2A agent
@@ -4703,20 +4703,20 @@ pip install "donkey-kit[a2a]"
 
 - `AgentHandle` comes from `ExchangeRegistry.resolve_agent()` — the same
   registry surface that resolves MCP servers into `McpServerHandle`s. See
-  [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md).
+  [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
 - `as_tool()` returns a framework-native callable, following the same
-  conventions as [Framework binding](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md).
-- To make *your* agent callable by others over A2A, see [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md).
+  conventions as [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
+- To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/a2a.md
+Source: https://docs.donkey-kit.dev/a2a.md
 
 # A2A agents
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
@@ -4749,7 +4749,7 @@ donkey.serve(handle)      # A2A server on 127.0.0.1:8000, card auto-generated
 ```
 
 - **The card is generated from your code** — the same `@donkey.tool` /
-  `@donkey.agent` markers the [scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) reads — so there is no
+  `@donkey.agent` markers the [scanner](https://docs.donkey-kit.dev/publishing.md) reads — so there is no
   second description of your agent to keep in sync.
 - **It binds to localhost by default**, so your agent is never the public face;
   the gateway is.
@@ -4779,29 +4779,29 @@ planned:
 - **A real gateway.** Where a self-managed Omni Gateway image is available for
   local development, `donkey dev` runs it alongside `donkey serve`, so A2A calls
   pass through real policies.
-- **Simulated ingress.** The [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) gains an A2A ingress
+- **Simulated ingress.** The [local simulator](https://docs.donkey-kit.dev/simulator.md) gains an A2A ingress
   mode: a local fake gateway in front of `donkey serve`, replaying the same
   rejection fixtures. A plain A2A client sees byte-identical responses, and
   every response carries `x-donkey-simulator: true`.
 
 ## Related
 
-- [A2A agent tools](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/a2a.md) — call *other* A2A agents as tools.
-- [Scan & publish](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) — register your agent card with Agent Registry.
-- [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — the fixture-replay server behind simulated ingress.
+- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — call *other* A2A agents as tools.
+- [Scan & publish](https://docs.donkey-kit.dev/publishing.md) — register your agent card with Agent Registry.
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md) — the fixture-replay server behind simulated ingress.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/publishing.md
+Source: https://docs.donkey-kit.dev/publishing.md
 
 # Scan & publish
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 `donkey scan` walks your repository, finds everything marked
-[`@donkey.tool`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md#donkeytool), plus MCP server definitions and agent entry
+[`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus MCP server definitions and agent entry
 points, and produces a manifest and A2A agent card. `donkey publish` registers
 them with Exchange / Agent Registry. A GitHub Action runs both on every merge to
 `main`.
@@ -4820,7 +4820,7 @@ Action, every merge updates it.
 Publication is for assets that **originate in your code**:
 
 - an MCP server written in Python or TypeScript,
-- an agent exposed over [A2A](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md),
+- an agent exposed over [A2A](https://docs.donkey-kit.dev/a2a.md),
 - an agent exposed as a tool without an A2A surface.
 
 It is not for assets the platform already owns. An MCP server created by MCP
@@ -4931,32 +4931,32 @@ reflect, or a broken framework adapter.
 
 ## Related
 
-- [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) — mark tools with `@donkey.tool` today.
-- [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) — serve and expose the agent whose card you publish.
-- [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md) — discover and bind published tools from Exchange.
+- [CLI & decorators](https://docs.donkey-kit.dev/cli.md) — mark tools with `@donkey.tool` today.
+- [A2A agents](https://docs.donkey-kit.dev/a2a.md) — serve and expose the agent whose card you publish.
+- [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/scenarios.md
+Source: https://docs.donkey-kit.dev/scenarios.md
 
 # Scenarios
 
 The feature pages tell you what each piece *is*. These pages show three of them
 working together on a real job, start to finish — the same three scenarios the
 build guide uses to justify the skeleton (`BG §1.8`). Each one is runnable
-today against the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), with no Anypoint credentials
+today against the [local simulator](https://docs.donkey-kit.dev/simulator.md), with no Anypoint credentials
 and no real gateway, so you can watch the governance branch execute in your own
 terminal before it ever runs on a customer's data.
 
 | Scenario | The job | What it exercises |
 | --- | --- | --- |
-| [Support triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md)), [correlation IDs](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md), [OTel spans](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) — the shipped LangGraph demo, end to end |
-| [Nightly batch](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/nightly-batch.md) | Enrich 50,000 records overnight against a windowed budget, unattended | [Budget pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) (`pace()` / `wait_for_reset()`) and resume, driven by the [simulator's `budget` scenario](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting) |
-| [Internal copilot](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md) | An internal assistant whose output must clear a content-safety guardrail | [`ContentSafetyBlocked`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) via the `donkey-sim/content-safety` sentinel, plus per-run correlation |
+| [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://docs.donkey-kit.dev/errors.md)), [correlation IDs](https://docs.donkey-kit.dev/telemetry.md), [OTel spans](https://docs.donkey-kit.dev/telemetry.md) — the shipped LangGraph demo, end to end |
+| [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md) | Enrich 50,000 records overnight against a windowed budget, unattended | [Budget pacing](https://docs.donkey-kit.dev/budget.md) (`pace()` / `wait_for_reset()`) and resume, driven by the [simulator's `budget` scenario](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) |
+| [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md) | An internal assistant whose output must clear a content-safety guardrail | [`ContentSafetyBlocked`](https://docs.donkey-kit.dev/errors.md) via the `donkey-sim/content-safety` sentinel, plus per-run correlation |
 
   **"Scenario" means two different things in these docs — don't conflate them.**
   These pages are the three *product* scenarios (a job you'd actually run). The
-  [simulator's `--scenario` flag](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting) names three
+  [simulator's `--scenario` flag](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) names three
   *failure-injection rules* (`pii_block`, `budget`, `injection`). The pages
   below use those rules as the engine, but the job is the story.
 
@@ -4973,7 +4973,7 @@ note here means *known, deliberate, and tracked*, never *guessed*.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md
+Source: https://docs.donkey-kit.dev/scenarios/support-triage.md
 
 # Support triage
 
@@ -4984,26 +4984,26 @@ sails straight through to the model. Through a governed proxy it comes back as a
 can watch execute *before* it runs on real data.
 
 This is the shipped Phase-1 acceptance demo (`BG §1.8`): `pip install` to a
-drafted reply against the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) only — no Anypoint
+drafted reply against the [local simulator](https://docs.donkey-kit.dev/simulator.md) only — no Anypoint
 credentials, no real gateway — exercising four governance pieces at once.
 
 ## What it demonstrates
 
-- **Runs with no gateway.** The demo boots the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md)
+- **Runs with no gateway.** The demo boots the [local simulator](https://docs.donkey-kit.dev/simulator.md)
   in-process on an ephemeral port and points the SDK at it; the simulator
   ignores auth, so the credentials are throwaway placeholders.
 - **The PII-masking branch actually executes.** The simulator runs the
-  `pii_block:every=5` [scenario](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting) — every fifth
+  `pii_block:every=5` [scenario](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) — every fifth
   `POST /responses` is served the captured `pii-detected` **403**. The fifth
   ticket (the one with the SSN) is blocked, and the refusal surfaces out of the
-  LangGraph run as a typed [`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), not a framework-wrapped
+  LangGraph run as a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md), not a framework-wrapped
   generic error.
 - **Correlation reaches every node for free.** Each ticket runs inside a
-  [`donkey.run(id=...)`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) block; the run id shows up in a graph
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block; the run id shows up in a graph
   node's own logs without being threaded through graph state, because LangGraph
   runs nodes on context-copying `asyncio` tasks.
 - **Every governed call emits an OTel span** — refusals included — exported to a
-  bundled local OTLP collector with [zero config](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md): setting the
+  bundled local OTLP collector with [zero config](https://docs.donkey-kit.dev/telemetry.md): setting the
   standard `OTEL_EXPORTER_OTLP_ENDPOINT` is all it takes.
 
 ## Run it
@@ -5065,7 +5065,7 @@ async with donkey.run(id=f"ticket-{i}"):
   (`every=5`), not by scanning content — it replays a captured fixture, it is
   not a PII detector. The real gateway does the detection; here the SSN in
   ticket five just makes the blocked ticket read true. See
-  [It replays; it does not evaluate](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#how-the-simulator-works).
+  [It replays; it does not evaluate](https://docs.donkey-kit.dev/simulator.md#how-the-simulator-works).
 
 ## Verification status
 
@@ -5079,16 +5079,16 @@ is the framework's own runtime.
 
 ## Where to go next
 
-- [Nightly batch](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/nightly-batch.md) — the same governance, applied to an
+- [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md) — the same governance, applied to an
   unattended overnight job that paces itself against a budget window.
-- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) — the full exception taxonomy the block above lands
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md) — the full exception taxonomy the block above lands
   in, with a per-exception "retryable?" cookbook.
-- [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) — run this same agent factory through the
+- [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — run this same agent factory through the
   conformance suite (`pytest --donkey-conformance`).
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/scenarios/nightly-batch.md
+Source: https://docs.donkey-kit.dev/scenarios/nightly-batch.md
 
 # Nightly batch
 
@@ -5097,10 +5097,10 @@ window resetting every hour, no human awake. Without a budget object the script
 runs flat out, takes a `429` partway through, crashes, and someone re-runs it
 from record zero in the morning — spending the budget twice to do the same work.
 
-The fix is to make the remaining budget a [first-class object](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and pace
+The fix is to make the remaining budget a [first-class object](https://docs.donkey-kit.dev/budget.md) and pace
 against it: slow down *before* the wall, wait for the window to reset, and carry
 on. This page runs that loop end to end against the [local
-simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) in about ninety seconds, instead of "we'll find out
+simulator](https://docs.donkey-kit.dev/simulator.md) in about ninety seconds, instead of "we'll find out
 tonight."
 
 ## What it demonstrates
@@ -5108,7 +5108,7 @@ tonight."
 - **`pace()` raises before the request that would cross your reserve**, not
   after a `429` comes back — the distinction that is the whole feature.
 - **The window actually resets and the job resumes**, driven by the simulator's
-  `budget` [scenario](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting), which runs a *real*
+  `budget` [scenario](https://docs.donkey-kit.dev/simulator.md#scenario-scripting), which runs a *real*
   wall-clock-windowed token counter and serves the captured `token-rate-limit`
   **429** on exhaustion.
 - **The batch finishes unattended** — nobody re-runs anything.
@@ -5185,7 +5185,7 @@ async def enrich_all(records, enrich):
   the guard active again. A response that does not supply a fresh future
   `reset_at` leaves the stale pass-through open. If a partial observation reaches
   the reserve without a `reset_at`, the loop re-raises after one attempt instead
-  of spinning at zero delay. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+  of spinning at zero delay. See [Budget & pacing](https://docs.donkey-kit.dev/budget.md).
 
 ## The honest limitation
 
@@ -5194,28 +5194,28 @@ async def enrich_all(records, enrich):
   So `donkey.budget.remaining` is only as fresh as your last call, and a
   brand-new process knows nothing until its first request completes — which is
   why `donkey.budget.observed_at` is part of the public surface. A budget-query
-  endpoint is filed as an [upstream gap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) against the gateway.
+  endpoint is filed as an [upstream gap](https://docs.donkey-kit.dev/roadmap.md) against the gateway.
 
 ## Verification status
 
 The budget object, `pace()`, and `wait_for_reset()` are **shipped** (Phase 1).
 The windowed-counter behaviour you're pacing against here is the
-[simulator's](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — a faithful replay of the observed live contract
+[simulator's](https://docs.donkey-kit.dev/simulator.md) — a faithful replay of the observed live contract
 (prose window on the `200`, numeric `x-token-*` trio on the `429`), never a
 header shape the gateway does not emit. The end-to-end assertion against the simulator
 is exactly what this scenario runs.
 
 ## Where to go next
 
-- [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) — the full `Budget` object and its two helpers.
-- [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — the `budget` scenario and how the windowed
+- [Budget & pacing](https://docs.donkey-kit.dev/budget.md) — the full `Budget` object and its two helpers.
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md) — the `budget` scenario and how the windowed
   counter is computed.
-- [Internal copilot](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md) — a content-safety guardrail
+- [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md) — a content-safety guardrail
   and per-run correlation for an internal assistant.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md
+Source: https://docs.donkey-kit.dev/scenarios/internal-copilot.md
 
 # Internal copilot
 
@@ -5224,16 +5224,16 @@ output has to clear a **content-safety guardrail** before it reaches a person,
 and when the guardrail fires you need the refusal to (a) surface as something
 you can branch on and (b) carry an id that joins the block back to the run in
 your own logs. This page runs that content-safety branch against the [local
-simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), and is honest about the parts of a full internal
+simulator](https://docs.donkey-kit.dev/simulator.md), and is honest about the parts of a full internal
 copilot that are still blocked on verification.
 
 ## What it demonstrates
 
 - **The content-safety branch executes** as a typed
-  [`ContentSafetyBlocked`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), driven by the `donkey-sim/content-safety`
+  [`ContentSafetyBlocked`](https://docs.donkey-kit.dev/errors.md), driven by the `donkey-sim/content-safety`
   sentinel — no need to craft a prompt that a real guardrail would reject.
 - **Per-run correlation joins the refusal to your logs.** Inside a
-  [`donkey.run(id=...)`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) block the bound id becomes the
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block the bound id becomes the
   `X-Correlation-Id` on every request *and* lands on
   `ContentSafetyBlocked.correlation_id`, so a log line for the block joins to
   the gateway's own record with no extra wiring.
@@ -5252,7 +5252,7 @@ pip install "donkey-kit[llm,local]"
 donkey mock --port 8080
 ```
 
-No `--scenario` needed: the [`donkey-sim/<shape>` sentinel](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) lets
+No `--scenario` needed: the [`donkey-sim/<shape>` sentinel](https://docs.donkey-kit.dev/simulator.md) lets
 *you* pick which call fails by setting the request's `model`. The selectable
 shapes include `content-safety`.
 
@@ -5286,8 +5286,8 @@ asyncio.run(...)   # DONKEY_LLM_PROXY_URL=http://localhost:8080, throwaway creds
   **The raw client raises `openai.APIStatusError`, not a `DonkeyError`.**
   `donkey.llm.client()` is the real OpenAI SDK, so you bridge into the taxonomy
   with `classify(e.response)` — see [Bridging from the raw
-  client](https://donkey-development-kit.github.io/donkey-development-kit/errors.md#bridging-from-the-raw-client). An adapter that wraps calls in
-  `typed_refusals()` (as the [support-triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md) demo
+  client](https://docs.donkey-kit.dev/errors.md#bridging-from-the-raw-client). An adapter that wraps calls in
+  `typed_refusals()` (as the [support-triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) demo
   does) surfaces the typed refusal directly instead.
 
 ## What a full internal copilot also needs — and what's blocked
@@ -5298,17 +5298,17 @@ blocked on verification — this page shows the *shape* without inventing
 an endpoint:
 
   **Governed access to internal tools** — reaching company systems through
-  governed MCP tools rather than ad-hoc HTTP — is a [Phase 2 surface](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+  governed MCP tools rather than ad-hoc HTTP — is a [Phase 2 surface](https://docs.donkey-kit.dev/roadmap.md).
   Exchange→MCP tool discovery is still blocked on verification; the SDK raises
   `NotImplementedError("blocked on verification: …")` at call time rather than
-  guessing an endpoint. See [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md).
+  guessing an endpoint. See [Tool access](https://docs.donkey-kit.dev/tool-access.md).
 
   **Agent identity and a kill switch** — a verifiable identity for the copilot,
   and the ability to disable it centrally — are platform capabilities the SDK's
   job is to make *reachable and typed*, not to reimplement. The kill switch's
   refusal is already typed: a blocked agent surfaces as
-  [`AgentKilled`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), never retried. Stopping a run cleanly on it, and
-  identity itself, are [Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); see [Identity](https://donkey-development-kit.github.io/donkey-development-kit/identity.md). Until
+  [`AgentKilled`](https://docs.donkey-kit.dev/errors.md), never retried. Stopping a run cleanly on it, and
+  identity itself, are [Phase 2](https://docs.donkey-kit.dev/roadmap.md); see [Identity](https://docs.donkey-kit.dev/identity.md). Until
   then the SDK does not fabricate a stand-in.
 
 ## Verification status
@@ -5324,16 +5324,16 @@ and framework-agnostic.
 
 ## Where to go next
 
-- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) — the `ContentSafetyBlocked` shape and the
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md) — the `ContentSafetyBlocked` shape and the
   documented-but-not-captured caveat, plus the retryable cookbook.
-- [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) — how the run id ties spans, logs, and the
+- [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) — how the run id ties spans, logs, and the
   gateway record together.
-- [Support triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md) — the same governance surfacing a
+- [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) — the same governance surfacing a
   refusal directly through a framework adapter.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples.md
+Source: https://docs.donkey-kit.dev/examples.md
 
 # Examples
 
@@ -5565,7 +5565,7 @@ headers go on the wire.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/governed-client.md
+Source: https://docs.donkey-kit.dev/examples/general/governed-client.md
 
 # Governed client
 
@@ -5796,9 +5796,9 @@ Note the base URL has no `/v1`, and auth is a `client_id` / `client_secret`
 header pair rather than a bearer token. There is deliberately no `id=` on
 `@donkey.governed`: a fixed id would collapse unrelated calls into one
 correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
-[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/telemetry.md)).
+[Telemetry](https://docs.donkey-kit.dev/examples/general/telemetry.md)).
 
-**Learn more:** [Introduction](https://donkey-development-kit.github.io/donkey-development-kit/) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
+**Learn more:** [Introduction](https://docs.donkey-kit.dev/) · [Model access](https://docs.donkey-kit.dev/frameworks.md) · [CLI & decorators](https://docs.donkey-kit.dev/cli.md)
 
 **Source:**
 [narrative demo 01](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/01_governed_client) ·
@@ -5808,7 +5808,7 @@ correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/typed-refusals.md
+Source: https://docs.donkey-kit.dev/examples/general/typed-refusals.md
 
 # Typed refusals
 
@@ -6115,7 +6115,7 @@ wrong, the gateway did not say no. `GatewayUnavailable` is not a
 undiscriminated `content-moderation` 4xx falls through to a generic
 `PolicyViolation`.
 
-**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md)
+**Learn more:** [Typed refusals](https://docs.donkey-kit.dev/errors.md)
 
 **Source:**
 [narrative demo 02](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/02_typed_refusals) ·
@@ -6124,7 +6124,7 @@ undiscriminated `content-moderation` 4xx falls through to a generic
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/budget-and-pacing.md
+Source: https://docs.donkey-kit.dev/examples/general/budget-and-pacing.md
 
 # Budget & pacing
 
@@ -6277,7 +6277,7 @@ terminal, while this is a local signal you are expected to recover from. If you
 do cross the window, the resulting `TokenBudgetExceeded` is not retried by the
 transport — retrying only burns the same window.
 
-**Learn more:** [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md)
+**Learn more:** [Budget & pacing](https://docs.donkey-kit.dev/budget.md)
 
 **Source:**
 [narrative demo 03](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/03_budget_and_pacing) ·
@@ -6285,7 +6285,7 @@ transport — retrying only burns the same window.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/simulating-refusals.md
+Source: https://docs.donkey-kit.dev/examples/general/simulating-refusals.md
 
 # Simulating refusals
 
@@ -6472,13 +6472,13 @@ exhaustion until the window rolls over.
   `simulate(ToolInvocationError)` and `simulate(GatewayUnavailable)` raise
   `ValueError` instead of inventing one — a transport failure has no HTTP
   response to replay. To provoke `GatewayUnavailable`, point at a dead origin
-  (see [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/typed-refusals.md)).
+  (see [Typed refusals](https://docs.donkey-kit.dev/examples/general/typed-refusals.md)).
 
 Because the injection sits on the transport, it also reaches framework objects
 the SDK does not wrap — demo 04 drives `donkey.langgraph.chat_model("gpt-4o")`
 through `simulate(PIIDetected)` and gets the same taxonomy back.
 
-**Learn more:** [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) · [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md)
+**Learn more:** [Local simulator](https://docs.donkey-kit.dev/simulator.md) · [Testing & conformance](https://docs.donkey-kit.dev/testing.md)
 
 **Source:**
 [narrative demo 04](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/04_simulate_refusals) ·
@@ -6486,7 +6486,7 @@ through `simulate(PIIDetected)` and gets the same taxonomy back.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/conformance.md
+Source: https://docs.donkey-kit.dev/examples/general/conformance.md
 
 # Conformance suite
 
@@ -6707,14 +6707,14 @@ The naive agent in the same file retries three times and re-raises a bare
 `RuntimeError`. The suite flags the retried `TokenBudgetExceeded`, the lost
 `PIIDetected` type, and the missing correlation id in its logs.
 
-**Learn more:** [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md)
+**Learn more:** [Testing & conformance](https://docs.donkey-kit.dev/testing.md)
 
 **Source:**
 [narrative demo 05](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/05_conformance)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/telemetry.md
+Source: https://docs.donkey-kit.dev/examples/general/telemetry.md
 
 # Telemetry
 
@@ -6977,7 +6977,7 @@ with donkey.run(id="otel-zero-config", team="cx", project="welcome"):
   `DONKEY_TELEMETRY=false` opts out even when one is set, and a host
   `TracerProvider` is never replaced.
 
-**Learn more:** [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)
+**Learn more:** [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md)
 
 **Source:**
 [narrative demo 06](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/06_telemetry) ·
@@ -6987,7 +6987,7 @@ with donkey.run(id="otel-zero-config", team="cx", project="welcome"):
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/framework-objects.md
+Source: https://docs.donkey-kit.dev/examples/general/framework-objects.md
 
 # Framework objects & model handles
 
@@ -7216,16 +7216,16 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
   adapters build the native object directly. They refuse with "blocked on
   verification" only when the installed framework version lacks the class or
   field the adapter depends on (for example, `gemini()` on google-adk older than
-  2.4). See [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#supported-frameworks) for each adapter's
+  2.4). See [Model access](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) for each adapter's
   verification status.
 
 `resolve()` capabilities are heuristics derived from the model id, not a
 governed catalog. The gateway returns 404 for `GET /models` because
 model-based routing only routes requests that already carry `model` in the
 body. When a live call fails — wrong URL, wrong credentials, or a model the
-allow-list does not include — [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) tells those apart.
+allow-list does not include — [`donkey doctor`](https://docs.donkey-kit.dev/cli.md) tells those apart.
 
-**Learn more:** [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
+**Learn more:** [Model access](https://docs.donkey-kit.dev/frameworks.md) · [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [CLI & decorators](https://docs.donkey-kit.dev/cli.md)
 
 **Source:**
 [narrative demo 07](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/07_model_handles) ·
@@ -7233,7 +7233,7 @@ allow-list does not include — [`donkey doctor`](https://donkey-development-kit
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/langgraph-agent.md
+Source: https://docs.donkey-kit.dev/examples/general/langgraph-agent.md
 
 # LangGraph agent
 
@@ -7259,7 +7259,7 @@ make demo N=09          # needs live credentials
   This example needs a live gateway. The local simulator replays a captured
   `/responses` completion and will not decide to call tools, so there is no
   offline version. Without credentials it exits cleanly with setup guidance.
-  The refusal path *can* run offline: [Simulating refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/simulating-refusals.md)
+  The refusal path *can* run offline: [Simulating refusals](https://docs.donkey-kit.dev/examples/general/simulating-refusals.md)
   drives the same `ChatOpenAI` through `donkey.simulate()`.
 
 ## Key code
@@ -7307,7 +7307,7 @@ policy.
 `asyncio` task, so parallel calls never overwrite each other's record, and
 LangGraph makes each model call on its own task, so the record never reaches
 the caller's scope. On a direct call it is populated (see
-[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md)); a run-level record of every call is tracked
+[Gateway identity](https://docs.donkey-kit.dev/examples/general/gateway-identity.md)); a run-level record of every call is tracked
 in [#613](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/613).
 
 The adapter targets the
@@ -7315,17 +7315,17 @@ The adapter targets the
 uses. `DEMO_MODEL` defaults to `gpt-4o-mini` in this example; set it to a model
 your proxy routes.
 
-If the gateway is unavailable, [Framework objects](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/framework-objects.md)
+If the gateway is unavailable, [Framework objects](https://docs.donkey-kit.dev/examples/general/framework-objects.md)
 constructs the same real framework objects with no network.
 
-**Learn more:** [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)
+**Learn more:** [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [Model access](https://docs.donkey-kit.dev/frameworks.md)
 
 **Source:**
 [narrative demo 09](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/09_langgraph_agent)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md
+Source: https://docs.donkey-kit.dev/examples/general/gateway-identity.md
 
 # Gateway identity (last_call)
 
@@ -7535,7 +7535,7 @@ except Exception as err:
 - **A `provider/` prefix is not a substitution.** On a model-based routing
   proxy the gateway reports the served model without the `provider/` prefix;
   `substituted` ignores a prefix that names the served provider (see
-  [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing)).
+  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing)).
 
   The simulator's captured success response was recorded against `gpt-5.1`, so
   asking for any other model id shows up as a substitution in narrative demo
@@ -7561,7 +7561,7 @@ the same way — only these two are added.
 
 You can exercise this branch offline: point the simulator at the captured
 `Semantic` response by requesting the `donkey-sim/success-semantic` model id
-(the same sentinel mechanism the [simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) uses to force a
+(the same sentinel mechanism the [simulator](https://docs.donkey-kit.dev/simulator.md) uses to force a
 refusal shape, here forcing a happy-path variant).
 
 ```python
@@ -7581,7 +7581,7 @@ print("routing_score", last.routing_score)  # 0.62
   `x-llm-proxy-semantic-routing-success` header is semantic-only. An unparseable
   message leaves each field `None` rather than guessing a value.
 
-**Learn more:** [Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md) · [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)
+**Learn more:** [Feature overview](https://docs.donkey-kit.dev/feature-overview.md) · [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md)
 
 **Source:**
 [narrative demo 10](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/10_last_call) ·
@@ -7589,7 +7589,7 @@ print("routing_score", last.routing_score)  # 0.62
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md
+Source: https://docs.donkey-kit.dev/examples/openai.md
 
 # OpenAI
 
@@ -7621,7 +7621,7 @@ framework pages are measured against it.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,local]"
@@ -8079,15 +8079,15 @@ class as Azure in 13, with the vendor in the message. Bedrock's own id rides
 content-safety ['content_filter']`, the message, `x-request-id None` and a
 populated `request_id`.
 
-**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) · [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) ·
-[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) · [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md)
+**Learn more:** [Typed refusals](https://docs.donkey-kit.dev/errors.md) · [Budget & pacing](https://docs.donkey-kit.dev/budget.md) ·
+[Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) · [Local simulator](https://docs.donkey-kit.dev/simulator.md)
 
 **Source:**
 [`demos/human-made/openai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md
+Source: https://docs.donkey-kit.dev/examples/langgraph.md
 
 # LangGraph
 
@@ -8111,7 +8111,7 @@ back into the SDK's typed refusal.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,local,langgraph]" "langchain>=1.0"
@@ -8242,7 +8242,7 @@ python "demos/human-made/langgraph/06 - otel exporter simple.py"
 ```
 
 The host owns the `TracerProvider` and Donkey rides it, as in
-[OpenAI 06](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md#06--opentelemetry-host-owned-provider). Two
+[OpenAI 06](https://docs.donkey-kit.dev/examples/openai.md#06--opentelemetry-host-owned-provider). Two
 `ainvoke` calls run in one tagged `donkey.run(...)`. **You should see:** two
 replies locally, and two spans with one correlation id in the collector.
 
@@ -8327,14 +8327,14 @@ requests 2
 
 The "ok" text is the simulator's canned completion, not a reply to the ticket.
 
-**Learn more:** [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [LangGraph agent](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/langgraph-agent.md)
+**Learn more:** [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [LangGraph agent](https://docs.donkey-kit.dev/examples/general/langgraph-agent.md)
 
 **Source:**
 [`demos/human-made/langgraph/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/langgraph)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/openai-agents.md
+Source: https://docs.donkey-kit.dev/examples/openai-agents.md
 
 # OpenAI Agents SDK
 
@@ -8353,7 +8353,7 @@ live-verified `/responses` route and the SDK owns the transport.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,local,openai-agents]"
@@ -8394,7 +8394,7 @@ print("last_call   ", donkey.last_call.status.value)
 answer, `model calls 2`, total tokens from the Agents SDK's own usage, and
 `last_call observed`. That record is the second call only: the runner sends the
 first turn from a task of its own, where the caller can't see it (see
-[`donkey.last_call`](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md#donkeylast_call)). The SDK usage line
+[`donkey.last_call`](https://docs.donkey-kit.dev/frameworks/openai.md#donkeylast_call)). The SDK usage line
 counts both calls.
 
 ## 02 — Typed refusals, simulated
@@ -8469,14 +8469,14 @@ refused PIIDetected ['Email']
 requests 2
 ```
 
-**Learn more:** [OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md)
+**Learn more:** [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md)
 
 **Source:**
 [`demos/human-made/openai-agents/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai-agents)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/agent-framework.md
+Source: https://docs.donkey-kit.dev/examples/agent-framework.md
 
 # Microsoft Agent Framework
 
@@ -8495,7 +8495,7 @@ openai error in `ChatClientException`, and the response rides on `__cause__`.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,local,agent_framework]"
@@ -8586,14 +8586,14 @@ requests 2
   `TypeError … model_id` means an older Agent Framework; the scripts target
   the 1.19.0 `model=` keyword.
 
-**Learn more:** [MS Agent Framework](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/agent-framework.md)
+**Learn more:** [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md)
 
 **Source:**
 [`demos/human-made/agent-framework/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/agent-framework)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/strands.md
+Source: https://docs.donkey-kit.dev/examples/strands.md
 
 # Strands
 
@@ -8604,7 +8604,7 @@ the governed client is passed in, the SDK owns the transport: run id,
 scripts use `gpt-4o`. If you point them at a model the proxy routes to Gemini,
 add `stream=False` to `OpenAIModel(...)`: Strands streams by default, and a
 Gemini-routed stream has no chunk deltas, so every turn fails (see
-[Streaming chat completions to a Gemini upstream](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)).
+[Streaming chat completions to a Gemini upstream](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)).
 
   **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
   client per request from `client_args`. That closes the shared transport
@@ -8621,7 +8621,7 @@ Gemini-routed stream has no chunk deltas, so every turn fails (see
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm]" "strands-agents[openai]"
@@ -8721,14 +8721,14 @@ for `AuthError`.
 first case. **You should see:** `<case> ->  <entities>` per case, or
 `<case> NO REFUSAL`.
 
-**Learn more:** [Strands](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/strands.md)
+**Learn more:** [Strands](https://docs.donkey-kit.dev/frameworks/strands.md)
 
 **Source:**
 [`demos/human-made/strands/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/strands)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/crewai.md
+Source: https://docs.donkey-kit.dev/examples/crewai.md
 
 # CrewAI
 
@@ -8747,7 +8747,7 @@ Both scripts need a live gateway; there is no offline CrewAI script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,crewai]"
@@ -8809,14 +8809,14 @@ first case. **You should see:** `<case> ->  <entities>` per case, or
 `<case> NO REFUSAL`. A `404` means the proxy's upstream has no
 `/chat/completions` route.
 
-**Learn more:** [CrewAI](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md)
+**Learn more:** [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md)
 
 **Source:**
 [`demos/human-made/crewai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/crewai)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/llamaindex.md
+Source: https://docs.donkey-kit.dev/examples/llamaindex.md
 
 # LlamaIndex
 
@@ -8837,7 +8837,7 @@ Both scripts need a live gateway; there is no offline LlamaIndex script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,llamaindex]"
@@ -8889,14 +8889,14 @@ except openai.APIStatusError as err:
 first case. **You should see:** `<case> ->  <entities>` per case, or
 `<case> NO REFUSAL`.
 
-**Learn more:** [LlamaIndex](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/llamaindex.md)
+**Learn more:** [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md)
 
 **Source:**
 [`demos/human-made/llamaindex/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/llamaindex)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md
+Source: https://docs.donkey-kit.dev/examples/adk.md
 
 # Google ADK
 
@@ -8914,7 +8914,7 @@ Both scripts need a live gateway; there is no offline ADK script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,adk]"
@@ -8943,7 +8943,7 @@ event's `usage_metadata`, and `last_call unavailable …`. The record is set in
 the `Runner`'s own task, not where the script reads it, and a cold read on
 this adapter reports `unavailable` rather than `unobserved` ([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)). Read it
 in an `after_model_callback` instead, as shown under
-[Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini). LiteLLM also logs a
+[Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). LiteLLM also logs a
 provider-list banner, which is harmless.
 
 ## 02 — A refusal that is not typed
@@ -8971,19 +8971,19 @@ should see:** `APIError 403` and the first line of the proxy's message — **not
 
   If you need typed refusals with ADK, use
   `donkey.adk.gemini("gemini-2.5-flash")` on a `Format=Gemini` proxy and
-  `classify()` its error (see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini)).
+  `classify()` its error (see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)).
   Otherwise prefer a framework path where the SDK owns the transport, such as
-  [OpenAI](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md) or [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md). A `404`
+  [OpenAI](https://docs.donkey-kit.dev/examples/openai.md) or [LangGraph](https://docs.donkey-kit.dev/examples/langgraph.md). A `404`
   here means the proxy's upstream has no `/chat/completions` route.
 
-**Learn more:** [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md)
+**Learn more:** [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md)
 
 **Source:**
 [`demos/human-made/adk/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/adk)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/anthropic.md
+Source: https://docs.donkey-kit.dev/examples/anthropic.md
 
 # Anthropic
 
@@ -9001,7 +9001,7 @@ as they do for OpenAI.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,anthropic]"
@@ -9012,7 +9012,7 @@ export DONKEY_LLM_PROXY_URL=https://<host>/ddk-anthropic-inbound/   # 01 only; o
   **`anthropic` 0.x and 1.x both work.** The `anthropic` 1.x releases
   (September 2026) moved to `httpx2` and reject an `httpx` client, so the SDK
   hands them an `httpx2` client that sends through the governed transport
-  ([Anthropic SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md#manual-equivalent)). Published
+  ([Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md#manual-equivalent)). Published
   `donkey-kit` builds up to 0.1.1.dev1 predate this and fail on 1.x with
   `TypeError: Invalid http_client argument`; with one of those, add
   `"anthropic<1"` to the install line. These examples were run against the proxy
@@ -9086,14 +9086,14 @@ The left column is what Anthropic's client alone would tell you — a 403 is a
 `PermissionDeniedError` whether it was PII or content safety. The right column
 is what the gateway actually decided.
 
-**Learn more:** [Anthropic SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md)
+**Learn more:** [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md)
 
 **Source:**
 [`demos/human-made/anthropic/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/anthropic)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/examples/gemini.md
+Source: https://docs.donkey-kit.dev/examples/gemini.md
 
 # Gemini
 
@@ -9101,7 +9101,7 @@ These scripts show the wire: plain `httpx` against a proxy provisioned
 **`Format=Gemini`** (for example `ddk-gemini-inbound`) with the same
 `client_id` / `client_secret` pair. For an agent, ADK's native `Gemini` model is
 bound to the same proxy by `donkey.adk.gemini("gemini-2.5-flash")` — see
-[Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini). The route is
+[Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). The route is
 `<proxy URL>/models/<model>:generateContent`. `DonkeyConfig` still resolves
 and validates the credentials, and `classify()` still types the errors.
 
@@ -9115,7 +9115,7 @@ script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm]"   # httpx + classify()
@@ -9179,14 +9179,14 @@ print(error)
 and error type, and the message. Typing Gemini's list envelope needs
 `donkey-kit` 0.1.0.dev9 or later.
 
-**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)
+**Learn more:** [Typed refusals](https://docs.donkey-kit.dev/errors.md) · [Model access](https://docs.donkey-kit.dev/frameworks.md)
 
 **Source:**
 [`demos/human-made/gemini/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/gemini)
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md
+Source: https://docs.donkey-kit.dev/roadmap.md
 
 # Roadmap
 
@@ -9198,7 +9198,7 @@ when you open the page. Phase 1 is complete and released as `donkey-kit`
   Complete every issue in the milestone is closed ·{' '}
   In progress work has landed and more is open ·{' '}
   Planned designed, not started. Want to help
-  move a phase forward? See [Contribute](https://donkey-development-kit.github.io/donkey-development-kit/community/contribute.md).
+  move a phase forward? See [Contribute](https://docs.donkey-kit.dev/community/contribute.md).
 
 ## Phase 1 — Build the MVP
 
@@ -9303,7 +9303,7 @@ reachable and typed, not to reproduce it:
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/community/team.md
+Source: https://docs.donkey-kit.dev/community/team.md
 
 # The DDK team
 
@@ -9329,11 +9329,11 @@ them.
 
   DDK is an open-source community project, not an official Salesforce or
   MuleSoft product. Team members contribute in a personal capacity. Want to
-  join them? Start with [Contribute](https://donkey-development-kit.github.io/donkey-development-kit/community/contribute.md).
+  join them? Start with [Contribute](https://docs.donkey-kit.dev/community/contribute.md).
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/community/contribute.md
+Source: https://docs.donkey-kit.dev/community/contribute.md
 
 # Contribute
 
@@ -9366,7 +9366,7 @@ in the repository.
 
 No change lands without a GitHub issue — the issue is the plan. Each issue
 carries exactly one milestone, which is the release it targets (see the
-[Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md)).
+[Roadmap](https://docs.donkey-kit.dev/roadmap.md)).
 
 ### Cut a branch from `develop`
 
@@ -9436,7 +9436,7 @@ npm run generate:llms
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md
+Source: https://docs.donkey-kit.dev/reference/configuration.md
 
 # Configuration
 
@@ -9484,7 +9484,7 @@ The three required values for the LLM proxy:
 
 | Env var | Meaning |
 |---|---|
-| `DONKEY_LLM_PROXY_URL` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), and for other hosts only with [`DONKEY_ALLOW_HTTP`](#endpoints-must-use-https). |
+| `DONKEY_LLM_PROXY_URL` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](https://docs.donkey-kit.dev/simulator.md), and for other hosts only with [`DONKEY_ALLOW_HTTP`](#endpoints-must-use-https). |
 | `DONKEY_LLM_PROXY_CLIENT_ID` | Consumer client ID (the per-agent identity). |
 | `DONKEY_LLM_PROXY_CLIENT_SECRET` | Consumer client secret. |
 
@@ -9497,7 +9497,7 @@ The three required values for the LLM proxy:
   `apikey: <client_id>:<client_secret>` — which its
   `dataweave-headers-transformation` policy splits back into the pair. DDK doesn't use that form: it always
   sends the two-header pair, because `client_id` is the per-agent
-  [attribution](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) unit. The colon-joined value is not an
+  [attribution](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) unit. The colon-joined value is not an
   alternative once a `client_id` header is present — the policy ignores it.
 
 Missing required fields are reported **all at once** with their env-var names,
@@ -9563,7 +9563,7 @@ donkey = Donkey(
     `from donkey_kit.integrations.langgraph import chat_model`), which have no
     `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.
 
-  See [Injection depth](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#injection-depth-differs-by-framework).
+  See [Injection depth](https://docs.donkey-kit.dev/frameworks.md#injection-depth-differs-by-framework).
 
 ## Bearer-token auth mode
 
@@ -9660,7 +9660,7 @@ attribution.
 
 Per-call and per-run correlation IDs ride on request headers. The IDs also
 appear on spans and exceptions regardless of the header names. See
-[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids).
+[Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#correlation-ids).
 
 - `X-Correlation-Id` carries the run ID. The gateway reads this header and
   echoes it on the response `x-correlation-id`, so a client log line joins to
@@ -9704,7 +9704,7 @@ A fixed set of dimensions set once and emitted on every call as `donkey.cost.*`
 span attributes (and, only if you opt in, as request headers). Override them per run with
 `donkey.run(team=…, project=…, env=…, enduser_id=…)`. The key set is fixed — an
 unknown dimension is a configuration error, not a silently dropped tag. See
-[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
+[Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
 
 | Env var | `Donkey.from_env` kwarg | Meaning |
 |---|---|---|
@@ -9751,7 +9751,7 @@ kwarg; in code, use
   With `send_cost_headers` on, the headers, including the end-user ID, go only
   on model requests to the LLM proxy, never to the Anypoint platform. Where the
   tags go is described in
-  [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags).
+  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags).
 
 ## Telemetry
 
@@ -9763,7 +9763,7 @@ kwarg; in code, use
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
 content re-exports the very text the platform masks. Enable it only for a
-trusted collector. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
+trusted collector. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
 
 ## Behaviour
 
@@ -9771,8 +9771,8 @@ trusted collector. See [Telemetry & cost](https://donkey-development-kit.github.
 |---|---|---|---|
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `60.0` | HTTP timeout for governed calls, in seconds. |
 | `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. Policy refusals are never retried, and a gateway fallback is never retried twice. |
-| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing). |
-| `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md)) are cached in memory, in seconds. |
+| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing). |
+| `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://docs.donkey-kit.dev/tool-access.md)) are cached in memory, in seconds. |
 | `DONKEY_NO_CACHE` | — | unset | Set to `1`, `true` or `yes` to bypass that in-memory registry cache. |
 | `DONKEY_TRUST_PROJECT_CONFIG` | — | unset | Set to `1` (or `true`, `yes`, `on`) to let a URL from the working directory's config files receive credentials from elsewhere. Read only from the environment. See [Which credentials a URL receives](#which-credentials-a-url-receives). |
 | `DONKEY_ALLOW_HTTP` | — | unset | Set to `1` (or `true`, `yes`, `on`) to allow plain `http://` endpoints on non-loopback hosts. Read only from the environment. See [Endpoints must use `https://`](#endpoints-must-use-https). |
@@ -9916,7 +9916,7 @@ never carry them.
 | `X-Donkey-Request-Id` (`call_id_header`) | A per-call ID | Always | Both planes |
 | `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy only |
 | `X-Anypoint-Business-Group` | `business_group` | When set | The LLM proxy only |
-| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
+| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
 | `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache only |
 
 CrewAI, which gets only a header snapshot, sends the auth headers, the
@@ -10053,7 +10053,7 @@ ConfigWarning: llm_proxy_url uses plain http:// to llm.example.test because DONK
 The warning quotes the value as you set it, for example
 `DONKEY_ALLOW_HTTP=true is set`. `donkey doctor` adds a `plain http` line while
 it is on. See
-[CLI](https://donkey-development-kit.github.io/donkey-development-kit/cli.md#donkey-doctor).
+[CLI](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
 
 #### A URL from the project files gets credentials from the project files only
 
@@ -10125,7 +10125,7 @@ those two.
 `donkey doctor` prints each endpoint's host and where it came from (`env`,
 `project file`, `local overlay`, `user file` or `default`), and reports this
 error on its `config` line without sending a request. See
-[CLI](https://donkey-development-kit.github.io/donkey-development-kit/cli.md#donkey-doctor).
+[CLI](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
 
 ## Programmatic
 
@@ -10162,7 +10162,7 @@ sends the real values.
 |---|---|---|
 | `DonkeyConfig` | `client_secret`, `llm_proxy_client_secret` and `llm_proxy_key` are left out | Every other field, including client IDs, `llm_proxy_wallet_client_id`, URLs and `cost=CostTags(…, enduser_id=…)` |
 | Every adapter's `connection_kwargs()`, ADK's `gemini_connection_kwargs()`, `donkey_kit.core.transport.proxy_auth_headers()` | The value under any key named `api_key`, `apikey`, `api-key`, `x-api-key`, `x-goog-api-key`, `client_secret`, `authorization`, `proxy-authorization` or `cookie` (any case), at any depth, shows as `'***'` | `base_url`, `client_id`, `X-Client-Id`, attribution headers, and `X-Anypoint-Cost-*` headers including the end-user ID |
-| `PIIDetected` (`str`, `repr`, `.args`) | The flagged values | Entity types, count and character offsets; see [Errors](https://donkey-development-kit.github.io/donkey-development-kit/errors.md#refusal-messages-dont-repeat-blocked-content) |
+| `PIIDetected` (`str`, `repr`, `.args`) | The flagged values | Entity types, count and character offsets; see [Errors](https://docs.donkey-kit.dev/errors.md#refusal-messages-dont-repeat-blocked-content) |
 
 The masked mappings are ordinary `dict`s. The table shows how common operations behave:
 
@@ -10206,7 +10206,7 @@ Not covered by the masking:
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md
+Source: https://docs.donkey-kit.dev/reference/last-call.md
 
 # `last_call` field reference
 
@@ -10217,7 +10217,7 @@ always sees one internally-consistent call. It is contextvar-scoped, so a
 fan-out of concurrent calls each reads its own record. When a framework sends a
 single call from a task of its own, as LangChain's `ainvoke` does, the
 `donkey.langgraph(...)` model still brings that call's record back to the caller
-(see [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#which-provider-served-this)).
+(see [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md#which-provider-served-this)).
 
 ```python
 donkey = Donkey.from_env()
@@ -10253,7 +10253,7 @@ even on a cold read.
   routes outside it. A cold read on a `Donkey` that resolved only CrewAI,
   LlamaIndex, MS Agent Framework or ADK's `model()` reports `UNAVAILABLE` with
   the surface named. See
-  [When `last_call` is unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
+  [When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
 
 ## Gateway identity
 
@@ -10271,8 +10271,8 @@ for quoting to a provider's support team.
 What the gateway *did* with the request — which provider and model served it, how
 it routed, and whether that was a failover. Read live off the shared transport,
 so the raw `donkey.llm.client()` path gets them with no framework required. See
-[Routing & resilience](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#routing--resilience) for the operational story,
-or [Which provider served this?](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#which-provider-served-this)
+[Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience) for the operational story,
+or [Which provider served this?](https://docs.donkey-kit.dev/frameworks/langgraph.md#which-provider-served-this)
 for why a LangGraph message's own `model_provider` field disagrees with these.
 
 | Field | Type | Meaning |
@@ -10309,13 +10309,13 @@ Each is `None` (never `0`) when unobserved or absent.
 
 When the proxy is fronted by the Anypoint **semantic-caching** policy, the
 gateway reports what it did with each request. Steer it per block with
-[`donkey.cache(...)`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md#semantic-cache-steering); read the outcome here.
+[`donkey.cache(...)`](https://docs.donkey-kit.dev/budget.md#semantic-cache-steering); read the outcome here.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `cache_status` | `str \| None` | What the caching policy did (`x-semantic-cache-status`): `"hit"` / `"miss"` / `"bypass"` / `"no-store"`. `None` on a proxy with no caching policy (the header is absent) or a simulated response. |
 | `cache_score` | `float \| None` | On a cache **hit**, the similarity score of the matched entry (`x-semantic-cache-score`). `None` on miss/bypass/no-store (the header is hit-only) or when the score did not parse. |
-| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) (a replay is no fresh spend). |
+| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](https://docs.donkey-kit.dev/budget.md) (a replay is no fresh spend). |
 
   A cache **hit** replays a stored completion byte-for-byte, including its
   original `usage` block — so the token counts above describe the *cached*
@@ -10331,11 +10331,11 @@ for each governed call, under the pinned `gen_ai.*` keys and the stable
 `donkey.routing.matched_topic` / `donkey.routing.score`, and — on a cached
 proxy — `donkey.cache.status` / `donkey.cache.score`, alongside the usage
 counts. A field that is `None` is omitted from the span entirely. See
-[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) for the full attribute list.
+[Telemetry](https://docs.donkey-kit.dev/telemetry.md) for the full attribute list.
 
 ---
 
-Source: https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md
+Source: https://docs.donkey-kit.dev/reference/unsupported-boundary.md
 
 # Unsupported boundary
 
@@ -10362,7 +10362,7 @@ The SDK can reach two platform destinations: the Model Proxy, for every model
 call, and the Anypoint connected-app token endpoint, only when a control-plane
 feature needs a token. Model calls never request that token. The features that
 would request it are listed in
-[Which features use the control plane](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-features-use-the-control-plane);
+[Which features use the control plane](https://docs.donkey-kit.dev/reference/configuration.md#which-features-use-the-control-plane);
 all of them are Roadmap in this release, so the token endpoint is contacted
 only if your own code calls `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
@@ -10404,7 +10404,7 @@ section is empty.
 ## Local Mode is not supported
 
   Donkey Development Kit does not support Omni/Flex Gateway **Local Mode**.
-  The [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) (`donkey mock` / `simulate()`) is the
+  The [local simulator](https://docs.donkey-kit.dev/simulator.md) (`donkey mock` / `simulate()`) is the
   supported local dev loop; real-gateway behavior is exercised against a
   hosted (Connected Mode) proxy instead. A stock Flex Gateway 1.14.0 Local
   Mode image rejects the LLM Proxy and MCP Bridge policies as missing

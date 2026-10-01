@@ -26,21 +26,21 @@ FlexSearch). It indexes the built HTML, so the `postbuild` hook runs
 `pagefind --site out --output-subdir _pagefind` after every `next build` — which
 means **search only works against the built export, not `npm run dev`.**
 
-To preview exactly as GitHub Pages serves it — under the project sub-path:
+The preview command serves the generated static files from `out/`, matching
+GitHub Pages more closely than the Next.js development server. The deployed site
+is served from the domain root, so a plain `npm run build` is what ships. To
+check a build hosted under a project sub-path instead, set the same variable for
+both commands:
 
 ```bash
 DOCS_BASE_PATH=/donkey-development-kit npm run build
-npm run preview:pages
+DOCS_BASE_PATH=/donkey-development-kit npm run preview:pages
 # Open http://localhost:4173/donkey-development-kit/
 ```
 
-The preview command serves the generated static files from `out/`, matching
-GitHub Pages more closely than the Next.js development server. The preview
-script maps the `/donkey-development-kit` project prefix back to the export root so
-pages, stylesheets, fonts, and scripts resolve at the same URLs used after
-deployment. GitHub's Jekyll preview instructions do not apply here: this site
-is a Nextra/Next.js static export, and the Pages workflow disables Jekyll
-before deployment.
+GitHub's Jekyll preview instructions do not apply here: this site is a
+Nextra/Next.js static export, and the Pages workflow disables Jekyll before
+deployment.
 
 ## AI-readable docs (`llms.txt`)
 
@@ -66,17 +66,21 @@ npm run generate:llms   # regenerate after editing pages; commit the result
 
 The site is published by [`.github/workflows/docs.yml`](../.github/workflows/docs.yml)
 on every push to `main` that touches `website/**` (and on manual
-`workflow_dispatch`). The workflow builds the static export with
-`DOCS_BASE_PATH=/donkey-development-kit`, adds `.nojekyll`, and deploys the `out/`
-artifact to Pages. The published site lives at
-`https://donkey-development-kit.github.io/donkey-development-kit/`.
+`workflow_dispatch`). The workflow builds the static export for the domain
+root (no `DOCS_BASE_PATH`), adds `.nojekyll`, and deploys the `out/` artifact to
+Pages. The published site lives at the custom domain
+`https://docs.donkey-kit.dev/`, declared by `public/CNAME` (#909). GitHub Pages
+redirects the old `donkey-development-kit.github.io/donkey-development-kit/`
+URLs there.
 
 **One-time setup:** in repo **Settings → Pages**, set **Source = "GitHub
-Actions"**. The workflow cannot flip that switch; until it is set, the deploy
-job has nowhere to publish.
+Actions"** and **Custom domain = `docs.donkey-kit.dev`** (with **Enforce
+HTTPS**). DNS: a `CNAME` record `docs` → `donkey-development-kit.github.io` at
+the `donkey-kit.dev` registrar. The workflow cannot flip these switches; until
+the source is set, the deploy job has nowhere to publish.
 
-`basePath`/`assetPrefix` are gated on `DOCS_BASE_PATH`, so `npm run dev` and a
-future custom domain serve at the root without the sub-path.
+`basePath`/`assetPrefix` are gated on `DOCS_BASE_PATH`, so `npm run dev` and the
+deployed custom domain both serve at the root without a sub-path.
 
 ### Web analytics
 

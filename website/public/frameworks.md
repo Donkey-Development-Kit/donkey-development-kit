@@ -24,7 +24,7 @@ Each card shows what has been proven about that adapter, in the terms the
 
 | Status | Means |
 |---|---|
-| Conformance-tested | Runs the conformance suite against the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) in CI. |
+| Conformance-tested | Runs the conformance suite against the [local simulator](https://docs.donkey-kit.dev/simulator.md) in CI. |
 | Live-verified | Has made a real round-trip through a governed proxy. |
 | Signature-confirmed | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
 
@@ -85,7 +85,7 @@ real values, and `json.dumps`, `dict(...)`, `{**kwargs}` or `kwargs.items()`
 still expose the top-level `api_key`. Some framework objects built from the
 kwargs (LangGraph's `ChatOpenAI`, LlamaIndex's `OpenAILike`, CrewAI's
 `OpenAICompletion`) print credentials themselves. See
-[What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides)
+[What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides)
 for exactly what is and isn't masked.
 
 Where the framework's dependencies are installed, `connection_kwargs()` also
@@ -117,7 +117,7 @@ for it: pick the adapter that matches your proxy.
 |---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter. Default DDK proxies are `Format=OpenAI`. |
 | **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`). The proxy serves the native Messages route at `POST /<base-path>/v1/messages`; OpenAI-shape `/chat/completions` returns 404. |
-| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
+| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
 
   **Ingress Format is not the same as the upstream provider.** The ingress
   Format is the wire protocol *your request* speaks to the proxy. The upstream
@@ -148,14 +148,14 @@ framework's constructor accepts. With **header injection**, the proxy auth and
 attribution headers are sent. With **transport injection**, the SDK's shared
 HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 `donkey.last_call`, the `jwt`-mode JWT, and
-[credentials only to checked endpoints](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#credentials-go-only-to-checked-endpoints).
+[credentials only to checked endpoints](https://docs.donkey-kit.dev/reference/configuration.md#credentials-go-only-to-checked-endpoints).
 
 | Framework | Header injection | Transport injection | Notes |
 |---|---|---|---|
 | LangGraph | ✅ | ✅ | `default_headers` plus the SDK's async client (`ainvoke`) and blocking client (`invoke`). |
 | Strands | ✅ | ✅ | Via `client_args`. |
 | OpenAI Agents SDK | ✅ | ✅ | The adapter builds the `AsyncOpenAI` client itself. |
-| Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object. On `anthropic` 1.0 and later, transport injection goes through a bridged `httpx2` client — see the [Anthropic page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md). |
+| Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object. On `anthropic` 1.0 and later, transport injection goes through a bridged `httpx2` client — see the [Anthropic page](https://docs.donkey-kit.dev/frameworks/anthropic.md). |
 | LlamaIndex | ✅ | ✅ | Via `http_client` (sync) and `async_http_client`. `is_chat_model=True` is forced. |
 | MS Agent Framework | ✅ | ✅ | Via an `async_client` built on the SDK's client. |
 | Google ADK — `model()` | ✅ (`extra_headers`) | ✅ | LiteLLM gets a pre-built OpenAI `client` that sends through the SDK's client. |
@@ -179,19 +179,19 @@ Some frameworks retry above the provider SDK, where the SDK can't reach:
 |---|---|---|---|
 | LangGraph, OpenAI Agents SDK, Anthropic SDK, LlamaIndex, MS Agent Framework, Google ADK | once | `max_retries + 1` times | Nothing. |
 | Strands | once from the model; up to 6 times from a default `Agent` | `max_retries + 1` times | Build the agent with `Agent(retry_strategy=None)`. |
-| CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md#notes). |
+| CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://docs.donkey-kit.dev/frameworks/crewai.md#notes). |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
 attached only by the SDK's shared async client. CrewAI can't carry it, so it
 raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
 also raise `ConfigError` instead of sending. See the
-[`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
-[`bearer` mode](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#bearer-token-auth-mode) has the same
+[`jwt` mode note](https://docs.donkey-kit.dev/reference/configuration.md#jwt--model-wallet-auth-mode).
+[`bearer` mode](https://docs.donkey-kit.dev/reference/configuration.md#bearer-token-auth-mode) has the same
 reach; there, CrewAI raises `ConfigError` instead of sending no token.
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
 or Strands' `client_args["base_url"]`) must pass the same
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https) as the
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) as the
 configured proxy URL; it then receives the configured credentials.
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for how each constructor

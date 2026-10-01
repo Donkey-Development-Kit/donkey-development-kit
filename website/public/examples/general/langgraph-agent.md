@@ -22,7 +22,7 @@ make demo N=09          # needs live credentials
   This example needs a live gateway. The local simulator replays a captured
   `/responses` completion and will not decide to call tools, so there is no
   offline version. Without credentials it exits cleanly with setup guidance.
-  The refusal path *can* run offline: [Simulating refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/simulating-refusals.md)
+  The refusal path *can* run offline: [Simulating refusals](https://docs.donkey-kit.dev/examples/general/simulating-refusals.md)
   drives the same `ChatOpenAI` through `donkey.simulate()`.
 
 ## Key code
@@ -70,7 +70,7 @@ policy.
 `asyncio` task, so parallel calls never overwrite each other's record, and
 LangGraph makes each model call on its own task, so the record never reaches
 the caller's scope. On a direct call it is populated (see
-[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md)); a run-level record of every call is tracked
+[Gateway identity](https://docs.donkey-kit.dev/examples/general/gateway-identity.md)); a run-level record of every call is tracked
 in [#613](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/613).
 
 The adapter targets the
@@ -78,10 +78,10 @@ The adapter targets the
 uses. `DEMO_MODEL` defaults to `gpt-4o-mini` in this example; set it to a model
 your proxy routes.
 
-If the gateway is unavailable, [Framework objects](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/framework-objects.md)
+If the gateway is unavailable, [Framework objects](https://docs.donkey-kit.dev/examples/general/framework-objects.md)
 constructs the same real framework objects with no network.
 
-**Learn more:** [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)
+**Learn more:** [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [Model access](https://docs.donkey-kit.dev/frameworks.md)
 
 **Source:**
 [narrative demo 09](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/09_langgraph_agent)

@@ -26,7 +26,7 @@ real credentials.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough is the docs
 > quickstart:
-> **[Quickstart](https://donkey-development-kit.github.io/donkey-development-kit/quickstart)**.
+> **[Quickstart](https://docs.donkey-kit.dev/quickstart)**.
 > This example is the exact code that page documents, kept in lockstep; it is
 > executed and timed in CI (the `quickstart` job) so it can never silently rot.
 
@@ -56,5 +56,5 @@ export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
 
 ## Links
 
-- Quickstart docs: https://donkey-development-kit.github.io/donkey-development-kit/quickstart
-- Error taxonomy: https://donkey-development-kit.github.io/donkey-development-kit/errors
+- Quickstart docs: https://docs.donkey-kit.dev/quickstart
+- Error taxonomy: https://docs.donkey-kit.dev/errors

@@ -2,12 +2,12 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance**, domain and tags, so an agent
 binds only the tools it needs rather than the entire catalog. It returns a
-[`ToolSet`](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md) whose per-framework methods hand back native
+[`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding.md) whose per-framework methods hand back native
 tool objects. Name search, asset type and environment are filters on the
 lower-level [`donkey.registry.search()`](#registry-search).
 
@@ -41,7 +41,7 @@ tools = await donkey.tools.discover(
 | `tags` | `list[str] \| None` | All listed tags must be present. |
 | `governed` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered (the default). |
 | `governance` | `Any \| None` | Reserved in the signature; no behaviour is defined for it yet. |
-| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md)). Default `False`. |
+| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Default `False`. |
 
 ## Registry search
 
@@ -135,5 +135,5 @@ message points you to `explain()`.
 
 ## Related
 
-- [Framework binding](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md) — turn a `ToolSet` into native tools.
-- [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md) — pin resolved versions for production.
+- [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md) — turn a `ToolSet` into native tools.
+- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md) — pin resolved versions for production.

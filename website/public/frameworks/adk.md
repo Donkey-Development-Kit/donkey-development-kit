@@ -117,7 +117,7 @@ route uses it in place of the client it would build. `max_retries=0` has to
 be passed to LiteLLM itself: LiteLLM sets the client's retry count on every
 call, and its default is 2. An `api_base` /
 `base_url` passed to `model()` must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https), and the
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https), and the
 adapter builds `client` on that URL.
 
 ## Native Gemini
@@ -154,7 +154,7 @@ llm = gemini("gemini-2.5-flash")
 `Format=OpenAI` proxy. If your Gemini proxy is a different one, pass its URL
 as `base_url`; the `client_id`/`client_secret` pair must be contracted on that
 proxy, and the URL must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https):
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https):
 
 ```python
 llm = donkey.adk.gemini("gemini-2.5-flash", base_url="https://…/ddk-gemini-inbound/")
@@ -254,7 +254,7 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 - **Refusals on the `model()` path aren't typed.** LiteLLM raises its own
   error without the response headers, so `classify()` has nothing to read; see
-  the [ADK examples](https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md).
+  the [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
 - **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
   accepts `client_kwargs`; the `adk` extra declares that floor. On an older
   ADK, `Gemini` drops the governed client without an error and talks to Google
@@ -263,5 +263,5 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
 - `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
   own upper bound if you need one.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface through
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface through
 ADK's `LiteLlm` model, and [Native Gemini](#native-gemini) for `gemini()`.

@@ -2,7 +2,7 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design.
 
 By default the gateway sees your **service**, not the person the agent is
@@ -34,7 +34,7 @@ make the call it is already able to make.
   **DDK does not implement authorisation logic.** Trusted Agent Identity is a
   MuleSoft gateway feature. DDK does the token-exchange plumbing and header
   placement — nothing more. "Check the user's role in the SDK" is client-side
-  enforcement, and it is on the [will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md): code in your
+  enforcement, and it is on the [will-not-build list](https://docs.donkey-kit.dev/roadmap.md): code in your
   process can be bypassed by code in your process.
 
 ## No silent fallback

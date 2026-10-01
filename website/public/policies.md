@@ -2,7 +2,7 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design. It depends on a policy-discovery endpoint on the gateway, which does not
 exist today.
 
@@ -30,7 +30,7 @@ reject — so your bot can say *"some details were redacted"* instead of
 *"request failed."* Same gateway behaviour, a very different experience, and
 today the client has no way to know which mode is in force.
 
-**Warm start.** It also makes [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) live rather than
+**Warm start.** It also makes [budget](https://docs.donkey-kit.dev/budget.md) live rather than
 last-known-good: a fresh process currently knows nothing about its budget until
 its first response comes back.
 
@@ -42,7 +42,7 @@ its first response comes back.
 If the client's cached view and the gateway disagree, **the gateway wins** and
 the client learns from the refusal. Skipping a gateway call *"because the
 handshake said it's fine"* is client-side enforcement, which is on the
-[will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+[will-not-build list](https://docs.donkey-kit.dev/roadmap.md).
 
 This is also why `observed_at` is part of the surface, as it is on the budget
 object: a policy view is a snapshot, and code that cannot tell a snapshot from

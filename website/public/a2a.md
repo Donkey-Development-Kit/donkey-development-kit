@@ -2,7 +2,7 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
@@ -35,7 +35,7 @@ donkey.serve(handle)      # A2A server on 127.0.0.1:8000, card auto-generated
 ```
 
 - **The card is generated from your code** — the same `@donkey.tool` /
-  `@donkey.agent` markers the [scanner](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) reads — so there is no
+  `@donkey.agent` markers the [scanner](https://docs.donkey-kit.dev/publishing.md) reads — so there is no
   second description of your agent to keep in sync.
 - **It binds to localhost by default**, so your agent is never the public face;
   the gateway is.
@@ -65,13 +65,13 @@ planned:
 - **A real gateway.** Where a self-managed Omni Gateway image is available for
   local development, `donkey dev` runs it alongside `donkey serve`, so A2A calls
   pass through real policies.
-- **Simulated ingress.** The [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) gains an A2A ingress
+- **Simulated ingress.** The [local simulator](https://docs.donkey-kit.dev/simulator.md) gains an A2A ingress
   mode: a local fake gateway in front of `donkey serve`, replaying the same
   rejection fixtures. A plain A2A client sees byte-identical responses, and
   every response carries `x-donkey-simulator: true`.
 
 ## Related
 
-- [A2A agent tools](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/a2a.md) — call *other* A2A agents as tools.
-- [Scan & publish](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) — register your agent card with Agent Registry.
-- [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — the fixture-replay server behind simulated ingress.
+- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — call *other* A2A agents as tools.
+- [Scan & publish](https://docs.donkey-kit.dev/publishing.md) — register your agent card with Agent Registry.
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md) — the fixture-replay server behind simulated ingress.

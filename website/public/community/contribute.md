@@ -29,7 +29,7 @@ in the repository.
 
 No change lands without a GitHub issue — the issue is the plan. Each issue
 carries exactly one milestone, which is the release it targets (see the
-[Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md)).
+[Roadmap](https://docs.donkey-kit.dev/roadmap.md)).
 
 ### Cut a branch from `develop`
 
