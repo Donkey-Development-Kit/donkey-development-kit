@@ -408,7 +408,10 @@ example `openai/gpt-5-mini`), and the gateway reports the served model without
 the prefix (`gpt-5-mini`), with the provider in its own header. A prefix that
 names the served provider is not counted as a difference, so asking for
 `openai/gpt-5-mini` and being served `gpt-5-mini` by `openai` is not a
-substitution. The same model served by a different provider still is.
+substitution. The same model served by a different provider still is. On a
+proxy with more than one provider, a bare name the gateway cannot pin to one
+provider is rejected with a `400` before any upstream call, and DDK raises
+[`ModelNotRoutable`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
 
 ### Semantic caching & semantic routing Live
 
@@ -511,7 +514,7 @@ length), so nobody stuffs a JSON blob into a span attribute or header.
 | Carrier | Names | When | Goes to |
 |---|---|---|---|
 | Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
-| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Every request the SDK sends. See the warning below. |
+| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
 
 Each header carries the tag's value unchanged (for example
 `X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
@@ -522,14 +525,12 @@ cost from token usage per API instance and consuming client application. So the
 span attributes are the carrier that matters. Turn the headers on only when
 something of your own reads them.
 
-  **With `send_cost_headers` on, the headers go on every request, not just model
-  calls.** That includes the connected-app token request and other Anypoint
-  control-plane requests, so the end-user ID reaches those hosts too. Adapters
-  with transport injection also send per-run `donkey.run(...)` values;
-  adapters that get only a `default_headers` snapshot send the configured tags.
-  Limiting these headers, and the other LLM-proxy-only headers, to model
-  requests is tracked in
-  [#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
+  **With `send_cost_headers` on, the headers go only on model requests to the
+  LLM proxy.** The connected-app token request and other Anypoint
+  control-plane requests never carry them, so the end-user ID doesn't reach
+  those hosts. Adapters with transport injection also send per-run
+  `donkey.run(...)` values; adapters that get only a `default_headers` snapshot
+  send the configured tags.
 
   **The end-user ID reaches your trace backend regardless of
   `send_cost_headers`.** If `enduser_id` is set, every model-call span carries

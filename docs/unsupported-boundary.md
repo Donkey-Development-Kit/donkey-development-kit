@@ -40,8 +40,10 @@ Classification:
 - `LLMClient.list_models(live=True)` does not call `GET /models`; live capture
   established that Model Proxy has no model-catalog endpoint.
 - Application/business-group attribution request-header names remain
-  warning-emitting, overridable `Unverified` placeholders (`verified-apis.md`
-  §3). The gateway reads and echoes the correlation request header; the per-call
+  warning-emitting `Unverified` placeholders (`verified-apis.md` §3). They are
+  the only names here that still warn, and they have no config key, so they
+  cannot be overridden; leaving `application_name` / `business_group` unset
+  sends neither header. The gateway reads and echoes the correlation request header; the per-call
   and cost-tag request-header names are overridable SDK conventions it does not
   read, and cost tags are carried on spans. The SDK does not depend on the
   gateway reading any of these, so they are not represented as supported

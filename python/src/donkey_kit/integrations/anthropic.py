@@ -8,12 +8,17 @@ our shared transport, header AND transport injection are both available (full
 injection).
 
 HTTP STACK (#701, docs/verified-apis.md §8.1): ``anthropic<1`` is built on
-``httpx`` and is handed the shared ``DonkeyAsyncClient`` itself. ``anthropic>=1.0``
+``httpx`` and is handed the shared client's non-owning view (#733), so closing
+the ``AsyncAnthropic`` leaves the shared client open. ``anthropic>=1.0``
 is built on ``httpx2`` and rejects any ``httpx`` client, so it is handed an
 ``httpx2.AsyncClient`` whose transport forwards every request through the same
 shared client (``_httpx2_bridge``). Both stacks get the same governed headers,
 retries, span, budget and ``donkey.last_call``; the installed release decides
 which one ``connection_kwargs()`` returns.
+
+ASYNC ONLY (#736): there is no governed sync ``anthropic.Anthropic``. The
+``http_client`` in ``connection_kwargs()`` is the async client (or its async
+bridge), so it fits only ``AsyncAnthropic``; a sync caller has no governed path.
 
 Divergence, by design (BG §1.8 — the framework wins): Anthropic's native surface
 is a *client*, and the model id is a per-call argument, not a constructor one.
@@ -46,7 +51,7 @@ import httpx
 
 from ..core.config import DonkeyConfig
 from ..core.masking import masked
-from ..core.transport import DonkeyAsyncClient, DonkeyClient
+from ..core.transport import DonkeyAsyncClient, DonkeyAsyncClientView, DonkeyClient
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -80,25 +85,26 @@ class AnthropicAdapter(Adapter):
         super().__init__(cfg, http_client, sync_http_client)
         self._bridged: httpx2.AsyncClient | None = None
 
-    def _anthropic_http_client(self) -> DonkeyAsyncClient | httpx2.AsyncClient:
-        """The ``http_client`` for the installed ``anthropic``: the shared client
-        on ``anthropic<1``, one bridged ``httpx2`` client per adapter on 1.0 and
-        later. The bridged client is rebuilt once closed, because
-        ``async with AsyncAnthropic(...)`` closes its ``http_client`` on exit."""
+    def _anthropic_http_client(self) -> DonkeyAsyncClientView | httpx2.AsyncClient:
+        """The ``http_client`` for the installed ``anthropic``: the shared client's
+        non-owning view on ``anthropic<1``, one bridged ``httpx2`` client per
+        adapter on 1.0 and later. Neither closes the shared client (#733). The
+        bridged client is rebuilt once closed, because ``async with
+        AsyncAnthropic(...)`` closes its ``http_client`` on exit."""
         if not _anthropic_uses_httpx2():
-            return self._http_client()
+            return self.http_client()
         if self._bridged is None or self._bridged.is_closed:
             with self._native_import():  # the bridge imports httpx2
                 from ._httpx2_bridge import bridged_client
 
-            self._bridged = bridged_client(self._http_client())
+            self._bridged = bridged_client(self._http)
         return self._bridged
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``AsyncAnthropic(**kwargs)`` you build yourself:
         proxy ``base_url``, the verified consumer-auth ``default_headers``, an
         ``http_client`` that sends through the shared transport, and the
-        ``api_key`` slot. ``http_client`` is the shared ``httpx`` client on
+        ``api_key`` slot. ``http_client`` is the shared client's ``httpx`` view on
         ``anthropic<1`` and a bridged ``httpx2`` client on ``anthropic>=1.0`` (see
         the module docstring). The proxy's Anthropic-native route requires a
         ``Format=Anthropic`` proxy (docs/verified-apis.md §2)."""

@@ -1,14 +1,15 @@
 # Microsoft Agent Framework
 
 Microsoft Agent Framework gets a governed chat client pointed at the Omni
-Gateway LLM proxy, plus policy middleware that stops a run on a governance
-rejection instead of letting the agent loop retry.
+Gateway LLM proxy, plus policy middleware that ends a run on a governance
+rejection with the SDK's typed refusal.
 
 **What you get**
 
 - A native `agent_framework.openai.OpenAIChatClient`, checked against
   agent-framework 1.19.0.
-- `policy_middleware()` for terminating a run on a `PolicyViolation`.
+- `policy_middleware()`, which ends a run on a proxy refusal with a typed
+  `PolicyViolation` such as `PIIDetected`.
 - Supported at `connection_kwargs()`. The client gets an `async_client` that
   sends through the SDK's shared HTTP client, so per-run correlation, retries,
   spans, `donkey.last_call` and the `jwt`-mode JWT apply (see [Notes](#notes)).
@@ -105,13 +106,40 @@ client built on that URL; the URL must pass the
 
 ## Policy middleware
 
-`donkey.agent_framework.policy_middleware()` returns an async
-`(context, next)` middleware that lets a `PolicyViolation` propagate, so the
-host ends the run instead of retrying. It is a plain async wrapper whose
-signature has not been confirmed against Agent Framework's middleware
-protocol, so check it in your host before relying on it. Setting Agent
-Framework's explicit "terminate run" signal instead of re-raising is planned
-Roadmap.
+`donkey.agent_framework.policy_middleware()` returns a chat middleware for
+`Agent(..., middleware=[...])`:
+
+```python
+from agent_framework import Agent
+from donkey_kit import Donkey, PIIDetected
+
+async with Donkey.from_env() as donkey:
+    agent = Agent(
+        client=donkey.agent_framework.chat_client("gpt-4o"),
+        middleware=[donkey.agent_framework.policy_middleware()],
+    )
+    try:
+        await agent.run("...")
+    except PIIDetected as err:
+        print(err.correlation_id, err.entities)
+```
+
+Without it, a proxy refusal reaches you as Agent Framework's generic
+`ChatClientException`. With it, the refusal goes through
+`donkey_kit.core.errors.classify()` and the run ends with the typed error,
+for example `PIIDetected` or `TokenBudgetExceeded`. The error carries the
+correlation and call ids that were sent, and keeps the original exception on
+`.framework_error`. This also works for streaming runs
+(`agent.run(..., stream=True)`): the typed error is raised while you iterate
+the stream. The chat client sends with retries off, so a refused request is
+sent once.
+
+Errors that have no proxy response behind them, such as a connection failure,
+pass through unchanged. The middleware is marked with Agent Framework's
+`@chat_middleware` decorator. That is confirmed offline against
+agent-framework 1.19.0, with no live round-trip yet. If the decorator is
+missing from your installed version, `policy_middleware()` raises a
+`NotImplementedError` naming it.
 
 ## Notes
 
@@ -127,4 +155,4 @@ Roadmap.
   that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for the full `PolicyViolation` hierarchy
-that `policy_middleware()` lets through.
+that `policy_middleware()` raises.

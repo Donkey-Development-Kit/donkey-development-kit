@@ -19,13 +19,13 @@ from pathlib import Path
 
 try:
     import typer
-except ImportError:  # pragma: no cover - install-time guidance
-    print(
-        'The CLI needs the [cli] extra. Install it with:\n'
-        '    pip install "donkey-kit[cli]"',
-        file=sys.stderr,
-    )
-    raise SystemExit(1) from None
+except ImportError as exc:
+    # A curated ImportError, not SystemExit: importing this module must not
+    # kill the interpreter (test collection, docs tooling), #811.
+    raise ImportError(
+        'The donkey CLI needs the [cli] extra. Install it with:\n'
+        '    pip install "donkey-kit[cli]"'
+    ) from exc
 
 from ..core.config import _LOCAL_TOML_NAME, _TOML_NAME, TRUST_PROJECT_CONFIG_ENV, DonkeyConfig
 from ..core.endpoints import ALLOW_HTTP_ENV
@@ -42,17 +42,41 @@ app = typer.Typer(
 def _global(
     ctx: typer.Context,
     config: Path | None = typer.Option(
-        None, "--config", metavar="PATH", help=f"Path to {_TOML_NAME} (default: cwd)."
+        None,
+        "--config",
+        metavar="PATH",
+        help=f"Where `init` writes {_TOML_NAME} (default: cwd). init only.",
     ),
     env: str | None = typer.Option(
-        None, "--env", metavar="NAME", help="Anypoint environment override (e.g. Sandbox)."
+        None,
+        "--env",
+        metavar="NAME",
+        help="Anypoint environment `init` writes (e.g. Sandbox). init only.",
     ),
     as_json: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON where the command supports it."
     ),
 ) -> None:
-    """Global flags shared by every command (provisioning-as-code). Precede the subcommand:
-    ``donkey --json init``, ``donkey --config ./cfg.toml doctor``."""
+    """Global flags. Precede the subcommand: ``donkey --json init``,
+    ``donkey --config ./cfg.toml init``.
+
+    ``--config`` and ``--env`` only apply to ``init``. Any other command
+    resolves config from env and the working directory's files, so it rejects
+    them rather than silently diagnosing a different configuration (#811).
+    Pointing the loader at an explicit file is #727."""
+    command = ctx.invoked_subcommand
+    if command != "init":
+        given = [flag for flag, value in (("--config", config), ("--env", env)) if value]
+        if given:
+            typer.secho(
+                f"{' and '.join(given)} only apply to `donkey init`; `donkey {command}` "
+                "resolves config from environment variables and the working directory's "
+                f"{_TOML_NAME} / {_LOCAL_TOML_NAME}. Set ANYPOINT_ENV or run from the "
+                "directory holding the config file instead.",
+                fg="red",
+                err=True,
+            )
+            raise typer.Exit(2)
     ctx.obj = {"config": config, "env": env, "json": as_json}
 
 
@@ -457,7 +481,9 @@ def doctor(
         raise typer.Exit(1)
 
 
-def main() -> None:  # pragma: no cover
+def main() -> None:
+    """The ``donkey`` console script. A :class:`DonkeyError` any command lets
+    escape exits 1 with its message, never a traceback (#811)."""
     try:
         app()
     except DonkeyError as exc:
