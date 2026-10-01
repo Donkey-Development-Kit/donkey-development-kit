@@ -140,23 +140,45 @@ the object as `llm_auth`.
 
 ## Optional attribution
 
-| Env var | Meaning |
-|---|---|
-| `DONKEY_APP_NAME` | Human-readable app name, surfaced on telemetry. |
-| `DONKEY_BUSINESS_GROUP` | Business group for attribution. |
+| Env var | `DonkeyConfig` field | Sent as |
+|---|---|---|
+| `DONKEY_APP_NAME` | `application_name` | The `X-Anypoint-Client-Application` request header. |
+| `DONKEY_BUSINESS_GROUP` | `business_group` | The `X-Anypoint-Business-Group` request header. |
+
+These two values go only on request headers. No span attribute carries them.
+The gateway attributes traffic to the `client_id` credential (or, in `jwt`
+mode, the JWT's `client_id` claim), so you don't need either value for
+attribution.
+
+<Callout type="warning">
+  Both header names are unconfirmed guesses. The gateway hasn't been seen
+  reading them (see §3 of the
+  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md)).
+  The first time the SDK sends one,
+  it emits an `UnverifiedValueWarning`. Unlike the correlation and cost-tag
+  headers, these names have no config key, so you can't override them. To
+  stop the warning, leave both values unset.
+</Callout>
 
 ## Correlation headers
 
-Per-call and per-run correlation IDs ride on request headers. The gateway's
-inbound header names aren't published, so the SDK uses placeholder names you
-can override to match your gateway. The IDs also appear on spans and
-exceptions regardless of the header names. See
+Per-call and per-run correlation IDs ride on request headers. The IDs also
+appear on spans and exceptions regardless of the header names. See
 [Telemetry & cost](/telemetry#correlation-ids).
 
-| Env var | `DonkeyConfig` field | Meaning |
-|---|---|---|
-| `DONKEY_CORRELATION_HEADER` | `correlation_header` | Request header that carries the per-run correlation ID. |
-| `DONKEY_CALL_ID_HEADER` | `call_id_header` | Request header that carries the per-call ID. |
+- `X-Correlation-Id` carries the run ID. The gateway reads this header and
+  echoes it on the response `x-correlation-id`, so a client log line joins to
+  the gateway's record.
+- `X-Donkey-Request-Id` carries the per-call ID. The name is the SDK's own
+  convention, and the gateway doesn't read it.
+
+Both are confirmed names, so neither emits a warning. Override one only if a
+proxy of your own in front of the gateway expects a different name:
+
+| Env var | `DonkeyConfig` field | Default | Meaning |
+|---|---|---|---|
+| `DONKEY_CORRELATION_HEADER` | `correlation_header` | `X-Correlation-Id` | Request header that carries the per-run correlation ID. |
+| `DONKEY_CALL_ID_HEADER` | `call_id_header` | `X-Donkey-Request-Id` | Request header that carries the per-call ID. |
 
 ### Header names you can't use
 
@@ -220,8 +242,10 @@ proxy of your own that reads them, opt in:
 |---|---|---|---|
 | `DONKEY_SEND_COST_HEADERS` | `send_cost_headers` | `false` | Also send the cost tags as request headers. |
 
-With it enabled, the headers use placeholder names (`X-Anypoint-Cost-Team`, …)
-you can override: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
+With it enabled, the headers use the SDK's own names (`X-Anypoint-Cost-Team`,
+…). Because no gateway reads them, they're a convention rather than a
+placeholder for some real name, and they emit no warning. Rename them to match
+whatever receiver you send them to: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
 `DONKEY_COST_ENV_HEADER`, `DONKEY_COST_ENDUSER_HEADER` (or the matching
 `cost_*_header` config keys), within the
 [names you can't use](#header-names-you-cant-use). `send_cost_headers` is not a `Donkey.from_env`
