@@ -8,4 +8,19 @@ without the flag, a clean UsageError on misuse, a scenario table on success.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+import pytest
+
+from donkey_kit.core import runtime
+
 pytest_plugins = ["pytester"]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_default_runtime() -> Iterator[None]:
+    """Drop the process-default runtime after each test (#725), so a test that
+    sets env vars and calls a module-level factory never sees a runtime built
+    from an earlier test's environment."""
+    yield
+    runtime.close_default()

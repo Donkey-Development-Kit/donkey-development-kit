@@ -76,9 +76,10 @@ agents in production.
 
 ## Architecture
 
-DDK sits inside your agent process and speaks to the platform on three
-fronts: governed calls through the gateway, assets published to the control
-plane, and telemetry to your observability stack.
+DDK sits inside your agent process. Today it speaks to the platform on two
+fronts: governed calls through the gateway, and telemetry to your
+observability stack. A third front, publishing assets to the control plane,
+is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
 
 **The AI control plane** is where the platform team manages the AI estate:
 the agent registry, cost control, gateway federation, and governance and
@@ -108,9 +109,10 @@ framework client your agent already uses and adds:
   decision, policy type, budget and correlation ID, exported to whatever
   observability stack you run (Grafana, Datadog, Jaeger, and others) and
   joined to the gateway's audit record through the correlation ID.
-- **Registry and agent-to-agent** — scanning your code to publish tools and
-  agent cards to the control plane, and serving or exposing your agent to
-  other agents over A2A.
+- **Registry and agent-to-agent** Roadmap —
+  planned, not shipped: scanning your code to publish tools and agent cards
+  to the control plane, discovering governed MCP tools, and serving or
+  exposing your agent to other agents over A2A.
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK

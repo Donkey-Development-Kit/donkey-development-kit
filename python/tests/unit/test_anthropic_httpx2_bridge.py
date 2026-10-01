@@ -263,19 +263,19 @@ class _HttpxEraClient(httpx.AsyncClient):
     """Stands in for ``anthropic<1``'s ``DefaultAsyncHttpxClient``."""
 
 
-def test_anthropic_0x_gets_the_shared_client_itself(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_anthropic_0x_gets_the_shared_clients_view(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_anthropic(monkeypatch, _HttpxEraClient)
     shared = shared_client(lambda request: success_response())
     kw = AnthropicAdapter(CFG, shared).connection_kwargs()
-    assert kw["http_client"] is shared
+    assert kw["http_client"] is shared.view()
 
 
-def test_anthropic_without_a_default_client_gets_the_shared_client(
+def test_anthropic_without_a_default_client_gets_the_shared_clients_view(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _stub_anthropic(monkeypatch, None)
     shared = shared_client(lambda request: success_response())
-    assert AnthropicAdapter(CFG, shared).connection_kwargs()["http_client"] is shared
+    assert AnthropicAdapter(CFG, shared).connection_kwargs()["http_client"] is shared.view()
 
 
 def test_connection_kwargs_work_without_anthropic_installed(
@@ -283,7 +283,7 @@ def test_connection_kwargs_work_without_anthropic_installed(
 ) -> None:
     monkeypatch.setitem(sys.modules, "anthropic", None)  # import → ImportError
     shared = shared_client(lambda request: success_response())
-    assert AnthropicAdapter(CFG, shared).connection_kwargs()["http_client"] is shared
+    assert AnthropicAdapter(CFG, shared).connection_kwargs()["http_client"] is shared.view()
 
 
 async def test_anthropic_1x_gets_one_bridged_client_per_adapter(
