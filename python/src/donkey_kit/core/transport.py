@@ -341,6 +341,7 @@ def _apply_base_headers(
     correlation_id: str,
     *,
     correlation_header: str,
+    control_plane: bool,
 ) -> None:
     """The run correlation ID + attribution — everything both transports inject
     on EVERY send without needing to await anything. The correlation ID is
@@ -355,12 +356,19 @@ def _apply_base_headers(
     carries the CONFIG-LEVEL cost tags and any ``donkey.run(...)`` per-run
     overrides are applied on top here (read from the contextvar per send), so a
     run-scope dimension wins for its block (#196). Disabled (the default), no
-    cost header is sent; the span attributes still carry every tag."""
+    cost header is sent; the span attributes still carry every tag.
+
+    On a ``control_plane`` client only the correlation ID is set: the
+    attribution, cost-tag and ``x-cache-*`` headers are meant for the LLM proxy
+    (docs/verified-apis.md §3) and no Anypoint platform API reads them
+    (docs/verified-apis.md §12.2), so they are not sent there (#833)."""
     request.headers[correlation_header] = correlation_id
     # Stamp the resolved name so read-back (errors._sent_ids) honours a
     # header-name override without core/errors importing DonkeyConfig (#363).
     # Idempotent across retries — same name each send.
     request.extensions["donkey_correlation_header"] = correlation_header
+    if control_plane:
+        return
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
     run = current_cost_tags()
@@ -842,9 +850,10 @@ class _SseUsageScanner:
 
 
 class _SpanClosingStream:
-    """Shared finalize logic for the stream wrappers: record the scanned usage
-    onto the detached span and end it, exactly once and best-effort — telemetry
-    must never break stream teardown."""
+    """Shared finalize logic for the stream wrappers: merge the scanned usage
+    into ``donkey.last_call``, record it onto the detached span and end it,
+    exactly once. The span recording is best-effort — telemetry must never break
+    stream teardown, nor drop the usage ``last_call`` reports (#817)."""
 
     def __init__(self, gspan: GenAiSpan) -> None:
         self._gspan = gspan
@@ -855,9 +864,9 @@ class _SpanClosingStream:
         if self._finalized:
             return
         self._finalized = True
+        self._scanner.close()
+        counts = self._scanner.counts
         try:
-            self._scanner.close()
-            counts = self._scanner.counts
             self._gspan.record(
                 input_tokens=counts["input_tokens"],
                 output_tokens=counts["output_tokens"],
@@ -865,13 +874,14 @@ class _SpanClosingStream:
                 cache_write_tokens=counts["cache_write_tokens"],
                 reasoning_tokens=counts["reasoning_tokens"],
             )
-            # The record set in _on_response had no usage (the body was unread on
-            # a stream); merge the terminal event's counts into it now (#307). The
-            # stream is consumed in the same context that set the record, so this
-            # updates the caller's own donkey.last_call.
-            observe_usage(counts)
         except Exception:  # noqa: BLE001 — telemetry must never break teardown
-            pass
+            _log.debug("recording streamed usage on the span failed", exc_info=True)
+        # The record set in _on_response had no usage (the body was unread on a
+        # stream); merge the terminal event's counts into it now (#307). The stream
+        # is consumed in the same context that set the record, so this updates the
+        # caller's own donkey.last_call. Outside the telemetry guard: a failing
+        # span recorder must not drop the usage (#817).
+        observe_usage(counts)
         self._gspan.end()
 
 
@@ -1101,6 +1111,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             request,
             _request_correlation_id(request),
             correlation_header=self._correlation_header,
+            control_plane=self._control_plane,
         )
         if not self._guard(request):
             return
@@ -1201,10 +1212,12 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         # lands in the terminal SSE event, read by the caller long after send()
         # returns. That span must OUTLIVE the ``with`` block, so it is detached
         # (started here, ended by the stream wrapper in ``_finish``); a buffered
-        # call keeps the auto-closing context manager (#192).
-        if enabled and bool(kwargs.get("stream")):
+        # call keeps the auto-closing context manager (#192). A model stream takes
+        # this path even with telemetry off — the span is then inert, but the
+        # wrapper still scans the terminal event into ``donkey.last_call`` (#817).
+        if model is not None and bool(kwargs.get("stream")):
             gspan = start_genai_span(
-                enabled=True, capture_content=self._cfg.telemetry_capture_content
+                enabled=enabled, capture_content=self._cfg.telemetry_capture_content
             )
             try:
                 gspan.record(request_model=model)
@@ -1465,6 +1478,7 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
             request,
             _request_correlation_id(request),
             correlation_header=self._correlation_header,
+            control_plane=False,
         )
         self._guard(request)
 
@@ -1500,11 +1514,11 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
         model = _request_model(request)
         enabled = self._cfg.telemetry and model is not None  # see DonkeyAsyncClient.send
-        if enabled and bool(kwargs.get("stream")):
-            # Streaming: a detached span the stream wrapper ends (see
-            # DonkeyAsyncClient.send, #193).
+        if model is not None and bool(kwargs.get("stream")):
+            # Streaming: a detached span the stream wrapper ends, inert with
+            # telemetry off (see DonkeyAsyncClient.send, #193, #817).
             gspan = start_genai_span(
-                enabled=True, capture_content=self._cfg.telemetry_capture_content
+                enabled=enabled, capture_content=self._cfg.telemetry_capture_content
             )
             try:
                 gspan.record(request_model=model)

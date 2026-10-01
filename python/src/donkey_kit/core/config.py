@@ -318,8 +318,8 @@ class DonkeyConfig:
     # gateway reads a cost-tag header (docs/verified-apis.md §3, #522), so the
     # ``donkey.cost.*`` span attributes are the only consumer, and an
     # ``enduser.id`` header would carry an end-user identifier for no reader.
-    # When enabled, the headers currently go on every request the SDK's clients
-    # send, control-plane requests included (#833).
+    # When enabled, the headers go on data-plane (model) requests only, never on
+    # a control-plane client's (#833).
     send_cost_headers: bool = False  # env: DONKEY_SEND_COST_HEADERS
 
     # --- Provenance (config resolution) ---

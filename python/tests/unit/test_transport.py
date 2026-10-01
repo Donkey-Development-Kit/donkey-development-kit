@@ -1512,6 +1512,88 @@ async def test_streaming_usage_details_fill_span_and_last_call(monkeypatch) -> N
     assert final.reasoning_tokens == 96
 
 
+async def test_failing_span_recorder_keeps_streamed_usage_on_last_call(monkeypatch, caplog) -> None:
+    # #817: a telemetry fault while recording the terminal usage on the span must
+    # not drop that usage from donkey.last_call — the two are separate concerns.
+    # The swallowed fault is logged at DEBUG, and the span still ends.
+    exporter = _use_tracer(monkeypatch)
+    real_record = telemetry.GenAiSpan.record
+
+    def failing_record(self, **fields):
+        if "input_tokens" in fields:
+            raise RuntimeError("span recorder blew up")
+        real_record(self, **fields)
+
+    monkeypatch.setattr(telemetry.GenAiSpan, "record", failing_record)
+    sse = _AsyncSSE(_SSE_WITH_USAGE_DETAILS)
+
+    client = DonkeyAsyncClient(
+        _LLM_CFG, None, transport=httpx.MockTransport(lambda r: _sse_response(sse))
+    )
+    with caplog.at_level("DEBUG", logger="donkey_kit.core.transport"):
+        async with client:
+            req = client.build_request(
+                "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+            )
+            resp = await client.send(req, stream=True)
+            async for _line in resp.aiter_lines():
+                pass
+
+    final = current_last_call()
+    assert final is not None
+    assert final.input_tokens == 1420
+    assert final.output_tokens == 310
+    assert final.reasoning_tokens == 96
+    assert any(rec.exc_info for rec in caplog.records if rec.levelname == "DEBUG")
+    (_span,) = exporter.get_finished_spans()  # still ended exactly once
+
+
+async def test_streamed_usage_reaches_last_call_with_telemetry_off() -> None:
+    # #817: with telemetry off, the stream is still scanned so donkey.last_call
+    # carries the terminal event's usage — only the span is inert.
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", telemetry=False)
+    sse = _AsyncSSE(_SSE_WITH_USAGE_DETAILS)
+
+    client = DonkeyAsyncClient(
+        cfg, None, transport=httpx.MockTransport(lambda r: _sse_response(sse))
+    )
+    async with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = await client.send(req, stream=True)
+        async for _line in resp.aiter_lines():
+            pass
+
+    assert sse.closed
+    final = current_last_call()
+    assert final is not None
+    assert final.input_tokens == 1420
+    assert final.output_tokens == 310
+    assert final.cached_tokens == 512
+
+
+def test_sync_streamed_usage_reaches_last_call_with_telemetry_off() -> None:
+    # The blocking twin of the telemetry-off case (#817).
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", telemetry=False)
+    sse = _SyncSSE(_SSE_WITH_USAGE_DETAILS)
+
+    client = DonkeyClient(cfg, transport=httpx.MockTransport(lambda r: _sse_response(sse)))
+    with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = client.send(req, stream=True)
+        for _line in resp.iter_lines():
+            pass
+
+    assert sse.closed
+    final = current_last_call()
+    assert final is not None
+    assert final.input_tokens == 1420
+    assert final.output_tokens == 310
+
+
 async def test_streaming_span_closes_when_abandoned_mid_iteration(monkeypatch) -> None:
     # AC #3: a stream abandoned after one chunk still closes its span (via the
     # caller's response.aclose(), which routes through the wrapping stream).

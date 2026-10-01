@@ -60,6 +60,11 @@ in `base_url`, `api_key`, and `default_headers` from one governed config
 source, and raises a clear "blocked on verification" error instead of
 silently guessing if the class import fails.
 
+`OpenAIChatClient` calls the Responses API (`POST /responses`). A proxy route
+that does not serve it, such as Azure OpenAI (a 404), needs the Chat
+Completions client instead: `chat_client("…", api="chat_completions")` builds
+an `agent_framework.openai.OpenAIChatCompletionClient` with the same kwargs.
+
 ## Links
 
 - Microsoft Agent Framework docs: see the framework's official documentation
