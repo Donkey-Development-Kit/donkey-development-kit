@@ -148,7 +148,10 @@ async def test_one_cached_view_per_shared_client() -> None:
     donkey = _donkey()
     assert donkey.http_client() is donkey.http_client() is donkey._http.view()
     assert donkey.http_client(sync=True) is donkey._sync_http_client().view()
-    assert donkey.strands.http_client() is donkey.http_client()
+    # Built directly: ``donkey.strands`` refuses when Strands isn't installed.
+    from donkey_kit.integrations.strands import StrandsAdapter
+
+    assert StrandsAdapter(CFG, donkey._http).http_client() is donkey.http_client()
     await donkey.aclose()
 
 
@@ -250,6 +253,9 @@ def _routed_adapters() -> set[str]:
 async def test_closing_what_an_adapter_hands_out_never_closes_the_shared_client(
     attr: str,
 ) -> None:
+    if attr == "openai_agents":
+        # Its only governed value is a pre-built AsyncOpenAI (no base-only install).
+        pytest.importorskip("openai")
     spec = ADAPTERS[attr]
     module = importlib.import_module(spec.module, package="donkey_kit.integrations")
     donkey = _donkey()
