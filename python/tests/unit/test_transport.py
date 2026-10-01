@@ -16,7 +16,7 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
-from donkey_kit.core.errors import GatewayUnavailable, PIIDetected, classify
+from donkey_kit.core.errors import ConfigError, GatewayUnavailable, PIIDetected, classify
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call
 from donkey_kit.core.telemetry import current_correlation_id, run_context, run_scope
 from donkey_kit.core.transport import (
@@ -984,7 +984,7 @@ async def test_langgraph_adapter_does_not_retry_429_end_to_end() -> None:
     # shared client, so the transport is what governs the retry policy.
     kw = adapter.connection_kwargs()
     assert kw["max_retries"] == 0
-    assert kw["http_async_client"] is shared
+    assert kw["http_async_client"] is shared.view()
     async with shared:
         model = adapter.chat_model("gpt-4o")
         with pytest.raises(openai.APIStatusError):
@@ -1448,6 +1448,88 @@ async def test_streaming_usage_details_fill_span_and_last_call(monkeypatch) -> N
     assert final.cached_tokens == 512
     assert final.cache_write_tokens == 128
     assert final.reasoning_tokens == 96
+
+
+async def test_failing_span_recorder_keeps_streamed_usage_on_last_call(monkeypatch, caplog) -> None:
+    # #817: a telemetry fault while recording the terminal usage on the span must
+    # not drop that usage from donkey.last_call — the two are separate concerns.
+    # The swallowed fault is logged at DEBUG, and the span still ends.
+    exporter = _use_tracer(monkeypatch)
+    real_record = telemetry.GenAiSpan.record
+
+    def failing_record(self, **fields):
+        if "input_tokens" in fields:
+            raise RuntimeError("span recorder blew up")
+        real_record(self, **fields)
+
+    monkeypatch.setattr(telemetry.GenAiSpan, "record", failing_record)
+    sse = _AsyncSSE(_SSE_WITH_USAGE_DETAILS)
+
+    client = DonkeyAsyncClient(
+        _LLM_CFG, None, transport=httpx.MockTransport(lambda r: _sse_response(sse))
+    )
+    with caplog.at_level("DEBUG", logger="donkey_kit.core.transport"):
+        async with client:
+            req = client.build_request(
+                "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+            )
+            resp = await client.send(req, stream=True)
+            async for _line in resp.aiter_lines():
+                pass
+
+    final = current_last_call()
+    assert final is not None
+    assert final.input_tokens == 1420
+    assert final.output_tokens == 310
+    assert final.reasoning_tokens == 96
+    assert any(rec.exc_info for rec in caplog.records if rec.levelname == "DEBUG")
+    (_span,) = exporter.get_finished_spans()  # still ended exactly once
+
+
+async def test_streamed_usage_reaches_last_call_with_telemetry_off() -> None:
+    # #817: with telemetry off, the stream is still scanned so donkey.last_call
+    # carries the terminal event's usage — only the span is inert.
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", telemetry=False)
+    sse = _AsyncSSE(_SSE_WITH_USAGE_DETAILS)
+
+    client = DonkeyAsyncClient(
+        cfg, None, transport=httpx.MockTransport(lambda r: _sse_response(sse))
+    )
+    async with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = await client.send(req, stream=True)
+        async for _line in resp.aiter_lines():
+            pass
+
+    assert sse.closed
+    final = current_last_call()
+    assert final is not None
+    assert final.input_tokens == 1420
+    assert final.output_tokens == 310
+    assert final.cached_tokens == 512
+
+
+def test_sync_streamed_usage_reaches_last_call_with_telemetry_off() -> None:
+    # The blocking twin of the telemetry-off case (#817).
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", telemetry=False)
+    sse = _SyncSSE(_SSE_WITH_USAGE_DETAILS)
+
+    client = DonkeyClient(cfg, transport=httpx.MockTransport(lambda r: _sse_response(sse)))
+    with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = client.send(req, stream=True)
+        for _line in resp.iter_lines():
+            pass
+
+    assert sse.closed
+    final = current_last_call()
+    assert final is not None
+    assert final.input_tokens == 1420
+    assert final.output_tokens == 310
 
 
 async def test_streaming_span_closes_when_abandoned_mid_iteration(monkeypatch) -> None:
@@ -2254,3 +2336,58 @@ async def test_5xx_response_still_returns_a_response_not_gateway_unavailable() -
         async with client:
             resp = await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
     assert resp.status_code == 503
+
+
+# --- lifecycle RuntimeErrors are typed (#813) --------------------------------
+
+
+async def test_send_on_closed_async_client_raises_config_error() -> None:
+    # httpx raises a bare RuntimeError for a send after close (e.g. a framework
+    # closed the shared client); the transport types it.
+    client = _client(lambda r: httpx.Response(200))
+    await client.aclose()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        with pytest.raises(ConfigError, match="client is closed") as ei:
+            await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert isinstance(ei.value.__cause__, RuntimeError)
+    assert "new Donkey" in ei.value.remediation
+    assert ei.value.call_id is not None  # the sent ids are carried, like GatewayUnavailable
+
+
+def test_send_on_closed_sync_client_raises_config_error() -> None:
+    client = _sync_client(lambda r: httpx.Response(200))
+    client.close()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        with pytest.raises(ConfigError, match="client is closed"):
+            client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+
+
+async def test_closed_event_loop_raises_config_error() -> None:
+    # A pooled connection bound to an event loop that has since closed (a second
+    # asyncio.run() on one Donkey) surfaces from the transport as this RuntimeError.
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("Event loop is closed")
+
+    client = _client(handler)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        async with client:
+            with pytest.raises(ConfigError, match="event loop") as ei:
+                await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert isinstance(ei.value.__cause__, RuntimeError)
+    assert "asyncio.run()" in ei.value.remediation
+
+
+async def test_unrelated_runtime_error_is_not_retyped() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("something else")
+
+    client = _client(handler)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        async with client:
+            with pytest.raises(RuntimeError, match="something else") as ei:
+                await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert not isinstance(ei.value, ConfigError)

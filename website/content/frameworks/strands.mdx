@@ -91,8 +91,9 @@ llm = OpenAIModel(
         "base_url": ...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
-        "http_client": ...,       # the SDK's shared httpx client
+        "http_client": ...,       # a non-owning view of the SDK's shared client
     },
+    stream=False,                 # see Notes
 )
 ```
 
@@ -104,6 +105,14 @@ Strands forwards to its internal OpenAI client.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
+- **The client stays open.** Strands opens and closes an OpenAI client for
+  every request (`async with AsyncOpenAI(**client_args)`). The `http_client` it
+  gets is a view whose close is a no-op, so the SDK's shared client survives
+  every call. Only `donkey.aclose()` ends the connection pool.
+- **Streaming is off by default.** The governed model sets `stream=False`. A
+  proxy routing to a Gemini upstream answers a streamed request with one whole
+  `chat.completion` and no chunk deltas, and Strands fails on it. Pass
+  `donkey.strands.model("gpt-4o", stream=True)` on routes that stream.
 - Strands also exposes lifecycle hooks (`BeforeToolCallEvent` and friends).
   The SDK uses them for the policy-termination pattern — see the error taxonomy
   for how a `PolicyViolation` should end a run cleanly rather than trigger a

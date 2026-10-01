@@ -1,0 +1,1 @@
+{"error":"Failed to parse model from request: Model 'gpt-5-mini' is not in the known unique model map and multiple providers are configured. Use 'provider/model' format."}
