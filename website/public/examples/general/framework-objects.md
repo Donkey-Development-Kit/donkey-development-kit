@@ -213,9 +213,12 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 
   `donkey.openai_agents` is the OpenAI Agents SDK adapter; `donkey.openai()` is
   the raw OpenAI client factory. The LangGraph adapter sets
-  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. Where
-  an adapter cannot confirm a framework's class name or constructor, it raises
-  "blocked on verification" rather than guessing.
+  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. The
+  adapters build the native object directly. They refuse with "blocked on
+  verification" only when the installed framework version lacks the class or
+  field the adapter depends on (for example, `gemini()` on google-adk older than
+  2.4). See [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#supported-frameworks) for each adapter's
+  verification status.
 
 `resolve()` capabilities are heuristics derived from the model id, not a
 governed catalog. The gateway returns 404 for `GET /models` because

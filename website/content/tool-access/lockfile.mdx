@@ -72,7 +72,9 @@ Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`,
 are cached with a configurable TTL (default 300 seconds):
 
 ```python
-donkey = Donkey.from_env(registry_cache_ttl_s=300)
+from donkey_kit import Donkey, DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(registry_cache_ttl_s=60))
 ```
 
 - `donkey.registry.refresh()` invalidates the cache and re-fetches on next use —

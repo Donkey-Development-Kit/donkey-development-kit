@@ -584,6 +584,15 @@ passes under **both** an `openai<3` and an `openai>=3` resolve. This replaced th
 because `--strict` enables `warn_unused_ignores` / `warn_redundant_casts`, a pinned `openai<3` (where the
 mismatch does not occur) flagged them as *unused* / *redundant* (#597).
 
+### 8.2 Known upstream runtime limitations
+
+Behaviour of a supported framework that the SDK cannot change, so it is
+recorded here rather than worked around.
+
+| Framework | Python | Symptom | Status | Date |
+|---|---|---|---|---|
+| LangGraph `interrupt()` | `<3.11` | Under `graph.ainvoke()`, `interrupt()` raises `RuntimeError: Called get_config outside of a runnable context`, from an async node and from a sync node alike. `langgraph.config.get_config()` reads the run's config from langchain-core's `var_child_runnable_config` context variable, and asyncio tasks only accept an explicit context from 3.11, so the variable is unset inside the node. `interrupt()` takes no config argument, so there is nothing to pass through explicitly. `graph.invoke()` works on 3.10. Reproduced on Python 3.10 with `langgraph==0.3.0`, `0.4.0` and `1.2.12`. **Documented, 3.11+ required for `interrupt()` under `ainvoke()`**: `test_interrupt_and_typed_refusal_compose` is a strict `xfail` on 3.10 (an asserted exemption, not a skip), and `test_interrupt_and_typed_refusal_compose_sync` proves the composition on every supported Python. CI coverage of 3.10 × langgraph is #769 (#865). | DOCUMENTED | 2026-10-01 |
+
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 
 | Framework | Binding class | Status | Source |
