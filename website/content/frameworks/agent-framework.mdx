@@ -14,8 +14,10 @@ rejection with the SDK's typed refusal.
 
 **What you get**
 
-- A native `agent_framework.openai.OpenAIChatClient`, checked against
-  agent-framework 1.19.0.
+- A native `agent_framework.openai.OpenAIChatClient`, which calls the
+  Responses API (`POST /responses`), checked against agent-framework 1.19.0.
+  Pass `api="chat_completions"` for the Chat Completions client (see
+  [Which API](#which-api)).
 - `policy_middleware()`, which ends a run on a proxy refusal with a typed
   `PolicyViolation` such as `PIIDetected`.
 - Supported at `connection_kwargs()`. The client gets an `async_client` that
@@ -103,6 +105,32 @@ llm = OpenAIChatClient(
 constructor uses it as given, so a `base_url` passed to `chat_client()` gets a
 client built on that URL; the URL must pass the
 [`https://` rule](/reference/configuration#endpoints-must-use-https).
+The same kwargs work with `OpenAIChatCompletionClient`, the Chat Completions
+client.
+
+## Which API
+
+agent-framework-openai has two OpenAI-compatible chat clients, and
+`chat_client()` picks one with `api=`:
+
+| `api=` | Client | Request |
+| --- | --- | --- |
+| `"responses"` (default) | `OpenAIChatClient` | `POST /responses` |
+| `"chat_completions"` | `OpenAIChatCompletionClient` | `POST /chat/completions` |
+
+The default is the Responses API because it is the proxy route the SDK has
+verified live, the same one `donkey.llm` and the LangGraph adapter use. It is
+verified on an OpenAI upstream only. A proxy can route a model to any
+upstream, and not every upstream serves `/responses`: a route to Azure OpenAI
+answers it with `404 Resource not found`, which reaches you as a
+`ChatClientException`. For such a route, ask for the Chat Completions client:
+
+```python
+llm = chat_client("azure/gpt-4.1-mini", api="chat_completions")
+```
+
+Both clients work with `policy_middleware()`. The local simulator serves
+`/responses` only, so keep the default when you run against it.
 
 ## Policy middleware
 
@@ -143,9 +171,9 @@ missing from your installed version, `policy_middleware()` raises a
 
 ## Notes
 
-- **Constructor signature.** `OpenAIChatClient` takes `model`, `base_url`,
-  `api_key`, and `default_headers` (agent-framework 1.19.0; `model_id` is not
-  accepted). If the import fails or an upstream release renames a kwarg,
+- **Constructor signature.** `OpenAIChatClient` and
+  `OpenAIChatCompletionClient` both take `model`, `base_url`, `api_key`, and
+  `default_headers` (agent-framework 1.19.0; `model_id` is not accepted). If the import fails or an upstream release renames a kwarg,
   `chat_client()` raises a `NotImplementedError` naming the class path or
   signature to check, rather than a raw `ImportError` or `TypeError`.
 - **`donkey.last_call` is set in the context that made the call.** A cold read
