@@ -129,31 +129,32 @@ def test_strands_connection_kwargs_inject_client_and_headers() -> None:
 
 async def test_strands_real_model_is_built_and_called_through_our_transport() -> None:
     """With strands installed: ``model()`` builds the native ``OpenAIModel`` and
-    a streamed call goes through the shared DonkeyAsyncClient. The OpenAI module
-    is imported directly, not skipped: the strands extra must pull in openai
-    itself (``strands-agents[openai]``), or this fails (#743)."""
+    a call goes through the shared DonkeyAsyncClient. The OpenAI module is
+    imported directly, not skipped: the strands extra must pull in openai itself
+    (``strands-agents[openai]``), or this fails (#743). The governed connection
+    does not stream (#830), so the proxy answers with one whole completion."""
     pytest.importorskip("strands")
+    import json
+
     import httpx
     import strands.models.openai  # noqa: F401 — must import under the strands extra alone
 
     from donkey_kit.integrations.strands import StrandsAdapter
 
     seen: list[httpx.Request] = []
-    chunks = [
-        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": "PONG"}}]},
-        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
-    ]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        import json
-
         seen.append(request)
-        base = {"id": "c1", "object": "chat.completion.chunk", "created": 0, "model": "gpt-4o"}
-        sse = "".join(f"data: {json.dumps({**base, **c})}\n\n" for c in chunks)
+        message = {"role": "assistant", "content": "PONG"}
         return httpx.Response(
             200,
-            content=(sse + "data: [DONE]\n\n").encode(),
-            headers={"content-type": "text/event-stream"},
+            json={
+                "id": "c1",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "gpt-4o",
+                "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
+            },
         )
 
     cfg = _cfg()
@@ -167,6 +168,7 @@ async def test_strands_real_model_is_built_and_called_through_our_transport() ->
     sent = seen[0]
     assert sent.url.path == "/chat/completions"
     assert sent.headers["client_id"] == "cid"
+    assert json.loads(sent.content)["stream"] is False
 
 
 def test_agent_framework_connection_kwargs_are_the_openai_connection() -> None:
