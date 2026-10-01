@@ -161,19 +161,27 @@ Run context
   own constructor. Bringing a framework up to the deep bar is demand-driven and happens
   one at a time, so this is not a stepping stone that everything is queued behind — it
   is the supported surface.
-  LangGraph is the only adapter held to the conformance bar, and it sets
-  use_responses_api=True so ChatOpenAI calls the live-verified /responses route rather
-  than the unverified /chat/completions default.
+  LangGraph is the only adapter held to the conformance bar. It sets
+  use_responses_api=True so ChatOpenAI calls /responses rather than its
+  /chat/completions default: /responses is the raw client's route and the only one the
+  local simulator serves.
 
 What is and is not verified here
 ────────────────────────────────
   The proxy contract these objects are configured against is live-verified: the base URL
-  shape, the credential header pair, the rejection shapes. The exact framework class
-  names and constructor kwargs are not — they are checked against installed packages by
-  a nightly matrix rather than asserted from documentation.
-  Where a class name cannot be confirmed, the adapter raises 'blocked on verification'
-  rather than guessing. A guessed class name that fails on a developer's first import
-  costs more than the missing adapter.
+  shape, the credential header pair, the rejection shapes. The adapters themselves are
+  held to three bars (docs/verified-apis.md §8):
+  • Conformance-tested against the simulator: the raw client and LangGraph.
+  • Signature-confirmed offline: every other adapter, ADK's model() included. The SDK's
+    scripts/verify_frameworks.py builds each native object against the installed
+    framework; Agent Framework's model= kwarg (not model_id) is confirmed that way
+    against 1.19.0.
+  • Live-verified: ADK's gemini(), through a Format=Gemini proxy.
+
+  The adapters build the framework's native object directly. They refuse with 'blocked
+  on verification' only when the installed framework version lacks the class or field
+  the adapter depends on: an Agent Framework class rename, or ADK's gemini() before
+  google-adk 2.4.
 
 ────────────────────────────────────────────────────────────────────────────────────────
 ```
