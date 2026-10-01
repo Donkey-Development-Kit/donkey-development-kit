@@ -155,7 +155,7 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
     Header NAMES are UNVERIFIED (verification discipline / docs/verified-apis.md §3):
     the live direct-proxy path did NOT
     surface application/business-group as request headers (docs/verified-apis.md §3), so these
-    remain loud, overridable placeholders. The verified per-agent attribution
+    remain loud placeholders with no config override. The verified per-agent attribution
     unit is the ``client_id`` credential — see :func:`proxy_auth_headers`.
 
     Includes the CONFIG-LEVEL cost tags only when ``cfg.send_cost_headers`` is
