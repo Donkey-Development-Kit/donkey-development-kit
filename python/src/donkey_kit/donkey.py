@@ -17,9 +17,9 @@ import functools
 import importlib
 import importlib.util
 import inspect
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager, AsyncExitStack
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
 from .core import _verify
 from .core.auth import AnypointConnectedApp, AuthProvider, EndpointCheckedAuth
@@ -58,6 +58,8 @@ if TYPE_CHECKING:
 
 
 _Callable = TypeVar("_Callable", bound=Callable[..., Any])
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 def _framework_installed(probe: str) -> bool:
@@ -419,15 +421,39 @@ class Donkey:
         )
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
+    # The overloads keep the decorated callable's own signature, for both the
+    # bare and the keyword form, under a downstream ``mypy --strict`` (#716).
+    @overload
     def governed(
         self,
-        func: _Callable | None = None,
+        func: Callable[_P, _R],
         *,
         team: str | None = None,
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
-    ) -> _Callable | Callable[[_Callable], _Callable]:
+    ) -> Callable[_P, _R]: ...
+
+    @overload
+    def governed(
+        self,
+        func: None = None,
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
+
+    def governed(
+        self,
+        func: Callable[_P, _R] | None = None,
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]:
         """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
 
         The one-line on-ramp to governed execution: every governed model call
@@ -452,26 +478,29 @@ class Donkey:
         HITL (2.3) and are out of scope here (#200).
         """
 
-        def decorate(fn: _Callable) -> _Callable:
+        def decorate(fn: Callable[_P, _R]) -> Callable[_P, _R]:
             if inspect.iscoroutinefunction(fn):
+                # Here ``_R`` is the coroutine type, which mypy cannot narrow
+                # from ``iscoroutinefunction``; the casts restate that fact.
+                coro_fn = cast(Callable[_P, Awaitable[Any]], fn)
 
                 @functools.wraps(fn)
-                async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
                     async with self.run(
                         team=team, project=project, env=env, enduser_id=enduser_id
                     ):
-                        return await fn(*args, **kwargs)
+                        return await coro_fn(*args, **kwargs)
 
-                return async_wrapper  # type: ignore[return-value]
+                return cast(Callable[_P, _R], async_wrapper)
 
             @functools.wraps(fn)
-            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            def sync_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
                 with self.run(
                     team=team, project=project, env=env, enduser_id=enduser_id
                 ):
                     return fn(*args, **kwargs)
 
-            return sync_wrapper  # type: ignore[return-value]
+            return sync_wrapper
 
         # Bare ``@donkey.governed`` passes the callable positionally; the
         # parametrised ``@donkey.governed(...)`` passes nothing and returns the

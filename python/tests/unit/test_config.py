@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
+from typing import get_type_hints
+
 import pytest
 
-from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.config import ConfigOverrides, DonkeyConfig
 from donkey_kit.core.cost import CostTags
 from donkey_kit.core.errors import ConfigError
 
@@ -280,3 +283,16 @@ def test_cost_header_name_overrides_resolve(
     assert cfg.cost_project_header == "x-cost-project"
     assert cfg.cost_env_header == "x-cost-env"
     assert cfg.cost_enduser_header == "x-cost-enduser"
+
+
+def test_config_overrides_lists_every_public_field_with_its_type() -> None:
+    # with_overrides() is typed by ConfigOverrides (#716); a field added to the
+    # dataclass but not here would be rejected by mypy for a valid override.
+    hints = get_type_hints(DonkeyConfig)
+    public = {f.name: hints[f.name] for f in fields(DonkeyConfig) if not f.name.startswith("_")}
+    assert get_type_hints(ConfigOverrides) == public
+
+
+def test_with_overrides_replaces_the_named_fields() -> None:
+    cfg = DonkeyConfig(timeout_s=60.0).with_overrides(timeout_s=1.0, telemetry=False)
+    assert (cfg.timeout_s, cfg.telemetry) == (1.0, False)
