@@ -9,12 +9,24 @@ without the flag, a clean UsageError on misuse, a scenario table on success.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
 from donkey_kit.core import runtime
 
 pytest_plugins = ["pytester"]
+
+
+@pytest.fixture(autouse=True)
+def _empty_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the home directory at an empty temp dir, so a test that unsets
+    ``XDG_CONFIG_HOME`` never reads the developer's own
+    ``~/.config/.donkey-kit.toml`` (#837)."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    return home
 
 
 @pytest.fixture(autouse=True)
