@@ -157,6 +157,7 @@ jobs:
           tests/unit/test_anthropic_client_stacks.py
           tests/unit/test_anthropic_httpx2_bridge.py
           tests/unit/test_adapter_ergonomics.py
+          tests/unit/test_adapter_async_last_call.py
 
   adk-stacks:
     # #735: below google-adk 2.4, Gemini silently drops client_kwargs and
@@ -184,6 +185,7 @@ jobs:
           pytest -q
           tests/unit/test_adapter_ergonomics.py
           tests/unit/test_framework_redirects.py
+          tests/unit/test_adapter_async_last_call.py
 
   agent-framework-middleware:
     # #739: policy_middleware() is only meaningful on a real Agent Framework
@@ -198,6 +200,22 @@ jobs:
       - run: >-
           pytest -q
           tests/unit/test_agent_framework_policy_middleware.py
+          tests/unit/test_adapter_ergonomics.py
+
+  agents-strands-last-call:
+    # #899: the OpenAI Agents SDK and Strands send through the shared client, but
+    # no other job installs them, so their donkey.last_call tests would only
+    # skip. Run them with both extras present.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,llm,openai-agents,strands]"
+      - run: >-
+          pytest -q
+          tests/unit/test_adapter_async_last_call.py
           tests/unit/test_adapter_ergonomics.py
 
   benchmark:

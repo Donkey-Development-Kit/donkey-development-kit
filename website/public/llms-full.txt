@@ -1910,6 +1910,27 @@ llm = OpenAIChatCompletionsModel(
 `connection_kwargs()` returns exactly one key, `openai_client`, holding this
 pre-built `AsyncOpenAI` instance.
 
+## `donkey.last_call`
+
+Every model call goes through the SDK's shared HTTP client, so the SDK records
+it. `last_call` is contextvar-scoped, though, and `Runner` sends a run's first
+turn from a task of its own (`run_streamed` sends every turn that way). After a
+one-turn `Runner.run`, or any `run_streamed`, the caller reads `UNOBSERVED`.
+After a longer `Runner.run` it reads the last turn's call. To read every call,
+use `RunHooks.on_llm_end`, which runs in the same task as the call:
+
+```python
+from agents import Agent, RunHooks, Runner
+
+class LastCallHooks(RunHooks):
+    async def on_llm_end(self, context, agent, response):
+        r = donkey.last_call
+        print(r.request_id, r.input_tokens, r.output_tokens)
+
+agent = Agent(name="assistant", model=donkey.openai_agents.model("gpt-4o"))
+await Runner.run(agent, "hello", hooks=LastCallHooks())
+```
+
 ## Notes
 
 - **A pre-built client is the preferred integration point.** When a framework
@@ -3389,6 +3410,17 @@ yet received a governed response. On an unavailable surface the SDK cannot
 observe any response-derived `last_call` field, including gateway identity,
 routing, fallback, and usage. If multiple non-observing adapters were resolved,
 `surface` lists their names.
+
+An agent runner that sends the model call from a task of its own leaves its
+caller reading `UNOBSERVED`, even though the SDK observed the call: the record
+lands in that task. The OpenAI Agents SDK's `Runner` sends a run's first turn
+that way (and every turn of `run_streamed`), and ADK's `Runner` runs the whole
+agent that way. Read `last_call` in the framework's model hook, which runs in the
+call's own task: `RunHooks.on_llm_end` for the
+[OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md#donkeylast_call), `after_model_callback`
+for [ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
+`Agent.invoke_async`, `AsyncAnthropic.messages.create`, a model's own async
+method) records in the caller's context.
 
 ### Two behaviours worth knowing
 
@@ -8326,8 +8358,10 @@ print("last_call   ", donkey.last_call.status.value)
 
 **Live only** — the simulator never calls tools. **You should see:** the final
 answer, `model calls 2`, total tokens from the Agents SDK's own usage, and
-`last_call unobserved`. The runner calls the model on its own task, so trust
-the SDK usage line here.
+`last_call observed`. That record is the second call only: the runner sends the
+first turn from a task of its own, where the caller can't see it (see
+[`donkey.last_call`](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md#donkeylast_call)). The SDK usage line
+counts both calls.
 
 ## 02 — Typed refusals, simulated
 
