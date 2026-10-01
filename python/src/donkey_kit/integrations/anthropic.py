@@ -39,13 +39,14 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8 (#34).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from ..core.config import DonkeyConfig
 from ..core.masking import masked
-from ..core.transport import DonkeyAsyncClient
+from ..core.transport import DonkeyAsyncClient, DonkeyClient
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -70,8 +71,13 @@ def _anthropic_uses_httpx2() -> bool:
 class AnthropicAdapter(Adapter):
     extra = "anthropic"
 
-    def __init__(self, cfg: DonkeyConfig, http_client: DonkeyAsyncClient) -> None:
-        super().__init__(cfg, http_client)
+    def __init__(
+        self,
+        cfg: DonkeyConfig,
+        http_client: DonkeyAsyncClient,
+        sync_http_client: Callable[[], DonkeyClient] | None = None,
+    ) -> None:
+        super().__init__(cfg, http_client, sync_http_client)
         self._bridged: httpx2.AsyncClient | None = None
 
     def _anthropic_http_client(self) -> DonkeyAsyncClient | httpx2.AsyncClient:

@@ -23,21 +23,25 @@ if TYPE_CHECKING:
 
 class LlamaIndexAdapter(Adapter):
     extra = "llamaindex"
-    # We hand OpenAILike only default_headers, never our httpx client, so no
-    # response reaches donkey.last_call (#362) — the SDK does not own the transport.
+    # Kept False while the conformance exemption table lists LlamaIndex; its
+    # calls now go through the shared clients (http_client/async_http_client).
     observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAILike(model=…, **kwargs)`` you build
         yourself. Includes ``is_chat_model=True`` — never omit it (see the module
         docstring for the completions-endpoint gotcha). LlamaIndex uses
-        ``api_base`` rather than ``base_url``."""
+        ``api_base`` rather than ``base_url``. Sync and async calls send through
+        the SDK's clients, which do not follow redirects and send credentials
+        only to checked endpoints."""
         conn = self._openai_connection()
         return masked(
             {
                 "api_base": conn["base_url"],
                 "api_key": conn["api_key"],
                 "default_headers": conn["default_headers"],
+                "http_client": self._sync_http_client(),
+                "async_http_client": self._http_client(),
                 "is_chat_model": True,  # never omit — see module docstring
                 "is_function_calling_model": True,
             }

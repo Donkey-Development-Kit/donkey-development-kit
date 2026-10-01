@@ -204,8 +204,8 @@ def test_copy_deepcopy_and_json_match_a_plain_dict(kwargs: Mapping[str, Any]) ->
 
 
 def test_json_dumps_emits_the_real_values() -> None:
-    kw = _SURFACES["llamaindex.connection_kwargs"]()
-    assert json.loads(json.dumps(kw))["default_headers"]["client_secret"] == _PROXY_SECRET
+    kw = _SURFACES["core.proxy_auth_headers"]()  # data-only, so json.dumps works
+    assert json.loads(json.dumps(kw))["client_secret"] == _PROXY_SECRET
 
 
 @pytest.mark.parametrize(
@@ -214,9 +214,9 @@ def test_json_dumps_emits_the_real_values() -> None:
     ids=["copy.copy", "copy.deepcopy", ".copy()", "| merge"],
 )
 def test_copies_stay_masked(duplicate: Callable[[Any], Any]) -> None:
-    kw = _SURFACES["llamaindex.connection_kwargs"]()  # data-only, so deepcopy works
+    kw = _SURFACES["core.proxy_auth_headers"]()  # data-only, so deepcopy works
     dup = duplicate(kw)
-    assert dup["default_headers"]["client_secret"] == _PROXY_SECRET
+    assert dup["client_secret"] == _PROXY_SECRET
     for secret in _SECRETS:
         assert secret not in repr(dup)
         assert secret not in pprint.pformat(dup)

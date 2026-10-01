@@ -483,7 +483,24 @@ def test_factory_and_connection_kwargs_do_not_drift(
 
     # Every governed kwarg the eject path documents reached the native constructor
     # with an identical value. (captured also holds model/model_id — not governed.)
-    assert {k: captured[k] for k in expected} == expected
+    # A pre-built OpenAI client is made fresh on each call, so compare what it is
+    # bound to.
+    assert {k: _comparable(captured[k]) for k in expected} == {
+        k: _comparable(v) for k, v in expected.items()
+    }
+
+
+def _comparable(value: Any) -> Any:
+    if type(value).__name__ == "AsyncOpenAI":
+        return (
+            "AsyncOpenAI",
+            str(value.base_url),
+            value.default_headers["client_id"],
+            value.default_headers["client_secret"],
+            value.max_retries,
+            id(value._client),
+        )
+    return value
 
 
 @pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)

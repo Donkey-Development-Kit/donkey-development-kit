@@ -43,12 +43,15 @@ class LangGraphAdapter(Adapter):
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs to spread into a ``ChatOpenAI(model=…, **kwargs)`` you
         build yourself (BG §1.8). Same values the factory uses — one source of
-        truth for the proxy connection."""
+        truth for the proxy connection. Both ``ainvoke`` and ``invoke`` send
+        through the SDK's clients (``http_async_client`` / ``http_client``), which
+        do not follow redirects and send credentials only to checked endpoints."""
         conn = self._openai_connection()
         return masked(
             {
                 **conn,  # base_url, api_key, default_headers
                 "http_async_client": self._http_client(),  # our client, our hooks
+                "http_client": self._sync_http_client(),  # the same, for invoke()
                 "max_retries": 0,  # we retry in transport (BG §1.1)
                 # Target the proxy's LIVE-VERIFIED endpoint: the data plane is the
                 # OpenAI Responses API (``/responses``, docs/verified-apis.md §2) — the

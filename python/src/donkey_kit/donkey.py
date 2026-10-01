@@ -607,7 +607,7 @@ class Donkey:
             )
         module = importlib.import_module(spec.module, package="donkey_kit.integrations")
         adapter_cls = getattr(module, spec.cls)
-        adapter: Adapter = adapter_cls(self._cfg, self._http)
+        adapter: Adapter = adapter_cls(self._cfg, self._http, self._sync_http_client)
         self._adapter_cache[name] = adapter
         return adapter
 

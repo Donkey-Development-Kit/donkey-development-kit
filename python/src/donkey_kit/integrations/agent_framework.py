@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
 from ..core.errors import PolicyViolation
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -31,16 +32,24 @@ if TYPE_CHECKING:
 
 class AgentFrameworkAdapter(Adapter):
     extra = "agent_framework"
-    # We hand OpenAIChatClient only default_headers, never our httpx client, so no
-    # response reaches donkey.last_call (#362) — the SDK does not own the transport.
+    # Kept False while the conformance exemption table lists Agent Framework; its
+    # calls now go through the shared client (async_client).
     observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` you
         build yourself. Confirmed offline against agent-framework 1.19.0
         (docs/verified-apis.md §8): ``base_url``/``api_key``/``default_headers``
-        are all accepted by the constructor."""
-        return self._openai_connection()  # base_url, api_key, default_headers
+        are all accepted by the constructor. ``async_client`` is an ``AsyncOpenAI``
+        that sends through the SDK's shared client, which does not follow
+        redirects and sends credentials only to checked endpoints; the
+        constructor uses it as given."""
+        return masked(
+            {
+                **self._openai_connection(),  # base_url, api_key, default_headers
+                **self._proxy_openai_client_kwarg("async_client"),
+            }
+        )
 
     def chat_client(self, model: str, **kw: Any) -> Any:
         """Return a native ``OpenAIChatClient`` at the proxy. A ``base_url``
@@ -60,10 +69,14 @@ class AgentFrameworkAdapter(Adapter):
                 "or confirm the class path against your installed version."
             ) from exc
 
+        conn = self.connection_kwargs()
+        if kw.get("base_url") is not None and "async_client" in conn:
+            # The constructor uses async_client as given, so build it on the override.
+            conn["async_client"] = self._proxy_openai_client(str(kw["base_url"]))
         try:
             return OpenAIChatClient(
                 model=model,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
-                **{**self.connection_kwargs(), **kw},
+                **{**conn, **kw},
             )
         except TypeError as exc:
             # A TypeError from the constructor means a kwarg this adapter relies on
