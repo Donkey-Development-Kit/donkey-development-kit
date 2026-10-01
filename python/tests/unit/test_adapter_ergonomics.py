@@ -220,54 +220,29 @@ def test_only_langgraph_is_conformance_tested() -> None:
 
 
 # --- Agent Framework behavior (BG §1.2) -------------------------------------
+# policy_middleware() on a real Agent: test_agent_framework_policy_middleware.py.
 
 
-async def test_agent_framework_policy_middleware_passes_through_result() -> None:
+def test_agent_framework_policy_middleware_blocks_unverified_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 
-    context = object()
-    result = object()
+    import_error = ImportError("chat_middleware is unavailable")
+    original_import = builtins.__import__
 
-    async def next_(received: object) -> object:
-        assert received is context
-        return result
+    def fail_framework_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "agent_framework":
+            raise import_error
+        return original_import(name, *args, **kwargs)
 
-    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
+    monkeypatch.setattr(builtins, "__import__", fail_framework_import)
+    adapter = AgentFrameworkAdapter(_cfg(), _http())
 
-    assert await middleware(context, next_) is result
+    with pytest.raises(NotImplementedError, match=r"^blocked on verification:") as exc_info:
+        adapter.policy_middleware()
 
-
-async def test_agent_framework_policy_middleware_preserves_policy_violation() -> None:
-    from donkey_kit.core.errors import PolicyViolation
-    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
-
-    violation = PolicyViolation("gateway refused the request")
-
-    async def next_(_context: object) -> None:
-        raise violation
-
-    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
-
-    with pytest.raises(PolicyViolation) as exc_info:
-        await middleware(object(), next_)
-
-    assert exc_info.value is violation
-
-
-async def test_agent_framework_policy_middleware_preserves_unrelated_error() -> None:
-    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
-
-    error = RuntimeError("agent failed")
-
-    async def next_(_context: object) -> None:
-        raise error
-
-    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
-
-    with pytest.raises(RuntimeError) as exc_info:
-        await middleware(object(), next_)
-
-    assert exc_info.value is error
+    assert exc_info.value.__cause__ is import_error
 
 
 def test_agent_framework_chat_client_blocks_unverified_import(
