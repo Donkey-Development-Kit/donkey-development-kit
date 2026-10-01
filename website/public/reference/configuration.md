@@ -75,13 +75,16 @@ donkey = Donkey(
   the proxy only from async calls through adapters with **transport injection**
   built from a `Donkey` that has `llm_auth`: the raw client, LangGraph, Strands,
   OpenAI Agents SDK, the Anthropic SDK, ADK's `model()` and `gemini()`,
-  LlamaIndex and MS Agent Framework. These send **no JWT**, so a wallet proxy
-  answers `401`:
+  LlamaIndex and MS Agent Framework.
+
+  Sync calls through an adapter, such as LangGraph's `invoke()` or LlamaIndex's
+  `complete()`, go through the blocking client, so they raise the same
+  `ConfigError` as `sync=True` before sending anything.
+
+  These send **no JWT**, so a wallet proxy answers `401`:
 
   - CrewAI, which gets only a header snapshot: its `Authorization` header
     carries `llm_proxy_key` or the `client-id-enforced` placeholder;
-  - sync calls such as LangGraph's `invoke()` or LlamaIndex's `complete()`,
-    which go through the blocking client;
   - the module-level factories (for example
     `from donkey_kit.integrations.langgraph import chat_model`), which have no
     `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.
@@ -123,10 +126,9 @@ OpenAI-style API-key slot. A `401` refreshes the token once, and the
   `model()` and `gemini()`, LlamaIndex and MS Agent Framework, on a `Donkey`
   built with `llm_auth`. The forms that can't carry the token raise
   `ConfigError` instead of sending an unauthenticated request: CrewAI's
-  `connection_kwargs()` and `llm()`, the blocking client (`sync=True`), and the
-  module-level factories, which have no `llm_auth`. Sync calls on a native
-  object that also has an async path, such as LangGraph's `invoke()`, go
-  through the blocking client and send no token.
+  `connection_kwargs()` and `llm()`, the blocking client (`sync=True`), sync
+  calls through an adapter such as LangGraph's `invoke()` or LlamaIndex's
+  `complete()`, and the module-level factories, which have no `llm_auth`.
 
 ### Auth providers
 
@@ -164,23 +166,43 @@ the object as `llm_auth`.
 
 ## Optional attribution
 
-| Env var | Meaning |
-|---|---|
-| `DONKEY_APP_NAME` | Human-readable app name, surfaced on telemetry. |
-| `DONKEY_BUSINESS_GROUP` | Business group for attribution. |
+| Env var | `DonkeyConfig` field | Sent as |
+|---|---|---|
+| `DONKEY_APP_NAME` | `application_name` | The `X-Anypoint-Client-Application` request header. |
+| `DONKEY_BUSINESS_GROUP` | `business_group` | The `X-Anypoint-Business-Group` request header. |
+
+These two values go only on request headers. No span attribute carries them.
+The gateway attributes traffic to the `client_id` credential (or, in `jwt`
+mode, the JWT's `client_id` claim), so you don't need either value for
+attribution.
+
+  Both header names are unconfirmed guesses. The gateway hasn't been seen
+  reading them (see §3 of the
+  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md)).
+  The first time the SDK sends one,
+  it emits an `UnverifiedValueWarning`. Unlike the correlation and cost-tag
+  headers, these names have no config key, so you can't override them. To
+  stop the warning, leave both values unset.
 
 ## Correlation headers
 
-Per-call and per-run correlation IDs ride on request headers. The gateway's
-inbound header names aren't published, so the SDK uses placeholder names you
-can override to match your gateway. The IDs also appear on spans and
-exceptions regardless of the header names. See
+Per-call and per-run correlation IDs ride on request headers. The IDs also
+appear on spans and exceptions regardless of the header names. See
 [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids).
 
-| Env var | `DonkeyConfig` field | Meaning |
-|---|---|---|
-| `DONKEY_CORRELATION_HEADER` | `correlation_header` | Request header that carries the per-run correlation ID. |
-| `DONKEY_CALL_ID_HEADER` | `call_id_header` | Request header that carries the per-call ID. |
+- `X-Correlation-Id` carries the run ID. The gateway reads this header and
+  echoes it on the response `x-correlation-id`, so a client log line joins to
+  the gateway's record.
+- `X-Donkey-Request-Id` carries the per-call ID. The name is the SDK's own
+  convention, and the gateway doesn't read it.
+
+Both are confirmed names, so neither emits a warning. Override one only if a
+proxy of your own in front of the gateway expects a different name:
+
+| Env var | `DonkeyConfig` field | Default | Meaning |
+|---|---|---|---|
+| `DONKEY_CORRELATION_HEADER` | `correlation_header` | `X-Correlation-Id` | Request header that carries the per-run correlation ID. |
+| `DONKEY_CALL_ID_HEADER` | `call_id_header` | `X-Donkey-Request-Id` | Request header that carries the per-call ID. |
 
 ### Header names you can't use
 
@@ -244,8 +266,10 @@ proxy of your own that reads them, opt in:
 |---|---|---|---|
 | `DONKEY_SEND_COST_HEADERS` | `send_cost_headers` | `false` | Also send the cost tags as request headers. |
 
-With it enabled, the headers use placeholder names (`X-Anypoint-Cost-Team`, …)
-you can override: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
+With it enabled, the headers use the SDK's own names (`X-Anypoint-Cost-Team`,
+…). Because no gateway reads them, they're a convention rather than a
+placeholder for some real name, and they emit no warning. Rename them to match
+whatever receiver you send them to: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
 `DONKEY_COST_ENV_HEADER`, `DONKEY_COST_ENDUSER_HEADER` (or the matching
 `cost_*_header` config keys), within the
 [names you can't use](#header-names-you-cant-use). `send_cost_headers` is not a `Donkey.from_env`
@@ -282,6 +306,35 @@ trusted collector. See [Telemetry & cost](https://donkey-development-kit.github.
 | `DONKEY_NO_CACHE` | — | unset | Set to `1`, `true` or `yes` to bypass that in-memory registry cache. |
 | `DONKEY_TRUST_PROJECT_CONFIG` | — | unset | Set to `1` (or `true`, `yes`, `on`) to let a URL from the working directory's config files receive credentials from elsewhere. Read only from the environment. See [Which credentials a URL receives](#which-credentials-a-url-receives). |
 | `DONKEY_ALLOW_HTTP` | — | unset | Set to `1` (or `true`, `yes`, `on`) to allow plain `http://` endpoints on non-loopback hosts. Read only from the environment. See [Endpoints must use `https://`](#endpoints-must-use-https). |
+
+### Invalid values
+
+Every `DonkeyConfig` is checked when it is built, including by
+`with_overrides()`, and an invalid value raises `ConfigError` before any
+request is sent. One error lists every bad field and where each was set:
+
+| Field | Accepted |
+|---|---|
+| `timeout_s` | A number greater than `0` |
+| `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
+| `telemetry`, `telemetry_capture_content`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
+| `region` | `us`, `eu`, `ca` or `jp` |
+| `llm_proxy_auth` | `client-id` or `jwt` (any case in the environment or a config file) |
+| `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |
+
+A misspelt switch such as `DONKEY_TELEMETRY=flase` is an error, not `false`:
+
+```text
+ConfigError: Configuration is invalid:
+  - timeout_s is 'abc', set in the environment (DONKEY_TIMEOUT_S); expected a number
+  - telemetry is 'flase', set in the environment (DONKEY_TELEMETRY); expected one of 1, true, yes, on, 0, false, no, off
+  - max_retries is -1, set in the environment (DONKEY_MAX_RETRIES); expected a whole number, 0 or more
+Fix each value where it is set: in code, an environment variable, or .donkey-kit.toml.
+```
+
+The environment-only switches above (`DONKEY_NO_CACHE`,
+`DONKEY_TRUST_PROJECT_CONFIG`, `DONKEY_ALLOW_HTTP`) are not checked: any value
+other than the ones listed leaves them off.
 
 ## Anypoint control plane
 

@@ -31,6 +31,7 @@ from ..core.transport import (
     build_sync_http_client,
     proxy_api_key,
     proxy_auth_headers,
+    sync_token_auth_error,
 )
 from .catalog import ModelHandle, heuristic_capabilities
 
@@ -90,19 +91,12 @@ class LLMClient:
             # The rotating token enters through an AuthProvider on the shared async
             # transport, never a config field (#509, #836). Two things config
             # alone cannot check, enforced here where the provider is known:
-            token = "model-wallet JWT" if mode == "jwt" else "bearer token"
             if sync:
                 # Proposal 6 / AC 7: the token modes are async-only. The blocking
                 # DonkeyClient takes no AuthProvider (the protocol is async-only),
                 # so a sync client could only send a stale or absent token — never
                 # hand one back silently unauthenticated.
-                raise ConfigError(
-                    f"llm_proxy_auth={mode!r} is async-only: the credential is a "
-                    f"rotating {token} fetched from an async AuthProvider, and the "
-                    "blocking client cannot await it. Use the async client — "
-                    "`donkey.llm.client()` / `donkey.openai()` without sync=True — or switch "
-                    "to client-id auth for a synchronous caller."
-                )
+                raise sync_token_auth_error(mode)
             if self._http.token_provider is None:
                 # AC 1: a token mode with no provider attached fails with actionable guidance.
                 raise missing_llm_auth_error(mode)

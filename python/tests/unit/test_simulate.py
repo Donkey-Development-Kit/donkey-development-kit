@@ -176,16 +176,15 @@ async def test_sync_client_swapped_when_already_built() -> None:
         assert sync.post(_URL, json={}).status_code == 299  # restored
 
 
-async def test_sync_client_built_inside_block_is_not_retro_swapped() -> None:
-    # Documented limitation: a sync client created INSIDE the block was not a
-    # target at enter time, so it is not injected into.
+async def test_sync_client_is_built_and_swapped_on_enter() -> None:
+    # A blocking client first asked for INSIDE the block (e.g. by a ChatOpenAI
+    # built there, #736) is the one simulate() already built and swapped.
     donkey = _donkey()
     assert donkey._sync_http is None
     async with donkey:
         with donkey.simulate(PIIDetected):
             sync = donkey._sync_http_client()
-            sync._swap_transport(_sentinel())  # avoid touching the network
-            assert sync.post(_URL, json={}).status_code == 299  # NOT injected
+            assert sync.post(_URL, json={}).status_code == 403
 
 
 async def test_unmapped_donkey_error_raises_value_error() -> None:

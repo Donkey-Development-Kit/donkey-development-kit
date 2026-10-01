@@ -25,7 +25,7 @@ from donkey_kit.core import runtime
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
-from donkey_kit.core.transport import DonkeyAsyncClient, proxy_auth_headers
+from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient, proxy_auth_headers
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.llm.client import LLMClient
 
@@ -251,6 +251,20 @@ async def test_the_raw_client_without_a_provider_is_refused_with_guidance() -> N
         await http.aclose()
     assert "bearer token" in str(exc.value)
     assert "llm_auth" in str(exc.value)
+
+
+def test_every_blocking_request_is_refused_in_bearer_mode() -> None:
+    # The blocking client cannot await the provider, so it refuses rather than
+    # sending a request with no token (#736, #836).
+    with DonkeyClient(_bearer_cfg()) as sync_http, pytest.raises(ConfigError, match="async-only"):
+        sync_http.post(f"{_PROXY}chat/completions", json={"model": "m"})
+
+
+async def test_langgraph_sync_invoke_is_refused_in_bearer_mode() -> None:
+    pytest.importorskip("langchain_openai")
+    async with Donkey(_bearer_cfg(), llm_auth=StaticToken(_TOKEN)) as donkey:
+        with pytest.raises(ConfigError, match="bearer"):
+            donkey.langgraph.chat_model("m").invoke("hi")
 
 
 @pytest.mark.parametrize("name", sorted(ADAPTERS))
