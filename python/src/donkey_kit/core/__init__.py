@@ -41,7 +41,9 @@ from .telemetry import (
 )
 from .transport import (
     DonkeyAsyncClient,
+    DonkeyAsyncClientView,
     DonkeyClient,
+    DonkeyClientView,
     attribution_headers,
     build_http_client,
     build_sync_http_client,
@@ -62,7 +64,9 @@ __all__ = [
     "ContentSafetyBlocked",
     "CostTags",
     "DonkeyAsyncClient",
+    "DonkeyAsyncClientView",
     "DonkeyClient",
+    "DonkeyClientView",
     "DonkeyConfig",
     "DonkeyError",
     "GatewayUnavailable",
