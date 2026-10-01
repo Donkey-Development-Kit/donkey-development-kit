@@ -50,7 +50,7 @@ All importable from `donkey_kit`, along with `classify`:
 
 ```
 DonkeyError                     # base of the whole tree
-├─ ConfigError                  # misconfiguration (raised locally, pre-flight)
+├─ ConfigError                  # misconfiguration or client misuse (raised locally, no request sent)
 ├─ AuthError                    # rejected data-plane credentials or control-plane auth
 ├─ PolicyViolation              # base for every governance rejection
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
@@ -109,7 +109,16 @@ field at once, and it also reports an endpoint that may not receive the
 configured credentials: a non-`https://` URL, or a URL from the project's config
 files paired with credentials from elsewhere. See
 [Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
-Fix the config and re-run.
+Fix the config and re-run. The transport raises `ConfigError` for two lifecycle
+mistakes as well, so neither escapes as a bare `RuntimeError`: a call on a
+`Donkey` whose HTTP client is closed (after `aclose()`, or after a framework
+closed the client it was given), and a call whose pooled connections belong to
+an event loop that has closed. The SDK's own connection pools are per event
+loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
+transport you passed in and reused across `asyncio.run()` calls. Its
+`.remediation` names the fix for each. Through the OpenAI SDK it arrives
+wrapped, like `GatewayUnavailable`: catch `openai.APIConnectionError` and read
+the `ConfigError` from `e.__cause__`.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that

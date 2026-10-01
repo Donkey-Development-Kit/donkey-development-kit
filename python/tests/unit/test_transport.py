@@ -16,7 +16,7 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
-from donkey_kit.core.errors import GatewayUnavailable, PIIDetected, classify
+from donkey_kit.core.errors import ConfigError, GatewayUnavailable, PIIDetected, classify
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call
 from donkey_kit.core.telemetry import current_correlation_id, run_context, run_scope
 from donkey_kit.core.transport import (
@@ -2254,3 +2254,59 @@ async def test_5xx_response_still_returns_a_response_not_gateway_unavailable() -
         async with client:
             resp = await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
     assert resp.status_code == 503
+
+
+# --- lifecycle RuntimeErrors are typed (#813) --------------------------------
+
+
+async def test_send_on_closed_async_client_raises_config_error() -> None:
+    # httpx raises a bare RuntimeError for a send after close (e.g. a framework
+    # closed the shared client); the transport types it.
+    client = _client(lambda r: httpx.Response(200))
+    await client.aclose()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        with pytest.raises(ConfigError, match="client is closed") as ei:
+            await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert isinstance(ei.value.__cause__, RuntimeError)
+    assert "new Donkey" in ei.value.remediation
+    assert ei.value.call_id is not None  # the sent ids are carried, like GatewayUnavailable
+
+
+def test_send_on_closed_sync_client_raises_config_error() -> None:
+    client = _sync_client(lambda r: httpx.Response(200))
+    client.close()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        with pytest.raises(ConfigError, match="client is closed"):
+            client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+
+
+async def test_closed_event_loop_raises_config_error() -> None:
+    # A pooled connection bound to an event loop that has since closed (a
+    # caller-supplied transport reused across asyncio.run() calls) surfaces from
+    # the transport as this RuntimeError.
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("Event loop is closed")
+
+    client = _client(handler)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        async with client:
+            with pytest.raises(ConfigError, match="event loop") as ei:
+                await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert isinstance(ei.value.__cause__, RuntimeError)
+    assert "asyncio.run()" in ei.value.remediation
+
+
+async def test_unrelated_runtime_error_is_not_retyped() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("something else")
+
+    client = _client(handler)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        async with client:
+            with pytest.raises(RuntimeError, match="something else") as ei:
+                await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
+    assert not isinstance(ei.value, ConfigError)
