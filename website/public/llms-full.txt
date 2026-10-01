@@ -1041,6 +1041,13 @@ A human-in-the-loop `interrupt()` and a typed refusal don't interfere: the
 graph pauses cleanly at the interrupt, and on resume a refusal in a downstream
 model node still surfaces as its typed exception.
 
+On Python 3.10, `interrupt()` only works when the graph runs with
+`graph.invoke()`. Under `graph.ainvoke()` it raises `RuntimeError: Called
+get_config outside of a runnable context`, whether the node is async or sync.
+LangGraph reads the run's config from a context variable that asyncio tasks
+can't carry before Python 3.11, and `interrupt()` takes no config argument to
+pass it in. Use Python 3.11 or later for async graphs that interrupt.
+
 ### Run the conformance suite against your own graph
 
 The suite that tests this adapter is also a pytest plugin you can point at
