@@ -93,7 +93,7 @@ ask; against your Omni Gateway the model answers your actual prompt.
 
   Prefer one command? Run `python -m examples.quickstart.main` from the
   `python/` directory of the
-  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/python/examples/quickstart):
+  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/quickstart):
   it boots the simulator for you and runs the steps above end to end.
 
 ## Catch a typed refusal Live

@@ -20,7 +20,7 @@ settings are tested, and each exposes factory methods that return the native
 object.
 
 Each card shows what has been proven about that adapter, in the terms the
-[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) uses:
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) uses:
 
 | Status | Means |
 |---|---|
@@ -186,11 +186,13 @@ attached only by the SDK's shared async client. CrewAI can't carry it, so it
 raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
 also raise `ConfigError` instead of sending. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
+[`bearer` mode](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#bearer-token-auth-mode) has the same
+reach; there, CrewAI raises `ConfigError` instead of sending no token.
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
 or Strands' `client_args["base_url"]`) must pass the same
 [`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https) as the
 configured proxy URL; it then receives the configured credentials.
 
-See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
+See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.

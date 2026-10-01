@@ -2427,8 +2427,9 @@ def test_send_on_closed_sync_client_raises_config_error() -> None:
 
 
 async def test_closed_event_loop_raises_config_error() -> None:
-    # A pooled connection bound to an event loop that has since closed (a second
-    # asyncio.run() on one Donkey) surfaces from the transport as this RuntimeError.
+    # A pooled connection bound to an event loop that has since closed (a
+    # caller-supplied transport reused across asyncio.run() calls) surfaces from
+    # the transport as this RuntimeError.
     def handler(request: httpx.Request) -> httpx.Response:
         raise RuntimeError("Event loop is closed")
 

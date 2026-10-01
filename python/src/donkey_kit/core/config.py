@@ -7,7 +7,8 @@ one changed afterwards (``with_overrides``, ``dataclasses.replace``). A
 file is the working directory's ``.donkey-kit.toml`` with its gitignored
 ``.donkey-kit.local.toml`` merged over it key by key (nested tables such as
 ``[donkey.cost]`` recursively; scalars and arrays replace); if neither exists,
-``$XDG_CONFIG_HOME/.donkey-kit.toml``. We never read ``.env`` implicitly — the
+``$XDG_CONFIG_HOME/.donkey-kit.toml`` (``~/.config/.donkey-kit.toml`` when
+``XDG_CONFIG_HOME`` is unset or empty). We never read ``.env`` implicitly — the
 user calls ``load_dotenv()`` themselves.
 
 Every resolved field records its source (a value changed in code afterwards
@@ -67,12 +68,19 @@ OnModelSubstitution = Literal["off", "raise"]
 # a wallet-backed proxy where Client ID Enforcement is disabled and the caller is
 # identified from an IdP-issued JWT validated by the JWT Validation policy, with
 # NO ``client_secret`` — the parallel ingress captured live under #372
-# (docs/verified-apis.md §2/§3). The mode is durable config even though the JWT itself is
-# not: the rotating credential enters through an ``AuthProvider`` (see
+# (docs/verified-apis.md §2/§3). ``"bearer"``: a proxy that authenticates model
+# calls on a bearer token alone — ``Authorization: Bearer <token>``, with no
+# wallet selector and no ``client_id``/``client_secret`` pair (#836). The mode is
+# durable config even though the token itself is not: in both token modes the
+# rotating credential enters through an ``AuthProvider`` (see
 # ``Donkey(llm_auth=...)``), never a config field. Inferring the mode from "no
 # client_id set" is deliberately NOT done — it would turn a typo into a silent
 # mode switch and make the per-mode missing-field report misleading (#509).
-LlmProxyAuth = Literal["client-id", "jwt"]
+LlmProxyAuth = Literal["client-id", "jwt", "bearer"]
+
+#: The auth modes whose data-plane credential is a token from the
+#: ``Donkey(llm_auth=...)`` provider, added per send by the shared async client.
+TOKEN_AUTH_MODES: frozenset[LlmProxyAuth] = frozenset({"jwt", "bearer"})
 
 # The capability :meth:`DonkeyConfig.validated` checks the config for: the
 # Anypoint control plane (registry/provisioning) or the LLM proxy (BG §1.1).
@@ -165,7 +173,7 @@ _CHECKED_ENV_VARS: dict[str, str] = {
 # The allowed values of each choice field.
 _CHOICES: dict[str, tuple[str, ...]] = {
     "region": tuple(sorted(REGION_HOSTS)),
-    "llm_proxy_auth": ("client-id", "jwt"),
+    "llm_proxy_auth": ("client-id", "jwt", "bearer"),
     "on_model_substitution": ("off", "raise"),
 }
 
@@ -271,6 +279,8 @@ class DonkeyConfig:
     # ingress: no ``client_secret``, an IdP JWT supplied dynamically via an
     # ``AuthProvider`` (``Donkey(llm_auth=...)``), and a durable wallet-selector
     # client ID sent as the ``X-Client-Id`` header (docs/verified-apis.md §2/§3, #372).
+    # ``"bearer"`` sends only ``Authorization: Bearer <token>`` from that provider
+    # (#836).
     llm_proxy_auth: LlmProxyAuth = "client-id"  # env: DONKEY_LLM_PROXY_AUTH
     # The wallet-selector client ID sent as ``X-Client-Id`` in JWT mode — the
     # wallet's system-generated clientId (read from the omni API, see the
@@ -554,8 +564,10 @@ class DonkeyConfig:
                         "llm_proxy_wallet_client_id (env DONKEY_LLM_PROXY_WALLET_CLIENT_ID) "
                         "— the wallet-selector X-Client-Id, required in jwt auth mode"
                     )
-            else:
-                # client-id enforcement (default): the CIE pair.
+            elif self.llm_proxy_auth == "client-id":
+                # client-id enforcement (default): the CIE pair. In bearer mode
+                # (#836) only the URL is required: the token comes from the
+                # llm_auth provider, checked where the provider is known.
                 if not self.llm_proxy_client_id:
                     missing.append("llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)")
                 if not self.llm_proxy_client_secret:
@@ -577,9 +589,9 @@ class DonkeyConfig:
         ``.local`` overlay only receives credentials read from those same files,
         unless it is a standard Anypoint control-plane host or
         ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. Loopback
-        hosts are exempt from the ``https://`` rule only. In ``jwt``
-        auth mode the JWT comes from the caller's ``AuthProvider``, never from
-        those files, so it always counts as outside them. ``code_credential``
+        hosts are exempt from the ``https://`` rule only. In ``jwt`` and
+        ``bearer`` auth modes the token comes from the caller's ``AuthProvider``,
+        never from those files, so it always counts as outside them. ``code_credential``
         names another credential supplied in code, such as the token of a
         ``Donkey(auth=...)`` provider, which counts as outside them too.
         """
@@ -594,6 +606,9 @@ class DonkeyConfig:
             if self.llm_proxy_auth == "jwt":
                 credentials = ("llm_proxy_wallet_client_id",)
                 runtime_credential = "the JWT from the llm_auth provider"
+            elif self.llm_proxy_auth == "bearer":
+                credentials = ("llm_proxy_key",)
+                runtime_credential = "the token from the llm_auth provider"
             else:
                 credentials = ("llm_proxy_client_id", "llm_proxy_client_secret", "llm_proxy_key")
         else:
@@ -732,6 +747,20 @@ def _as_bool(v: object) -> bool:
     raise ValueError(f"expected one of {', '.join(_TRUE_TOKENS + _FALSE_TOKENS)}")
 
 
+def missing_llm_auth_error(mode: LlmProxyAuth) -> ConfigError:
+    """The error for a token auth mode (:data:`TOKEN_AUTH_MODES`) used with no
+    ``llm_auth`` provider attached to the shared data-plane client, which is
+    also the case for the module-level factories (#509, #836)."""
+    token = "model-wallet JWT" if mode == "jwt" else "bearer token"
+    return ConfigError(
+        f"llm_proxy_auth={mode!r} requires an AuthProvider that supplies the "
+        f"{token}, but none is attached. Pass one when constructing Donkey, e.g. "
+        "`Donkey(llm_auth=StaticToken(token))` or a custom AuthProvider that "
+        "refreshes the token (see donkey_kit.core.auth). The module-level "
+        "factories have no provider; use a Donkey instance instead."
+    )
+
+
 def _as_token(v: object) -> str:
     """A choice value, case-insensitive; :func:`_value_problems` checks it."""
     return str(v).strip().lower()
@@ -791,9 +820,10 @@ def _load_config_files(
     every key in it, by dotted path (``cost.team``).
 
     The working directory's ``.donkey-kit.local.toml`` is merged key by key over
-    its ``.donkey-kit.toml``; if neither exists, ``$XDG_CONFIG_HOME/.donkey-kit.toml``
-    is used alone. Missing files are fine; a malformed file raises, and so does
-    a working-directory file that resolves (through a link) outside it."""
+    its ``.donkey-kit.toml``; if neither exists, the user file
+    (:func:`_user_config_file`) is used alone. Missing files are fine; a
+    malformed file raises, and so does a working-directory file that resolves
+    (through a link) outside it."""
 
     cwd = Path.cwd()
     layers: list[tuple[ConfigSource, dict[str, object]]] = []
@@ -809,8 +839,7 @@ def _load_config_files(
         _require_inside(local, cwd)
         layers.append((ConfigSource("local", local), _read_table(local, name)))
     if not layers:
-        xdg = os.environ.get("XDG_CONFIG_HOME")
-        user = Path(xdg) / _TOML_NAME if xdg else None
+        user = _user_config_file()
         if user is not None and user.is_file():
             layers.append((ConfigSource("user", user), _read_table(user, name)))
 
@@ -819,6 +848,19 @@ def _load_config_files(
     for source, table in layers:
         _merge_table(merged, table, source, sources, prefix="")
     return merged, sources
+
+
+def _user_config_file() -> Path | None:
+    """``$XDG_CONFIG_HOME/.donkey-kit.toml``, or ``~/.config/.donkey-kit.toml``
+    when the variable is unset, empty, or relative — the XDG Base Directory
+    default (#837). ``None`` when no home directory can be determined."""
+    xdg = os.environ.get("XDG_CONFIG_HOME", "")
+    if os.path.isabs(xdg):
+        return Path(xdg) / _TOML_NAME
+    try:
+        return Path.home() / ".config" / _TOML_NAME
+    except RuntimeError:
+        return None
 
 
 def _require_inside(path: Path, cwd: Path) -> None:

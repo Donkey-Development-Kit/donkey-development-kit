@@ -30,6 +30,8 @@ The client:
   * refreshes the attached provider's token and retries exactly once on 401
     (BG §1.1); a client-id data-plane client has no provider, so its 401 is
     terminal
+  * keeps one connection pool per event loop, so a sync app that wraps each
+    call in ``asyncio.run()`` can reuse one client (#807)
 
 For frameworks that only accept a ``default_headers`` dict (not a client), pass
 :func:`attribution_headers` — a snapshot — and accept that the correlation ID is
@@ -39,12 +41,14 @@ per-client rather than per-run. Document that degradation per adapter (BG §1.8)
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import random
 import re
+import threading
 import time
-from collections.abc import AsyncIterator, Iterable, Iterator, Sized
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Sized
 from types import TracebackType
 from typing import Any, Protocol
 
@@ -54,7 +58,7 @@ from . import _verify
 from .auth import AuthProvider
 from .budget import Budget
 from .cachecontrol import current_cache_controls
-from .config import DonkeyConfig
+from .config import TOKEN_AUTH_MODES, DonkeyConfig, LlmProxyAuth
 from .cost import CostTags
 from .endpoints import require_secure_url
 from .errors import (
@@ -224,6 +228,8 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
       injected per-send by :meth:`DonkeyAsyncClient._inject_headers` from the
       attached ``AuthProvider``, because a static snapshot cannot carry a
       credential that rotates.
+    * ``bearer`` mode (#836): no consumer-auth header at all. The token is
+      injected per-send exactly like the ``jwt`` one, with no wallet selector.
 
     Returns a :class:`~donkey_kit.core.masking.MaskedDict`: a plain ``dict`` in
     use, but printing it shows ``'***'`` for the secret header.
@@ -233,6 +239,8 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
     if cfg.llm_proxy_auth == "jwt":
         if cfg.llm_proxy_wallet_client_id:
             headers[_verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER] = cfg.llm_proxy_wallet_client_id
+        return headers
+    if cfg.llm_proxy_auth == "bearer":
         return headers
     if cfg.llm_proxy_client_id:
         headers[_verify.LLM_PROXY_CLIENT_ID_HEADER] = cfg.llm_proxy_client_id
@@ -484,7 +492,8 @@ def _lifecycle_error(
     * The client is closed: httpx refuses the send. Detected from the client's
       own state, not httpx's message wording.
     * The event loop is closed: a pooled connection belongs to a loop that has
-      since closed, typically a second ``asyncio.run()`` on one ``Donkey``."""
+      since closed. The SDK's own pools are per loop (#807), so this comes from
+      a transport the caller supplied, reused across ``asyncio.run()`` calls."""
     if client_closed:
         message = (
             "Cannot send: this Donkey's HTTP client is closed. It was closed by "
@@ -499,12 +508,12 @@ def _lifecycle_error(
     elif str(exc) == "Event loop is closed":
         message = (
             "Cannot send: the async client's connections belong to an event loop "
-            "that has closed (for example, a second asyncio.run() on the same "
-            "Donkey)."
+            "that has closed (for example, a transport passed in and reused across "
+            "asyncio.run() calls)."
         )
         remediation = (
-            "Use the Donkey within one event loop: create it inside the "
-            "asyncio.run() that uses it, or make every call from the same loop."
+            "Build the transport you pass in inside the asyncio.run() that uses "
+            "it, or make every call from the same loop."
         )
     else:
         return None
@@ -925,6 +934,65 @@ class _SpanClosingSyncStream(_SpanClosingStream, httpx.SyncByteStream):
             self._inner.close()
 
 
+class _LoopLocalTransport(httpx.AsyncBaseTransport):
+    """One connection pool per event loop (#807).
+
+    An httpx pool's keep-alive connections belong to the loop that opened them.
+    A sync app that wraps each call in ``asyncio.run()`` (a Flask or Django
+    view, a CLI, a per-test pytest-asyncio loop) gets a new loop per call, and
+    reusing the old loop's pool fails with a raw ``RuntimeError: Event loop is
+    closed``. This wrapper takes the place of each pool httpx builds for a
+    :class:`DonkeyAsyncClient`, and sends each request through the pool of the
+    running loop. The pool httpx built goes to the first loop that sends. Each
+    later loop gets a fresh pool from ``build``, with the same settings, so
+    loops in different threads never share connections. A closed loop's pool
+    is dropped when the next new loop arrives, so one ``asyncio.run()`` per
+    request does not pile up dead pools.
+
+    It wraps the pool rather than overriding the client, so a transport swapped
+    in on top (``simulate()``, the conformance probe) still delegates to the
+    right pool when it passes a request through.
+    """
+
+    def __init__(
+        self, first: httpx.AsyncBaseTransport, build: Callable[[], httpx.AsyncBaseTransport]
+    ) -> None:
+        self._first: httpx.AsyncBaseTransport | None = first
+        self._build = build
+        # A plain dict, not a WeakKeyDictionary: a pool's connections hold
+        # their loop, so the loop key would never be collected anyway.
+        self._pools: dict[asyncio.AbstractEventLoop, httpx.AsyncBaseTransport] = {}
+        self._lock = threading.Lock()
+
+    def _pool(self) -> httpx.AsyncBaseTransport:
+        loop = asyncio.get_running_loop()
+        pool = self._pools.get(loop)
+        if pool is None:
+            with self._lock:
+                pool = self._pools.get(loop)
+                if pool is None:
+                    for closed in [old for old in self._pools if old.is_closed()]:
+                        del self._pools[closed]
+                    pool, self._first = self._first or self._build(), None
+                    self._pools[loop] = pool
+        return pool
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return await self._pool().handle_async_request(request)
+
+    async def aclose(self) -> None:
+        # Close only the running loop's pool. A pool on another loop is dropped
+        # unclosed: that loop is closed (``asyncio.run`` returned) or runs in
+        # another thread, and closing its sockets from here would fail.
+        loop = asyncio.get_running_loop()
+        with self._lock:
+            pool = self._pools.get(loop) or self._first
+            self._pools.clear()
+            self._first = None
+        if pool is not None:
+            await pool.aclose()
+
+
 class _UrlPattern(Protocol):
     """The one method of httpx's (private) mount-key ``URLPattern`` we use."""
 
@@ -1045,7 +1113,8 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
 
     A client serves exactly one credential plane (BG §1.1). The default is the
     data plane (the LLM proxy): ``auth`` is the data-plane credential, which is
-    the model-wallet JWT provider in ``jwt`` mode and ``None`` in client-id mode.
+    the model-wallet JWT provider in ``jwt`` mode, the bearer-token provider in
+    ``bearer`` mode, and ``None`` in client-id mode.
     ``control_plane=True`` marks a client for Anypoint platform calls: ``auth``
     is then the connected-app provider, and the ``jwt``-mode wallet headers are
     never stamped on its requests.
@@ -1085,11 +1154,37 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             event_hooks={"request": [self._inject_headers]},
             **kw,  # type: ignore[arg-type]
         )
+        self._pool_per_loop(kw)
         # Fold env/``proxy=``/``mounts=`` mounts into the base transport so the
         # swap seam below covers every route (#801).
         if self._mounts:
             self._transport = _AsyncMountRouter(self._transport, self._mounts.items())
             self._mounts = {}
+
+    def _pool_per_loop(self, kw: dict[str, object]) -> None:
+        """Give each event loop its own connection pool (#807). Wraps every pool
+        httpx built here: the default transport and the env-proxy mounts. A
+        later loop's pool comes from an httpx client built with the same
+        ``kw``. A ``transport`` or ``mounts`` the caller passed is theirs, so it
+        is left as given."""
+
+        def fresh() -> httpx.AsyncClient:
+            return httpx.AsyncClient(**kw)  # type: ignore[arg-type]
+
+        if "transport" not in kw:
+            self._transport = _LoopLocalTransport(self._transport, lambda: fresh()._transport)
+        if "mounts" not in kw:
+
+            def build_mount(pattern: Any) -> httpx.AsyncBaseTransport:
+                client = fresh()
+                return client._mounts.get(pattern) or client._transport
+
+            self._mounts = {
+                pattern: None
+                if mount is None
+                else _LoopLocalTransport(mount, functools.partial(build_mount, pattern))
+                for pattern, mount in self._mounts.items()
+            }
 
     def view(self) -> DonkeyAsyncClientView:
         """The non-owning view of this client, the one to hand a framework (#733).
@@ -1120,6 +1215,9 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         # default_headers snapshot), so adapters routed through this shared client
         # carry it too — and never on a control-plane send. The name is VERIFIED
         # (docs/verified-apis.md §2/§3).
+        data_plane_token = (
+            self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES and not self._control_plane
+        )
         wallet = self._cfg.llm_proxy_auth == "jwt" and not self._control_plane
         if wallet and self._cfg.llm_proxy_wallet_client_id:
             request.headers.setdefault(
@@ -1128,19 +1226,20 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             )
         if self._token_provider is not None:
             token = await self._token_provider.token()
-            # Two token-bearing ingresses ride here, each on its own client and both
-            # as ``Authorization: Bearer`` (VERIFIED): the control-plane OAuth2
-            # client_credentials token (docs/verified-apis.md §12.1) and — when jwt
-            # auth mode is selected — the data-plane model-wallet JWT
-            # (docs/verified-apis.md §2/§3, #372). The header name/scheme come from
-            # the verified wallet constants so there is one source; the
-            # control-plane token happens to use the identical shape.
+            # Three token-bearing ingresses ride here, each on its own client and
+            # all as ``Authorization: Bearer`` (VERIFIED): the control-plane OAuth2
+            # client_credentials token (docs/verified-apis.md §12.1), the
+            # data-plane model-wallet JWT in jwt mode (docs/verified-apis.md §2/§3,
+            # #372), and the data-plane token in bearer mode, which is the same
+            # JWT Validation bearer header with no wallet selector (#836). The
+            # header name/scheme come from the verified wallet constants so there
+            # is one source; the other two use the identical shape.
             header = _verify.LLM_PROXY_WALLET_JWT_HEADER
             value = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
-            if wallet:
+            if data_plane_token:
                 # The OpenAI SDK pre-sets ``Authorization: Bearer <api_key>`` from
-                # its mandatory key slot; a wallet proxy READS this header as the
-                # JWT, so we must OVERRIDE that sentinel with the fresh per-send
+                # its mandatory key slot; the proxy READS this header as the
+                # token, so we must OVERRIDE that sentinel with the fresh per-send
                 # token. ``setdefault`` would yield to the sentinel and 401.
                 request.headers[header] = value
             else:
@@ -1427,9 +1526,10 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.
 
-    In jwt / model-wallet auth mode (``llm_proxy_auth='jwt'``) the credential is
-    exactly such a fetched token, so every request raises :func:`sync_jwt_error`
-    instead of going out unauthenticated (#509, #736). The check sits in
+    In the token auth modes (``llm_proxy_auth='jwt'`` or ``'bearer'``) the
+    credential is exactly such a fetched token, so every request raises
+    :func:`sync_token_auth_error` instead of going out unauthenticated (#509,
+    #736, #836). The check sits in
     :meth:`build_request`, which the OpenAI SDK calls outside the ``try`` that
     turns transport errors into ``APIConnectionError``, so a framework's sync
     call (``ChatOpenAI.invoke()``) raises the ``ConfigError`` itself.
@@ -1462,8 +1562,8 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
             self._mounts = {}
 
     def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
-        if self._cfg.llm_proxy_auth == "jwt":
-            raise sync_jwt_error()
+        if self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES:
+            raise sync_token_auth_error(self._cfg.llm_proxy_auth)
         return super().build_request(*args, **kwargs)
 
     def view(self) -> DonkeyClientView:
@@ -1725,9 +1825,10 @@ class DonkeyClientView(httpx.Client):
         return self._shared.is_closed
 
     def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
-        # The shared client refuses here in jwt mode; a view must refuse too.
-        if self._shared._cfg.llm_proxy_auth == "jwt":
-            raise sync_jwt_error()
+        # The shared client refuses here in a token mode; a view must refuse too.
+        mode = self._shared._cfg.llm_proxy_auth
+        if mode in TOKEN_AUTH_MODES:
+            raise sync_token_auth_error(mode)
         return super().build_request(*args, **kwargs)
 
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
@@ -1763,32 +1864,22 @@ def build_http_client(
     return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
 
 
-def sync_jwt_error() -> ConfigError:
-    """The error for a blocking call in jwt / model-wallet auth mode, shared by
-    ``donkey.llm.client(sync=True)`` and every sync call through
-    :class:`DonkeyClient` (#509, #736), so both surfaces fail the same way."""
+def sync_token_auth_error(mode: LlmProxyAuth) -> ConfigError:
+    """The error for a blocking call in a token auth mode (jwt / model-wallet or
+    bearer), shared by ``donkey.llm.client(sync=True)`` and every sync call
+    through :class:`DonkeyClient` (#509, #736, #836), so both surfaces fail the
+    same way."""
+    label = "JWT / model-wallet" if mode == "jwt" else "Bearer-token"
+    token = "JWT" if mode == "jwt" else "bearer token"
     return ConfigError(
-        "JWT / model-wallet auth mode (llm_proxy_auth='jwt') is async-only: "
-        "the credential is a rotating JWT fetched from an async AuthProvider, "
+        f"{label} auth mode (llm_proxy_auth={mode!r}) is async-only: "
+        f"the credential is a rotating {token} fetched from an async AuthProvider, "
         "and the blocking client cannot await it. Use the async surface — "
         "`donkey.llm.client()` / `donkey.openai()` without sync=True, or a "
         "framework's async call (`ainvoke()` / `astream()`, not `invoke()`) — or "
         "switch to client-id auth for a synchronous caller."
     )
 
-
-def missing_jwt_provider_error() -> ConfigError:
-    """The error for jwt / model-wallet auth mode with no ``AuthProvider`` on the
-    data-plane client, shared by ``donkey.llm.client()`` and every adapter
-    (#509, #828). Without one the request would carry the api-key placeholder as
-    its bearer, and a wallet proxy refuses every call."""
-    return ConfigError(
-        "llm_proxy_auth='jwt' requires an AuthProvider that supplies the "
-        "model-wallet JWT, but none is attached. Pass one when constructing "
-        "Donkey, e.g. `Donkey(llm_auth=StaticToken(jwt))` or a custom "
-        "AuthProvider that refreshes the token (see donkey_kit.core.auth). The "
-        "module-level factories have no provider; use a Donkey in jwt mode."
-    )
 
 
 def build_sync_http_client(

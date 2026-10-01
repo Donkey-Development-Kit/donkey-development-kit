@@ -84,7 +84,7 @@ durable wallet-selector client ID, with Client ID Enforcement disabled and **no
 
 | Env var | `DonkeyConfig` field | Meaning |
 |---|---|---|
-| `DONKEY_LLM_PROXY_AUTH` | `llm_proxy_auth` | Data-plane auth mode: `client-id` (default) or `jwt`. |
+| `DONKEY_LLM_PROXY_AUTH` | `llm_proxy_auth` | Data-plane auth mode: `client-id` (default), `jwt`, or [`bearer`](#bearer-token-auth-mode). |
 | `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` | `llm_proxy_wallet_client_id` | The wallet's system-generated client ID, sent as the `X-Client-Id` header. Required in `jwt` mode. |
 
 In `jwt` mode the required fields are `llm_proxy_url` **and**
@@ -136,6 +136,45 @@ donkey = Donkey(
   See [Injection depth](/frameworks#injection-depth-differs-by-framework).
 </Callout>
 
+## Bearer-token auth mode
+
+A proxy that authenticates model calls on a plain bearer token, with no wallet
+selector and no `client_id` / `client_secret` pair, uses
+`DONKEY_LLM_PROXY_AUTH=bearer`. The only required field is `llm_proxy_url`. The
+token comes from an [`AuthProvider`](#auth-providers) passed as
+`Donkey(llm_auth=…)`:
+
+```python
+from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit.core.auth import StaticToken  # or your own rotating AuthProvider
+
+donkey = Donkey(
+    DonkeyConfig(
+        llm_proxy_url="https://<ingress-gw>/<instance>/",
+        llm_proxy_auth="bearer",
+    ),
+    llm_auth=StaticToken("<token>"),  # rides as Authorization: Bearer <token>
+)
+```
+
+The SDK's shared client adds `Authorization: Bearer <token>` to every model
+call, replacing whatever the framework client put there. It sends no
+`X-Client-Id` and no `client_id` / `client_secret`. This is the way to send a
+bearer token from the Anthropic client and ADK's `gemini()`, which have no
+OpenAI-style API-key slot. A `401` refreshes the token once, and the
+[endpoint rule](#which-credentials-a-url-receives) covers it.
+
+<Callout type="warning">
+  `bearer` mode has the same reach as `jwt` mode: async calls through the raw
+  client, LangGraph, Strands, OpenAI Agents SDK, the Anthropic SDK, ADK's
+  `model()` and `gemini()`, LlamaIndex and MS Agent Framework, on a `Donkey`
+  built with `llm_auth`. The forms that can't carry the token raise
+  `ConfigError` instead of sending an unauthenticated request: CrewAI's
+  `connection_kwargs()` and `llm()`, the blocking client (`sync=True`), sync
+  calls through an adapter such as LangGraph's `invoke()` or LlamaIndex's
+  `complete()`, and the module-level factories, which have no `llm_auth`.
+</Callout>
+
 ### Auth providers
 
 An `AuthProvider` (in `donkey_kit.core.auth`) is any object with two async
@@ -145,7 +184,7 @@ cached one.
 Each provider belongs to one credential plane:
 
 - `Donkey(llm_auth=…)` supplies the LLM-proxy credential. It is used only in
-  `jwt` mode.
+  `jwt` and `bearer` mode.
 - `Donkey(auth=…)` supplies the Anypoint control-plane credential. By default
   it is an `AnypointConnectedApp` built from `ANYPOINT_CLIENT_ID` /
   `ANYPOINT_CLIENT_SECRET`. It is used only for control-plane calls, never for
@@ -157,7 +196,7 @@ What happens on a `401`:
 | Request | On `401` |
 |---|---|
 | Model call, client-id mode | Raises `AuthError` straight away. There is no token to refresh. |
-| Model call, `jwt` mode | Calls `invalidate()` on the `llm_auth` provider, re-sends once with the new token, then raises `AuthError`. |
+| Model call, `jwt` or `bearer` mode | Calls `invalidate()` on the `llm_auth` provider, re-sends once with the new token, then raises `AuthError`. |
 | Control-plane call | Calls `invalidate()` on the `auth` provider, re-sends once, then raises `AuthError`. |
 | Blocking client (`sync=True`) | Raises `AuthError` straight away. |
 
@@ -185,7 +224,7 @@ attribution.
 <Callout type="warning">
   Both header names are unconfirmed guesses. The gateway hasn't been seen
   reading them (see §3 of the
-  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md)).
+  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)).
   The first time the SDK sends one,
   it emits an `UnverifiedValueWarning`. Unlike the correlation and cost-tag
   headers, these names have no config key, so you can't override them. To
@@ -382,19 +421,20 @@ rides the other plane's requests:
 
 ### Credentials
 
-| Destination | Client-id mode (default) | `jwt` mode | Never sent here |
-|---|---|---|---|
-| **LLM proxy** (`llm_proxy_url`) | `client_id: <llm_proxy_client_id>` and `client_secret: <llm_proxy_client_secret>` headers. The API-key slot<sup>1</sup> carries `llm_proxy_key`, or the placeholder `client-id-enforced`. | `X-Client-Id: <llm_proxy_wallet_client_id>` and `Authorization: Bearer <JWT from llm_auth>`<sup>2</sup>. No `client_secret`. | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, the connected-app token, anything from `Donkey(auth=…)` |
-| **Anypoint token endpoint** (`<base_url>/accounts/api/v2/oauth2/token`) | Form body: `grant_type=client_credentials`, `client_id`, `client_secret` (the `ANYPOINT_*` values). | Same. | Every `llm_proxy_*` value, the JWT, `X-Client-Id` |
-| **Registry and tools** (`base_url`) | `Authorization: Bearer <connected-app token>` (or the token from `Donkey(auth=…)`). | Same. No `X-Client-Id`. | Every `llm_proxy_*` value, the JWT, `X-Client-Id` |
+| Destination | Client-id mode (default) | `jwt` mode | `bearer` mode | Never sent here |
+|---|---|---|---|---|
+| **LLM proxy** (`llm_proxy_url`) | `client_id: <llm_proxy_client_id>` and `client_secret: <llm_proxy_client_secret>` headers. The API-key slot<sup>1</sup> carries `llm_proxy_key`, or the placeholder `client-id-enforced`. | `X-Client-Id: <llm_proxy_wallet_client_id>` and `Authorization: Bearer <JWT from llm_auth>`<sup>2</sup>. No `client_secret`. | `Authorization: Bearer <token from llm_auth>`<sup>2</sup>. The API-key slot<sup>1</sup> as in client-id mode. No `X-Client-Id`, no `client_secret`. | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, the connected-app token, anything from `Donkey(auth=…)` |
+| **Anypoint token endpoint** (`<base_url>/accounts/api/v2/oauth2/token`) | Form body: `grant_type=client_credentials`, `client_id`, `client_secret` (the `ANYPOINT_*` values). | Same. | Same. | Every `llm_proxy_*` value, the JWT or bearer token, `X-Client-Id` |
+| **Registry and tools** (`base_url`) | `Authorization: Bearer <connected-app token>` (or the token from `Donkey(auth=…)`). | Same. No `X-Client-Id`. | Same. | Every `llm_proxy_*` value, the JWT or bearer token, `X-Client-Id` |
 
 <sup>1</sup> The framework client decides the header: `Authorization: Bearer`
 for OpenAI-compatible clients, `x-api-key` for the Anthropic client,
-`x-goog-api-key` for ADK's `gemini()`. In `jwt` mode the SDK's shared client
-replaces `Authorization` with the JWT.
+`x-goog-api-key` for ADK's `gemini()`. In `jwt` and `bearer` mode the SDK's
+shared client replaces `Authorization` with the token from `llm_auth`.
 
 <sup>2</sup> Only from async calls through adapters with transport
-injection; see the [`jwt` mode note](#jwt--model-wallet-auth-mode).
+injection; see the [`jwt` mode note](#jwt--model-wallet-auth-mode) and the
+[`bearer` mode note](#bearer-token-auth-mode).
 
 Model calls never request, send or refresh the connected-app token.
 
@@ -471,7 +511,7 @@ Instead of env vars you can put values in a `[donkey]` table. Keys are the
 |---|---|---|
 | `.donkey-kit.toml` | The current working directory (not searched upward) | Non-secret project config you commit: URLs, client IDs, attribution. |
 | `.donkey-kit.local.toml` | The current working directory | Secrets and personal overrides. Keep it gitignored. Same keys. Read with or without `.donkey-kit.toml`. |
-| `$XDG_CONFIG_HOME/.donkey-kit.toml` | Your user config directory | Read only when `XDG_CONFIG_HOME` is set **and** the working directory has neither file above. There is no `~/.config` fallback yet ([#837](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/837)). |
+| `$XDG_CONFIG_HOME/.donkey-kit.toml`, or `~/.config/.donkey-kit.toml` when `XDG_CONFIG_HOME` is unset or empty | Your user config directory | Personal defaults for every project. Read only when the working directory has neither file above. When `XDG_CONFIG_HOME` is set, `~/.config` isn't read. |
 
 `.donkey-kit.local.toml` merges into `.donkey-kit.toml` key by key, and nested
 tables such as `[donkey.cost]` merge the same way. A scalar or an array in the
@@ -503,7 +543,8 @@ Highest first, per key:
 2. Environment variables.
 3. `./.donkey-kit.local.toml`
 4. `./.donkey-kit.toml`
-5. `$XDG_CONFIG_HOME/.donkey-kit.toml`, only when 3 and 4 don't exist.
+5. The user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`, or
+   `~/.config/.donkey-kit.toml`), only when 3 and 4 don't exist.
 6. Defaults.
 
 A value counts as set in code once it differs from the value that was loaded,
@@ -608,6 +649,7 @@ These are the credentials checked for each endpoint:
 | `base_url` | `client_id`, `client_secret`, or the token from a `Donkey(auth=…)` provider, which always counts as coming from outside the files |
 | `llm_proxy_url`, client-id mode | `llm_proxy_client_id`, `llm_proxy_client_secret`, `llm_proxy_key` (the ones that are set) |
 | `llm_proxy_url`, `jwt` mode | `llm_proxy_wallet_client_id`, and the JWT from `llm_auth`, which always counts as coming from outside the files |
+| `llm_proxy_url`, `bearer` mode | `llm_proxy_key` if set, and the token from `llm_auth`, which always counts as coming from outside the files |
 
 | The URL comes from | A credential it would receive comes from | Result |
 |---|---|---|
@@ -617,6 +659,7 @@ These are the credentials checked for each endpoint:
 | `.donkey-kit.toml` / `.donkey-kit.local.toml` | The user file | `ConfigError` |
 | `.donkey-kit.toml` / `.donkey-kit.local.toml` | Code (a value you set or changed on the config) | `ConfigError` |
 | `.donkey-kit.toml` / `.donkey-kit.local.toml`, `jwt` mode | The JWT from `llm_auth` (always) | `ConfigError`, every time |
+| `.donkey-kit.toml` / `.donkey-kit.local.toml`, `bearer` mode | The token from `llm_auth` (always) | `ConfigError`, every time |
 | `.donkey-kit.toml` / `.donkey-kit.local.toml` (`base_url`) | The token from a `Donkey(auth=…)` provider (always) | `ConfigError`, every time |
 | `.donkey-kit.toml` / `.donkey-kit.local.toml`, `base_url` on `anypoint.mulesoft.com`, `eu1.anypoint.mulesoft.com`, `ca1.anypoint.mulesoft.com` or `jp1.anypoint.mulesoft.com` | Anywhere | Sent |
 | Any of the above, with `DONKEY_TRUST_PROJECT_CONFIG` set in the environment | Anywhere | Sent |
@@ -625,7 +668,8 @@ These are the credentials checked for each endpoint:
 **What counts as code:** any value passed to `DonkeyConfig(...)`; any value on
 a resolved config that differs from what was loaded, whether you changed it with
 `with_overrides(...)`, `dataclasses.replace(...)` or otherwise; the token from a
-`Donkey(auth=…)` provider; and in `jwt` mode the JWT returned by `llm_auth`. A
+`Donkey(auth=…)` provider; and in `jwt` and `bearer` mode the token returned by
+`llm_auth`. A
 config built entirely with `DonkeyConfig(...)` has its URLs in code too, so the
 rule never applies to it. Likewise, a URL you change in code is no longer
 treated as coming from the file.
@@ -648,14 +692,14 @@ The source labels are `env`, `user file` and `code`.
    `ANYPOINT_BASE_URL`). The environment wins over the file, so the URL no
    longer comes from the file.
 2. **Keep the credentials in `.donkey-kit.local.toml`** in the same directory.
-   Not available for the JWT in `jwt` mode or for a `Donkey(auth=…)` token,
-   because neither comes from a file.
+   Not available for the `llm_auth` token in `jwt` or `bearer` mode or for a
+   `Donkey(auth=…)` token, because none of them comes from a file.
 3. **Opt in:** set `DONKEY_TRUST_PROJECT_CONFIG` to `1` (or `true`, `yes`,
    `on`) in the environment if you trust this directory's config files. The
    setting decides whether those files are trusted, so it is read from the
    environment only; a `[donkey]` key with that name is ignored.
 
-In `jwt` mode with the URL in a project file, and for a `Donkey(auth=…)` token
+In `jwt` or `bearer` mode with the URL in a project file, and for a `Donkey(auth=…)` token
 with `base_url` in a project file, only 1 and 3 apply; the error lists only
 those two.
 

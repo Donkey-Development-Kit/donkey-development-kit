@@ -117,7 +117,7 @@ async with donkey.cache(threshold=0.9, ttl=60):
 ```
 
 `donkey.cache(...)` is a dual sync/async context manager — like
-[`donkey.run(...)`](https://donkey-development-kit.github.io/donkey-development-kit/identity.md), the controls bind to a context variable, so they
+[`donkey.run(...)`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids), the controls bind to a context variable, so they
 reach every governed call in the block (including calls on framework-spawned
 `asyncio` tasks) with no threading through framework state. The five controls:
 

@@ -96,12 +96,12 @@ class Governance:
 
     # ---- verb 1: simulate (local) -----------------------------------------
     def simulate(self) -> SimulationContext:
-        """Start an ephemeral local Omni Gateway harness (BG §1.4).
+        """Start an ephemeral local harness for this governance spec (BG §1.4). Roadmap.
 
-        Requires the ``[local]`` extra (the simulator's ASGI server). Whether Local Mode can run the
-        LLM Proxy / MCP Bridge at all is a gate in the Verification milestone; if not, LLM traffic
-        is served by a clearly-labelled local mock proxy. Either way, skipped
-        connected-only policies are reported loudly and non-suppressibly.
+        Entering the returned context is still ``_verify.blocked``. When it lands it is
+        meant to run on the pure-Python local simulator (the ``[local]`` extra), with no
+        Docker and no Omni/Flex Gateway Local Mode, which the SDK does not support (#661).
+        Skipped connected-only policies are reported loudly and non-suppressibly.
         """
 
         return SimulationContext(self)
@@ -169,10 +169,10 @@ class SimulationContext:
 
     async def __aenter__(self) -> Any:
         raise _verify.blocked(
-            "local Omni Gateway docker harness + Local-Mode LLM-Proxy/MCP-Bridge "
-            "availability (BG §1.4, the Verification milestone). The [local] extra and the loud "
-            "skipped-policy report (skipped_policies()) are scaffolded; the docker "
-            "orchestration is gated on the Verification milestone's local-mode findings."
+            "running a Governance spec's policies locally (BG §1.4, the Verification "
+            "milestone). The loud skipped-policy report (skipped_policies()) is scaffolded. "
+            "For local refusals today use donkey.simulate() or the [local] simulator "
+            "(donkey mock); Omni/Flex Gateway Local Mode is not supported (#661)."
         )
 
     async def __aexit__(self, *exc: object) -> None:
