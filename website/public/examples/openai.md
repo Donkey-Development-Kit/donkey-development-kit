@@ -151,7 +151,7 @@ PolicyViolation  (policy: unknown)
   request_id     None
 
 simulate(GatewayUnavailable)
-  simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AgentKilled, AuthError, ContentSafetyBlocked, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
+  simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AgentKilled, AuthError, ContentSafetyBlocked, ModelNotRoutable, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
 ```
 
 `request_id` is `None` throughout because a simulated response carries no

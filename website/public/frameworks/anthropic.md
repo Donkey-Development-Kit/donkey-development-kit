@@ -120,7 +120,7 @@ Which `http_client` you get depends on the installed `anthropic`:
 
 | `anthropic` | Built on | `http_client` |
 | --- | --- | --- |
-| 0.x | `httpx` | The SDK's shared `httpx.AsyncClient`. |
+| 0.x | `httpx` | A non-owning `httpx.AsyncClient` view that sends through the shared client. |
 | 1.0 and later | `httpx2` | An `httpx2.AsyncClient` whose transport sends every request through the shared client. |
 
 `anthropic` 1.0 moved to `httpx2`, Pydantic's continuation of `httpx`, and
@@ -135,6 +135,10 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   object already bound to a model ID, because their native constructors accept
   `model`. `AsyncAnthropic` is a bare client and the model ID is an argument to
   `.messages.create()`, so `donkey.anthropic.client()` takes no model argument.
+- **Async only.** The adapter returns `AsyncAnthropic`; there is no governed
+  sync `anthropic.Anthropic`. `connection_kwargs()` carries the SDK's async
+  client, so spread it only into `AsyncAnthropic`. A sync `Anthropic` you build
+  yourself does not go through the SDK's transport.
 - **Proxy Format.** MuleSoft Model Proxy offers three ingress Formats (OpenAI /
   Gemini / Anthropic), fixed when the proxy is created
   ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)). A
@@ -144,13 +148,12 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   To use the native surface, set `DONKEY_LLM_PROXY_URL` (or `llm_proxy_url`)
   to a `Format=Anthropic` proxy.
 - **Closing the client.** `AsyncAnthropic.close()`, and leaving
-  `async with AsyncAnthropic(...)`, closes its `http_client`. On `anthropic`
-  1.0 and later that is the bridged client: the shared client stays open, and
-  the next `client()` call gets a fresh bridge. On `anthropic` 0.x it is the
-  shared client itself, which every adapter and `donkey.llm` also use, so don't
-  close the Anthropic client there; close the `Donkey` instead
-  (`async with Donkey.from_env()` or `await donkey.aclose()`).
+  `async with AsyncAnthropic(...)`, closes its `http_client`. On both stacks
+  that is not the shared client (the bridge on 1.0 and later, the view on 0.x),
+  so the shared client stays open and later `client()` calls keep working. To
+  end the connection pool, close the `Donkey` (`async with Donkey.from_env()`
+  or `await donkey.aclose()`).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

@@ -11,16 +11,17 @@ For *how the SDK is built* — the layer boundaries, the verification discipline
 the error taxonomy, adapter support depth — read [`ARCHITECTURE.md`](ARCHITECTURE.md)
 first; this guide assumes it. The authoritative specs behind both live in
 [`spec/`](spec/): the build plan owns phases and invariants, the build guide
-owns feature scope (cited `BG §N.N`), and a bare `§N.N` resolves into the
-archived v1 plan. When a rule here feels arbitrary, read the cited section.
+owns feature scope (cited `BG §N.N`). A bare `§` label names one of the build
+plan's five standing invariants (`§0.3`, `§1.1`, `§2.1`, `§8.1`, `§8.4`); the
+archived v1 plan the old bare `§N.N` numbers pointed into was deleted (#266),
+so don't add new bare `§` numbers. When a rule here feels arbitrary, read the
+cited section.
 
-> **These conventions are also encoded as Claude Code skills** under
-> `.claude/skills/ddk-*/` (one runbook per topic, listed in
-> [`.claude/skills/README.md`](.claude/skills/README.md)). Those skills are the
-> machine-readable, operational form for agent-assisted work; this document is
-> their human-readable distillation. If the two ever diverge, the skills are the
-> source of truth for the exact `gh` commands, and this file is the narrative — a
-> discrepancy is a bug worth reporting.
+> **This file is the canonical contributor guide.** Some maintainers use
+> AI-agent tooling (prompts, skills) that restates these rules for agents. That
+> tooling is optional, is not part of this repository, and never outranks this
+> file: if it disagrees with anything here, this file wins and the tooling is
+> the bug.
 
 All Python work happens in `python/`; commands below are run from there unless
 noted. There is no Makefile — every command runs directly.
@@ -75,9 +76,6 @@ block waiting on it:
 - **Triage fields.** You can file an issue, but setting its milestone, labels,
   and assignee needs write access. File it, then say in the issue that you plan
   to work it, so it isn't picked up by someone else.
-- **The `.claude/skills/**` shortcut** (below) — committing straight to
-  `develop` — needs push access. From a fork, even a skills-only change goes
-  through a PR.
 - **Merging and promotion** — squashing a branch into `develop` and promoting
   `develop` → `main` are maintainer-only.
 - **Secret-gated CI and live/sandbox verification** — see
@@ -96,13 +94,8 @@ context. Fold closely related small changes into one PR.
 Small changes are exactly where this discipline gets skipped and history gets
 unanchored, so there is no "too small for an issue" exception. Plan content
 lives in the issue (edit the body or comment) — not in committed `plans/*.md`
-scratch files.
-
-The one exception: edits scoped **entirely** to `.claude/skills/**` may be
-committed directly to `develop` after a recap, since skills are agent tooling
-rather than SDK code. Anything touching `python/`, `website/`, CI, the build
-plan, or repo policy follows the full flow below. **(fork)** This shortcut needs
-push access — from a fork, a skills-only change still goes through a PR.
+scratch files. CI rejects any tracked file under a `plans/` directory in
+`docs/` (`scripts/check_doc_links.py`).
 
 ### Branch model
 
@@ -147,9 +140,9 @@ find yourself on `main` about to start work, `git checkout develop` first.
    `Unverified(...)` placeholder), not a place to guess (verification discipline).
 4. **Commit, push, open a PR into `develop`.** Once you're on a correctly-named
    branch, commit and push autonomously — the branch is the isolation boundary.
-   Commit messages cite `§N.N` when the change implements or modifies
-   spec-governed behavior, e.g. `fix(llm): correct proxy base URL handling
-   (config resolution)`.
+   Commit messages cite the spec (`BG §N.N`, an invariant, or a `Phase N`) when
+   the change implements or modifies spec-governed behavior, e.g.
+   `fix(llm): correct proxy base URL handling (§2.1)`.
 
 **Use a worktree when there's any chance of a parallel session** (another editor
 window, a running dev server, a `pytest --looponfail` holding files): one issue =
@@ -209,7 +202,7 @@ capture is what makes that fast, but it is not itself the verification.
 ### The PR
 
 The PR targets `develop` and its body includes `Closes #<issue#>`, a `## Summary`
-(with `§N.N` references where relevant), a `## Test plan`, and a mandatory
+(with `BG §N.N` / invariant references where relevant), a `## Test plan`, and a mandatory
 `## Post-deploy steps` section. That last section is real content in most PRs
 (new/changed extras → the `pip install` users need; a value flipped to `VERIFIED`
 → note that `docs/verified-apis.md` moved with it; a new adapter/exemption → note
@@ -352,15 +345,11 @@ job via `pytest -q -m local_gateway`); `sandbox` is exercised by
   (BG §1.4) on a real TCP port — it needs the optional `[local]` extra
   (Starlette + Uvicorn) and nothing else; there is no Docker dependency, and
   donkey-development-kit does not support Omni/Flex Gateway Local Mode as a
-  test surface (#661). The local
-  harness (`Governance.simulate()`) is designed so that **port allocation is
-  dynamic**, so parallel test workers don't collide on a fixed port; the fixture
-  **prefers gateway config hot-reload over a container restart** between test
-  cases; and the whole surface is **gated behind the marker, off by default** —
-  never run in plain unit tests. The harness's `env` handle exposes `gateway` (a
-  `GatewayTarget` at the dynamically-allocated localhost port), `logs()`, and
-  `policy_events(policy_name)` parsed from gateway logs, so a test can assert a
-  policy actually fired.
+  test surface (#661). Bind the simulator to a dynamically allocated port so
+  parallel test workers don't collide, and keep the surface **gated behind the
+  marker, off by default** — never run in plain unit tests.
+  `Governance.simulate()` is **not** this harness: it is a roadmap surface whose
+  `__aenter__` is still `_verify.blocked(...)`, so don't write tests against it.
 - **`@pytest.mark.sandbox`** needs a real Anypoint sandbox and is gated by
   `DONKEY_SANDBOX_TESTS=1`. The suite (`tests/sandbox/`) calls the LLM Gateway
   proxies provisioned in `donkey-development-kit-provisioning`, each declared in a
@@ -371,11 +360,11 @@ job via `pytest -q -m local_gateway`); `sandbox` is exercised by
   bodies against real proxies.
 
 A test under either marker must **degrade to a clean skip** (not a failure) when
-its docker service / env var is absent — that's what "off by default" means. This
+its prerequisite (the `[local]` extra / the env var) is absent — that's what "off by default" means. This
 is deliberately *different* from the conformance kit's "never skip" rule: these
 markers gate *infra availability*, so a clean skip is correct; the conformance
 kit gates *framework support*, where a silent skip is not. Run them explicitly
-with `pytest -q -m local_gateway` / `-m sandbox` (with the service/env in place).
+with `pytest -q -m local_gateway` / `-m sandbox` (with the extra / env var in place).
 
 ### `scripts/verify_frameworks.py` — signatures, outside pytest
 
@@ -407,8 +396,8 @@ python scripts/verify_frameworks.py [--live] [--only <fw>] [--emit-verified]
 
 ## 3. Coding conventions
 
-The full pre-write checklist lives in the `ddk-coding-conventions` skill and the
-build plan; the load-bearing rules:
+Walk this checklist before writing code under `python/src/donkey_kit/`; the
+build plan has the rationale behind each rule:
 
 - **`mypy --strict`, blocking.** The whole `src/donkey_kit` tree and the
   downstream public-API contracts under `tests/typecheck/` are strict-checked.
@@ -452,10 +441,12 @@ build plan; the load-bearing rules:
   the SDK's shared client wherever its constructor takes one, and pass every
   URL override the factory accepts through `_allow_endpoints(...)` before the
   framework import, so it gets the https check and joins the checked endpoints.
-- **`§N.N` citation habit.** When code encodes a build-plan decision, cite the
-  section in the docstring/comment so reviewers and future-you can find the
-  rationale. A principled deviation gets a leading comment naming the `§N.N` it
-  trades against.
+- **Citation habit.** When code encodes a spec decision, cite it in the
+  docstring/comment so reviewers and future-you can find the rationale: `BG §N.N`
+  for build-guide scope (e.g. `# budget parsed at the response hook (BG §1.3)`),
+  a standing invariant by its `§` label or name (`§1.1`, verification
+  discipline), or a `Phase N`. A principled deviation gets a leading comment
+  naming what it trades against.
 - **Trademark-descriptive language (the trademark/support boundary).** "Agent Fabric", "Anypoint", "Omni
   Gateway", and "MuleSoft" are Salesforce trademarks. Write the package as a
   descriptive, third-party SDK for *consuming* Agent Fabric, never as a
@@ -484,16 +475,26 @@ Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .
 perspective. When code changes what the SDK does — or which platform facts it
 depends on — the docs must change *with it*, or the drift is discovered by a
 confused adopter instead of at review time. There is no automated drift detector;
-this is a PR-time discipline. The full surface→page mapping is in the
-`ddk-docs-sync` skill — the load-bearing cases:
+this is a PR-time discipline. The surface→page map (code paths under
+`python/src/donkey_kit/`, pages under `website/content/`):
 
 | Code surface | Docs page(s) |
 | --- | --- |
 | `core/errors.py` | `errors.mdx` |
-| `core/config.py`, `core/auth.py` | `reference/configuration.mdx` |
-| `core/_verify.py`, `docs/verified-apis.md` | `concepts/verification.mdx`, `reference/unsupported-boundary.mdx` |
-| `integrations/<fw>.py` | `frameworks/<fw>.mdx` (note `openai_agents.py` → `openai.mdx`) |
-| `provisioning/*` | the matching `provisioning/*.mdx` page |
+| `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
+| `core/_verify.py`, `docs/verified-apis.md`, `docs/unsupported-boundary.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
+| `core/budget.py` | `budget.mdx` |
+| `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
+| `core/lastcall.py` | `reference/last-call.mdx` |
+| `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
+| `simulator/*` | `simulator.mdx` |
+| `conformance/*`, `donkey.simulate()` | `testing.mdx` |
+| `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
+| `registry/governance.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
+| `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
+| `tools/session.py` | `tool-access/binding.mdx` |
+| `governance.py` | none today: its verbs are `_verify.blocked(...)`, so no page documents them. Unblocking one needs a page (or a follow-up issue for one) |
+| `provisioning/cli.py`, `provisioning/doctor.py` | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is cut) |
 | `README.md` (install/status/extras) | `quickstart.mdx`, `index.mdx` |
 
 `docs/verified-apis.md` is not "engineering-internal" for this purpose: when

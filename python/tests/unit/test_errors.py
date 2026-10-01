@@ -11,6 +11,7 @@ from donkey_kit.core.errors import (
     ContentSafetyBlocked,
     DonkeyError,
     GatewayUnavailable,
+    ModelNotRoutable,
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
@@ -52,6 +53,19 @@ def test_429_is_token_budget_with_retry_after() -> None:
     err = classify(_resp(429, {"retry-after": "42"}))
     assert isinstance(err, TokenBudgetExceeded)
     assert err.retry_after == 42.0
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{"retry-after": "-1"}, {"x-token-reset": "-5000"}],
+    ids=["retry-after", "x-token-reset"],
+)
+def test_negative_retry_after_is_floored_at_zero(headers: dict[str, str]) -> None:
+    """#815: classify() shares the transport's Retry-After parser (the #286
+    floor), so a raised error never advertises a negative wait."""
+    err = classify(_resp(429, headers))
+    assert isinstance(err, TokenBudgetExceeded)
+    assert err.retry_after == 0.0
 
 
 def test_injection_protection_header_is_prompt_injection_blocked() -> None:
@@ -121,6 +135,44 @@ def test_content_safety_action_allow_is_not_content_safety_blocked() -> None:
     assert not isinstance(err, AuthError)
     assert isinstance(err, PolicyViolation)
     assert "shape unconfirmed" in str(err)
+
+
+# --- bare model name on a multi-provider proxy (#825) -----------------------
+# The live capture is pinned in test_llm_proxy_contract.py; these pin the edges
+# of the discriminator.
+
+_UNROUTABLE = (
+    "Failed to parse model from request: Model 'gpt-5-mini' is not in the known "
+    "unique model map and multiple providers are configured. Use 'provider/model' format."
+)
+
+
+def test_bare_model_name_400_is_model_not_routable_not_a_refusal() -> None:
+    err = classify(httpx.Response(400, json={"error": _UNROUTABLE}))
+    assert isinstance(err, ModelNotRoutable)
+    assert not isinstance(err, PolicyViolation)
+    assert err.model == "gpt-5-mini"
+    assert "provider/model" in str(err)
+    assert "file an issue" not in err.remediation.lower()
+
+
+def test_nested_envelope_with_the_unroutable_text_stays_upstream() -> None:
+    """The nested upstream envelope is checked first and keeps its own type."""
+    err = classify(httpx.Response(400, json={"error": {"message": _UNROUTABLE}}))
+    assert isinstance(err, UpstreamRequestError)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"error": "Request rejected by policy"},  # flat, but a different sentence
+        {"message": _UNROUTABLE},  # not the captured envelope; not guessed at
+    ],
+)
+def test_other_flat_400s_still_fall_through(body: dict[str, str]) -> None:
+    err = classify(httpx.Response(400, json=body))
+    assert isinstance(err, PolicyViolation)
+    assert err.policy == "unknown"
 
 
 # --- honest fall-through for unrecognised refusals (#184) -------------------

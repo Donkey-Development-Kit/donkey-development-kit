@@ -31,7 +31,12 @@ from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.runtime import Runtime
 from .core.telemetry import RunScope, run_scope
 from .core.toolspec import register_tool
-from .core.transport import DonkeyAsyncClient, DonkeyClient
+from .core.transport import (
+    DonkeyAsyncClient,
+    DonkeyAsyncClientView,
+    DonkeyClient,
+    DonkeyClientView,
+)
 from .integrations import ADAPTERS, missing_framework_error
 from .llm.client import LLMClient
 from .registry.exchange import ExchangeRegistry
@@ -273,6 +278,28 @@ class Donkey:
         if sync:
             return self._llm.client(sync=True, **kw)
         return self._llm.client(sync=False, **kw)
+
+    @overload
+    def http_client(self, *, sync: Literal[False] = ...) -> DonkeyAsyncClientView: ...
+
+    @overload
+    def http_client(self, *, sync: Literal[True]) -> DonkeyClientView: ...
+
+    def http_client(self, *, sync: bool = False) -> DonkeyAsyncClientView | DonkeyClientView:
+        """The governed data-plane ``httpx`` client, for a framework or SDK that
+        takes one (``http_client=``, ``async_http_client=``, a pre-built
+        ``AsyncOpenAI``). Requests sent through it get the same headers, retries,
+        span, budget and ``donkey.last_call`` as every adapter.
+
+        It is a non-owning view of the shared client: closing it, as a framework
+        that owns its client's lifecycle does, leaves the shared client open, and
+        only :meth:`aclose`/:meth:`close` end the pool (#733). Defaults to the
+        ``httpx.AsyncClient``; ``sync=True`` returns the blocking ``httpx.Client``.
+        Event hooks added to it run for every request sent through it.
+        """
+        if sync:
+            return self._sync_http_client().view()
+        return self._http.view()
 
     @property
     def registry(self) -> ExchangeRegistry:
@@ -520,9 +547,10 @@ class Donkey:
         ``times``+1 onward proceeds normally. Nesting composes and the previous
         transport is restored on exit, even if the block raises.
 
-        Swaps the async client always, and the blocking client only if it has
-        already been built (``client(sync=True)`` was called earlier); a sync
-        client created *inside* the block is not retro-swapped. Raises
+        Swaps both the async and the blocking client, building the blocking one
+        if nothing has yet, so a sync call — ``client(sync=True)``, or
+        ``ChatOpenAI.invoke()`` on a model built inside the block — is injected
+        into too (#736). Raises
         ``ValueError`` for a refusal type with no captured fixture (e.g.
         :class:`~donkey_kit.core.errors.GatewayUnavailable`, which no gateway
         response produces). Body-shaping (specific PII entities, a custom
@@ -530,9 +558,7 @@ class Donkey:
         """
         from .simulator.inject import simulate as _simulate
 
-        clients: list[Any] = [self._http]
-        if self._sync_http is not None:
-            clients.append(self._sync_http)
+        clients: list[Any] = [self._http, self._sync_http_client()]
         return _simulate(clients, error, times=times)
 
     @property

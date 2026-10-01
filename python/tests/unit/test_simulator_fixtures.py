@@ -27,6 +27,7 @@ _CONTRACT_STATUS = {
     "content-moderation": 400,
     "agent-killed": 403,
     "model-not-found": 400,
+    "model-not-routable": 400,
     "upstream-5xx": 503,
     "client-id-missing": 401,
     "success": 200,
