@@ -171,6 +171,17 @@ def test_llamaindex_connection_kwargs_use_api_base_and_chat_flags() -> None:
     assert kw["is_function_calling_model"] is True
 
 
+def test_llamaindex_llm_leaves_retries_to_the_transport() -> None:
+    """``OpenAILike`` retries 3 times by default; its calls now go through the
+    SDK's client, which already retries, so the framework must not retry too."""
+    pytest.importorskip("llama_index.llms.openai_like")
+    from donkey_kit.integrations.llamaindex import LlamaIndexAdapter
+
+    adapter = LlamaIndexAdapter(_cfg(), _http())
+    assert adapter.connection_kwargs()["max_retries"] == 0
+    assert adapter.llm("m").max_retries == 0
+
+
 def test_openai_agents_connection_kwargs_carry_governed_client() -> None:
     """The OpenAI Agents SDK wants a *pre-built* client, so unlike the
     OpenAI-compatible adapters this one's connection_kwargs() returns a single
