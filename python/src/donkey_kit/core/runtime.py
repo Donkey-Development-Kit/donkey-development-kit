@@ -23,7 +23,7 @@ from contextlib import AsyncExitStack
 
 from .auth import AnypointConnectedApp, AuthProvider, EndpointCheckedAuth
 from .budget import Budget
-from .config import DonkeyConfig
+from .config import TOKEN_AUTH_MODES, DonkeyConfig
 from .telemetry import configure_otlp_export
 from .transport import (
     DonkeyAsyncClient,
@@ -38,8 +38,8 @@ class Runtime:
 
     ``auth`` is the control-plane provider (built from the connected-app
     credentials when omitted); ``llm_auth`` is the data-plane credential, used
-    only in ``jwt`` mode (#509). See :class:`~donkey_kit.Donkey` for the public
-    contract.
+    only in the ``jwt`` (#509) and ``bearer`` (#836) modes. See
+    :class:`~donkey_kit.Donkey` for the public contract.
     """
 
     def __init__(
@@ -62,13 +62,20 @@ class Runtime:
             self._auth = auth
         # One shared client per credential plane (BG §1.1). The data-plane (LLM
         # proxy) client carries only the data-plane credential: the rotating
-        # model-wallet JWT from ``llm_auth`` in jwt mode (#509), and no token
+        # token from ``llm_auth`` in the jwt (#509) and bearer (#836) modes, and no token
         # provider in the default client-id mode, which authenticates on the
         # client_id/client_secret header pair. The control-plane provider never
         # rides it; it drives a separate client for the registry and other
         # Anypoint platform calls.
         self._llm_auth = llm_auth
-        data_plane_auth = llm_auth if self._cfg.llm_proxy_auth == "jwt" else None
+        data_plane_auth = llm_auth if self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES else None
+        if data_plane_auth is not None and self._cfg.llm_proxy_auth == "bearer":
+            # Bearer mode (#836): check the endpoint before every token, so a
+            # raw request through the shared client is covered as well as the
+            # factories, which run the same check through validated().
+            data_plane_auth = EndpointCheckedAuth(
+                data_plane_auth, functools.partial(self._cfg.check_endpoints, need="llm")
+            )
         # One Budget per runtime (never global, BG §1.3 / #185): both data-plane
         # transports feed it in-band from every response's x-token-* headers.
         self._budget = Budget()

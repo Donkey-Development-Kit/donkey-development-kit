@@ -15,7 +15,7 @@ from types import MappingProxyType
 from typing import Any, ClassVar, TypeVar, cast
 
 from ..core import runtime
-from ..core.config import DonkeyConfig
+from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, missing_llm_auth_error
 from ..core.masking import masked
 from ..core.transport import (
     DonkeyAsyncClient,
@@ -24,7 +24,6 @@ from ..core.transport import (
     DonkeyClientView,
     attribution_headers,
     build_sync_http_client,
-    missing_jwt_provider_error,
     proxy_api_key,
     proxy_auth_headers,
 )
@@ -174,12 +173,14 @@ class Adapter(ABC):
             return {}
 
     def _require_proxy(self) -> DonkeyConfig:
-        """The validated proxy config. In jwt mode, also refuses a shared client
-        with no ``AuthProvider``: the request would carry the api-key placeholder
-        as its bearer and every call would 401 (#828)."""
+        """The validated proxy config. In a token auth mode (jwt or bearer), also
+        refuses a shared client with no ``AuthProvider``: the token rides only
+        that client, so a client without one (the module-level factories, or a
+        Donkey built without llm_auth) would send none, or the api-key
+        placeholder as the bearer, and every call would 401 (#828, #836)."""
         cfg = self._cfg.validated(need="llm")
-        if cfg.llm_proxy_auth == "jwt" and self._http.token_provider is None:
-            raise missing_jwt_provider_error()
+        if cfg.llm_proxy_auth in TOKEN_AUTH_MODES and self._http.token_provider is None:
+            raise missing_llm_auth_error(cfg.llm_proxy_auth)
         return cfg
 
     def _allow_endpoints(self, overrides: Mapping[str, Any], *names: str) -> None:
@@ -238,7 +239,7 @@ def default_adapter(cls: type[A]) -> A:
 
     The runtime is closed at interpreter exit. Prefer an explicit ``Donkey``
     when you need lifecycle control (``aclose``), non-env configuration, or a
-    data-plane ``llm_auth`` provider (jwt mode).
+    data-plane ``llm_auth`` provider (jwt or bearer mode).
     """
     rt = runtime.default()
     with _DEFAULT_ADAPTERS_LOCK:

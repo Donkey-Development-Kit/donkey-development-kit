@@ -52,7 +52,7 @@ from . import _verify
 from .auth import AuthProvider
 from .budget import Budget
 from .cachecontrol import current_cache_controls
-from .config import DonkeyConfig
+from .config import TOKEN_AUTH_MODES, DonkeyConfig, LlmProxyAuth
 from .cost import CostTags
 from .endpoints import require_secure_url
 from .errors import (
@@ -207,6 +207,8 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
       injected per-send by :meth:`DonkeyAsyncClient._inject_headers` from the
       attached ``AuthProvider``, because a static snapshot cannot carry a
       credential that rotates.
+    * ``bearer`` mode (#836): no consumer-auth header at all. The token is
+      injected per-send exactly like the ``jwt`` one, with no wallet selector.
 
     Returns a :class:`~donkey_kit.core.masking.MaskedDict`: a plain ``dict`` in
     use, but printing it shows ``'***'`` for the secret header.
@@ -216,6 +218,8 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
     if cfg.llm_proxy_auth == "jwt":
         if cfg.llm_proxy_wallet_client_id:
             headers[_verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER] = cfg.llm_proxy_wallet_client_id
+        return headers
+    if cfg.llm_proxy_auth == "bearer":
         return headers
     if cfg.llm_proxy_client_id:
         headers[_verify.LLM_PROXY_CLIENT_ID_HEADER] = cfg.llm_proxy_client_id
@@ -1028,7 +1032,8 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
 
     A client serves exactly one credential plane (BG §1.1). The default is the
     data plane (the LLM proxy): ``auth`` is the data-plane credential, which is
-    the model-wallet JWT provider in ``jwt`` mode and ``None`` in client-id mode.
+    the model-wallet JWT provider in ``jwt`` mode, the bearer-token provider in
+    ``bearer`` mode, and ``None`` in client-id mode.
     ``control_plane=True`` marks a client for Anypoint platform calls: ``auth``
     is then the connected-app provider, and the ``jwt``-mode wallet headers are
     never stamped on its requests.
@@ -1103,6 +1108,9 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         # default_headers snapshot), so adapters routed through this shared client
         # carry it too — and never on a control-plane send. The name is VERIFIED
         # (docs/verified-apis.md §2/§3).
+        data_plane_token = (
+            self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES and not self._control_plane
+        )
         wallet = self._cfg.llm_proxy_auth == "jwt" and not self._control_plane
         if wallet and self._cfg.llm_proxy_wallet_client_id:
             request.headers.setdefault(
@@ -1111,19 +1119,20 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             )
         if self._token_provider is not None:
             token = await self._token_provider.token()
-            # Two token-bearing ingresses ride here, each on its own client and both
-            # as ``Authorization: Bearer`` (VERIFIED): the control-plane OAuth2
-            # client_credentials token (docs/verified-apis.md §12.1) and — when jwt
-            # auth mode is selected — the data-plane model-wallet JWT
-            # (docs/verified-apis.md §2/§3, #372). The header name/scheme come from
-            # the verified wallet constants so there is one source; the
-            # control-plane token happens to use the identical shape.
+            # Three token-bearing ingresses ride here, each on its own client and
+            # all as ``Authorization: Bearer`` (VERIFIED): the control-plane OAuth2
+            # client_credentials token (docs/verified-apis.md §12.1), the
+            # data-plane model-wallet JWT in jwt mode (docs/verified-apis.md §2/§3,
+            # #372), and the data-plane token in bearer mode, which is the same
+            # JWT Validation bearer header with no wallet selector (#836). The
+            # header name/scheme come from the verified wallet constants so there
+            # is one source; the other two use the identical shape.
             header = _verify.LLM_PROXY_WALLET_JWT_HEADER
             value = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
-            if wallet:
+            if data_plane_token:
                 # The OpenAI SDK pre-sets ``Authorization: Bearer <api_key>`` from
-                # its mandatory key slot; a wallet proxy READS this header as the
-                # JWT, so we must OVERRIDE that sentinel with the fresh per-send
+                # its mandatory key slot; the proxy READS this header as the
+                # token, so we must OVERRIDE that sentinel with the fresh per-send
                 # token. ``setdefault`` would yield to the sentinel and 401.
                 request.headers[header] = value
             else:
@@ -1409,9 +1418,10 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.
 
-    In jwt / model-wallet auth mode (``llm_proxy_auth='jwt'``) the credential is
-    exactly such a fetched token, so every request raises :func:`sync_jwt_error`
-    instead of going out unauthenticated (#509, #736). The check sits in
+    In the token auth modes (``llm_proxy_auth='jwt'`` or ``'bearer'``) the
+    credential is exactly such a fetched token, so every request raises
+    :func:`sync_token_auth_error` instead of going out unauthenticated (#509,
+    #736, #836). The check sits in
     :meth:`build_request`, which the OpenAI SDK calls outside the ``try`` that
     turns transport errors into ``APIConnectionError``, so a framework's sync
     call (``ChatOpenAI.invoke()``) raises the ``ConfigError`` itself.
@@ -1444,8 +1454,8 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
             self._mounts = {}
 
     def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
-        if self._cfg.llm_proxy_auth == "jwt":
-            raise sync_jwt_error()
+        if self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES:
+            raise sync_token_auth_error(self._cfg.llm_proxy_auth)
         return super().build_request(*args, **kwargs)
 
     def view(self) -> DonkeyClientView:
@@ -1706,9 +1716,10 @@ class DonkeyClientView(httpx.Client):
         return self._shared.is_closed
 
     def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
-        # The shared client refuses here in jwt mode; a view must refuse too.
-        if self._shared._cfg.llm_proxy_auth == "jwt":
-            raise sync_jwt_error()
+        # The shared client refuses here in a token mode; a view must refuse too.
+        mode = self._shared._cfg.llm_proxy_auth
+        if mode in TOKEN_AUTH_MODES:
+            raise sync_token_auth_error(mode)
         return super().build_request(*args, **kwargs)
 
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
@@ -1744,32 +1755,22 @@ def build_http_client(
     return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
 
 
-def sync_jwt_error() -> ConfigError:
-    """The error for a blocking call in jwt / model-wallet auth mode, shared by
-    ``donkey.llm.client(sync=True)`` and every sync call through
-    :class:`DonkeyClient` (#509, #736), so both surfaces fail the same way."""
+def sync_token_auth_error(mode: LlmProxyAuth) -> ConfigError:
+    """The error for a blocking call in a token auth mode (jwt / model-wallet or
+    bearer), shared by ``donkey.llm.client(sync=True)`` and every sync call
+    through :class:`DonkeyClient` (#509, #736, #836), so both surfaces fail the
+    same way."""
+    label = "JWT / model-wallet" if mode == "jwt" else "Bearer-token"
+    token = "JWT" if mode == "jwt" else "bearer token"
     return ConfigError(
-        "JWT / model-wallet auth mode (llm_proxy_auth='jwt') is async-only: "
-        "the credential is a rotating JWT fetched from an async AuthProvider, "
+        f"{label} auth mode (llm_proxy_auth={mode!r}) is async-only: "
+        f"the credential is a rotating {token} fetched from an async AuthProvider, "
         "and the blocking client cannot await it. Use the async surface — "
         "`donkey.llm.client()` / `donkey.openai()` without sync=True, or a "
         "framework's async call (`ainvoke()` / `astream()`, not `invoke()`) — or "
         "switch to client-id auth for a synchronous caller."
     )
 
-
-def missing_jwt_provider_error() -> ConfigError:
-    """The error for jwt / model-wallet auth mode with no ``AuthProvider`` on the
-    data-plane client, shared by ``donkey.llm.client()`` and every adapter
-    (#509, #828). Without one the request would carry the api-key placeholder as
-    its bearer, and a wallet proxy refuses every call."""
-    return ConfigError(
-        "llm_proxy_auth='jwt' requires an AuthProvider that supplies the "
-        "model-wallet JWT, but none is attached. Pass one when constructing "
-        "Donkey, e.g. `Donkey(llm_auth=StaticToken(jwt))` or a custom "
-        "AuthProvider that refreshes the token (see donkey_kit.core.auth). The "
-        "module-level factories have no provider; use a Donkey in jwt mode."
-    )
 
 
 def build_sync_http_client(

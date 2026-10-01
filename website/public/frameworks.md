@@ -167,6 +167,8 @@ attached only by the SDK's shared async client. CrewAI can't carry it, so it
 raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
 also raise `ConfigError` instead of sending. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
+[`bearer` mode](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#bearer-token-auth-mode) has the same
+reach; there, CrewAI raises `ConfigError` instead of sending no token.
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
 or Strands' `client_args["base_url"]`) must pass the same
