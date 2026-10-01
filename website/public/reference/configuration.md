@@ -423,7 +423,7 @@ Instead of env vars you can put values in a `[donkey]` table. Keys are the
 |---|---|---|
 | `.donkey-kit.toml` | The current working directory (not searched upward) | Non-secret project config you commit: URLs, client IDs, attribution. |
 | `.donkey-kit.local.toml` | The current working directory | Secrets and personal overrides. Keep it gitignored. Same keys. Read with or without `.donkey-kit.toml`. |
-| `$XDG_CONFIG_HOME/.donkey-kit.toml` | Your user config directory | Read only when `XDG_CONFIG_HOME` is set **and** the working directory has neither file above. There is no `~/.config` fallback yet ([#837](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/837)). |
+| `$XDG_CONFIG_HOME/.donkey-kit.toml`, or `~/.config/.donkey-kit.toml` when `XDG_CONFIG_HOME` is unset or empty | Your user config directory | Personal defaults for every project. Read only when the working directory has neither file above. When `XDG_CONFIG_HOME` is set, `~/.config` isn't read. |
 
 `.donkey-kit.local.toml` merges into `.donkey-kit.toml` key by key, and nested
 tables such as `[donkey.cost]` merge the same way. A scalar or an array in the
@@ -453,7 +453,8 @@ Highest first, per key:
 2. Environment variables.
 3. `./.donkey-kit.local.toml`
 4. `./.donkey-kit.toml`
-5. `$XDG_CONFIG_HOME/.donkey-kit.toml`, only when 3 and 4 don't exist.
+5. The user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`, or
+   `~/.config/.donkey-kit.toml`), only when 3 and 4 don't exist.
 6. Defaults.
 
 A value counts as set in code once it differs from the value that was loaded,
