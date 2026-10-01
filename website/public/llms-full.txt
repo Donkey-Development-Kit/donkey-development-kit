@@ -3866,10 +3866,16 @@ donkey test          # a thin front end to pytest --donkey-conformance
 Three global flags precede the subcommand:
 
 ```bash
-donkey --config ./cfg.toml init   # write the generated config file to a non-default path (init only)
-donkey --env Sandbox doctor       # override the Anypoint environment
+donkey --config ./cfg.toml init   # write the generated config file to a non-default path
+donkey --env Sandbox init         # write this Anypoint environment into the generated file
 donkey --json init                # machine-readable output where a command supports it
 ```
+
+`--config` and `--env` apply to `init` only. Every other command reads its
+configuration from environment variables and the working directory's config
+files, so it rejects them with exit `2` rather than run against a configuration
+you didn't ask for. To point `doctor` at another environment, set
+`ANYPOINT_ENV`, or run it from the directory that holds the config file.
 
 ### Exit codes
 
