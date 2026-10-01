@@ -7,8 +7,6 @@ import { Badge, Card, CardGrid } from '../../components'
 
 # Model access
 
-<Badge tone="live">Live</Badge>
-
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
@@ -30,32 +28,44 @@ seven are **supported at `connection_kwargs()`**: the governed connection
 settings are tested, and each exposes factory methods that return the native
 object.
 
+Each card shows what has been proven about that adapter, in the terms the
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) uses:
+
+| Status | Means |
+|---|---|
+| <Badge tone="accent">Conformance-tested</Badge> | Runs the conformance suite against the [local simulator](/simulator) in CI. |
+| <Badge tone="live">Live-verified</Badge> | Has made a real round-trip through a governed proxy. |
+| <Badge tone="neutral">Signature-confirmed</Badge> | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
+
+The proxy data plane every adapter calls (base URL, credential headers,
+streaming, rejection shapes) is live-verified.
+
 <CardGrid>
-  <Card title="LangGraph" href="/frameworks/langgraph" badge="Deep" badgeTone="accent">
+  <Card title="LangGraph" href="/frameworks/langgraph" badge="Conformance-tested" badgeTone="accent">
     `chat_model()` → `langchain_openai.ChatOpenAI`
   </Card>
-  <Card title="Google ADK" href="/frameworks/adk" badge="Supported" badgeTone="neutral">
-    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
+  <Card title="Google ADK" href="/frameworks/adk" badge="Signature-confirmed" badgeTone="neutral">
+    `model()` → `google.adk … LiteLlm` (signature-confirmed); `gemini()` → `google.adk.models.Gemini` (live-verified)
   </Card>
-  <Card title="Strands" href="/frameworks/strands" badge="Supported" badgeTone="neutral">
+  <Card title="Strands" href="/frameworks/strands" badge="Signature-confirmed" badgeTone="neutral">
     `model()` → `strands … OpenAIModel`
   </Card>
-  <Card title="MS Agent Framework" href="/frameworks/agent-framework" badge="Supported" badgeTone="neutral">
+  <Card title="MS Agent Framework" href="/frameworks/agent-framework" badge="Signature-confirmed" badgeTone="neutral">
     `chat_client()` → Agent Framework chat client
   </Card>
-  <Card title="OpenAI Agents SDK" href="/frameworks/openai" badge="Supported" badgeTone="neutral">
+  <Card title="OpenAI Agents SDK" href="/frameworks/openai" badge="Signature-confirmed" badgeTone="neutral">
     `model()` → `agents.OpenAIChatCompletionsModel`
   </Card>
-  <Card title="Anthropic SDK" href="/frameworks/anthropic" badge="Supported" badgeTone="neutral">
+  <Card title="Anthropic SDK" href="/frameworks/anthropic" badge="Signature-confirmed" badgeTone="neutral">
     `client()` → `anthropic.AsyncAnthropic`
   </Card>
-  <Card title="CrewAI" href="/frameworks/crewai" badge="Supported" badgeTone="neutral">
+  <Card title="CrewAI" href="/frameworks/crewai" badge="Signature-confirmed" badgeTone="neutral">
     `llm()` → `crewai.BaseLLM` (`OpenAICompletion`)
   </Card>
-  <Card title="LlamaIndex" href="/frameworks/llamaindex" badge="Supported" badgeTone="neutral">
+  <Card title="LlamaIndex" href="/frameworks/llamaindex" badge="Signature-confirmed" badgeTone="neutral">
     `llm()` → `OpenAILike` (`is_chat_model=True`)
   </Card>
-  <Card title="No framework" href="/quickstart" badge="Live" badgeTone="live">
+  <Card title="No framework" href="/quickstart" badge="Conformance-tested" badgeTone="accent">
     `donkey.llm.client()` → `openai.AsyncOpenAI` (or `OpenAI` with `sync=True`)
   </Card>
 </CardGrid>
@@ -94,6 +104,11 @@ carries the SDK's HTTP client in the form that framework takes: `http_client`
 and `http_async_client` (LangGraph), `http_client` and `async_http_client`
 (LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
 or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
+Each HTTP client is a non-owning view of the SDK's shared client: it sends
+through the shared client, and closing it (as Strands does after every call, or
+`async with` on an OpenAI client) leaves the shared client open. Only
+`donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
+returns the same view if you build a framework client by hand.
 
 ```python
 kwargs = donkey.llamaindex.connection_kwargs()
@@ -161,9 +176,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 | CrewAI | ✅ (`extra_headers`) | ❌ | CrewAI's native OpenAI provider builds its own HTTP client: correlation is per client and `donkey.last_call` is not populated. An `interceptor` keeps credentials to checked endpoints. |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
-attached only by the SDK's shared async client. CrewAI, and sync calls such as
-LangGraph's `invoke()`, send `X-Client-Id` but no JWT, so a wallet proxy
-answers `401`. See the
+attached only by the SDK's shared async client. CrewAI can't carry it, so it
+raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
+also raise `ConfigError` instead of sending. See the
 [`jwt` mode note](/reference/configuration#jwt--model-wallet-auth-mode).
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,

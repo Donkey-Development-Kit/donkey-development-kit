@@ -118,7 +118,8 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   `UNOBSERVED`, because LlamaIndex is still listed as not observing calls. Aligning
   that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 - **`jwt` mode is async-only.** `acomplete()` / `achat()` carry the JWT; sync
-  `complete()` / `chat()` go through the blocking client, which carries none.
+  `complete()` / `chat()` go through the blocking client, which can't fetch
+  one, so they raise `ConfigError` before sending anything.
 - **Printing the model shows credentials.** `OpenAILike`'s own `repr()` /
   `str()` include `client_secret` and `api_key`. Don't print or log it; see
   [What printed output hides](/reference/configuration#what-printed-output-hides).

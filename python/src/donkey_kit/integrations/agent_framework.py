@@ -3,14 +3,22 @@
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
 Current Python surface is ``from agent_framework import Agent`` with
-``Agent(client=<ChatClient>, name=..., instructions=...)``. The
-OpenAI-compatible chat client class path and its constructor kwargs are
-confirmed offline against agent-framework 1.19.0 (docs/verified-apis.md §8):
-``agent_framework.openai.OpenAIChatClient`` takes ``model``, ``base_url``,
-``api_key`` and ``default_headers``. Both the import and the construction stay
-guarded so a future upstream rename surfaces as a ``_verify.blocked(...)``
-refusal, never a raw ``ImportError``/``TypeError`` reaching the caller; a
-missing package raises the curated install hint every adapter raises (#741).
+``Agent(client=<ChatClient>, name=..., instructions=...)``. agent-framework-openai
+ships two OpenAI-compatible chat clients, confirmed offline against
+agent-framework 1.19.0 (docs/verified-apis.md §8):
+``agent_framework.openai.OpenAIChatCompletionClient`` (Chat Completions,
+``POST /chat/completions``) and ``agent_framework.openai.OpenAIChatClient``
+(Responses API, ``POST /responses``). Both take ``model``, ``base_url``,
+``api_key``, ``default_headers`` and ``async_client``. :meth:`chat_client`
+builds the Responses client by default: ``/responses`` is the data-plane route
+in docs/verified-apis.md §2, the same one ``donkey.llm`` and the LangGraph
+adapter use. Not every upstream serves it (an Azure OpenAI route answers with a
+404), so ``api="chat_completions"`` builds the Chat Completions client for such
+routes (#826). Both the
+import and the construction stay guarded so a future upstream rename surfaces
+as a ``_verify.blocked(...)`` refusal, never a raw ``ImportError``/``TypeError``
+reaching the caller; a missing package raises the curated install hint every
+adapter raises (#741).
 
 Agent Framework has first-class middleware for intercepting chat calls.
 :meth:`AgentFrameworkAdapter.policy_middleware` is a chat middleware that turns
@@ -23,7 +31,7 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from ..core import _verify
 from ..core.masking import masked
@@ -32,7 +40,14 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from agent_framework.openai import OpenAIChatClient
+    from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
+
+ChatAPI = Literal["responses", "chat_completions"]
+# The agent-framework.openai class each ``api=`` value builds (docs/verified-apis.md §8).
+_CHAT_CLIENT_CLASSES: dict[str, str] = {
+    "responses": "OpenAIChatClient",
+    "chat_completions": "OpenAIChatCompletionClient",
+}
 
 
 class AgentFrameworkAdapter(Adapter):
@@ -42,13 +57,13 @@ class AgentFrameworkAdapter(Adapter):
     observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
-        """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` you
-        build yourself. Confirmed offline against agent-framework 1.19.0
-        (docs/verified-apis.md §8): ``base_url``/``api_key``/``default_headers``
-        are all accepted by the constructor. ``async_client`` is an ``AsyncOpenAI``
-        that sends through the SDK's shared client, which does not follow
-        redirects and sends credentials only to checked endpoints; the
-        constructor uses it as given."""
+        """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` (or
+        ``OpenAIChatCompletionClient``) you build yourself. Confirmed offline against
+        agent-framework 1.19.0 (docs/verified-apis.md §8): both constructors
+        accept ``base_url``/``api_key``/``default_headers``. ``async_client`` is
+        an ``AsyncOpenAI`` that sends through the SDK's shared client, which does
+        not follow redirects and sends credentials only to checked endpoints;
+        the constructor uses it as given."""
         return masked(
             {
                 **self._openai_connection(),  # base_url, api_key, default_headers
@@ -56,23 +71,50 @@ class AgentFrameworkAdapter(Adapter):
             }
         )
 
-    def chat_client(self, model: str, **kw: Any) -> OpenAIChatClient:
-        """Return a native ``OpenAIChatClient`` at the proxy. A ``base_url``
-        override must pass the https check."""
+    @overload
+    def chat_client(
+        self, model: str, *, api: Literal["responses"] = ..., **kw: Any
+    ) -> OpenAIChatClient: ...
+
+    @overload
+    def chat_client(
+        self, model: str, *, api: Literal["chat_completions"], **kw: Any
+    ) -> OpenAIChatCompletionClient: ...
+
+    def chat_client(
+        self, model: str, *, api: ChatAPI = "responses", **kw: Any
+    ) -> OpenAIChatClient | OpenAIChatCompletionClient:
+        """Return a native Agent Framework chat client at the proxy.
+
+        ``api="responses"`` (the default) returns an ``OpenAIChatClient``, which
+        sends ``POST /responses`` (docs/verified-apis.md §2). An Azure OpenAI
+        route answers that with a 404 (#826); for such a route pass
+        ``api="chat_completions"`` to get an ``OpenAIChatCompletionClient``,
+        which sends ``POST /chat/completions``. A ``base_url`` override must
+        pass the https check."""
+        if api not in _CHAT_CLIENT_CLASSES:
+            raise ValueError(f"api must be 'responses' or 'chat_completions', not {api!r}")
+        cls_name = _CHAT_CLIENT_CLASSES[api]
         self._allow_endpoints(kw, "base_url")
         self._require_proxy()
         # A missing module (the package or a dependency of it) is the curated
         # install hint; a missing name in a module that imports is a rename.
         with self._native_import():
             try:
-                from agent_framework.openai import (
-                    OpenAIChatClient,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
-                )
+                # Both class paths confirmed offline: docs/verified-apis.md §8 (1.19.0).
+                if api == "chat_completions":
+                    from agent_framework.openai import OpenAIChatCompletionClient as _completions
+
+                    client_cls: type[Any] = _completions
+                else:
+                    from agent_framework.openai import OpenAIChatClient as _responses
+
+                    client_cls = _responses
             except ImportError as exc:
                 if isinstance(exc, ModuleNotFoundError):
                     raise
                 raise _verify.blocked(
-                    "agent_framework.openai.OpenAIChatClient import "
+                    f"agent_framework.openai.{cls_name} import "
                     "(docs/verified-apis.md §8). The class path is confirmed offline "
                     "against agent-framework 1.19.0; an ImportError here means the "
                     "installed version has renamed the class again. Confirm the class "
@@ -84,16 +126,19 @@ class AgentFrameworkAdapter(Adapter):
             # The constructor uses async_client as given, so build it on the override.
             conn["async_client"] = self._proxy_openai_client(str(kw["base_url"]))
         try:
-            return OpenAIChatClient(
-                model=model,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
-                **{**conn, **kw},
+            return cast(
+                "OpenAIChatClient | OpenAIChatCompletionClient",
+                client_cls(
+                    model=model,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
+                    **{**conn, **kw},
+                ),
             )
         except TypeError as exc:
             # A TypeError from the constructor means a kwarg this adapter relies on
             # was renamed upstream. Surface it as a verification refusal, not a raw
             # TypeError leaking out of the SDK (§0.3, BG §1.8).
             raise _verify.blocked(
-                "agent_framework.openai.OpenAIChatClient constructor signature "
+                f"agent_framework.openai.{cls_name} constructor signature "
                 "(docs/verified-apis.md §8). Verified against agent-framework 1.19.0 "
                 "(model=, base_url=, api_key=, default_headers=); a TypeError here "
                 "means the installed version renamed a kwarg. Confirm the signature "
@@ -104,7 +149,8 @@ class AgentFrameworkAdapter(Adapter):
         """A chat middleware for ``Agent(..., middleware=[...])`` that raises a
         proxy refusal as the SDK's typed exception (BG §1.2).
 
-        ``OpenAIChatClient`` wraps every openai error in a ``ChatClientException``.
+        Both chat clients wrap every openai error in a ``ChatClientException``
+        (``OpenAIContentFilterException`` for a content-filter 400).
         This middleware finds the ``openai.APIStatusError`` behind it and raises
         :func:`~donkey_kit.core.errors.classify` of its response instead, so a
         PII block ends ``agent.run()`` as
@@ -178,8 +224,20 @@ class _TypedRefusals(AbstractContextManager[None]):
         raise typed from None
 
 
-def chat_client(model: str, **kw: Any) -> OpenAIChatClient:
+@overload
+def chat_client(model: str, *, api: Literal["responses"] = ..., **kw: Any) -> OpenAIChatClient: ...
+
+
+@overload
+def chat_client(
+    model: str, *, api: Literal["chat_completions"], **kw: Any
+) -> OpenAIChatCompletionClient: ...
+
+
+def chat_client(
+    model: str, *, api: ChatAPI = "responses", **kw: Any
+) -> OpenAIChatClient | OpenAIChatCompletionClient:
     """Module-level convenience: an Agent Framework chat client at the proxy
     using a cached default env-configured Donkey. Equivalent to
-    ``Donkey.from_env().agent_framework.chat_client(model, **kw)``."""
-    return default_adapter(AgentFrameworkAdapter).chat_client(model, **kw)
+    ``Donkey.from_env().agent_framework.chat_client(model, api=api, **kw)``."""
+    return default_adapter(AgentFrameworkAdapter).chat_client(model, api=api, **kw)

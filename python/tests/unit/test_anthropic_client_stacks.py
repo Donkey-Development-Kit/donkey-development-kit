@@ -1,7 +1,7 @@
 """A real ``anthropic.AsyncAnthropic`` from ``donkey.anthropic``, end to end (#701).
 
 Runs against whichever ``anthropic`` is installed: on ``anthropic<1`` (``httpx``)
-the client gets the shared ``DonkeyAsyncClient`` itself, on ``anthropic>=1.0``
+the client gets the shared ``DonkeyAsyncClient``'s non-owning view, on ``anthropic>=1.0``
 (``httpx2``) a bridged client that sends through it. Either way the same governed
 request reaches the wire and the same ``donkey.last_call`` is recorded. CI runs
 this file on both majors (the ``anthropic-stacks`` job).
@@ -48,7 +48,7 @@ def test_the_http_client_matches_the_installed_anthropic() -> None:
     if _ON_HTTPX2:
         assert type(http_client).__module__.split(".")[0] == "httpx2"
     else:
-        assert http_client is shared
+        assert http_client is shared.view()
 
 
 async def test_a_governed_call_reaches_the_wire_and_last_call() -> None:
@@ -132,8 +132,7 @@ async def test_a_refusal_classifies_with_the_ids_that_were_sent(
 
 
 async def test_closing_the_anthropic_client_leaves_the_shared_client_usable() -> None:
-    if not _ON_HTTPX2:
-        pytest.skip("anthropic<1 is given the shared client itself and closes it")
+    # Both stacks: anthropic<1 gets the shared client's view, 1.0+ the bridge (#733).
     async with shared_client(lambda request: success_response()) as shared:
         adapter = AnthropicAdapter(CFG, shared)
         async with adapter.client() as llm:

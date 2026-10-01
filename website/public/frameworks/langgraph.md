@@ -252,7 +252,9 @@ own fields instead of the span will still show `openai`.
 - `base_url`, `api_key`, `default_headers`, `http_async_client` and
   `http_client` are all forwarded, so proxy auth headers and the SDK's
   transport (retries, correlation IDs) reach every request, from `ainvoke()`
-  and `invoke()` alike. In `jwt` mode only `ainvoke()` carries the JWT.
+  and `invoke()` alike, so `donkey.simulate()` and `donkey.last_call` cover
+  both. In `jwt` mode only `ainvoke()` / `astream()` carry the JWT: `invoke()`
+  and `stream()` raise `ConfigError` before sending anything.
 - Printing the model shows `client_secret`: `ChatOpenAI`'s own `repr()` /
   `str()` include `default_headers`. Don't print or log it; see
   [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).

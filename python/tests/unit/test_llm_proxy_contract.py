@@ -17,12 +17,14 @@ import httpx
 
 from donkey_kit.core.errors import (
     AuthError,
+    ModelNotRoutable,
     PIIDetected,
     PolicyViolation,
     TokenBudgetExceeded,
     UpstreamRequestError,
     classify,
 )
+from donkey_kit.core.telemetry import policy_type_slug
 from donkey_kit.simulator.fixtures import parse_headers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "llm_proxy"
@@ -145,6 +147,28 @@ def test_token_rate_limit_rejection_is_429_with_header_only_budget() -> None:
     assert isinstance(err, TokenBudgetExceeded)
     assert err.policy == "token-rate-limit"
     assert err.retry_after == reset_ms / 1000.0
+
+
+def test_bare_model_name_400_classifies_as_model_not_routable() -> None:
+    """docs/verified-apis.md §4 live capture (#825): a bare model name on a
+    multi-provider model-based proxy is rejected by the gateway with a 400 and a
+    flat-string ``error``. It is a client configuration mistake, so classify()
+    returns ModelNotRoutable — NOT a PolicyViolation — and keeps the gateway's
+    text, while the remediation names the ``provider/model`` fix."""
+    h = _headers("reject.model-not-routable.headers.txt")
+    body = _load("reject.model-not-routable.body.json")
+    assert isinstance(body, dict)
+    assert isinstance(body["error"], str)  # flat, so not the upstream envelope
+
+    err = classify(httpx.Response(400, headers=h, json=body))
+    assert isinstance(err, ModelNotRoutable)
+    assert not isinstance(err, PolicyViolation)
+    assert not isinstance(err, UpstreamRequestError)
+    assert err.model == "gpt-5-mini"
+    assert "provider/model" in str(err)
+    assert body["error"] in str(err)
+    assert "openai/gpt-5-mini" in err.remediation
+    assert policy_type_slug(err) is None  # telemetry does not record a refusal
 
 
 def test_anypoint_flat_error_4xx_stays_policy_violation() -> None:

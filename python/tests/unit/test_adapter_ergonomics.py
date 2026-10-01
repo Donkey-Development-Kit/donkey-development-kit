@@ -23,10 +23,10 @@ from typing import Any, NamedTuple
 
 import pytest
 
+from donkey_kit.core import runtime
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.transport import DonkeyAsyncClient, build_http_client
-from donkey_kit.integrations import _base
 from donkey_kit.integrations._base import Adapter, default_adapter
 from donkey_kit.integrations.langgraph import LangGraphAdapter
 
@@ -81,7 +81,7 @@ def test_default_adapter_is_cached_per_class(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
     a1 = default_adapter(LangGraphAdapter)
     a2 = default_adapter(LangGraphAdapter)
@@ -94,7 +94,7 @@ def test_module_level_factory_matches_method(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
     from donkey_kit.integrations.langgraph import chat_model
 
@@ -271,15 +271,27 @@ def test_agent_framework_chat_client_constructs_with_package_present() -> None:
     """The mirror of the blocks-on-import test (#520): with agent-framework
     actually installed, the factory returns a real ``OpenAIChatClient`` built
     with the VERIFIED ``model=`` kwarg — the path the acceptance harness hit
-    that the package-absent test never exercised. VERIFIED: agent-framework
+    that the package-absent test never exercised. ``api="chat_completions"``
+    returns the Chat Completions client instead (#826). VERIFIED: agent-framework
     1.19.0 (docs/verified-apis.md §8)."""
     pytest.importorskip("agent_framework")
-    from agent_framework.openai import OpenAIChatClient
+    from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
     from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 
-    client = AgentFrameworkAdapter(_cfg(), _http()).chat_client("gpt-4o")
-    assert isinstance(client, OpenAIChatClient)
+    adapter = AgentFrameworkAdapter(_cfg(), _http())
+    assert isinstance(adapter.chat_client("gpt-4o"), OpenAIChatClient)
+    assert isinstance(
+        adapter.chat_client("gpt-4o", api="chat_completions"), OpenAIChatCompletionClient
+    )
+
+
+def test_agent_framework_chat_client_rejects_an_unknown_api() -> None:
+    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
+
+    adapter = AgentFrameworkAdapter(_cfg(), _http())
+    with pytest.raises(ValueError, match="responses"):
+        adapter.chat_client("gpt-4o", api="completions")  # type: ignore[call-overload]
 
 
 def test_agent_framework_chat_client_blocks_on_constructor_rename(
@@ -289,7 +301,8 @@ def test_agent_framework_chat_client_blocks_on_constructor_rename(
     refusal, not the raw ``TypeError`` that reached callers in 0.1.0.dev4 (#520,
     §0.3). Stub ``OpenAIChatClient`` with a constructor that rejects ``model=``
     (as a rename would); the widened guard turns the resulting ``TypeError``
-    into a verification-blocked error. Runs without the package installed."""
+    into a verification-blocked error, for either ``api=`` (#826). Runs without
+    the package installed."""
     from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 
     class _RenamedChatClient:
@@ -301,13 +314,15 @@ def test_agent_framework_chat_client_blocks_on_constructor_rename(
             monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
     pkg, openai_mod = sys.modules["agent_framework"], sys.modules["agent_framework.openai"]
     monkeypatch.setattr(pkg, "openai", openai_mod, raising=False)
-    monkeypatch.setattr(openai_mod, "OpenAIChatClient", _RenamedChatClient, raising=False)
+    for attr in ("OpenAIChatClient", "OpenAIChatCompletionClient"):
+        monkeypatch.setattr(openai_mod, attr, _RenamedChatClient, raising=False)
 
     adapter = AgentFrameworkAdapter(_cfg(), _http())
-    with pytest.raises(NotImplementedError, match=r"^blocked on verification:") as exc_info:
-        adapter.chat_client("gpt-4o")
+    for api in ("responses", "chat_completions"):
+        with pytest.raises(NotImplementedError, match=r"^blocked on verification:") as exc_info:
+            adapter.chat_client("gpt-4o", api=api)  # type: ignore[call-overload]
 
-    assert isinstance(exc_info.value.__cause__, TypeError)
+        assert isinstance(exc_info.value.__cause__, TypeError)
 
 
 # --- The two paths cannot drift (issue #33 AC) ------------------------------
@@ -449,7 +464,7 @@ def _set_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
 
 @pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)
@@ -577,7 +592,7 @@ def test_adk_gemini_connection_kwargs_inject_the_shared_client() -> None:
     opts = kw["client_kwargs"]["http_options"]
     assert kw["base_url"] == opts["base_url"] == "https://proxy"
     assert opts["api_version"] == ""  # the proxy route has no /v1beta segment
-    assert opts["httpx_async_client"] is http
+    assert opts["httpx_async_client"] is http.view()
     assert opts["headers"]["client_id"] == "cid"
     assert opts["timeout"] == int(cfg.timeout_s * 1000)  # genai sends None otherwise
     assert kw["client_kwargs"]["api_key"]  # google-genai requires the slot

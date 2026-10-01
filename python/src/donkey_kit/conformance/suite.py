@@ -8,7 +8,10 @@ run-it-against-your-agent sibling of the SDK's internal adapter matrix
 
 Each scenario asks a question a team usually cannot answer about its own code
 and answers it framework-agnostically, by *observing the transport and the
-logs* rather than the agent's internals:
+logs* rather than the agent's internals. A scenario can only be observed if the
+agent's model call goes through the ``Donkey`` it was given, so every check first
+fails a run where no call reached the transport (#737) — an agent that bypasses
+the Donkey client must never pass by default:
 
 - **retries a budget refusal** — counting wire sends: a ``TokenBudgetExceeded``
   is terminal, so more than one send for one run means the agent retried.
@@ -37,6 +40,7 @@ from typing import Any, Literal, Protocol
 from ..core.errors import DonkeyError, PIIDetected, TokenBudgetExceeded
 
 __all__ = [
+    "NO_MODEL_CALL",
     "PROBE_CORRELATION_ID",
     "SCENARIOS",
     "SCENARIO_NAMES",
@@ -61,12 +65,19 @@ Status = Literal["pass", "fail", "exempt"]
 class Observation:
     """What the harness saw during one ``agent.run(...)``: the return value, the
     exception it let escape (if any), how many times it hit the gateway, and the
-    text of every log record it emitted."""
+    text of every log record it emitted.
+
+    ``bypass_attempts`` counts the requests sent through a client the agent built
+    itself, outside the ``Donkey`` (the harness blocks them). ``unobservable_adapters``
+    names the resolved adapters whose model calls never pass through the
+    ``Donkey`` transport, so the harness cannot see them."""
 
     returned: Any
     raised: BaseException | None
     wire_sends: int
     log_text: str
+    bypass_attempts: int = 0
+    unobservable_adapters: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -130,24 +141,63 @@ class Scenario:
 # scenario-agnostic. Detail strings are phrased as findings about the agent,
 # because the report shows them verbatim to the developer.
 
+NO_MODEL_CALL = "no model call went through the Donkey client"
+
+
+def _no_model_call(obs: Observation) -> Outcome | None:
+    """Fail a run in which no request reached the ``Donkey`` transport (#737).
+
+    Nothing a scenario asserts can be observed without a call, so a run with
+    ``wire_sends == 0`` is never a pass, whatever the agent returned or logged.
+    The detail says why, if the harness can tell: the agent sent its requests
+    through its own client, or it used an adapter that routes outside the
+    ``Donkey`` transport. Returns ``None`` when at least one call went through."""
+    if obs.wire_sends:
+        return None
+    blocked = (
+        f" ({obs.bypass_attempts} request(s) blocked by the harness)"
+        if obs.bypass_attempts
+        else ""
+    )
+    if obs.unobservable_adapters:
+        # The adapter built the client, so "use the donkey" is not the fix: say
+        # the surface is unobservable and point at the asserted-exemption route.
+        names = ", ".join(f"donkey.{name}" for name in obs.unobservable_adapters)
+        reason = (
+            f"{names} sends model calls outside the Donkey transport{blocked}, "
+            f"so this scenario cannot be observed; if that is expected, record it "
+            f"in KNOWN_LIMITATIONS as an asserted exemption"
+        )
+    elif obs.bypass_attempts:
+        reason = (
+            f"the agent sent its requests through a client other than the "
+            f"Donkey's{blocked}; build the model client from the donkey your "
+            f"factory receives"
+        )
+    else:
+        reason = "the agent made no model call, so the scenario was never exercised"
+    return Outcome(False, f"{NO_MODEL_CALL}: {reason}")
+
 
 async def _retries_token_budget(ctx: ScenarioContext) -> Outcome:
     ctx.serve_refusal(TokenBudgetExceeded)
     obs = await ctx.run()
+    if (no_call := _no_model_call(obs)) is not None:
+        return no_call
     if obs.wire_sends > 1:
         return Outcome(
             False,
             f"retried a TokenBudgetExceeded {obs.wire_sends}× — a budget refusal "
             f"is terminal; retrying only burns the same exhausted window",
         )
-    if obs.wire_sends == 0:
-        return Outcome(True, "made no model call, so nothing was retried")
     return Outcome(True, "issued one call and did not retry the budget refusal")
 
 
 async def _swallows_pii_as_generic(ctx: ScenarioContext) -> Outcome:
     ctx.serve_refusal(PIIDetected)
     obs = await ctx.run()
+    if (no_call := _no_model_call(obs)) is not None:
+        return no_call
     if obs.raised is None:
         return Outcome(
             True, "handled the PII refusal without leaking a generic exception"
@@ -170,6 +220,8 @@ async def _swallows_pii_as_generic(ctx: ScenarioContext) -> Outcome:
 async def _correlation_id_propagated(ctx: ScenarioContext) -> Outcome:
     ctx.serve_success()
     obs = await ctx.run(correlation_id=PROBE_CORRELATION_ID)
+    if (no_call := _no_model_call(obs)) is not None:
+        return no_call
     if PROBE_CORRELATION_ID in obs.log_text:
         return Outcome(True, "emitted the run's correlation id in its own logs")
     return Outcome(
@@ -182,6 +234,8 @@ async def _correlation_id_propagated(ctx: ScenarioContext) -> Outcome:
 async def _works_without_budget_headers(ctx: ScenarioContext) -> Outcome:
     ctx.serve_success(budget_headers=False)
     obs = await ctx.run()
+    if (no_call := _no_model_call(obs)) is not None:
+        return no_call
     if obs.raised is None:
         return Outcome(
             True, "completed a run when the gateway returned no budget headers"
