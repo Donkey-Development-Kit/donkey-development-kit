@@ -257,8 +257,11 @@ What is verified today: the LLM-proxy data plane (its base-URL shape — note th
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
-discovery, the provisioning control plane, and the exact framework-adapter class
-names/kwargs (the conformance kit and the build plan phases).
+discovery and the provisioning control plane. The framework adapters are not
+blocked. They build their native object directly, and their constructor rows in
+§8 of the ledger read **signature-confirmed offline**, except ADK's `gemini()`,
+which is **live-verified**. An adapter refuses with `blocked(...)` only when the
+installed framework version lacks the class or field it depends on.
 
 ---
 
@@ -317,12 +320,15 @@ Not every framework gets the same CI guarantee, and the roster is deliberately
 scoped rather than exhaustive. The former Tier 1 / Tier 2 split is **retired**
 along with the eight-adapter roster (#197):
 
-- **Deep — conformance-tested:** LangGraph, and only LangGraph. Held to the
-  conformance suite; the `ADAPTERS` registry marks it `conformance_tested=True`.
+- **Deep — conformance-tested against the simulator:** LangGraph, and only
+  LangGraph (alongside the raw client). Held to the conformance suite; the
+  `ADAPTERS` registry marks it `conformance_tested=True`. Its `ChatOpenAI`
+  constructor is signature-confirmed offline, not live-verified.
 - **Supported at `connection_kwargs()`:** Google ADK, Strands, Microsoft Agent
-  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. Verified at
-  the kwargs level rather than the constructor level, and no longer carried in
-  the nightly framework matrix — a demoted framework returns with its own
+  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. Each
+  constructor is **signature-confirmed offline** (`scripts/verify_frameworks.py`),
+  except ADK's `gemini()`, which is **live-verified**. None is conformance-tested,
+  and none is carried in the nightly framework matrix — a demoted framework returns with its own
   conformance run when demand justifies it.
 - **Out of scope:** AutoGen and Semantic Kernel — Microsoft positions Agent
   Framework as their direct successor, so carrying all three would mean
