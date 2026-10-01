@@ -52,7 +52,13 @@ from .cachecontrol import current_cache_controls
 from .config import DonkeyConfig
 from .cost import CostTags
 from .endpoints import require_secure_url
-from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
+from .errors import (
+    ConfigError,
+    GatewayUnavailable,
+    ModelSubstituted,
+    classify,
+    gateway_unavailable,
+)
 from .lastcall import (
     LLM_MODEL_HEADER,
     LLM_PROVIDER_HEADER,
@@ -385,6 +391,16 @@ def _retry_delay(attempt: int, response: httpx.Response) -> float:
             pass  # HTTP-date form not handled here; fall through to backoff
     exp = min(_BACKOFF_BASE_S * (2.0**attempt), _BACKOFF_CAP_S)
     return exp * (0.5 + random.random() / 2.0)  # full-ish jitter
+
+
+def _no_attempts(max_retries: object) -> ConfigError:
+    """The error for a retry loop that sent nothing: ``max_retries`` is below 0.
+    ``DonkeyConfig`` refuses that value, so only a config altered after
+    construction gets here (#809)."""
+    return ConfigError(
+        f"max_retries is {max_retries!r}, so no request was sent; expected a whole "
+        "number, 0 or more."
+    )
 
 
 def _gateway_unavailable(
@@ -988,7 +1004,8 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
 
             return await self._finish(request, response, gspan, streaming=streaming)
 
-        assert last_response is not None  # attempts >= 1
+        if last_response is None:
+            raise _no_attempts(self._cfg.max_retries)
         return await self._finish(request, last_response, gspan, streaming=streaming)
 
     async def _finish(
@@ -1202,7 +1219,8 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
 
             return self._finish(request, response, gspan, streaming=streaming)
 
-        assert last_response is not None  # attempts >= 1
+        if last_response is None:
+            raise _no_attempts(self._cfg.max_retries)
         return self._finish(request, last_response, gspan, streaming=streaming)
 
     def _finish(
