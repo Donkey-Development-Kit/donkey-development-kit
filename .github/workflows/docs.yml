@@ -48,10 +48,9 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
       - run: npm ci
-      - name: Build static export (served under the project sub-path)
+      - name: Build static export (served from the docs.donkey-kit.dev root)
         run: npm run build
         env:
-          DOCS_BASE_PATH: /donkey-development-kit
           GITHUB_TOKEN: ${{ github.token }}
           # Public Cloudflare Web Analytics site token (repository variable);
           # unset means the build ships no beacon.
