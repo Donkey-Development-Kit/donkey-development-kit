@@ -48,7 +48,9 @@ llm = ["openai>=1.30"]
 # runtime so `interrupt()` composition and the conformance harness run against a
 # real LangGraph app, not just a bare ChatOpenAI.
 langgraph = ["langgraph>=0.3", "langchain-openai>=0.1", "langchain-core>=0.2"]
-adk = ["google-adk>=0.2", "litellm>=1.84"]
+# google-adk 2.4 is the first release with Gemini.client_kwargs; below it ADK
+# silently drops the governed client from gemini() (#735).
+adk = ["google-adk>=2.4", "litellm>=1.84"]
 agent_framework = ["agent-framework>=0.1"]
 openai-agents = ["openai-agents>=0.1", "openai>=1.30"]
 anthropic = ["anthropic>=0.40"]

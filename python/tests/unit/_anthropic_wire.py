@@ -65,6 +65,24 @@ def success_response() -> httpx.Response:
     )
 
 
+_LLM_PROXY = FIXTURES.parent / "llm_proxy"
+
+# The live gateway refusals the bridge must hand back classifiable (#738):
+# fixture stem → status.
+REFUSALS = {"pii-detected": 403, "token-rate-limit": 429}
+
+
+def refusal_response(name: str) -> httpx.Response:
+    """A live LLM-proxy refusal (``tests/fixtures/anypoint/llm_proxy/reject.*``).
+    The gateway applies the same policies whatever the inbound format."""
+    body = next(_LLM_PROXY.glob(f"reject.{name}.body.*"))
+    return httpx.Response(
+        REFUSALS[name],
+        content=body.read_bytes(),
+        headers=parse_headers((_LLM_PROXY / f"reject.{name}.headers.txt").read_text()),
+    )
+
+
 class Chunks(httpx.AsyncByteStream):
     """A response body delivered chunk by chunk, as from the network, recording
     whether it was closed."""
