@@ -152,6 +152,8 @@ attached only by the SDK's shared async client. CrewAI, and sync calls such as
 LangGraph's `invoke()`, send `X-Client-Id` but no JWT, so a wallet proxy
 answers `401`. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
+[`bearer` mode](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#bearer-token-auth-mode) has the same
+reach; there, CrewAI raises `ConfigError` instead of sending no token.
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
 or Strands' `client_args["base_url"]`) must pass the same

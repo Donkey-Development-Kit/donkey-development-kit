@@ -64,7 +64,11 @@ class CrewAIAdapter(Adapter):
         ``interceptor`` (present when CrewAI is installed) makes that provider
         build plain ``httpx`` clients around a transport hook, so redirects are
         not followed, and the hook removes the credential headers from any
-        request to an origin the shared client was not checked for."""
+        request to an origin the shared client was not checked for.
+
+        Raises :class:`~donkey_kit.core.errors.ConfigError` in ``bearer`` auth
+        mode, whose per-request token the provider's own client can't carry."""
+        self._refuse_header_only("CrewAI")
         conn = self._openai_connection()
         return masked(
             {

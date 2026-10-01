@@ -189,24 +189,20 @@ with no retry.
   ```
 
   (`cfg.with_overrides(...)` works the same way.)
-- Anthropic client or ADK's `gemini()` against a proxy that expects a plain
-  bearer token, without a wallet: there's no dedicated setting yet
-  ([#836](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/836)).
-  Add the header to the client's headers yourself, keeping the SDK's own. It is
-  static, so it isn't refreshed, and the endpoint check doesn't cover it:
+- Any client with transport injection, rotating bearer token, no wallet: use
+  `bearer` mode. Only `llm_proxy_url` is required; the token from `llm_auth` is
+  sent as `Authorization: Bearer <token>` with no `X-Client-Id` and no
+  `client_id`/`client_secret` pair, refreshed and re-sent once on a `401`, and
+  covered by the endpoint check. Like `jwt` mode it is async-only, and CrewAI,
+  which builds its own HTTP client, raises `ConfigError` in this mode:
 
-  ```python
-  # Anthropic
-  headers = donkey.anthropic.connection_kwargs()["default_headers"]
-  client = donkey.anthropic.client(
-      default_headers={**headers, "Authorization": "Bearer <token>"},
-  )
-
-  # ADK gemini(): build the model from the governed kwargs
-  kw = donkey.adk.gemini_connection_kwargs()
-  kw["client_kwargs"]["http_options"]["headers"]["Authorization"] = "Bearer <token>"
-  model = Gemini(model="gemini-2.5-flash", **kw)
+  ```diff
+  - donkey = Donkey(cfg, auth=StaticToken(token))
+  + donkey = Donkey(replace(cfg, llm_proxy_auth="bearer"), llm_auth=StaticToken(token))
   ```
+
+  This covers the Anthropic client and ADK's `gemini()`, which have no
+  OpenAI-style API-key slot.
 
 **4b. In client-id mode, a `401` from the LLM proxy is no longer retried.**
 

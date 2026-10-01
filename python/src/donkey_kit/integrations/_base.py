@@ -15,7 +15,8 @@ from types import MappingProxyType
 from typing import Any, ClassVar, TypeVar, cast
 
 from ..core import runtime
-from ..core.config import DonkeyConfig
+from ..core.config import DonkeyConfig, missing_llm_auth_error
+from ..core.errors import ConfigError
 from ..core.masking import masked
 from ..core.transport import (
     DonkeyAsyncClient,
@@ -164,7 +165,30 @@ class Adapter(ABC):
             return {}
 
     def _require_proxy(self) -> DonkeyConfig:
-        return self._cfg.validated(need="llm")
+        cfg = self._cfg.validated(need="llm")
+        # Bearer mode (#836): the token rides only the shared client, from its
+        # llm_auth provider, so a client without one (the module-level
+        # factories, or a Donkey built without llm_auth) would send none.
+        if cfg.llm_proxy_auth == "bearer" and self._http.token_provider is None:
+            raise missing_llm_auth_error(cfg.llm_proxy_auth)
+        return cfg
+
+    def _refuse_header_only(self, form: str) -> None:
+        """Raise :class:`~donkey_kit.core.errors.ConfigError` from a form that
+        hands the framework only a ``default_headers`` snapshot, never the shared
+        client, when the auth mode's token is added per send: the snapshot cannot
+        carry it, so every call would 401 (#836)."""
+        mode = self._cfg.llm_proxy_auth
+        if mode != "bearer":
+            return
+        raise ConfigError(
+            f"{form} can't send the token in llm_proxy_auth={mode!r} mode: the "
+            "framework builds its own HTTP client, so the SDK can only hand it "
+            "static headers, and the token from llm_auth is added per request by "
+            "the SDK's shared client. Use a form that sends through that client: "
+            "the raw client, LangGraph, Strands, OpenAI Agents, Anthropic, "
+            "LlamaIndex, Agent Framework, or ADK model() / gemini()."
+        )
 
     def _allow_endpoints(self, overrides: Mapping[str, Any], *names: str) -> None:
         """Check each URL override in ``overrides`` under ``names`` — a URL passed
@@ -222,7 +246,7 @@ def default_adapter(cls: type[A]) -> A:
 
     The runtime is closed at interpreter exit. Prefer an explicit ``Donkey``
     when you need lifecycle control (``aclose``), non-env configuration, or a
-    data-plane ``llm_auth`` provider (jwt mode).
+    data-plane ``llm_auth`` provider (jwt or bearer mode).
     """
     rt = runtime.default()
     with _DEFAULT_ADAPTERS_LOCK:

@@ -51,7 +51,7 @@ from . import _verify
 from .auth import AuthProvider
 from .budget import Budget
 from .cachecontrol import current_cache_controls
-from .config import DonkeyConfig
+from .config import TOKEN_AUTH_MODES, DonkeyConfig
 from .cost import CostTags
 from .endpoints import require_secure_url
 from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
@@ -192,6 +192,8 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
       injected per-send by :meth:`DonkeyAsyncClient._inject_headers` from the
       attached ``AuthProvider``, because a static snapshot cannot carry a
       credential that rotates.
+    * ``bearer`` mode (#836): no consumer-auth header at all. The token is
+      injected per-send exactly like the ``jwt`` one, with no wallet selector.
 
     Returns a :class:`~donkey_kit.core.masking.MaskedDict`: a plain ``dict`` in
     use, but printing it shows ``'***'`` for the secret header.
@@ -201,6 +203,8 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
     if cfg.llm_proxy_auth == "jwt":
         if cfg.llm_proxy_wallet_client_id:
             headers[_verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER] = cfg.llm_proxy_wallet_client_id
+        return headers
+    if cfg.llm_proxy_auth == "bearer":
         return headers
     if cfg.llm_proxy_client_id:
         headers[_verify.LLM_PROXY_CLIENT_ID_HEADER] = cfg.llm_proxy_client_id
@@ -860,7 +864,8 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
 
     A client serves exactly one credential plane (BG §1.1). The default is the
     data plane (the LLM proxy): ``auth`` is the data-plane credential, which is
-    the model-wallet JWT provider in ``jwt`` mode and ``None`` in client-id mode.
+    the model-wallet JWT provider in ``jwt`` mode, the bearer-token provider in
+    ``bearer`` mode, and ``None`` in client-id mode.
     ``control_plane=True`` marks a client for Anypoint platform calls: ``auth``
     is then the connected-app provider, and the ``jwt``-mode wallet headers are
     never stamped on its requests.
@@ -926,6 +931,9 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         # default_headers snapshot), so adapters routed through this shared client
         # carry it too — and never on a control-plane send. The name is VERIFIED
         # (docs/verified-apis.md §2/§3).
+        data_plane_token = (
+            self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES and not self._control_plane
+        )
         wallet = self._cfg.llm_proxy_auth == "jwt" and not self._control_plane
         if wallet and self._cfg.llm_proxy_wallet_client_id:
             request.headers.setdefault(
@@ -934,19 +942,20 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             )
         if self._token_provider is not None:
             token = await self._token_provider.token()
-            # Two token-bearing ingresses ride here, each on its own client and both
-            # as ``Authorization: Bearer`` (VERIFIED): the control-plane OAuth2
-            # client_credentials token (docs/verified-apis.md §12.1) and — when jwt
-            # auth mode is selected — the data-plane model-wallet JWT
-            # (docs/verified-apis.md §2/§3, #372). The header name/scheme come from
-            # the verified wallet constants so there is one source; the
-            # control-plane token happens to use the identical shape.
+            # Three token-bearing ingresses ride here, each on its own client and
+            # all as ``Authorization: Bearer`` (VERIFIED): the control-plane OAuth2
+            # client_credentials token (docs/verified-apis.md §12.1), the
+            # data-plane model-wallet JWT in jwt mode (docs/verified-apis.md §2/§3,
+            # #372), and the data-plane token in bearer mode, which is the same
+            # JWT Validation bearer header with no wallet selector (#836). The
+            # header name/scheme come from the verified wallet constants so there
+            # is one source; the other two use the identical shape.
             header = _verify.LLM_PROXY_WALLET_JWT_HEADER
             value = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
-            if wallet:
+            if data_plane_token:
                 # The OpenAI SDK pre-sets ``Authorization: Bearer <api_key>`` from
-                # its mandatory key slot; a wallet proxy READS this header as the
-                # JWT, so we must OVERRIDE that sentinel with the fresh per-send
+                # its mandatory key slot; the proxy READS this header as the
+                # token, so we must OVERRIDE that sentinel with the fresh per-send
                 # token. ``setdefault`` would yield to the sentinel and 401.
                 request.headers[header] = value
             else:
