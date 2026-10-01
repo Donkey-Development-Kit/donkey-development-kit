@@ -12,7 +12,9 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   are not followed and credentials go only to checked endpoints. The
   conformance kit still lists ``model()`` under ``correlation_id_propagated`` /
   ``gateway_identity_observed`` and ``donkey.last_call`` stays unpopulated.
-  ADK requires ``litellm>=1.84`` (floor, not ceiling).
+  ADK requires ``litellm>=1.84`` (floor, not ceiling). LiteLLM sets the
+  client's ``max_retries`` on every call (default 2), so the kwarg goes to
+  LiteLLM itself (#734).
 * ``gemini()`` — ADK's native ``google.adk.models.Gemini`` for a
   ``Format=Gemini`` proxy (#691). The LIVE-verified native route is
   ``POST <proxy>/models/<model>:generateContent`` (#540); the model travels in
@@ -59,6 +61,8 @@ class ADKAdapter(Adapter):
                 "api_base": conn["base_url"],
                 "api_key": conn["api_key"],
                 "extra_headers": conn["default_headers"],
+                # LiteLLM sets this on ``client`` per call, default 2.
+                "max_retries": 0,  # we retry in transport (BG §1.1)
                 **self._proxy_openai_client_kwarg("client"),
             }
         )

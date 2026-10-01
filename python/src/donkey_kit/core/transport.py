@@ -25,6 +25,8 @@ The client:
     includes 429: on this proxy a 429 is a token-budget refusal
     (TokenBudgetExceeded), and retrying it only burns the same exhausted window
     (BG §1.2, #183). retry_after is still surfaced for wait_for_reset() (#186).
+    A final 4xx is stamped ``x-should-retry: false``, so the openai and
+    anthropic SDKs above the transport do not retry it either (#734).
   * refreshes the attached provider's token and retries exactly once on 401
     (BG §1.1); a client-id data-plane client has no provider, so its 401 is
     terminal
@@ -106,6 +108,21 @@ PROXY_API_KEY_SENTINEL = "client-id-enforced"
 _RETRYABLE_STATUS = frozenset({502, 503, 504})
 _BACKOFF_BASE_S = 0.5
 _BACKOFF_CAP_S = 30.0
+# The openai and anthropic SDKs read this response header before their own retry
+# decision, and do not retry when it is "false" (#734).
+_SHOULD_RETRY_HEADER = "x-should-retry"
+
+
+def _mark_terminal(response: httpx.Response) -> None:
+    """Stamp ``x-should-retry: false`` on a final 4xx, so a provider SDK above the
+    transport does not re-send what the transport treats as terminal (BG §1.2,
+    #734). The adapters already turn SDK retries off; this covers a client a
+    developer builds from ``connection_kwargs()`` with their own retry setting.
+    Every 4xx is terminal here, including every policy refusal; a 5xx is left
+    alone, because a 502/503/504 is transient and the transport has already
+    retried it."""
+    if 400 <= response.status_code < 500:
+        response.headers[_SHOULD_RETRY_HEADER] = "false"
 
 
 # The four cost dimensions → the config field that overrides that header name →
@@ -1025,6 +1042,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         A buffered 2xx or a refusal on a stream request has no SSE body to scan, so
         the span is ended inline (``_record_response`` already set its decision,
         usage and — for a refusal — ERROR status)."""
+        _mark_terminal(response)
         await self._on_response(request, response)
         _record_response(
             gspan,
@@ -1218,6 +1236,7 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         hands a 2xx SSE body to a :class:`_SpanClosingSyncStream` that ends the
         detached span on close; a buffered/refused stream response ends it inline
         (see :meth:`DonkeyAsyncClient._finish`)."""
+        _mark_terminal(response)
         self._on_response(request, response)
         _record_response(
             gspan,

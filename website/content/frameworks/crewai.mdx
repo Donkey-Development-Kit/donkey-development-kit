@@ -96,11 +96,12 @@ model = LLM(
     base_url=...,       # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     extra_headers=...,  # client_id / client_secret header pair
+    max_retries=0,      # don't let the OpenAI client retry a refusal
 )
 ```
 
-`connection_kwargs()` fills in `base_url`, `api_key`, and `extra_headers` (the
-`client_id` / `client_secret` header pair) for you. When CrewAI is installed it
+`connection_kwargs()` fills in `base_url`, `api_key`, `extra_headers` (the
+`client_id` / `client_secret` header pair), and `max_retries=0` for you. When CrewAI is installed it
 also adds an `interceptor`: with one set, CrewAI's provider builds HTTP clients
 that don't follow redirects, and the interceptor removes the credential headers
 from any request to an origin other than the proxy (see
@@ -118,6 +119,12 @@ A `base_url` / `api_base` passed to `llm()` must pass the
 - **No JWT in `jwt` mode.** The JWT is added only by the SDK's shared client,
   so a wallet proxy answers `401`; see the
   [`jwt` mode note](/reference/configuration#jwt--model-wallet-auth-mode).
+- **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
+  rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as
+  a rate limit. On the proxy a `429` is a budget refusal, so CrewAI re-sends it
+  twice before raising. CrewAI has no setting to turn this retry off. The
+  OpenAI client underneath has `max_retries=0`, and transient `5xx` errors are
+  not retried at all, because the SDK's transport isn't used.
 - **Printing the model shows the API key.** `OpenAICompletion`'s own `repr()` /
   `str()` include `api_key`. Don't print or log it.
 - **`donkey.last_call` is unavailable.** Because the response is handled by

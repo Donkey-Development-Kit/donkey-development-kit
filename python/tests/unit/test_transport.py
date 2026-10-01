@@ -619,6 +619,68 @@ def test_sync_401_is_terminal_because_there_is_no_token_to_refresh() -> None:
     assert calls["n"] == 1
 
 
+# --- x-should-retry on terminal responses (#734) ----------------------------
+# A final 4xx is stamped so a provider SDK above the transport does not re-send
+# it; a 2xx or 5xx is not (the transport has already retried 502/503/504).
+
+_TERMINAL = [400, 401, 403, 429]
+_NOT_TERMINAL = [200, 500, 502, 503, 504]
+
+
+@pytest.mark.parametrize("status", _TERMINAL + _NOT_TERMINAL)
+async def test_terminal_4xx_is_stamped_should_retry_false(status: int) -> None:
+    async with _client(lambda r: httpx.Response(status), DonkeyConfig(max_retries=0)) as client:
+        resp = await client.get("https://x")
+    expected = "false" if status in _TERMINAL else None
+    assert resp.headers.get("x-should-retry") == expected
+
+
+@pytest.mark.parametrize("status", _TERMINAL + _NOT_TERMINAL)
+def test_sync_terminal_4xx_is_stamped_should_retry_false(status: int) -> None:
+    with _sync_client(lambda r: httpx.Response(status), DonkeyConfig(max_retries=0)) as client:
+        resp = client.get("https://x")
+    expected = "false" if status in _TERMINAL else None
+    assert resp.headers.get("x-should-retry") == expected
+
+
+async def test_streamed_refusal_is_stamped_should_retry_false() -> None:
+    async with _client(lambda r: httpx.Response(429)) as client:
+        request = client.build_request("POST", "https://x", json={"model": "m", "stream": True})
+        resp = await client.send(request, stream=True)
+        await resp.aclose()
+    assert resp.headers.get("x-should-retry") == "false"
+
+
+async def test_openai_sdk_with_its_own_retries_sends_a_refusal_once() -> None:
+    """A developer's own ``AsyncOpenAI`` built on the shared client, with the
+    SDK's default retries left on, still sends a budget refusal once — and keeps
+    retrying a 500, which the transport does not stamp."""
+    openai = pytest.importorskip("openai")
+    from typing import Any, cast
+
+    sends: list[int] = []
+
+    def handler(status: int) -> Any:
+        def answer(request: httpx.Request) -> httpx.Response:
+            sends.append(status)
+            return httpx.Response(status, headers={"retry-after": "0"})
+
+        return answer
+
+    for status, expected in ((429, 1), (500, 3)):
+        sends.clear()
+        http = _client(handler(status), DonkeyConfig(max_retries=0))
+        client = openai.AsyncOpenAI(
+            base_url="https://x/", api_key="k", http_client=cast(Any, http), max_retries=2
+        )
+        with pytest.raises(openai.APIStatusError):
+            await client.chat.completions.create(
+                model="m", messages=[{"role": "user", "content": "hi"}]
+            )
+        await http.aclose()
+        assert len(sends) == expected, f"{status}: {len(sends)} sends"
+
+
 # --- lifecycle hooks (BG §1.1, #179) --------------------------------------
 # The four seams every Phase 1 feature attaches to: _on_request / _on_response
 # fire exactly once per logical send(); _on_refusal is defined but has no caller
