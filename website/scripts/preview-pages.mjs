@@ -3,7 +3,8 @@ import { createServer } from 'node:http'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 
 const root = resolve('out')
-const basePath = '/donkey-development-kit'
+// Mirrors next.config.mjs: empty (root) unless the export was built with DOCS_BASE_PATH.
+const basePath = (process.env.DOCS_BASE_PATH ?? '').replace(/\/+$/, '')
 const port = Number(process.env.PORT ?? 4173)
 
 const contentTypes = {
@@ -36,12 +37,12 @@ function resolveFile(pathname) {
 
 createServer((request, response) => {
   const pathname = new URL(request.url ?? '/', `http://${request.headers.host}`).pathname
-  if (pathname === '/') {
+  if (basePath && pathname === '/') {
     response.writeHead(302, { location: `${basePath}/` })
     response.end()
     return
   }
-  if (pathname !== basePath && !pathname.startsWith(`${basePath}/`)) {
+  if (basePath && pathname !== basePath && !pathname.startsWith(`${basePath}/`)) {
     response.writeHead(404)
     response.end('Not found')
     return

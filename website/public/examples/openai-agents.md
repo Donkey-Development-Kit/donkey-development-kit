@@ -15,7 +15,7 @@ live-verified `/responses` route and the SDK owns the transport.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,local,openai-agents]"
@@ -56,7 +56,7 @@ print("last_call   ", donkey.last_call.status.value)
 answer, `model calls 2`, total tokens from the Agents SDK's own usage, and
 `last_call observed`. That record is the second call only: the runner sends the
 first turn from a task of its own, where the caller can't see it (see
-[`donkey.last_call`](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md#donkeylast_call)). The SDK usage line
+[`donkey.last_call`](https://docs.donkey-kit.dev/frameworks/openai.md#donkeylast_call)). The SDK usage line
 counts both calls.
 
 ## 02 — Typed refusals, simulated
@@ -131,7 +131,7 @@ refused PIIDetected ['Email']
 requests 2
 ```
 
-**Learn more:** [OpenAI Agents SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/openai.md)
+**Learn more:** [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md)
 
 **Source:**
 [`demos/human-made/openai-agents/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai-agents)

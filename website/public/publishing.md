@@ -2,10 +2,10 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 `donkey scan` walks your repository, finds everything marked
-[`@donkey.tool`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md#donkeytool), plus MCP server definitions and agent entry
+[`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus MCP server definitions and agent entry
 points, and produces a manifest and A2A agent card. `donkey publish` registers
 them with Exchange / Agent Registry. A GitHub Action runs both on every merge to
 `main`.
@@ -24,7 +24,7 @@ Action, every merge updates it.
 Publication is for assets that **originate in your code**:
 
 - an MCP server written in Python or TypeScript,
-- an agent exposed over [A2A](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md),
+- an agent exposed over [A2A](https://docs.donkey-kit.dev/a2a.md),
 - an agent exposed as a tool without an A2A surface.
 
 It is not for assets the platform already owns. An MCP server created by MCP
@@ -135,6 +135,6 @@ reflect, or a broken framework adapter.
 
 ## Related
 
-- [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) — mark tools with `@donkey.tool` today.
-- [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) — serve and expose the agent whose card you publish.
-- [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md) — discover and bind published tools from Exchange.
+- [CLI & decorators](https://docs.donkey-kit.dev/cli.md) — mark tools with `@donkey.tool` today.
+- [A2A agents](https://docs.donkey-kit.dev/a2a.md) — serve and expose the agent whose card you publish.
+- [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.

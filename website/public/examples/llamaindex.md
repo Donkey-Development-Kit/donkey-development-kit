@@ -17,7 +17,7 @@ Both scripts need a live gateway; there is no offline LlamaIndex script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,llamaindex]"
@@ -69,7 +69,7 @@ except openai.APIStatusError as err:
 first case. **You should see:** `<case> ->  <entities>` per case, or
 `<case> NO REFUSAL`.
 
-**Learn more:** [LlamaIndex](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/llamaindex.md)
+**Learn more:** [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md)
 
 **Source:**
 [`demos/human-made/llamaindex/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/llamaindex)

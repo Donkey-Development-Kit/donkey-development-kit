@@ -303,7 +303,7 @@ wrong, the gateway did not say no. `GatewayUnavailable` is not a
 undiscriminated `content-moderation` 4xx falls through to a generic
 `PolicyViolation`.
 
-**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md)
+**Learn more:** [Typed refusals](https://docs.donkey-kit.dev/errors.md)
 
 **Source:**
 [narrative demo 02](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/02_typed_refusals) ·

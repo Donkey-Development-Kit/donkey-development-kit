@@ -2,7 +2,7 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design.
 
 Refunds over €100 need a human. Today that is bespoke code, per team, per
@@ -43,7 +43,7 @@ none of which is a new mechanism:
 1. **Normalisation** — one vocabulary across frameworks, so approval policy is
    not rewritten when a team switches from ADK to LangGraph.
 2. **Auditability** — the pending approval appears in the
-   [span](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md), and the approver's identity lands in the audit trail
+   [span](https://docs.donkey-kit.dev/telemetry.md), and the approver's identity lands in the audit trail
    next to the correlation ID. "Who approved this refund?" becomes a query.
 3. **Gateway routing** — a high-risk approval can be routed through the
    gateway's identity layer for step-up MFA, rather than trusting a click in
@@ -52,7 +52,7 @@ none of which is a new mechanism:
 ## Out of scope
 
   DDK will not ship an approval queue or an approval UI — both are on the
-  [will-not-build list](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md). It integrates with whatever you already run:
+  [will-not-build list](https://docs.donkey-kit.dev/roadmap.md). It integrates with whatever you already run:
   Slack, ServiceNow, or LangGraph's own checkpointer.
 
 A queue would mean owning a durable store, an escalation model, and a

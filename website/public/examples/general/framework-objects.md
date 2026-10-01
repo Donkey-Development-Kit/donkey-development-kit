@@ -225,16 +225,16 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
   adapters build the native object directly. They refuse with "blocked on
   verification" only when the installed framework version lacks the class or
   field the adapter depends on (for example, `gemini()` on google-adk older than
-  2.4). See [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#supported-frameworks) for each adapter's
+  2.4). See [Model access](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) for each adapter's
   verification status.
 
 `resolve()` capabilities are heuristics derived from the model id, not a
 governed catalog. The gateway returns 404 for `GET /models` because
 model-based routing only routes requests that already carry `model` in the
 body. When a live call fails — wrong URL, wrong credentials, or a model the
-allow-list does not include — [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) tells those apart.
+allow-list does not include — [`donkey doctor`](https://docs.donkey-kit.dev/cli.md) tells those apart.
 
-**Learn more:** [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
+**Learn more:** [Model access](https://docs.donkey-kit.dev/frameworks.md) · [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [CLI & decorators](https://docs.donkey-kit.dev/cli.md)
 
 **Source:**
 [narrative demo 07](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/07_model_handles) ·

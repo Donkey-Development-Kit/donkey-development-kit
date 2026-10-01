@@ -8,7 +8,7 @@ when you open the page. Phase 1 is complete and released as `donkey-kit`
   Complete every issue in the milestone is closed ·{' '}
   In progress work has landed and more is open ·{' '}
   Planned designed, not started. Want to help
-  move a phase forward? See [Contribute](https://donkey-development-kit.github.io/donkey-development-kit/community/contribute.md).
+  move a phase forward? See [Contribute](https://docs.donkey-kit.dev/community/contribute.md).
 
 ## Phase 1 — Build the MVP
 

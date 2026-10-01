@@ -5,10 +5,10 @@ window resetting every hour, no human awake. Without a budget object the script
 runs flat out, takes a `429` partway through, crashes, and someone re-runs it
 from record zero in the morning — spending the budget twice to do the same work.
 
-The fix is to make the remaining budget a [first-class object](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and pace
+The fix is to make the remaining budget a [first-class object](https://docs.donkey-kit.dev/budget.md) and pace
 against it: slow down *before* the wall, wait for the window to reset, and carry
 on. This page runs that loop end to end against the [local
-simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) in about ninety seconds, instead of "we'll find out
+simulator](https://docs.donkey-kit.dev/simulator.md) in about ninety seconds, instead of "we'll find out
 tonight."
 
 ## What it demonstrates
@@ -16,7 +16,7 @@ tonight."
 - **`pace()` raises before the request that would cross your reserve**, not
   after a `429` comes back — the distinction that is the whole feature.
 - **The window actually resets and the job resumes**, driven by the simulator's
-  `budget` [scenario](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting), which runs a *real*
+  `budget` [scenario](https://docs.donkey-kit.dev/simulator.md#scenario-scripting), which runs a *real*
   wall-clock-windowed token counter and serves the captured `token-rate-limit`
   **429** on exhaustion.
 - **The batch finishes unattended** — nobody re-runs anything.
@@ -93,7 +93,7 @@ async def enrich_all(records, enrich):
   the guard active again. A response that does not supply a fresh future
   `reset_at` leaves the stale pass-through open. If a partial observation reaches
   the reserve without a `reset_at`, the loop re-raises after one attempt instead
-  of spinning at zero delay. See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+  of spinning at zero delay. See [Budget & pacing](https://docs.donkey-kit.dev/budget.md).
 
 ## The honest limitation
 
@@ -102,21 +102,21 @@ async def enrich_all(records, enrich):
   So `donkey.budget.remaining` is only as fresh as your last call, and a
   brand-new process knows nothing until its first request completes — which is
   why `donkey.budget.observed_at` is part of the public surface. A budget-query
-  endpoint is filed as an [upstream gap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) against the gateway.
+  endpoint is filed as an [upstream gap](https://docs.donkey-kit.dev/roadmap.md) against the gateway.
 
 ## Verification status
 
 The budget object, `pace()`, and `wait_for_reset()` are **shipped** (Phase 1).
 The windowed-counter behaviour you're pacing against here is the
-[simulator's](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — a faithful replay of the observed live contract
+[simulator's](https://docs.donkey-kit.dev/simulator.md) — a faithful replay of the observed live contract
 (prose window on the `200`, numeric `x-token-*` trio on the `429`), never a
 header shape the gateway does not emit. The end-to-end assertion against the simulator
 is exactly what this scenario runs.
 
 ## Where to go next
 
-- [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) — the full `Budget` object and its two helpers.
-- [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) — the `budget` scenario and how the windowed
+- [Budget & pacing](https://docs.donkey-kit.dev/budget.md) — the full `Budget` object and its two helpers.
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md) — the `budget` scenario and how the windowed
   counter is computed.
-- [Internal copilot](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/internal-copilot.md) — a content-safety guardrail
+- [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md) — a content-safety guardrail
   and per-run correlation for an internal assistant.

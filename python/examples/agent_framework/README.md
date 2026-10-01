@@ -18,7 +18,7 @@ itself.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
-> **[Microsoft Agent Framework](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/agent-framework)**.
+> **[Microsoft Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework)**.
 > This README duplicates the runnable essentials on purpose so you can run it in
 > place; if the two ever differ, the docs page is canonical.
 
@@ -40,7 +40,7 @@ missing setting, when one is absent. For a model-wallet proxy, set
 `DONKEY_LLM_PROXY_AUTH=jwt` and `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` instead of
 the client id and secret; the wallet JWT comes from an `AuthProvider` you pass
 to `Donkey(llm_auth=...)` in your own code
-([Configuration](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration#jwt--model-wallet-auth-mode)).
+([Configuration](https://docs.donkey-kit.dev/reference/configuration#jwt--model-wallet-auth-mode)).
 
 ## The manual equivalent
 

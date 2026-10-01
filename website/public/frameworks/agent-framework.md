@@ -104,7 +104,7 @@ llm = OpenAIChatClient(
 `async_client` is present when the `openai` package is installed. The
 constructor uses it as given, so a `base_url` passed to `chat_client()` gets a
 client built on that URL; the URL must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 The same kwargs work with `OpenAIChatCompletionClient`, the Chat Completions
 client.
 
@@ -182,5 +182,5 @@ missing from your installed version, `policy_middleware()` raises a
   `UNOBSERVED`, because MS Agent Framework is still listed as not observing calls. Aligning
   that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for the full `PolicyViolation` hierarchy
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for the full `PolicyViolation` hierarchy
 that `policy_middleware()` raises.

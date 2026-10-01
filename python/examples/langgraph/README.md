@@ -54,7 +54,7 @@ prove (#198):
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
-> **[LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph)**.
+> **[LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph)**.
 > This README duplicates the runnable essentials on purpose so you can run it in
 > place; if the two ever differ, the docs page is canonical.
 

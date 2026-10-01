@@ -23,7 +23,7 @@ The SDK can reach two platform destinations: the Model Proxy, for every model
 call, and the Anypoint connected-app token endpoint, only when a control-plane
 feature needs a token. Model calls never request that token. The features that
 would request it are listed in
-[Which features use the control plane](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-features-use-the-control-plane);
+[Which features use the control plane](https://docs.donkey-kit.dev/reference/configuration.md#which-features-use-the-control-plane);
 all of them are Roadmap in this release, so the token endpoint is contacted
 only if your own code calls `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
@@ -65,7 +65,7 @@ section is empty.
 ## Local Mode is not supported
 
   Donkey Development Kit does not support Omni/Flex Gateway **Local Mode**.
-  The [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) (`donkey mock` / `simulate()`) is the
+  The [local simulator](https://docs.donkey-kit.dev/simulator.md) (`donkey mock` / `simulate()`) is the
   supported local dev loop; real-gateway behavior is exercised against a
   hosted (Connected Mode) proxy instead. A stock Flex Gateway 1.14.0 Local
   Mode image rejects the LLM Proxy and MCP Bridge policies as missing

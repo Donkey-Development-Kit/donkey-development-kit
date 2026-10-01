@@ -259,7 +259,7 @@ with donkey.run(id="otel-zero-config", team="cx", project="welcome"):
   `DONKEY_TELEMETRY=false` opts out even when one is set, and a host
   `TracerProvider` is never replaced.
 
-**Learn more:** [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)
+**Learn more:** [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md)
 
 **Source:**
 [narrative demo 06](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/06_telemetry) ·

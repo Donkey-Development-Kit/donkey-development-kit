@@ -72,14 +72,14 @@ agents in production.
   an official Salesforce or MuleSoft product** and is not supported by
   Salesforce. "Agent Fabric", "Anypoint", "MuleSoft" and "Omni Gateway" are
   Salesforce trademarks; DDK uses them only to describe the platform it
-  connects to. Meet the people behind it on the [Team](https://donkey-development-kit.github.io/donkey-development-kit/community/team.md) page.
+  connects to. Meet the people behind it on the [Team](https://docs.donkey-kit.dev/community/team.md) page.
 
 ## Architecture
 
 DDK sits inside your agent process. Today it speaks to the platform on two
 fronts: governed calls through the gateway, and telemetry to your
 observability stack. A third front, publishing assets to the control plane,
-is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
 
 **The AI control plane** is where the platform team manages the AI estate:
 the agent registry, cost control, gateway federation, and governance and
@@ -225,7 +225,7 @@ curl "${DONKEY_LLM_PROXY_URL}chat/completions" \
 `donkey.llamaindex.llm("gpt-4o")` returns a real `OpenAILike`. Hand them
 straight to `create_agent`, a LlamaIndex query engine or a Strands `Agent`.
 And if you ever want to drop DDK, you eject to three lines of native
-constructor code — every [framework page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) shows exactly which
+constructor code — every [framework page](https://docs.donkey-kit.dev/frameworks.md) shows exactly which
 three.
 
 A stock client with a `base_url` and two headers can reach the gateway. What

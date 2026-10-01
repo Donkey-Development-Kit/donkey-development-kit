@@ -96,11 +96,11 @@ never burn an exhausted budget or replay a blocked prompt.
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
-| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md). |
+| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli.md). |
 
 Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
 they sit outside the retry question. `BudgetReserveReached` is raised *before* a
-call by [`donkey.budget.pace()`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) and is meant to be recovered from
+call by [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) and is meant to be recovered from
 (`await donkey.budget.wait_for_reset()`, then continue) when its `.reset_at` is
 known. If `.reset_at` is `None`, propagate or handle it instead — waiting returns
 immediately and an unconditional retry would spin. Its `.remediation` carries
@@ -111,7 +111,7 @@ different model than requested (opt-in via `on_model_substitution="raise"`).
 field at once, and it also reports an endpoint that may not receive the
 configured credentials: a non-`https://` URL, or a URL from the project's config
 files paired with credentials from elsewhere. See
-[Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+[Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 Fix the config and re-run. The transport raises `ConfigError` for two lifecycle
 mistakes as well, so neither escapes as a bare `RuntimeError`: a call on a
 `Donkey` whose HTTP client is closed (after `aclose()`, or after a framework
@@ -125,7 +125,7 @@ the `ConfigError` from `e.__cause__`.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
-[`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) also prints. Control-plane token failures override that
+[`donkey doctor`](https://docs.donkey-kit.dev/cli.md) also prints. Control-plane token failures override that
 default with guidance for the provider that failed: connected-app errors point
 to the Anypoint credentials and scopes, while an exhausted `ChainedAuth` points
 to each configured provider's credential or token source.
@@ -174,7 +174,7 @@ a canonical default. For the refusals:
 
 The text names the **action you can take**, not the policy that fired. Because
 each default lives on the exception class, it is a single source of wording that
-[`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) reuses for its own failure output, so the CLI and the
+[`donkey doctor`](https://docs.donkey-kit.dev/cli.md) reuses for its own failure output, so the CLI and the
 exception never disagree.
 
 ## Refusal messages don't repeat blocked content
@@ -183,7 +183,7 @@ The PII policy's rejection text repeats every value it flagged. `PIIDetected`
 builds its own message instead, from the entity types, their count and their
 character offsets. So `str(exc)`, `repr(exc)` and `exc.args` never contain the
 blocked value, and neither does a log line, a traceback or
-[`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md):
+[`donkey doctor`](https://docs.donkey-kit.dev/cli.md):
 
 ```
 Request blocked: personally identifiable information detected (403): 1 entity (Email at chars 12-32). Values withheld; the gateway's text is on .gateway_message.
@@ -198,7 +198,7 @@ headers, category names and policy pattern names, never from the request.
 A traceback also prints every chained exception, and a framework's own error
 usually repeats the gateway's text. So when the SDK maps a framework error to
 a typed one, as LangGraph's
-[`typed_refusals()`](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#typed-refusals-inside-a-node) does,
+[`typed_refusals()`](https://docs.donkey-kit.dev/frameworks/langgraph.md#typed-refusals-inside-a-node) does,
 it raises it without a chained cause: `exc.__cause__` is `None`, and the
 framework error is on `exc.framework_error` (`None` when there was none). No
 frame in the traceback holds the framework error as a local variable, so error
@@ -209,7 +209,7 @@ Python still keeps it on the suppressed `exc.__context__`, so treat
 This applies to policy refusals. `UpstreamRequestError` messages include the
 upstream provider's own error text, which can quote parts of your request. For
 everything the SDK does and doesn't hide in printed output, see
-[What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
+[What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides).
 
 ## The ids every `DonkeyError` carries
 
@@ -218,7 +218,7 @@ logs and to the gateway's own record:
 
 | Attribute | What it is | Provenance |
 | --- | --- | --- |
-| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
+| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
 | `.call_id` | The **per-call** id, unique per logical request and stable across that request's retries | The `X-Donkey-Request-Id` request header the client sent. Present **even when the request fails before any response** (a transport error). |
 | `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
@@ -270,7 +270,7 @@ retries **once** on a 401. In the default client-id mode the data-plane client
 holds no token, so a 401 is terminal, as it is on the blocking client, and
 surfaces immediately as `AuthError`. The Anypoint control-plane credential
 lives on a separate client: model calls never fetch, send or refresh it. See
-[What the SDK sends where](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-the-sdk-sends-where).
+[What the SDK sends where](https://docs.donkey-kit.dev/reference/configuration.md#what-the-sdk-sends-where).
 
 ## Unrecognised shapes
 

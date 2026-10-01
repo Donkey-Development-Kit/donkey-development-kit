@@ -15,7 +15,7 @@ openai error in `ChatClientException`, and the response rides on `__cause__`.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,local,agent_framework]"
@@ -106,7 +106,7 @@ requests 2
   `TypeError … model_id` means an older Agent Framework; the scripts target
   the 1.19.0 `model=` keyword.
 
-**Learn more:** [MS Agent Framework](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/agent-framework.md)
+**Learn more:** [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md)
 
 **Source:**
 [`demos/human-made/agent-framework/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/agent-framework)

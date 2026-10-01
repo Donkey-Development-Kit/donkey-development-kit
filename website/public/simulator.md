@@ -36,14 +36,14 @@ multi-provider proxy (`ModelNotRoutable`). One happy-path
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see
-[Gateway identity](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
+[Gateway identity](https://docs.donkey-kit.dev/examples/general/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
 Any other `model` value gets the default model-based happy path. The
 `donkey-sim/` prefix is a simulator-only control surface; the real gateway never
 interprets it.
 
 Because each body is the *same fixture* the SDK's error classifier is tested
 against, a sentinel request surfaces in your agent as the typed exception — a
-[`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), not a raw `403`.
+[`PIIDetected`](https://docs.donkey-kit.dev/errors.md), not a raw `403`.
 
 ## Choosing a port or host
 
@@ -69,7 +69,7 @@ Point your client at the same address: set
 simulator from another machine or container by LAN address or hostname (for
 example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
 environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
-[Endpoints must use `https://`](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[Endpoints must use `https://`](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
   Behind an HTTP proxy (`HTTP_PROXY` or `ALL_PROXY` set, as on many corporate
   machines and CI runners), the client sends loopback requests to the proxy
@@ -84,7 +84,7 @@ Set the simulator URL in the environment (or in code), as above. If you keep it
 in `.donkey-kit.toml` instead, put the credentials in `.donkey-kit.local.toml`
 next to it: a URL from the working directory's config files, loopback included,
 only receives credentials from those files. See
-[Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+[Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 
   If you run the simulator's ASGI app under `uvicorn` yourself instead of
   through `donkey mock`, remember uvicorn's own default port is `8000`, not
@@ -112,7 +112,7 @@ scenarios the `--scenario` flag builds. If the `[local]` extra is missing,
 
 Happy-path `200` responses carry a synthesised `x-llm-proxy-ratelimit` budget
 window that decrements on every call, so the pacing logic from
-[Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) runs end-to-end against the simulator. For a real
+[Budget & pacing](https://docs.donkey-kit.dev/budget.md) runs end-to-end against the simulator. For a real
 windowed counter that resets and emits the `429` on exhaustion, use the
 [`budget` scenario](#scenario-scripting).
 
@@ -147,13 +147,13 @@ other calls get the happy path.
 donkey mock --scenario pii_block:every=5
 ```
 
-Every fifth call raises a typed [`PIIDetected`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) in your agent, so your
+Every fifth call raises a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md) in your agent, so your
 masking logic runs in your own terminal before the pull request is opened.
 
 ### `budget:limit=<tokens>,window=<duration>`
 
 Runs a **real, wall-clock-windowed token counter**. Shrink an hour-long window
-to a minute and your [pacing and resume logic](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) is exercised in ninety
+to a minute and your [pacing and resume logic](https://docs.donkey-kit.dev/budget.md) is exercised in ninety
 seconds.
 
 ```bash
@@ -181,7 +181,7 @@ Serves the `injection-protection` **400** on any request whose `input`,
 donkey mock --scenario injection:on-pattern="ignore previous"
 ```
 
-The request surfaces as a typed [`PromptInjectionBlocked`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) (via the
+The request surfaces as a typed [`PromptInjectionBlocked`](https://docs.donkey-kit.dev/errors.md) (via the
 `x-injection-protection: blocked` discriminator), so the refusal branch of a
 guardrailed bot is exercised before it faces a real attack.
 
@@ -202,18 +202,18 @@ guardrailed bot is exercised before it faces a real attack.
   byte-identical rejection bodies and exact discriminator headers.
 - **Its fixtures are the SDK's test fixtures.** The simulator serves the same
   files the error classifier is tested against, so the simulator and the
-  [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) cannot drift apart. The wheel ships a sha256
+  [error taxonomy](https://docs.donkey-kit.dev/errors.md) cannot drift apart. The wheel ships a sha256
   integrity manifest of every fixture, so a changed byte fails loudly rather
   than silently altering what the simulator replays.
 - **It is pure Python — not Omni/Flex Gateway running in Local Mode.**
   `pip install "donkey-kit[local]"` adds Starlette and Uvicorn; no Docker
   required. DDK does not support Local Mode as a deployment target (see the
-  [unsupported boundary](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)); real-gateway
+  [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)); real-gateway
   behavior is exercised against a hosted (Connected Mode) proxy instead.
 
 ## Related
 
-- [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) — `simulate()` for in-process unit tests,
+- [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
   and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
-- [Error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) — the typed exceptions each shape maps to.
-- [CLI](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) — the full `donkey` command reference.
+- [Error taxonomy](https://docs.donkey-kit.dev/errors.md) — the typed exceptions each shape maps to.
+- [CLI](https://docs.donkey-kit.dev/cli.md) — the full `donkey` command reference.

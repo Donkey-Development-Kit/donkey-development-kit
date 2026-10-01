@@ -2,12 +2,12 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 Governed tool access lets an agent discover the MCP tools your organisation has
 published and governed, filter them down to what it actually needs, and bind
 them into any of the eight supported frameworks as that framework's **native
-tool objects** — the same "no wrapper" approach as [model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md).
+tool objects** — the same "no wrapper" approach as [model access](https://docs.donkey-kit.dev/frameworks.md).
 
 ## Two lines from catalog to agent
 
@@ -38,7 +38,7 @@ Name search, asset type and environment filters live one layer down, on
 `donkey.registry.search()`.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
-Exchange — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md).
+Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
 
 ## In this section
 

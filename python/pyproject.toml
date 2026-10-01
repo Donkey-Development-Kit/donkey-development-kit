@@ -32,7 +32,7 @@ dependencies = [
 # (basePath /donkey-development-kit); Changelog is the GitHub Releases feed —
 # the GitHub Release IS the changelog (no CHANGELOG.md), per the ddk-release skill.
 Homepage = "https://github.com/Donkey-Development-Kit/donkey-development-kit"
-Documentation = "https://donkey-development-kit.github.io/donkey-development-kit"
+Documentation = "https://docs.donkey-kit.dev"
 Repository = "https://github.com/Donkey-Development-Kit/donkey-development-kit"
 Issues = "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues"
 Changelog = "https://github.com/Donkey-Development-Kit/donkey-development-kit/releases"

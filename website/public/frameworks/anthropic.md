@@ -15,7 +15,7 @@ straight into the client constructor.
   the Anthropic ingress Format. Default DDK proxies are `Format=OpenAI`: there,
   `/v1/messages` returns 404 and Claude is reachable only as an upstream
   provider through the OpenAI-compatible adapters. See
-  [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) for how ingress Format works.
+  [Model access](https://docs.donkey-kit.dev/frameworks.md) for how ingress Format works.
 
 ## Install
 
@@ -162,6 +162,6 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   end the connection pool, close the `Donkey` (`async with Donkey.from_env()`
   or `await donkey.aclose()`).
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

@@ -15,13 +15,13 @@ build, so they never drift from what you see here:
 
 | Artifact | What it is | URL |
 | --- | --- | --- |
-| `llms.txt` | A curated **index** — one link per page, grouped by section. Best when your tool ingests a doc index and fetches pages on demand. | [`/llms.txt`](https://donkey-development-kit.github.io/donkey-development-kit/llms.txt) |
-| `llms-full.txt` | **Every page inlined** into one file. Best for pasting straight into an assistant — no fetching required. | [`/llms-full.txt`](https://donkey-development-kit.github.io/donkey-development-kit/llms-full.txt) |
-| Per-page `.md` | The raw markdown for any page, served next to its HTML. Append `.md` to any page URL. | e.g. [`/quickstart.md`](https://donkey-development-kit.github.io/donkey-development-kit/quickstart.md) |
+| `llms.txt` | A curated **index** — one link per page, grouped by section. Best when your tool ingests a doc index and fetches pages on demand. | [`/llms.txt`](https://docs.donkey-kit.dev/llms.txt) |
+| `llms-full.txt` | **Every page inlined** into one file. Best for pasting straight into an assistant — no fetching required. | [`/llms-full.txt`](https://docs.donkey-kit.dev/llms-full.txt) |
+| Per-page `.md` | The raw markdown for any page, served next to its HTML. Append `.md` to any page URL. | e.g. [`/quickstart.md`](https://docs.donkey-kit.dev/quickstart.md) |
 
   The site is served under a project sub-path today
   (`/donkey-development-kit`), so the files live at
-  `https://donkey-development-kit.github.io/donkey-development-kit/llms.txt`
+  `https://docs.donkey-kit.dev/llms.txt`
   rather than a bare domain-root `/llms.txt`. Use the full URLs above.
 
 ## Point your assistant at them
@@ -29,7 +29,7 @@ build, so they never drift from what you see here:
 Ask Claude Code to read the full docs, then build:
 
 ```text
-Read https://donkey-development-kit.github.io/donkey-development-kit/llms-full.txt,
+Read https://docs.donkey-kit.dev/llms-full.txt,
 then write a governed LangGraph model call using the donkey-kit SDK.
 ```
 
@@ -37,7 +37,7 @@ In Cursor, add the docs as a source (**Settings → Features → Docs → Add**)
 the index URL, then `@Docs` it in chat:
 
 ```text
-https://donkey-development-kit.github.io/donkey-development-kit/llms.txt
+https://docs.donkey-kit.dev/llms.txt
 ```
 
 For any assistant, paste the contents of `llms-full.txt` into the conversation,
@@ -46,7 +46,7 @@ full context without following links:
 
 ```text
 <paste the contents of
- https://donkey-development-kit.github.io/donkey-development-kit/llms-full.txt>
+ https://docs.donkey-kit.dev/llms-full.txt>
 
 Now write a governed OpenAI Agents SDK setup that handles a TokenBudgetExceeded
 refusal.
@@ -56,10 +56,10 @@ If your tool follows a doc index, give it `llms.txt`. Each entry links to the
 page's `.md`, so the tool fetches only the pages it needs:
 
 ```text
-https://donkey-development-kit.github.io/donkey-development-kit/llms.txt
+https://docs.donkey-kit.dev/llms.txt
 ```
 
-  These docs cover both live capabilities and ones on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+  These docs cover both live capabilities and ones on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
   Roadmap pages show the planned API, which is not callable yet. When you ask an
   assistant to write code, tell it to use only capabilities marked **Live**, and
   review generated code before running it against a real gateway.

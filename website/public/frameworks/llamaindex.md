@@ -102,7 +102,7 @@ model = OpenAILike(
 
 LlamaIndex uses `api_base` rather than `base_url`; `connection_kwargs()`
 already translates for you. An `api_base` passed to `llm()` must pass the
-[`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
 ## Notes
 
@@ -139,8 +139,8 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   one, so they raise `ConfigError` before sending anything.
 - **Printing the model shows credentials.** `OpenAILike`'s own `repr()` /
   `str()` include `client_secret` and `api_key`. Don't print or log it; see
-  [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
+  [What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides).
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

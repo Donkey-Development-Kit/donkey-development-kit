@@ -139,6 +139,6 @@ await Runner.run(agent, "hello", hooks=LastCallHooks())
   `donkey-kit[openai-agents]` pulls it in for you. For the raw governed client
   with no framework, use `donkey.openai()` (from `donkey-kit[llm]`) instead.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

@@ -7,7 +7,7 @@ the governed client is passed in, the SDK owns the transport: run id,
 scripts use `gpt-4o`. If you point them at a model the proxy routes to Gemini,
 add `stream=False` to `OpenAIModel(...)`: Strands streams by default, and a
 Gemini-routed stream has no chunk deltas, so every turn fails (see
-[Streaming chat completions to a Gemini upstream](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)).
+[Streaming chat completions to a Gemini upstream](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)).
 
   **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
   client per request from `client_args`. That closes the shared transport
@@ -24,7 +24,7 @@ Gemini-routed stream has no chunk deltas, so every turn fails (see
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm]" "strands-agents[openai]"
@@ -124,7 +124,7 @@ for `AuthError`.
 first case. **You should see:** `<case> ->  <entities>` per case, or
 `<case> NO REFUSAL`.
 
-**Learn more:** [Strands](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/strands.md)
+**Learn more:** [Strands](https://docs.donkey-kit.dev/frameworks/strands.md)
 
 **Source:**
 [`demos/human-made/strands/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/strands)
