@@ -28,13 +28,13 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 from . import _verify
 from .lastcall import request_id as read_request_id
 
 if TYPE_CHECKING:
     from datetime import datetime
-
-    import httpx
 
 
 class DonkeyError(Exception):
@@ -826,19 +826,29 @@ def _retry_after(response: httpx.Response) -> float | None:
     """Seconds until the caller may retry. Prefers the standard ``retry-after``
     (delta-seconds) header; falls back to the LLM token-rate-limit policy's
     ``x-token-reset`` header, which is captured in **milliseconds** (docs/verified-apis.md §4)."""
-    raw = response.headers.get("retry-after")
-    if raw is not None:
-        try:
-            return float(raw)
-        except ValueError:
-            pass  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
+    seconds = parse_retry_after(response.headers.get("retry-after"))
+    if seconds is not None:
+        return seconds
     reset_ms = response.headers.get("x-token-reset")
     if reset_ms is not None:
         try:
-            return float(reset_ms) / 1000.0
+            return max(0.0, float(reset_ms) / 1000.0)
         except ValueError:
             return None
     return None
+
+
+def parse_retry_after(raw: str | None) -> float | None:
+    """A ``Retry-After`` delta-seconds value, floored at 0, or ``None`` when it
+    is absent or not a number. The one parser behind both the transport's retry
+    sleep and an error's ``retry_after``: a negative value (e.g. ``"-1"``) means
+    "retry now", never a negative wait (#286, #815)."""
+    if raw is None:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
 
 
 _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
@@ -903,10 +913,12 @@ def _int_or_none(value: Any) -> int | None:
 def _parse_json(response: httpx.Response) -> Any:
     """The response's parsed JSON body (of any shape — object, list, scalar), or
     ``None`` when the body is absent or not JSON. Never raises on the caller's
-    request path (verification discipline)."""
+    request path (verification discipline). An unread streamed body
+    (``ResponseNotRead``) is "absent" too: the transport reads a streamed refusal
+    before classifying it (#805), so this only guards a direct caller."""
     try:
         return response.json()
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, httpx.ResponseNotRead):
         return None
 
 

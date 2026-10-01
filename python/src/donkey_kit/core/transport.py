@@ -38,12 +38,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 import re
 import time
 from collections.abc import AsyncIterator, Iterable, Iterator, Sized
 from types import TracebackType
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -54,7 +55,14 @@ from .cachecontrol import current_cache_controls
 from .config import DonkeyConfig
 from .cost import CostTags
 from .endpoints import require_secure_url
-from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
+from .errors import (
+    ConfigError,
+    GatewayUnavailable,
+    ModelSubstituted,
+    classify,
+    gateway_unavailable,
+    parse_retry_after,
+)
 from .lastcall import (
     LLM_MODEL_HEADER,
     LLM_PROVIDER_HEADER,
@@ -105,6 +113,13 @@ PROXY_API_KEY_SENTINEL = "client-id-enforced"
 _RETRYABLE_STATUS = frozenset({502, 503, 504})
 _BACKOFF_BASE_S = 0.5
 _BACKOFF_CAP_S = 30.0
+# A non-2xx body on a stream request is read up to this many bytes before the
+# span is recorded, so classify() sees the same JSON a buffered refusal has
+# (#805). Proxy error envelopes are a few hundred bytes; past the cap the body is
+# left for the caller and the span falls back to what the headers say.
+_ERROR_BODY_CAP = 64 * 1024
+
+_log = logging.getLogger(__name__)
 
 
 # The four cost dimensions → the config field that overrides that header name →
@@ -155,7 +170,7 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
     Header NAMES are UNVERIFIED (verification discipline / docs/verified-apis.md §3):
     the live direct-proxy path did NOT
     surface application/business-group as request headers (docs/verified-apis.md §3), so these
-    remain loud, overridable placeholders. The verified per-agent attribution
+    remain loud placeholders with no config override. The verified per-agent attribution
     unit is the ``client_id`` credential — see :func:`proxy_auth_headers`.
 
     Includes the CONFIG-LEVEL cost tags only when ``cfg.send_cost_headers`` is
@@ -380,19 +395,26 @@ def _apply_call_id_header(request: httpx.Request, call_id_header: str) -> None:
 
 
 def _retry_delay(attempt: int, response: httpx.Response) -> float:
-    retry_after = response.headers.get("retry-after")
+    # Floored at 0 by the parser: a negative Retry-After (e.g. "-1") must retry
+    # immediately, never become a negative sleep — asyncio.sleep()/time.sleep()
+    # raise ValueError on a negative argument, which would turn the retryable
+    # status the loop exists to absorb into an unhandled exception (#286). The
+    # HTTP-date form parses to None and falls through to backoff.
+    retry_after = parse_retry_after(response.headers.get("retry-after"))
     if retry_after is not None:
-        try:
-            # Floor at 0: a malformed/negative Retry-After (e.g. "-1") must retry
-            # immediately, never become a negative sleep — asyncio.sleep()/
-            # time.sleep() raise ValueError on a negative argument, which would
-            # turn the retryable status the loop exists to absorb into an
-            # unhandled exception (#286).
-            return max(0.0, min(float(retry_after), _BACKOFF_CAP_S))
-        except ValueError:
-            pass  # HTTP-date form not handled here; fall through to backoff
+        return min(retry_after, _BACKOFF_CAP_S)
     exp = min(_BACKOFF_BASE_S * (2.0**attempt), _BACKOFF_CAP_S)
     return exp * (0.5 + random.random() / 2.0)  # full-ish jitter
+
+
+def _no_attempts(max_retries: object) -> ConfigError:
+    """The error for a retry loop that sent nothing: ``max_retries`` is below 0.
+    ``DonkeyConfig`` refuses that value, so only a config altered after
+    construction gets here (#809)."""
+    return ConfigError(
+        f"max_retries is {max_retries!r}, so no request was sent; expected a whole "
+        "number, 0 or more."
+    )
 
 
 def _gateway_unavailable(
@@ -555,7 +577,9 @@ def _record_response(
         if decision == POLICY_DECISION_REFUSE:
             gspan.set_error()
     except Exception:  # noqa: BLE001 — telemetry must never break the request
-        pass
+        # Never raised, but never silent either: a swallowed failure here once
+        # hid every streamed refusal from the span (#805).
+        _log.debug("recording the GenAI span response attributes failed", exc_info=True)
 
 
 def _substitution_error(
@@ -614,6 +638,94 @@ def _is_streaming_success(response: httpx.Response) -> bool:
     if response.status_code // 100 != 2:
         return False
     return _STREAM_CONTENT_TYPE in response.headers.get("content-type", "")
+
+
+# A refusal on a stream request arrives unread: classify() would hit
+# ``ResponseNotRead`` and the span would lose its decision, policy type and ERROR
+# status (#805). The SDKs read an error body anyway, so the transport reads it
+# first — bounded by _ERROR_BODY_CAP, and replayed untouched when it overflows.
+
+
+def _is_read(response: httpx.Response) -> bool:
+    try:
+        response.content  # noqa: B018 — raises ResponseNotRead on an unread body
+    except httpx.ResponseNotRead:
+        return False
+    return True
+
+
+class _ReplayAsyncStream(httpx.AsyncByteStream):
+    """An over-cap error body: the chunks already read, then the rest, unchanged."""
+
+    def __init__(
+        self, head: list[bytes], rest: AsyncIterator[bytes], inner: httpx.AsyncByteStream
+    ) -> None:
+        self._head, self._rest, self._inner = head, rest, inner
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self._head:
+            yield chunk
+        async for chunk in self._rest:
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
+class _ReplaySyncStream(httpx.SyncByteStream):
+    """Blocking twin of :class:`_ReplayAsyncStream`."""
+
+    def __init__(
+        self, head: list[bytes], rest: Iterator[bytes], inner: httpx.SyncByteStream
+    ) -> None:
+        self._head, self._rest, self._inner = head, rest, inner
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield from self._head
+        yield from self._rest
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+async def _aread_error_body(response: httpx.Response) -> None:
+    """Read an unread non-2xx stream body of at most :data:`_ERROR_BODY_CAP`
+    bytes, leaving the response as if it had been buffered. A larger body is put
+    back as a replay stream, still unread."""
+    inner = response.stream
+    if not isinstance(inner, httpx.AsyncByteStream) or _is_read(response):
+        return
+    rest = inner.__aiter__()
+    head: list[bytes] = []
+    size = 0
+    async for chunk in rest:
+        head.append(chunk)
+        size += len(chunk)
+        if size > _ERROR_BODY_CAP:
+            response.stream = _ReplayAsyncStream(head, rest, inner)
+            return
+    await inner.aclose()
+    response.stream = httpx.ByteStream(b"".join(head))
+    await response.aread()
+
+
+def _read_error_body(response: httpx.Response) -> None:
+    """Blocking twin of :func:`_aread_error_body`."""
+    inner = response.stream
+    if not isinstance(inner, httpx.SyncByteStream) or _is_read(response):
+        return
+    rest = iter(inner)
+    head: list[bytes] = []
+    size = 0
+    for chunk in rest:
+        head.append(chunk)
+        size += len(chunk)
+        if size > _ERROR_BODY_CAP:
+            response.stream = _ReplaySyncStream(head, rest, inner)
+            return
+    inner.close()
+    response.stream = httpx.ByteStream(b"".join(head))
+    response.read()
 
 
 class _SseUsageScanner:
@@ -1119,7 +1231,8 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
 
             return await self._finish(request, response, gspan, streaming=streaming)
 
-        assert last_response is not None  # attempts >= 1
+        if last_response is None:
+            raise _no_attempts(self._cfg.max_retries)
         return await self._finish(request, last_response, gspan, streaming=streaming)
 
     async def _finish(
@@ -1155,7 +1268,21 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         when the stream closes — on drain, mid-iteration abandonment, or exception.
         A buffered 2xx or a refusal on a stream request has no SSE body to scan, so
         the span is ended inline (``_record_response`` already set its decision,
-        usage and — for a refusal — ERROR status)."""
+        usage and — for a refusal — ERROR status). A non-2xx stream body is read
+        first (bounded, #805) so the refusal is classified exactly as a buffered
+        one; a transport failure mid-read surfaces as :class:`GatewayUnavailable`,
+        as it would have on the buffered path's own body read."""
+        if streaming and response.status_code // 100 != 2:
+            try:
+                await _aread_error_body(response)
+            except httpx.TransportError as exc:
+                await response.aclose()
+                raise _gateway_unavailable(
+                    request,
+                    exc,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                ) from exc
         await self._on_response(request, response)
         _record_response(
             gspan,
@@ -1204,6 +1331,13 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.
 
+    In jwt / model-wallet auth mode (``llm_proxy_auth='jwt'``) the credential is
+    exactly such a fetched token, so every request raises :func:`sync_jwt_error`
+    instead of going out unauthenticated (#509, #736). The check sits in
+    :meth:`build_request`, which the OpenAI SDK calls outside the ``try`` that
+    turns transport errors into ``APIConnectionError``, so a framework's sync
+    call (``ChatOpenAI.invoke()``) raises the ``ConfigError`` itself.
+
     Like its async twin it sends credentials only to the checked endpoints; pass
     the async client's :attr:`checked_origins` as ``origins`` to share them.
     """
@@ -1229,6 +1363,11 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         if self._mounts:  # see DonkeyAsyncClient.__init__ (#801)
             self._transport = _SyncMountRouter(self._transport, self._mounts.items())
             self._mounts = {}
+
+    def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
+        if self._cfg.llm_proxy_auth == "jwt":
+            raise sync_jwt_error()
+        return super().build_request(*args, **kwargs)
 
     def _inject_headers(self, request: httpx.Request) -> None:
         _apply_base_headers(
@@ -1337,7 +1476,8 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
 
             return self._finish(request, response, gspan, streaming=streaming)
 
-        assert last_response is not None  # attempts >= 1
+        if last_response is None:
+            raise _no_attempts(self._cfg.max_retries)
         return self._finish(request, last_response, gspan, streaming=streaming)
 
     def _finish(
@@ -1352,7 +1492,19 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         then record the response attributes on the GenAI span. Streaming (#193)
         hands a 2xx SSE body to a :class:`_SpanClosingSyncStream` that ends the
         detached span on close; a buffered/refused stream response ends it inline
-        (see :meth:`DonkeyAsyncClient._finish`)."""
+        (see :meth:`DonkeyAsyncClient._finish`, including the bounded read of a
+        non-2xx stream body, #805)."""
+        if streaming and response.status_code // 100 != 2:
+            try:
+                _read_error_body(response)
+            except httpx.TransportError as exc:
+                response.close()
+                raise _gateway_unavailable(
+                    request,
+                    exc,
+                    correlation_header=self._correlation_header,
+                    call_id_header=self._call_id_header,
+                ) from exc
         self._on_response(request, response)
         _record_response(
             gspan,
@@ -1391,6 +1543,20 @@ def build_http_client(
     ``control_plane=True`` for a client that calls the Anypoint platform (see
     :class:`DonkeyAsyncClient`)."""
     return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
+
+
+def sync_jwt_error() -> ConfigError:
+    """The error for a blocking call in jwt / model-wallet auth mode, shared by
+    ``donkey.llm.client(sync=True)`` and every sync call through
+    :class:`DonkeyClient` (#509, #736), so both surfaces fail the same way."""
+    return ConfigError(
+        "JWT / model-wallet auth mode (llm_proxy_auth='jwt') is async-only: "
+        "the credential is a rotating JWT fetched from an async AuthProvider, "
+        "and the blocking client cannot await it. Use the async surface — "
+        "`donkey.llm.client()` / `donkey.openai()` without sync=True, or a "
+        "framework's async call (`ainvoke()` / `astream()`, not `invoke()`) — or "
+        "switch to client-id auth for a synchronous caller."
+    )
 
 
 def build_sync_http_client(

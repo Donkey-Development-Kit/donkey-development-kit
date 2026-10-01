@@ -120,7 +120,7 @@ dev = [
 ]
 
 [project.scripts]
-donkey = "donkey_kit.provisioning.cli:app"
+donkey = "donkey_kit.provisioning.cli:main"
 
 [project.entry-points.pytest11]
 # Registers the conformance plugin (BG §1.5). Entry points are package metadata,
