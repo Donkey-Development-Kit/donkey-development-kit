@@ -7,7 +7,8 @@ rejected at ``Agent(...)`` construction and that only re-raised a
 ``Agent`` on ``donkey.agent_framework.chat_client()`` and send through the
 shared client to an ``httpx.MockTransport``, so the refusal takes the same path
 it takes against the proxy: openai raises ``PermissionDeniedError`` and MAF
-wraps it in a ``ChatClientException``.
+wraps it in a ``ChatClientException``. Each test runs on both chat clients
+(``api="responses"``, the default, and ``api="chat_completions"``, #826).
 
 Skipped where ``agent_framework`` is not installed; the
 ``agent-framework-middleware`` CI job installs it.
@@ -52,58 +53,84 @@ def _pii_proxy(sent: list[httpx.Request]) -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-def _ok_proxy() -> httpx.MockTransport:
-    """A proxy that answers a Responses API call with one assistant message."""
+_RESPONSES_OK = {
+    "id": "resp_1",
+    "object": "response",
+    "created_at": 0,
+    "model": "gpt-4o",
+    "status": "completed",
+    "output": [
+        {
+            "type": "message",
+            "id": "msg_1",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "hello", "annotations": []}],
+        }
+    ],
+    "parallel_tool_calls": False,
+    "tool_choice": "auto",
+    "tools": [],
+}
+
+_CHAT_COMPLETIONS_OK = {
+    "id": "chatcmpl-1",
+    "object": "chat.completion",
+    "created": 0,
+    "model": "gpt-4o",
+    "choices": [
+        {
+            "index": 0,
+            "message": {"role": "assistant", "content": "hello"},
+            "finish_reason": "stop",
+        }
+    ],
+}
+
+
+def _ok_proxy(sent: list[httpx.Request] | None = None) -> httpx.MockTransport:
+    """A proxy that answers either API with one assistant message and 404s
+    any other route."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={
-                "id": "resp_1",
-                "object": "response",
-                "created_at": 0,
-                "model": "gpt-4o",
-                "status": "completed",
-                "output": [
-                    {
-                        "type": "message",
-                        "id": "msg_1",
-                        "role": "assistant",
-                        "status": "completed",
-                        "content": [{"type": "output_text", "text": "hello", "annotations": []}],
-                    }
-                ],
-                "parallel_tool_calls": False,
-                "tool_choice": "auto",
-                "tools": [],
-            },
-        )
+        if sent is not None:
+            sent.append(request)
+        if request.url.path.endswith("/chat/completions"):
+            return httpx.Response(200, json=_CHAT_COMPLETIONS_OK)
+        if request.url.path.endswith("/responses"):
+            return httpx.Response(200, json=_RESPONSES_OK)
+        return httpx.Response(404, json={"error": {"message": "Resource not found"}})
 
     return httpx.MockTransport(handler)
 
 
-def _agent(fab: Donkey) -> object:
+@pytest.fixture(params=["responses", "chat_completions"])
+def api(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
+
+def _agent(fab: Donkey, api: str) -> object:
     return af.Agent(
-        client=fab.agent_framework.chat_client("gpt-4o"),
+        client=fab.agent_framework.chat_client("gpt-4o", api=api),  # type: ignore[call-overload]
         middleware=[fab.agent_framework.policy_middleware()],
     )
 
 
-def test_policy_middleware_registers_on_a_real_agent() -> None:
+def test_policy_middleware_registers_on_a_real_agent(api: str) -> None:
     """The old wrapper raised ``MiddlewareException: Cannot determine
     middleware type`` here."""
     fab = Donkey(_cfg())
 
-    agent = _agent(fab)
+    agent = _agent(fab, api)
 
     assert isinstance(agent, af.Agent)
 
 
-async def test_pii_refusal_ends_the_run_typed_after_one_send() -> None:
+async def test_pii_refusal_ends_the_run_typed_after_one_send(api: str) -> None:
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
     fab._http._swap_transport(_pii_proxy(sent))
-    agent = _agent(fab)
+    agent = _agent(fab, api)
 
     try:
         with fab.run(id="run-maf"):
@@ -123,13 +150,13 @@ async def test_pii_refusal_ends_the_run_typed_after_one_send() -> None:
     assert err.__cause__ is None
 
 
-async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send() -> None:
+async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send(api: str) -> None:
     """A streamed refusal surfaces when the stream is pulled, after the
     middleware has returned; the hook on the response stream still types it."""
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
     fab._http._swap_transport(_pii_proxy(sent))
-    agent = _agent(fab)
+    agent = _agent(fab, api)
 
     try:
         with fab.run(id="run-maf-stream"):
@@ -143,10 +170,10 @@ async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send() -> None:
     assert excinfo.value.correlation_id == "run-maf-stream"
 
 
-async def test_allowed_call_passes_through_unchanged() -> None:
+async def test_allowed_call_passes_through_unchanged(api: str) -> None:
     fab = Donkey(_cfg())
     fab._http._swap_transport(_ok_proxy())
-    agent = _agent(fab)
+    agent = _agent(fab, api)
 
     try:
         response = await agent.run("hi")  # type: ignore[attr-defined]
@@ -156,7 +183,7 @@ async def test_allowed_call_passes_through_unchanged() -> None:
     assert response.text == "hello"
 
 
-async def test_error_without_a_proxy_response_propagates_untouched() -> None:
+async def test_error_without_a_proxy_response_propagates_untouched(api: str) -> None:
     """A failure with no HTTP response behind it (here, the transport cannot
     connect) is not a gateway refusal and must not be masked as one."""
 
@@ -165,10 +192,32 @@ async def test_error_without_a_proxy_response_propagates_untouched() -> None:
 
     fab = Donkey(_cfg())
     fab._http._swap_transport(httpx.MockTransport(handler))
-    agent = _agent(fab)
+    agent = _agent(fab, api)
 
     try:
         with pytest.raises(ChatClientException):
             await agent.run("hi")  # type: ignore[attr-defined]
     finally:
         await fab.aclose()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "path"),
+    [({}, "/responses"), ({"api": "chat_completions"}, "/chat/completions")],
+)
+async def test_chat_client_sends_to_the_chosen_api(kwargs: dict[str, str], path: str) -> None:
+    """The default client posts to ``/responses``, the verified data-plane
+    route; ``api="chat_completions"`` posts to ``/chat/completions`` for a
+    route, such as Azure OpenAI, that 404s ``/responses`` (#826)."""
+    sent: list[httpx.Request] = []
+    fab = Donkey(_cfg())
+    fab._http._swap_transport(_ok_proxy(sent))
+    agent = af.Agent(client=fab.agent_framework.chat_client("gpt-4o", **kwargs))
+
+    try:
+        response = await agent.run("hi")  # type: ignore[attr-defined]
+    finally:
+        await fab.aclose()
+
+    assert response.text == "hello"
+    assert [r.url.path for r in sent] == [path]
