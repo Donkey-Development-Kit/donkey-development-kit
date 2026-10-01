@@ -1405,12 +1405,10 @@ except genai_errors.APIError as exc:
     err = classify(exc.response)  # e.g. AuthError on 401, UpstreamRequestError on 404
 ```
 
-**One `Donkey` per event loop.** The shared HTTP client's connection pool is
-bound to the event loop that first uses it. Build the `Donkey` — and the
-models — inside the loop that runs them (`async with Donkey.from_env()` in your
-`main`), and don't reuse the module-level `gemini()` across separate
-`asyncio.run(...)` calls: the second run fails with a `ConfigError` saying the
-client's connections belong to an event loop that has closed.
+**Reusing a model across `asyncio.run(...)` calls works.** The shared HTTP
+client keeps one connection pool per event loop, so a sync app that wraps each
+run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
+`gemini()`) once and reuse it.
 
 ## Notes
 
@@ -2444,7 +2442,9 @@ Fix the config and re-run. The transport raises `ConfigError` for two lifecycle
 mistakes as well, so neither escapes as a bare `RuntimeError`: a call on a
 `Donkey` whose HTTP client is closed (after `aclose()`, or after a framework
 closed the client it was given), and a call whose pooled connections belong to
-an event loop that has closed (a second `asyncio.run()` on one `Donkey`). Its
+an event loop that has closed. The SDK's own connection pools are per event
+loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
+transport you passed in and reused across `asyncio.run()` calls. Its
 `.remediation` names the fix for each. Through the OpenAI SDK it arrives
 wrapped, like `GatewayUnavailable`: catch `openai.APIConnectionError` and read
 the `ConfigError` from `e.__cause__`.
