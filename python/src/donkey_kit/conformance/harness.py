@@ -23,6 +23,8 @@ sibling, kept out of the five production layers by an import-linter contract.
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import inspect
 import logging
 from collections.abc import Callable, Iterator
@@ -150,44 +152,67 @@ class _ProbeTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
         return self._serve(request)
 
 
+# The httpx-family stacks whose real network transports the harness blocks.
+# ``httpx2`` is Pydantic's continuation of httpx with its own classes; openai 3.x
+# and anthropic 1.x build their clients on it, so blocking httpx alone would let
+# a stock OpenAI client straight through (#737).
+_HTTP_STACKS = ("httpx", "httpx2")
+
+
+def _installed_http_stacks() -> list[Any]:
+    """The httpx-family modules that are installed, imported now so a client the
+    agent builds later in the scenario gets the patched classes."""
+    stacks: list[Any] = []
+    for name in _HTTP_STACKS:
+        if importlib.util.find_spec(name) is not None:
+            stacks.append(importlib.import_module(name))
+    return stacks
+
+
 @contextmanager
 def _block_real_transports(attempts: list[str]) -> Iterator[None]:
-    """Refuse every send that reaches httpx's real network transports (#737).
+    """Refuse every send that reaches a real network transport (#737).
 
     The Donkey's own clients are swapped onto the counting probe, so anything
-    that arrives at :class:`httpx.HTTPTransport` / :class:`httpx.AsyncHTTPTransport`
-    came from a client the agent built itself: a framework that owns its
-    transport, or a stock ``httpx``/OpenAI client. Each one is recorded in
-    ``attempts`` and failed with :class:`httpx.ConnectError`, the error the
-    agent would see if the host were down, so nothing leaves the process. The
-    patch is on the classes, so it also covers clients built in other threads,
-    and it is removed on exit."""
-    sync_send = httpx.HTTPTransport.handle_request
-    async_send = httpx.AsyncHTTPTransport.handle_async_request
+    that arrives at ``HTTPTransport`` / ``AsyncHTTPTransport`` (of httpx, or of
+    httpx2 when installed) came from a client the agent built itself: a
+    framework that owns its transport, or a stock ``httpx``/OpenAI client. Each
+    one is recorded in ``attempts`` and failed with that stack's own
+    ``ConnectError``, the error the agent would see if the host were down, so
+    nothing leaves the process. The patch is on the classes, so it also covers
+    clients built in other threads, and it is removed on exit."""
+    restore: list[tuple[type, str, Any]] = []
 
-    def refuse(request: httpx.Request) -> httpx.ConnectError:
-        attempts.append(f"{request.method} {request.url}")
-        return httpx.ConnectError(
-            "blocked by the Donkey conformance harness: this request did not go "
-            "through the Donkey client",
-            request=request,
-        )
+    def block(stack: Any) -> None:
+        def refuse(request: Any) -> Exception:
+            attempts.append(f"{request.method} {request.url}")
+            error: Exception = stack.ConnectError(
+                "blocked by the Donkey conformance harness: this request did not "
+                "go through the Donkey client",
+                request=request,
+            )
+            return error
 
-    def blocked_sync(self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        raise refuse(request)
+        def blocked_sync(self: Any, request: Any) -> Any:
+            raise refuse(request)
 
-    async def blocked_async(
-        self: httpx.AsyncHTTPTransport, request: httpx.Request
-    ) -> httpx.Response:
-        raise refuse(request)
+        async def blocked_async(self: Any, request: Any) -> Any:
+            raise refuse(request)
 
-    httpx.HTTPTransport.handle_request = blocked_sync  # type: ignore[method-assign]
-    httpx.AsyncHTTPTransport.handle_async_request = blocked_async  # type: ignore[method-assign]
+        for cls, method, blocked in (
+            (stack.HTTPTransport, "handle_request", blocked_sync),
+            (stack.AsyncHTTPTransport, "handle_async_request", blocked_async),
+        ):
+            restore.append((cls, method, cls.__dict__[method]))
+            setattr(cls, method, blocked)
+
     try:
+        for stack in _installed_http_stacks():
+            block(stack)
         yield
     finally:
-        httpx.HTTPTransport.handle_request = sync_send  # type: ignore[method-assign]
-        httpx.AsyncHTTPTransport.handle_async_request = async_send  # type: ignore[method-assign]
+        for cls, method, original in reversed(restore):
+            setattr(cls, method, original)
 
 
 # Standard LogRecord attribute names, so :func:`_render_records` can tell an

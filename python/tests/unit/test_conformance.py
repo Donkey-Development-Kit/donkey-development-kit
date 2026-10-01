@@ -382,21 +382,24 @@ class OwnOpenAIAgent:
 
 @pytest.fixture
 def real_transport_spy(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Record any request that reaches httpx's real network transports. The
-    harness swaps its own blocker in for the run, so a send that gets past it
-    lands here; the spy fails the request too, so a test never goes online."""
+    """Record any request that reaches a real network transport, on httpx and on
+    httpx2 when installed (openai 3.x is built on it). The harness swaps its own
+    blocker in for the run, so a send that gets past it lands here; the spy fails
+    the request too, so a test never goes online."""
     sent: list[str] = []
 
-    def spy_sync(self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        sent.append(str(request.url))
-        raise httpx.ConnectError("test spy", request=request)
+    for stack in harness_module._installed_http_stacks():
 
-    async def spy_async(self: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
-        sent.append(str(request.url))
-        raise httpx.ConnectError("test spy", request=request)
+        def spy_sync(self: Any, request: Any, stack: Any = stack) -> Any:
+            sent.append(str(request.url))
+            raise stack.ConnectError("test spy", request=request)
 
-    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", spy_sync)
-    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", spy_async)
+        async def spy_async(self: Any, request: Any, stack: Any = stack) -> Any:
+            sent.append(str(request.url))
+            raise stack.ConnectError("test spy", request=request)
+
+        monkeypatch.setattr(stack.HTTPTransport, "handle_request", spy_sync)
+        monkeypatch.setattr(stack.AsyncHTTPTransport, "handle_async_request", spy_async)
     return sent
 
 
@@ -423,11 +426,17 @@ async def test_agent_bypassing_the_donkey_fails_every_scenario(
 async def test_harness_restores_real_transports_after_the_run(
     real_transport_spy: list[str],
 ) -> None:
-    spy_sync = httpx.HTTPTransport.handle_request
-    spy_async = httpx.AsyncHTTPTransport.handle_async_request
+    stacks = harness_module._installed_http_stacks()
+    before = [
+        (s.HTTPTransport.handle_request, s.AsyncHTTPTransport.handle_async_request)
+        for s in stacks
+    ]
     await run_conformance(OwnHttpxAgent)
-    assert httpx.HTTPTransport.handle_request is spy_sync
-    assert httpx.AsyncHTTPTransport.handle_async_request is spy_async
+    after = [
+        (s.HTTPTransport.handle_request, s.AsyncHTTPTransport.handle_async_request)
+        for s in stacks
+    ]
+    assert after == before
 
 
 def test_unobservable_adapter_is_named_with_the_exemption_route() -> None:
