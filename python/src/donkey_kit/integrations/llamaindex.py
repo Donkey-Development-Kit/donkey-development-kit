@@ -67,24 +67,36 @@ class LlamaIndexAdapter(Adapter):
         win."""
         self._allow_endpoints(kw, "api_base")
         with self._native_import():
-            from llama_index.llms.openai.utils import (  # VERIFY: docs/verified-apis.md §8
-                O1_MODELS,
-                openai_modelname_to_contextsize,
-            )
             from llama_index.llms.openai_like import (
                 OpenAILike,  # VERIFY name/path: docs/verified-apis.md §8
             )
 
-        _, sep, rest = model.partition("/")
-        bare = rest if sep else model
-        if "context_window" not in kw:
-            try:
-                kw["context_window"] = openai_modelname_to_contextsize(bare)
-            except ValueError:
-                pass  # not an OpenAI name: keep OpenAILike's default
-        if sep and bare in O1_MODELS:
-            kw = _reasoning_model_kwargs(kw)
+        kw = _model_defaults(model, kw)
         return OpenAILike(model=model, **{**self.connection_kwargs(), **kw})
+
+
+def _model_defaults(model: str, kw: dict[str, Any]) -> dict[str, Any]:
+    """``kw`` plus the defaults LlamaIndex would pick for the bare name after one
+    ``<provider>/`` prefix (#829). ``llama-index-llms-openai`` is a dependency of
+    ``-openai-like``, so its tables are present in any real install; without
+    them, ``kw`` is returned as is."""
+    try:
+        from llama_index.llms.openai.utils import (  # VERIFY: docs/verified-apis.md §8
+            O1_MODELS,
+            openai_modelname_to_contextsize,
+        )
+    except ImportError:
+        return kw
+    _, sep, rest = model.partition("/")
+    bare = rest if sep else model
+    if "context_window" not in kw:
+        try:
+            kw["context_window"] = openai_modelname_to_contextsize(bare)
+        except ValueError:
+            pass  # not an OpenAI name: keep OpenAILike's default
+    if sep and bare in O1_MODELS:
+        kw = _reasoning_model_kwargs(kw)
+    return kw
 
 
 def _reasoning_model_kwargs(kw: dict[str, Any]) -> dict[str, Any]:
