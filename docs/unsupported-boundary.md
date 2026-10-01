@@ -39,11 +39,13 @@ Classification:
   They are therefore not called platform APIs and are not classified above.
 - `LLMClient.list_models(live=True)` does not call `GET /models`; live capture
   established that Model Proxy has no model-catalog endpoint.
-- Correlation, per-call, application/business-group attribution, and cost-tag
-  request-header names remain warning-emitting, overridable `Unverified`
-  placeholders (`verified-apis.md` §3). The SDK makes no claim that the gateway
-  reads them and does not depend on it doing so, so they are not represented as
-  supported platform contracts here.
+- Application/business-group attribution request-header names remain
+  warning-emitting, overridable `Unverified` placeholders (`verified-apis.md`
+  §3). The gateway reads and echoes the correlation request header; the per-call
+  and cost-tag request-header names are overridable SDK conventions it does not
+  read, and cost tags are carried on spans. The SDK does not depend on the
+  gateway reading any of these, so they are not represented as supported
+  platform contracts here.
 
 ## Local Mode is not a supported deployment target
 

@@ -13,7 +13,7 @@ spans several ``core/`` modules but is one capability, so its tests live togethe
   * a cache ``hit`` never advances the budget (verbatim replay, no fresh spend, #588);
   * the outcome lands on the OTel span (``donkey.cache.*``).
 
-Verification note: the five ``x-cache-*`` names are ``verified=True`` in
+Verification note: the five ``x-cache-*`` names are plain constants in
 ``_verify`` (confirmed live, #588), so injecting them emits NO
 ``UnverifiedValueWarning`` — asserted below.
 """
@@ -127,10 +127,10 @@ def test_headers_emit_only_set_controls() -> None:
     controls = CacheControls(skip=True, ttl=60, threshold=0.5, principal_id="u-1")
     emitted = dict(controls.headers())
     assert emitted == {
-        CACHE_SKIP_HEADER.get(): "true",
-        CACHE_TTL_HEADER.get(): "60",
-        CACHE_THRESHOLD_HEADER.get(): "0.5",
-        CACHE_PRINCIPAL_ID_HEADER.get(): "u-1",
+        CACHE_SKIP_HEADER: "true",
+        CACHE_TTL_HEADER: "60",
+        CACHE_THRESHOLD_HEADER: "0.5",
+        CACHE_PRINCIPAL_ID_HEADER: "u-1",
     }
 
 
@@ -138,7 +138,7 @@ def test_boolean_headers_are_presence_only() -> None:
     # The live capture only ever sent `true`; a False/None omits the header rather
     # than inventing an untested `x-cache-skip: false` (verification discipline).
     assert dict(CacheControls(skip=False, no_store=False).headers()) == {}
-    assert dict(CacheControls(no_store=True).headers()) == {CACHE_NO_STORE_HEADER.get(): "true"}
+    assert dict(CacheControls(no_store=True).headers()) == {CACHE_NO_STORE_HEADER: "true"}
 
 
 def test_empty_controls_emit_nothing() -> None:
@@ -217,13 +217,13 @@ async def test_cache_headers_injected_async() -> None:
     )
     async with client:
         with warnings.catch_warnings():
-            # verified=True names must not warn (verification discipline: nothing left to discover).
+            # Confirmed names must not warn (verification discipline: nothing left to discover).
             warnings.simplefilter("error", UnverifiedValueWarning)
             with cache_scope(CacheControls(skip=True, ttl=60, principal_id="u-1")):
                 await client.get("https://x/thing")
-    assert seen[CACHE_SKIP_HEADER.get()] == "true"
-    assert seen[CACHE_TTL_HEADER.get()] == "60"
-    assert seen[CACHE_PRINCIPAL_ID_HEADER.get()] == "u-1"
+    assert seen[CACHE_SKIP_HEADER] == "true"
+    assert seen[CACHE_TTL_HEADER] == "60"
+    assert seen[CACHE_PRINCIPAL_ID_HEADER] == "u-1"
 
 
 def test_cache_headers_injected_sync() -> None:
@@ -231,7 +231,7 @@ def test_cache_headers_injected_sync() -> None:
     with DonkeyClient(DonkeyConfig(), transport=httpx.MockTransport(_capture_async(seen))) as c:
         with cache_scope(CacheControls(threshold=0.5)):
             c.get("https://x/thing")
-    assert seen[CACHE_THRESHOLD_HEADER.get()] == "0.5"
+    assert seen[CACHE_THRESHOLD_HEADER] == "0.5"
 
 
 async def test_no_cache_headers_without_a_scope() -> None:
@@ -241,8 +241,8 @@ async def test_no_cache_headers_without_a_scope() -> None:
     )
     async with client:
         await client.get("https://x/thing")
-    assert CACHE_SKIP_HEADER.get() not in seen
-    assert CACHE_TTL_HEADER.get() not in seen
+    assert CACHE_SKIP_HEADER not in seen
+    assert CACHE_TTL_HEADER not in seen
 
 
 # ---------------------------------------------------------------------------

@@ -180,9 +180,9 @@ Some frameworks retry above the provider SDK, where the SDK can't reach:
 | CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](/frameworks/crewai#notes). |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
-attached only by the SDK's shared async client. CrewAI, and sync calls such as
-LangGraph's `invoke()`, send `X-Client-Id` but no JWT, so a wallet proxy
-answers `401`. See the
+attached only by the SDK's shared async client. CrewAI sends `X-Client-Id` but
+no JWT, so a wallet proxy answers `401`. Sync calls such as LangGraph's
+`invoke()` raise `ConfigError` instead of sending. See the
 [`jwt` mode note](/reference/configuration#jwt--model-wallet-auth-mode).
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,

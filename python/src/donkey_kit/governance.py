@@ -35,7 +35,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
     import tomli as tomllib
 
 from .core import _verify
-from .core.errors import ConfigError
+from .core.errors import ConfigError, PlatformTeamOnly
 
 GatewayMode = Literal["local", "managed", "self-managed"]
 
@@ -103,7 +103,7 @@ class Governance:
     def simulate(self) -> SimulationContext:
         """Start an ephemeral local Omni Gateway harness (BG §1.4).
 
-        Requires the ``[local]`` extra (docker). Whether Local Mode can run the
+        Requires the ``[local]`` extra (the simulator's ASGI server). Whether Local Mode can run the
         LLM Proxy / MCP Bridge at all is a gate in the Verification milestone; if not, LLM traffic
         is served by a clearly-labelled local mock proxy. Either way, skipped
         connected-only policies are reported loudly and non-suppressibly.
@@ -140,7 +140,7 @@ class Governance:
         """Platform-team-only direct apply. Requires write scopes the
         default connected app will not hold; every use is logged at WARNING."""
         if not i_am_the_platform_team:
-            raise PermissionError(
+            raise PlatformTeamOnly(
                 "Governance.apply() inverts the platform-team ownership model "
                 "(provisioning-as-code). Runtime code should use resolve() (read-only). If you are "
                 "the platform team automating your own gateway, pass "

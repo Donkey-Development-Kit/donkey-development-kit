@@ -9,17 +9,17 @@ Two design points that matter:
    the framework boundary so host frameworks do not silently retry a refusal.
    It is NEVER retried by our transport.
 2. ``remediation`` is a structurally-guaranteed, human-readable next step —
-   worth more than a stack trace. Every :class:`PolicyViolation` carries one:
-   the constructor refuses to build an instance whose remediation is empty or
-   whitespace, and every concrete subclass ships a canonical default (BG §1.2,
-   #182). That default is the single source ``donkey doctor`` (#202) reuses, so
+   worth more than a stack trace. Every :class:`DonkeyError` carries one: the
+   base constructor refuses to build an instance whose remediation is empty or
+   whitespace, and every subclass ships a canonical default (BG §1.2, #182,
+   #715). That default is the single source ``donkey doctor`` (#202) reuses, so
    a diagnosis and the exception it stands for can never disagree.
 
-The concrete HTTP-response → exception mapping lives in :func:`classify`, which
-is driven by a table that MUST be populated from real captured fixtures (BG §1.5),
-not hand-written guesses. Until fixtures exist, :func:`classify` maps only the
-status-code families it can defensibly infer and otherwise returns a generic
-:class:`DonkeyError`.
+The concrete HTTP-response → exception mapping lives in :func:`classify`: an
+ordered series of discriminators, each keyed on a rejection shape captured from
+a real gateway (docs/verified-apis.md §4, ``tests/fixtures/anypoint/llm_proxy/``,
+BG §1.5) rather than a hand-written guess. A shape it does not recognise falls
+through to a generic :class:`PolicyViolation` or :class:`DonkeyError`.
 """
 
 from __future__ import annotations
@@ -28,13 +28,13 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 from . import _verify
 from .lastcall import request_id as read_request_id
 
 if TYPE_CHECKING:
     from datetime import datetime
-
-    import httpx
 
 
 class DonkeyError(Exception):
@@ -56,6 +56,13 @@ class DonkeyError(Exception):
       it to the provider's support team. Absent on a transport error (no response)
       — and on any route where the provider forwarded none — unlike the two
       client-sent ids above. The gateway-side join key is ``correlation_id``.
+
+    ``remediation`` names the caller's next step and is **structurally
+    mandatory** on every error in the tree (#182, #715), so a handler written
+    as ``except DonkeyError as e: log(e.remediation)`` never fails inside its
+    own ``except``. An explicit ``remediation=`` wins; otherwise the most-derived
+    class default applies. The constructor raises :class:`ValueError` if the
+    resolved value is empty or whitespace.
     """
 
     #: The framework exception this error was mapped from, if any. Kept here
@@ -63,16 +70,33 @@ class DonkeyError(Exception):
     #: request content, and a traceback renders every chained exception.
     framework_error: BaseException | None = None
 
+    #: Default next-step wording. This base value covers the generic
+    #: ``DonkeyError`` :func:`classify` returns for a response it cannot type;
+    #: every subclass overrides it.
+    remediation: str = (
+        "The SDK could not map this failure to a more specific error. Inspect "
+        ".response (status, headers, body) and quote .correlation_id and "
+        ".request_id when reporting it."
+    )
+
     def __init__(
         self,
         message: str,
         *,
+        remediation: str | None = None,
         correlation_id: str | None = None,
         call_id: str | None = None,
         request_id: str | None = None,
         response: httpx.Response | None = None,
     ) -> None:
         super().__init__(message)
+        resolved = remediation if remediation is not None else type(self).remediation
+        if not resolved.strip():
+            raise ValueError(
+                f"{type(self).__name__} requires a non-empty remediation naming the "
+                "caller's next step (BG §1.2, #182)."
+            )
+        self.remediation = resolved
         self.correlation_id = correlation_id
         self.call_id = call_id
         self.request_id = request_id
@@ -84,6 +108,13 @@ class ConfigError(DonkeyError):
     credentials that would be sent to it (see ``DonkeyConfig.check_endpoints``).
     Raised locally before any request; reports ALL missing fields at once
     (config resolution)."""
+
+    remediation: str = (
+        "Fix the configuration the message names — set each missing or invalid "
+        "field as a keyword argument, a DONKEY_* environment variable, or in "
+        ".donkey-kit.toml — then re-run. `donkey doctor` checks the resolved "
+        "configuration."
+    )
 
 
 class ConfigWarning(UserWarning):
@@ -97,8 +128,7 @@ class AuthError(DonkeyError):
     The class-level ``remediation`` is the LLM-proxy data-plane default that
     ``donkey doctor`` (#202) reuses. Control-plane callers override it with one
     of the canonical class values below, so the next step matches the auth
-    provider that failed (#484). This is not the constructor-enforced
-    :class:`PolicyViolation` contract."""
+    provider that failed (#484)."""
 
     #: Single source of next-step wording for a rejected-credentials diagnosis.
     remediation: str = (
@@ -119,27 +149,16 @@ class AuthError(DonkeyError):
         "a connected app, also verify its required scopes (docs/verified-apis.md §1)."
     )
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        remediation: str | None = None,
-        **kw: Any,
-    ) -> None:
-        super().__init__(message, **kw)
-        if remediation is not None:
-            self.remediation = remediation
-
 
 class PolicyViolation(DonkeyError):
     """Base for gateway-enforced refusals. NEVER retried.
 
     ``remediation`` names the concrete next step the caller can take, e.g.
     "Token budget exceeded for business group `finance`; limit resets in 42m;
-    request an increase in API Manager". It is **structurally mandatory** (#182):
-    the constructor raises :class:`ValueError` if the resolved remediation is
-    empty or whitespace, because a typed refusal with no next step is just a
-    renamed exception. When no ``remediation`` is passed, the class-level
+    request an increase in API Manager". It is **structurally mandatory** (#182),
+    enforced by the :class:`DonkeyError` constructor, because a typed refusal
+    with no next step is just a renamed exception. When no ``remediation`` is
+    passed, the class-level
     :attr:`remediation` default applies; every concrete subclass ships its own,
     and that default is the single source ``donkey doctor`` (#202) reuses so the
     CLI and the exception never disagree. It names the *action*, not the policy
@@ -162,24 +181,8 @@ class PolicyViolation(DonkeyError):
         "through to here. Inspect .response for the raw body."
     )
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        remediation: str | None = None,
-        policy: str | None = None,
-        **kw: Any,
-    ) -> None:
+    def __init__(self, message: str, *, policy: str | None = None, **kw: Any) -> None:
         super().__init__(message, **kw)
-        # An explicit remediation wins; otherwise the concrete class's default
-        # (resolved via the instance type, so the most-derived default applies).
-        resolved = remediation if remediation is not None else type(self).remediation
-        if not resolved.strip():
-            raise ValueError(
-                f"{type(self).__name__} requires a non-empty remediation naming the "
-                "caller's next step (BG §1.2, #182)."
-            )
-        self.remediation = resolved
         if policy is not None:
             self.policy = policy
 
@@ -252,6 +255,13 @@ class ModelSubstituted(DonkeyError):
     ``request_id`` (the gateway's own id) is inherited from :class:`DonkeyError`
     and populated from the response, so a substitution can be quoted in a ticket
     on the same terms as any other gateway event."""
+
+    remediation: str = (
+        "The gateway served a different model than requested (a routing "
+        "fallback). Accept the completion on .response, retry once the requested "
+        "model is available, or leave on_model_substitution unset to observe "
+        "substitutions on donkey.last_call.substituted instead of raising."
+    )
 
     def __init__(
         self,
@@ -351,6 +361,12 @@ class AgentKilled(PolicyViolation):
 class UpstreamModelError(DonkeyError):
     """Provider-side failure (5xx). Retryable."""
 
+    remediation: str = (
+        "The upstream provider failed (5xx); the transport already retried "
+        "502/503/504. Retry later, and if it persists escalate to the provider "
+        "quoting .request_id."
+    )
+
 
 class UpstreamRequestError(DonkeyError):
     """The upstream provider rejected the request (4xx), passed through the
@@ -362,7 +378,7 @@ class UpstreamRequestError(DonkeyError):
     caller can act (fix the model, the params, etc.).
 
     ``remediation`` is a class attribute so ``donkey doctor`` (#202) has one
-    canonical wording for a model-rejected diagnosis (the LIVE-VERIFIED
+    canonical wording for a model-rejected diagnosis (the
     ``model_not_found`` passthrough, docs/verified-apis.md §4) rather than a
     second copy."""
 
@@ -432,14 +448,11 @@ class GatewayUnavailable(DonkeyError):
         *,
         base_url: str | None = None,
         cause: BaseException | None = None,
-        remediation: str | None = None,
         **kw: Any,
     ) -> None:
         super().__init__(message, **kw)
         self.base_url = base_url
         self.cause = cause
-        if remediation is not None:
-            self.remediation = remediation
 
 
 def gateway_unavailable(
@@ -467,21 +480,64 @@ def gateway_unavailable(
 class ToolInvocationError(DonkeyError):
     """An MCP tool call failed."""
 
+    remediation: str = (
+        "An MCP tool call failed. Check the tool's arguments and the server's "
+        "reported error in the message, then retry or handle the failure in the agent."
+    )
+
 
 class RegistryError(DonkeyError):
     """Exchange discovery / resolution failed."""
+
+    remediation: str = (
+        "Exchange discovery or resolution failed. Check the asset reference "
+        "(group, asset id, version) and that the control-plane credentials can "
+        "read it in Exchange."
+    )
 
 
 class ProvisioningError(DonkeyError):
     """plan/apply/drift failed."""
 
+    remediation: str = (
+        "A provisioning step (plan/apply/drift) failed. Correct the spec the "
+        "message names and re-run; changes to shared environments go through CI "
+        "under platform-controlled credentials."
+    )
+
 
 class GovernanceDrift(DonkeyError):
     """resolve(): a declared policy is not actually applied on the gateway."""
 
+    remediation: str = (
+        "A declared policy is not applied on the gateway. Ask the platform team to "
+        "apply it through the reviewed provisioning pipeline, or remove it from the "
+        "declaration; do not apply it from runtime code."
+    )
+
 
 class PublicationDrift(DonkeyError):
     """verify(): the live server no longer matches the Exchange descriptor (BG §2.5)."""
+
+    remediation: str = (
+        "The live server no longer matches its Exchange descriptor. Republish the "
+        "descriptor, or roll the server back, so the two agree."
+    )
+
+
+class PlatformTeamOnly(DonkeyError, PermissionError):
+    """A platform-team-only operation (``Governance.apply()``) was called without
+    the explicit ``i_am_the_platform_team=True`` opt-in.
+
+    Also a :class:`PermissionError`, which ``Governance.apply()`` raised before
+    this type existed, so existing ``except PermissionError`` handlers still
+    catch it (#715)."""
+
+    remediation: str = (
+        "Runtime code should use Governance.resolve(), which is read-only. If you "
+        "are the platform team automating your own gateway, pass "
+        "i_am_the_platform_team=True and use a connected app that holds write scopes."
+    )
 
 
 def classify(
@@ -515,8 +571,7 @@ def classify(
       ``code`` is ``"agent_killed"`` (no ``type``, no ``www-authenticate``) →
       :class:`AgentKilled`. Keyed on the body ``code``, not the status, and
       checked BEFORE the auth and generic-4xx rules so a killed agent is not
-      mis-typed as an :class:`UpstreamRequestError`. Live-verified 2026-09-29
-      against ``ddk-agent-kill-switch`` (#694).
+      mis-typed as an :class:`UpstreamRequestError` (#694).
     * **Token rate limit** rejects with **429** and an **empty body**; the budget
       state is entirely in headers (``x-token-limit`` / ``x-token-remaining`` /
       ``x-token-reset`` in ms). There is NO standard ``retry-after``.
@@ -537,19 +592,10 @@ def classify(
       (flagged reasons parsed from the sibling ``...-reason`` header). Also
       checked before the auth rule.
 
-    All three provider-backed guardrail shapes are now **live-verified**: Regex
-    Prompt Guard against ``ddk-injection-guard`` and Azure Content Safety against
-    ``ddk-azure-content-safety`` (both 2026-09-22, #253), and Amazon Bedrock
-    Guardrails against ``ddk-bedrock-guardrails`` (2026-09-24, #568) — the same
-    ``...-action: reject`` header family, now confirmed against a real Bedrock
-    upstream (docs/verified-apis.md §4). These shapes have no ``_verify.py``
-    constant — ``classify()`` reads them straight from the response — so the
-    record is the §4 rows, not a ``verified=True`` flip. The Injection Protection
-    body (``x-injection-protection: blocked``, a distinct policy) is the only
-    content-moderation shape that stays documented-only — no proxy running it is
-    deployed to capture (#253). Any other content-moderation / federated-guardrail
-    shape still falls
-    through to a generic
+    These shapes have no ``_verify.py`` constant — ``classify()`` reads them
+    straight from the response — so their verification record is the
+    docs/verified-apis.md §4 rows. Any other content-moderation /
+    federated-guardrail shape falls through to a generic
     :class:`PolicyViolation` whose message names what was observed and says the
     shape is unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate``
     shape (docs/verified-apis.md §4), a **403 carrying no ``www-authenticate`` header** and matching
@@ -605,9 +651,9 @@ def classify(
         )
 
     # Agent Kill Switch: 403 + nested object, code == "agent_killed" (no `type`).
-    # Verified LIVE 2026-09-29 against ddk-agent-kill-switch (#694). Keyed on the
-    # body code, not the status, and checked before the auth and generic-4xx
-    # rules: a killed agent is neither an auth failure nor an upstream mistake.
+    # docs/verified-apis.md §4 (#694). Keyed on the body code, not the status, and
+    # checked before the auth and generic-4xx rules: a killed agent is neither an
+    # auth failure nor an upstream mistake.
     if error_obj is not None and error_obj.get("code") == "agent_killed":
         message = _str_or_none(error_obj.get("message"))
         return AgentKilled(
@@ -617,8 +663,8 @@ def classify(
         )
 
     # Content-safety / guardrails policy: 403 + a vendor `...-action: reject`
-    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4).
-    # Azure verified LIVE 2026-09-22, Bedrock verified LIVE 2026-09-24 (#253/#568).
+    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4,
+    # #253/#568).
     # Checked before the 401/403 → auth rule because a moderation block is not an
     # auth failure. Keyed on the header, not the body, so a reject with an
     # unexpected or absent body is still caught.
@@ -639,8 +685,7 @@ def classify(
 
     # Regex Prompt Guard policy: 403 + a top-level `matched_patterns` list
     # (flat-string `error`, so NOT the nested upstream envelope; docs/verified-apis.md §4).
-    # Verified LIVE 2026-09-22 against ddk-injection-guard (#253); body matched
-    # the committed fixture byte-for-byte. Checked before the 401/403 → auth
+    # #253. Checked before the 401/403 → auth
     # rule so a deny-list block is not mis-typed as an auth failure.
     matched = body.get("matched_patterns") if body is not None else None
     if isinstance(matched, list):
@@ -757,9 +802,7 @@ def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     importing ``DonkeyConfig`` — it only reads a plain dict carried on the same
     object ``response.request`` returns. When the stamp is absent (a response not
     produced by our transport — e.g. a hand-built stock-client response), the
-    placeholder names are used directly, **not** ``Unverified.get()``, so reading
-    an id back never emits the verification discipline's unverified warning; that warning belongs at
-    injection time, in the transport.
+    default names from ``core/_verify`` are used.
 
     Returns ``(None, None)`` when the request is unavailable (httpx raises if it
     was never set on the response)."""
@@ -770,11 +813,11 @@ def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     headers = request.headers
     corr_name = (
         request.extensions.get("donkey_correlation_header")
-        or _verify.CORRELATION_ID_HEADER.placeholder
+        or _verify.CORRELATION_ID_HEADER
     )
     call_name = (
         request.extensions.get("donkey_call_id_header")
-        or _verify.CALL_ID_HEADER.placeholder
+        or _verify.CALL_ID_HEADER
     )
     return headers.get(corr_name), headers.get(call_name)
 
@@ -860,10 +903,12 @@ def _int_or_none(value: Any) -> int | None:
 def _parse_json(response: httpx.Response) -> Any:
     """The response's parsed JSON body (of any shape — object, list, scalar), or
     ``None`` when the body is absent or not JSON. Never raises on the caller's
-    request path (verification discipline)."""
+    request path (verification discipline). An unread streamed body
+    (``ResponseNotRead``) is "absent" too: the transport reads a streamed refusal
+    before classifying it (#805), so this only guards a direct caller."""
     try:
         return response.json()
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, httpx.ResponseNotRead):
         return None
 
 
@@ -914,10 +959,8 @@ def _code_str(value: Any) -> str | None:
 
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
-# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4).
-# Azure Content Safety verified LIVE 2026-09-22 against ddk-azure-content-safety
-# (#253); Amazon Bedrock Guardrails verified LIVE 2026-09-24 against
-# ddk-bedrock-guardrails (#568).
+# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
+# #253/#568).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
     (
         "x-llm-proxy-azure-content-safety-action",

@@ -855,9 +855,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 | CrewAI | ✅ (`extra_headers`) | ❌ | CrewAI's native OpenAI provider builds its own HTTP client: correlation is per client and `donkey.last_call` is not populated. An `interceptor` keeps credentials to checked endpoints. |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
-attached only by the SDK's shared async client. CrewAI, and sync calls such as
-LangGraph's `invoke()`, send `X-Client-Id` but no JWT, so a wallet proxy
-answers `401`. See the
+attached only by the SDK's shared async client. CrewAI sends `X-Client-Id` but
+no JWT, so a wallet proxy answers `401`. Sync calls such as LangGraph's
+`invoke()` raise `ConfigError` instead of sending. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
@@ -1123,7 +1123,9 @@ own fields instead of the span will still show `openai`.
 - `base_url`, `api_key`, `default_headers`, `http_async_client` and
   `http_client` are all forwarded, so proxy auth headers and the SDK's
   transport (retries, correlation IDs) reach every request, from `ainvoke()`
-  and `invoke()` alike. In `jwt` mode only `ainvoke()` carries the JWT.
+  and `invoke()` alike, so `donkey.simulate()` and `donkey.last_call` cover
+  both. In `jwt` mode only `ainvoke()` / `astream()` carry the JWT: `invoke()`
+  and `stream()` raise `ConfigError` before sending anything.
 - Printing the model shows `client_secret`: `ChatOpenAI`'s own `repr()` /
   `str()` include `default_headers`. Don't print or log it; see
   [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
@@ -1398,6 +1400,11 @@ models — inside the loop that runs them (`async with Donkey.from_env()` in you
 - **Refusals on the `model()` path aren't typed.** LiteLLM raises its own
   error without the response headers, so `classify()` has nothing to read; see
   the [ADK examples](https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md).
+- **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
+  accepts `client_kwargs`; the `adk` extra declares that floor. On an older
+  ADK, `Gemini` drops the governed client without an error and talks to Google
+  directly, so `gemini()` raises `NotImplementedError` instead of returning a
+  model that bypasses the gateway.
 - `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
   own upper bound if you need one.
 
@@ -1530,14 +1537,15 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/framewor
 # Microsoft Agent Framework
 
 Microsoft Agent Framework gets a governed chat client pointed at the Omni
-Gateway LLM proxy, plus policy middleware that stops a run on a governance
-rejection instead of letting the agent loop retry.
+Gateway LLM proxy, plus policy middleware that ends a run on a governance
+rejection with the SDK's typed refusal.
 
 **What you get**
 
 - A native `agent_framework.openai.OpenAIChatClient`, checked against
   agent-framework 1.19.0.
-- `policy_middleware()` for terminating a run on a `PolicyViolation`.
+- `policy_middleware()`, which ends a run on a proxy refusal with a typed
+  `PolicyViolation` such as `PIIDetected`.
 - Supported at `connection_kwargs()`. The client gets an `async_client` that
   sends through the SDK's shared HTTP client, so per-run correlation, retries,
   spans, `donkey.last_call` and the `jwt`-mode JWT apply (see [Notes](#notes)).
@@ -1634,13 +1642,40 @@ client built on that URL; the URL must pass the
 
 ## Policy middleware
 
-`donkey.agent_framework.policy_middleware()` returns an async
-`(context, next)` middleware that lets a `PolicyViolation` propagate, so the
-host ends the run instead of retrying. It is a plain async wrapper whose
-signature has not been confirmed against Agent Framework's middleware
-protocol, so check it in your host before relying on it. Setting Agent
-Framework's explicit "terminate run" signal instead of re-raising is planned
-Roadmap.
+`donkey.agent_framework.policy_middleware()` returns a chat middleware for
+`Agent(..., middleware=[...])`:
+
+```python
+from agent_framework import Agent
+from donkey_kit import Donkey, PIIDetected
+
+async with Donkey.from_env() as donkey:
+    agent = Agent(
+        client=donkey.agent_framework.chat_client("gpt-4o"),
+        middleware=[donkey.agent_framework.policy_middleware()],
+    )
+    try:
+        await agent.run("...")
+    except PIIDetected as err:
+        print(err.correlation_id, err.entities)
+```
+
+Without it, a proxy refusal reaches you as Agent Framework's generic
+`ChatClientException`. With it, the refusal goes through
+`donkey_kit.core.errors.classify()` and the run ends with the typed error,
+for example `PIIDetected` or `TokenBudgetExceeded`. The error carries the
+correlation and call ids that were sent, and keeps the original exception on
+`.framework_error`. This also works for streaming runs
+(`agent.run(..., stream=True)`): the typed error is raised while you iterate
+the stream. The chat client sends with retries off, so a refused request is
+sent once.
+
+Errors that have no proxy response behind them, such as a connection failure,
+pass through unchanged. The middleware is marked with Agent Framework's
+`@chat_middleware` decorator. That is confirmed offline against
+agent-framework 1.19.0, with no live round-trip yet. If the decorator is
+missing from your installed version, `policy_middleware()` raises a
+`NotImplementedError` naming it.
 
 ## Notes
 
@@ -1656,7 +1691,7 @@ Roadmap.
   that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for the full `PolicyViolation` hierarchy
-that `policy_middleware()` lets through.
+that `policy_middleware()` raises.
 
 ---
 
@@ -1927,6 +1962,10 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   object already bound to a model ID, because their native constructors accept
   `model`. `AsyncAnthropic` is a bare client and the model ID is an argument to
   `.messages.create()`, so `donkey.anthropic.client()` takes no model argument.
+- **Async only.** The adapter returns `AsyncAnthropic`; there is no governed
+  sync `anthropic.Anthropic`. `connection_kwargs()` carries the SDK's async
+  client, so spread it only into `AsyncAnthropic`. A sync `Anthropic` you build
+  yourself does not go through the SDK's transport.
 - **Proxy Format.** MuleSoft Model Proxy offers three ingress Formats (OpenAI /
   Gemini / Anthropic), fixed when the proxy is created
   ([MuleSoft docs](https://docs.mulesoft.com/general/model-proxy)). A
@@ -2208,7 +2247,8 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   `UNOBSERVED`, because LlamaIndex is still listed as not observing calls. Aligning
   that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 - **`jwt` mode is async-only.** `acomplete()` / `achat()` carry the JWT; sync
-  `complete()` / `chat()` go through the blocking client, which carries none.
+  `complete()` / `chat()` go through the blocking client, which can't fetch
+  one, so they raise `ConfigError` before sending anything.
 - **Printing the model shows credentials.** `OpenAILike`'s own `repr()` /
   `str()` include `client_secret` and `api_key`. Don't print or log it; see
   [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
@@ -2269,7 +2309,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`:
+All importable from `donkey_kit`, along with `classify`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -2286,8 +2326,9 @@ DonkeyError                     # base of the whole tree
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
-└─ ToolInvocationError, RegistryError, PublicationDrift
-                                # tool access, registry and publishing (Roadmap surfaces)
+├─ PlatformTeamOnly             # Governance.apply() without the platform-team opt-in; also a PermissionError
+└─ ToolInvocationError, RegistryError, PublicationDrift, ProvisioningError, GovernanceDrift
+                                # tool access, registry, publishing and provisioning (Roadmap surfaces)
 ```
 
 `GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one
@@ -2365,9 +2406,11 @@ connectivity diagnosis.
 
 ## Every refusal names a next step
 
-Every `PolicyViolation` carries a non-empty, human-readable `remediation` — the
-constructor **raises** if you try to build one without it — and each concrete
-subclass ships a canonical default:
+Every `DonkeyError` — not just every refusal — carries a non-empty,
+human-readable `remediation`, so `except DonkeyError as e: log(e.remediation)`
+is always safe. The constructor **raises** if you try to build one with a blank
+remediation, every class accepts a `remediation=` override, and each class ships
+a canonical default. For the refusals:
 
 - `PIIDetected` → remove or redact the flagged values, or relax the policy's
   entity list in API Manager.
@@ -2443,8 +2486,7 @@ overrode the header names in config, pass the ids to `classify()` explicitly.)
 
 ```python
 import openai
-from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError
-from donkey_kit.core.errors import classify
+from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError, classify
 
 try:
     resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
@@ -3447,6 +3489,11 @@ example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
 environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
 [Endpoints must use `https://`](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
 
+  Behind an HTTP proxy (`HTTP_PROXY` or `ALL_PROXY` set, as on many corporate
+  machines and CI runners), the client sends loopback requests to the proxy
+  too, and the proxy usually cannot reach your simulator. Add the simulator's
+  host to `NO_PROXY`, for example `NO_PROXY=127.0.0.1,localhost`.
+
 The simulator's port is **not** read from an environment variable or
 `.donkey-kit.toml` — the `--port`/`--host` flags (or the `serve()` keyword
 arguments below) are the only way to change it.
@@ -3635,6 +3682,9 @@ async def test_agent_masks_pii():
   nested `simulate()` blocks compose.
 - Every injected response carries `x-donkey-simulator: true`, so a simulated
   refusal is never mistaken for a real gateway response in a log or trace.
+- Injected calls stay in-process even when `HTTP_PROXY`, `HTTPS_PROXY` or
+  `ALL_PROXY` is set. Calls that proceed after `times` still go through the
+  configured proxy.
 
 The selectable refusals are the ones produced from a captured fixture:
 `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
@@ -3669,6 +3719,17 @@ Each scenario becomes one pytest item, and the run prints a table of
 scenario → pass / fail / **exempt**. A failure reads as a finding about your
 agent — for example, *"your agent retried a budget refusal 3 times"* — found in
 CI, before production.
+
+The suite grades what it sees on the `Donkey`'s transport, so your agent's model
+calls must go through the `donkey` it is given. A scenario in which no call
+reaches that transport **fails** with *"no model call went through the Donkey
+client"*, never passes by default. That covers an agent that makes no call, one
+that builds its own `httpx` or OpenAI client, and an adapter that sends calls
+outside the shared transport (CrewAI, LlamaIndex, Microsoft Agent Framework,
+and ADK `model()`). The finding names the adapter. If the gap is expected,
+record an asserted exemption for it. The run never reaches the network: the
+harness replaces the configured proxy URL and every credential with
+placeholders, and it refuses any request that would leave the process.
 
 The factory is called once per scenario and receives the `donkey` fixture if it
 declares one. With `--donkey-conformance`, the plugin runs the suite
@@ -3805,10 +3866,16 @@ donkey test          # a thin front end to pytest --donkey-conformance
 Three global flags precede the subcommand:
 
 ```bash
-donkey --config ./cfg.toml init   # write the generated config file to a non-default path (init only)
-donkey --env Sandbox doctor       # override the Anypoint environment
+donkey --config ./cfg.toml init   # write the generated config file to a non-default path
+donkey --env Sandbox init         # write this Anypoint environment into the generated file
 donkey --json init                # machine-readable output where a command supports it
 ```
+
+`--config` and `--env` apply to `init` only. Every other command reads its
+configuration from environment variables and the working directory's config
+files, so it rejects them with exit `2` rather than run against a configuration
+you didn't ask for. To point `doctor` at another environment, set
+`ANYPOINT_ENV`, or run it from the directory that holds the config file.
 
 ### Exit codes
 
@@ -7786,9 +7853,9 @@ set -a; source .env.local; set +a
 `langchain>=1.0` provides `create_agent` (03, 04, 05, 09); it is not part of
 any `donkey-kit` extra.
 
-  **Async only.** The governed transport is `ChatOpenAI`'s
-  `http_async_client`, so every gateway script uses `ainvoke` / `astream`. A
-  sync `.invoke()` would bypass governance.
+  The scripts use `ainvoke` / `astream`. Sync `invoke()` / `stream()` are
+  governed the same way, through `ChatOpenAI`'s `http_client`, except in `jwt`
+  mode, where they raise `ConfigError`.
 
 ## 01 — Stock ChatOpenAI, no gateway
 
@@ -9175,13 +9242,16 @@ donkey = Donkey(
   the proxy only from async calls through adapters with **transport injection**
   built from a `Donkey` that has `llm_auth`: the raw client, LangGraph, Strands,
   OpenAI Agents SDK, the Anthropic SDK, ADK's `model()` and `gemini()`,
-  LlamaIndex and MS Agent Framework. These send **no JWT**, so a wallet proxy
-  answers `401`:
+  LlamaIndex and MS Agent Framework.
+
+  Sync calls through an adapter, such as LangGraph's `invoke()` or LlamaIndex's
+  `complete()`, go through the blocking client, so they raise the same
+  `ConfigError` as `sync=True` before sending anything.
+
+  These send **no JWT**, so a wallet proxy answers `401`:
 
   - CrewAI, which gets only a header snapshot: its `Authorization` header
     carries `llm_proxy_key` or the `client-id-enforced` placeholder;
-  - sync calls such as LangGraph's `invoke()` or LlamaIndex's `complete()`,
-    which go through the blocking client;
   - the module-level factories (for example
     `from donkey_kit.integrations.langgraph import chat_model`), which have no
     `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.

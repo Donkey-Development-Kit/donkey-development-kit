@@ -8,7 +8,7 @@ failures that look identical from the outside apart:
 * **wrong credentials** — the gateway answered ``401``/``403`` →
   :class:`AuthError`.
 * **credentials fine, model rejected** — the request got past auth and the
-  provider passthrough rejected the model (the LIVE-VERIFIED ``400``
+  provider passthrough rejected the model (the ``400``
   ``model_not_found`` shape, docs/verified-apis.md §4) → :class:`UpstreamRequestError`.
 
 Every failure line prints the remediation string carried by the exception it
@@ -202,7 +202,7 @@ def _probe_checks(result: ProbeResult) -> list[Check]:
         creds = Check("credentials", Level.FAIL, "rejected by the gateway", err.remediation)
         return [gateway, creds, Check("model", Level.SKIP, "not checked — credentials rejected")]
 
-    # The LIVE-VERIFIED model rejection is the provider passthrough (400
+    # The model rejection is the provider passthrough (docs/verified-apis.md §4: 400
     # model_not_found), which classify() maps to UpstreamRequestError carrying
     # code/param. A 403 allow-list rejection has no captured shape yet (verification discipline) and
     # would surface as AuthError above — a known, documented limitation.

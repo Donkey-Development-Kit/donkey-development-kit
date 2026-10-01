@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import warnings
 
 import httpx
@@ -300,8 +301,7 @@ def test_sync_correlation_and_attribution_headers_injected() -> None:
 
 def test_sync_requests_do_not_pin_a_correlation_id_to_the_process() -> None:
     """A blocking call outside run_context() must not bind its ID to the ambient
-    context: doing so would make every later unrelated call report the same run.
-    Async gets away with binding because asyncio.run() isolates the Context."""
+    context: doing so would make every later unrelated call report the same run."""
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -314,6 +314,79 @@ def test_sync_requests_do_not_pin_a_correlation_id_to_the_process() -> None:
 
     assert seen[0] != seen[1]  # each call is its own run
     assert current_correlation_id() is None  # nothing leaked out
+
+
+async def test_async_requests_do_not_pin_a_correlation_id_to_the_context() -> None:
+    """#803: the async twin of the test above. A long-lived ``asyncio.run(main())``
+    (queue consumer, bot) is one Context, so binding on first use would report
+    the first request's ID for the rest of the process — and hand it to every
+    task spawned afterwards."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers[CORRELATION_HEADER])
+        return httpx.Response(200)
+
+    async with _client(handler) as client:
+        await client.get("https://x")
+        await client.get("https://x")
+        assert current_correlation_id() is None  # nothing bound by the calls
+        await asyncio.create_task(client.get("https://x"))
+
+    assert len(set(seen)) == 3  # each call is its own run
+    assert current_correlation_id() is None
+
+
+async def test_async_requests_share_one_id_inside_a_run_scope() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers[CORRELATION_HEADER])
+        return httpx.Response(200)
+
+    async with _client(handler) as client:
+        async with run_scope("run-a"):
+            await client.get("https://x")
+            await asyncio.create_task(client.get("https://x"))
+
+    assert seen == ["run-a", "run-a"]
+
+
+async def test_unbound_correlation_id_is_stable_across_retries() -> None:
+    """#803: outside a run the ID is unbound, but one logical request still
+    carries ONE correlation id across its retries — it is pinned on the request,
+    not re-minted per send."""
+    calls = {"n": 0}
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        seen.append(request.headers[CORRELATION_HEADER])
+        return httpx.Response(503) if calls["n"] < 3 else httpx.Response(200)
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as client:
+        await client.get("https://x")
+
+    assert calls["n"] == 3
+    assert len(set(seen)) == 1
+    assert current_correlation_id() is None
+
+
+def test_sync_unbound_correlation_id_is_stable_across_retries() -> None:
+    calls = {"n": 0}
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        seen.append(request.headers[CORRELATION_HEADER])
+        return httpx.Response(503) if calls["n"] < 3 else httpx.Response(200)
+
+    with _sync_client(handler, DonkeyConfig(max_retries=3)) as client:
+        client.get("https://x")
+
+    assert calls["n"] == 3
+    assert len(set(seen)) == 1
+    assert current_correlation_id() is None
 
 
 def test_sync_requests_share_one_id_inside_a_run_context() -> None:
@@ -453,8 +526,8 @@ async def test_default_header_names_survive_classify_round_trip() -> None:
 
 async def test_classify_round_trip_emits_no_unverified_warning() -> None:
     """#363 AC4 / verification discipline: read-back must never emit an ``UnverifiedValueWarning`` —
-    that warning belongs at injection time. The extensions fallback touches
-    ``.placeholder``, never ``Unverified.get()``. Covers both the stamped path
+    that warning belongs at injection time. The extensions fallback reads the
+    plain ``_verify`` default names. Covers both the stamped path
     and a response with no stamp at all (a hand-built stock-client response)."""
     captured: dict[str, httpx.Request] = {}
 
@@ -1486,30 +1559,98 @@ async def test_streaming_span_closes_on_exception_during_iteration(monkeypatch) 
     assert dict(span.attributes)["gen_ai.request.model"] == "gpt-4o"
 
 
+def _streamed_pii_403(stream) -> httpx.Response:
+    # A refusal whose body is genuinely unread when send() returns: `json=` would
+    # buffer it (MockTransport then pre-reads it), which is what hid #805.
+    return httpx.Response(
+        403,
+        headers={"content-type": "application/json", _PROVIDER_HEADER: "openai"},
+        stream=stream,
+    )
+
+
 async def test_streaming_refusal_produces_one_span_with_error_status(monkeypatch) -> None:
-    # A refused stream request (stream=True but the proxy returns a buffered 403)
-    # is NOT an SSE body: the span closes immediately with decision=refuse and
-    # status ERROR — exactly one span, no wrapper, nothing to drain.
+    # A refused stream request (stream=True, the proxy returns an unread 403 body)
+    # is NOT an SSE body: the transport reads it (bounded, #805) so the span closes
+    # immediately with the same decision, policy type, system and ERROR status a
+    # buffered refusal records — exactly one span, no wrapper, nothing to drain.
     StatusCode = _span_status_code()
     exporter = _use_tracer(monkeypatch)
+    body = _AsyncSSE([json.dumps(_PII_403).encode()])
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(403, json=_PII_403)
-
-    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    client = DonkeyAsyncClient(
+        _LLM_CFG, None, transport=httpx.MockTransport(lambda r: _streamed_pii_403(body))
+    )
     async with client:
         req = client.build_request(
             "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
         )
         resp = await client.send(req, stream=True)
-        # Refusal is buffered and terminal: the span is already closed.
+        # Refusal is terminal: the span is already closed.
         (span,) = exporter.get_finished_spans()
+        # The caller still reads the same body (the SDKs do, to build their error).
+        assert (await resp.aread()) == json.dumps(_PII_403).encode()
         await resp.aclose()
+    assert body.closed  # the underlying stream was closed, not leaked
+    attrs = dict(span.attributes)
+    assert attrs["donkey.policy.decision"] == "refuse"
+    assert attrs["donkey.policy.type"] == "pii_detected"
+    assert attrs["gen_ai.system"] == "openai"
+    assert span.status.status_code is StatusCode.ERROR
+    assert len(exporter.get_finished_spans()) == 1  # still exactly one
+
+
+def test_sync_streaming_refusal_is_classified_on_the_span(monkeypatch) -> None:
+    # The blocking twin of the above (#805).
+    StatusCode = _span_status_code()
+    exporter = _use_tracer(monkeypatch)
+    body = _SyncSSE([json.dumps(_PII_403).encode()])
+
+    client = DonkeyClient(
+        _LLM_CFG, transport=httpx.MockTransport(lambda r: _streamed_pii_403(body))
+    )
+    with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = client.send(req, stream=True)
+        assert resp.json() == _PII_403
+        resp.close()
+    assert body.closed
+    (span,) = exporter.get_finished_spans()
     attrs = dict(span.attributes)
     assert attrs["donkey.policy.decision"] == "refuse"
     assert attrs["donkey.policy.type"] == "pii_detected"
     assert span.status.status_code is StatusCode.ERROR
-    assert len(exporter.get_finished_spans()) == 1  # still exactly one
+
+
+async def test_streaming_error_body_over_cap_is_replayed_unread(monkeypatch) -> None:
+    # Past the read cap the body is handed back intact and unread — the caller
+    # gets every byte, and the span falls back to the status-only classification
+    # rather than a type read from a body it never parsed (#805).
+    monkeypatch.setattr("donkey_kit.core.transport._ERROR_BODY_CAP", 8)
+    exporter = _use_tracer(monkeypatch)
+    chunks = [b'{"error":', b' {"type": "pii_detected",', b' "message": "x"}}']
+    body = _AsyncSSE(chunks)
+
+    client = DonkeyAsyncClient(
+        _LLM_CFG, None, transport=httpx.MockTransport(lambda r: _streamed_pii_403(body))
+    )
+    async with client:
+        req = client.build_request(
+            "POST", "https://proxy/chat", json={"model": "gpt-4o", "stream": True}
+        )
+        resp = await client.send(req, stream=True)
+        assert (await resp.aread()) == b"".join(chunks)
+    assert body.closed
+    (span,) = exporter.get_finished_spans()
+    assert dict(span.attributes)["donkey.policy.type"] == "policy_violation"
+
+
+def test_parse_json_treats_an_unread_stream_as_no_body() -> None:
+    # classify() never raises on an unread streamed body (#805).
+    resp = httpx.Response(403, stream=_SyncSSE([json.dumps(_PII_403).encode()]))
+    assert classify(resp) is not None
 
 
 def test_sync_streaming_span_captures_usage_from_terminal_chunk(monkeypatch) -> None:
@@ -1663,25 +1804,26 @@ def test_cost_headers_use_placeholder_name_without_warning() -> None:
     # #522: the gateway-side cost header names are a VERIFIED-NEGATIVE result — the
     # deployed proxy has no inbound cost-tag ingestion, so the name is a
     # forward-looking convention, not an open unknown. With no config override the
-    # header NAME is the placeholder AND the quiet default path emits NO
-    # UnverifiedValueWarning (verified=True). Escalate the warning to an error so a
-    # regression that re-arms it is caught here.
+    # header NAME is the ``_verify`` default AND the quiet default path emits NO
+    # UnverifiedValueWarning. Escalate the warning to an error so a regression
+    # that re-arms it is caught here.
     from donkey_kit.core import _verify
 
     cfg = DonkeyConfig(cost=CostTags(team="support"))
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         headers = cost_headers(cfg, cfg.cost)
-    assert headers[_verify.COST_TEAM_HEADER.placeholder] == "support"
+    assert headers[_verify.COST_TEAM_HEADER] == "support"
 
 
 def test_verified_inbound_attribution_headers_are_quiet() -> None:
     """#522: the six inbound correlation / cost / per-call-id request-header names
     are live-verified — ``X-Correlation-Id`` is read by the gateway, and the cost
     + per-call-id names are confirmed as a client-side / non-contract shape (the
-    gateway ingests no such header). All six placeholders are ``verified=True``, so
-    reading any of them emits NO ``UnverifiedValueWarning``. Pins the quiet path so
-    a regression that re-arms the warning is caught in CI."""
+    gateway ingests no such header). All six are plain ``str`` constants, not
+    ``Unverified`` placeholders, so reading them can never emit an
+    ``UnverifiedValueWarning``. Pins the quiet path so a regression that re-wraps
+    one is caught in CI."""
     from donkey_kit.core import _verify
 
     quiet = (
@@ -1692,11 +1834,8 @@ def test_verified_inbound_attribution_headers_are_quiet() -> None:
         _verify.COST_ENV_HEADER,
         _verify.COST_ENDUSER_HEADER,
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", UnverifiedValueWarning)
-        for placeholder in quiet:
-            assert placeholder.verified is True
-            assert placeholder.get()  # reading it must not warn/raise
+    for name in quiet:
+        assert isinstance(name, str) and name
 
 
 async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
@@ -1724,7 +1863,7 @@ async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
                 await client.get("https://x/thing")
 
     assert seen[CORRELATION_HEADER.lower()] == "run-522"
-    assert seen[_verify.COST_TEAM_HEADER.placeholder.lower()] == "support"
+    assert seen[_verify.COST_TEAM_HEADER.lower()] == "support"
 
 
 def test_effective_cost_tags_merges_run_over_config() -> None:

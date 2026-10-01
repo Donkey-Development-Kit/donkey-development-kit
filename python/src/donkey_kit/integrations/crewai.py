@@ -98,7 +98,8 @@ class CrewAIAdapter(Adapter):
         §8, #640/#684). A ``base_url``/``api_base`` override must pass the https
         check."""
         self._allow_endpoints(kw, "base_url", "api_base")
-        from crewai import LLM  # VERIFY name/path: docs/verified-apis.md §8
+        with self._native_import():
+            from crewai import LLM  # VERIFY name/path: docs/verified-apis.md §8
 
         # The ``openai/`` prefix (with ``base_url``) routes CrewAI's factory to its
         # native OpenAI provider, which strips it before the request.

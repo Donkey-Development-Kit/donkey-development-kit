@@ -13,7 +13,7 @@ The governed proxy publishes the same three values in **two shapes**, and which
 one arrives depends on the response class (#352):
 
 - the numeric trio ``x-token-limit`` / ``x-token-remaining`` / ``x-token-reset``,
-  VERIFIED (LIVE) — but only on the ``429`` that pacing exists to *prevent*; and
+  sent only on the ``429`` that pacing exists to *prevent*; and
 - the prose ``x-llm-proxy-ratelimit`` header, e.g.
   ``Token rate limit: 10000 tokens remaining of 10000 limit. Reset in 56711ms.``
   — the only budget signal on a successful ``200`` (and on the ``403`` refusal)
@@ -50,8 +50,8 @@ import httpx
 from .errors import BudgetReserveReached
 from .lastcall import is_cache_hit
 
-# The three numeric budget headers, VERIFIED (LIVE) against the token-rate-limit
-# policy (docs/verified-apis.md §4, row `Token rate limiting`) — present on the
+# The three numeric budget headers of the token-rate-limit policy
+# (docs/verified-apis.md §4, row `Token rate limiting`) — present on the
 # 429. Named here so the one place that parses them is greppable.
 LIMIT_HEADER = "x-token-limit"
 REMAINING_HEADER = "x-token-remaining"

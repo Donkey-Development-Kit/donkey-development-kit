@@ -100,6 +100,15 @@ framework that may not be installed.
   instead, whose transport forwards every request through the same data-plane
   client, so it is still one transport.
 
+  `Donkey` builds these through a **`Runtime`** (`core/runtime.py`), which owns
+  the config, the OTLP bootstrap, the auth providers, the `Budget`, both clients
+  and their close; it is the only place shared clients are built. The
+  module-level factories (`donkey_kit.integrations.<framework>.<factory>()`) run
+  on the process-default runtime from `runtime.default()`: built lazily under a
+  lock from the environment, exactly as `Donkey.from_env()` would be, shared by
+  every factory, and closed at interpreter exit. It lives in `core` because
+  `integrations` may not import the top package (#725).
+
   Each client attaches credentials only to its **checked endpoints**
   (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
   port: the plane's configured URL, plus any URL override a factory accepted
@@ -113,7 +122,10 @@ framework that may not be installed.
   `donkey.<framework>` on first access through the `ADAPTERS` registry declared
   in `integrations/__init__.py`. Accessing an adapter whose optional extra is not
   installed raises an `ImportError` carrying the exact `pip install` command —
-  never a bare `ModuleNotFoundError`. Each adapter returns the framework's own
+  never a bare `ModuleNotFoundError`. The registry probes every module an
+  adapter needs, not just the framework's own, and each factory wraps its lazy
+  import in `Adapter._native_import()`, so the adapter method and the
+  module-level factory raise the same error. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
 - **Configuration** resolves per key: values set in code → env vars →
@@ -158,7 +170,7 @@ framework that may not be installed.
   | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
   | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); span **end**; classification |
   | `_on_refusal` | Phase-2 seam — no caller until `classify()` wires it (#181) | typed-refusal handlers (`BG §1.2`) |
-  | `_swap_transport` | fixture seam | `simulate()` (#190) and `donkey mock` (#187) swap a fixture in (`BG §1.4`/`BG §1.5`) |
+  | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
 
   Correlation, attribution, cache-control and opt-in cost-tag headers
   (`BG §1.7`) are set on every attempt by the `_inject_headers` request event
@@ -213,10 +225,12 @@ Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 **How a value flips to verified.** When a value is confirmed against a sandbox,
 two edits move together, never apart: flip its row in
-[`docs/verified-apis.md`](docs/verified-apis.md) to `VERIFIED`, **and** set
-`verified=True` on its `Unverified(...)` entry in `core/_verify.py` so the warning
-stops firing. `docs/verified-apis.md` is the single source of truth for what is
-verified and the worklist of what is still blocked.
+[`docs/verified-apis.md`](docs/verified-apis.md) to `VERIFIED`, **and** replace
+its `Unverified(...)` entry in `core/_verify.py` with a plain constant so the
+warning stops firing. `docs/verified-apis.md` is the single source of truth for
+what is verified and the worklist of what is still blocked. Code outside
+`core/_verify.py` cites it (`docs/verified-apis.md §N`) and never restates a
+status or a date; `scripts/check_verification_claims.py` enforces that in CI.
 
 What is verified today: the LLM-proxy data plane (its base-URL shape — note there
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,

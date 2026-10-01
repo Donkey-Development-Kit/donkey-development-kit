@@ -256,8 +256,8 @@ def test_doctor_cli_omits_blocked_values(
 
 _COST = CostTags(team="support", project="triage-v2", env="prod", enduser_id="user-42")
 _COST_HEADER_NAMES = {
-    ph.placeholder.lower()
-    for ph in (
+    name.lower()
+    for name in (
         _verify.COST_TEAM_HEADER,
         _verify.COST_PROJECT_HEADER,
         _verify.COST_ENV_HEADER,
@@ -322,8 +322,8 @@ async def test_opted_in_config_sends_config_and_run_scope_cost_headers() -> None
     ) as client:
         with run_scope("run-1", CostTags(enduser_id="run-user")):
             await client.get("https://proxy/thing")
-    assert seen[_verify.COST_TEAM_HEADER.placeholder.lower()] == "support"
-    assert seen[_verify.COST_ENDUSER_HEADER.placeholder.lower()] == "run-user"
+    assert seen[_verify.COST_TEAM_HEADER.lower()] == "support"
+    assert seen[_verify.COST_ENDUSER_HEADER.lower()] == "run-user"
 
 
 def test_opted_in_header_snapshot_carries_cost_tags() -> None:

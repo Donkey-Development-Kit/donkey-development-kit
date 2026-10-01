@@ -23,10 +23,10 @@ from typing import Any, NamedTuple
 
 import pytest
 
+from donkey_kit.core import runtime
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.transport import DonkeyAsyncClient, build_http_client
-from donkey_kit.integrations import _base
 from donkey_kit.integrations._base import Adapter, default_adapter
 from donkey_kit.integrations.langgraph import LangGraphAdapter
 
@@ -81,7 +81,7 @@ def test_default_adapter_is_cached_per_class(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
     a1 = default_adapter(LangGraphAdapter)
     a2 = default_adapter(LangGraphAdapter)
@@ -94,7 +94,7 @@ def test_module_level_factory_matches_method(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
     from donkey_kit.integrations.langgraph import chat_model
 
@@ -220,54 +220,29 @@ def test_only_langgraph_is_conformance_tested() -> None:
 
 
 # --- Agent Framework behavior (BG §1.2) -------------------------------------
+# policy_middleware() on a real Agent: test_agent_framework_policy_middleware.py.
 
 
-async def test_agent_framework_policy_middleware_passes_through_result() -> None:
+def test_agent_framework_policy_middleware_blocks_unverified_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 
-    context = object()
-    result = object()
+    import_error = ImportError("chat_middleware is unavailable")
+    original_import = builtins.__import__
 
-    async def next_(received: object) -> object:
-        assert received is context
-        return result
+    def fail_framework_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "agent_framework":
+            raise import_error
+        return original_import(name, *args, **kwargs)
 
-    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
+    monkeypatch.setattr(builtins, "__import__", fail_framework_import)
+    adapter = AgentFrameworkAdapter(_cfg(), _http())
 
-    assert await middleware(context, next_) is result
+    with pytest.raises(NotImplementedError, match=r"^blocked on verification:") as exc_info:
+        adapter.policy_middleware()
 
-
-async def test_agent_framework_policy_middleware_preserves_policy_violation() -> None:
-    from donkey_kit.core.errors import PolicyViolation
-    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
-
-    violation = PolicyViolation("gateway refused the request")
-
-    async def next_(_context: object) -> None:
-        raise violation
-
-    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
-
-    with pytest.raises(PolicyViolation) as exc_info:
-        await middleware(object(), next_)
-
-    assert exc_info.value is violation
-
-
-async def test_agent_framework_policy_middleware_preserves_unrelated_error() -> None:
-    from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
-
-    error = RuntimeError("agent failed")
-
-    async def next_(_context: object) -> None:
-        raise error
-
-    middleware = AgentFrameworkAdapter(_cfg(), _http()).policy_middleware()
-
-    with pytest.raises(RuntimeError) as exc_info:
-        await middleware(object(), next_)
-
-    assert exc_info.value is error
+    assert exc_info.value.__cause__ is import_error
 
 
 def test_agent_framework_chat_client_blocks_unverified_import(
@@ -439,17 +414,24 @@ _FACTORIES = [
 
 
 def _install_native_stub(
-    monkeypatch: pytest.MonkeyPatch, dotted: str, attr: str
+    monkeypatch: pytest.MonkeyPatch,
+    dotted: str,
+    attr: str,
+    model_fields: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Replace ``<dotted>.<attr>`` (the native class a factory imports lazily)
     with a spy that records its constructor kwargs, registering stub modules for
     any part of ``dotted`` that is not installed so the lazy ``from`` import
-    resolves offline. Returns the dict the spy populates."""
+    resolves offline. ``model_fields`` mimics a pydantic model's declared fields
+    for factories that check them. Returns the dict the spy populates."""
     captured: dict[str, Any] = {}
 
     class _Spy:
         def __init__(self, **kwargs: Any) -> None:
             captured.update(kwargs)
+
+    if model_fields:
+        _Spy.model_fields = dict.fromkeys(model_fields)  # type: ignore[attr-defined]
 
     parts = dotted.split(".")
     for i in range(1, len(parts) + 1):
@@ -467,7 +449,7 @@ def _set_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    _base._DEFAULT_ADAPTERS.clear()
+    runtime.close_default()
 
 
 @pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)
@@ -576,6 +558,14 @@ def test_openai_agents_factory_caller_openai_client_overrides_default(
 # --- ADK native Gemini on a Format=Gemini proxy (#691) -----------------------
 
 
+def _install_gemini_stub(
+    monkeypatch: pytest.MonkeyPatch,
+    model_fields: tuple[str, ...] = ("model", "base_url", "client_kwargs"),
+) -> dict[str, Any]:
+    """A spy ``Gemini`` declaring the fields of google-adk >= 2.4 by default."""
+    return _install_native_stub(monkeypatch, "google.adk.models", "Gemini", model_fields)
+
+
 def test_adk_gemini_connection_kwargs_inject_the_shared_client() -> None:
     # ADK replaces its own http_options with client_kwargs, so every governed
     # value rides there — including OUR http client (full injection).
@@ -604,7 +594,7 @@ def test_adk_gemini_factory_and_connection_kwargs_do_not_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_proxy_env(monkeypatch)
-    captured = _install_native_stub(monkeypatch, "google.adk.models", "Gemini")
+    captured = _install_gemini_stub(monkeypatch)
     from donkey_kit.integrations.adk import ADKAdapter, gemini
 
     gemini("gemini-2.5-flash", base_url="https://gw/gem/")
@@ -619,7 +609,7 @@ def test_adk_gemini_caller_kwargs_override_connection_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_proxy_env(monkeypatch)
-    captured = _install_native_stub(monkeypatch, "google.adk.models", "Gemini")
+    captured = _install_gemini_stub(monkeypatch)
     from donkey_kit.integrations.adk import gemini
 
     caller = {"api_key": "k"}
@@ -627,19 +617,72 @@ def test_adk_gemini_caller_kwargs_override_connection_defaults(
     assert captured["client_kwargs"] is caller
 
 
-def test_adk_gemini_flips_observes_last_call_on_the_instance_only(
+def test_adk_gemini_records_the_factory_without_changing_the_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # model() (LiteLLM) cannot observe; gemini() routes through our transport. The
-    # class default stays False so the exemption table keeps matching model().
-    _install_native_stub(monkeypatch, "google.adk.models", "Gemini")
+    # model() (LiteLLM) cannot observe; gemini() routes through our transport.
+    # That is per-factory class data: building a Gemini records the use and never
+    # writes a capability flag onto the instance (#741).
+    _install_gemini_stub(monkeypatch)
     from donkey_kit.integrations.adk import ADKAdapter
 
     adapter = ADKAdapter(_cfg(), _http())
-    assert adapter.observes_last_call is False
+    assert adapter.observing_last_call() is False
     adapter.gemini("gemini-2.5-flash")
-    assert adapter.observes_last_call is True
-    assert ADKAdapter.observes_last_call is False
+    assert adapter.observing_last_call() is True
+    assert "observes_last_call" not in vars(adapter)
+    assert adapter.observes_last_call is ADKAdapter.observes_last_call is False
+
+
+@pytest.mark.parametrize(
+    ("factories", "status"),
+    [
+        (("model",), "UNAVAILABLE"),
+        (("gemini",), "UNOBSERVED"),
+        (("model", "gemini"), "UNOBSERVED"),
+        (("gemini", "model"), "UNOBSERVED"),
+    ],
+)
+def test_adk_last_call_status_does_not_depend_on_factory_order(
+    monkeypatch: pytest.MonkeyPatch, factories: tuple[str, ...], status: str
+) -> None:
+    # A cold read is UNAVAILABLE only when nothing built on this Donkey can be
+    # observed; which ADK factory ran first must not change the answer (#741).
+    from donkey_kit import Donkey
+    from donkey_kit.core.lastcall import LastCallStatus
+
+    _install_gemini_stub(monkeypatch)
+    _install_native_stub(monkeypatch, "google.adk.models.lite_llm", "LiteLlm")
+    monkeypatch.setattr("donkey_kit.donkey._missing_module", lambda _probe: None)
+    with Donkey(_cfg()) as donkey:
+        for factory in factories:
+            getattr(donkey.adk, factory)("gemini-2.5-flash")
+        assert donkey.last_call.status is LastCallStatus[status]
+
+
+@pytest.mark.parametrize(
+    ("fields", "missing"),
+    [
+        (("model", "base_url"), "client_kwargs"),  # google-adk 2.0-2.3
+        (("model",), "base_url, client_kwargs"),  # google-adk < 2.0
+    ],
+)
+def test_adk_gemini_refuses_a_gemini_that_would_drop_the_governed_client(
+    monkeypatch: pytest.MonkeyPatch, fields: tuple[str, ...], missing: str
+) -> None:
+    # ADK's pydantic config ignores unknown fields, so on google-adk < 2.4 the
+    # governed client would be dropped silently and the model would talk to
+    # Google directly (#735). gemini() must refuse before constructing it.
+    captured = _install_gemini_stub(monkeypatch, fields)
+    from donkey_kit.integrations.adk import ADKAdapter
+
+    adapter = ADKAdapter(_cfg(), _http())
+    with pytest.raises(NotImplementedError, match="blocked on verification") as exc_info:
+        adapter.gemini("gemini-2.5-flash")
+    assert f"lacks {missing}" in str(exc_info.value)
+    assert "google-adk>=2.4" in str(exc_info.value)
+    assert captured == {}  # never constructed
+    assert adapter.observing_last_call() is False
 
 
 async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None:

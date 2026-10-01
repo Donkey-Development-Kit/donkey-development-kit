@@ -107,7 +107,7 @@ def test_exemption_matches_observes_last_call_flag() -> None:
 async def test_adk_gemini_is_not_exempt() -> None:
     # The adk exemptions are scoped to model() (LiteLLM). adk.gemini() is handed
     # the shared DonkeyAsyncClient — the fact that makes correlation, last_call and
-    # per-send JWT work — and so flips observes_last_call on its instance (#691).
+    # per-send JWT work — and so observes per factory (#691, #741).
     cfg = DonkeyConfig(
         llm_proxy_url="https://proxy",
         llm_proxy_client_id="cid",

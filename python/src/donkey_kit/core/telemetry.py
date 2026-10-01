@@ -300,25 +300,16 @@ def run_scope(run_id: str | None = None, cost: CostTags | None = None) -> RunSco
     return RunScope(run_id, cost)
 
 
-def ensure_correlation_id() -> str:
-    """Return the current correlation ID, creating (and binding) one if absent."""
-    rid = _correlation_id.get()
-    if rid is None:
-        rid = new_correlation_id()
-        _correlation_id.set(rid)
-    return rid
-
-
 def request_correlation_id() -> str:
     """The bound run's correlation ID, or a fresh one that is deliberately *not*
-    bound.
+    bound (#803).
 
-    For blocking callers. :func:`ensure_correlation_id` binds on first use, which
-    is right under ``asyncio.run`` — that runs in its own ``Context``, so the
-    binding dies with the run and one run shares one ID. A synchronous call has
-    no such boundary: binding there would pin the very first request's ID to the
-    ambient context for the rest of the process, so every later unrelated call
-    would report the same run. Grouping stays opt-in via :func:`run_context`.
+    Only a ``donkey.run()`` / :func:`run_context` block binds a correlation ID; a
+    call outside one is its own run. Binding on first use would pin the very
+    first request's ID to the ambient context for its whole lifetime — the rest
+    of a blocking process, or the rest of a long-lived ``asyncio.run(main())``
+    (a queue consumer, a bot), including every task spawned after it — so
+    unrelated calls would all report the same run. Grouping is opt-in.
     """
     return _correlation_id.get() or new_correlation_id()
 
@@ -512,7 +503,7 @@ def span(name: str, *, enabled: bool, **attributes: Any) -> Iterator[None]:
         yield
         return
     with tracer.start_as_current_span(name) as sp:  # pragma: no cover - needs otel
-        sp.set_attribute(DONKEY_CORRELATION_ID, ensure_correlation_id())
+        sp.set_attribute(DONKEY_CORRELATION_ID, request_correlation_id())
         for key, value in attributes.items():
             if value is not None and key in _ALLOWED_SPAN_ATTRIBUTES:
                 sp.set_attribute(key, value)

@@ -1,20 +1,26 @@
-"""Centralized home for every value that the verification discipline says must
-be verified against a real Anypoint sandbox before it can be trusted.
+"""Centralized home for every gateway or control-plane value the verification
+discipline governs: endpoint paths, header names, and hosts.
 
 Working instruction #2: *never invent an endpoint, header name, or class name.*
 
-Nothing in this module is a verified fact. Each value is either:
+Each value here is one of:
 
-  * a ``PLACEHOLDER`` — a documented best-guess that is emitted with a loud,
-    one-time :class:`UnverifiedValueWarning` whenever it is read, and is fully
+  * a plain constant, confirmed against a real sandbox or the official
+    shipping client; its ``docs/verified-apis.md`` row records how;
+  * an :class:`Unverified` placeholder, a documented best guess that emits a
+    loud, one-time :class:`UnverifiedValueWarning` when it is read and is fully
     overridable via config / env so a customer can point it at the real value
     without waiting for us; or
   * absent, in which case the calling code raises
-    ``NotImplementedError("blocked on verification: …")``.
+    ``NotImplementedError("blocked on verification: …")`` via :func:`blocked`.
 
-When a value is confirmed against a sandbox, flip its row in
-``docs/verified-apis.md`` to ``VERIFIED`` and set ``verified=True`` here so the
-warning stops firing.
+When a placeholder is confirmed against a sandbox, flip its row in
+``docs/verified-apis.md`` to ``VERIFIED`` and replace it here with a plain
+constant so the warning stops firing.
+
+This is the one module under ``src/`` that may record verification status and
+dates. Everywhere else, code describes behaviour and cites
+``docs/verified-apis.md §N`` (enforced by ``scripts/check_verification_claims.py``).
 """
 
 from __future__ import annotations
@@ -41,10 +47,9 @@ class Unverified:
     key: str
     placeholder: str
     doc_ref: str
-    verified: bool = False
 
     def get(self) -> str:
-        if not self.verified and self.key not in _warned:
+        if self.key not in _warned:
             _warned.add(self.key)
             warnings.warn(
                 f"Using UNVERIFIED placeholder for {self.key!r} "
@@ -100,32 +105,12 @@ ATTRIBUTION_BUSINESS_GROUP_HEADER = Unverified(
 # attribute. The SDK keeps these ``X-Anypoint-Cost-*`` names as a
 # forward-looking, overridable (``cost_*_header``) convention, sent only when a
 # caller opts in with ``send_cost_headers`` — by default nothing is sent to a
-# gateway that reads nothing — so each is ``verified=True``: there is nothing
-# left to discover, and leaving the warning on would lie by silence.
-COST_TEAM_HEADER = Unverified(
-    key="cost.team_header",
-    placeholder="X-Anypoint-Cost-Team",
-    doc_ref="docs/verified-apis.md §3",
-    verified=True,
-)
-COST_PROJECT_HEADER = Unverified(
-    key="cost.project_header",
-    placeholder="X-Anypoint-Cost-Project",
-    doc_ref="docs/verified-apis.md §3",
-    verified=True,
-)
-COST_ENV_HEADER = Unverified(
-    key="cost.env_header",
-    placeholder="X-Anypoint-Cost-Env",
-    doc_ref="docs/verified-apis.md §3",
-    verified=True,
-)
-COST_ENDUSER_HEADER = Unverified(
-    key="cost.enduser_header",
-    placeholder="X-Anypoint-Cost-Enduser-Id",
-    doc_ref="docs/verified-apis.md §3",
-    verified=True,
-)
+# gateway that reads nothing — so each is a plain constant: there is nothing
+# left to discover, and a warning would lie by silence.
+COST_TEAM_HEADER = "X-Anypoint-Cost-Team"
+COST_PROJECT_HEADER = "X-Anypoint-Cost-Project"
+COST_ENV_HEADER = "X-Anypoint-Cost-Env"
+COST_ENDUSER_HEADER = "X-Anypoint-Cost-Enduser-Id"
 
 # --- Correlation / call-id request headers (BG §1.1, #195) ------------------
 # VERIFIED (LIVE 2026-09-22, #522) against the deployed Omni Gateway proxy
@@ -142,22 +127,12 @@ COST_ENDUSER_HEADER = Unverified(
 #     request's retries; the gateway does not need to consume it. The name is the
 #     SDK's own convention.
 # Both are overridable per-Donkey via config (``DonkeyConfig.correlation_header``
-# / ``.call_id_header``) and both are ``verified=True``: the correlation name is
+# / ``.call_id_header``) and both are plain constants: the correlation name is
 # confirmed read by the gateway, and the call-id name is confirmed to be a
 # client-side construct the gateway ignores — neither is an open worklist item,
-# and leaving the warning on would lie by silence. See docs/verified-apis.md §3.
-CORRELATION_ID_HEADER = Unverified(
-    key="correlation.request_header",
-    placeholder="X-Correlation-Id",
-    doc_ref="docs/verified-apis.md §3",
-    verified=True,
-)
-CALL_ID_HEADER = Unverified(
-    key="correlation.call_id_header",
-    placeholder="X-Donkey-Request-Id",
-    doc_ref="docs/verified-apis.md §3",
-    verified=True,
-)
+# and a warning would lie by silence. See docs/verified-apis.md §3.
+CORRELATION_ID_HEADER = "X-Correlation-Id"
+CALL_ID_HEADER = "X-Donkey-Request-Id"
 
 # --- Semantic caching (docs/verified-apis.md §2 "Semantic caching", #587/#588) —
 # VERIFIED (LIVE 2026-09-24) ------------
@@ -169,40 +144,14 @@ CALL_ID_HEADER = Unverified(
 # on the "Do not build" list).
 #
 # The five ``x-cache-*`` steering headers were sent LOWERCASE and honored, so the
-# transport injects them lowercase as written. Overridable via config/env like
-# the attribution headers above; ``verified=True`` because the names are confirmed
-# live and there is nothing left to discover — leaving the warning on would lie by
-# silence.
-CACHE_SKIP_HEADER = Unverified(
-    key="cache.skip_header",
-    placeholder="x-cache-skip",
-    doc_ref="docs/verified-apis.md §2",
-    verified=True,
-)
-CACHE_NO_STORE_HEADER = Unverified(
-    key="cache.no_store_header",
-    placeholder="x-cache-no-store",
-    doc_ref="docs/verified-apis.md §2",
-    verified=True,
-)
-CACHE_TTL_HEADER = Unverified(
-    key="cache.ttl_header",
-    placeholder="x-cache-ttl",
-    doc_ref="docs/verified-apis.md §2",
-    verified=True,
-)
-CACHE_THRESHOLD_HEADER = Unverified(
-    key="cache.threshold_header",
-    placeholder="x-cache-threshold",
-    doc_ref="docs/verified-apis.md §2",
-    verified=True,
-)
-CACHE_PRINCIPAL_ID_HEADER = Unverified(
-    key="cache.principal_id_header",
-    placeholder="x-cache-principal-id",
-    doc_ref="docs/verified-apis.md §2",
-    verified=True,
-)
+# transport injects them lowercase as written. Plain constants because the names
+# are confirmed live and there is nothing left to discover — a warning would lie
+# by silence.
+CACHE_SKIP_HEADER = "x-cache-skip"
+CACHE_NO_STORE_HEADER = "x-cache-no-store"
+CACHE_TTL_HEADER = "x-cache-ttl"
+CACHE_THRESHOLD_HEADER = "x-cache-threshold"
+CACHE_PRINCIPAL_ID_HEADER = "x-cache-principal-id"
 # The two RESPONSE signal headers the gateway states its outcome on: the status
 # (``hit`` / ``miss`` / ``bypass`` / ``no-store``, present on every cached route)
 # and, on a ``hit`` only, the similarity score (four-dp string, e.g. ``0.9518``).
@@ -216,12 +165,7 @@ SEMANTIC_CACHE_SCORE_HEADER = "x-semantic-cache-score"
 # Path is appended to the region base URL. VERIFIED (docs/verified-apis.md §12.1) from
 # static analysis of the shipping `mulesoft-anypoint-cli-agent-fabric-plugin` (+ `anypoint-cli-
 # command`): OAuth2 client_credentials → `POST /accounts/api/v2/oauth2/token`.
-OAUTH_TOKEN_PATH = Unverified(
-    key="anypoint.oauth_token_path",
-    placeholder="/accounts/api/v2/oauth2/token",
-    doc_ref="docs/verified-apis.md §12.1",
-    verified=True,
-)
+OAUTH_TOKEN_PATH = "/accounts/api/v2/oauth2/token"
 
 # --- LLM proxy consumer auth (docs/verified-apis.md §2/§3) — VERIFIED (LIVE
 # 2026-08-28) ------------
@@ -239,8 +183,8 @@ LLM_PROXY_CLIENT_SECRET_HEADER = "client_secret"
 # DataWeave Headers Transformation + Client ID Enforcement policies are disabled;
 # JWT Validation identifies the caller instead. These are confirmed names, not
 # placeholders — captured live against `ddk-model-wallet` (instance 21186246,
-# Sandbox), fixtures in tests/fixtures/anypoint/model_wallet/. The SDK does not
-# yet emit this path (transport still sends only the CIE pair); wiring is #509.
+# Sandbox), fixtures in tests/fixtures/anypoint/model_wallet/. The transport
+# emits this path when ``llm_proxy_auth = "jwt"`` (#509).
 #   * the wallet-selector REQUEST header (value = the wallet's generated clientId);
 LLM_PROXY_WALLET_CLIENT_ID_HEADER = "X-Client-Id"
 #   * the JWT rides as `Authorization: Bearer <JWT>` (jwtOrigin
@@ -255,11 +199,19 @@ LLM_PROXY_WALLET_JWT_CLIENT_ID_CLAIM = "client_id"
 LLM_PROXY_WALLET_SELECTED_HEADER = "x-model-wallet-selected"
 
 # --- Region host map (docs/verified-apis.md §1) ------------------------------
-# UNVERIFIED — Hyperforce region hosts in particular need confirmation.
+# The US host is VERIFIED (CLI) 2026-08-28. The eu/ca/jp hosts are UNVERIFIED:
+# each is an ``Unverified`` placeholder, so resolving that region with no
+# ``base_url`` override warns once (``DonkeyConfig.control_plane_url``).
+# ``REGION_HOSTS`` holds every host as a string, for host checks that must not warn.
+UNVERIFIED_REGION_HOSTS: dict[str, Unverified] = {
+    region: Unverified(
+        key=f"anypoint.region_host.{region}",
+        placeholder=f"https://{region}1.anypoint.mulesoft.com",
+        doc_ref="docs/verified-apis.md §1",
+    )
+    for region in ("eu", "ca", "jp")
+}
 REGION_HOSTS: dict[str, str] = {
     "us": "https://anypoint.mulesoft.com",
-    "eu": "https://eu1.anypoint.mulesoft.com",
-    "ca": "https://ca1.anypoint.mulesoft.com",
-    "jp": "https://jp1.anypoint.mulesoft.com",
+    **{region: host.placeholder for region, host in UNVERIFIED_REGION_HOSTS.items()},
 }
-REGION_HOSTS_VERIFIED = False

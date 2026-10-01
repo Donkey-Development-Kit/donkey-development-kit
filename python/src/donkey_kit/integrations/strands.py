@@ -51,7 +51,10 @@ class StrandsAdapter(Adapter):
         client_args = kw.get("client_args")
         if isinstance(client_args, Mapping):
             self._allow_endpoints(client_args, "base_url")
-        from strands.models.openai import OpenAIModel  # VERIFY name/path: docs/verified-apis.md §8
+        with self._native_import():
+            from strands.models.openai import (
+                OpenAIModel,  # VERIFY name/path: docs/verified-apis.md §8
+            )
 
         return OpenAIModel(model_id=model, **{**self.connection_kwargs(), **kw})
 

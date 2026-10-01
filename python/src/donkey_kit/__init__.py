@@ -33,6 +33,7 @@ from .core.errors import (
     GovernanceDrift,
     ModelSubstituted,
     PIIDetected,
+    PlatformTeamOnly,
     PolicyViolation,
     PromptInjectionBlocked,
     ProvisioningError,
@@ -41,6 +42,8 @@ from .core.errors import (
     TokenBudgetExceeded,
     ToolInvocationError,
     UpstreamModelError,
+    UpstreamRequestError,
+    classify,
 )
 from .core.toolspec import ToolSpec, registered_tools
 from .donkey import Donkey
@@ -77,6 +80,7 @@ __all__ = [
     "GovernanceDrift",
     "ModelSubstituted",
     "PIIDetected",
+    "PlatformTeamOnly",
     "PolicyViolation",
     "PromptInjectionBlocked",
     "Publication",
@@ -89,6 +93,8 @@ __all__ = [
     "ToolInvocationError",
     "ToolSpec",
     "UpstreamModelError",
+    "UpstreamRequestError",
     "__version__",
+    "classify",
     "registered_tools",
 ]

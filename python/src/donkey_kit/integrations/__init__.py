@@ -27,12 +27,27 @@ class AdapterSpec:
     #: (#223/#244) — never guessed up front. Replaces the retired Tier 1/Tier 2
     #: split (#197).
     conformance_tested: bool
-    #: A representative top-level module of the framework, probed with
+    #: The modules the adapter's factories need, probed with
     #: ``importlib.util.find_spec`` so ``Donkey.__getattr__`` can raise the
     #: curated ImportError at ACCESS time (BG §1.8). The adapters import their
     #: framework lazily inside methods, so importing the adapter module alone
-    #: never fails — this probe is what makes access-time detection work.
-    probe: str
+    #: never fails — this probe is what makes access-time detection work. It
+    #: lists a required dependency the framework does not always install (Strands
+    #: without ``openai``), so a half-installed framework fails here too (#741).
+    probe: tuple[str, ...]
+
+
+def missing_framework_error(extra: str, missing: str | None = None) -> ImportError:
+    """The curated ImportError for an integration whose framework, or one of its
+    required dependencies, is not installed (BG §1.8). Every form raises this one:
+    ``Donkey.<framework>`` at access time, and each factory when its lazy import
+    fails (#741). ``missing`` names the module that could not be found."""
+    name = next((s.attr for s in ADAPTERS.values() if s.extra == extra), extra)
+    detail = f" (no module named {missing!r})" if missing else ""
+    return ImportError(
+        f"The {name!r} integration is not installed{detail}. Install it with:\n"
+        f'    pip install "donkey-kit[{extra}]"'
+    )
 
 
 # One deep, seven shallow (`BG §1.8`, #197): only LangGraph is conformance-tested;
@@ -42,34 +57,34 @@ class AdapterSpec:
 ADAPTERS: dict[str, AdapterSpec] = {
     "langgraph": AdapterSpec(
         "langgraph", ".langgraph", "LangGraphAdapter", "langgraph",
-        conformance_tested=True, probe="langchain_openai",
+        conformance_tested=True, probe=("langchain_openai",),
     ),
     "adk": AdapterSpec(
         "adk", ".adk", "ADKAdapter", "adk",
-        conformance_tested=False, probe="google.adk",
+        conformance_tested=False, probe=("google.adk", "litellm"),
     ),
     "strands": AdapterSpec(
         "strands", ".strands", "StrandsAdapter", "strands",
-        conformance_tested=False, probe="strands",
+        conformance_tested=False, probe=("strands", "openai"),
     ),
     "agent_framework": AdapterSpec(
         "agent_framework", ".agent_framework", "AgentFrameworkAdapter", "agent_framework",
-        conformance_tested=False, probe="agent_framework",
+        conformance_tested=False, probe=("agent_framework",),
     ),
     "openai_agents": AdapterSpec(
         "openai_agents", ".openai_agents", "OpenAIAgentsAdapter", "openai-agents",
-        conformance_tested=False, probe="agents",
+        conformance_tested=False, probe=("agents",),
     ),
     "anthropic": AdapterSpec(
         "anthropic", ".anthropic", "AnthropicAdapter", "anthropic",
-        conformance_tested=False, probe="anthropic",
+        conformance_tested=False, probe=("anthropic",),
     ),
     "crewai": AdapterSpec(
         "crewai", ".crewai", "CrewAIAdapter", "crewai",
-        conformance_tested=False, probe="crewai",
+        conformance_tested=False, probe=("crewai",),
     ),
     "llamaindex": AdapterSpec(
         "llamaindex", ".llamaindex", "LlamaIndexAdapter", "llamaindex",
-        conformance_tested=False, probe="llama_index.llms.openai_like",
+        conformance_tested=False, probe=("llama_index.llms.openai_like",),
     ),
 }
