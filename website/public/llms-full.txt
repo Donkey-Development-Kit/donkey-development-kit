@@ -363,7 +363,7 @@ ask; against your Omni Gateway the model answers your actual prompt.
 
   Prefer one command? Run `python -m examples.quickstart.main` from the
   `python/` directory of the
-  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/python/examples/quickstart):
+  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/quickstart):
   it boots the simulator for you and runs the steps above end to end.
 
 ## Catch a typed refusal Live
@@ -730,7 +730,7 @@ settings are tested, and each exposes factory methods that return the native
 object.
 
 Each card shows what has been proven about that adapter, in the terms the
-[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) uses:
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) uses:
 
 | Status | Means |
 |---|---|
@@ -883,7 +883,7 @@ or Strands' `client_args["base_url"]`) must pass the same
 [`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https) as the
 configured proxy URL; it then receives the configured credentials.
 
-See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
+See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.
 
 ---
@@ -1561,7 +1561,7 @@ Strands forwards to its internal OpenAI client.
   retry loop.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.
 
 ---
@@ -1880,7 +1880,7 @@ pre-built `AsyncOpenAI` instance.
   with no framework, use `donkey.openai()` (from `donkey-kit[llm]`) instead.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.
 
 ---
@@ -2044,7 +2044,7 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   or `await donkey.aclose()`).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.
 
 ---
@@ -2317,7 +2317,7 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.
 
 ---
@@ -2731,7 +2731,7 @@ async with donkey.cache(threshold=0.9, ttl=60):
 ```
 
 `donkey.cache(...)` is a dual sync/async context manager — like
-[`donkey.run(...)`](https://donkey-development-kit.github.io/donkey-development-kit/identity.md), the controls bind to a context variable, so they
+[`donkey.run(...)`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#correlation-ids), the controls bind to a context variable, so they
 reach every governed call in the block (including calls on framework-spawned
 `asyncio` tasks) with no threading through framework state. The five controls:
 
@@ -4956,14 +4956,14 @@ async with donkey.run(id=f"ticket-{i}"):
   (`every=5`), not by scanning content — it replays a captured fixture, it is
   not a PII detector. The real gateway does the detection; here the SSN in
   ticket five just makes the blocked ticket read true. See
-  [It replays; it does not evaluate](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#it-replays-it-does-not-evaluate).
+  [It replays; it does not evaluate](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#how-the-simulator-works).
 
 ## Verification status
 
 The proxy *contract* the demo depends on — the base URL shape (no `/v1`), the
 `client_id`/`client_secret` header pair, the attribution headers, and the four
 live-verified rejection shapes including PII — is **live-verified**
-(see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md)). `ChatOpenAI` / `StateGraph` are
+(see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)). `ChatOpenAI` / `StateGraph` are
 the frameworks' own classes and `.ainvoke` is their documented API:
 construction via the SDK factory is the verified surface, and everything after
 is the framework's own runtime.
@@ -9180,7 +9180,7 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/communit
 
 DDK is open source under the Apache-2.0 licence, and contributions of every
 size are welcome. This page is the short version; the full runbook is
-[`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/CONTRIBUTING.md)
+[`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/CONTRIBUTING.md)
 in the repository.
 
 ## Ways to help
@@ -9273,7 +9273,7 @@ npm run generate:llms
   **Verification discipline.** DDK never documents or codes against an
   endpoint, header or class name that has not been confirmed against the real
   platform. If you can't confirm one, say so in the issue rather than guessing
-  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md).
+  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md).
 
 ---
 
@@ -9454,7 +9454,7 @@ attribution.
 
   Both header names are unconfirmed guesses. The gateway hasn't been seen
   reading them (see §3 of the
-  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md)).
+  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)).
   The first time the SDK sends one,
   it emits an `UnverifiedValueWarning`. Unlike the correlation and cost-tag
   headers, these names have no config key, so you can't override them. To
@@ -10029,7 +10029,7 @@ r.total_tokens    # 1730
 Every response-derived field defaults to `None`. `None` always means **not
 observed** — never `0`, and never a fabricated value. A count of `0` is a real
 observation (an empty completion) and is distinct from `None` (no usage was
-reported at all). See [Verification discipline](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification) for why
+reported at all). See [Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline) for why
 the SDK never guesses a value it did not see on the wire.
 
 ## Observability status
@@ -10141,7 +10141,7 @@ use? This page answers that question for security and procurement reviews.
 
 The maintained list lives in the repository at
 [`docs/unsupported-boundary.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/unsupported-boundary.md).
-It is separate from the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md): the
+It is separate from the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md): the
 ledger records how a fact was established, while this page records whether
 MuleSoft publishes the contract for third-party use.
 
@@ -10207,7 +10207,7 @@ section is empty.
   Mode image rejects the LLM Proxy and MCP Bridge policies as missing
   extensions and refuses configuration until registered to a control plane —
   enough to make this scope call, bounded to that image version. See the
-  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md#6-governance--local-mode-the-verification-milestone)
+  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md#6-governance--local-mode-the-verification-milestone)
   and [issue #661](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/661).
 
 ## Support statement
@@ -10221,5 +10221,5 @@ section is empty.
 
 The SDK doesn't invent endpoints: every call it makes is against a classified,
 known API, or it doesn't happen at all. See the
-[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md).
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md).
 

@@ -88,14 +88,14 @@ async with donkey.run(id=f"ticket-{i}"):
   (`every=5`), not by scanning content — it replays a captured fixture, it is
   not a PII detector. The real gateway does the detection; here the SSN in
   ticket five just makes the blocked ticket read true. See
-  [It replays; it does not evaluate](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#it-replays-it-does-not-evaluate).
+  [It replays; it does not evaluate](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#how-the-simulator-works).
 
 ## Verification status
 
 The proxy *contract* the demo depends on — the base URL shape (no `/v1`), the
 `client_id`/`client_secret` header pair, the attribution headers, and the four
 live-verified rejection shapes including PII — is **live-verified**
-(see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md)). `ChatOpenAI` / `StateGraph` are
+(see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)). `ChatOpenAI` / `StateGraph` are
 the frameworks' own classes and `.ainvoke` is their documented API:
 construction via the SDK factory is the verified surface, and everything after
 is the framework's own runtime.

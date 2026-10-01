@@ -173,7 +173,7 @@ attribution.
 
   Both header names are unconfirmed guesses. The gateway hasn't been seen
   reading them (see §3 of the
-  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md)).
+  [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)).
   The first time the SDK sends one,
   it emits an `UnverifiedValueWarning`. Unlike the correlation and cost-tag
   headers, these names have no config key, so you can't override them. To
