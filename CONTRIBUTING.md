@@ -445,7 +445,10 @@ build plan; the load-bearing rules:
   public API fully annotated so downstream users get types.
 - **Three ergonomic forms per governed surface** — the `donkey.<framework>`
   factory, a `connection_kwargs()` accessor, and a module-level factory. Keep all
-  three when adding an adapter (they must stay in lockstep).
+  three when adding an adapter (they must stay in lockstep). Hand the framework
+  the SDK's shared client wherever its constructor takes one, and pass every
+  URL override the factory accepts through `_allow_endpoints(...)` before the
+  framework import, so it gets the https check and joins the checked endpoints.
 - **`§N.N` citation habit.** When code encodes a build-plan decision, cite the
   section in the docstring/comment so reviewers and future-you can find the
   rationale. A principled deviation gets a leading comment naming the `§N.N` it
@@ -462,7 +465,8 @@ build plan; the load-bearing rules:
   files (loopback hosts included), unless `DONKEY_TRUST_PROJECT_CONFIG=1` is set (see
   `website/content/reference/configuration.mdx`). In `jwt` mode an
   `llm_proxy_url` from those files always needs the environment or the opt-in,
-  because the JWT never comes from a file. The LLM proxy authenticates on
+  because the JWT never comes from a file. Both working-directory files must be
+  regular files or links that stay inside the working directory. The LLM proxy authenticates on
   a `client_id`/`client_secret` header pair (consumer auth), separate from any
   Anypoint control-plane credential.
 

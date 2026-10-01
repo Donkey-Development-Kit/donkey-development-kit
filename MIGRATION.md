@@ -3,8 +3,8 @@
 ## Next release: credential handling, endpoint trust and printed output
 
 Changes since `0.1.1.dev2` that can affect existing code, grouped by what you
-would notice. The first six change what the SDK sends or accepts; the last three
-change only what it prints. The reference for each rule is linked from its
+would notice. Sections 1 to 11 change what the SDK sends or accepts; sections
+12 to 15 change only what it prints or how errors are chained. The reference for each rule is linked from its
 section.
 
 ### 1. Non-loopback `http://` endpoints are refused
@@ -28,7 +28,8 @@ on a network you control and has no TLS (a simulator in another container, an
 in-cluster proxy), set `DONKEY_ALLOW_HTTP=1` (or `true`, `yes`, `on`) in the
 environment. It covers `base_url`, `llm_proxy_url` and the token endpoint.
 Credentials then travel unencrypted to that host, and the SDK emits a
-`ConfigWarning` naming the key and the host:
+`ConfigWarning` naming the key and the host, and quoting the value as you set
+it:
 
 ```text
 ConfigWarning: llm_proxy_url uses plain http:// to llm.example.test because DONKEY_ALLOW_HTTP=1 is set. Credentials and data sent to it are not encrypted in transit.
@@ -110,9 +111,11 @@ ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example
 A value you change on a resolved config counts as set in code (labelled `code`
 in the error), however you change it: `with_overrides(...)`,
 `dataclasses.replace(...)` or any other copy. A copy that keeps the value keeps
-its source. So a URL you override in code is no longer bound to the file's
-credentials, and a secret you override in code no longer passes as a file
-credential.
+its source, including `DonkeyConfig(**dataclasses.asdict(cfg))` in the same
+process. A config rebuilt in another process keeps where its URLs came from,
+but its credentials count as set in code. So a URL you override in code is no
+longer bound to the file's credentials, and a secret you override in code no
+longer passes as a file credential.
 
 ### 3. `.donkey-kit.local.toml` is now read
 
@@ -262,7 +265,104 @@ line and skips the probe. With `DONKEY_ALLOW_HTTP=1` set it also shows:
 
 If you parse `donkey doctor --json`, expect the new entries named `llm endpoint`, `control plane` and, when the switch is on, `plain http`.
 
-### 7. `PIIDetected` messages no longer contain the flagged values
+### 7. Some configurable header names are refused
+
+Reference: [Header names you can't use](website/content/reference/configuration.mdx#header-names-you-cant-use).
+
+**Who:** anyone who sets `correlation_header`, `call_id_header` or a
+`cost_*_header` key (in the environment, a file or code) to a name that routes
+or frames the request (`Host`, `X-Forwarded-*`, `Content-Length`, …), carries
+credentials (`Authorization`, `Cookie`, `x-api-key`, `client_secret`, …), is
+already set by the SDK (`Content-Type`, `User-Agent`, the attribution and
+`x-cache-*` headers, …), is already used by another of these keys, or isn't a
+valid header name. Names compare case-insensitively.
+
+**Symptom:** building the config raises, whichever way it is built:
+
+```text
+ConfigError: cost_team_header names the header 'Host', which can't be used: it controls where the request goes or how it is framed. cost_team_header is set in the environment (DONKEY_COST_TEAM_HEADER). Choose a different header name.
+```
+
+**Fix:** choose a different header name.
+
+### 8. Config files that link outside the working directory are refused
+
+**Who:** anyone whose `.donkey-kit.toml` or `.donkey-kit.local.toml` is a link
+to a file outside the working directory.
+
+**Symptom:** loading the config raises:
+
+```text
+ConfigError: /home/me/my-agent/.donkey-kit.toml links to /home/me/shared/donkey.toml, outside the working directory. Replace the link with a regular file in the working directory, or set those values in the environment.
+```
+
+**Fix:** replace the link with a regular file (a link to a file inside the
+working directory is fine), or set the values in the environment.
+
+### 9. URL overrides passed to factories must use `https://`
+
+Reference: [Credentials go only to checked endpoints](website/content/reference/configuration.mdx#credentials-go-only-to-checked-endpoints).
+
+**Who:** code that passes a URL to a factory: `base_url` to
+`donkey.llm.client()` or an adapter factory, `api_base` (LlamaIndex, ADK's
+`model()`, CrewAI), `openai_api_base` (LangGraph) or Strands'
+`client_args["base_url"]`.
+
+**Symptom:** a non-loopback `http://` URL, another scheme, or a URL without a
+host raises the same `ConfigError` as in section 1, naming the keyword (for
+example `base_url must be an https:// URL …`).
+
+**Fix:** use the `https://` address, or set `DONKEY_ALLOW_HTTP=1` as in
+section 1. An accepted override receives the configured credentials, as before.
+
+### 10. Credentials go only to checked endpoints
+
+**Who:** code that sends an SDK-built client somewhere other than the
+configured proxy or a URL passed to a factory, for example by changing
+`base_url` after the fact (`ChatOpenAI(**{**kwargs, "base_url": other})`), or
+that follows redirects across origins.
+
+**Symptom:** the request is still sent, but without credentials: no
+`client_id` / `client_secret`, `Authorization`, `x-api-key` or `X-Client-Id`,
+including credential headers the framework set itself. The proxy at the other
+address answers `401`. The SDK's clients don't follow redirects; a redirect hop
+your code follows to another origin also carries no credentials. CrewAI gets
+the same rule through an `interceptor` in its `connection_kwargs()`.
+
+**Fix:** pass the URL to the factory instead (section 9), or set it as
+`llm_proxy_url`.
+
+### 11. LlamaIndex, MS Agent Framework and ADK's `model()` send through the SDK's client
+
+Reference: [Injection depth](website/content/frameworks/index.mdx#injection-depth-differs-by-framework).
+
+**Who:** users of these adapters, and anyone who spreads `connection_kwargs()`
+into a constructor.
+
+**Symptom:** `connection_kwargs()` has new keys when the framework's
+dependencies are installed:
+
+| Adapter | New keys |
+|---|---|
+| LangGraph | `http_client` (the blocking client, used by `invoke()`) |
+| LlamaIndex | `http_client`, `async_http_client` |
+| MS Agent Framework | `async_client` (an `AsyncOpenAI` on the SDK's client) |
+| ADK `model()` | `client` (an `AsyncOpenAI` on the SDK's client) |
+| CrewAI | `interceptor` |
+
+Calls through LlamaIndex, MS Agent Framework and ADK's `model()` now carry the
+run's correlation ID, get the SDK's retries and spans, populate
+`donkey.last_call` in the context that made the call, and carry the JWT in
+`jwt` mode (async calls only). A cold read of `donkey.last_call` on a `Donkey`
+that resolved only these adapters still reports `UNAVAILABLE`
+([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
+
+**Fix:** none needed if you spread `connection_kwargs()` whole. If you pick
+keys out of it, add the new ones. If you replace one (for example your own
+`http_client`), that client doesn't get the SDK's headers, retries or checked
+endpoints.
+
+### 12. `PIIDetected` messages no longer contain the flagged values
 
 **Who:** code that parses `str(exc)`. **Symptom:** the message now names the
 entity types, their count and their offsets, for example
@@ -270,17 +370,33 @@ entity types, their count and their offsets, for example
 gateway's text) or `.response` (the raw body); both contain the flagged values.
 `.entities` is unchanged.
 
-### 8. `repr()` / `str()` of `DonkeyConfig` omit the secrets
+### 13. `repr()` / `str()` of `DonkeyConfig` omit the secrets
 
 `client_secret`, `llm_proxy_client_secret` and `llm_proxy_key` no longer appear.
 Attribute access and equality are unchanged.
 
-### 9. Printed `connection_kwargs()` show `'***'` for secrets
+### 14. Printed `connection_kwargs()` show `'***'` for secrets
 
 **Who:** tests that compare printed output. **Fix:** compare the mapping
 instead. Unpacking, lookups, equality and `json.dumps` are unchanged (and
-`json.dumps` writes the real values). Details:
+`json.dumps` writes the real values). `dict(kwargs)`, `{**kwargs}` and
+`kwargs.items()` still show the top-level `api_key`, and some framework objects
+built from the kwargs print credentials in their own `repr()`: LangGraph's
+`ChatOpenAI` (`client_secret`), LlamaIndex's `OpenAILike` (`client_secret` and
+`api_key`) and CrewAI's `OpenAICompletion` (`api_key`). Details:
 [What printed output hides](website/content/reference/configuration.mdx#what-printed-output-hides).
+
+### 15. `typed_refusals()` no longer chains the LangChain error
+
+**Who:** code that reads `__cause__` on an error raised by LangGraph's
+`typed_refusals()`.
+
+**Symptom:** `exc.__cause__` is `None`. The LangChain error repeats the
+gateway's rejection text (for a PII block, the flagged values), and a traceback
+prints every chained exception.
+
+**Fix:** read `exc.framework_error` for the original LangChain error. See
+[Refusal messages don't repeat blocked content](website/content/errors.mdx#refusal-messages-dont-repeat-blocked-content).
 
 ## `agent-fabric` → `donkey-kit` (the DDK rebrand)
 
