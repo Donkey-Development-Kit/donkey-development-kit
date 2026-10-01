@@ -11,23 +11,25 @@ confirmed offline against agent-framework 1.19.0 (docs/verified-apis.md §8):
 guarded so a future upstream rename surfaces as a ``_verify.blocked(...)``
 refusal, never a raw ``ImportError``/``TypeError`` reaching the caller.
 
-Agent Framework has first-class middleware for intercepting agent actions. We
-ship :meth:`policy_middleware` that catches :class:`PolicyViolation` and
-terminates the run cleanly rather than letting the agent loop retry — the best
-policy-integration story of any of the seven (BG §1.8), and the flagship example.
+Agent Framework has first-class middleware for intercepting chat calls.
+:meth:`AgentFrameworkAdapter.policy_middleware` is a chat middleware that turns
+a proxy refusal into the SDK's typed exception (for example
+:class:`~donkey_kit.core.errors.PIIDetected`), so the run ends on the typed
+refusal instead of a generic ``ChatClientException`` (BG §1.2).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from contextlib import AbstractContextManager
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, cast
 
 from ..core import _verify
-from ..core.errors import PolicyViolation
 from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
 
 class AgentFrameworkAdapter(Adapter):
@@ -91,24 +93,81 @@ class AgentFrameworkAdapter(Adapter):
             ) from exc
 
     def policy_middleware(self) -> Callable[..., Any]:
-        """Middleware that converts a :class:`PolicyViolation` into a clean,
-        terminal agent state instead of letting the loop retry (BG §1.2).
+        """A chat middleware for ``Agent(..., middleware=[...])`` that raises a
+        proxy refusal as the SDK's typed exception (BG §1.2).
 
-        The exact middleware signature Agent Framework expects is UNVERIFIED
-        (verification discipline). We return a plain async wrapper and mark the shape for
-        verification rather than guessing the framework's middleware protocol.
+        ``OpenAIChatClient`` wraps every openai error in a ``ChatClientException``.
+        This middleware finds the ``openai.APIStatusError`` behind it and raises
+        :func:`~donkey_kit.core.errors.classify` of its response instead, so a
+        PII block ends ``agent.run()`` as
+        :class:`~donkey_kit.core.errors.PIIDetected` with the correlation and
+        call ids that were sent. The original is kept on ``.framework_error``.
+        Streaming runs are covered too: the conversion is attached to each pull
+        of the response stream, where a streamed refusal surfaces.
+
+        The client sends through the shared client with retries off, so the
+        refused request is sent once. Marked with ``@chat_middleware``, confirmed
+        offline against agent-framework 1.19.0 (docs/verified-apis.md §8).
         """
+        try:
+            from agent_framework import (
+                chat_middleware,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
+            )
+        except ImportError as exc:
+            raise _verify.blocked(
+                "agent_framework.chat_middleware import (docs/verified-apis.md §8). "
+                "The decorator is confirmed offline against agent-framework 1.19.0; an "
+                "ImportError here means the package is absent or has renamed it. "
+                "Install 'agent-framework' or confirm the name against your installed version."
+            ) from exc
 
-        async def middleware(context: Any, next_: Callable[[Any], Any]) -> Any:
-            try:
-                return await next_(context)
-            except PolicyViolation:
-                # Terminal: re-raise so the host does not silently retry (BG §1.2).
-                # Once the middleware protocol is verified, set the framework's
-                # explicit "terminate run" signal here instead of re-raising.
-                raise
+        async def donkey_policy_middleware(
+            context: Any, call_next: Callable[[], Awaitable[None]]
+        ) -> None:
+            with _TypedRefusals():
+                await call_next()
+            if context.stream and context.result is not None:
+                # A streamed refusal surfaces when the caller pulls the stream,
+                # after this middleware has returned.
+                context.result.with_pull_context_manager(_TypedRefusals)
 
-        return middleware
+        # Called, not applied with @: the decorator is untyped without the package.
+        return cast("Callable[..., Any]", chat_middleware(donkey_policy_middleware))
+
+
+class _TypedRefusals(AbstractContextManager[None]):
+    """Re-raise an error caused by an ``openai.APIStatusError`` as the typed
+    refusal :func:`~donkey_kit.core.errors.classify` maps its response to.
+
+    A class, not ``@contextmanager``, for the reason given on LangGraph's
+    ``_TypedRefusals``: a generator frame would keep the framework error, whose
+    message repeats the gateway text, in the typed error's traceback.
+    """
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        if exc is None:
+            return None
+        import openai  # lazy: only reached once the framework has raised
+
+        from ..core.errors import classify
+
+        # Agent Framework chains the openai error as __cause__ of its own
+        # ChatClientException; walk the chain rather than one level.
+        cause: BaseException | None = exc
+        while cause is not None and not isinstance(cause, openai.APIStatusError):
+            cause = cause.__cause__
+        if cause is None:
+            return None
+        # openai>=3 vendors its own httpx; cast for the reason in langgraph.py.
+        typed = classify(cast(Any, cause.response))
+        typed.framework_error = exc
+        del exc, exc_type, tb, cause
+        raise typed from None
 
 
 def chat_client(model: str, **kw: Any) -> Any:
