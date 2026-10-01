@@ -695,9 +695,18 @@ def _as_llm_proxy_auth(v: object) -> LlmProxyAuth:
     return cast(LlmProxyAuth, token)
 
 
-def _load_config_files() -> tuple[dict[str, object], dict[str, ConfigSource]]:
-    """The merged ``[donkey]`` table and the source of every key in it, by
-    dotted path (``cost.team``).
+def load_config_table(name: str) -> dict[str, object]:
+    """The merged ``[<name>]`` table from the same files, in the same order, as
+    ``[donkey]`` — so a table such as ``[targets]`` is never read from fewer
+    locations than the config it sits beside (#815)."""
+    return _load_config_files(name)[0]
+
+
+def _load_config_files(
+    name: str = "donkey",
+) -> tuple[dict[str, object], dict[str, ConfigSource]]:
+    """The merged ``[<name>]`` table (``[donkey]`` by default) and the source of
+    every key in it, by dotted path (``cost.team``).
 
     The working directory's ``.donkey-kit.local.toml`` is merged key by key over
     its ``.donkey-kit.toml``; if neither exists, ``$XDG_CONFIG_HOME/.donkey-kit.toml``
@@ -709,18 +718,19 @@ def _load_config_files() -> tuple[dict[str, object], dict[str, ConfigSource]]:
     project = cwd / _TOML_NAME
     if project.is_file():
         _require_inside(project, cwd)
-        table = _read_table(project)
-        _warn_on_secrets(project, table)
+        table = _read_table(project, name)
+        if name == "donkey":
+            _warn_on_secrets(project, table)
         layers.append((ConfigSource("project", project), table))
     local = cwd / _LOCAL_TOML_NAME
     if local.is_file():
         _require_inside(local, cwd)
-        layers.append((ConfigSource("local", local), _read_table(local)))
+        layers.append((ConfigSource("local", local), _read_table(local, name)))
     if not layers:
         xdg = os.environ.get("XDG_CONFIG_HOME")
         user = Path(xdg) / _TOML_NAME if xdg else None
         if user is not None and user.is_file():
-            layers.append((ConfigSource("user", user), _read_table(user)))
+            layers.append((ConfigSource("user", user), _read_table(user, name)))
 
     merged: dict[str, object] = {}
     sources: dict[str, ConfigSource] = {}
@@ -765,15 +775,18 @@ def _merge_table(
             into[key] = value
 
 
-def _read_table(path: Path) -> dict[str, object]:
-    """Read the ``[donkey]`` table, keeping only keys that are real config fields."""
+def _read_table(path: Path, name: str = "donkey") -> dict[str, object]:
+    """Read the ``[<name>]`` table. For ``[donkey]``, keep only keys that are
+    real config fields."""
     try:
         data = tomllib.loads(path.read_text())
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"Malformed {path}: {exc}") from exc
-    table = data.get("donkey", {})
+    table = data.get(name, {})
     if not isinstance(table, dict):
-        raise ConfigError(f"{path}: [donkey] must be a table.")
+        raise ConfigError(f"{path}: [{name}] must be a table.")
+    if name != "donkey":
+        return table
     known = {f.name for f in fields(DonkeyConfig) if not f.name.startswith("_")}
     return {k: v for k, v in table.items() if k in known}
 
