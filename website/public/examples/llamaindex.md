@@ -2,8 +2,8 @@
 
 LlamaIndex with `donkey.llamaindex.llm("…")`, an `OpenAILike`. The adapter sets
 `is_chat_model=True` — the `OpenAILike` default of `False` hits
-`/completions` — so calls go to **`/chat/completions`, which is not
-live-verified on the DDK proxies**. Sync and async calls send through the
+`/completions` — so calls go to the proxy's `/chat/completions` route. Sync
+and async calls send through the
 SDK's HTTP clients, so the run id reaches the proxy and `last_call` is
 populated. `OpenAILike` re-raises the openai error unchanged, so `classify()`
 types refusals.

@@ -1,8 +1,7 @@
 # Google ADK
 
 Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
-**`/chat/completions`, which is not live-verified on the DDK proxies**. It
-sends through the SDK's shared HTTP client, so the credentials and the run id
+the proxy's `/chat/completions` route. It sends through the SDK's shared HTTP client, so the credentials and the run id
 go on the wire, but LiteLLM raises its own errors, so there are **no typed
 refusals**. Script 02 exists to show that gap.
 

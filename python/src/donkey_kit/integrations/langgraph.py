@@ -53,14 +53,13 @@ class LangGraphAdapter(Adapter):
                 "http_async_client": self.http_client(),  # our client, our hooks
                 "http_client": self.sync_http_client(),  # the same, for invoke()
                 "max_retries": 0,  # we retry in transport (BG §1.1)
-                # Target the proxy's data-plane endpoint: the OpenAI Responses API
-                # (``/responses``, docs/verified-apis.md §2) — the
-                # same route the raw ``donkey.llm`` client uses. Left at ChatOpenAI's
-                # chat-completions default, ``donkey.langgraph(...)`` would call an
-                # UNVERIFIED ``/chat/completions`` route and risk a 404 in a real
-                # sandbox (verification discipline).
-                # Override per call (``use_responses_api=False``) if a deployment
-                # exposes chat-completions instead.
+                # Use the OpenAI Responses API (``/responses``) rather than
+                # ChatOpenAI's chat-completions default. An OpenAI-format proxy
+                # serves both (docs/verified-apis.md §2); ``/responses`` is the
+                # route the raw ``donkey.llm`` client uses and the only one the
+                # local simulator serves, and this is the adapter the
+                # conformance suite runs against it. Override per call
+                # (``use_responses_api=False``) to use ``/chat/completions``.
                 "use_responses_api": True,
             }
         )

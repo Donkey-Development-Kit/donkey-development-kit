@@ -996,14 +996,17 @@ llm = ChatOpenAI(
     http_async_client=...,    # the SDK's shared httpx async client (ainvoke)
     http_client=...,          # the SDK's shared blocking client (invoke)
     max_retries=0,            # the SDK retries in its own transport layer
-    use_responses_api=True,   # the proxy's data plane is /responses
+    use_responses_api=True,   # /responses, the route the raw client and the simulator use
 )
 ```
 
 `connection_kwargs()` returns exactly these keys, so you can drop the factory
-and construct `ChatOpenAI` by hand at any time. Pass `use_responses_api=False`
-to `chat_model(...)` only if your deployment exposes chat-completions instead
-of the Responses API (`/responses`). A `base_url` / `openai_api_base` passed to
+and construct `ChatOpenAI` by hand at any time. An OpenAI-format proxy serves
+both the Responses API (`/responses`) and `/chat/completions`. The adapter uses
+`/responses` because the raw `donkey.llm` client does, and because the local
+simulator, which the conformance suite runs against, serves only that route.
+Pass `use_responses_api=False` to `chat_model(...)` to call
+`/chat/completions` instead. A `base_url` / `openai_api_base` passed to
 `chat_model(...)` must pass the
 [`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
 
@@ -1555,10 +1558,6 @@ Strands forwards to its internal OpenAI client.
   proxy routing to a Gemini upstream answers a streamed request with one whole
   `chat.completion` and no chunk deltas, and Strands fails on it. Pass
   `donkey.strands.model("gpt-4o", stream=True)` on routes that stream.
-- Strands also exposes lifecycle hooks (`BeforeToolCallEvent` and friends).
-  The SDK uses them for the policy-termination pattern — see the error taxonomy
-  for how a `PolicyViolation` should end a run cleanly rather than trigger a
-  retry loop.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
@@ -8481,9 +8480,8 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/examples
 
 Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
 the governed client is passed in, the SDK owns the transport: run id,
-`last_call` and typed refusals all work. The calls go to
-**`/chat/completions`, which is not live-verified on the DDK proxies**
-(`/responses` is), so use a proxy whose upstream serves that route. The
+`last_call` and typed refusals all work. The calls go to the proxy's
+`/chat/completions` route, so use a proxy whose upstream serves that route. The
 scripts use `gpt-4o`. If you point them at a model the proxy routes to Gemini,
 add `stream=False` to `OpenAIModel(...)`: Strands streams by default, and a
 Gemini-routed stream has no chunk deltas, so every turn fails (see
@@ -8616,8 +8614,7 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/examples
 # CrewAI
 
 CrewAI 1.x with `donkey.crewai.llm("…")`. `openai/` models go through CrewAI's
-native OpenAI provider to **`/chat/completions`, which is not live-verified on
-the DDK proxies** (`/responses` is). CrewAI owns the transport: the
+native OpenAI provider to the proxy's `/chat/completions` route. CrewAI owns the transport: the
 credentials go on the wire, but there is **no run id and no `last_call`**.
 Refusals are still typed, because the native provider keeps the openai error's
 response.
@@ -8706,8 +8703,8 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/examples
 
 LlamaIndex with `donkey.llamaindex.llm("…")`, an `OpenAILike`. The adapter sets
 `is_chat_model=True` — the `OpenAILike` default of `False` hits
-`/completions` — so calls go to **`/chat/completions`, which is not
-live-verified on the DDK proxies**. Sync and async calls send through the
+`/completions` — so calls go to the proxy's `/chat/completions` route. Sync
+and async calls send through the
 SDK's HTTP clients, so the run id reaches the proxy and `last_call` is
 populated. `OpenAILike` re-raises the openai error unchanged, so `classify()`
 types refusals.
@@ -8785,8 +8782,7 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/examples
 # Google ADK
 
 Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
-**`/chat/completions`, which is not live-verified on the DDK proxies**. It
-sends through the SDK's shared HTTP client, so the credentials and the run id
+the proxy's `/chat/completions` route. It sends through the SDK's shared HTTP client, so the credentials and the run id
 go on the wire, but LiteLLM raises its own errors, so there are **no typed
 refusals**. Script 02 exists to show that gap.
 

@@ -7,8 +7,7 @@ import { Callout } from 'nextra/components'
 # CrewAI
 
 CrewAI 1.x with `donkey.crewai.llm("…")`. `openai/` models go through CrewAI's
-native OpenAI provider to **`/chat/completions`, which is not live-verified on
-the DDK proxies** (`/responses` is). CrewAI owns the transport: the
+native OpenAI provider to the proxy's `/chat/completions` route. CrewAI owns the transport: the
 credentials go on the wire, but there is **no run id and no `last_call`**.
 Refusals are still typed, because the native provider keeps the openai error's
 response.

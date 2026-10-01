@@ -6,9 +6,7 @@ Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 transport injection are both available (full injection). Strands builds and
 closes a fresh ``AsyncOpenAI(**client_args)`` for every request, so the
 ``http_client`` it gets is the shared client's non-owning view: closing it leaves
-the shared client open for the next call and every other surface (#733). Strands
-also has lifecycle hooks (``BeforeToolCallEvent`` and friends) — used elsewhere
-for the policy-termination pattern (BG §1.2, BG §1.8).
+the shared client open for the next call and every other surface (#733).
 
 STREAMING (#830): the governed connection sets ``stream=False``. On an
 OpenAI-format proxy routing to Gemini the gateway answers a streamed request with

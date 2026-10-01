@@ -113,10 +113,6 @@ Strands forwards to its internal OpenAI client.
   proxy routing to a Gemini upstream answers a streamed request with one whole
   `chat.completion` and no chunk deltas, and Strands fails on it. Pass
   `donkey.strands.model("gpt-4o", stream=True)` on routes that stream.
-- Strands also exposes lifecycle hooks (`BeforeToolCallEvent` and friends).
-  The SDK uses them for the policy-termination pattern — see the error taxonomy
-  for how a `PolicyViolation` should end a run cleanly rather than trigger a
-  retry loop.
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
