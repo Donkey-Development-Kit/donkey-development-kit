@@ -160,7 +160,7 @@ async def test_jwt_mode_injects_fresh_bearer_overriding_preset() -> None:
 
     async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
         # Simulate the OpenAI SDK's pre-set sentinel bearer on the request.
-        await client.get("https://x", headers={"Authorization": "Bearer sentinel"})
+        await client.get("https://proxy", headers={"Authorization": "Bearer sentinel"})
 
     assert seen["authorization"] == "Bearer jwt-1"  # overridden, not the sentinel
     assert seen["x-client-id"] == "wallet-42"
@@ -176,8 +176,8 @@ async def test_jwt_token_refreshed_per_send() -> None:
         return httpx.Response(200)
 
     async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
-        await client.get("https://x")
-        await client.get("https://x")
+        await client.get("https://proxy")
+        await client.get("https://proxy")
 
     assert seen == ["Bearer jwt-1", "Bearer jwt-2"]
 
@@ -192,7 +192,7 @@ async def test_jwt_401_refreshes_and_retries_once() -> None:
         return httpx.Response(401) if len(seen) == 1 else httpx.Response(200)
 
     async with _client(handler, _jwt_cfg(), _RotatingToken()) as client:
-        resp = await client.get("https://x")
+        resp = await client.get("https://proxy")
 
     assert resp.status_code == 200
     # First send jwt-1 (401) → invalidate advances → re-send with a fresh token.
@@ -201,7 +201,7 @@ async def test_jwt_401_refreshes_and_retries_once() -> None:
 
 
 async def test_client_id_mode_authorization_setdefault_preserves_preset() -> None:
-    """In the DEFAULT client-id mode the CIE proxy ignores Authorization, so the
+    """Outside jwt mode a token provider is a control-plane credential, so the
     transport must NOT clobber a caller-set bearer — setdefault, not override.
     (The override behaviour above is jwt-mode-only.)"""
     seen: dict[str, str] = {}
@@ -211,7 +211,8 @@ async def test_client_id_mode_authorization_setdefault_preserves_preset() -> Non
         return httpx.Response(200)
 
     # Default client-id mode, but a token provider is attached (control-plane).
-    async with _client(handler, DonkeyConfig(), StaticToken("cp-token")) as client:
+    cfg = DonkeyConfig(llm_proxy_url="https://x")
+    async with _client(handler, cfg, StaticToken("cp-token")) as client:
         await client.get("https://x", headers={"Authorization": "Bearer preset"})
 
     assert seen["authorization"] == "Bearer preset"  # preserved, not overridden
@@ -1507,6 +1508,7 @@ _COST_CFG = DonkeyConfig(
     cost_project_header="x-cost-project",
     cost_env_header="x-cost-env",
     cost_enduser_header="x-cost-enduser",
+    send_cost_headers=True,
 )
 
 
@@ -1636,11 +1638,12 @@ def test_verified_inbound_attribution_headers_are_quiet() -> None:
 
 
 async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
-    """#522 AC: a default call under ``donkey.run(team=…)`` — cost tags set, no
+    """#522 AC: a call under ``donkey.run(team=…)`` — cost tags set, no
     header-name overrides, no application/business-group attribution — emits NONE of
     the six ``UnverifiedValueWarning``s that used to fire (``X-Correlation-Id`` /
     ``X-Donkey-Request-Id`` / ``X-Anypoint-Cost-*``). Unit-level mirror of the
-    acceptance group-1 quiet-path assertion."""
+    acceptance group-1 quiet-path assertion. Cost headers are opt-in
+    (``send_cost_headers``), so this opts in to read the placeholder names."""
     from donkey_kit.core import _verify
 
     seen: dict[str, str] = {}
@@ -1649,7 +1652,9 @@ async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
         seen.update(request.headers)
         return httpx.Response(200)
 
-    cfg = DonkeyConfig(cost=CostTags(team="support", project="triage", env="prod"))
+    cfg = DonkeyConfig(
+        cost=CostTags(team="support", project="triage", env="prod"), send_cost_headers=True
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         async with _client(handler, cfg) as client:

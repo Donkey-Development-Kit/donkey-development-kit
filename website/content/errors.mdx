@@ -60,7 +60,7 @@ DonkeyError                     # base of the whole tree
 ├─ ConfigError                  # misconfiguration (raised locally, pre-flight)
 ├─ AuthError                    # rejected data-plane credentials or control-plane auth
 ├─ PolicyViolation              # base for every governance rejection
-│  ├─ PIIDetected               # 403, type=pii_detected; .entities
+│  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
@@ -90,7 +90,7 @@ never burn an exhausted budget or replay a blocked prompt.
 
 | Exception | Discriminator | Retryable? | Next step (`.remediation`) |
 |---|---|---|---|
-| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails. | **No** — terminal. The async data-plane client refreshes its token and retries **once** on a `401`, then surfaces it; control-plane token acquisition surfaces immediately. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. |
+| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. |
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
@@ -110,8 +110,12 @@ immediately and an unconditional retry would spin. Its `.remediation` carries
 that branch as an inspectable next step, so you don't have to parse the
 exception message. `ModelSubstituted` reports that a call *succeeded* against a
 different model than requested (opt-in via `on_model_substitution="raise"`).
-`ConfigError` is raised locally, pre-flight, and reports every missing field at
-once — fix the config and re-run.
+`ConfigError` is raised locally, before any request. It reports every missing
+field at once, and it also reports an endpoint that may not receive the
+configured credentials: a non-`https://` URL, or a URL from the project's config
+files paired with credentials from elsewhere. See
+[Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
+Fix the config and re-run.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
@@ -164,6 +168,40 @@ The text names the **action you can take**, not the policy that fired. Because
 each default lives on the exception class, it is a single source of wording that
 [`donkey doctor`](/cli) reuses for its own failure output, so the CLI and the
 exception never disagree.
+
+## Refusal messages don't repeat blocked content
+
+The PII policy's rejection text repeats every value it flagged. `PIIDetected`
+builds its own message instead, from the entity types, their count and their
+character offsets. So `str(exc)`, `repr(exc)` and `exc.args` never contain the
+blocked value, and neither does a log line, a traceback or
+[`donkey doctor`](/cli):
+
+```
+Request blocked: personally identifiable information detected (403): 1 entity (Email at chars 12-32). Values withheld; the gateway's text is on .gateway_message.
+```
+
+`.entities` lists the flagged types (`["Email"]`). The gateway's own text is on
+`.gateway_message`, and the raw body is on `.response`. Neither is rendered by
+`str()` or `repr()`. Both carry the blocked content, so handle them like the
+prompt itself. The other refusal messages are built from status codes,
+headers, category names and policy pattern names, never from the request.
+
+A traceback also prints every chained exception, and a framework's own error
+usually repeats the gateway's text. So when the SDK maps a framework error to
+a typed one, as LangGraph's
+[`typed_refusals()`](/frameworks/langgraph#typed-refusals-inside-a-node) does,
+it raises it without a chained cause: `exc.__cause__` is `None`, and the
+framework error is on `exc.framework_error` (`None` when there was none). No
+frame in the traceback holds the framework error as a local variable, so error
+reporters that print frame locals (Sentry, `pytest -l`) don't show it either.
+Python still keeps it on the suppressed `exc.__context__`, so treat
+`framework_error` and `__context__` like `gateway_message`.
+
+This applies to policy refusals. `UpstreamRequestError` messages include the
+upstream provider's own error text, which can quote parts of your request. For
+everything the SDK does and doesn't hide in printed output, see
+[What printed output hides](/reference/configuration#what-printed-output-hides).
 
 ## The ids every `DonkeyError` carries
 
@@ -222,10 +260,12 @@ token-budget refusal (`TokenBudgetExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
 against, but the transport never silently retries it.
 
-The async client additionally refreshes its token and retries **once** on a 401,
-because it may carry an Anypoint control-plane credential. The blocking client
-holds no such credential, so a 401 there is terminal and surfaces immediately as
-`AuthError`.
+In `jwt` mode the async client additionally refreshes the wallet JWT and
+retries **once** on a 401. In the default client-id mode the data-plane client
+holds no token, so a 401 is terminal, as it is on the blocking client, and
+surfaces immediately as `AuthError`. The Anypoint control-plane credential
+lives on a separate client: model calls never fetch, send or refresh it. See
+[What the SDK sends where](/reference/configuration#what-the-sdk-sends-where).
 
 ## Unrecognised shapes
 

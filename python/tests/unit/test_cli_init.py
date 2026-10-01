@@ -136,6 +136,32 @@ def test_init_lists_all_missing_required_fields_at_once(
     assert "DONKEY_LLM_PROXY_CLIENT_SECRET" in out
 
 
+def test_init_missing_list_names_only_missing_fields(
+    monkeypatch: pytest.MonkeyPatch, clean_env: None, tmp_path: object
+) -> None:
+    """A project-file URL with env credentials is an endpoint problem, not a
+    missing field, so it must not appear in init's missing list."""
+    import json
+    from pathlib import Path
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    (Path(str(tmp_path)) / ".donkey-kit.toml").write_text(
+        '[donkey]\nllm_proxy_url = "https://llm.example.test/"\n'
+    )
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    result = runner.invoke(app, ["--json", "init", "--force"])
+    assert result.exit_code == 0, _combined(result)
+
+    missing = json.loads(result.stdout)["missing"]
+    assert missing == [
+        "client_id (env ANYPOINT_CLIENT_ID)",
+        "client_secret (env ANYPOINT_CLIENT_SECRET)",
+        "org_id (env ANYPOINT_ORG_ID)",
+    ]
+
+
 def test_init_is_idempotent_and_does_not_clobber(
     monkeypatch: pytest.MonkeyPatch, clean_env: None, tmp_path: object
 ) -> None:

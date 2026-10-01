@@ -171,6 +171,17 @@ def test_llamaindex_connection_kwargs_use_api_base_and_chat_flags() -> None:
     assert kw["is_function_calling_model"] is True
 
 
+def test_llamaindex_llm_leaves_retries_to_the_transport() -> None:
+    """``OpenAILike`` retries 3 times by default; its calls now go through the
+    SDK's client, which already retries, so the framework must not retry too."""
+    pytest.importorskip("llama_index.llms.openai_like")
+    from donkey_kit.integrations.llamaindex import LlamaIndexAdapter
+
+    adapter = LlamaIndexAdapter(_cfg(), _http())
+    assert adapter.connection_kwargs()["max_retries"] == 0
+    assert adapter.llm("m").max_retries == 0
+
+
 def test_openai_agents_connection_kwargs_carry_governed_client() -> None:
     """The OpenAI Agents SDK wants a *pre-built* client, so unlike the
     OpenAI-compatible adapters this one's connection_kwargs() returns a single
@@ -483,7 +494,24 @@ def test_factory_and_connection_kwargs_do_not_drift(
 
     # Every governed kwarg the eject path documents reached the native constructor
     # with an identical value. (captured also holds model/model_id — not governed.)
-    assert {k: captured[k] for k in expected} == expected
+    # A pre-built OpenAI client is made fresh on each call, so compare what it is
+    # bound to.
+    assert {k: _comparable(captured[k]) for k in expected} == {
+        k: _comparable(v) for k, v in expected.items()
+    }
+
+
+def _comparable(value: Any) -> Any:
+    if type(value).__name__ == "AsyncOpenAI":
+        return (
+            "AsyncOpenAI",
+            str(value.base_url),
+            value.default_headers["client_id"],
+            value.default_headers["client_secret"],
+            value.max_retries,
+            id(value._client),
+        )
+    return value
 
 
 @pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)

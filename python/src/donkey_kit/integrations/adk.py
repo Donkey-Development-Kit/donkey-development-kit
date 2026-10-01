@@ -7,12 +7,12 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
 * ``model()`` — ADK's ``LiteLlm`` wrapper for a ``Format=OpenAI`` proxy (the
   SDK's default DDK proxies). LiteLLM takes ``openai/<id>`` model strings and
   speaks ``/chat/completions``. Header injection is via LiteLLM's
-  ``extra_headers``; we CANNOT inject our httpx client — LiteLLM owns the
-  transport. Consequence: transport retries and correlation-ID-per-run degrade
-  to per-client, and ``donkey.last_call`` is not populated. These are
-  documented, asserted conformance exemptions (the conformance kit's
-  ``correlation_id_propagated`` / ``gateway_identity_observed``). ADK requires
-  ``litellm>=1.84`` (floor, not ceiling).
+  ``extra_headers``. LiteLLM takes a pre-built OpenAI client (``client``), so
+  we pass an ``AsyncOpenAI`` that sends through the shared client: redirects
+  are not followed and credentials go only to checked endpoints. The
+  conformance kit still lists ``model()`` under ``correlation_id_propagated`` /
+  ``gateway_identity_observed`` and ``donkey.last_call`` stays unpopulated.
+  ADK requires ``litellm>=1.84`` (floor, not ceiling).
 * ``gemini()`` — ADK's native ``google.adk.models.Gemini`` for a
   ``Format=Gemini`` proxy (#691). The LIVE-verified native route is
   ``POST <proxy>/models/<model>:generateContent`` (#540); the model travels in
@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -39,23 +40,28 @@ if TYPE_CHECKING:
 
 class ADKAdapter(Adapter):
     extra = "adk"
-    # LiteLLM owns the transport, so no response from ``model()`` reaches
-    # donkey.last_call (#362, the same reason as the conformance kit's
-    # correlation_id_propagated exemption). ``gemini()`` routes through our
-    # transport and flips this on the instance that built it (#691).
+    # Kept False for ``model()`` while the conformance kit lists its
+    # correlation_id_propagated exemption (#362), although its calls now go
+    # through the shared client. ``gemini()`` flips this on the instance that
+    # built it (#691).
     observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``LiteLlm(model="openai/<id>", **kwargs)`` you
         build yourself. LiteLLM uses ``api_base``/``extra_headers`` (not
-        ``base_url``/``default_headers``) and owns its own transport, so the
-        shared http client is not injected here (BG §1.8 exemption; the conformance kit)."""
+        ``base_url``/``default_headers``). ``client`` is an ``AsyncOpenAI`` that
+        sends through the SDK's shared client, which does not follow redirects
+        and sends credentials only to checked endpoints; LiteLLM's OpenAI route
+        uses it in place of the client it would build."""
         conn = self._openai_connection()
-        return {
-            "api_base": conn["base_url"],
-            "api_key": conn["api_key"],
-            "extra_headers": conn["default_headers"],
-        }
+        return masked(
+            {
+                "api_base": conn["base_url"],
+                "api_key": conn["api_key"],
+                "extra_headers": conn["default_headers"],
+                **self._proxy_openai_client_kwarg("client"),
+            }
+        )
 
     def gemini_connection_kwargs(self, *, base_url: str | None = None) -> dict[str, Any]:
         """Governed kwargs for a ``Gemini(model=<id>, **kwargs)`` you build
@@ -68,36 +74,48 @@ class ADKAdapter(Adapter):
         google-genai requires for the Gemini API backend, and the SDK timeout —
         google-genai otherwise sends ``timeout=None``, which disables the
         client's. ``api_version=""`` because the proxy route has no
-        ``/v1beta`` segment."""
+        ``/v1beta`` segment. A ``base_url`` passed here must pass the https check."""
+        self._allow_endpoints({"base_url": base_url}, "base_url")
         conn = self._openai_connection()
         url = base_url or conn["base_url"]
-        return {
-            "base_url": url,
-            "client_kwargs": {
-                "api_key": conn["api_key"],
-                "http_options": {
-                    "base_url": url,
-                    "api_version": "",
-                    "headers": conn["default_headers"],
-                    "timeout": int(self._cfg.timeout_s * 1000),
-                    "httpx_async_client": self._http_client(),
+        return masked(
+            {
+                "base_url": url,
+                "client_kwargs": {
+                    "api_key": conn["api_key"],
+                    "http_options": {
+                        "base_url": url,
+                        "api_version": "",
+                        "headers": conn["default_headers"],
+                        "timeout": int(self._cfg.timeout_s * 1000),
+                        "httpx_async_client": self._http_client(),
+                    },
                 },
-            },
-        }
+            }
+        )
 
     def model(self, model: str, **kw: Any) -> LiteLlm:
+        """Return ADK's ``LiteLlm`` at the proxy. An ``api_base``/``base_url``
+        override must pass the https check."""
+        self._allow_endpoints(kw, "api_base", "base_url")
         from google.adk.models.lite_llm import LiteLlm  # VERIFY name/path: docs/verified-apis.md §8
 
+        conn = self.connection_kwargs()
+        override = kw.get("api_base") or kw.get("base_url")
+        if override is not None and "client" in conn:
+            # LiteLLM sends to the client's own base URL, so rebuild it there.
+            conn["client"] = self._proxy_openai_client(str(override))
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
-        return LiteLlm(model=f"openai/{model}", **{**self.connection_kwargs(), **kw})
+        return LiteLlm(model=f"openai/{model}", **{**conn, **kw})
 
     def gemini(self, model: str, *, base_url: str | None = None, **kw: Any) -> Gemini:
         """Return ADK's native ``google.adk.models.Gemini`` bound to a
         ``Format=Gemini`` proxy, with the shared http client injected (#691).
         Pass the bare model id (``"gemini-2.5-flash"``) — no provider prefix."""
+        conn = self.gemini_connection_kwargs(base_url=base_url)
         from google.adk.models import Gemini  # VERIFY name/path: docs/verified-apis.md §8
 
-        native = Gemini(model=model, **{**self.gemini_connection_kwargs(base_url=base_url), **kw})
+        native = Gemini(model=model, **{**conn, **kw})
         self.observes_last_call = True
         return native
 

@@ -7,13 +7,17 @@ Each adapter depends on exactly one framework. Nothing here may be imported by
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar, cast
 
 from ..core.config import DonkeyConfig
+from ..core.masking import masked
 from ..core.transport import (
     DonkeyAsyncClient,
+    DonkeyClient,
     attribution_headers,
     build_http_client,
+    build_sync_http_client,
     proxy_api_key,
     proxy_auth_headers,
 )
@@ -38,9 +42,25 @@ class Adapter:
     #: and it is the fact the conformance suite asserts as an exemption (the conformance kit).
     observes_last_call: bool = True
 
-    def __init__(self, cfg: DonkeyConfig, http_client: DonkeyAsyncClient) -> None:
+    def __init__(
+        self,
+        cfg: DonkeyConfig,
+        http_client: DonkeyAsyncClient,
+        sync_http_client: Callable[[], DonkeyClient] | None = None,
+    ) -> None:
         self._cfg = cfg
         self._http = http_client
+        # ``Donkey`` passes its own accessor so it owns the blocking client's
+        # lifecycle; standalone use falls back to one owned here.
+        self._sync_http = sync_http_client or self._own_sync_client
+        self._owned_sync: DonkeyClient | None = None
+
+    def _own_sync_client(self) -> DonkeyClient:
+        if self._owned_sync is None:
+            self._owned_sync = build_sync_http_client(
+                self._cfg, origins=self._http.checked_origins
+            )
+        return self._owned_sync
 
     def _attribution_headers(self) -> dict[str, str]:
         return attribution_headers(self._cfg)
@@ -59,8 +79,54 @@ class Adapter:
     def _http_client(self) -> DonkeyAsyncClient:
         return self._http
 
+    def _sync_http_client(self) -> DonkeyClient:
+        """The shared blocking client, for a framework that also makes sync
+        calls. It shares the async client's checked endpoints."""
+        return self._sync_http()
+
+    def _proxy_openai_client(self, base_url: str | None = None) -> Any:
+        """A native ``AsyncOpenAI`` bound to the proxy (or to ``base_url``, an
+        override already allowed through :meth:`_allow_endpoints`) that sends
+        through the shared client, for a framework that takes a pre-built OpenAI
+        client rather than an ``http_client``."""
+        conn = self._openai_connection()
+        from openai import AsyncOpenAI
+
+        # openai 3.x retyped http_client to httpx2.AsyncClient (a distinct class from a
+        # separate distribution); our DonkeyAsyncClient is an httpx subclass, duck-typed
+        # at runtime. Typecheck-only mismatch — docs/verified-apis.md (openai >=3.0 row).
+        # `cast(Any, …)` erases the argument type so this typechecks clean under BOTH
+        # majors; a bare `# type: ignore` is `unused-ignore` under openai<3 (#597).
+        return AsyncOpenAI(
+            base_url=base_url or conn["base_url"],
+            api_key=conn["api_key"],
+            default_headers=conn["default_headers"],
+            http_client=cast(Any, self._http_client()),
+            max_retries=0,  # we retry in transport (BG §1.1)
+        )
+
+    def _proxy_openai_client_kwarg(self, name: str, base_url: str | None = None) -> dict[str, Any]:
+        """``{name: self._proxy_openai_client(base_url)}``, or ``{}`` without the
+        OpenAI SDK. For frameworks that depend on it, so their
+        ``connection_kwargs()`` still builds on a base install."""
+        try:
+            return {name: self._proxy_openai_client(base_url)}
+        except ImportError:
+            return {}
+
     def _require_proxy(self) -> DonkeyConfig:
         return self._cfg.validated(need="llm")
+
+    def _allow_endpoints(self, overrides: Mapping[str, Any], *names: str) -> None:
+        """Check each URL override in ``overrides`` under ``names`` — a URL passed
+        in code to a factory — with the config's https check, then let the
+        shared client send the proxy credentials to it. Called before the
+        framework is imported, so a refused URL fails the same with or without
+        the framework installed."""
+        for name in names:
+            url = overrides.get(name)
+            if url is not None:
+                self._http.allow_endpoint(str(url), name=name)
 
     def _openai_connection(self) -> dict[str, Any]:
         """The three governed values every OpenAI-compatible client needs to
@@ -71,13 +137,19 @@ class Adapter:
         :meth:`connection_kwargs`; both the ``donkey.<framework>.<factory>()``
         methods and the module-level factories build on top of this so there is
         one source of truth for the governed connection.
+
+        Every ``connection_kwargs()`` returns its mapping through
+        :func:`~donkey_kit.core.masking.masked`, so printing it never shows the
+        ``api_key`` or the secret header.
         """
         cfg = self._require_proxy()
-        return {
-            "base_url": cfg.llm_proxy_url,
-            "api_key": self._proxy_api_key(),
-            "default_headers": self._proxy_headers(),
-        }
+        return masked(
+            {
+                "base_url": cfg.llm_proxy_url,
+                "api_key": self._proxy_api_key(),
+                "default_headers": self._proxy_headers(),
+            }
+        )
 
 
 A = TypeVar("A", bound=Adapter)

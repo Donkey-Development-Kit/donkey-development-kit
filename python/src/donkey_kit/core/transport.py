@@ -2,7 +2,9 @@
 
 This is the most important piece of engineering in the SDK. Every framework has
 a different mechanism for setting request headers, and several have none. The
-solution is one shared HTTP client that every adapter is handed.
+solution is one shared HTTP client per credential plane: every adapter is handed
+the data-plane (LLM proxy) client, and Anypoint platform calls use a separate
+control-plane client, so neither credential ever rides the other's requests.
 
 The client:
   * injects, via a request event hook, on every outbound request:
@@ -23,7 +25,9 @@ The client:
     includes 429: on this proxy a 429 is a token-budget refusal
     (TokenBudgetExceeded), and retrying it only burns the same exhausted window
     (BG §1.2, #183). retry_after is still surfaced for wait_for_reset() (#186).
-  * refreshes the token and retries exactly once on 401 (BG §1.1)
+  * refreshes the attached provider's token and retries exactly once on 401
+    (BG §1.1); a client-id data-plane client has no provider, so its 401 is
+    terminal
 
 For frameworks that only accept a ``default_headers`` dict (not a client), pass
 :func:`attribution_headers` — a snapshot — and accept that the correlation ID is
@@ -47,6 +51,7 @@ from .budget import Budget
 from .cachecontrol import current_cache_controls
 from .config import DonkeyConfig
 from .cost import CostTags
+from .endpoints import require_secure_url
 from .errors import GatewayUnavailable, ModelSubstituted, classify, gateway_unavailable
 from .lastcall import (
     LLM_MODEL_HEADER,
@@ -64,6 +69,7 @@ from .lastcall import (
     usage_from_response,
     usage_mapping,
 )
+from .masking import SENSITIVE_NAMES, masked
 from .telemetry import (
     POLICY_DECISION_ALLOW,
     POLICY_DECISION_REFUSE,
@@ -123,7 +129,9 @@ def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
     names are a VERIFIED-NEGATIVE result (docs/verified-apis.md §3): the LLM
     Gateway ingests no cost-tag header, so the name is a forward-looking
     convention and reading the placeholder emits no warning — the authoritative
-    carrier is the ``donkey.cost.*`` span attribute. Values are pre-validated by
+    carrier is the ``donkey.cost.*`` span attribute. The transport therefore
+    sends these only when ``DonkeyConfig.send_cost_headers`` is enabled; this
+    builder itself does not check the flag. Values are pre-validated by
     :class:`CostTags`, so they are always header-safe."""
     override = {
         field: getattr(cfg, attr) for field, attr, _placeholder in _COST_HEADER_SOURCES
@@ -155,8 +163,9 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
     remain loud, overridable placeholders. The verified per-agent attribution
     unit is the ``client_id`` credential — see :func:`proxy_auth_headers`.
 
-    Includes the CONFIG-LEVEL cost tags (docs/verified-apis.md §3, #196). A static
-    ``default_headers``
+    Includes the CONFIG-LEVEL cost tags only when ``cfg.send_cost_headers`` is
+    enabled (docs/verified-apis.md §3, #196): nothing on the gateway reads them.
+    A static ``default_headers``
     snapshot cannot see a later ``donkey.run(...)`` override — that binding is a
     contextvar the live client reads per send — so the snapshot path carries the
     set-once tags only, a documented degradation (like the per-run correlation
@@ -167,7 +176,8 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
         headers[_verify.ATTRIBUTION_APP_HEADER.get()] = cfg.application_name
     if cfg.business_group:
         headers[_verify.ATTRIBUTION_BUSINESS_GROUP_HEADER.get()] = cfg.business_group
-    headers.update(cost_headers(cfg, cfg.cost))
+    if cfg.send_cost_headers:
+        headers.update(cost_headers(cfg, cfg.cost))
     return headers
 
 
@@ -187,9 +197,12 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
       injected per-send by :meth:`DonkeyAsyncClient._inject_headers` from the
       attached ``AuthProvider``, because a static snapshot cannot carry a
       credential that rotates.
+
+    Returns a :class:`~donkey_kit.core.masking.MaskedDict`: a plain ``dict`` in
+    use, but printing it shows ``'***'`` for the secret header.
     """
 
-    headers = attribution_headers(cfg)
+    headers = masked(attribution_headers(cfg))
     if cfg.llm_proxy_auth == "jwt":
         if cfg.llm_proxy_wallet_client_id:
             headers[_verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER] = cfg.llm_proxy_wallet_client_id
@@ -206,6 +219,83 @@ def proxy_api_key(cfg: DonkeyConfig) -> str:
     configured key if any, else :data:`PROXY_API_KEY_SENTINEL` (the proxy ignores
     it and enforces the client_id/secret headers instead)."""
     return cfg.llm_proxy_key or PROXY_API_KEY_SENTINEL
+
+
+#: An origin: scheme, lower-cased host, and port (the scheme's default when absent).
+Origin = tuple[str, str, int]
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+#: Lower-cased request-header names that carry or identify a credential: the
+#: masked names plus the proxy client-id and wallet-selector headers. A shared
+#: client never sends them to an origin it was not checked for.
+CREDENTIAL_HEADERS: frozenset[str] = SENSITIVE_NAMES | frozenset(
+    {
+        _verify.LLM_PROXY_CLIENT_ID_HEADER.lower(),
+        _verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER.lower(),
+    }
+)
+
+
+def origin_of(url: str | httpx.URL) -> Origin | None:
+    """The :data:`Origin` of ``url``, or ``None`` when it has no scheme or host."""
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL:
+        return None
+    port = parsed.port or _DEFAULT_PORTS.get(parsed.scheme)
+    if not parsed.host or port is None:
+        return None
+    return (parsed.scheme, parsed.host.lower(), port)
+
+
+def strip_credential_headers(request: httpx.Request) -> None:
+    """Remove every :data:`CREDENTIAL_HEADERS` header from ``request``."""
+    for name in [n for n in request.headers if n.lower() in CREDENTIAL_HEADERS]:
+        del request.headers[name]
+
+
+class _CheckedEndpoints:
+    """The origins a shared client sends credentials to.
+
+    Seeded with the plane's configured endpoint — the LLM proxy URL on the data
+    plane, the control-plane URL on the control plane — which config validation
+    checks. A URL passed in code joins through :meth:`allow_endpoint` once it
+    passes the same https check. A request to any other origin, a redirect hop
+    included (httpx runs request hooks on every hop), is sent without the SDK's
+    credentials and with the credential headers a framework set removed.
+    """
+
+    _origins: set[Origin]
+
+    def _init_origins(self, endpoint: str | None, origins: set[Origin] | None) -> None:
+        self._origins = origins if origins is not None else set()
+        seeded = origin_of(endpoint) if endpoint else None
+        if seeded is not None:
+            self._origins.add(seeded)
+
+    @property
+    def checked_origins(self) -> set[Origin]:
+        """The live set of origins this client sends credentials to. Pass it as
+        ``origins=`` to another client of the same plane to share it."""
+        return self._origins
+
+    def allow_endpoint(self, url: str, *, name: str) -> None:
+        """Let this client send credentials to ``url``'s origin, a URL passed in
+        code. Raises :class:`~donkey_kit.core.errors.ConfigError` unless it passes
+        the config's https check (``https://``, a loopback host, or any host with
+        ``DONKEY_ALLOW_HTTP=1`` in the environment); ``name`` labels the error."""
+        require_secure_url(url, name=name)
+        origin = origin_of(url)
+        if origin is not None:
+            self._origins.add(origin)
+
+    def _guard(self, request: httpx.Request) -> bool:
+        """Whether ``request`` may carry credentials. When not, strip any it has."""
+        if origin_of(request.url) in self._origins:
+            return True
+        strip_credential_headers(request)
+        return False
 
 
 def _resolve_header_names(cfg: DonkeyConfig) -> tuple[str, str]:
@@ -237,9 +327,11 @@ def _apply_base_headers(
     random, it must be pinned once before the retry loop
     (:func:`_apply_call_id_header`), never re-rolled per send.
 
-    ``attribution_headers`` already carries the CONFIG-LEVEL cost tags; any
-    ``donkey.run(...)`` per-run overrides are applied on top here (read from the
-    contextvar per send), so a run-scope dimension wins for its block (#196)."""
+    With ``cfg.send_cost_headers`` enabled, ``attribution_headers`` already
+    carries the CONFIG-LEVEL cost tags and any ``donkey.run(...)`` per-run
+    overrides are applied on top here (read from the contextvar per send), so a
+    run-scope dimension wins for its block (#196). Disabled (the default), no
+    cost header is sent; the span attributes still carry every tag."""
     request.headers[correlation_header] = correlation_id
     # Stamp the resolved name so read-back (errors._sent_ids) honours a
     # header-name override without core/errors importing DonkeyConfig (#363).
@@ -248,7 +340,7 @@ def _apply_base_headers(
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
     run = current_cost_tags()
-    if run is not None:
+    if run is not None and cfg.send_cost_headers:
         for name, value in cost_headers(cfg, run).items():
             request.headers[name] = value
     # Per-request semantic-cache steering bound by ``donkey.cache(...)`` (#587).
@@ -640,10 +732,21 @@ class _SpanClosingSyncStream(_SpanClosingStream, httpx.SyncByteStream):
             self._inner.close()
 
 
-class DonkeyAsyncClient(httpx.AsyncClient):
+class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
     """An ``httpx.AsyncClient`` that injects attribution/correlation/auth headers
     and applies the SDK's retry policy. Every adapter that accepts a custom HTTP
-    client MUST be given one of these."""
+    client MUST be given one of these.
+
+    A client serves exactly one credential plane (BG §1.1). The default is the
+    data plane (the LLM proxy): ``auth`` is the data-plane credential, which is
+    the model-wallet JWT provider in ``jwt`` mode and ``None`` in client-id mode.
+    ``control_plane=True`` marks a client for Anypoint platform calls: ``auth``
+    is then the connected-app provider, and the ``jwt``-mode wallet headers are
+    never stamped on its requests.
+
+    Credentials go only to the plane's checked endpoints (see
+    :class:`_CheckedEndpoints`); ``origins`` shares that set with another client.
+    Redirects are not followed unless a caller asks for it per request."""
 
     def __init__(
         self,
@@ -651,9 +754,13 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         auth: AuthProvider | None,
         *,
         budget: Budget | None = None,
+        control_plane: bool = False,
+        origins: set[Origin] | None = None,
         **kw: object,
     ) -> None:
         self._cfg = cfg
+        self._control_plane = control_plane
+        self._init_origins(cfg.control_plane_url if control_plane else cfg.llm_proxy_url, origins)
         # The two correlation request-header NAMES, resolved once (config override
         # → UNVERIFIED placeholder). The one-time verification-discipline warning
         # for an un-overridden
@@ -686,35 +793,39 @@ class DonkeyAsyncClient(httpx.AsyncClient):
             ensure_correlation_id(),
             correlation_header=self._correlation_header,
         )
+        if not self._guard(request):
+            return
         # jwt auth mode (model-wallet ingress, #509/#372): stamp the durable
         # wallet-selector ``X-Client-Id`` on every data-plane send (not just the
         # default_headers snapshot), so adapters routed through this shared client
-        # carry it too. The name is VERIFIED (docs/verified-apis.md §2/§3).
-        if self._cfg.llm_proxy_auth == "jwt" and self._cfg.llm_proxy_wallet_client_id:
+        # carry it too — and never on a control-plane send. The name is VERIFIED
+        # (docs/verified-apis.md §2/§3).
+        wallet = self._cfg.llm_proxy_auth == "jwt" and not self._control_plane
+        if wallet and self._cfg.llm_proxy_wallet_client_id:
             request.headers.setdefault(
                 _verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER,
                 self._cfg.llm_proxy_wallet_client_id,
             )
         if self._token_provider is not None:
             token = await self._token_provider.token()
-            # Two token-bearing ingresses ride here, both as ``Authorization:
-            # Bearer`` (VERIFIED): the control-plane OAuth2 client_credentials token
-            # (docs/verified-apis.md §12.1) and — when jwt auth mode is selected — the
-            # data-plane model-wallet JWT (docs/verified-apis.md §2/§3, #372). The header
-            # name/scheme come from the verified wallet constants so there is one
-            # source; the control-plane token happens to use the identical shape.
+            # Two token-bearing ingresses ride here, each on its own client and both
+            # as ``Authorization: Bearer`` (VERIFIED): the control-plane OAuth2
+            # client_credentials token (docs/verified-apis.md §12.1) and — when jwt
+            # auth mode is selected — the data-plane model-wallet JWT
+            # (docs/verified-apis.md §2/§3, #372). The header name/scheme come from
+            # the verified wallet constants so there is one source; the
+            # control-plane token happens to use the identical shape.
             header = _verify.LLM_PROXY_WALLET_JWT_HEADER
             value = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
-            if self._cfg.llm_proxy_auth == "jwt":
+            if wallet:
                 # The OpenAI SDK pre-sets ``Authorization: Bearer <api_key>`` from
                 # its mandatory key slot; a wallet proxy READS this header as the
                 # JWT, so we must OVERRIDE that sentinel with the fresh per-send
                 # token. ``setdefault`` would yield to the sentinel and 401.
                 request.headers[header] = value
             else:
-                # Control plane: the OpenAI SDK is not in this path, and on a CIE
-                # data-plane call the proxy ignores Authorization — so yield to any
-                # call-site Authorization rather than clobber it.
+                # Control plane: the OpenAI SDK is not in this path, so yield to
+                # any call-site Authorization rather than clobber it.
                 request.headers.setdefault(header, value)
 
     # --- lifecycle hooks (the skeleton's attachment points, BG §1.1) --------
@@ -944,7 +1055,7 @@ class DonkeyAsyncClient(httpx.AsyncClient):
         return response
 
 
-class DonkeyClient(httpx.Client):
+class DonkeyClient(_CheckedEndpoints, httpx.Client):
     """The blocking twin of :class:`DonkeyAsyncClient`, for ``donkey.llm.client(
     sync=True)``.
 
@@ -961,10 +1072,21 @@ class DonkeyClient(httpx.Client):
     a fetched token. It does mean the control-plane surfaces — ``registry`` and
     ``tools`` — stay async-only; see BG §1.1 for why the two credentials are
     deliberately not conflated.
+
+    Like its async twin it sends credentials only to the checked endpoints; pass
+    the async client's :attr:`checked_origins` as ``origins`` to share them.
     """
 
-    def __init__(self, cfg: DonkeyConfig, *, budget: Budget | None = None, **kw: object) -> None:
+    def __init__(
+        self,
+        cfg: DonkeyConfig,
+        *,
+        budget: Budget | None = None,
+        origins: set[Origin] | None = None,
+        **kw: object,
+    ) -> None:
         self._cfg = cfg
+        self._init_origins(cfg.llm_proxy_url, origins)
         # Resolved once; see DonkeyAsyncClient.__init__ (BG §1.1, #195).
         self._correlation_header, self._call_id_header = _resolve_header_names(cfg)
         self._budget = budget  # see DonkeyAsyncClient.__init__ (BG §1.3, #185)
@@ -981,6 +1103,7 @@ class DonkeyClient(httpx.Client):
             request_correlation_id(),
             correlation_header=self._correlation_header,
         )
+        self._guard(request)
 
     # --- lifecycle hooks (BG §1.1) ------------------------------------------
     # Synchronous twins of the async seams, kept in lockstep so a blocking caller
@@ -1125,15 +1248,24 @@ def build_http_client(
     auth: AuthProvider | None,
     *,
     budget: Budget | None = None,
+    control_plane: bool = False,
 ) -> DonkeyAsyncClient:
-    """Factory for the shared client (BG §1.1). Pass ``budget`` to track the in-band
-    token window on every response (BG §1.3, #185); omit it for the control-plane
-    token-fetch client, which observes no budget."""
-    return DonkeyAsyncClient(cfg, auth, budget=budget)
+    """Factory for a shared client, one per credential plane (BG §1.1). Pass
+    ``budget`` to track the in-band token window on every response (BG §1.3,
+    #185); omit it on the control plane, which observes no budget. Pass
+    ``control_plane=True`` for a client that calls the Anypoint platform (see
+    :class:`DonkeyAsyncClient`)."""
+    return DonkeyAsyncClient(cfg, auth, budget=budget, control_plane=control_plane)
 
 
-def build_sync_http_client(cfg: DonkeyConfig, *, budget: Budget | None = None) -> DonkeyClient:
+def build_sync_http_client(
+    cfg: DonkeyConfig,
+    *,
+    budget: Budget | None = None,
+    origins: set[Origin] | None = None,
+) -> DonkeyClient:
     """Factory for the shared blocking client (BG §1.1). See :class:`DonkeyClient`
     for why it takes no :class:`AuthProvider`. Pass ``budget`` to share one budget
-    object with the async client (BG §1.3, #185)."""
-    return DonkeyClient(cfg, budget=budget)
+    object with the async client (BG §1.3, #185), and ``origins`` to share its
+    checked endpoints."""
+    return DonkeyClient(cfg, budget=budget, origins=origins)

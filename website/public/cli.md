@@ -66,7 +66,7 @@ donkey test          # a thin front end to pytest --donkey-conformance
 Three global flags precede the subcommand:
 
 ```bash
-donkey --config ./cfg.toml init   # write/read a config file at a non-default path
+donkey --config ./cfg.toml init   # write the generated config file to a non-default path (init only)
 donkey --env Sandbox doctor       # override the Anypoint environment
 donkey --json init                # machine-readable output where a command supports it
 ```
@@ -80,15 +80,22 @@ preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
 
 ### `donkey init`
 
-Resolves your current configuration (kwargs → env vars → `.donkey-kit.toml` →
-defaults) and writes a **commented** `.donkey-kit.toml` with the values it
+Resolves your current configuration (env vars → config files → defaults; see
+[Precedence](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#precedence)) and writes a **commented** `.donkey-kit.toml` with the values it
 found.
 
 - **Names every missing required field at once** — control plane *and* LLM
   proxy — using the same validation the SDK runs at call time, so `init` and a
   real request never disagree about what is required.
 - **Never writes a secret.** `client_secret`, `llm_proxy_client_secret`, and
-  `llm_proxy_key` are emitted as commented `env` pointers, not values.
+  `llm_proxy_key` are emitted as commented pointers, not values. Put them in a
+  gitignored `.donkey-kit.local.toml` next to the file, or in environment
+  variables. A URL in `.donkey-kit.toml`, including a loopback one, only
+  receives credentials from those two files unless you opt in; see
+  [Which credentials a URL receives](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives).
+  The file's comments also say that URLs must use `https://`, that `localhost`
+  is accepted over plain `http://`, and that `DONKEY_ALLOW_HTTP=1` in the
+  environment (not in the file) allows plain `http://` to other hosts.
 - **Idempotent.** An existing file is left untouched unless you pass `--force`.
 
 ```bash
@@ -112,16 +119,38 @@ Each verdict prints the same remediation string the matching typed exception
 carries, so the fix is in the output rather than in a runbook. The budget line
 states how old the reading is, since the proxy has no budget endpoint.
 
+Before the call, `doctor` prints each endpoint's host and where it came from:
+`env`, `project file`, `local overlay`, `user file` or `default`. If the LLM
+proxy URL comes from the working directory's config files but its credentials
+don't (a loopback URL such as the simulator's included), the `config` line
+fails with the
+[remediation](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-credentials-a-url-receives) and no
+request is sent. A control-plane endpoint with the same problem shows its
+remediation on the `control plane` line without failing the report, since
+`doctor` only calls the LLM proxy. In `jwt` mode, an LLM proxy URL from those
+files always fails the `config` line, because the JWT never comes from a file:
+set the URL in the environment or opt in.
+
+With `DONKEY_ALLOW_HTTP` on in the environment, a `plain http` line says so and
+quotes the value as set, for example `DONKEY_ALLOW_HTTP=true` (in `--json`
+output, the entry with `"name": "plain http"`):
+
+```text
+[i]  plain http     allowed to non-loopback hosts (DONKEY_ALLOW_HTTP=1 in env)
+```
+
 ```bash
 donkey doctor
 ```
 
 ```text
-[ok] config       env (3 fields)
-[ok] gateway      reachable, responded
-[ok] credentials  client_id accepted
-[ok] model        accepted by the proxy
-[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+[ok] config         env (3 fields)
+[i]  llm endpoint   <ingress-gw> (env)
+[i]  control plane  anypoint.mulesoft.com (default)
+[ok] gateway        reachable, responded
+[ok] credentials    client_id accepted
+[ok] model          accepted by the proxy
+[i]  budget         99,000 / 100,000 remaining, resets in 59s, observed 0s ago
 ```
 
 ```bash

@@ -26,10 +26,11 @@ docs/verified-apis.md §8.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, cast
 
+from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -42,25 +43,32 @@ class LangGraphAdapter(Adapter):
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs to spread into a ``ChatOpenAI(model=…, **kwargs)`` you
         build yourself (BG §1.8). Same values the factory uses — one source of
-        truth for the proxy connection."""
+        truth for the proxy connection. Both ``ainvoke`` and ``invoke`` send
+        through the SDK's clients (``http_async_client`` / ``http_client``), which
+        do not follow redirects and send credentials only to checked endpoints."""
         conn = self._openai_connection()
-        return {
-            **conn,  # base_url, api_key, default_headers
-            "http_async_client": self._http_client(),  # our client, our hooks
-            "max_retries": 0,  # we retry in transport (BG §1.1)
-            # Target the proxy's LIVE-VERIFIED endpoint: the data plane is the
-            # OpenAI Responses API (``/responses``, docs/verified-apis.md §2) — the same route the
-            # raw ``donkey.llm`` client uses. Left at ChatOpenAI's chat-completions
-            # default, ``donkey.langgraph(...)`` would call an UNVERIFIED
-            # ``/chat/completions`` route and risk a 404 in a real sandbox (verification
-            # discipline).
-            # Override per call (``use_responses_api=False``) if a deployment
-            # exposes chat-completions instead.
-            "use_responses_api": True,
-        }
+        return masked(
+            {
+                **conn,  # base_url, api_key, default_headers
+                "http_async_client": self._http_client(),  # our client, our hooks
+                "http_client": self._sync_http_client(),  # the same, for invoke()
+                "max_retries": 0,  # we retry in transport (BG §1.1)
+                # Target the proxy's LIVE-VERIFIED endpoint: the data plane is the
+                # OpenAI Responses API (``/responses``, docs/verified-apis.md §2) — the
+                # same route the raw ``donkey.llm`` client uses. Left at ChatOpenAI's
+                # chat-completions default, ``donkey.langgraph(...)`` would call an
+                # UNVERIFIED ``/chat/completions`` route and risk a 404 in a real
+                # sandbox (verification discipline).
+                # Override per call (``use_responses_api=False``) if a deployment
+                # exposes chat-completions instead.
+                "use_responses_api": True,
+            }
+        )
 
     def chat_model(self, model: str, **kw: Any) -> ChatOpenAI:
-        """Return a native ``ChatOpenAI`` pointed at the proxy (BG §1.8)."""
+        """Return a native ``ChatOpenAI`` pointed at the proxy (BG §1.8). A
+        ``base_url``/``openai_api_base`` override must pass the https check."""
+        self._allow_endpoints(kw, "base_url", "openai_api_base")
         from langchain_openai import ChatOpenAI  # VERIFY name/path: docs/verified-apis.md §8
 
         return ChatOpenAI(model=model, **{**self.connection_kwargs(), **kw})
@@ -89,8 +97,46 @@ def chat_model(model: str, **kw: Any) -> ChatOpenAI:
     return default_adapter(LangGraphAdapter).chat_model(model, **kw)
 
 
-@contextmanager
-def typed_refusals() -> Iterator[None]:
+class _TypedRefusals(AbstractContextManager[None]):
+    """The context manager behind :func:`typed_refusals`.
+
+    A class, not ``@contextmanager``: a generator-based manager leaves
+    ``contextlib``'s ``__exit__`` frame, whose locals hold the framework error,
+    in the typed error's traceback, and reporters that render frame locals
+    (Sentry, ``pytest -l``) would print its message. This ``__exit__`` drops its
+    own references before raising.
+    """
+
+    def __enter__(self) -> None:
+        import openai  # noqa: F401  # lazy: only the framework path needs it
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        import openai
+
+        from ..core.errors import classify
+
+        if not isinstance(exc, openai.APIStatusError):
+            return None
+        # ``APIStatusError`` always carries the originating response; classify()
+        # maps it (and reads back the sent correlation/call ids) into the typed
+        # taxonomy. openai>=3 vendors its own httpx, so ``exc.response`` is
+        # statically a distinct-but-duck-identical Response type; cast erases it
+        # to the one classify wants. `cast(Any, …)` (not `cast("httpx.Response", …)`)
+        # so this typechecks clean under BOTH majors: under openai<3
+        # ``exc.response`` is already ``httpx.Response`` and a cast to it is
+        # `redundant-cast` (#597).
+        typed = classify(cast(Any, exc.response))
+        typed.framework_error = exc
+        del exc, exc_type, tb
+        raise typed from None
+
+
+def typed_refusals() -> AbstractContextManager[None]:
     """Surface a proxy refusal raised *inside a node* as the SDK's typed
     exception, not a framework-wrapped generic error (#198 AC3).
 
@@ -117,20 +163,11 @@ def typed_refusals() -> Iterator[None]:
     (``APIConnectionError``/``APITimeoutError``, which are *not*
     ``APIStatusError``) are transport failures, not gateway refusals, and pass
     through untouched.
+
+    The typed error is raised without a chained cause: the framework error's
+    message repeats the gateway's rejection text, which for a PII block holds
+    the blocked values, and a traceback or ``logger.exception()`` renders every
+    chained exception. It stays reachable on ``exc.framework_error``, and no
+    frame in the typed error's traceback holds it as a local variable.
     """
-    import openai  # lazy: only the framework path needs it (the layered architecture)
-
-    from ..core.errors import classify
-
-    try:
-        yield
-    except openai.APIStatusError as exc:
-        # ``APIStatusError`` always carries the originating response; classify()
-        # maps it (and reads back the sent correlation/call ids) into the typed
-        # taxonomy. ``from exc`` keeps the framework wrapper as the cause.
-        # openai>=3 vendors its own httpx, so ``exc.response`` is statically a
-        # distinct-but-duck-identical Response type; cast erases it to the one
-        # classify wants. `cast(Any, …)` (not `cast("httpx.Response", …)`) so this
-        # typechecks clean under BOTH majors: under openai<3 ``exc.response`` is
-        # already ``httpx.Response`` and a cast to it is `redundant-cast` (#597).
-        raise classify(cast(Any, exc.response)) from exc
+    return _TypedRefusals()

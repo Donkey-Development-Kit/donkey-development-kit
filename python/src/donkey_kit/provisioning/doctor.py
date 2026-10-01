@@ -17,6 +17,12 @@ wording). The budget line always states ``observed_at`` staleness — the proxy
 has no budget-query endpoint (upstream gap #2), so a budget is only ever as
 fresh as the last response, and doctor never implies otherwise (AC3).
 
+Before any request, doctor prints each endpoint's host and where it came from
+(env, project file, local overlay, user file or default). An LLM-proxy endpoint
+that may not receive the configured credentials (see
+:meth:`DonkeyConfig.check_endpoints`) fails the ``config`` line, so the probe
+never runs. When ``DONKEY_ALLOW_HTTP`` is on, a ``plain http`` line shows the value set.
+
 Honest scope (verification discipline): the gateway's *allow-list* rejection (a model refused by
 API Manager policy rather than missing at the provider) has no captured 403
 shape yet, and enumerating the allowed alternatives needs the discovery
@@ -31,10 +37,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..core.config import _TOML_NAME, DonkeyConfig
+from ..core.config import ConfigSource, DonkeyConfig
+from ..core.endpoints import allow_http_enabled, allow_http_setting, host_of
 from ..core.errors import (
     AuthError,
     ConfigError,
@@ -113,9 +119,10 @@ def _humanize(seconds: float) -> str:
 def _config_check(cfg: DonkeyConfig) -> tuple[Check, bool]:
     """Resolve config without any network call and report llm-proxy completeness.
     Returns the check plus whether it's safe to probe (all required fields set)."""
-    resolved = sum(1 for f in _LLM_FIELDS if getattr(cfg, f))
-    toml_present = (Path.cwd() / _TOML_NAME).is_file()
-    source = f"{_TOML_NAME} + env" if toml_present else "env"
+    set_fields = [f for f in _LLM_FIELDS if getattr(cfg, f)]
+    resolved = len(set_fields)
+    labels = dict.fromkeys(str(cfg.source_of(f)) for f in set_fields)
+    source = " + ".join(labels) or "nothing set"
     try:
         cfg.validated(need="llm")
     except ConfigError as exc:
@@ -131,6 +138,48 @@ def _config_check(cfg: DonkeyConfig) -> tuple[Check, bool]:
             False,
         )
     return Check("config", Level.OK, f"{source} ({resolved} fields)"), True
+
+
+def _endpoint_detail(url: str, source: ConfigSource) -> str:
+    return f"{host_of(url) or 'no host'} ({source})"
+
+
+def _endpoint_checks(cfg: DonkeyConfig) -> list[Check]:
+    """One line per resolved endpoint: its host and where it came from. The
+    probe only exercises the LLM proxy, so a control-plane problem is shown
+    with its remediation but does not fail the report."""
+    checks: list[Check] = []
+    if cfg.llm_proxy_url:
+        checks.append(
+            Check(
+                "llm endpoint",
+                Level.INFO,
+                _endpoint_detail(cfg.llm_proxy_url, cfg.source_of("llm_proxy_url")),
+            )
+        )
+    remediation: str | None = None
+    if cfg.client_id or cfg.client_secret:
+        try:
+            cfg.check_endpoints(need="control_plane")
+        except ConfigError as exc:
+            remediation = str(exc)
+    checks.append(
+        Check(
+            "control plane",
+            Level.INFO,
+            _endpoint_detail(cfg.control_plane_url, cfg.source_of("base_url")),
+            remediation,
+        )
+    )
+    if allow_http_enabled():
+        checks.append(
+            Check(
+                "plain http",
+                Level.INFO,
+                f"allowed to non-loopback hosts ({allow_http_setting()} in env)",
+            )
+        )
+    return checks
 
 
 def _probe_checks(result: ProbeResult) -> list[Check]:
@@ -242,9 +291,9 @@ def run_diagnostics(model: str, *, probe: Probe | None = None) -> list[Check]:
     diagnosis without a gateway."""
     cfg = DonkeyConfig.from_env()
     config_check, can_probe = _config_check(cfg)
-    checks = [config_check]
+    checks = [config_check, *_endpoint_checks(cfg)]
     if not can_probe:
-        nc = "not checked — config incomplete"
+        nc = "not checked — config check failed"
         checks += [Check(n, Level.SKIP, nc) for n in ("credentials", "gateway", "model")]
         checks.append(_budget_check(None))
         return checks

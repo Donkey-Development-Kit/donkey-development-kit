@@ -69,11 +69,24 @@ donkey mock --port 9000 --host 0.0.0.0
   credentials, so only expose it on a network you trust.
 </Callout>
 
-Whatever you choose, point your client at the same address: set
-`DONKEY_LLM_PROXY_URL=http://<host>:<port>` to match (for the example above,
-`http://127.0.0.1:9000`). The simulator's port is **not** read from an
-environment variable or `.donkey-kit.toml` — the `--port`/`--host` flags (or the
-`serve()` keyword arguments below) are the only way to change it.
+Point your client at the same address: set
+`DONKEY_LLM_PROXY_URL=http://127.0.0.1:<port>` (for the example above,
+`http://127.0.0.1:9000`). The SDK accepts plain `http://` for loopback hosts
+(`localhost`, `127.0.0.0/8`, `::1`); `http://0.0.0.0:…` is refused. To reach the
+simulator from another machine or container by LAN address or hostname (for
+example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
+environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
+[Endpoints must use `https://`](/reference/configuration#endpoints-must-use-https).
+
+The simulator's port is **not** read from an environment variable or
+`.donkey-kit.toml` — the `--port`/`--host` flags (or the `serve()` keyword
+arguments below) are the only way to change it.
+
+Set the simulator URL in the environment (or in code), as above. If you keep it
+in `.donkey-kit.toml` instead, put the credentials in `.donkey-kit.local.toml`
+next to it: a URL from the working directory's config files, loopback included,
+only receives credentials from those files. See
+[Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
 
 <Callout type="info">
   If you run the simulator's ASGI app under `uvicorn` yourself instead of

@@ -202,8 +202,9 @@ all. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-deve
 
 ## Attribute cost to a run Live
 
-Group one logical task under a single correlation ID and cost tags, so the
-gateway record, your logs and your spans all join up:
+Group one logical task under a single correlation ID and cost tags. The
+correlation ID joins the gateway record, your logs and your spans; the cost
+tags land on your spans:
 
 ```python
 async with donkey.run(id=ticket.id, team="support", project="triage"):
@@ -261,11 +262,13 @@ donkey doctor
 ```
 
 ```text
-[ok] config       env (3 fields)
-[ok] gateway      reachable, responded
-[ok] credentials  client_id accepted
-[ok] model        accepted by the proxy
-[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+[ok] config         env (3 fields)
+[i]  llm endpoint   <ingress-gw> (env)
+[i]  control plane  anypoint.mulesoft.com (default)
+[ok] gateway        reachable, responded
+[ok] credentials    client_id accepted
+[ok] model          accepted by the proxy
+[i]  budget         99,000 / 100,000 remaining, resets in 59s, observed 0s ago
 ```
 
 `donkey doctor` tells a wrong URL from wrong credentials from a model that is

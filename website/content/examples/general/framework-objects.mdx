@@ -80,7 +80,7 @@ Run context
     Configuration for 'llm' is incomplete. Missing:
       - llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)
       - llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)
-    Set them via kwargs, environment variables, or .donkey-kit.toml.
+    Set them via kwargs, environment variables, or .donkey-kit.toml (secrets in .donkey-kit.local.toml).
 
   Two missing fields, one error, each naming the environment variable that sets it. And
   note the LLM proxy credential is validated separately from the Anypoint control-plane
@@ -153,6 +153,7 @@ Run context
     default_headers.client_id      <redacted> (36 chars)
     default_headers.client_secret  <redacted> (40 chars)
     http_async_client              <donkey_kit.core.transport.DonkeyAsyncClient object at 0x10aac2a50>
+    http_client                    <donkey_kit.core.transport.DonkeyClient object at 0x10aac2c10>
     max_retries                    0
     use_responses_api              True
 

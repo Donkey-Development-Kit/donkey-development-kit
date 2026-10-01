@@ -18,15 +18,19 @@ verification-blocked error where it is needed.
 
 from __future__ import annotations
 
+import functools
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from . import _verify
-from .errors import AuthError
+from .endpoints import require_secure_url
+from .errors import AuthError, ConfigError
 
 if TYPE_CHECKING:
     import httpx
+
+    from .config import DonkeyConfig
 
 _EXPIRY_SAFETY_MARGIN_S = 60.0
 
@@ -69,6 +73,7 @@ class AnypointConnectedApp(AuthProvider):
         http_client: httpx.AsyncClient,
         token_path: str | None = None,
         clock: Callable[[], float] = time.monotonic,
+        endpoint_check: Callable[[], None] | None = None,
     ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
@@ -77,8 +82,37 @@ class AnypointConnectedApp(AuthProvider):
         # The default is VERIFIED (plugin); callers may override it for their environment.
         self._token_path = token_path or _verify.OAUTH_TOKEN_PATH.get()
         self._clock = clock
+        # Runs before every token POST; raises ConfigError to stop it.
+        self._endpoint_check = endpoint_check
         self._cached: str | None = None
         self._expires_at: float = 0.0
+
+    @classmethod
+    def from_config(
+        cls,
+        cfg: DonkeyConfig,
+        *,
+        http_client: httpx.AsyncClient,
+        token_path: str | None = None,
+    ) -> AnypointConnectedApp:
+        """Build from a resolved config. Before the first token POST, the
+        control-plane endpoint is checked against where the credentials came from
+        (:meth:`DonkeyConfig.check_endpoints`), so nothing is sent to a host the
+        credentials are not bound to. The check is deferred to the first fetch so
+        an unused control plane never blocks LLM-only use."""
+        if not (cfg.client_id and cfg.client_secret):
+            raise ConfigError(
+                "The Anypoint connected app needs client_id and client_secret "
+                "(env ANYPOINT_CLIENT_ID / ANYPOINT_CLIENT_SECRET)."
+            )
+        return cls(
+            client_id=cfg.client_id,
+            client_secret=cfg.client_secret,
+            control_plane_url=cfg.control_plane_url,
+            http_client=http_client,
+            token_path=token_path,
+            endpoint_check=functools.partial(cfg.check_endpoints, need="control_plane"),
+        )
 
     async def token(self) -> str:
         if self._cached is not None and self._clock() < self._expires_at:
@@ -91,6 +125,9 @@ class AnypointConnectedApp(AuthProvider):
 
     async def _fetch(self) -> str:
         url = f"{self._base}{self._token_path}"
+        require_secure_url(url, name="token endpoint")
+        if self._endpoint_check is not None:
+            self._endpoint_check()
         resp = await self._http.post(
             url,
             data={
@@ -131,6 +168,22 @@ class AnypointConnectedApp(AuthProvider):
         self._cached = token
         self._expires_at = self._clock() + max(0.0, expires_in - _EXPIRY_SAFETY_MARGIN_S)
         return token
+
+
+class EndpointCheckedAuth(AuthProvider):
+    """Runs ``endpoint_check`` before each ``token()`` of ``provider``, so a
+    :class:`ConfigError` stops the token before it is fetched or sent."""
+
+    def __init__(self, provider: AuthProvider, endpoint_check: Callable[[], None]) -> None:
+        self._provider = provider
+        self._endpoint_check = endpoint_check
+
+    async def token(self) -> str:
+        self._endpoint_check()
+        return await self._provider.token()
+
+    async def invalidate(self) -> None:
+        await self._provider.invalidate()
 
 
 class ChainedAuth(AuthProvider):

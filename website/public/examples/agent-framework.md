@@ -2,9 +2,9 @@
 
 `donkey.agent_framework.chat_client("…")` builds an `OpenAIChatClient`
 (verified against 1.19.0, where the keyword is `model=`) that calls
-`/responses`. Only `default_headers` are handed over, so the proxy sees your
-credentials but the SDK does not own the transport: there is **no run id and
-no `last_call`**. Refusals still come back typed — Agent Framework wraps the
+`/responses`. It sends through the SDK's shared HTTP client, so the run id
+reaches the proxy and `last_call` is set in the task that made the call.
+Refusals come back typed — Agent Framework wraps the
 openai error in `ChatClientException`, and the response rides on `__cause__`.
 
 | # | Script | Shows | Needs |
@@ -43,8 +43,11 @@ print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
 ```
 
 **You should see:** the reply, `total tokens` from Agent Framework's
-`usage_details`, and `last_call unavailable …` — the honest answer when the SDK
-only supplied headers. Read usage from the framework on this path.
+`usage_details`, and `last_call unavailable …`. `asyncio.run(...)` runs the
+call in its own context, so the script's read is a cold one, and a cold read
+on this adapter reports `unavailable` rather than `unobserved` ([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)). Read
+usage from the framework here, or read `last_call` inside the coroutine that
+made the call.
 
 ## 02 — Typed refusals, live
 

@@ -19,9 +19,14 @@ Every platform API the SDK calls is classified:
 
 ## Current boundary
 
-The SDK reaches two platform destinations: the Anypoint connected-app token
-endpoint and the Model Proxy. The rows below classify each contract it
-consumes there. Any feature that would need an unconfirmed endpoint stops
+The SDK can reach two platform destinations: the Model Proxy, for every model
+call, and the Anypoint connected-app token endpoint, only when a control-plane
+feature needs a token. Model calls never request that token. The features that
+would request it are listed in
+[Which features use the control plane](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#which-features-use-the-control-plane);
+all of them are Roadmap in this release, so the token endpoint is contacted
+only if your own code calls `AnypointConnectedApp.token()`. The rows below
+classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
 before making a network request.
 
 | Destination / contract | Classification | SDK use |

@@ -3,14 +3,14 @@
 A small, FIXED set of dimensions — ``team``, ``project``, ``env``,
 ``enduser.id`` — set once on the :class:`~donkey_kit.core.config.DonkeyConfig`
 (and optionally overridden per run via ``donkey.run(...)``), then emitted on
-every governed model call two ways:
+every governed model call:
 
-  * as request **headers**, under UNVERIFIED placeholder names (verification discipline — the
-    gateway-side cost-attribution header name is the single highest-priority
-    unknown, ``docs/verified-apis.md`` §3); and
   * as ``donkey.cost.*`` **span attributes**, which carry the full value
-    regardless of the header question because the SDK controls the span end to
-    end.
+    because the SDK controls the span end to end — the authoritative carrier; and
+  * as request **headers**, only when ``DonkeyConfig.send_cost_headers`` is
+    enabled. The gateway ingests no cost-tag header (a verified-negative result,
+    ``docs/verified-apis.md`` §3, #522), so the names are an overridable
+    convention and the default sends none.
 
 The key set is fixed on purpose (BG §1.7 / #196 AC #1): "we don't know" is the
 failure this replaces, so an unknown dimension is a configuration *error*, not

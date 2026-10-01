@@ -18,11 +18,11 @@ import importlib
 import importlib.util
 import inspect
 from collections.abc import Callable
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, AsyncExitStack
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 from .core import _verify
-from .core.auth import AnypointConnectedApp, AuthProvider
+from .core.auth import AnypointConnectedApp, AuthProvider, EndpointCheckedAuth
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope, cache_scope
 from .core.config import DonkeyConfig, OnModelSubstitution
@@ -142,25 +142,41 @@ class Donkey:
             self._auth, self._owned_auth_http = self._default_auth(self._cfg)
         else:
             self._auth = auth
-        # The data-plane (LLM proxy) credential is SEPARATE from the control-plane
-        # one (BG §1.1). In jwt/model-wallet mode (#509) the rotating JWT enters
-        # through this caller-supplied AuthProvider and drives the shared data-plane
-        # client; in the default client-id mode nothing changes — the control-plane
-        # provider (or None) rides the client exactly as before, and the CIE proxy
-        # ignores its bearer. So an existing client-id config is byte-identical.
+        # One shared client per credential plane (BG §1.1). The data-plane (LLM
+        # proxy) client carries only the data-plane credential: the rotating
+        # model-wallet JWT from ``llm_auth`` in jwt mode (#509), and no token
+        # provider in the default client-id mode, which authenticates on the
+        # client_id/client_secret header pair. The control-plane provider never
+        # rides it; it drives a separate client for the registry and other
+        # Anypoint platform calls.
         self._llm_auth = llm_auth
-        data_plane_auth = llm_auth if self._cfg.llm_proxy_auth == "jwt" else self._auth
-        # One Budget per Donkey (never global, BG §1.3 / #185): both transports feed
-        # it in-band from every response's x-token-* headers.
+        data_plane_auth = llm_auth if self._cfg.llm_proxy_auth == "jwt" else None
+        # One Budget per Donkey (never global, BG §1.3 / #185): both data-plane
+        # transports feed it in-band from every response's x-token-* headers.
         self._budget = Budget()
         self._http: DonkeyAsyncClient = build_http_client(
             self._cfg, data_plane_auth, budget=self._budget
+        )
+        control_plane_auth = self._auth
+        if auth is not None:
+            # A caller-supplied provider is set in code, so its token counts as
+            # coming from outside the project config files (config resolution).
+            control_plane_auth = EndpointCheckedAuth(
+                auth,
+                functools.partial(
+                    self._cfg.check_endpoints,
+                    need="control_plane",
+                    code_credential="the token from the Donkey(auth=...) provider",
+                ),
+            )
+        self._control_http: DonkeyAsyncClient = build_http_client(
+            self._cfg, control_plane_auth, control_plane=True
         )
         # Built only if someone asks for a blocking client, so the common async
         # path never opens a connection pool it will not use.
         self._sync_http: DonkeyClient | None = None
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
-        self._registry = ExchangeRegistry(self._cfg, self._http)
+        self._registry = ExchangeRegistry(self._cfg, self._control_http)
         self._tools = _ToolsFacade(self._registry)
         self._adapter_cache: dict[str, Adapter] = {}
 
@@ -493,7 +509,7 @@ class Donkey:
     ) -> AbstractContextManager[None]:
         """Inject a real gateway refusal in-process, no server (#190, BG §1.5).
 
-        Swaps a fixture-returning transport onto this Donkey's HTTP client(s) for
+        Swaps a fixture-returning transport onto this Donkey's data-plane HTTP client(s) for
         the next ``times`` calls, so the branch of your agent that handles a typed
         refusal runs with no network and no gateway::
 
@@ -529,20 +545,25 @@ class Donkey:
         if self._sync_http is None:
             # Same Budget object as the async client, so a blocking caller updates
             # donkey.budget on identical terms (BG §1.3, #185).
-            self._sync_http = build_sync_http_client(self._cfg, budget=self._budget)
+            self._sync_http = build_sync_http_client(
+                self._cfg, budget=self._budget, origins=self._http.checked_origins
+            )
         return self._sync_http
 
     async def aclose(self) -> None:
+        """Close every transport this Donkey owns: the data-plane and
+        control-plane clients, the connected-app token-fetch client it built (a
+        caller-supplied ``auth`` provider stays caller-owned), and the blocking
+        client. Each one is closed even if an earlier close raises."""
         auth_http = self._owned_auth_http
         self._owned_auth_http = None
-        try:
-            await self._http.aclose()
-        finally:
-            try:
-                if auth_http is not None:
-                    await auth_http.aclose()
-            finally:
-                self.close()
+        async with AsyncExitStack() as stack:
+            # Callbacks unwind last-in, first-out: data plane first, blocking last.
+            stack.callback(self.close)
+            if auth_http is not None:
+                stack.push_async_callback(auth_http.aclose)
+            stack.push_async_callback(self._control_http.aclose)
+            stack.push_async_callback(self._http.aclose)
 
     async def __aenter__(self) -> Donkey:
         return self
@@ -553,9 +574,9 @@ class Donkey:
     def close(self) -> None:
         """Close the blocking transport.
 
-        This sync method cannot close either async transport. A sync-only caller
+        This sync method cannot close the async transports. A sync-only caller
         never opens them; mixed or async callers must use :meth:`aclose`, which
-        closes both async transports and calls this method for the blocking one.
+        closes every async transport and calls this method for the blocking one.
         """
         if self._sync_http is not None:
             self._sync_http.close()
@@ -586,7 +607,7 @@ class Donkey:
             )
         module = importlib.import_module(spec.module, package="donkey_kit.integrations")
         adapter_cls = getattr(module, spec.cls)
-        adapter: Adapter = adapter_cls(self._cfg, self._http)
+        adapter: Adapter = adapter_cls(self._cfg, self._http, self._sync_http_client)
         self._adapter_cache[name] = adapter
         return adapter
 
@@ -597,12 +618,8 @@ class Donkey:
         """Build control-plane auth when credentials are present. The LLM proxy
         credential is separate and handled by the OpenAI client (`BG §1.1`)."""
         if cfg.client_id and cfg.client_secret:
-            http_client = build_http_client(cfg, None)  # token fetches need no auth
-            auth = AnypointConnectedApp(
-                client_id=cfg.client_id,
-                client_secret=cfg.client_secret,
-                control_plane_url=cfg.control_plane_url,
-                http_client=http_client,
-            )
+            # token fetches need no auth
+            http_client = build_http_client(cfg, None, control_plane=True)
+            auth = AnypointConnectedApp.from_config(cfg, http_client=http_client)
             return auth, http_client
         return None, None

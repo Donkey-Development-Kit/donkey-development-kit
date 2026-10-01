@@ -39,12 +39,14 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8 (#34).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from ..core.config import DonkeyConfig
-from ..core.transport import DonkeyAsyncClient
+from ..core.masking import masked
+from ..core.transport import DonkeyAsyncClient, DonkeyClient
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -69,8 +71,13 @@ def _anthropic_uses_httpx2() -> bool:
 class AnthropicAdapter(Adapter):
     extra = "anthropic"
 
-    def __init__(self, cfg: DonkeyConfig, http_client: DonkeyAsyncClient) -> None:
-        super().__init__(cfg, http_client)
+    def __init__(
+        self,
+        cfg: DonkeyConfig,
+        http_client: DonkeyAsyncClient,
+        sync_http_client: Callable[[], DonkeyClient] | None = None,
+    ) -> None:
+        super().__init__(cfg, http_client, sync_http_client)
         self._bridged: httpx2.AsyncClient | None = None
 
     def _anthropic_http_client(self) -> DonkeyAsyncClient | httpx2.AsyncClient:
@@ -95,18 +102,22 @@ class AnthropicAdapter(Adapter):
         the module docstring). The proxy's Anthropic-native route is
         LIVE-verified but requires a ``Format=Anthropic`` proxy."""
         conn = self._openai_connection()  # base_url, api_key, default_headers
-        return {
-            "base_url": conn["base_url"],
-            "api_key": conn["api_key"],
-            "default_headers": conn["default_headers"],
-            "http_client": self._anthropic_http_client(),
-            "max_retries": 0,  # we retry in transport (BG §1.1)
-        }
+        return masked(
+            {
+                "base_url": conn["base_url"],
+                "api_key": conn["api_key"],
+                "default_headers": conn["default_headers"],
+                "http_client": self._anthropic_http_client(),
+                "max_retries": 0,  # we retry in transport (BG §1.1)
+            }
+        )
 
     def client(self, **kw: Any) -> AsyncAnthropic:
         """Return a native ``anthropic.AsyncAnthropic`` pointed at the proxy. Pass
         the model id per call (``messages.create(model=..., ...)``), per the
-        Anthropic SDK's own surface (BG §1.8)."""
+        Anthropic SDK's own surface (BG §1.8). A ``base_url`` override must pass
+        the https check."""
+        self._allow_endpoints(kw, "base_url")
         from anthropic import AsyncAnthropic  # VERIFY name/path: docs/verified-apis.md §8
 
         return AsyncAnthropic(**{**self.connection_kwargs(), **kw})

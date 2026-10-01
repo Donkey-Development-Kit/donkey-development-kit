@@ -81,12 +81,34 @@ framework that may not be installed.
 
 - **`Donkey`** is the public surface and orchestrator. It owns one shared
   **`DonkeyAsyncClient`** (an `httpx.AsyncClient` subclass that injects the
-  governance/attribution headers) and hands that single client to the LLM
-  client, the registry, and every adapter — so there is exactly one transport and
-  one header-injection point. A framework built on `httpx2` that rejects `httpx`
-  clients (`anthropic>=1.0`, #701) gets an `httpx2.AsyncClient` from
-  `integrations/_httpx2_bridge.py` instead, whose transport forwards every
-  request through that same shared client, so it is still one transport.
+  governance/attribution headers) **per credential plane**, so each credential
+  only ever rides its own plane's requests (`BG §1.1`):
+  - the **data-plane** client goes to the LLM client and every adapter, so there
+    is exactly one transport and one header-injection point for model calls. It
+    carries only the LLM-proxy credential: the `client_id`/`client_secret` header
+    pair in the default client-id mode (no token provider), or the model-wallet
+    JWT from `Donkey(llm_auth=…)` in `jwt` mode;
+  - the **control-plane** client backs the registry and any other Anypoint
+    platform call, authenticated by the connected-app token (`Donkey(auth=…)`,
+    or the default `AnypointConnectedApp`). It never carries the wallet JWT or
+    the wallet selector, and data-plane calls never fetch or carry its token.
+    Both clients inject the same correlation, attribution, cache-control and
+    (opt-in) cost-tag headers; only the credentials differ.
+
+  A framework built on `httpx2` that rejects `httpx` clients (`anthropic>=1.0`,
+  #701) gets an `httpx2.AsyncClient` from `integrations/_httpx2_bridge.py`
+  instead, whose transport forwards every request through the same data-plane
+  client, so it is still one transport.
+
+  Each client attaches credentials only to its **checked endpoints**
+  (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
+  port: the plane's configured URL, plus any URL override a factory accepted
+  after the same https check (`allow_endpoint`). A request to any other origin,
+  every redirect hop included (httpx runs request hooks per hop), goes out with
+  the credential headers removed. The clients don't follow redirects. The
+  blocking `DonkeyClient` shares the async client's origin set. CrewAI, whose
+  provider builds its own client, gets an `interceptor` that applies the same
+  rule.
 - **Adapters are lazy attributes.** `Donkey.__getattr__` resolves
   `donkey.<framework>` on first access through the `ADAPTERS` registry declared
   in `integrations/__init__.py`. Accessing an adapter whose optional extra is not
@@ -94,9 +116,37 @@ framework that may not be installed.
   never a bare `ModuleNotFoundError`. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
-- **Configuration** resolves in a fixed precedence — constructor kwargs → env
-  vars → `.donkey-kit.toml` → default — and reports every missing field
-  at once rather than one failure per run. `Donkey.from_env()` is the entry point.
+- **Configuration** resolves per key: values set in code → env vars →
+  `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
+  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml` → default.
+  `DonkeyConfig(...)` built directly reads neither env nor files. It reports
+  every missing field at once rather than one failure per run.
+  `Donkey.from_env()` is the entry point. Each field records its source
+  (`DonkeyConfig.source_of`); a value that differs from the loaded one counts as
+  set in code, however it was changed. So `llm_proxy_url` or `base_url` read
+  from the working directory's files only receives credentials from those files
+  (`DonkeyConfig.check_endpoints`), loopback included. Those two URLs and the
+  token endpoint must be `https://` except loopback, unless `DONKEY_ALLOW_HTTP`
+  is set in the environment. The check runs before a credential leaves on
+  either plane: in `validated()` for model calls and the registry, before each
+  control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
+  requested. Governance `[targets.*].base_url` is not covered yet (#832).
+  Provenance stores a keyed digest of each loaded value (the key is random per
+  process), so `asdict()` copies no secret and a config rebuilt in another
+  process keeps its URL sources but treats its credentials as set in code. A
+  working-directory config file that resolves outside the directory is
+  refused. `DonkeyConfig.__post_init__` checks the configurable header names
+  against `core/header_names.py`: a name must start with `X-` and must not be a
+  routing, framing, method/path-override, credential, SDK-set or framework-set
+  header, or collide with another configured name.
+- **Printed output.** `core/masking.py` holds the one list of credential key
+  names (`SENSITIVE_NAMES`). Every `connection_kwargs()` and
+  `proxy_auth_headers()` returns a `MaskedDict` that prints `'***'` for them;
+  `DonkeyConfig` leaves its secret fields out of `repr`; `PIIDetected` rebuilds
+  its message without the flagged values; a typed error mapped from a framework
+  error is raised `from None`, with the original on `framework_error`. Framework
+  objects built from the kwargs keep their own `repr`, and some of them print
+  credentials.
 - **The transport is the attachment point.** `DonkeyAsyncClient` exposes four
   internal lifecycle hooks — no-op by default, **not** public API, mirrored on the
   sync twin `DonkeyClient` — so the six-piece minimum *attaches* rather than
@@ -105,10 +155,15 @@ framework that may not be installed.
 
   | Hook | When it fires | What attaches |
   | --- | --- | --- |
-  | `_on_request` | once, before the retry loop | correlation ID + cost-tag headers (`BG §1.7`); OTel span **start** (`BG §1.6`) |
+  | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
   | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); span **end**; classification |
   | `_on_refusal` | Phase-2 seam — no caller until `classify()` wires it (#181) | typed-refusal handlers (`BG §1.2`) |
   | `_swap_transport` | fixture seam | `simulate()` (#190) and `donkey mock` (#187) swap a fixture in (`BG §1.4`/`BG §1.5`) |
+
+  Correlation, attribution, cache-control and opt-in cost-tag headers
+  (`BG §1.7`) are set on every attempt by the `_inject_headers` request event
+  hook, not by `_on_request`. The OTel span (`BG §1.6`) opens in `send()` and
+  closes there, or in the stream wrapper for a streamed response.
 
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
@@ -247,26 +302,25 @@ up front. The demotion landed in #197; deepening LangGraph is tracked in #198.
 (`python/tests/conformance/suite.py`) runs identically against every adapter. A
 framework is "supported" only when it passes every scenario **or** records an
 *asserted exemption* in `KNOWN_LIMITATIONS` — never a silent skip. Those
-exemptions are published in the README as credibility. ADK's `model()` and
-CrewAI cannot propagate a per-run correlation ID or populate `donkey.last_call`,
-because the framework owns the transport: LiteLLM for ADK's `model()`, CrewAI's
-native OpenAI provider for CrewAI. ADK's `gemini()` (a `Format=Gemini` proxy,
-#691) injects the shared client, so it records no exemption. LlamaIndex and Microsoft Agent Framework have the
-same two exemptions because they receive only a static `default_headers`
-snapshot, which deliberately excludes the per-run correlation ID, rather than
-the SDK's shared HTTP client.
+exemptions are published in the README as credibility. CrewAI cannot
+propagate a per-run correlation ID or populate `donkey.last_call`, because its
+native OpenAI provider builds its own HTTP client; the adapter only hands it an
+`interceptor` that keeps credentials to checked endpoints. ADK's `gemini()` (a
+`Format=Gemini` proxy, #691) injects the shared client, so it records no
+exemption. LlamaIndex, Microsoft Agent Framework and ADK's `model()` now send
+through the shared client too (`http_client` / `async_http_client`, an
+`async_client`, and a pre-built OpenAI `client` for LiteLLM), but still carry
+their exemptions and `observes_last_call = False`; removing them is #740.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
 pytest plugin** users run against their own agent (#191).
 
 Four adapters carry documented conformance exemptions for per-run correlation
-and gateway-identity observation: ADK's `model()` and CrewAI because their
-framework owns the transport (LiteLLM for ADK, CrewAI's native OpenAI provider
-for CrewAI), plus
-LlamaIndex and Microsoft Agent Framework because they receive
-only static headers. The conformance suite pins those exemptions to each
-adapter's actual transport behavior.
+and gateway-identity observation: CrewAI, whose native OpenAI provider owns the
+transport, and LlamaIndex, Microsoft Agent Framework and ADK's `model()`, whose
+exemptions predate their move to the shared client and are due to be removed
+in #740.
 
 ---
 
