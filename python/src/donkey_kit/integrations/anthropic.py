@@ -88,7 +88,8 @@ class AnthropicAdapter(Adapter):
         if not _anthropic_uses_httpx2():
             return self._http_client()
         if self._bridged is None or self._bridged.is_closed:
-            from ._httpx2_bridge import bridged_client
+            with self._native_import():  # the bridge imports httpx2
+                from ._httpx2_bridge import bridged_client
 
             self._bridged = bridged_client(self._http_client())
         return self._bridged
@@ -118,7 +119,8 @@ class AnthropicAdapter(Adapter):
         Anthropic SDK's own surface (BG §1.8). A ``base_url`` override must pass
         the https check."""
         self._allow_endpoints(kw, "base_url")
-        from anthropic import AsyncAnthropic  # VERIFY name/path: docs/verified-apis.md §8
+        with self._native_import():
+            from anthropic import AsyncAnthropic  # VERIFY name/path: docs/verified-apis.md §8
 
         return AsyncAnthropic(**{**self.connection_kwargs(), **kw})
 

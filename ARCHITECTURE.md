@@ -113,7 +113,10 @@ framework that may not be installed.
   `donkey.<framework>` on first access through the `ADAPTERS` registry declared
   in `integrations/__init__.py`. Accessing an adapter whose optional extra is not
   installed raises an `ImportError` carrying the exact `pip install` command —
-  never a bare `ModuleNotFoundError`. Each adapter returns the framework's own
+  never a bare `ModuleNotFoundError`. The registry probes every module an
+  adapter needs, not just the framework's own, and each factory wraps its lazy
+  import in `Adapter._native_import()`, so the adapter method and the
+  module-level factory raise the same error. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
 - **Configuration** resolves per key: values set in code → env vars →
