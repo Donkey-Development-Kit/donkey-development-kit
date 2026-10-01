@@ -142,7 +142,8 @@ framework that may not be installed.
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
 - **Configuration** resolves per key: values set in code → env vars →
   `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
-  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml` → default.
+  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml`, or
+  `~/.config/.donkey-kit.toml` when that variable is unset or empty → default.
   `DonkeyConfig(...)` built directly reads neither env nor files. It reports
   every missing field at once rather than one failure per run.
   `Donkey.from_env()` is the entry point. This is what the code does today;
