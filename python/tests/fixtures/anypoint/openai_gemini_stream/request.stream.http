@@ -1,0 +1,7 @@
+POST /ddk-model-wallet/chat/completions HTTP/1.1
+Host: shared-omni-gateway-qrpud8.5sc6y6-1.usa-e2.cloudhub.io
+Content-Type: application/json
+Authorization: Bearer <RS256 JWT minted by the org IdP — redacted>
+X-Client-Id: ddk-model-wallet
+
+{"model":"gemini/gemini-2.5-flash","stream":true,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"Write three short sentences about donkeys."}]}

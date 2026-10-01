@@ -280,7 +280,8 @@ Omni Gateway later is an environment change, not a code change.
 
 | Capability | Status | Learn more |
 |---|---|---|
-| Governed model access for 8 frameworks | Live | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) |
+| Governed model access (the raw client, through the proxy data plane) | Live | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) |
+| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified ADK `gemini()` · Signature-confirmed the rest | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#supported-frameworks) |
 | Typed refusals | Live | [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) |
 | Budget & pacing | Live | [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) |
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) |
@@ -709,8 +710,6 @@ Source: https://donkey-development-kit.github.io/donkey-development-kit/framewor
 
 # Model access
 
-Live
-
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
@@ -730,11 +729,23 @@ seven are **supported at `connection_kwargs()`**: the governed connection
 settings are tested, and each exposes factory methods that return the native
 object.
 
+Each card shows what has been proven about that adapter, in the terms the
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) uses:
+
+| Status | Means |
+|---|---|
+| Conformance-tested | Runs the conformance suite against the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) in CI. |
+| Live-verified | Has made a real round-trip through a governed proxy. |
+| Signature-confirmed | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
+
+The proxy data plane every adapter calls (base URL, credential headers,
+streaming, rejection shapes) is live-verified.
+
   
     `chat_model()` → `langchain_openai.ChatOpenAI`
   
   
-    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
+    `model()` → `google.adk … LiteLlm` (signature-confirmed); `gemini()` → `google.adk.models.Gemini` (live-verified)
   
   
     `model()` → `strands … OpenAIModel`
@@ -1556,8 +1567,10 @@ rejection with the SDK's typed refusal.
 
 **What you get**
 
-- A native `agent_framework.openai.OpenAIChatClient`, checked against
-  agent-framework 1.19.0.
+- A native `agent_framework.openai.OpenAIChatClient`, which calls the
+  Responses API (`POST /responses`), checked against agent-framework 1.19.0.
+  Pass `api="chat_completions"` for the Chat Completions client (see
+  [Which API](#which-api)).
 - `policy_middleware()`, which ends a run on a proxy refusal with a typed
   `PolicyViolation` such as `PIIDetected`.
 - Supported at `connection_kwargs()`. The client gets an `async_client` that
@@ -1653,6 +1666,32 @@ llm = OpenAIChatClient(
 constructor uses it as given, so a `base_url` passed to `chat_client()` gets a
 client built on that URL; the URL must pass the
 [`https://` rule](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
+The same kwargs work with `OpenAIChatCompletionClient`, the Chat Completions
+client.
+
+## Which API
+
+agent-framework-openai has two OpenAI-compatible chat clients, and
+`chat_client()` picks one with `api=`:
+
+| `api=` | Client | Request |
+| --- | --- | --- |
+| `"responses"` (default) | `OpenAIChatClient` | `POST /responses` |
+| `"chat_completions"` | `OpenAIChatCompletionClient` | `POST /chat/completions` |
+
+The default is the Responses API because it is the proxy route the SDK has
+verified live, the same one `donkey.llm` and the LangGraph adapter use. It is
+verified on an OpenAI upstream only. A proxy can route a model to any
+upstream, and not every upstream serves `/responses`: a route to Azure OpenAI
+answers it with `404 Resource not found`, which reaches you as a
+`ChatClientException`. For such a route, ask for the Chat Completions client:
+
+```python
+llm = chat_client("azure/gpt-4.1-mini", api="chat_completions")
+```
+
+Both clients work with `policy_middleware()`. The local simulator serves
+`/responses` only, so keep the default when you run against it.
 
 ## Policy middleware
 
@@ -1693,9 +1732,9 @@ missing from your installed version, `policy_middleware()` raises a
 
 ## Notes
 
-- **Constructor signature.** `OpenAIChatClient` takes `model`, `base_url`,
-  `api_key`, and `default_headers` (agent-framework 1.19.0; `model_id` is not
-  accepted). If the import fails or an upstream release renames a kwarg,
+- **Constructor signature.** `OpenAIChatClient` and
+  `OpenAIChatCompletionClient` both take `model`, `base_url`, `api_key`, and
+  `default_headers` (agent-framework 1.19.0; `model_id` is not accepted). If the import fails or an upstream release renames a kwarg,
   `chat_client()` raises a `NotImplementedError` naming the class path or
   signature to check, rather than a raw `ImportError` or `TypeError`.
 - **`donkey.last_call` is set in the context that made the call.** A cold read
@@ -2697,6 +2736,11 @@ reach every governed call in the block (including calls on framework-spawned
 | `threshold` | `float` | Override the similarity threshold, in `[0.0, 1.0]`. |
 | `principal_id` | `str` | Override the id the similarity filter partitions on. |
 
+The controls travel as `x-cache-*` request headers on model requests to the
+LLM proxy only. Control-plane requests inside the block (the connected-app
+token request, registry and tool calls) never carry them, so `principal_id`
+doesn't leave the data plane.
+
 An invalid control (a negative `ttl`, a `threshold` outside `[0.0, 1.0]`, a
 `principal_id` with a control character) raises `ConfigError` **at the call
 site**, not on the first request. The **outcome** of each call is on
@@ -3411,7 +3455,7 @@ length), so nobody stuffs a JSON blob into a span attribute or header.
 | Carrier | Names | When | Goes to |
 |---|---|---|---|
 | Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
-| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Every request the SDK sends. See the warning below. |
+| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
 
 Each header carries the tag's value unchanged (for example
 `X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
@@ -3422,14 +3466,12 @@ cost from token usage per API instance and consuming client application. So the
 span attributes are the carrier that matters. Turn the headers on only when
 something of your own reads them.
 
-  **With `send_cost_headers` on, the headers go on every request, not just model
-  calls.** That includes the connected-app token request and other Anypoint
-  control-plane requests, so the end-user ID reaches those hosts too. Adapters
-  with transport injection also send per-run `donkey.run(...)` values;
-  adapters that get only a `default_headers` snapshot send the configured tags.
-  Limiting these headers, and the other LLM-proxy-only headers, to model
-  requests is tracked in
-  [#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
+  **With `send_cost_headers` on, the headers go only on model requests to the
+  LLM proxy.** The connected-app token request and other Anypoint
+  control-plane requests never carry them, so the end-user ID doesn't reach
+  those hosts. Adapters with transport injection also send per-run
+  `donkey.run(...)` values; adapters that get only a `default_headers` snapshot
+  send the configured tags.
 
   **The end-user ID reaches your trace backend regardless of
   `send_cost_headers`.** If `enduser_id` is set, every model-call span carries
@@ -6990,9 +7032,12 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 
   `donkey.openai_agents` is the OpenAI Agents SDK adapter; `donkey.openai()` is
   the raw OpenAI client factory. The LangGraph adapter sets
-  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. Where
-  an adapter cannot confirm a framework's class name or constructor, it raises
-  "blocked on verification" rather than guessing.
+  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. The
+  adapters build the native object directly. They refuse with "blocked on
+  verification" only when the installed framework version lacks the class or
+  field the adapter depends on (for example, `gemini()` on google-adk older than
+  2.4). See [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#supported-frameworks) for each adapter's
+  verification status.
 
 `resolve()` capabilities are heuristics derived from the model id, not a
 governed catalog. The gateway returns 404 for `GET /models` because
@@ -8373,7 +8418,11 @@ Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
 the governed client is passed in, the SDK owns the transport: run id,
 `last_call` and typed refusals all work. The calls go to
 **`/chat/completions`, which is not live-verified on the DDK proxies**
-(`/responses` is), so use a proxy whose upstream serves that route.
+(`/responses` is), so use a proxy whose upstream serves that route. The
+scripts use `gpt-4o`. If you point them at a model the proxy routes to Gemini,
+add `stream=False` to `OpenAIModel(...)`: Strands streams by default, and a
+Gemini-routed stream has no chunk deltas, so every turn fails (see
+[Streaming chat completions to a Gemini upstream](https://donkey-development-kit.github.io/donkey-development-kit/reference/unsupported-boundary.md)).
 
   **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
   client per request from `client_args`. That closes the shared transport
@@ -9451,11 +9500,9 @@ whatever receiver you send them to: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJ
 kwarg; in code, use
 `DonkeyConfig.from_env().with_overrides(send_cost_headers=True)`.
 
-  With `send_cost_headers` on, the headers, including the end-user ID, currently
-  go on **every** request the SDK sends, including requests to the Anypoint
-  platform. Limiting them to model requests is tracked in
-  [#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
-  Where the tags go is described in
+  With `send_cost_headers` on, the headers, including the end-user ID, go only
+  on model requests to the LLM proxy, never to the Anypoint platform. Where the
+  tags go is described in
   [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags).
 
 ## Telemetry
@@ -9609,19 +9656,19 @@ code asks for a connected-app token.
 
 ### Other headers
 
-These go on every request the SDK's shared HTTP clients send. Today that
-includes control-plane requests and the connected-app token request; limiting
-the LLM-proxy-only headers to model requests is tracked in
-[#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
+The correlation and per-call IDs go on every request the SDK's HTTP clients
+send, on both planes. The other headers go only on model requests to the LLM
+proxy: the connected-app token request and the registry and tool requests
+never carry them.
 
-| Header (default name) | Value | When | Meant for |
+| Header (default name) | Value | When | Sent to |
 |---|---|---|---|
 | `X-Correlation-Id` (`correlation_header`) | The run ID | Always | Both planes |
 | `X-Donkey-Request-Id` (`call_id_header`) | A per-call ID | Always | Both planes |
-| `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy |
-| `X-Anypoint-Business-Group` | `business_group` | When set | The LLM proxy |
-| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) | The LLM proxy, or a receiver of yours in front of it |
-| `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache |
+| `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy only |
+| `X-Anypoint-Business-Group` | `business_group` | When set | The LLM proxy only |
+| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
+| `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache only |
 
 CrewAI, which gets only a header snapshot, sends the auth headers, the
 attribution headers and, with `send_cost_headers`, the configured cost tags. It
@@ -10068,11 +10115,24 @@ before making a network request.
 | Destination / contract | Classification | SDK use |
 |---|---|---|
 | Anypoint connected-app token endpoint | **Documented and public** | Retrieves an OAuth bearer token with client credentials. |
-| Model Proxy OpenAI-format `/responses` endpoint | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. The raw client can also call documented OpenAI-native routes such as `/chat/completions`; `/responses` is the route tested against a deployed proxy. |
+| Model Proxy OpenAI-format `/responses` endpoint | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. The raw client can also call documented OpenAI-native routes such as `/chat/completions`; `/responses` is the route tested against a deployed proxy. A streamed `/chat/completions` request that the proxy routes to a Gemini upstream does not stream OpenAI chunks; see the warning below. |
 | Model Proxy policy refusals (observed) | **Documented and public** | Classifies Client ID Enforcement, token-rate-limit, PII, Injection Protection, Regex Prompt Guard, Azure Content Safety, and Amazon Bedrock Guardrails responses captured from a deployed proxy. |
 | Upstream provider error pass-through | **Documented, no SLA for third-party use** | Classifies the nested non-`429` `4xx` provider envelope as `UpstreamRequestError`; generic `5xx` responses become `UpstreamModelError` by status only. The envelope schema belongs to the upstream provider, and MuleSoft's public Model Proxy page states no pass-through compatibility contract. |
 | `x-llm-proxy-ratelimit` success-budget sentence | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored. |
 | Gateway identity and routing extension headers | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`. |
+
+  **Streaming chat completions to a Gemini upstream.** On an OpenAI-format
+  proxy that routes to Gemini, `chat.completions.create(..., stream=True)`
+  returns a `text/event-stream` whose events are whole `chat.completion`
+  objects: the text is in `choices[0].message`, not `choices[0].delta`, every
+  event has `finish_reason: "stop"`, and no `data: [DONE]` is sent. The openai
+  client does not validate the events, so `chunk.choices[0].delta` is `None`
+  and `client.chat.completions.stream(...)` fails. This was observed live
+  (VERIFIED (LIVE), non-conformant) and is a gateway gap, not an SDK one.
+  Until it is fixed, use `stream=False` for chat completions on Gemini routes.
+  `donkey.last_call` still records the call's token totals. OpenAI-routed
+  proxies stream normal chunks, and a `Format=Gemini` proxy's native
+  `streamGenerateContent` route streams correctly.
 
   Exchange search and resolution, API Manager governed-state reads, MCP
   discovery and binding, and provisioning/publication are
