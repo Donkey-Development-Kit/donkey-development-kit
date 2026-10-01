@@ -40,6 +40,9 @@ async def test_agent_masks_pii():
   nested `simulate()` blocks compose.
 - Every injected response carries `x-donkey-simulator: true`, so a simulated
   refusal is never mistaken for a real gateway response in a log or trace.
+- Injected calls stay in-process even when `HTTP_PROXY`, `HTTPS_PROXY` or
+  `ALL_PROXY` is set. Calls that proceed after `times` still go through the
+  configured proxy.
 
 The selectable refusals are the ones produced from a captured fixture:
 `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
