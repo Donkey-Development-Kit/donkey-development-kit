@@ -9,15 +9,20 @@ is needed. Needs only ``[dev]``.
 from __future__ import annotations
 
 import os
+import socket
+import warnings
 from datetime import timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 
+from donkey_kit.core._verify import UnverifiedValueWarning
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import ConfigWarning
 from donkey_kit.core.errors import (
     AuthError,
+    ConfigError,
     GatewayUnavailable,
     PIIDetected,
     UpstreamRequestError,
@@ -128,6 +133,50 @@ def test_non_model_typed_error_leaves_model_ok_and_notes_it(llm_env: None) -> No
     assert _by_name(checks, "credentials").level is Level.OK
     assert _by_name(checks, "model").level is Level.OK
     assert _by_name(checks, "policy").level is Level.INFO
+
+
+# --- the live probe's error bridge (#813) --------------------------------------
+
+
+def test_live_probe_reports_the_transports_own_outage() -> None:
+    """Through the OpenAI client the transport's GatewayUnavailable arrives only
+    on ``APIConnectionError.__cause__``; the probe must surface that instance, not
+    rebuild a generic one from the wrapper."""
+    pytest.importorskip("openai")
+    from donkey_kit.core.config import DonkeyConfig
+
+    # A just-released loopback port: nothing listens, so no network is touched.
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    cfg = DonkeyConfig(
+        llm_proxy_url=f"http://127.0.0.1:{port}/",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+        timeout_s=2.0,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        result = doctor._live_probe(cfg, "gpt-4o")
+
+    err = result.error
+    assert isinstance(err, GatewayUnavailable)
+    assert isinstance(err.__cause__, httpx.TransportError)  # not the SDK's wrapper
+    assert err.base_url == f"http://127.0.0.1:{port}"
+    assert err.call_id is not None  # the ids the transport sent, carried through
+    gw = _by_name(doctor._probe_checks(result), "gateway")
+    assert gw.level is Level.FAIL
+
+
+def test_bridge_prefers_a_typed_cause_over_an_outage_guess() -> None:
+    """A typed error the transport raised (here a closed-client ConfigError) is
+    reported as itself, never misreported as the gateway being unreachable."""
+    cause = ConfigError("closed", remediation="make a new Donkey")
+    wrapper = RuntimeError("Connection error.")
+    wrapper.__cause__ = cause
+    cfg = object.__new__(doctor.DonkeyConfig)
+
+    assert doctor._bridge(wrapper, cfg) is cause
 
 
 def test_clean_success_is_all_ok(llm_env: None) -> None:
