@@ -22,6 +22,7 @@ from ..core.transport import (
     DonkeyClient,
     attribution_headers,
     build_sync_http_client,
+    missing_jwt_provider_error,
     proxy_api_key,
     proxy_auth_headers,
 )
@@ -164,7 +165,13 @@ class Adapter(ABC):
             return {}
 
     def _require_proxy(self) -> DonkeyConfig:
-        return self._cfg.validated(need="llm")
+        """The validated proxy config. In jwt mode, also refuses a shared client
+        with no ``AuthProvider``: the request would carry the api-key placeholder
+        as its bearer and every call would 401 (#828)."""
+        cfg = self._cfg.validated(need="llm")
+        if cfg.llm_proxy_auth == "jwt" and self._http.token_provider is None:
+            raise missing_jwt_provider_error()
+        return cfg
 
     def _allow_endpoints(self, overrides: Mapping[str, Any], *names: str) -> None:
         """Check each URL override in ``overrides`` under ``names`` — a URL passed
