@@ -116,7 +116,9 @@ Fix the config and re-run. The transport raises `ConfigError` for two lifecycle
 mistakes as well, so neither escapes as a bare `RuntimeError`: a call on a
 `Donkey` whose HTTP client is closed (after `aclose()`, or after a framework
 closed the client it was given), and a call whose pooled connections belong to
-an event loop that has closed (a second `asyncio.run()` on one `Donkey`). Its
+an event loop that has closed. The SDK's own connection pools are per event
+loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
+transport you passed in and reused across `asyncio.run()` calls. Its
 `.remediation` names the fix for each. Through the OpenAI SDK it arrives
 wrapped, like `GatewayUnavailable`: catch `openai.APIConnectionError` and read
 the `ConfigError` from `e.__cause__`.

@@ -19,7 +19,7 @@ r.total_tokens    # 1730
 Every response-derived field defaults to `None`. `None` always means **not
 observed** — never `0`, and never a fabricated value. A count of `0` is a real
 observation (an empty completion) and is distinct from `None` (no usage was
-reported at all). See [Verification discipline](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification) for why
+reported at all). See [Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline) for why
 the SDK never guesses a value it did not see on the wire.
 
 ## Observability status

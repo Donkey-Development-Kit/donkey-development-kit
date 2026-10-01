@@ -142,7 +142,8 @@ framework that may not be installed.
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
 - **Configuration** resolves per key: values set in code → env vars →
   `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
-  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml` → default.
+  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml`, or
+  `~/.config/.donkey-kit.toml` when that variable is unset or empty → default.
   `DonkeyConfig(...)` built directly reads neither env nor files. It reports
   every missing field at once rather than one failure per run.
   `Donkey.from_env()` is the entry point. This is what the code does today;
@@ -368,12 +369,9 @@ pytest plugin** users run against their own agent (#191).
 - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch/PR/release flow, testing surfaces,
-  coding conventions.
-- [`CLAUDE.md`](CLAUDE.md) — repo guidance for Claude Code: the invariants, the
-  layer rule, and the skill index in operational form.
-- [`.claude/skills/README.md`](.claude/skills/README.md) — the `ddk-*` skill
-  index; the trigger-based path into the rules above (including
-  `ddk-implementing-features`, the implement-stage skill).
+  coding conventions, and the docs-sync map. It is the canonical contributor
+  guide; maintainers' optional AI-agent tooling is not part of this repository
+  and never outranks it.
 - `website/` — the consumer "how to use the SDK" documentation.
 
 ---

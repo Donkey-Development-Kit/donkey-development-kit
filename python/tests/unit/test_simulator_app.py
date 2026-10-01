@@ -25,6 +25,7 @@ from donkey_kit.core.errors import (  # noqa: E402
     AgentKilled,
     AuthError,
     ContentSafetyBlocked,
+    ModelNotRoutable,
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
@@ -163,6 +164,7 @@ _CLASSIFY = [
     ("content-safety", ContentSafetyBlocked),
     ("agent-killed", AgentKilled),
     ("model-not-found", UpstreamRequestError),
+    ("model-not-routable", ModelNotRoutable),
     ("upstream-5xx", UpstreamModelError),
     ("client-id-missing", AuthError),
 ]
