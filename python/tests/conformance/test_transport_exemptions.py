@@ -117,7 +117,7 @@ async def test_adk_gemini_is_not_exempt() -> None:
     try:
         adapter = _adapter_class("adk")(cfg, client)
         kw = adapter.gemini_connection_kwargs()  # type: ignore[attr-defined]
-        assert kw["client_kwargs"]["http_options"]["httpx_async_client"] is client
+        assert kw["client_kwargs"]["http_options"]["httpx_async_client"] is client.view()
     finally:
         await client.aclose()
     for reason in KNOWN_LIMITATIONS["adk"].values():
