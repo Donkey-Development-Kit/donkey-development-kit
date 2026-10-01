@@ -155,7 +155,8 @@ class _Spec:
 
 # The full shape table. Keys are the canonical shape names the simulator and the
 # tests share. The eight policy-rejection rows classify() is tested against, plus
-# the consumer-auth 401, the happy path, the SSE stream, and the /models 404.
+# the consumer-auth 401, the gateway's bare-model-name 400, the happy path, the
+# SSE stream, and the /models 404.
 SHAPES: dict[str, _Spec] = {
     # --- the documented rejection shapes (#181, +#289 regex-prompt-guard /
     #     content-safety) ---
@@ -206,6 +207,14 @@ SHAPES: dict[str, _Spec] = {
         "application/json",
     ),
     "upstream-5xx": _Spec("rejections", "reject.upstream-5xx.headers.txt", None, 503),
+    # --- the gateway's own bare-model-name 400 (NOT one of the eight;
+    #     classify() → ModelNotRoutable, docs/verified-apis.md §4, #825/#891) ---
+    "model-not-routable": _Spec(
+        "anypoint/llm_proxy",
+        "reject.model-not-routable.headers.txt",
+        "reject.model-not-routable.body.json",
+        400,
+    ),
     # --- consumer-auth 401 (NOT one of the eight; classify() → AuthError) ---
     "client-id-missing": _Spec(
         "anypoint/llm_proxy",

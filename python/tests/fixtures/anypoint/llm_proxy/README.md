@@ -47,7 +47,8 @@ targets — the first live confirmation of docs/verified-apis.md §§2–4 (prev
   not in the known unique model map … Use 'provider/model' format."}`. The
   headers file keeps only the status line and `content-type`; the live
   response had no `x-llm-proxy-*` headers. Discriminator for
-  `ModelNotRoutable`. A classify()-contract fixture only, not a simulator shape.
+  `ModelNotRoutable`, and the simulator's `model-not-routable` shape (served by
+  `simulate(ModelNotRoutable)` and the `donkey-sim/model-not-routable` sentinel, #891).
 - `reject.pii-detected.{body.json,headers.txt}` — HTTP **403** from the
   `llm-pii-detection-policy` (applied with `action: Reject`, `entities:["Email"]`)
   when the prompt contained an email. Body is a **nested** object

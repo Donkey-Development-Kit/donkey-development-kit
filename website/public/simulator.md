@@ -29,8 +29,10 @@ curl -s http://localhost:8080/responses \
 
 The selectable shapes are `token-rate-limit`, `pii-detected`,
 `injection-protection`, `regex-prompt-guard`, `content-safety`,
-`content-moderation`, `agent-killed`, `model-not-found`, `upstream-5xx`, and
-`client-id-missing` — the nine documented rejections plus the consumer-auth `401`. One happy-path
+`content-moderation`, `agent-killed`, `model-not-found`, `upstream-5xx`,
+`client-id-missing`, and `model-not-routable` — the nine documented rejections
+plus the consumer-auth `401` and the gateway's `400` for a bare model name on a
+multi-provider proxy (`ModelNotRoutable`). One happy-path
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see
