@@ -10,7 +10,12 @@ every request through the shared client. The framework keeps its own client type
 and the SDK keeps one HTTP stack: header injection, retries and the 401 refresh,
 the GenAI span, budget and ``donkey.last_call`` all run in
 ``DonkeyAsyncClient.send()`` exactly as they do for an ``httpx`` framework. Only
-the request and response objects are translated, never the wire call.
+the request and response objects are translated, never the wire call. The ids the
+shared client sends are copied back onto the framework's request, so
+``classify(exc.response)`` joins a refusal to its run on either stack (#738).
+
+The bridge is async-only: it serves ``httpx2.AsyncClient``, the only client the
+Anthropic adapter builds. A sync ``httpx2.Client`` has no bridge.
 
 ``httpx2`` is imported at module load, so import this module lazily, from an
 adapter method, once the framework is known to need it (BG §1.8).
@@ -44,6 +49,10 @@ def wants_stream(request: httpx2.Request, body: bytes) -> bool:
     when the stream is drained, while a buffered call has its body read before
     ``donkey.last_call`` records its usage. The Messages API puts
     ``"stream": true`` in the JSON body of every streaming request.
+
+    Only these two Stainless-style signals are recognised. A framework that
+    streams some other way gets a buffered call: correct, but read in full
+    before the framework sees the first byte.
     """
     if request.headers.get(_RAW_RESPONSE_HEADER) == "stream":
         return True
@@ -54,6 +63,26 @@ def wants_stream(request: httpx2.Request, body: bytes) -> bool:
     except ValueError:
         return False
     return isinstance(payload, dict) and payload.get("stream") is True
+
+
+def _copy_sent_ids(forwarded: httpx.Request, request: httpx2.Request) -> None:
+    """Copy the ids the shared client stamped on ``forwarded`` onto the
+    framework's own ``request`` (#738).
+
+    ``httpx2.AsyncClient`` binds the returned response to ``request``, whatever
+    the transport passes, so that is where ``classify(exc.response)`` reads the
+    sent correlation and call ids (``core/errors._sent_ids``). The ``donkey_*``
+    extensions name the headers that carry them. Only those two headers are
+    copied, so the consumer credentials stay off the framework's request.
+    """
+    for key, value in forwarded.extensions.items():
+        if not key.startswith("donkey_"):
+            continue
+        request.extensions[key] = value
+        if key in ("donkey_correlation_header", "donkey_call_id_header"):
+            sent = forwarded.headers.get(value)
+            if sent is not None:
+                request.headers[value] = sent
 
 
 class _ForwardedStream(httpx2.AsyncByteStream):
@@ -94,6 +123,7 @@ class DonkeyForwardingTransport(httpx2.AsyncBaseTransport):
             },
         )
         response = await self._client.send(forwarded, stream=stream)
+        _copy_sent_ids(forwarded, request)
         extensions: dict[str, object] = {
             key: response.extensions[key]
             for key in ("http_version", "reason_phrase")

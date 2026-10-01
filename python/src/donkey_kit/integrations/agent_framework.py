@@ -31,6 +31,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from agent_framework.openai import OpenAIChatClient
+
 
 class AgentFrameworkAdapter(Adapter):
     extra = "agent_framework"
@@ -53,7 +55,7 @@ class AgentFrameworkAdapter(Adapter):
             }
         )
 
-    def chat_client(self, model: str, **kw: Any) -> Any:
+    def chat_client(self, model: str, **kw: Any) -> OpenAIChatClient:
         """Return a native ``OpenAIChatClient`` at the proxy. A ``base_url``
         override must pass the https check."""
         self._allow_endpoints(kw, "base_url")
@@ -170,7 +172,7 @@ class _TypedRefusals(AbstractContextManager[None]):
         raise typed from None
 
 
-def chat_client(model: str, **kw: Any) -> Any:
+def chat_client(model: str, **kw: Any) -> OpenAIChatClient:
     """Module-level convenience: an Agent Framework chat client at the proxy
     using a cached default env-configured Donkey. Equivalent to
     ``Donkey.from_env().agent_framework.chat_client(model, **kw)``."""

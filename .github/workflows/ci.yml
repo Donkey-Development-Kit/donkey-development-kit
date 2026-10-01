@@ -114,6 +114,17 @@ jobs:
       # off, needing real Anypoint creds).
       - name: local gateway simulator boot (BG §1.4)
         run: pytest -q -m local_gateway
+      # #801: the offline seams (simulate(), the conformance harness) must stay
+      # offline behind a corporate proxy. Every proxy variable points at a dead
+      # port, so a request that escapes the swapped-in fixture fails the run.
+      - name: offline seams stay offline under HTTP(S)_PROXY (#801)
+        env:
+          HTTPS_PROXY: http://127.0.0.1:9
+          HTTP_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+        run: >-
+          pytest -q tests/unit/test_simulate.py tests/unit/test_conformance.py
+          tests/unit/test_conformance_plugin.py tests/unit/test_transport_proxy_mounts.py
 
   anthropic-stacks:
     # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
@@ -142,6 +153,33 @@ jobs:
           tests/unit/test_anthropic_client_stacks.py
           tests/unit/test_anthropic_httpx2_bridge.py
           tests/unit/test_adapter_ergonomics.py
+
+  adk-stacks:
+    # #735: below google-adk 2.4, Gemini silently drops client_kwargs and
+    # donkey.adk.gemini() would bypass the gateway; it now refuses instead. No
+    # other job installs google-adk, so the real-ADK round-trip and redirect
+    # tests run here, at the extra's floor and at the newest release. The `==`
+    # pin tests the floor only; the extra keeps no ceiling (§8.4).
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        adk: ["google-adk>=2.4", "google-adk==2.4.0"]
+    name: adk-stacks (${{ matrix.adk }})
+    env:
+      # Bind the matrix value to an env var so it is never interpolated into a
+      # run: body directly (injection hardening).
+      ADK_SPEC: ${{ matrix.adk }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,llm,adk]" "$ADK_SPEC"
+      - run: >-
+          pytest -q
+          tests/unit/test_adapter_ergonomics.py
+          tests/unit/test_framework_redirects.py
 
   agent-framework-middleware:
     # #739: policy_middleware() is only meaningful on a real Agent Framework

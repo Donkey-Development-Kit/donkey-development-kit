@@ -41,7 +41,9 @@ import json
 import random
 import re
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterable, Iterator, Sized
+from types import TracebackType
+from typing import Protocol
 
 import httpx
 
@@ -732,6 +734,119 @@ class _SpanClosingSyncStream(_SpanClosingStream, httpx.SyncByteStream):
             self._inner.close()
 
 
+class _UrlPattern(Protocol):
+    """The one method of httpx's (private) mount-key ``URLPattern`` we use."""
+
+    def matches(self, other: httpx.URL) -> bool: ...
+
+
+class _AsyncMountRouter(httpx.AsyncBaseTransport):
+    """The client's base transport and its proxy mounts, folded into one
+    transport (#801).
+
+    httpx turns ``HTTP(S)_PROXY`` / ``ALL_PROXY`` (``trust_env``), ``proxy=`` and
+    ``mounts=`` into ``client._mounts``, which it checks *before*
+    ``client._transport``. A swap that replaces only ``_transport`` is bypassed
+    by them, so ``simulate()`` and the conformance probe went online behind a
+    corporate proxy. Folding the mounts in here leaves ``_mounts`` empty, so
+    ``_transport`` is the only route: a swap takes every request, and a
+    fixture's pass-through to this router still honours the proxy settings.
+    Routing mirrors httpx's ``_transport_for_url``: the first matching pattern
+    wins, and a ``None`` mount (a ``NO_PROXY`` entry) means the default."""
+
+    def __init__(
+        self,
+        default: httpx.AsyncBaseTransport,
+        mounts: Iterable[tuple[_UrlPattern, httpx.AsyncBaseTransport | None]],
+    ) -> None:
+        self._default = default
+        self._routes = list(mounts)
+
+    def _children(self) -> list[httpx.AsyncBaseTransport]:
+        return [self._default, *(t for _, t in self._routes if t is not None)]
+
+    def _route(self, url: httpx.URL) -> httpx.AsyncBaseTransport:
+        for pattern, transport in self._routes:
+            if pattern.matches(url):
+                return self._default if transport is None else transport
+        return self._default
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return await self._route(request.url).handle_async_request(request)
+
+    async def __aenter__(self) -> _AsyncMountRouter:
+        for transport in self._children():
+            await transport.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
+    ) -> None:
+        for transport in self._children():
+            await transport.__aexit__(exc_type, exc_value, traceback)
+
+    async def aclose(self) -> None:
+        for transport in self._children():
+            await transport.aclose()
+
+
+class _SyncMountRouter(httpx.BaseTransport):
+    """Blocking twin of :class:`_AsyncMountRouter`."""
+
+    def __init__(
+        self,
+        default: httpx.BaseTransport,
+        mounts: Iterable[tuple[_UrlPattern, httpx.BaseTransport | None]],
+    ) -> None:
+        self._default = default
+        self._routes = list(mounts)
+
+    def _children(self) -> list[httpx.BaseTransport]:
+        return [self._default, *(t for _, t in self._routes if t is not None)]
+
+    def _route(self, url: httpx.URL) -> httpx.BaseTransport:
+        for pattern, transport in self._routes:
+            if pattern.matches(url):
+                return self._default if transport is None else transport
+        return self._default
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        return self._route(request.url).handle_request(request)
+
+    def __enter__(self) -> _SyncMountRouter:
+        for transport in self._children():
+            transport.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
+    ) -> None:
+        for transport in self._children():
+            transport.__exit__(exc_type, exc_value, traceback)
+
+    def close(self) -> None:
+        for transport in self._children():
+            transport.close()
+
+
+def _refuse_swap_past_mounts(mounts: Sized) -> None:
+    """Fail closed (#801): with a mount in place, httpx would route some
+    requests past a swapped-in fixture to a real connection. The constructors
+    fold every mount into the base transport, so a mount here was added later."""
+    if mounts:
+        raise RuntimeError(
+            "cannot swap the transport: this client has httpx mounts that would "
+            "bypass it and open real connections. Pass proxies via mounts=/proxy= "
+            "at construction so the client folds them into its transport."
+        )
+
+
 class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
     """An ``httpx.AsyncClient`` that injects attribution/correlation/auth headers
     and applies the SDK's retry policy. Every adapter that accepts a custom HTTP
@@ -778,6 +893,11 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             event_hooks={"request": [self._inject_headers]},
             **kw,  # type: ignore[arg-type]
         )
+        # Fold env/``proxy=``/``mounts=`` mounts into the base transport so the
+        # swap seam below covers every route (#801).
+        if self._mounts:
+            self._transport = _AsyncMountRouter(self._transport, self._mounts.items())
+            self._mounts = {}
 
     @property
     def token_provider(self) -> AuthProvider | None:
@@ -868,9 +988,14 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
 
     def _swap_transport(self, transport: httpx.AsyncBaseTransport) -> None:
         """Replace the underlying transport on a live client. httpx resolves the
-        transport per-send from ``self._transport`` (we mount nothing), so the
-        next request uses ``transport`` with no reconstruction. This is the seam
-        ``simulate()`` (#190) and ``donkey mock`` (#187) swap a fixture into."""
+        transport per-send from ``self._mounts`` and then ``self._transport``;
+        the constructor folds every mount (including ``HTTP(S)_PROXY`` /
+        ``ALL_PROXY`` proxies from the environment) into ``self._transport``, so
+        the next request uses ``transport`` with no reconstruction and no
+        route around it (#801). This is the seam ``simulate()`` (#190) and the
+        conformance harness (#191) swap a fixture into. Raises ``RuntimeError``
+        rather than swap while a mount could bypass the fixture."""
+        _refuse_swap_past_mounts(self._mounts)
         self._transport = transport
 
     async def send(
@@ -1095,6 +1220,9 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
             event_hooks={"request": [self._inject_headers]},
             **kw,  # type: ignore[arg-type]
         )
+        if self._mounts:  # see DonkeyAsyncClient.__init__ (#801)
+            self._transport = _SyncMountRouter(self._transport, self._mounts.items())
+            self._mounts = {}
 
     def _inject_headers(self, request: httpx.Request) -> None:
         _apply_base_headers(
@@ -1131,6 +1259,7 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
     def _swap_transport(self, transport: httpx.BaseTransport) -> None:
         """Replace the underlying transport on a live client; the next request
         uses it (see :meth:`DonkeyAsyncClient._swap_transport`)."""
+        _refuse_swap_past_mounts(self._mounts)
         self._transport = transport
 
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:

@@ -1398,6 +1398,11 @@ models — inside the loop that runs them (`async with Donkey.from_env()` in you
 - **Refusals on the `model()` path aren't typed.** LiteLLM raises its own
   error without the response headers, so `classify()` has nothing to read; see
   the [ADK examples](https://donkey-development-kit.github.io/donkey-development-kit/examples/adk.md).
+- **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
+  accepts `client_kwargs`; the `adk` extra declares that floor. On an older
+  ADK, `Gemini` drops the governed client without an error and talks to Google
+  directly, so `gemini()` raises `NotImplementedError` instead of returning a
+  model that bypasses the gateway.
 - `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
   own upper bound if you need one.
 
@@ -2297,7 +2302,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`:
+All importable from `donkey_kit`, along with `classify`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -2314,8 +2319,9 @@ DonkeyError                     # base of the whole tree
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
-└─ ToolInvocationError, RegistryError, PublicationDrift
-                                # tool access, registry and publishing (Roadmap surfaces)
+├─ PlatformTeamOnly             # Governance.apply() without the platform-team opt-in; also a PermissionError
+└─ ToolInvocationError, RegistryError, PublicationDrift, ProvisioningError, GovernanceDrift
+                                # tool access, registry, publishing and provisioning (Roadmap surfaces)
 ```
 
 `GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one
@@ -2393,9 +2399,11 @@ connectivity diagnosis.
 
 ## Every refusal names a next step
 
-Every `PolicyViolation` carries a non-empty, human-readable `remediation` — the
-constructor **raises** if you try to build one without it — and each concrete
-subclass ships a canonical default:
+Every `DonkeyError` — not just every refusal — carries a non-empty,
+human-readable `remediation`, so `except DonkeyError as e: log(e.remediation)`
+is always safe. The constructor **raises** if you try to build one with a blank
+remediation, every class accepts a `remediation=` override, and each class ships
+a canonical default. For the refusals:
 
 - `PIIDetected` → remove or redact the flagged values, or relax the policy's
   entity list in API Manager.
@@ -2471,8 +2479,7 @@ overrode the header names in config, pass the ids to `classify()` explicitly.)
 
 ```python
 import openai
-from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError
-from donkey_kit.core.errors import classify
+from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError, classify
 
 try:
     resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
@@ -3475,6 +3482,11 @@ example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
 environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
 [Endpoints must use `https://`](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#endpoints-must-use-https).
 
+  Behind an HTTP proxy (`HTTP_PROXY` or `ALL_PROXY` set, as on many corporate
+  machines and CI runners), the client sends loopback requests to the proxy
+  too, and the proxy usually cannot reach your simulator. Add the simulator's
+  host to `NO_PROXY`, for example `NO_PROXY=127.0.0.1,localhost`.
+
 The simulator's port is **not** read from an environment variable or
 `.donkey-kit.toml` — the `--port`/`--host` flags (or the `serve()` keyword
 arguments below) are the only way to change it.
@@ -3663,6 +3675,9 @@ async def test_agent_masks_pii():
   nested `simulate()` blocks compose.
 - Every injected response carries `x-donkey-simulator: true`, so a simulated
   refusal is never mistaken for a real gateway response in a log or trace.
+- Injected calls stay in-process even when `HTTP_PROXY`, `HTTPS_PROXY` or
+  `ALL_PROXY` is set. Calls that proceed after `times` still go through the
+  configured proxy.
 
 The selectable refusals are the ones produced from a captured fixture:
 `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
