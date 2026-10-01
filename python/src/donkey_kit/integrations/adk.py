@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..core import _verify
 from ..core.masking import masked
 from ._base import Adapter, default_adapter
 
@@ -115,6 +116,21 @@ class ADKAdapter(Adapter):
         conn = self.gemini_connection_kwargs(base_url=base_url)
         from google.adk.models import Gemini  # VERIFY name/path: docs/verified-apis.md §8
 
+        # ADK's pydantic config ignores unknown fields, so on google-adk < 2.4 (no
+        # ``client_kwargs``; no ``base_url`` before 2.0) both kwargs are dropped
+        # silently and the model talks to Google directly, bypassing the gateway
+        # (#735). Refuse rather than return an ungoverned model.
+        fields = getattr(Gemini, "model_fields", {})
+        missing = sorted({"base_url", "client_kwargs"} - set(fields))
+        if missing:
+            raise _verify.blocked(
+                "google.adk.models.Gemini lacks "
+                + ", ".join(missing)
+                + " (docs/verified-apis.md §8). donkey.adk.gemini() needs "
+                "google-adk>=2.4, the first release with Gemini.client_kwargs; on "
+                "older versions ADK drops the governed client without an error. "
+                "Upgrade with: pip install -U 'donkey-kit[adk]'"
+            )
         native = Gemini(model=model, **{**conn, **kw})
         self.observes_last_call = True
         return native
