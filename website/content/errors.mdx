@@ -53,7 +53,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`:
+All importable from `donkey_kit`, along with `classify`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -70,8 +70,9 @@ DonkeyError                     # base of the whole tree
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
-└─ ToolInvocationError, RegistryError, PublicationDrift
-                                # tool access, registry and publishing (Roadmap surfaces)
+├─ PlatformTeamOnly             # Governance.apply() without the platform-team opt-in; also a PermissionError
+└─ ToolInvocationError, RegistryError, PublicationDrift, ProvisioningError, GovernanceDrift
+                                # tool access, registry, publishing and provisioning (Roadmap surfaces)
 ```
 
 `GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one
@@ -149,9 +150,11 @@ connectivity diagnosis.
 
 ## Every refusal names a next step
 
-Every `PolicyViolation` carries a non-empty, human-readable `remediation` — the
-constructor **raises** if you try to build one without it — and each concrete
-subclass ships a canonical default:
+Every `DonkeyError` — not just every refusal — carries a non-empty,
+human-readable `remediation`, so `except DonkeyError as e: log(e.remediation)`
+is always safe. The constructor **raises** if you try to build one with a blank
+remediation, every class accepts a `remediation=` override, and each class ships
+a canonical default. For the refusals:
 
 - `PIIDetected` → remove or redact the flagged values, or relax the policy's
   entity list in API Manager.
@@ -229,8 +232,7 @@ overrode the header names in config, pass the ids to `classify()` explicitly.)
 
 ```python
 import openai
-from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError
-from donkey_kit.core.errors import classify
+from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError, classify
 
 try:
     resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
