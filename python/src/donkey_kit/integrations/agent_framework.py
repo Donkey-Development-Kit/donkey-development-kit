@@ -9,7 +9,8 @@ confirmed offline against agent-framework 1.19.0 (docs/verified-apis.md §8):
 ``agent_framework.openai.OpenAIChatClient`` takes ``model``, ``base_url``,
 ``api_key`` and ``default_headers``. Both the import and the construction stay
 guarded so a future upstream rename surfaces as a ``_verify.blocked(...)``
-refusal, never a raw ``ImportError``/``TypeError`` reaching the caller.
+refusal, never a raw ``ImportError``/``TypeError`` reaching the caller; a
+missing package raises the curated install hint every adapter raises (#741).
 
 Agent Framework has first-class middleware for intercepting agent actions. We
 ship :meth:`policy_middleware` that catches :class:`PolicyViolation` and
@@ -28,6 +29,8 @@ from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from agent_framework.openai import OpenAIChatClient
 
 
 class AgentFrameworkAdapter(Adapter):
@@ -51,23 +54,28 @@ class AgentFrameworkAdapter(Adapter):
             }
         )
 
-    def chat_client(self, model: str, **kw: Any) -> Any:
+    def chat_client(self, model: str, **kw: Any) -> OpenAIChatClient:
         """Return a native ``OpenAIChatClient`` at the proxy. A ``base_url``
         override must pass the https check."""
         self._allow_endpoints(kw, "base_url")
         self._require_proxy()
-        try:
-            from agent_framework.openai import (
-                OpenAIChatClient,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
-            )
-        except ImportError as exc:
-            raise _verify.blocked(
-                "agent_framework.openai.OpenAIChatClient import "
-                "(docs/verified-apis.md §8). The class path is confirmed offline against "
-                "agent-framework 1.19.0; an ImportError here means the package is "
-                "absent or has renamed the class again. Install 'agent-framework' "
-                "or confirm the class path against your installed version."
-            ) from exc
+        # A missing module (the package or a dependency of it) is the curated
+        # install hint; a missing name in a module that imports is a rename.
+        with self._native_import():
+            try:
+                from agent_framework.openai import (
+                    OpenAIChatClient,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
+                )
+            except ImportError as exc:
+                if isinstance(exc, ModuleNotFoundError):
+                    raise
+                raise _verify.blocked(
+                    "agent_framework.openai.OpenAIChatClient import "
+                    "(docs/verified-apis.md §8). The class path is confirmed offline "
+                    "against agent-framework 1.19.0; an ImportError here means the "
+                    "installed version has renamed the class again. Confirm the class "
+                    "path against your installed version."
+                ) from exc
 
         conn = self.connection_kwargs()
         if kw.get("base_url") is not None and "async_client" in conn:
@@ -111,7 +119,7 @@ class AgentFrameworkAdapter(Adapter):
         return middleware
 
 
-def chat_client(model: str, **kw: Any) -> Any:
+def chat_client(model: str, **kw: Any) -> OpenAIChatClient:
     """Module-level convenience: an Agent Framework chat client at the proxy
     using a cached default env-configured Donkey. Equivalent to
     ``Donkey.from_env().agent_framework.chat_client(model, **kw)``."""

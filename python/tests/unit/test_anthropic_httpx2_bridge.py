@@ -32,15 +32,24 @@ from _anthropic_wire import (  # noqa: E402
     FIXTURES,
     MESSAGES,
     MODEL,
+    REFUSALS,
     SSE_CHUNKS,
     Chunks,
+    refusal_response,
     shared_client,
     sse_response,
     success_response,
 )
 
-from donkey_kit.core.errors import GatewayUnavailable  # noqa: E402
+from donkey_kit.core.errors import (  # noqa: E402
+    DonkeyError,
+    GatewayUnavailable,
+    PIIDetected,
+    TokenBudgetExceeded,
+    classify,
+)
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call  # noqa: E402
+from donkey_kit.core.telemetry import run_context  # noqa: E402
 from donkey_kit.integrations._httpx2_bridge import (  # noqa: E402
     bridged_client,
     wants_stream,
@@ -162,6 +171,39 @@ async def test_the_callers_timeout_reaches_the_wire() -> None:
     assert explicit == {"connect": 12.5, "read": 12.5, "write": 12.5, "pool": 12.5}
     # Without a per-request timeout, the shared client's configured one applies.
     assert default == shared.timeout.as_dict()
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [("pii-detected", PIIDetected), ("token-rate-limit", TokenBudgetExceeded)],
+)
+@pytest.mark.parametrize("stream", [False, True], ids=["buffered", "streamed"])
+async def test_a_bridged_refusal_carries_the_ids_that_were_sent(
+    name: str, expected: type[DonkeyError], stream: bool
+) -> None:
+    # httpx2 binds the response to the framework's own request, which the shared
+    # client never saw; classify() reads the sent ids from that request (#738).
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return refusal_response(name)
+
+    async with shared_client(handler) as shared:
+        bridged = bridged_client(shared)
+        with run_context("run-42"):
+            async with bridged.stream("POST", MESSAGES, json={**BODY, "stream": stream}) as resp:
+                await resp.aread()
+
+    err = classify(resp)  # type: ignore[arg-type]  # httpx2 mirrors the httpx API
+    assert isinstance(err, expected)
+    assert resp.status_code == REFUSALS[name]
+    (wire,) = seen
+    assert err.correlation_id == "run-42" == wire.headers["x-correlation-id"]
+    assert err.call_id is not None and err.call_id == wire.headers["x-donkey-request-id"]
+    # Only the ids are copied back: the consumer secret stays off the
+    # framework's request object.
+    assert "client_secret" not in resp.request.headers
 
 
 async def test_a_lost_gateway_surfaces_as_gateway_unavailable() -> None:

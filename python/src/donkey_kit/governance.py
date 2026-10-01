@@ -35,7 +35,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
     import tomli as tomllib
 
 from .core import _verify
-from .core.errors import ConfigError
+from .core.errors import ConfigError, PlatformTeamOnly
 
 GatewayMode = Literal["local", "managed", "self-managed"]
 
@@ -140,7 +140,7 @@ class Governance:
         """Platform-team-only direct apply. Requires write scopes the
         default connected app will not hold; every use is logged at WARNING."""
         if not i_am_the_platform_team:
-            raise PermissionError(
+            raise PlatformTeamOnly(
                 "Governance.apply() inverts the platform-team ownership model "
                 "(provisioning-as-code). Runtime code should use resolve() (read-only). If you are "
                 "the platform team automating your own gateway, pass "

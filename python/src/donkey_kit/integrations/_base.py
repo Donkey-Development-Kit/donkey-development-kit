@@ -7,8 +7,11 @@ Each adapter depends on exactly one framework. Nothing here may be imported by
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import Any, TypeVar, cast
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from types import MappingProxyType
+from typing import Any, ClassVar, TypeVar, cast
 
 from ..core.config import DonkeyConfig
 from ..core.masking import masked
@@ -21,10 +24,13 @@ from ..core.transport import (
     proxy_api_key,
     proxy_auth_headers,
 )
+from . import missing_framework_error
 
 
-class Adapter:
-    """Base holding the config and the shared HTTP client every adapter needs."""
+class Adapter(ABC):
+    """Base holding the config and the shared HTTP client every adapter needs,
+    and declaring the contract every adapter shares (BG §1.8): ``extra``,
+    ``observes_last_call`` and :meth:`connection_kwargs`."""
 
     #: pip extra that provides this adapter's framework, for the curated
     #: ImportError raised on access when it is not installed (BG §1.8).
@@ -40,7 +46,14 @@ class Adapter:
     #: A ``False`` here is why ``donkey.last_call`` reports "not available on this
     #: surface" rather than a bare ``None`` (hazard #3),
     #: and it is the fact the conformance suite asserts as an exemption (the conformance kit).
+    #: It describes the adapter's default factory and its ``connection_kwargs()``;
+    #: a factory that routes differently is listed in
+    #: :attr:`factory_observes_last_call`. Neither is ever changed on an instance (#741).
     observes_last_call: bool = True
+
+    #: Per-factory overrides of :attr:`observes_last_call`, keyed by method name
+    #: (ADK ``gemini()`` observes where ``model()`` does not). Read-only.
+    factory_observes_last_call: ClassVar[Mapping[str, bool]] = MappingProxyType({})
 
     def __init__(
         self,
@@ -54,6 +67,40 @@ class Adapter:
         # lifecycle; standalone use falls back to one owned here.
         self._sync_http = sync_http_client or self._own_sync_client
         self._owned_sync: DonkeyClient | None = None
+        # Which factories with a per-factory capability have built an object, so
+        # observing_last_call() answers for what was used, not what was called last.
+        self._built: set[str] = set()
+
+    def _record_factory(self, name: str) -> None:
+        self._built.add(name)
+
+    def observing_last_call(self) -> bool:
+        """Whether a model call through anything this adapter built can reach
+        ``donkey.last_call``: true if any factory it was used through observes.
+        Before any such factory is used, the class's :attr:`observes_last_call`."""
+        if not self._built:
+            return self.observes_last_call
+        return any(
+            self.factory_observes_last_call.get(name, self.observes_last_call)
+            for name in self._built
+        )
+
+    @contextmanager
+    def _native_import(self) -> Iterator[None]:
+        """Wrap a factory's lazy framework import: a missing framework, or a
+        missing dependency of it, raises the same curated ImportError as
+        ``Donkey.<framework>``, never a bare ``ModuleNotFoundError`` (BG §1.8, #741)."""
+        try:
+            yield
+        except ModuleNotFoundError as exc:
+            raise missing_framework_error(self.extra, exc.name) from exc
+
+    @abstractmethod
+    def connection_kwargs(self) -> dict[str, Any]:
+        """The governed kwargs for the framework's own client constructor,
+        and the whole supported surface for a ``connection_kwargs()``-only
+        framework (BG §1.8). Returned through
+        :func:`~donkey_kit.core.masking.masked`, so printing it hides secrets."""
 
     def _own_sync_client(self) -> DonkeyClient:
         if self._owned_sync is None:
@@ -90,7 +137,8 @@ class Adapter:
         through the shared client, for a framework that takes a pre-built OpenAI
         client rather than an ``http_client``."""
         conn = self._openai_connection()
-        from openai import AsyncOpenAI
+        with self._native_import():
+            from openai import AsyncOpenAI
 
         # openai 3.x retyped http_client to httpx2.AsyncClient (a distinct class from a
         # separate distribution); our DonkeyAsyncClient is an httpx subclass, duck-typed

@@ -17,9 +17,9 @@ import functools
 import importlib
 import importlib.util
 import inspect
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager, AsyncExitStack
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
 from .core import _verify
 from .core.auth import AnypointConnectedApp, AuthProvider, EndpointCheckedAuth
@@ -36,7 +36,7 @@ from .core.transport import (
     build_http_client,
     build_sync_http_client,
 )
-from .integrations import ADAPTERS
+from .integrations import ADAPTERS, missing_framework_error
 from .llm.client import LLMClient
 from .registry.exchange import ExchangeRegistry
 from .registry.governance import GovernanceCriteria
@@ -58,15 +58,20 @@ if TYPE_CHECKING:
 
 
 _Callable = TypeVar("_Callable", bound=Callable[..., Any])
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
-def _framework_installed(probe: str) -> bool:
-    """Whether a framework's representative module can be located, without
-    importing it. Any error locating it means 'not installed'."""
-    try:
-        return importlib.util.find_spec(probe) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
+def _missing_module(probe: tuple[str, ...]) -> str | None:
+    """The first of a framework's required modules that cannot be located, or
+    ``None`` when all of them can. Any error locating one means 'not installed'."""
+    for module in probe:
+        try:
+            if importlib.util.find_spec(module) is None:
+                return module
+        except (ImportError, ValueError):
+            return module
+    return None
 
 
 class _ToolsFacade:
@@ -282,7 +287,7 @@ class Donkey:
         # an indistinguishable UNOBSERVED (hazard #3). An empty cache (raw client
         # / not used yet) is a cold read, not UNAVAILABLE.
         used = list(self._adapter_cache.values())
-        if used and all(not a.observes_last_call for a in used):
+        if used and all(not a.observing_last_call() for a in used):
             return unavailable(", ".join(sorted(self._adapter_cache)))
         return UNOBSERVED
 
@@ -419,15 +424,39 @@ class Donkey:
         )
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
+    # The overloads keep the decorated callable's own signature, for both the
+    # bare and the keyword form, under a downstream ``mypy --strict`` (#716).
+    @overload
     def governed(
         self,
-        func: _Callable | None = None,
+        func: Callable[_P, _R],
         *,
         team: str | None = None,
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
-    ) -> _Callable | Callable[[_Callable], _Callable]:
+    ) -> Callable[_P, _R]: ...
+
+    @overload
+    def governed(
+        self,
+        func: None = None,
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
+
+    def governed(
+        self,
+        func: Callable[_P, _R] | None = None,
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]:
         """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
 
         The one-line on-ramp to governed execution: every governed model call
@@ -452,26 +481,29 @@ class Donkey:
         HITL (2.3) and are out of scope here (#200).
         """
 
-        def decorate(fn: _Callable) -> _Callable:
+        def decorate(fn: Callable[_P, _R]) -> Callable[_P, _R]:
             if inspect.iscoroutinefunction(fn):
+                # Here ``_R`` is the coroutine type, which mypy cannot narrow
+                # from ``iscoroutinefunction``; the casts restate that fact.
+                coro_fn = cast(Callable[_P, Awaitable[Any]], fn)
 
                 @functools.wraps(fn)
-                async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
                     async with self.run(
                         team=team, project=project, env=env, enduser_id=enduser_id
                     ):
-                        return await fn(*args, **kwargs)
+                        return await coro_fn(*args, **kwargs)
 
-                return async_wrapper  # type: ignore[return-value]
+                return cast(Callable[_P, _R], async_wrapper)
 
             @functools.wraps(fn)
-            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            def sync_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
                 with self.run(
                     team=team, project=project, env=env, enduser_id=enduser_id
                 ):
                     return fn(*args, **kwargs)
 
-            return sync_wrapper  # type: ignore[return-value]
+            return sync_wrapper
 
         # Bare ``@donkey.governed`` passes the callable positionally; the
         # parametrised ``@donkey.governed(...)`` passes nothing and returns the
@@ -600,11 +632,9 @@ class Donkey:
             raise AttributeError(f"{type(self).__name__!r} has no attribute {name!r}")
         if name in self._adapter_cache:
             return self._adapter_cache[name]
-        if not _framework_installed(spec.probe):
-            raise ImportError(
-                f"The {name!r} integration is not installed. Install it with:\n"
-                f'    pip install "donkey-kit[{spec.extra}]"'
-            )
+        missing = _missing_module(spec.probe)
+        if missing is not None:
+            raise missing_framework_error(spec.extra, missing)
         module = importlib.import_module(spec.module, package="donkey_kit.integrations")
         adapter_cls = getattr(module, spec.cls)
         adapter: Adapter = adapter_cls(self._cfg, self._http, self._sync_http_client)

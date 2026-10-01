@@ -30,7 +30,7 @@ import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -43,6 +43,9 @@ from .cost import CostTags
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
 from .header_names import header_name_problem
+
+if TYPE_CHECKING:
+    from typing_extensions import Unpack
 
 Region = Literal["us", "eu", "ca", "jp"]
 
@@ -67,6 +70,47 @@ OnModelSubstitution = Literal["off", "raise"]
 # client_id set" is deliberately NOT done — it would turn a typo into a silent
 # mode switch and make the per-mode missing-field report misleading (#509).
 LlmProxyAuth = Literal["client-id", "jwt"]
+
+# The capability :meth:`DonkeyConfig.validated` checks the config for: the
+# Anypoint control plane (registry/provisioning) or the LLM proxy (BG §1.1).
+Capability = Literal["control_plane", "llm"]
+
+
+class ConfigOverrides(TypedDict, total=False):
+    """The public :class:`DonkeyConfig` fields, each optional, as keyword
+    arguments: what :meth:`DonkeyConfig.with_overrides` accepts, so a misspelt
+    field fails type checking (#716). Must list exactly the dataclass's public
+    fields; a unit test pins that."""
+
+    client_id: str | None
+    client_secret: str | None
+    org_id: str | None
+    environment: str
+    region: Region
+    base_url: str | None
+    llm_proxy_url: str | None
+    llm_proxy_client_id: str | None
+    llm_proxy_client_secret: str | None
+    llm_proxy_key: str | None
+    llm_proxy_auth: LlmProxyAuth
+    llm_proxy_wallet_client_id: str | None
+    application_name: str | None
+    business_group: str | None
+    correlation_header: str | None
+    call_id_header: str | None
+    cost: CostTags
+    cost_team_header: str | None
+    cost_project_header: str | None
+    cost_env_header: str | None
+    cost_enduser_header: str | None
+    timeout_s: float
+    max_retries: int
+    registry_cache_ttl_s: int
+    telemetry: bool
+    telemetry_capture_content: bool
+    on_model_substitution: OnModelSubstitution
+    send_cost_headers: bool
+
 
 _TOML_NAME = ".donkey-kit.toml"
 _LOCAL_TOML_NAME = ".donkey-kit.local.toml"
@@ -320,7 +364,7 @@ class DonkeyConfig:
                 f"Unknown region {region!r}. Expected one of {sorted(REGION_HOSTS)}."
             )
 
-        values: dict[str, object] = dict(
+        values = ConfigOverrides(
             cost=_resolve_cost_tags(toml_cost),
             client_id=_opt(pick("ANYPOINT_CLIENT_ID", "client_id", None)),
             client_secret=_opt(pick("ANYPOINT_CLIENT_SECRET", "client_secret", None)),
@@ -379,7 +423,7 @@ class DonkeyConfig:
             name: _Loaded(src, _digest(_value_at(values, name)), key_id)
             for name, src in sources.items()
         }
-        return cls(**values, _sources=loaded)  # type: ignore[arg-type]
+        return cls(**values, _sources=loaded)
 
     # --------------------------------------------------------------- derived
     @property
@@ -410,12 +454,12 @@ class DonkeyConfig:
             return _EXPLICIT
         return loaded.source
 
-    def with_overrides(self, **kw: object) -> DonkeyConfig:
+    def with_overrides(self, **kw: Unpack[ConfigOverrides]) -> DonkeyConfig:
         sources = {k: v for k, v in self._sources.items() if k not in kw}
-        return replace(self, _sources=sources, **kw)  # type: ignore[arg-type]
+        return replace(self, _sources=sources, **kw)
 
     # ------------------------------------------------------------- validation
-    def validated(self, *, need: str = "control_plane") -> DonkeyConfig:
+    def validated(self, *, need: Capability = "control_plane") -> DonkeyConfig:
         """Return self if valid for the requested capability, else raise a
         :class:`ConfigError` listing EVERY missing field at once.
 
@@ -437,7 +481,7 @@ class DonkeyConfig:
         self.check_endpoints(need=need)
         return self
 
-    def missing_fields(self, *, need: str) -> list[str]:
+    def missing_fields(self, *, need: Capability) -> list[str]:
         """Every required field for ``need`` that is unset, each with the env var
         that sets it. The list :meth:`validated` reports."""
         missing: list[str] = []
@@ -475,7 +519,7 @@ class DonkeyConfig:
             raise ConfigError(f"Unknown capability {need!r} passed to validated().")
         return missing
 
-    def check_endpoints(self, *, need: str, code_credential: str | None = None) -> None:
+    def check_endpoints(self, *, need: Capability, code_credential: str | None = None) -> None:
         """Raise :class:`ConfigError` if ``need``'s endpoint may not receive the
         credentials that would be sent to it.
 

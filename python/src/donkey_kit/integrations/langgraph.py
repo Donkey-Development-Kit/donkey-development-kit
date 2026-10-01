@@ -69,7 +69,8 @@ class LangGraphAdapter(Adapter):
         """Return a native ``ChatOpenAI`` pointed at the proxy (BG §1.8). A
         ``base_url``/``openai_api_base`` override must pass the https check."""
         self._allow_endpoints(kw, "base_url", "openai_api_base")
-        from langchain_openai import ChatOpenAI  # VERIFY name/path: docs/verified-apis.md §8
+        with self._native_import():
+            from langchain_openai import ChatOpenAI  # VERIFY name/path: docs/verified-apis.md §8
 
         return ChatOpenAI(model=model, **{**self.connection_kwargs(), **kw})
 
