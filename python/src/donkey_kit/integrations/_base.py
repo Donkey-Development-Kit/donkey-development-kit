@@ -7,19 +7,20 @@ Each adapter depends on exactly one framework. Nothing here may be imported by
 
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from types import MappingProxyType
 from typing import Any, ClassVar, TypeVar, cast
 
+from ..core import runtime
 from ..core.config import DonkeyConfig
 from ..core.masking import masked
 from ..core.transport import (
     DonkeyAsyncClient,
     DonkeyClient,
     attribution_headers,
-    build_http_client,
     build_sync_http_client,
     proxy_api_key,
     proxy_auth_headers,
@@ -114,7 +115,7 @@ class Adapter(ABC):
 
     def _proxy_headers(self) -> dict[str, str]:
         """Default headers for a native OpenAI-compatible client pointed at the
-        proxy: the LIVE-VERIFIED client_id/client_secret consumer-auth pair plus
+        proxy: the client_id/client_secret consumer-auth pair plus
         any attribution headers (docs/verified-apis.md §2/§3)."""
         return proxy_auth_headers(self._cfg)
 
@@ -203,23 +204,31 @@ class Adapter(ABC):
 A = TypeVar("A", bound=Adapter)
 
 # One cached default adapter per class, backing the module-level factories
-# (e.g. ``from donkey_kit.integrations.langgraph import chat_model``). Built
-# straight from core (config + transport), never via ``Donkey`` — the layered
-# import contract forbids ``integrations`` from importing the top package.
+# (e.g. ``from donkey_kit.integrations.langgraph import chat_model``). Each is
+# built on the process-default runtime from core, never via ``Donkey`` — the
+# layered import contract forbids ``integrations`` from importing the top
+# package — so every factory shares one client, budget and auth (#725).
 _DEFAULT_ADAPTERS: dict[type[Adapter], Adapter] = {}
+_DEFAULT_ADAPTERS_LOCK = threading.Lock()
 
 
 def default_adapter(cls: type[A]) -> A:
-    """Return a process-wide default instance of ``cls``, configured from the
-    environment and sharing one governed HTTP client. Lets the module-level
-    factories work without an explicit :class:`~donkey_kit.Donkey` handle.
+    """Return a process-wide default instance of ``cls`` on the process-default
+    runtime (:func:`donkey_kit.core.runtime.default`): configured from the
+    environment like ``Donkey.from_env()``, with its budget, control-plane auth
+    and OTLP export, and sharing one governed HTTP client with every other
+    module-level factory. Lets those factories work without an explicit
+    :class:`~donkey_kit.Donkey` handle.
 
-    Prefer an explicit ``Donkey`` when you need lifecycle control (``aclose``)
-    or non-env configuration; this trades that for a shorter call site.
+    The runtime is closed at interpreter exit. Prefer an explicit ``Donkey``
+    when you need lifecycle control (``aclose``), non-env configuration, or a
+    data-plane ``llm_auth`` provider (jwt mode).
     """
-    inst = _DEFAULT_ADAPTERS.get(cls)
-    if inst is None:
-        cfg = DonkeyConfig.from_env()
-        inst = cls(cfg, build_http_client(cfg, None))
-        _DEFAULT_ADAPTERS[cls] = inst
+    rt = runtime.default()
+    with _DEFAULT_ADAPTERS_LOCK:
+        inst = _DEFAULT_ADAPTERS.get(cls)
+        # Rebuild if the default runtime was closed and replaced since.
+        if inst is None or inst._http is not rt.http:
+            inst = cls(rt.config, rt.http, rt.sync_http)
+            _DEFAULT_ADAPTERS[cls] = inst
     return cast(A, inst)

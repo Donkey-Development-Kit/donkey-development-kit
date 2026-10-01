@@ -23,18 +23,13 @@ loudly report which declared policies are skipped locally and why.
 from __future__ import annotations
 
 import os
-import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal, cast
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
-    import tomli as tomllib
-
 from .core import _verify
+from .core.config import load_config_table
 from .core.errors import ConfigError, PlatformTeamOnly
 
 GatewayMode = Literal["local", "managed", "self-managed"]
@@ -103,7 +98,7 @@ class Governance:
     def simulate(self) -> SimulationContext:
         """Start an ephemeral local Omni Gateway harness (BG §1.4).
 
-        Requires the ``[local]`` extra (docker). Whether Local Mode can run the
+        Requires the ``[local]`` extra (the simulator's ASGI server). Whether Local Mode can run the
         LLM Proxy / MCP Bridge at all is a gate in the Verification milestone; if not, LLM traffic
         is served by a clearly-labelled local mock proxy. Either way, skipped
         connected-only policies are reported loudly and non-suppressibly.
@@ -185,12 +180,4 @@ class SimulationContext:
 
 
 def _load_targets() -> dict[str, dict[str, Any]]:
-    path = Path.cwd() / ".donkey-kit.toml"
-    if not path.is_file():
-        return {}
-    try:
-        data = tomllib.loads(path.read_text())
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"Malformed {path}: {exc}") from exc
-    targets = data.get("targets", {})
-    return targets if isinstance(targets, dict) else {}
+    return cast("dict[str, dict[str, Any]]", load_config_table("targets"))
