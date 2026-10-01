@@ -29,6 +29,12 @@ take an ``interceptor``, which :meth:`CrewAIAdapter.connection_kwargs` supplies:
 with one set, it builds ``httpx`` clients that do not follow redirects, and the
 interceptor keeps credentials to checked endpoints.
 
+jwt / model-wallet auth mode is refused with a ``ConfigError`` (#828): the
+provider's clients never see the rotating JWT, which only the shared client
+adds, so the api-key placeholder would go out as the bearer and every call
+would 401. The interceptor cannot add it either, since the provider's sync
+client cannot await the async ``AuthProvider``.
+
 Retries (#734): ``max_retries=0`` turns the provider's OpenAI client retries
 off, so a 5xx is not retried at all (the transport is not in the path). CrewAI
 itself wraps every ``BaseLLM.call``/``acall`` in a rate-limit retry (3
@@ -46,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from ..core.errors import ConfigError
 from ..core.masking import masked
 from ..core.transport import Origin, origin_of, strip_credential_headers
 from ._base import Adapter, default_adapter
@@ -71,7 +78,10 @@ class CrewAIAdapter(Adapter):
         ``interceptor`` (present when CrewAI is installed) makes that provider
         build plain ``httpx`` clients around a transport hook, so redirects are
         not followed, and the hook removes the credential headers from any
-        request to an origin the shared client was not checked for."""
+        request to an origin the shared client was not checked for.
+
+        Raises ``ConfigError`` in jwt auth mode (see the module docstring)."""
+        self._refuse_jwt()
         conn = self._openai_connection()
         return masked(
             {
@@ -82,6 +92,18 @@ class CrewAIAdapter(Adapter):
                 **self._interceptor_kwarg(),
             }
         )
+
+    def _refuse_jwt(self) -> None:
+        if self._cfg.llm_proxy_auth == "jwt":
+            raise ConfigError(
+                "CrewAI does not support llm_proxy_auth='jwt': its native OpenAI "
+                "provider builds its own HTTP clients, so the rotating model-wallet "
+                "JWT never reaches the request and a wallet proxy refuses every call. "
+                "Use client-id auth with CrewAI, or a jwt-capable surface from an "
+                "async caller: donkey.llm.client(), donkey.langgraph(), "
+                "donkey.strands, donkey.openai_agents, donkey.anthropic, "
+                "donkey.llamaindex, donkey.agent_framework or donkey.adk."
+            )
 
     def _interceptor_kwarg(self) -> dict[str, Any]:
         try:
@@ -96,8 +118,9 @@ class CrewAIAdapter(Adapter):
         Typed ``-> BaseLLM``, not ``-> LLM``: the ``openai/`` prefix routes
         ``crewai.LLM``'s factory to a provider subclass (docs/verified-apis.md
         §8, #640/#684). A ``base_url``/``api_base`` override must pass the https
-        check."""
+        check. Raises ``ConfigError`` in jwt auth mode."""
         self._allow_endpoints(kw, "base_url", "api_base")
+        self._refuse_jwt()
         with self._native_import():
             from crewai import LLM  # VERIFY name/path: docs/verified-apis.md §8
 

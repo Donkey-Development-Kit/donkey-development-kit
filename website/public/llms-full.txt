@@ -86,9 +86,10 @@ agents in production.
 
 ## Architecture
 
-DDK sits inside your agent process and speaks to the platform on three
-fronts: governed calls through the gateway, assets published to the control
-plane, and telemetry to your observability stack.
+DDK sits inside your agent process. Today it speaks to the platform on two
+fronts: governed calls through the gateway, and telemetry to your
+observability stack. A third front, publishing assets to the control plane,
+is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
 
 **The AI control plane** is where the platform team manages the AI estate:
 the agent registry, cost control, gateway federation, and governance and
@@ -118,9 +119,10 @@ framework client your agent already uses and adds:
   decision, policy type, budget and correlation ID, exported to whatever
   observability stack you run (Grafana, Datadog, Jaeger, and others) and
   joined to the gateway's audit record through the correlation ID.
-- **Registry and agent-to-agent** — scanning your code to publish tools and
-  agent cards to the control plane, and serving or exposing your agent to
-  other agents over A2A.
+- **Registry and agent-to-agent** Roadmap —
+  planned, not shipped: scanning your code to publish tools and agent cards
+  to the control plane, discovering governed MCP tools, and serving or
+  exposing your agent to other agents over A2A.
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK
@@ -790,6 +792,11 @@ carries the SDK's HTTP client in the form that framework takes: `http_client`
 and `http_async_client` (LangGraph), `http_client` and `async_http_client`
 (LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
 or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
+Each HTTP client is a non-owning view of the SDK's shared client: it sends
+through the shared client, and closing it (as Strands does after every call, or
+`async with` on an OpenAI client) leaves the shared client open. Only
+`donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
+returns the same view if you build a framework client by hand.
 
 ```python
 kwargs = donkey.llamaindex.connection_kwargs()
@@ -874,9 +881,9 @@ Some frameworks retry above the provider SDK, where the SDK can't reach:
 | CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md#notes). |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
-attached only by the SDK's shared async client. CrewAI sends `X-Client-Id` but
-no JWT, so a wallet proxy answers `401`. Sync calls such as LangGraph's
-`invoke()` raise `ConfigError` instead of sending. See the
+attached only by the SDK's shared async client. CrewAI can't carry it, so it
+raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
+also raise `ConfigError` instead of sending. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
@@ -1530,9 +1537,10 @@ llm = OpenAIModel(
         "base_url": ...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
-        "http_client": ...,       # the SDK's shared httpx client
+        "http_client": ...,       # a non-owning view of the SDK's shared client
         "max_retries": 0,         # the SDK retries in its own transport layer
     },
+    stream=False,                 # see Notes
 )
 ```
 
@@ -1557,6 +1565,14 @@ Strands forwards to its internal OpenAI client.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
+- **The client stays open.** Strands opens and closes an OpenAI client for
+  every request (`async with AsyncOpenAI(**client_args)`). The `http_client` it
+  gets is a view whose close is a no-op, so the SDK's shared client survives
+  every call. Only `donkey.aclose()` ends the connection pool.
+- **Streaming is off by default.** The governed model sets `stream=False`. A
+  proxy routing to a Gemini upstream answers a streamed request with one whole
+  `chat.completion` and no chunk deltas, and Strands fails on it. Pass
+  `donkey.strands.model("gpt-4o", stream=True)` on routes that stream.
 - Strands also exposes lifecycle hooks (`BeforeToolCallEvent` and friends).
   The SDK uses them for the policy-termination pattern — see the error taxonomy
   for how a `PolicyViolation` should end a run cleanly rather than trigger a
@@ -1983,7 +1999,7 @@ Which `http_client` you get depends on the installed `anthropic`:
 
 | `anthropic` | Built on | `http_client` |
 | --- | --- | --- |
-| 0.x | `httpx` | The SDK's shared `httpx.AsyncClient`. |
+| 0.x | `httpx` | A non-owning `httpx.AsyncClient` view that sends through the shared client. |
 | 1.0 and later | `httpx2` | An `httpx2.AsyncClient` whose transport sends every request through the shared client. |
 
 `anthropic` 1.0 moved to `httpx2`, Pydantic's continuation of `httpx`, and
@@ -2011,12 +2027,11 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   To use the native surface, set `DONKEY_LLM_PROXY_URL` (or `llm_proxy_url`)
   to a `Format=Anthropic` proxy.
 - **Closing the client.** `AsyncAnthropic.close()`, and leaving
-  `async with AsyncAnthropic(...)`, closes its `http_client`. On `anthropic`
-  1.0 and later that is the bridged client: the shared client stays open, and
-  the next `client()` call gets a fresh bridge. On `anthropic` 0.x it is the
-  shared client itself, which every adapter and `donkey.llm` also use, so don't
-  close the Anthropic client there; close the `Donkey` instead
-  (`async with Donkey.from_env()` or `await donkey.aclose()`).
+  `async with AsyncAnthropic(...)`, closes its `http_client`. On both stacks
+  that is not the shared client (the bridge on 1.0 and later, the view on 0.x),
+  so the shared client stays open and later `client()` calls keep working. To
+  end the connection pool, close the `Donkey` (`async with Donkey.from_env()`
+  or `await donkey.aclose()`).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
 exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
@@ -2145,8 +2160,10 @@ A `base_url` / `api_base` passed to `llm()` must pass the
   correlation ID bound by `donkey.run()` doesn't reach the request. The auth
   and attribution headers are still sent on every request. The conformance
   suite checks this as a documented behaviour.
-- **No JWT in `jwt` mode.** The JWT is added only by the SDK's shared client,
-  so a wallet proxy answers `401`; see the
+- **`jwt` mode isn't supported.** The JWT is added only by the SDK's shared
+  client, which CrewAI's provider doesn't use, so `donkey.crewai.llm()` and
+  `connection_kwargs()` raise `ConfigError` in `jwt` mode. Use client-id auth
+  with CrewAI; see the
   [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 - **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
   rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as
@@ -2334,6 +2351,7 @@ specific headers.
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
+| Bare model name on a multi-provider proxy | `400` | flat `{"error":"…"}` saying the model "is not in the known unique model map" | `ModelNotRoutable` (`.model`) |
 
 `PIIDetected`, `AgentKilled`, the regex-prompt-guard check, and the content-safety
 check are all evaluated **before** the generic 401/403→auth rule, because each is
@@ -2366,6 +2384,7 @@ DonkeyError                     # base of the whole tree
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
+├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
@@ -2398,6 +2417,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
+| `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md). |
 
@@ -2579,6 +2599,11 @@ Any content-moderation or federated-guardrail response that matches none of the
 discriminators above falls through to a generic `PolicyViolation` rather than an
 invented type. DDK only types a refusal by a discriminator it can identify
 reliably; everything else stays inspectable via `.response`.
+
+One `400` that used to land here is now typed: a bare model name (`gpt-5-mini`)
+sent to a model-based proxy with more than one provider. The gateway rejects it
+before any upstream call, and `classify()` returns `ModelNotRoutable`. It keeps
+the gateway's text and is not a `PolicyViolation`.
 
 ---
 
@@ -3323,7 +3348,10 @@ example `openai/gpt-5-mini`), and the gateway reports the served model without
 the prefix (`gpt-5-mini`), with the provider in its own header. A prefix that
 names the served provider is not counted as a difference, so asking for
 `openai/gpt-5-mini` and being served `gpt-5-mini` by `openai` is not a
-substitution. The same model served by a different provider still is.
+substitution. The same model served by a different provider still is. On a
+proxy with more than one provider, a bare name the gateway cannot pin to one
+provider is rejected with a `400` before any upstream call, and DDK raises
+[`ModelNotRoutable`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
 
 ### Semantic caching & semantic routing Live
 
@@ -4161,21 +4189,20 @@ hold up in production.
 
 ## Discover and filter
 
-`donkey.tools.discover(...)` is also the search and filter entry point. One call
-narrows the catalog by name/description glob, governance, domain, tags, and
-asset type, so an agent binds only the tools it needs:
+`donkey.tools.discover(...)` is also the filter entry point. One call narrows
+the catalog by governance, domain and tags, so an agent binds only the tools it
+needs:
 
 ```python
 tools = await donkey.tools.discover(
-    search="*accounts*",     # glob over asset name + description
-    governed_only=True,      # default criteria, or a GovernanceCriteria
     domain="hr",
     tags=["approved"],
-    asset_types=["mcp"],
-    environment="Production",
-    limit=50,
+    governed=True,           # default criteria, or a GovernanceCriteria
 )
 ```
+
+Name search, asset type and environment filters live one layer down, on
+`donkey.registry.search()`.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
 Exchange — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md).
@@ -4183,7 +4210,7 @@ Exchange — see [Discovery, search & filter](https://donkey-development-kit.git
 ## In this section
 
   
-    Narrow the catalog by name, governance, domain, tags, and asset type.
+    Narrow the catalog by governance, domain and tags, or search it by name and asset type.
   
   
     Turn a `ToolSet` into each framework's own native tool objects.
@@ -4204,54 +4231,63 @@ Roadmap
 
 This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
 
-`donkey.tools.discover(...)` is the one entry point for finding governed tools.
-It narrows the catalog by **name/description (search)**, **governance**, domain,
-tags, asset type, and environment, so an agent binds only the tools it needs
-rather than the entire catalog. It returns a [`ToolSet`](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md)
-whose per-framework methods hand back native tool objects.
+`donkey.tools.discover(...)` is the one entry point for finding governed tools
+to bind. It narrows the catalog by **governance**, domain and tags, so an agent
+binds only the tools it needs rather than the entire catalog. It returns a
+[`ToolSet`](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md) whose per-framework methods hand back native
+tool objects. Name search, asset type and environment are filters on the
+lower-level [`donkey.registry.search()`](#registry-search).
 
 ## The two most common calls
 
 ```python
-# 1. Governed-only + name search:
-#    only governed tools whose name or description matches the glob "*accounts*".
-tools = await donkey.tools.discover(governed_only=True, search="*accounts*")
+# 1. Everything governed in a domain:
+tools = await donkey.tools.discover(domain="hr", governed=True)
 
-# 2. Everything governed in a domain:
-tools = await donkey.tools.discover(domain="hr", governed_only=True)
+# 2. Governed tools in a domain that carry a tag:
+tools = await donkey.tools.discover(domain="hr", tags=["approved"], governed=True)
 ```
 
 ## Filter reference
 
-Every argument is optional and combines with `AND` semantics:
+Every argument is keyword-only and optional, and filters combine with `AND`
+semantics:
 
 ```python
 tools = await donkey.tools.discover(
-    search="*accounts*",     # glob over asset name + description; None = no text filter
-    governed_only=True,      # True = default criteria; or an explicit GovernanceCriteria
     domain="hr",             # catalog domain
     tags=["approved"],       # all tags must be present
-    asset_types=["mcp"],     # restrict to MCP servers, agents, etc.
-    environment="Production",# environment-scoped governance
-    limit=50,
+    governed=True,           # True = default criteria; or an explicit GovernanceCriteria
+    locked=False,            # True = resolve only what donkey.lock pins
 )
 ```
 
 | Argument | Type | Meaning |
 |---|---|---|
-| `search` | `str \| None` | Glob over asset **name and description** (`*accounts*`, `get_*`). `None` = no text filter. |
-| `governed_only` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
 | `domain` | `str \| None` | Catalog domain. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
-| `asset_types` | `list[AssetType] \| None` | Restrict by asset type, e.g. `["mcp"]`. |
-| `environment` | `str \| None` | Which environment governance is computed against. |
-| `limit` | `int` | Max results (default 50). |
+| `governed` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered (the default). |
+| `governance` | `Any \| None` | Reserved in the signature; no behaviour is defined for it yet. |
+| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md)). Default `False`. |
 
-  `discover(...)` is the high-level facade over `ExchangeRegistry.search()`. On
-  the facade, `search` is the text/glob filter (the registry's `query`) and
-  `governed_only` is the governance predicate (the registry's `governed`). The
-  glob runs server-side where Exchange supports it and client-side otherwise —
-  the results are identical either way.
+## Registry search
+
+`discover(...)` is the high-level facade over the registry. When you need name
+search, asset types, an explicit environment or a result limit, call
+`donkey.registry.search()` directly. It returns `AssetRef` handles rather than a
+bindable `ToolSet`:
+
+```python
+refs = await donkey.registry.search(
+    query="*accounts*",       # glob over asset name + description; None = no text filter
+    asset_types=["mcp"],      # restrict to MCP servers, agents, etc.
+    tags=["approved"],
+    domain="hr",
+    environment="Production", # environment-scoped governance
+    governed=True,
+    limit=50,                 # max results (default 50)
+)
+```
 
 ## "Governed" is a computed predicate
 
@@ -4288,7 +4324,7 @@ STRICT = GovernanceCriteria(
 Pass it straight through:
 
 ```python
-tools = await donkey.tools.discover(domain="hr", governed_only=STRICT)
+tools = await donkey.tools.discover(domain="hr", governed=STRICT)
 ```
 
   `allow_unknown` matters more than it looks. If the platform doesn't expose,
@@ -4298,7 +4334,7 @@ tools = await donkey.tools.discover(domain="hr", governed_only=STRICT)
 
 ## `explain()` — why a tool was included or excluded
 
-Without it, `governed_only=True` returning an empty list is indistinguishable
+Without it, `governed=True` returning an empty list is indistinguishable
 from a broken credential. `explain()` reports every check:
 
 ```python
@@ -4317,7 +4353,7 @@ message points you to `explain()`.
 
 ## Defaults and performance
 
-- **Unfiltered by default.** `governed_only` defaults to `None`, and a startup
+- **Unfiltered by default.** `governed` defaults to `None`, and a startup
   log line states that discovery is unfiltered. Changing the default to `True`
   is reserved for a future major version.
 - **Warm the index.** The governance join is a bulk operation, not one API call
@@ -9299,17 +9335,18 @@ donkey = Donkey(
   `complete()`, go through the blocking client, so they raise the same
   `ConfigError` as `sync=True` before sending anything.
 
-  These send **no JWT**, so a wallet proxy answers `401`:
+  These can't send the JWT, so they raise `ConfigError` before sending anything,
+  rather than sending the `client-id-enforced` placeholder as the bearer:
 
-  - CrewAI, which gets only a header snapshot: its `Authorization` header
-    carries `llm_proxy_key` or the `client-id-enforced` placeholder;
-  - the module-level factories (for example
+  - CrewAI, in `jwt` mode at all: its native OpenAI provider builds its own
+    HTTP clients, which the SDK can't add the JWT to. Use client-id auth with
+    CrewAI;
+  - every adapter on a `Donkey` without `llm_auth`, and the module-level
+    factories (for example
     `from donkey_kit.integrations.langgraph import chat_model`), which have no
     `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.
 
   See [Injection depth](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#injection-depth-differs-by-framework).
-  Making these forms raise `ConfigError` in `jwt` mode is tracked in
-  [#835](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/835).
 
 ### Auth providers
 

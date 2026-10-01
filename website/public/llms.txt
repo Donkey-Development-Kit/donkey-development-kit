@@ -42,7 +42,7 @@
 ## Tool access
 
 - [Overview](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md): Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
-- [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md): Find governed MCP tools by name, governance criteria, domain, tags, asset type, and environment — and see why any tool was included or excluded.
+- [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md): Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
 - [Framework binding](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md): Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
 - [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md): Pin governed tool versions and content digests in a donkey.lock so catalog changes become reviewable diffs, not runtime surprises.
 - [A2A agent tools](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/a2a.md): Bind a governed A2A agent from the registry as a native tool, so your agent can delegate to it without learning the A2A protocol.

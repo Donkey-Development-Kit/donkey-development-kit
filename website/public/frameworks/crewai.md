@@ -117,8 +117,10 @@ A `base_url` / `api_base` passed to `llm()` must pass the
   correlation ID bound by `donkey.run()` doesn't reach the request. The auth
   and attribution headers are still sent on every request. The conformance
   suite checks this as a documented behaviour.
-- **No JWT in `jwt` mode.** The JWT is added only by the SDK's shared client,
-  so a wallet proxy answers `401`; see the
+- **`jwt` mode isn't supported.** The JWT is added only by the SDK's shared
+  client, which CrewAI's provider doesn't use, so `donkey.crewai.llm()` and
+  `connection_kwargs()` raise `ConfigError` in `jwt` mode. Use client-id auth
+  with CrewAI; see the
   [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 - **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
   rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as

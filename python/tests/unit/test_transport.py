@@ -1046,7 +1046,7 @@ async def test_langgraph_adapter_does_not_retry_429_end_to_end() -> None:
     # shared client, so the transport is what governs the retry policy.
     kw = adapter.connection_kwargs()
     assert kw["max_retries"] == 0
-    assert kw["http_async_client"] is shared
+    assert kw["http_async_client"] is shared.view()
     async with shared:
         model = adapter.chat_model("gpt-4o")
         with pytest.raises(openai.APIStatusError):
