@@ -86,9 +86,10 @@ agents in production.
 
 ## Architecture
 
-DDK sits inside your agent process and speaks to the platform on three
-fronts: governed calls through the gateway, assets published to the control
-plane, and telemetry to your observability stack.
+DDK sits inside your agent process. Today it speaks to the platform on two
+fronts: governed calls through the gateway, and telemetry to your
+observability stack. A third front, publishing assets to the control plane,
+is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
 
 **The AI control plane** is where the platform team manages the AI estate:
 the agent registry, cost control, gateway federation, and governance and
@@ -118,9 +119,10 @@ framework client your agent already uses and adds:
   decision, policy type, budget and correlation ID, exported to whatever
   observability stack you run (Grafana, Datadog, Jaeger, and others) and
   joined to the gateway's audit record through the correlation ID.
-- **Registry and agent-to-agent** — scanning your code to publish tools and
-  agent cards to the control plane, and serving or exposing your agent to
-  other agents over A2A.
+- **Registry and agent-to-agent** Roadmap —
+  planned, not shipped: scanning your code to publish tools and agent cards
+  to the control plane, discovering governed MCP tools, and serving or
+  exposing your agent to other agents over A2A.
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK
@@ -4131,21 +4133,20 @@ hold up in production.
 
 ## Discover and filter
 
-`donkey.tools.discover(...)` is also the search and filter entry point. One call
-narrows the catalog by name/description glob, governance, domain, tags, and
-asset type, so an agent binds only the tools it needs:
+`donkey.tools.discover(...)` is also the filter entry point. One call narrows
+the catalog by governance, domain and tags, so an agent binds only the tools it
+needs:
 
 ```python
 tools = await donkey.tools.discover(
-    search="*accounts*",     # glob over asset name + description
-    governed_only=True,      # default criteria, or a GovernanceCriteria
     domain="hr",
     tags=["approved"],
-    asset_types=["mcp"],
-    environment="Production",
-    limit=50,
+    governed=True,           # default criteria, or a GovernanceCriteria
 )
 ```
+
+Name search, asset type and environment filters live one layer down, on
+`donkey.registry.search()`.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
 Exchange — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md).
@@ -4153,7 +4154,7 @@ Exchange — see [Discovery, search & filter](https://donkey-development-kit.git
 ## In this section
 
   
-    Narrow the catalog by name, governance, domain, tags, and asset type.
+    Narrow the catalog by governance, domain and tags, or search it by name and asset type.
   
   
     Turn a `ToolSet` into each framework's own native tool objects.
@@ -4174,54 +4175,63 @@ Roadmap
 
 This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
 
-`donkey.tools.discover(...)` is the one entry point for finding governed tools.
-It narrows the catalog by **name/description (search)**, **governance**, domain,
-tags, asset type, and environment, so an agent binds only the tools it needs
-rather than the entire catalog. It returns a [`ToolSet`](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md)
-whose per-framework methods hand back native tool objects.
+`donkey.tools.discover(...)` is the one entry point for finding governed tools
+to bind. It narrows the catalog by **governance**, domain and tags, so an agent
+binds only the tools it needs rather than the entire catalog. It returns a
+[`ToolSet`](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md) whose per-framework methods hand back native
+tool objects. Name search, asset type and environment are filters on the
+lower-level [`donkey.registry.search()`](#registry-search).
 
 ## The two most common calls
 
 ```python
-# 1. Governed-only + name search:
-#    only governed tools whose name or description matches the glob "*accounts*".
-tools = await donkey.tools.discover(governed_only=True, search="*accounts*")
+# 1. Everything governed in a domain:
+tools = await donkey.tools.discover(domain="hr", governed=True)
 
-# 2. Everything governed in a domain:
-tools = await donkey.tools.discover(domain="hr", governed_only=True)
+# 2. Governed tools in a domain that carry a tag:
+tools = await donkey.tools.discover(domain="hr", tags=["approved"], governed=True)
 ```
 
 ## Filter reference
 
-Every argument is optional and combines with `AND` semantics:
+Every argument is keyword-only and optional, and filters combine with `AND`
+semantics:
 
 ```python
 tools = await donkey.tools.discover(
-    search="*accounts*",     # glob over asset name + description; None = no text filter
-    governed_only=True,      # True = default criteria; or an explicit GovernanceCriteria
     domain="hr",             # catalog domain
     tags=["approved"],       # all tags must be present
-    asset_types=["mcp"],     # restrict to MCP servers, agents, etc.
-    environment="Production",# environment-scoped governance
-    limit=50,
+    governed=True,           # True = default criteria; or an explicit GovernanceCriteria
+    locked=False,            # True = resolve only what donkey.lock pins
 )
 ```
 
 | Argument | Type | Meaning |
 |---|---|---|
-| `search` | `str \| None` | Glob over asset **name and description** (`*accounts*`, `get_*`). `None` = no text filter. |
-| `governed_only` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
 | `domain` | `str \| None` | Catalog domain. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
-| `asset_types` | `list[AssetType] \| None` | Restrict by asset type, e.g. `["mcp"]`. |
-| `environment` | `str \| None` | Which environment governance is computed against. |
-| `limit` | `int` | Max results (default 50). |
+| `governed` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered (the default). |
+| `governance` | `Any \| None` | Reserved in the signature; no behaviour is defined for it yet. |
+| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/lockfile.md)). Default `False`. |
 
-  `discover(...)` is the high-level facade over `ExchangeRegistry.search()`. On
-  the facade, `search` is the text/glob filter (the registry's `query`) and
-  `governed_only` is the governance predicate (the registry's `governed`). The
-  glob runs server-side where Exchange supports it and client-side otherwise —
-  the results are identical either way.
+## Registry search
+
+`discover(...)` is the high-level facade over the registry. When you need name
+search, asset types, an explicit environment or a result limit, call
+`donkey.registry.search()` directly. It returns `AssetRef` handles rather than a
+bindable `ToolSet`:
+
+```python
+refs = await donkey.registry.search(
+    query="*accounts*",       # glob over asset name + description; None = no text filter
+    asset_types=["mcp"],      # restrict to MCP servers, agents, etc.
+    tags=["approved"],
+    domain="hr",
+    environment="Production", # environment-scoped governance
+    governed=True,
+    limit=50,                 # max results (default 50)
+)
+```
 
 ## "Governed" is a computed predicate
 
@@ -4258,7 +4268,7 @@ STRICT = GovernanceCriteria(
 Pass it straight through:
 
 ```python
-tools = await donkey.tools.discover(domain="hr", governed_only=STRICT)
+tools = await donkey.tools.discover(domain="hr", governed=STRICT)
 ```
 
   `allow_unknown` matters more than it looks. If the platform doesn't expose,
@@ -4268,7 +4278,7 @@ tools = await donkey.tools.discover(domain="hr", governed_only=STRICT)
 
 ## `explain()` — why a tool was included or excluded
 
-Without it, `governed_only=True` returning an empty list is indistinguishable
+Without it, `governed=True` returning an empty list is indistinguishable
 from a broken credential. `explain()` reports every check:
 
 ```python
@@ -4287,7 +4297,7 @@ message points you to `explain()`.
 
 ## Defaults and performance
 
-- **Unfiltered by default.** `governed_only` defaults to `None`, and a startup
+- **Unfiltered by default.** `governed` defaults to `None`, and a startup
   log line states that discovery is unfiltered. Changing the default to `True`
   is reserved for a future major version.
 - **Warm the index.** The governance join is a bulk operation, not one API call
