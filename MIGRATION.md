@@ -252,11 +252,11 @@ send_cost_headers = true
 cfg = DonkeyConfig.from_env().with_overrides(send_cost_headers=True)
 ```
 
-When they are on, the headers, including `X-Anypoint-Cost-Enduser-Id`, go on
-**every** request the SDK sends, including Anypoint control-plane requests and
-the connected-app token request. Limiting them, and the other LLM-proxy-only
-headers, to model requests is tracked in
-[#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
+When they are on, the headers, including `X-Anypoint-Cost-Enduser-Id`, go only
+on model requests to the LLM proxy. Anypoint control-plane requests and the
+connected-app token request carry none of them, nor the attribution or
+`x-cache-*` headers
+([#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833)).
 The `cost_*_header` name overrides apply as before.
 
 ### 6. `donkey doctor` output

@@ -138,6 +138,11 @@ reach every governed call in the block (including calls on framework-spawned
 | `threshold` | `float` | Override the similarity threshold, in `[0.0, 1.0]`. |
 | `principal_id` | `str` | Override the id the similarity filter partitions on. |
 
+The controls travel as `x-cache-*` request headers on model requests to the
+LLM proxy only. Control-plane requests inside the block (the connected-app
+token request, registry and tool calls) never carry them, so `principal_id`
+doesn't leave the data plane.
+
 An invalid control (a negative `ttl`, a `threshold` outside `[0.0, 1.0]`, a
 `principal_id` with a control character) raises `ConfigError` **at the call
 site**, not on the first request. The **outcome** of each call is on

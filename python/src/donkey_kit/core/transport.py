@@ -309,6 +309,7 @@ def _apply_base_headers(
     correlation_id: str,
     *,
     correlation_header: str,
+    control_plane: bool,
 ) -> None:
     """The run correlation ID + attribution — everything both transports inject
     on EVERY send without needing to await anything. The correlation ID is
@@ -323,12 +324,19 @@ def _apply_base_headers(
     carries the CONFIG-LEVEL cost tags and any ``donkey.run(...)`` per-run
     overrides are applied on top here (read from the contextvar per send), so a
     run-scope dimension wins for its block (#196). Disabled (the default), no
-    cost header is sent; the span attributes still carry every tag."""
+    cost header is sent; the span attributes still carry every tag.
+
+    On a ``control_plane`` client only the correlation ID is set: the
+    attribution, cost-tag and ``x-cache-*`` headers are meant for the LLM proxy
+    (docs/verified-apis.md §3) and no Anypoint platform API reads them
+    (docs/verified-apis.md §12.2), so they are not sent there (#833)."""
     request.headers[correlation_header] = correlation_id
     # Stamp the resolved name so read-back (errors._sent_ids) honours a
     # header-name override without core/errors importing DonkeyConfig (#363).
     # Idempotent across retries — same name each send.
     request.extensions["donkey_correlation_header"] = correlation_header
+    if control_plane:
+        return
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
     run = current_cost_tags()
@@ -918,6 +926,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             request,
             _request_correlation_id(request),
             correlation_header=self._correlation_header,
+            control_plane=self._control_plane,
         )
         if not self._guard(request):
             return
@@ -1236,6 +1245,7 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
             request,
             _request_correlation_id(request),
             correlation_header=self._correlation_header,
+            control_plane=False,
         )
         self._guard(request)
 

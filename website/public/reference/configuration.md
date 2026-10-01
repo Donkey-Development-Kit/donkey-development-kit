@@ -214,11 +214,9 @@ you can override: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
 kwarg; in code, use
 `DonkeyConfig.from_env().with_overrides(send_cost_headers=True)`.
 
-  With `send_cost_headers` on, the headers, including the end-user ID, currently
-  go on **every** request the SDK sends, including requests to the Anypoint
-  platform. Limiting them to model requests is tracked in
-  [#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
-  Where the tags go is described in
+  With `send_cost_headers` on, the headers, including the end-user ID, go only
+  on model requests to the LLM proxy, never to the Anypoint platform. Where the
+  tags go is described in
   [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags).
 
 ## Telemetry
@@ -343,19 +341,19 @@ code asks for a connected-app token.
 
 ### Other headers
 
-These go on every request the SDK's shared HTTP clients send. Today that
-includes control-plane requests and the connected-app token request; limiting
-the LLM-proxy-only headers to model requests is tracked in
-[#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
+The correlation and per-call IDs go on every request the SDK's HTTP clients
+send, on both planes. The other headers go only on model requests to the LLM
+proxy: the connected-app token request and the registry and tool requests
+never carry them.
 
-| Header (default name) | Value | When | Meant for |
+| Header (default name) | Value | When | Sent to |
 |---|---|---|---|
 | `X-Correlation-Id` (`correlation_header`) | The run ID | Always | Both planes |
 | `X-Donkey-Request-Id` (`call_id_header`) | A per-call ID | Always | Both planes |
-| `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy |
-| `X-Anypoint-Business-Group` | `business_group` | When set | The LLM proxy |
-| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) | The LLM proxy, or a receiver of yours in front of it |
-| `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache |
+| `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy only |
+| `X-Anypoint-Business-Group` | `business_group` | When set | The LLM proxy only |
+| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
+| `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache only |
 
 CrewAI, which gets only a header snapshot, sends the auth headers, the
 attribution headers and, with `send_cost_headers`, the configured cost tags. It
