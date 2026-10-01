@@ -153,9 +153,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 | CrewAI | ✅ (`extra_headers`) | ❌ | CrewAI's native OpenAI provider builds its own HTTP client: correlation is per client and `donkey.last_call` is not populated. An `interceptor` keeps credentials to checked endpoints. |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
-attached only by the SDK's shared async client. CrewAI sends `X-Client-Id` but
-no JWT, so a wallet proxy answers `401`. Sync calls such as LangGraph's
-`invoke()` raise `ConfigError` instead of sending. See the
+attached only by the SDK's shared async client. CrewAI can't carry it, so it
+raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
+also raise `ConfigError` instead of sending. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
