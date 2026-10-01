@@ -3,9 +3,7 @@
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
 ``client_args`` is forwarded to the underlying OpenAI client, so header AND
-transport injection are both available (full injection). Strands also has
-lifecycle hooks (``BeforeToolCallEvent`` and friends) — used elsewhere for the
-policy-termination pattern (BG §1.2, BG §1.8).
+transport injection are both available (full injection).
 
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """

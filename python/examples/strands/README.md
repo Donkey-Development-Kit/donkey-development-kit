@@ -32,6 +32,14 @@ export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
 python examples/strands/main.py
 ```
 
+The script reads its settings the way the SDK does (environment variables, then
+`.donkey-kit.toml`) and stops with the SDK's own `ConfigError`, listing every
+missing setting, when one is absent. For a model-wallet proxy, set
+`DONKEY_LLM_PROXY_AUTH=jwt` and `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` instead of
+the client id and secret; the wallet JWT comes from an `AuthProvider` you pass
+to `Donkey(llm_auth=...)` in your own code
+([Configuration](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration#jwt--model-wallet-auth-mode)).
+
 ## The manual equivalent
 
 The factory call is equivalent to building `OpenAIModel` yourself with the

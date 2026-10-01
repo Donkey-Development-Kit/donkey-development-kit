@@ -104,9 +104,5 @@ Strands forwards to its internal OpenAI client.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
-- Strands also exposes lifecycle hooks (`BeforeToolCallEvent` and friends).
-  The SDK uses them for the policy-termination pattern — see the error taxonomy
-  for how a `PolicyViolation` should end a run cleanly rather than trigger a
-  retry loop.
 
 <AdapterErrorTaxonomyNote />

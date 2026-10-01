@@ -2,9 +2,8 @@
 
 Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
 the governed client is passed in, the SDK owns the transport: run id,
-`last_call` and typed refusals all work. The calls go to
-**`/chat/completions`, which is not live-verified on the DDK proxies**
-(`/responses` is), so use a proxy whose upstream serves that route.
+`last_call` and typed refusals all work. The calls go to the proxy's
+`/chat/completions` route, so use a proxy whose upstream serves that route.
 
   **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
   client per request from `client_args`. That closes the shared transport

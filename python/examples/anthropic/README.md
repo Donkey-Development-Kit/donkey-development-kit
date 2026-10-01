@@ -15,8 +15,7 @@ not a constructor one. So this adapter exposes `client()` rather than the
 
 **Proxy route (docs/verified-apis.md §2, #304).** MuleSoft Model Proxy offers a
 native **Anthropic** ingress Format — one of three selectable Formats (OpenAI /
-Gemini / Anthropic) fixed at proxy creation. That route is now **LIVE-verified**:
-a `Format=Anthropic` proxy serves the Anthropic Messages API natively at
+Gemini / Anthropic) fixed at proxy creation. A `Format=Anthropic` proxy serves the Anthropic Messages API natively at
 `POST /<base-path>/v1/messages` (an OpenAI-shaped `/chat/completions` request 404s
 there). Usage caveat: the SDK's own default DDK proxies are `Format=OpenAI`, so
 this client pointed at them reaches Claude only as an *upstream provider*, not
@@ -41,6 +40,14 @@ export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
 python examples/anthropic/main.py
 ```
 
+The script reads its settings the way the SDK does (environment variables, then
+`.donkey-kit.toml`) and stops with the SDK's own `ConfigError`, listing every
+missing setting, when one is absent. For a model-wallet proxy, set
+`DONKEY_LLM_PROXY_AUTH=jwt` and `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` instead of
+the client id and secret; the wallet JWT comes from an `AuthProvider` you pass
+to `Donkey(llm_auth=...)` in your own code
+([Configuration](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration#jwt--model-wallet-auth-mode)).
+
 ## The manual equivalent
 
 The factory call is equivalent to building `AsyncAnthropic` yourself with the
@@ -51,7 +58,7 @@ import httpx2  # anthropic 0.x is built on httpx: use httpx.AsyncClient there
 from anthropic import AsyncAnthropic
 
 c = AsyncAnthropic(
-    base_url=DONKEY_LLM_PROXY_URL,   # native /v1/messages route LIVE-verified: use a Format=Anthropic proxy
+    base_url=DONKEY_LLM_PROXY_URL,   # a Format=Anthropic proxy: the native /v1/messages route (docs/verified-apis.md §2)
     api_key="unused",                  # proxy enforces client_id/client_secret headers
     default_headers={
         "client_id": DONKEY_LLM_PROXY_CLIENT_ID,

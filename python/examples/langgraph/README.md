@@ -36,8 +36,8 @@ those header names aren't yet confirmed against a live proxy, not an error.
 The model itself is a *native* `langchain_openai.ChatOpenAI` pointed at the
 proxy — correct base URL (no `/v1`), `client_id`/`client_secret` header auth (not
 bearer), attribution headers, the SDK's shared transport (retry/telemetry
-hooks), and `use_responses_api=True` (the proxy's live-verified `/responses`
-data plane). It's LangGraph/LangChain's own class, not a wrapper, so it drops
+hooks), and `use_responses_api=True` (the Responses API, `/responses`: the
+route the raw client and the local simulator use). It's LangGraph/LangChain's own class, not a wrapper, so it drops
 straight into any graph or chain.
 
 The graph demonstrates the two deep-adapter guarantees this example exists to
@@ -104,16 +104,19 @@ model = ChatOpenAI(
     },
     http_async_client=httpx.AsyncClient(...),  # your own transport, retries, hooks
     max_retries=0,
-    use_responses_api=True,  # the proxy's live-verified data plane is /responses
+    use_responses_api=True,  # the route the raw client and the simulator use
 )
 ```
 
 The factory (`donkey_kit.integrations.langgraph.chat_model`) fills in
 `base_url`, `api_key`, `default_headers`, `http_async_client`, and
 `use_responses_api` from one governed config source and gives you the SDK's
-shared transport (with its retry policy and telemetry hooks) for free. Pass
-`use_responses_api=False` only if a deployment exposes chat-completions instead
-— `/responses` is the endpoint verified against a live proxy.
+shared transport (with its retry policy and telemetry hooks) for free. An
+OpenAI-format proxy serves both `/responses` and `/chat/completions`
+(docs/verified-apis.md §2). The adapter uses `/responses` because the raw
+`donkey.llm` client does, and because the local simulator, which this example
+and the conformance suite run against, serves only that route. Pass
+`use_responses_api=False` to call `/chat/completions` on a live proxy.
 
 ## Links
 
