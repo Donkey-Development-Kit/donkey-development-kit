@@ -22,13 +22,21 @@ from _anthropic_wire import (  # noqa: E402
     CFG,
     SSE_CHUNKS,
     Chunks,
+    refusal_response,
     shared_client,
     sse_response,
     success_response,
 )
 
-from donkey_kit.core.errors import GatewayUnavailable  # noqa: E402
+from donkey_kit.core.errors import (  # noqa: E402
+    DonkeyError,
+    GatewayUnavailable,
+    PIIDetected,
+    TokenBudgetExceeded,
+    classify,
+)
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call  # noqa: E402
+from donkey_kit.core.telemetry import run_context  # noqa: E402
 from donkey_kit.integrations.anthropic import AnthropicAdapter  # noqa: E402
 
 _ON_HTTPX2 = not issubclass(anthropic.DefaultAsyncHttpxClient, httpx.AsyncClient)
@@ -91,6 +99,36 @@ async def test_a_lost_gateway_is_a_connection_error_caused_by_gateway_unavailabl
             await llm.messages.create(**BODY)
 
     assert isinstance(info.value.__cause__, GatewayUnavailable)
+
+
+@pytest.mark.parametrize(
+    ("name", "framework_error", "expected"),
+    [
+        ("pii-detected", anthropic.PermissionDeniedError, PIIDetected),
+        ("token-rate-limit", anthropic.RateLimitError, TokenBudgetExceeded),
+    ],
+)
+async def test_a_refusal_classifies_with_the_ids_that_were_sent(
+    name: str, framework_error: type[Exception], expected: type[DonkeyError]
+) -> None:
+    # The documented path into the taxonomy, ``classify(exc.response)``, joins a
+    # refusal to its run and gateway record on both stacks (#738).
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return refusal_response(name)
+
+    async with shared_client(handler) as shared:
+        llm = AnthropicAdapter(CFG, shared).client(max_retries=0)
+        with run_context("run-42"), pytest.raises(framework_error) as info:
+            await llm.messages.create(**BODY)
+
+    err = classify(info.value.response)  # type: ignore[attr-defined]
+    assert isinstance(err, expected)
+    (wire,) = seen
+    assert err.correlation_id == "run-42"
+    assert err.call_id is not None and err.call_id == wire.headers["x-donkey-request-id"]
 
 
 async def test_closing_the_anthropic_client_leaves_the_shared_client_usable() -> None:

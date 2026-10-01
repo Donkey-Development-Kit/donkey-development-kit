@@ -7,6 +7,7 @@ Each adapter depends on exactly one framework. Nothing here may be imported by
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from types import MappingProxyType
@@ -26,8 +27,10 @@ from ..core.transport import (
 from . import missing_framework_error
 
 
-class Adapter:
-    """Base holding the config and the shared HTTP client every adapter needs."""
+class Adapter(ABC):
+    """Base holding the config and the shared HTTP client every adapter needs,
+    and declaring the contract every adapter shares (BG §1.8): ``extra``,
+    ``observes_last_call`` and :meth:`connection_kwargs`."""
 
     #: pip extra that provides this adapter's framework, for the curated
     #: ImportError raised on access when it is not installed (BG §1.8).
@@ -91,6 +94,13 @@ class Adapter:
             yield
         except ModuleNotFoundError as exc:
             raise missing_framework_error(self.extra, exc.name) from exc
+
+    @abstractmethod
+    def connection_kwargs(self) -> dict[str, Any]:
+        """The governed kwargs for the framework's own client constructor,
+        and the whole supported surface for a ``connection_kwargs()``-only
+        framework (BG §1.8). Returned through
+        :func:`~donkey_kit.core.masking.masked`, so printing it hides secrets."""
 
     def _own_sync_client(self) -> DonkeyClient:
         if self._owned_sync is None:
