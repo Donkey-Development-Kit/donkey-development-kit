@@ -3,7 +3,8 @@
 ``correlation_header``, ``call_id_header`` and the ``cost_*_header`` keys name
 headers the SDK writes on every request. :func:`header_name_problem` says why a
 name can't be used: it isn't a valid HTTP token, it routes or frames the
-request, it carries a credential, or the SDK already sets it. Names compare
+request, it can change the method or path, it carries a credential, the SDK or
+a framework SDK already sets it, or it doesn't start with ``X-``. Names compare
 case-insensitively.
 """
 
@@ -33,6 +34,21 @@ ROUTING_HEADERS: frozenset[str] = frozenset(
     }
 )
 ROUTING_PREFIXES: tuple[str, ...] = ("x-forwarded-",)
+
+#: Headers some servers and gateways read to change the method or the path.
+OVERRIDE_HEADERS: frozenset[str] = frozenset(
+    {
+        "x-http-method-override",
+        "x-http-method",
+        "x-method-override",
+        "x-original-url",
+        "x-original-uri",
+        "x-rewrite-url",
+    }
+)
+
+#: Prefixes of headers the framework SDKs set on their own requests.
+FRAMEWORK_PREFIXES: tuple[str, ...] = ("x-stainless-",)
 
 #: Headers that carry a credential or select one: every masked name plus the
 #: identifiers the proxy authenticates or selects a wallet by.
@@ -67,8 +83,12 @@ def header_name_problem(name: str) -> str | None:
     lowered = name.lower()
     if lowered in ROUTING_HEADERS or lowered.startswith(ROUTING_PREFIXES):
         return "it controls where the request goes or how it is framed"
+    if lowered in OVERRIDE_HEADERS:
+        return "it can change the request's method or path"
     if lowered in CREDENTIAL_HEADERS:
         return "it carries or selects credentials"
-    if lowered in SDK_HEADERS:
+    if lowered in SDK_HEADERS or lowered.startswith(FRAMEWORK_PREFIXES):
         return "the SDK already sets it"
+    if not lowered.startswith("x-"):
+        return "custom header names must start with X-"
     return None
