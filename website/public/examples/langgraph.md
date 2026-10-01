@@ -31,9 +31,9 @@ set -a; source .env.local; set +a
 `langchain>=1.0` provides `create_agent` (03, 04, 05, 09); it is not part of
 any `donkey-kit` extra.
 
-  **Async only.** The governed transport is `ChatOpenAI`'s
-  `http_async_client`, so every gateway script uses `ainvoke` / `astream`. A
-  sync `.invoke()` would bypass governance.
+  The scripts use `ainvoke` / `astream`. Sync `invoke()` / `stream()` are
+  governed the same way, through `ChatOpenAI`'s `http_client`, except in `jwt`
+  mode, where they raise `ConfigError`.
 
 ## 01 — Stock ChatOpenAI, no gateway
 
