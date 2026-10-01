@@ -97,7 +97,7 @@ def test_unknown_region_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # --- telemetry_capture_content resolution (#306, BG §1.6) -------------------
 # Safe by default: content is emitted on spans only when the developer opts in,
-# through the normal kwarg → env → toml → default precedence.
+# through the normal set-in-code → env → toml → default precedence.
 
 
 def test_capture_content_defaults_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -328,3 +328,56 @@ def test_config_overrides_lists_every_public_field_with_its_type() -> None:
 def test_with_overrides_replaces_the_named_fields() -> None:
     cfg = DonkeyConfig(timeout_s=60.0).with_overrides(timeout_s=1.0, telemetry=False)
     assert (cfg.timeout_s, cfg.telemetry) == (1.0, False)
+
+
+# --- user config file location (XDG Base Directory default, #837) ---------------------------------
+
+
+@pytest.mark.parametrize("xdg", [None, "", "relative/dir"])
+def test_user_file_defaults_to_home_config_when_xdg_unset(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, xdg: str | None
+) -> None:
+    home = tmp_path / "home"
+    (home / ".config").mkdir(parents=True)
+    user = home / ".config" / ".donkey-kit.toml"
+    user.write_text('[donkey]\norg_id = "home-org"\n')
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("ANYPOINT_ORG_ID", raising=False)
+    if xdg is None:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    else:
+        monkeypatch.setenv("XDG_CONFIG_HOME", xdg)
+
+    cfg = DonkeyConfig.from_env()
+
+    assert cfg.org_id == "home-org"
+    assert cfg.source_of("org_id").kind == "user"
+    assert cfg.source_of("org_id").path == user
+
+
+def test_user_file_reads_only_xdg_config_home_when_set(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / ".config").mkdir(parents=True)
+    (home / ".config" / ".donkey-kit.toml").write_text('[donkey]\norg_id = "home-org"\n')
+    xdg = tmp_path / "xdg"
+    xdg.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    monkeypatch.delenv("ANYPOINT_ORG_ID", raising=False)
+
+    assert DonkeyConfig.from_env().org_id is None
+
+    (xdg / ".donkey-kit.toml").write_text('[donkey]\norg_id = "xdg-org"\n')
+    cfg = DonkeyConfig.from_env()
+    assert cfg.org_id == "xdg-org"
+    assert cfg.source_of("org_id").kind == "user"

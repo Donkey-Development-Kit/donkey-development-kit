@@ -183,6 +183,7 @@ async def test_valid_custom_names_reach_the_request(
         '[donkey.cost]\nteam = "payments"\n'
     )
     monkeypatch.setenv("DONKEY_CORRELATION_HEADER", "X-Request-Trace")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://gw.example.internal/proxy/")
     seen: list[httpx.Request] = []
 
     async def _record(self: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
@@ -191,8 +192,9 @@ async def test_valid_custom_names_reach_the_request(
 
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _record)
 
+    # A model request: cost headers go on the data plane only (#833).
     async with Donkey(DonkeyConfig.from_env()) as donkey:
-        await donkey.registry._http.get("https://anypoint.mulesoft.com/exchange/api/v2/assets")
+        await donkey._http.post("https://gw.example.internal/proxy/chat/completions", json={})
 
     (request,) = seen
     assert request.headers["X-Team-Id"] == "payments"

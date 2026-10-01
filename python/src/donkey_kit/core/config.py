@@ -1,10 +1,14 @@
 """Configuration.
 
-Resolution order: explicit kwarg → env var → config file → default. The config
+Resolution order (:meth:`DonkeyConfig.from_env`): value set in code → env var →
+config file → default. ``from_env()`` takes no arguments; a value set in code is
+one changed afterwards (``with_overrides``, ``dataclasses.replace``). A
+``DonkeyConfig(...)`` built directly reads neither env nor files. The config
 file is the working directory's ``.donkey-kit.toml`` with its gitignored
 ``.donkey-kit.local.toml`` merged over it key by key (nested tables such as
 ``[donkey.cost]`` recursively; scalars and arrays replace); if neither exists,
-``$XDG_CONFIG_HOME/.donkey-kit.toml``. We never read ``.env`` implicitly — the
+``$XDG_CONFIG_HOME/.donkey-kit.toml`` (``~/.config/.donkey-kit.toml`` when
+``XDG_CONFIG_HOME`` is unset or empty). We never read ``.env`` implicitly — the
 user calls ``load_dotenv()`` themselves.
 
 Every resolved field records its source (a value changed in code afterwards
@@ -27,10 +31,10 @@ import os
 import secrets
 import sys
 import warnings
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -64,12 +68,19 @@ OnModelSubstitution = Literal["off", "raise"]
 # a wallet-backed proxy where Client ID Enforcement is disabled and the caller is
 # identified from an IdP-issued JWT validated by the JWT Validation policy, with
 # NO ``client_secret`` — the parallel ingress captured live under #372
-# (docs/verified-apis.md §2/§3). The mode is durable config even though the JWT itself is
-# not: the rotating credential enters through an ``AuthProvider`` (see
+# (docs/verified-apis.md §2/§3). ``"bearer"``: a proxy that authenticates model
+# calls on a bearer token alone — ``Authorization: Bearer <token>``, with no
+# wallet selector and no ``client_id``/``client_secret`` pair (#836). The mode is
+# durable config even though the token itself is not: in both token modes the
+# rotating credential enters through an ``AuthProvider`` (see
 # ``Donkey(llm_auth=...)``), never a config field. Inferring the mode from "no
 # client_id set" is deliberately NOT done — it would turn a typo into a silent
 # mode switch and make the per-mode missing-field report misleading (#509).
-LlmProxyAuth = Literal["client-id", "jwt"]
+LlmProxyAuth = Literal["client-id", "jwt", "bearer"]
+
+#: The auth modes whose data-plane credential is a token from the
+#: ``Donkey(llm_auth=...)`` provider, added per send by the shared async client.
+TOKEN_AUTH_MODES: frozenset[LlmProxyAuth] = frozenset({"jwt", "bearer"})
 
 # The capability :meth:`DonkeyConfig.validated` checks the config for: the
 # Anypoint control plane (registry/provisioning) or the LLM proxy (BG §1.1).
@@ -144,6 +155,33 @@ _HEADER_KEYS: tuple[tuple[str, str, str], ...] = (
 
 # Keys that should never sit in the committed project file.
 _SECRET_KEYS = ("client_secret", "llm_proxy_client_secret", "llm_proxy_key")
+
+# The fields whose values are checked on construction (#809), each with the env
+# var that sets it, for error messages.
+_CHECKED_ENV_VARS: dict[str, str] = {
+    "region": "ANYPOINT_REGION",
+    "llm_proxy_auth": "DONKEY_LLM_PROXY_AUTH",
+    "on_model_substitution": "DONKEY_ON_MODEL_SUBSTITUTION",
+    "timeout_s": "DONKEY_TIMEOUT_S",
+    "max_retries": "DONKEY_MAX_RETRIES",
+    "registry_cache_ttl_s": "DONKEY_REGISTRY_CACHE_TTL_S",
+    "telemetry": "DONKEY_TELEMETRY",
+    "telemetry_capture_content": "DONKEY_TELEMETRY_CAPTURE_CONTENT",
+    "send_cost_headers": "DONKEY_SEND_COST_HEADERS",
+}
+
+# The allowed values of each choice field.
+_CHOICES: dict[str, tuple[str, ...]] = {
+    "region": tuple(sorted(REGION_HOSTS)),
+    "llm_proxy_auth": ("client-id", "jwt", "bearer"),
+    "on_model_substitution": ("off", "raise"),
+}
+
+_BOOL_KEYS = ("telemetry", "telemetry_capture_content", "send_cost_headers")
+_TRUE_TOKENS = ("1", "true", "yes", "on")
+_FALSE_TOKENS = ("0", "false", "no", "off")
+
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
@@ -241,6 +279,8 @@ class DonkeyConfig:
     # ingress: no ``client_secret``, an IdP JWT supplied dynamically via an
     # ``AuthProvider`` (``Donkey(llm_auth=...)``), and a durable wallet-selector
     # client ID sent as the ``X-Client-Id`` header (docs/verified-apis.md §2/§3, #372).
+    # ``"bearer"`` sends only ``Authorization: Bearer <token>`` from that provider
+    # (#836).
     llm_proxy_auth: LlmProxyAuth = "client-id"  # env: DONKEY_LLM_PROXY_AUTH
     # The wallet-selector client ID sent as ``X-Client-Id`` in JWT mode — the
     # wallet's system-generated clientId (read from the omni API, see the
@@ -291,8 +331,8 @@ class DonkeyConfig:
     # gateway reads a cost-tag header (docs/verified-apis.md §3, #522), so the
     # ``donkey.cost.*`` span attributes are the only consumer, and an
     # ``enduser.id`` header would carry an end-user identifier for no reader.
-    # When enabled, the headers currently go on every request the SDK's clients
-    # send, control-plane requests included (#833).
+    # When enabled, the headers go on data-plane (model) requests only, never on
+    # a control-plane client's (#833).
     send_cost_headers: bool = False  # env: DONKEY_SEND_COST_HEADERS
 
     # --- Provenance (config resolution) ---
@@ -306,7 +346,19 @@ class DonkeyConfig:
     def __post_init__(self) -> None:
         loaded = {name: _as_loaded(name, entry) for name, entry in self._sources.items()}
         object.__setattr__(self, "_sources", loaded)
+        self._check_values()
         self._check_header_names()
+
+    def _check_values(self) -> None:
+        """Refuse out-of-range numbers, non-boolean switches and unknown choices,
+        listing every bad field in one error. Runs on every construction, so
+        :meth:`with_overrides` and ``dataclasses.replace`` re-check too (#809)."""
+        values = {key: getattr(self, key) for key in _CHECKED_ENV_VARS}
+        problems = _value_problems(
+            values, lambda key: _where(self.source_of(key), _CHECKED_ENV_VARS[key])
+        )
+        if problems:
+            raise _invalid_config(problems)
 
     def _check_header_names(self) -> None:
         """Refuse a configurable header name that isn't safe to send, or that
@@ -349,6 +401,19 @@ class DonkeyConfig:
             sources[key] = ConfigSource("default")
             return default
 
+        # Values that can't be parsed, by field: reported with the out-of-range
+        # ones below, in one error (#809).
+        problems: dict[str, str] = {}
+
+        def parse(key: str, default: _T, convert: Callable[[object], _T]) -> _T:
+            env = _CHECKED_ENV_VARS[key]
+            raw = pick(env, key, default)
+            try:
+                return convert(raw)
+            except ValueError as exc:
+                problems[key] = f"{key} is {raw!r}, set in {_where(sources[key], env)}; {exc}"
+                return default
+
         toml_cost = table.get("cost")
         for name, key, env in _COST_KEYS:
             if env in os.environ:
@@ -358,19 +423,13 @@ class DonkeyConfig:
             else:
                 sources[f"cost.{name}"] = ConfigSource("default")
 
-        region = str(pick("ANYPOINT_REGION", "region", "us"))
-        if region not in REGION_HOSTS:
-            raise ConfigError(
-                f"Unknown region {region!r}. Expected one of {sorted(REGION_HOSTS)}."
-            )
-
         values = ConfigOverrides(
             cost=_resolve_cost_tags(toml_cost),
             client_id=_opt(pick("ANYPOINT_CLIENT_ID", "client_id", None)),
             client_secret=_opt(pick("ANYPOINT_CLIENT_SECRET", "client_secret", None)),
             org_id=_opt(pick("ANYPOINT_ORG_ID", "org_id", None)),
             environment=str(pick("ANYPOINT_ENV", "environment", "Sandbox")),
-            region=cast(Region, region),
+            region=cast(Region, parse("region", "us", str)),
             base_url=_opt(pick("ANYPOINT_BASE_URL", "base_url", None)),
             llm_proxy_url=_opt(pick("DONKEY_LLM_PROXY_URL", "llm_proxy_url", None)),
             llm_proxy_client_id=_opt(
@@ -380,9 +439,7 @@ class DonkeyConfig:
                 pick("DONKEY_LLM_PROXY_CLIENT_SECRET", "llm_proxy_client_secret", None)
             ),
             llm_proxy_key=_opt(pick("DONKEY_LLM_PROXY_KEY", "llm_proxy_key", None)),
-            llm_proxy_auth=_as_llm_proxy_auth(
-                pick("DONKEY_LLM_PROXY_AUTH", "llm_proxy_auth", "client-id")
-            ),
+            llm_proxy_auth=cast(LlmProxyAuth, parse("llm_proxy_auth", "client-id", _as_token)),
             llm_proxy_wallet_client_id=_opt(
                 pick("DONKEY_LLM_PROXY_WALLET_CLIENT_ID", "llm_proxy_wallet_client_id", None)
             ),
@@ -402,22 +459,22 @@ class DonkeyConfig:
             cost_enduser_header=_opt(
                 pick("DONKEY_COST_ENDUSER_HEADER", "cost_enduser_header", None)
             ),
-            timeout_s=_as_float(pick("DONKEY_TIMEOUT_S", "timeout_s", 60.0)),
-            max_retries=_as_int(pick("DONKEY_MAX_RETRIES", "max_retries", 3)),
-            registry_cache_ttl_s=_as_int(
-                pick("DONKEY_REGISTRY_CACHE_TTL_S", "registry_cache_ttl_s", 300)
+            timeout_s=parse("timeout_s", 60.0, _as_float),
+            max_retries=parse("max_retries", 3, _as_int),
+            registry_cache_ttl_s=parse("registry_cache_ttl_s", 300, _as_int),
+            telemetry=parse("telemetry", True, _as_bool),
+            telemetry_capture_content=parse("telemetry_capture_content", False, _as_bool),
+            on_model_substitution=cast(
+                OnModelSubstitution, parse("on_model_substitution", "off", _as_token)
             ),
-            telemetry=_as_bool(pick("DONKEY_TELEMETRY", "telemetry", True)),
-            telemetry_capture_content=_as_bool(
-                pick("DONKEY_TELEMETRY_CAPTURE_CONTENT", "telemetry_capture_content", False)
-            ),
-            on_model_substitution=_as_substitution(
-                pick("DONKEY_ON_MODEL_SUBSTITUTION", "on_model_substitution", "off")
-            ),
-            send_cost_headers=_as_bool(
-                pick("DONKEY_SEND_COST_HEADERS", "send_cost_headers", False)
-            ),
+            send_cost_headers=parse("send_cost_headers", False, _as_bool),
         )
+        parsed = {k: v for k, v in values.items() if k in _CHECKED_ENV_VARS and k not in problems}
+        out_of_range = _value_problems(
+            parsed, lambda key: _where(sources[key], _CHECKED_ENV_VARS[key])
+        )
+        if problems or out_of_range:
+            raise _invalid_config([*problems.values(), *out_of_range])
         key_id = _key_id()
         loaded = {
             name: _Loaded(src, _digest(_value_at(values, name)), key_id)
@@ -507,8 +564,10 @@ class DonkeyConfig:
                         "llm_proxy_wallet_client_id (env DONKEY_LLM_PROXY_WALLET_CLIENT_ID) "
                         "— the wallet-selector X-Client-Id, required in jwt auth mode"
                     )
-            else:
-                # client-id enforcement (default): the CIE pair.
+            elif self.llm_proxy_auth == "client-id":
+                # client-id enforcement (default): the CIE pair. In bearer mode
+                # (#836) only the URL is required: the token comes from the
+                # llm_auth provider, checked where the provider is known.
                 if not self.llm_proxy_client_id:
                     missing.append("llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)")
                 if not self.llm_proxy_client_secret:
@@ -530,9 +589,9 @@ class DonkeyConfig:
         ``.local`` overlay only receives credentials read from those same files,
         unless it is a standard Anypoint control-plane host or
         ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. Loopback
-        hosts are exempt from the ``https://`` rule only. In ``jwt``
-        auth mode the JWT comes from the caller's ``AuthProvider``, never from
-        those files, so it always counts as outside them. ``code_credential``
+        hosts are exempt from the ``https://`` rule only. In ``jwt`` and
+        ``bearer`` auth modes the token comes from the caller's ``AuthProvider``,
+        never from those files, so it always counts as outside them. ``code_credential``
         names another credential supplied in code, such as the token of a
         ``Donkey(auth=...)`` provider, which counts as outside them too.
         """
@@ -547,6 +606,9 @@ class DonkeyConfig:
             if self.llm_proxy_auth == "jwt":
                 credentials = ("llm_proxy_wallet_client_id",)
                 runtime_credential = "the JWT from the llm_auth provider"
+            elif self.llm_proxy_auth == "bearer":
+                credentials = ("llm_proxy_key",)
+                runtime_credential = "the token from the llm_auth provider"
             else:
                 credentials = ("llm_proxy_client_id", "llm_proxy_client_secret", "llm_proxy_key")
         else:
@@ -558,7 +620,8 @@ class DonkeyConfig:
             return
         if need == "control_plane" and host_of(url) in STANDARD_CONTROL_PLANE_HOSTS:
             return
-        if _as_bool(os.environ.get(TRUST_PROJECT_CONFIG_ENV, "")):
+        # An unrecognised value leaves this switch off, like DONKEY_ALLOW_HTTP.
+        if os.environ.get(TRUST_PROJECT_CONFIG_ENV, "").strip().lower() in _TRUE_TOKENS:
             return
         outside = [
             f"{name} (from {self.source_of(name)})"
@@ -654,79 +717,150 @@ def _resolve_cost_tags(toml_cost: object) -> CostTags:
 
 
 def _as_int(v: object) -> int:
-    return int(str(v))
+    if not isinstance(v, bool):
+        try:
+            return int(str(v).strip())
+        except ValueError:
+            pass
+    raise ValueError("expected a whole number")
 
 
 def _as_float(v: object) -> float:
-    return float(str(v))
+    if not isinstance(v, bool):
+        try:
+            return float(str(v).strip())
+        except ValueError:
+            pass
+    raise ValueError("expected a number")
 
 
 def _as_bool(v: object) -> bool:
+    """A switch, parsed strictly: an unrecognised value such as ``"flase"`` is an
+    error, never a silent False (#809)."""
     if isinstance(v, bool):
         return v
-    return str(v).strip().lower() in ("1", "true", "yes", "on")
-
-
-def _as_substitution(v: object) -> OnModelSubstitution:
-    """Coerce and validate ``on_model_substitution`` (docs/verified-apis.md §3, #309).
-    An unknown value is a config mistake worth reporting up front — a silent
-    fall-back to ``"off"``
-    would leave a caller who typed ``"error"`` believing they had opted into
-    strictness. Validated at resolve time, like ``region``."""
     token = str(v).strip().lower()
-    if token not in ("off", "raise"):
-        raise ConfigError(
-            f"Unknown on_model_substitution {v!r}. Expected 'off' or 'raise'."
-        )
-    return cast(OnModelSubstitution, token)
+    if token in _TRUE_TOKENS:
+        return True
+    if token in _FALSE_TOKENS:
+        return False
+    raise ValueError(f"expected one of {', '.join(_TRUE_TOKENS + _FALSE_TOKENS)}")
 
 
-def _as_llm_proxy_auth(v: object) -> LlmProxyAuth:
-    """Coerce and validate ``llm_proxy_auth`` (BG §1.1, #509). An unknown value is
-    a config mistake worth reporting up front — a silent fall-back to
-    ``"client-id"`` would leave a caller who typed ``"oauth"`` believing they had
-    selected the wallet ingress. Validated at resolve time, like ``region`` and
-    ``on_model_substitution``."""
-    token = str(v).strip().lower()
-    if token not in ("client-id", "jwt"):
-        raise ConfigError(
-            f"Unknown llm_proxy_auth {v!r}. Expected 'client-id' or 'jwt'."
-        )
-    return cast(LlmProxyAuth, token)
+def missing_llm_auth_error(mode: LlmProxyAuth) -> ConfigError:
+    """The error for a token auth mode (:data:`TOKEN_AUTH_MODES`) used with no
+    ``llm_auth`` provider attached to the shared data-plane client, which is
+    also the case for the module-level factories (#509, #836)."""
+    token = "model-wallet JWT" if mode == "jwt" else "bearer token"
+    return ConfigError(
+        f"llm_proxy_auth={mode!r} requires an AuthProvider that supplies the "
+        f"{token}, but none is attached. Pass one when constructing Donkey, e.g. "
+        "`Donkey(llm_auth=StaticToken(token))` or a custom AuthProvider that "
+        "refreshes the token (see donkey_kit.core.auth). The module-level "
+        "factories have no provider; use a Donkey instance instead."
+    )
 
 
-def _load_config_files() -> tuple[dict[str, object], dict[str, ConfigSource]]:
-    """The merged ``[donkey]`` table and the source of every key in it, by
-    dotted path (``cost.team``).
+def _as_token(v: object) -> str:
+    """A choice value, case-insensitive; :func:`_value_problems` checks it."""
+    return str(v).strip().lower()
+
+
+def _value_problems(values: Mapping[str, object], where: Callable[[str], str]) -> list[str]:
+    """One line for each checked field in ``values`` that is out of range, not a
+    boolean, or not an allowed choice; ``where(key)`` says where it was set.
+
+    An unknown choice is reported, never replaced by the default: a silent
+    fall-back would leave a caller who typed ``llm_proxy_auth="oauth"`` believing
+    they had selected the wallet ingress (BG §1.1, #509), or
+    ``on_model_substitution="error"`` believing they had opted into strictness
+    (#309)."""
+    problems: list[str] = []
+
+    def bad(key: str, expected: str) -> None:
+        problems.append(f"{key} is {values[key]!r}, set in {where(key)}; expected {expected}")
+
+    for key, choices in _CHOICES.items():
+        if key in values and values[key] not in choices:
+            bad(key, "one of " + ", ".join(repr(c) for c in choices))
+    if "timeout_s" in values:
+        timeout = values["timeout_s"]
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not timeout > 0:
+            bad("timeout_s", "a number of seconds greater than 0")
+    for key in ("max_retries", "registry_cache_ttl_s"):
+        if key in values:
+            value = values[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                bad(key, "a whole number, 0 or more")
+    for key in _BOOL_KEYS:
+        if key in values and not isinstance(values[key], bool):
+            bad(key, "True or False")
+    return problems
+
+
+def _invalid_config(problems: list[str]) -> ConfigError:
+    joined = "\n  - ".join(problems)
+    return ConfigError(
+        f"Configuration is invalid:\n  - {joined}\n"
+        f"Fix each value where it is set: in code, an environment variable, or {_TOML_NAME}."
+    )
+
+
+def load_config_table(name: str) -> dict[str, object]:
+    """The merged ``[<name>]`` table from the same files, in the same order, as
+    ``[donkey]`` — so a table such as ``[targets]`` is never read from fewer
+    locations than the config it sits beside (#815)."""
+    return _load_config_files(name)[0]
+
+
+def _load_config_files(
+    name: str = "donkey",
+) -> tuple[dict[str, object], dict[str, ConfigSource]]:
+    """The merged ``[<name>]`` table (``[donkey]`` by default) and the source of
+    every key in it, by dotted path (``cost.team``).
 
     The working directory's ``.donkey-kit.local.toml`` is merged key by key over
-    its ``.donkey-kit.toml``; if neither exists, ``$XDG_CONFIG_HOME/.donkey-kit.toml``
-    is used alone. Missing files are fine; a malformed file raises, and so does
-    a working-directory file that resolves (through a link) outside it."""
+    its ``.donkey-kit.toml``; if neither exists, the user file
+    (:func:`_user_config_file`) is used alone. Missing files are fine; a
+    malformed file raises, and so does a working-directory file that resolves
+    (through a link) outside it."""
 
     cwd = Path.cwd()
     layers: list[tuple[ConfigSource, dict[str, object]]] = []
     project = cwd / _TOML_NAME
     if project.is_file():
         _require_inside(project, cwd)
-        table = _read_table(project)
-        _warn_on_secrets(project, table)
+        table = _read_table(project, name)
+        if name == "donkey":
+            _warn_on_secrets(project, table)
         layers.append((ConfigSource("project", project), table))
     local = cwd / _LOCAL_TOML_NAME
     if local.is_file():
         _require_inside(local, cwd)
-        layers.append((ConfigSource("local", local), _read_table(local)))
+        layers.append((ConfigSource("local", local), _read_table(local, name)))
     if not layers:
-        xdg = os.environ.get("XDG_CONFIG_HOME")
-        user = Path(xdg) / _TOML_NAME if xdg else None
+        user = _user_config_file()
         if user is not None and user.is_file():
-            layers.append((ConfigSource("user", user), _read_table(user)))
+            layers.append((ConfigSource("user", user), _read_table(user, name)))
 
     merged: dict[str, object] = {}
     sources: dict[str, ConfigSource] = {}
     for source, table in layers:
         _merge_table(merged, table, source, sources, prefix="")
     return merged, sources
+
+
+def _user_config_file() -> Path | None:
+    """``$XDG_CONFIG_HOME/.donkey-kit.toml``, or ``~/.config/.donkey-kit.toml``
+    when the variable is unset, empty, or relative — the XDG Base Directory
+    default (#837). ``None`` when no home directory can be determined."""
+    xdg = os.environ.get("XDG_CONFIG_HOME", "")
+    if os.path.isabs(xdg):
+        return Path(xdg) / _TOML_NAME
+    try:
+        return Path.home() / ".config" / _TOML_NAME
+    except RuntimeError:
+        return None
 
 
 def _require_inside(path: Path, cwd: Path) -> None:
@@ -765,15 +899,18 @@ def _merge_table(
             into[key] = value
 
 
-def _read_table(path: Path) -> dict[str, object]:
-    """Read the ``[donkey]`` table, keeping only keys that are real config fields."""
+def _read_table(path: Path, name: str = "donkey") -> dict[str, object]:
+    """Read the ``[<name>]`` table. For ``[donkey]``, keep only keys that are
+    real config fields."""
     try:
         data = tomllib.loads(path.read_text())
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"Malformed {path}: {exc}") from exc
-    table = data.get("donkey", {})
+    table = data.get(name, {})
     if not isinstance(table, dict):
-        raise ConfigError(f"{path}: [donkey] must be a table.")
+        raise ConfigError(f"{path}: [{name}] must be a table.")
+    if name != "donkey":
+        return table
     known = {f.name for f in fields(DonkeyConfig) if not f.name.startswith("_")}
     return {k: v for k, v in table.items() if k in known}
 

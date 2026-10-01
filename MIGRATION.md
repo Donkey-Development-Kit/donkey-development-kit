@@ -189,24 +189,20 @@ with no retry.
   ```
 
   (`cfg.with_overrides(...)` works the same way.)
-- Anthropic client or ADK's `gemini()` against a proxy that expects a plain
-  bearer token, without a wallet: there's no dedicated setting yet
-  ([#836](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/836)).
-  Add the header to the client's headers yourself, keeping the SDK's own. It is
-  static, so it isn't refreshed, and the endpoint check doesn't cover it:
+- Any client with transport injection, rotating bearer token, no wallet: use
+  `bearer` mode. Only `llm_proxy_url` is required; the token from `llm_auth` is
+  sent as `Authorization: Bearer <token>` with no `X-Client-Id` and no
+  `client_id`/`client_secret` pair, refreshed and re-sent once on a `401`, and
+  covered by the endpoint check. Like `jwt` mode it is async-only, and CrewAI,
+  which builds its own HTTP client, raises `ConfigError` in this mode:
 
-  ```python
-  # Anthropic
-  headers = donkey.anthropic.connection_kwargs()["default_headers"]
-  client = donkey.anthropic.client(
-      default_headers={**headers, "Authorization": "Bearer <token>"},
-  )
-
-  # ADK gemini(): build the model from the governed kwargs
-  kw = donkey.adk.gemini_connection_kwargs()
-  kw["client_kwargs"]["http_options"]["headers"]["Authorization"] = "Bearer <token>"
-  model = Gemini(model="gemini-2.5-flash", **kw)
+  ```diff
+  - donkey = Donkey(cfg, auth=StaticToken(token))
+  + donkey = Donkey(replace(cfg, llm_proxy_auth="bearer"), llm_auth=StaticToken(token))
   ```
+
+  This covers the Anthropic client and ADK's `gemini()`, which have no
+  OpenAI-style API-key slot.
 
 **4b. In client-id mode, a `401` from the LLM proxy is no longer retried.**
 
@@ -252,11 +248,11 @@ send_cost_headers = true
 cfg = DonkeyConfig.from_env().with_overrides(send_cost_headers=True)
 ```
 
-When they are on, the headers, including `X-Anypoint-Cost-Enduser-Id`, go on
-**every** request the SDK sends, including Anypoint control-plane requests and
-the connected-app token request. Limiting them, and the other LLM-proxy-only
-headers, to model requests is tracked in
-[#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833).
+When they are on, the headers, including `X-Anypoint-Cost-Enduser-Id`, go only
+on model requests to the LLM proxy. Anypoint control-plane requests and the
+connected-app token request carry none of them, nor the attribution or
+`x-cache-*` headers
+([#833](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833)).
 The `cost_*_header` name overrides apply as before.
 
 ### 6. `donkey doctor` output
@@ -476,16 +472,19 @@ only the package and instance name changed.
 
 ### 3. CLI
 
-```diff
-- agent-fabric validate
-- agent-fabric plan
-+ donkey validate
-+ donkey plan
+The top-level command is now `donkey`. `donkey --help` lists four commands:
+
+```bash
+donkey init      # write a commented .donkey-kit.toml from the resolved config
+donkey doctor    # diagnose config, credentials, gateway, model and budget
+donkey mock      # run the local gateway simulator
+donkey test --agent=myagent:build   # run the conformance suite against your agent
 ```
 
-All subcommands (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`,
-`status`, `init`, `publish`, `verify`) are unchanged apart from the top-level
-command name.
+The provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
+`generate`, `status`, `publish`, `verify`) are hidden from `--help`. All of
+them except `validate` exit with status 3 and a `blocked on verification`
+message.
 
 ### 4. Configuration file
 
@@ -540,7 +539,7 @@ their names:
 
 ```diff
 - pytest --fabric-conformance --fabric-agent=myagent:build
-+ pytest --donkey-conformance --donkey-agent=myagent:build
++ pytest --donkey-conformance --agent=myagent:build
 ```
 
 The pytest plugin's entry-point key is now `donkey_kit_conformance`. If you had
@@ -558,18 +557,15 @@ appearing the moment you upgrade.
 
 **What did *not* change:** the OpenTelemetry `gen_ai.*` semantic-convention
 attributes (`gen_ai.system`, `gen_ai.request.model`,
-`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, …) and any
-`mulesoft.*` attributes are untouched — they are not ours to rename. A governed
-model call still opens **one** span carrying both namespaces at once.
+`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, …) are untouched —
+they are not ours to rename. A governed model call still opens **one** span
+carrying both namespaces at once.
 
-Span names:
+Span name (the SDK emits one span, for each governed model call):
 
 | Was | Now |
 | --- | --- |
 | `fabric.llm.chat` | `donkey.llm.chat` |
-| `fabric.registry.resolve` | `donkey.registry.resolve` |
-| `fabric.tool.call` | `donkey.tool.call` |
-| `fabric.provision.apply` | `donkey.provision.apply` |
 
 Attribute keys:
 
@@ -593,5 +589,5 @@ at `donkey.*`. Queries that only use the `gen_ai.*` attributes need no change.
   header pair, streaming, and the typed rejection shapes.
 - The Anypoint CLI plugin literal `mulesoft-anypoint-cli-agent-fabric-plugin`
   and the Maven coordinate `com.mulesoft.agents:agent-fabric-transformation`.
-- The `gen_ai.*` / `mulesoft.*` OpenTelemetry attributes and `x-anypoint-*` /
+- The `gen_ai.*` OpenTelemetry attributes and `x-anypoint-*` /
   `x-correlation-id` headers.

@@ -125,5 +125,5 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   [What printed output hides](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#what-printed-output-hides).
 
 See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

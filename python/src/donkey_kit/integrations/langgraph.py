@@ -51,8 +51,8 @@ class LangGraphAdapter(Adapter):
         return masked(
             {
                 **conn,  # base_url, api_key, default_headers
-                "http_async_client": self._http_client(),  # our client, our hooks
-                "http_client": self._sync_http_client(),  # the same, for invoke()
+                "http_async_client": self.http_client(),  # our client, our hooks
+                "http_client": self.sync_http_client(),  # the same, for invoke()
                 "max_retries": 0,  # we retry in transport (BG §1.1)
                 # Target the proxy's data-plane endpoint: the OpenAI Responses API
                 # (``/responses``, docs/verified-apis.md §2) — the
