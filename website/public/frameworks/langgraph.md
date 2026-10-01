@@ -215,7 +215,15 @@ r.substituted
 `last_call` is contextvar-scoped: it is the last call **in the current task**,
 so it does not survive into graph state and does not leak back to a parent
 that gathered parallel branches (each branch runs on its own `asyncio` task
-with its own copy). Read it immediately after the call it describes. See the
+with its own copy). Read it immediately after the call it describes.
+
+LangChain sends an `ainvoke` request from a task of its own, so a model built by
+`donkey.langgraph(...)` carries a callback that brings the record back to the
+task that called `ainvoke`. A `ChatOpenAI` you build from `connection_kwargs()`
+has no such callback: after its `ainvoke` (but not `invoke` or `astream`),
+`last_call` stays `UNOBSERVED`. A batch (`abatch`, or `agenerate` with several
+inputs) runs its requests side by side, so it leaves no record in the caller
+either. See the
 [full field reference](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#routing--fallback) for every
 field.
 

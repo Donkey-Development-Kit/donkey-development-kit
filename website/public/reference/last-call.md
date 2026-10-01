@@ -4,7 +4,10 @@
 model call** in the current context. It is an immutable snapshot: every governed
 response replaces the record wholesale rather than mutating it, so a reader
 always sees one internally-consistent call. It is contextvar-scoped, so a
-fan-out of concurrent calls each reads its own record.
+fan-out of concurrent calls each reads its own record. When a framework sends a
+single call from a task of its own, as LangChain's `ainvoke` does, the
+`donkey.langgraph(...)` model still brings that call's record back to the caller
+(see [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md#which-provider-served-this)).
 
 ```python
 donkey = Donkey.from_env()
