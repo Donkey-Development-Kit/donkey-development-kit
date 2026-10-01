@@ -52,7 +52,7 @@ for quoting to a provider's support team.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id`). `None` when the gateway forwarded none. |
+| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id` / Anthropic's `request-id`). `None` when the gateway forwarded none. |
 | `api_instance_id` | `str \| None` | The API Manager instance id that served the call. |
 | `environment_id` | `str \| None` | The Anypoint environment id that served the call. |
 
@@ -88,7 +88,7 @@ Each is `None` (never `0`) when unobserved or absent.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call. |
+| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call, as the provider reports them. OpenAI's count includes `cached_tokens`. Anthropic's excludes both `cached_tokens` and `cache_write_tokens`. |
 | `output_tokens` | `int \| None` | Completion/output tokens produced (includes `reasoning_tokens`). |
 | `total_tokens` | `int \| None` | Total tokens the gateway attributed to this call. |
 | `cached_tokens` | `int \| None` | Input tokens served from the prompt cache (billed at the cached rate). |

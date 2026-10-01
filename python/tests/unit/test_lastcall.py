@@ -153,6 +153,14 @@ def test_request_id_from_azure_apim_header() -> None:
     assert LastCall.from_response(resp).request_id == "apim-xyz789"
 
 
+def test_request_id_from_anthropic_header_only() -> None:
+    # The native Format=Anthropic ingress passes Anthropic's own id through as
+    # ``request-id`` and sends no x-request-id (live capture, #827).
+    resp = httpx.Response(200, headers={"request-id": "req_011CfMnB"})
+    assert lastcall.request_id(resp) == "req_011CfMnB"
+    assert LastCall.from_response(resp).request_id == "req_011CfMnB"
+
+
 def test_request_id_prefers_x_request_id_over_provider_fallbacks() -> None:
     # OpenAI's own header wins the ordered resolution even when a provider-specific
     # id is also present, so behaviour on OpenAI/Azure routes is unchanged.
@@ -162,6 +170,7 @@ def test_request_id_prefers_x_request_id_over_provider_fallbacks() -> None:
             "x-request-id": _REQUEST_ID,
             "x-amzn-requestid": "amzn-abc",
             "apim-request-id": "apim-xyz",
+            "request-id": "req_abc",
         },
     )
     assert lastcall.request_id(resp) == _REQUEST_ID
@@ -510,6 +519,25 @@ def test_parse_usage_gemini_usage_metadata_shape() -> None:
     }
 
 
+def test_parse_usage_anthropic_messages_shape() -> None:
+    # Anthropic's flat cache counts (#827). Its input_tokens EXCLUDES the cache
+    # counts and is taken as reported; it sends no total.
+    usage = {
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 100,
+        "cache_read_input_tokens": 2000,
+        "output_tokens": 5,
+    }
+    assert parse_usage(usage) == {
+        "input_tokens": 12,
+        "output_tokens": 5,
+        "total_tokens": None,
+        "cached_tokens": 2000,
+        "cache_write_tokens": 100,
+        "reasoning_tokens": None,
+    }
+
+
 def test_parse_usage_absent_detail_fields_are_none_not_zero() -> None:
     # Only the top-level counts present: the detail fields are ABSENT, so None —
     # distinct from the fixture's present-but-zero 0 (AC2).
@@ -539,6 +567,10 @@ def test_usage_mapping_reads_both_shapes_and_rejects_others() -> None:
     assert usage_mapping({"response": {"usage": {"input_tokens": 2}}}) == {"input_tokens": 2}
     # A Gemini SSE chunk carries usageMetadata at the top level.
     assert usage_mapping({"usageMetadata": {"promptTokenCount": 3}}) == {"promptTokenCount": 3}
+    # Anthropic's message_start nests usage under `message`; message_delta is top-level.
+    assert usage_mapping({"type": "message_start", "message": {"usage": {"input_tokens": 4}}}) == {
+        "input_tokens": 4
+    }
     assert usage_mapping({"type": "response.output_text.delta"}) is None
     assert usage_mapping("not-a-dict") is None
 

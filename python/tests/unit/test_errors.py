@@ -295,6 +295,12 @@ def test_classify_request_id_from_azure_apim_header_on_a_refusal() -> None:
     assert err.request_id == "apim-req-2"
 
 
+def test_classify_request_id_from_anthropic_header_on_a_refusal() -> None:
+    # The native Format=Anthropic ingress forwards only Anthropic's `request-id` (#827).
+    err = classify(_resp(429, {"request-id": "req_anthropic-3"}))
+    assert err.request_id == "req_anthropic-3"
+
+
 def test_classify_request_id_prefers_x_request_id() -> None:
     err = classify(_resp(500, {"x-request-id": "gw-1", "x-amzn-requestid": "amzn-2"}))
     assert err.request_id == "gw-1"

@@ -80,7 +80,9 @@ if TYPE_CHECKING:
 # is no single header that is present on every route (#542):
 #   * ``x-request-id``     — OpenAI's own id (Azure OpenAI also sends it);
 #   * ``x-amzn-requestid`` — Amazon Bedrock (which sends NO ``x-request-id``);
-#   * ``apim-request-id``  — Azure OpenAI's APIM-side id.
+#   * ``apim-request-id``  — Azure OpenAI's APIM-side id;
+#   * ``request-id``       — Anthropic's own id (``req_…``) on the native
+#     ``Format=Anthropic`` ingress, which sends no ``x-request-id`` (#827).
 # So it is resolved from an ordered fallback list, failing open to ``None`` when
 # none is present (verification discipline). This is the id a provider's support
 # team needs; the gateway-side join key is instead ``x-correlation-id`` (the id
@@ -94,6 +96,7 @@ REQUEST_ID_HEADERS: tuple[str, ...] = (
     REQUEST_ID_HEADER,
     "x-amzn-requestid",
     "apim-request-id",
+    "request-id",
 )
 DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 
@@ -277,8 +280,8 @@ def is_substitution(
 def request_id(response: httpx.Response) -> str | None:
     """The upstream provider's request id for a response, resolved from the first
     present of :data:`REQUEST_ID_HEADERS` (``x-request-id``, then
-    ``x-amzn-requestid``, then ``apim-request-id``), or ``None`` when the gateway
-    passed none through (#542).
+    ``x-amzn-requestid``, then ``apim-request-id``, then Anthropic's
+    ``request-id``), or ``None`` when the gateway passed none through (#542, #827).
 
     The gateway does not mint its own per-response id; it forwards the upstream
     provider's, and the header name differs by provider — Bedrock sends only
@@ -365,6 +368,13 @@ def is_fallback(response: httpx.Response) -> bool:
 # (``promptTokenCount`` / ``candidatesTokenCount`` / ``totalTokenCount`` /
 # ``cachedContentTokenCount`` / ``thoughtsTokenCount``; LIVE, #540/#691). Gemini's
 # ``totalTokenCount`` already includes the thoughts, so it is taken as reported.
+# Anthropic's Messages API (native ``Format=Anthropic`` ingress, #827) shares the
+# Responses API's ``input_tokens`` / ``output_tokens`` keys but carries its cache
+# counts flat, as ``cache_read_input_tokens`` / ``cache_creation_input_tokens``,
+# and reports no total. Its ``input_tokens`` EXCLUDES both cache counts, while
+# OpenAI's ``input_tokens`` / ``prompt_tokens`` includes ``cached_tokens``; every
+# count is taken as reported, so a cost rollup across providers must add
+# Anthropic's cache counts back in to compare like with like.
 _USAGE_FIELDS = (
     "input_tokens",
     "output_tokens",
@@ -402,8 +412,9 @@ def parse_usage(usage: object) -> dict[str, int | None]:
 
     Handles the Responses API (``input_tokens`` / ``input_tokens_details`` /
     ``output_tokens_details``), Chat Completions (``prompt_tokens`` /
-    ``prompt_tokens_details`` / ``completion_tokens_details``) and Gemini
-    ``usageMetadata`` (flat camelCase counts) shapes. A non-dict
+    ``prompt_tokens_details`` / ``completion_tokens_details``), Gemini
+    ``usageMetadata`` (flat camelCase counts) and Anthropic Messages (flat
+    ``cache_read_input_tokens`` / ``cache_creation_input_tokens``) shapes. A non-dict
     ``usage`` (absent, ``None``, wrong type) yields all-``None`` — an absent count
     is ``None``, never ``0`` (the same honesty rule ``Budget`` applies to an
     unobserved window). Never raises (verification discipline)."""
@@ -419,6 +430,7 @@ def parse_usage(usage: object) -> dict[str, int | None]:
     input_details = _usage_details(usage, "input_tokens_details", "prompt_tokens_details")
     output_details = _usage_details(usage, "output_tokens_details", "completion_tokens_details")
     cached = _first_int(input_details, "cached_tokens")
+    cache_write = _first_int(input_details, "cache_write_tokens")
     reasoning = _first_int(output_details, "reasoning_tokens")
     return {
         "input_tokens": _first_int(usage, "input_tokens", "prompt_tokens", "promptTokenCount"),
@@ -428,8 +440,10 @@ def parse_usage(usage: object) -> dict[str, int | None]:
         "total_tokens": _first_int(usage, "total_tokens", "totalTokenCount"),
         "cached_tokens": cached
         if cached is not None
-        else _first_int(usage, "cachedContentTokenCount"),
-        "cache_write_tokens": _first_int(input_details, "cache_write_tokens"),
+        else _first_int(usage, "cachedContentTokenCount", "cache_read_input_tokens"),
+        "cache_write_tokens": cache_write
+        if cache_write is not None
+        else _first_int(usage, "cache_creation_input_tokens"),
         "reasoning_tokens": reasoning
         if reasoning is not None
         else _first_int(usage, "thoughtsTokenCount"),
@@ -448,13 +462,17 @@ def usage_mapping(obj: object) -> dict[str, object] | None:
 
     Handles Chat Completions (top-level ``usage``), the Responses API (``usage``
     nested under ``response``, as the terminal ``response.completed`` event
-    carries it) and Gemini (top-level ``usageMetadata`` on each chunk). Feeds the
-    streaming scanner, which then :func:`parse_usage` it."""
+    carries it), Gemini (top-level ``usageMetadata`` on each chunk) and Anthropic
+    Messages (``usage`` nested under ``message`` on ``message_start`` — the only
+    event carrying ``input_tokens`` — then top-level on ``message_delta``, #827).
+    Feeds the streaming scanner, which then :func:`parse_usage` it."""
     if not isinstance(obj, dict):
         return None
     usage = _body_usage(obj)
-    if not isinstance(usage, dict):
-        nested = obj.get("response")
+    for key in ("response", "message"):
+        if isinstance(usage, dict):
+            break
+        nested = obj.get(key)
         usage = nested.get("usage") if isinstance(nested, dict) else None
     return usage if isinstance(usage, dict) else None
 
@@ -490,7 +508,8 @@ class LastCall:
 
     status: LastCallStatus
     #: The upstream provider's own request id, passed through by the gateway
-    #: (``x-request-id`` / ``x-amzn-requestid`` / ``apim-request-id``, #542) —
+    #: (``x-request-id`` / ``x-amzn-requestid`` / ``apim-request-id`` /
+    #: ``request-id``, #542, #827) —
     #: quote it to the provider's support team. ``None`` when the gateway forwarded
     #: none. Mirrors :attr:`DonkeyError.request_id` on the refusal path; the
     #: gateway-side join key is instead the run ``correlation_id``.
@@ -530,7 +549,9 @@ class LastCall:
     # --- per-call usage token counts (#307), from the response BODY's ``usage``.
     # ``None`` (never ``0``) when unobserved or absent; on a stream they land once
     # the terminal SSE event is scanned (:func:`observe_usage`), not at record time.
-    #: Prompt/input tokens billed for this call.
+    #: Prompt/input tokens billed for this call. As the provider reports it:
+    #: OpenAI's count includes ``cached_tokens``, Anthropic's excludes both
+    #: ``cached_tokens`` and ``cache_write_tokens`` (#827).
     input_tokens: int | None = None
     #: Completion/output tokens produced by this call (includes ``reasoning_tokens``).
     output_tokens: int | None = None

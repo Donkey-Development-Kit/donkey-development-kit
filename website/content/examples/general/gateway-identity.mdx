@@ -206,7 +206,8 @@ except Exception as err:
   through the SDK's transport.
 - **`request_id` is the upstream provider's id, passed through by the
   gateway** — `x-request-id` for OpenAI, `x-amzn-requestid` for Amazon Bedrock,
-  `apim-request-id` for Azure OpenAI. Quote it to the provider's support team.
+  `apim-request-id` for Azure OpenAI, `request-id` for a native Anthropic
+  proxy. Quote it to the provider's support team.
   It is the same field `classify()` puts on a refusal, now present on a 200 too,
   and `None` on a route whose provider forwards no id.
 - **Absent counts are `None`, never `0`.** `cached_tokens` are billed at the
