@@ -855,9 +855,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 | CrewAI | ✅ (`extra_headers`) | ❌ | CrewAI's native OpenAI provider builds its own HTTP client: correlation is per client and `donkey.last_call` is not populated. An `interceptor` keeps credentials to checked endpoints. |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
-attached only by the SDK's shared async client. CrewAI sends `X-Client-Id` but
-no JWT, so a wallet proxy answers `401`. Sync calls such as LangGraph's
-`invoke()` raise `ConfigError` instead of sending. See the
+attached only by the SDK's shared async client. CrewAI can't carry it, so its
+`llm()` and `connection_kwargs()` raise `ConfigError` in `jwt` mode. Sync calls
+such as LangGraph's `invoke()` also raise `ConfigError` instead of sending. See the
 [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
@@ -2108,8 +2108,10 @@ A `base_url` / `api_base` passed to `llm()` must pass the
   correlation ID bound by `donkey.run()` doesn't reach the request. The auth
   and attribution headers are still sent on every request. The conformance
   suite checks this as a documented behaviour.
-- **No JWT in `jwt` mode.** The JWT is added only by the SDK's shared client,
-  so a wallet proxy answers `401`; see the
+- **Not available in `jwt` mode.** The JWT is added only by the SDK's shared
+  client, which CrewAI doesn't use, so `llm()` and `connection_kwargs()` raise
+  `ConfigError` instead of sending a request the proxy would answer with
+  `401`; see the
   [`jwt` mode note](https://donkey-development-kit.github.io/donkey-development-kit/reference/configuration.md#jwt--model-wallet-auth-mode).
 - **Printing the model shows the API key.** `OpenAICompletion`'s own `repr()` /
   `str()` include `api_key`. Don't print or log it.
@@ -9242,17 +9244,18 @@ donkey = Donkey(
   `complete()`, go through the blocking client, so they raise the same
   `ConfigError` as `sync=True` before sending anything.
 
-  These send **no JWT**, so a wallet proxy answers `401`:
+  These forms could not send the JWT, so in `jwt` mode they raise
+  `ConfigError` before any request:
 
-  - CrewAI, which gets only a header snapshot: its `Authorization` header
-    carries `llm_proxy_key` or the `client-id-enforced` placeholder;
-  - the module-level factories (for example
-    `from donkey_kit.integrations.langgraph import chat_model`), which have no
-    `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.
+  - CrewAI's `llm()` and `connection_kwargs()`. CrewAI builds its own HTTP
+    client from a header snapshot, so the per-request JWT can't reach it;
+  - any adapter on a `Donkey` without `llm_auth`, and the module-level
+    factories (for example
+    `from donkey_kit.integrations.langgraph import chat_model`), whose
+    env-configured default runtime has no `llm_auth`. Use
+    `Donkey(llm_auth=…)` and its adapters in `jwt` mode.
 
   See [Injection depth](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md#injection-depth-differs-by-framework).
-  Making these forms raise `ConfigError` in `jwt` mode is tracked in
-  [#835](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/835).
 
 ### Auth providers
 
