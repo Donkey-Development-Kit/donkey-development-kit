@@ -107,7 +107,9 @@ class ConfigError(DonkeyError):
     """Configuration is missing or invalid, or an endpoint may not receive the
     credentials that would be sent to it (see ``DonkeyConfig.check_endpoints``).
     Raised locally before any request; reports ALL missing fields at once
-    (config resolution)."""
+    (config resolution). The transport also raises it, with its own
+    remediation, for a send on a closed client or from a closed event loop
+    (#813)."""
 
     remediation: str = (
         "Fix the configuration the message names — set each missing or invalid "
