@@ -183,6 +183,21 @@ jobs:
           tests/unit/test_adapter_ergonomics.py
           tests/unit/test_framework_redirects.py
 
+  agent-framework-middleware:
+    # #739: policy_middleware() is only meaningful on a real Agent Framework
+    # Agent, which no other job installs. Run its tests with the extra present.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,llm,agent_framework]"
+      - run: >-
+          pytest -q
+          tests/unit/test_agent_framework_policy_middleware.py
+          tests/unit/test_adapter_ergonomics.py
+
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The
     # `benchmark`-marked test is deselected from the default run (addopts), so it

@@ -28,13 +28,13 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 from . import _verify
 from .lastcall import request_id as read_request_id
 
 if TYPE_CHECKING:
     from datetime import datetime
-
-    import httpx
 
 
 class DonkeyError(Exception):
@@ -913,10 +913,12 @@ def _int_or_none(value: Any) -> int | None:
 def _parse_json(response: httpx.Response) -> Any:
     """The response's parsed JSON body (of any shape — object, list, scalar), or
     ``None`` when the body is absent or not JSON. Never raises on the caller's
-    request path (verification discipline)."""
+    request path (verification discipline). An unread streamed body
+    (``ResponseNotRead``) is "absent" too: the transport reads a streamed refusal
+    before classifying it (#805), so this only guards a direct caller."""
     try:
         return response.json()
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, httpx.ResponseNotRead):
         return None
 
 
