@@ -189,8 +189,13 @@ ignore_missing_imports = true
 # The httpx2 bridge subclasses httpx2's transport and byte-stream bases. When
 # httpx2 is absent those bases are Any, so strict's disallow_subclassing_any would
 # fail the base typecheck; an inline ignore would go stale whenever it is present.
-# The CrewAI adapter's interceptor subclasses crewai's BaseInterceptor, likewise.
-module = ["donkey_kit.integrations._httpx2_bridge", "donkey_kit.integrations.crewai"]
+# The CrewAI adapter's interceptor subclasses crewai's BaseInterceptor, likewise,
+# and the LangGraph adapter's last_call handler langchain_core's BaseCallbackHandler.
+module = [
+    "donkey_kit.integrations._httpx2_bridge",
+    "donkey_kit.integrations.crewai",
+    "donkey_kit.integrations.langgraph",
+]
 disallow_subclassing_any = false
 
 [tool.pytest.ini_options]
