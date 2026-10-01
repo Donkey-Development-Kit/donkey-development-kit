@@ -192,7 +192,11 @@ usually repeats the gateway's text. So when the SDK maps a framework error to
 a typed one, as LangGraph's
 [`typed_refusals()`](/frameworks/langgraph#typed-refusals-inside-a-node) does,
 it raises it without a chained cause: `exc.__cause__` is `None`, and the
-framework error is on `exc.framework_error` (`None` when there was none).
+framework error is on `exc.framework_error` (`None` when there was none). No
+frame in the traceback holds the framework error as a local variable, so error
+reporters that print frame locals (Sentry, `pytest -l`) don't show it either.
+Python still keeps it on the suppressed `exc.__context__`, so treat
+`framework_error` and `__context__` like `gateway_message`.
 
 This applies to policy refusals. `UpstreamRequestError` messages include the
 upstream provider's own error text, which can quote parts of your request. For

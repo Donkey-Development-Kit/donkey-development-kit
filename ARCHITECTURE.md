@@ -136,8 +136,9 @@ framework that may not be installed.
   process keeps its URL sources but treats its credentials as set in code. A
   working-directory config file that resolves outside the directory is
   refused. `DonkeyConfig.__post_init__` checks the configurable header names
-  against `core/header_names.py` (routing, framing, credential and SDK-set
-  headers, and collisions).
+  against `core/header_names.py`: a name must start with `X-` and must not be a
+  routing, framing, method/path-override, credential, SDK-set or framework-set
+  header, or collide with another configured name.
 - **Printed output.** `core/masking.py` holds the one list of credential key
   names (`SENSITIVE_NAMES`). Every `connection_kwargs()` and
   `proxy_auth_headers()` returns a `MaskedDict` that prints `'***'` for them;

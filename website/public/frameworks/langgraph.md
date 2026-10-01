@@ -158,7 +158,8 @@ The typed error is raised without a chained cause, because LangChain's error
 message repeats the gateway's rejection text, which for a PII block includes
 the flagged values, and a traceback prints every chained exception. The
 original LangChain error is on `err.framework_error`; `err.__cause__` is
-`None`.
+`None`. No frame in the traceback holds it as a local variable, so reporters
+that print frame locals (Sentry, `pytest -l`) don't show it.
 
 ### `interrupt()` composes with typed refusals
 

@@ -14,7 +14,8 @@ proxy, with the chat-model flag a chat-only gateway requires already set.
 **What you get**
 
 - A native `llama_index.llms.openai_like.OpenAILike`.
-- `is_chat_model=True` and `is_function_calling_model=True` set for you.
+- `is_chat_model=True` and `is_function_calling_model=True` set for you, and
+  `max_retries=0` so `OpenAILike` doesn't retry on top of the SDK's transport.
 - Supported at `connection_kwargs()`. Sync and async calls send through the
   SDK's HTTP clients (`http_client`, `async_http_client`), so per-run
   correlation, retries, spans and `donkey.last_call` apply (see
@@ -95,6 +96,7 @@ model = OpenAILike(
     is_function_calling_model=True,
     http_client=...,                  # the SDK's blocking client
     async_http_client=...,            # the SDK's async client
+    max_retries=0,                    # the SDK's transport retries
 )
 ```
 

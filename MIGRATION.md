@@ -117,6 +117,12 @@ but its credentials count as set in code. So a URL you override in code is no
 longer bound to the file's credentials, and a secret you override in code no
 longer passes as a file credential.
 
+This matters if you hand a config to a worker in another process
+(`multiprocessing` with the spawn start method, Celery, Ray). A worker that gets
+a URL from `.donkey-kit.toml` and credentials from `.donkey-kit.local.toml`
+refuses to send them. Call `DonkeyConfig.from_env()` in the worker instead, or
+set the URL in the environment.
+
 ### 3. `.donkey-kit.local.toml` is now read
 
 **Who:** anyone with a `.donkey-kit.local.toml` in the working directory. The
@@ -270,12 +276,19 @@ If you parse `donkey doctor --json`, expect the new entries named `llm endpoint`
 Reference: [Header names you can't use](website/content/reference/configuration.mdx#header-names-you-cant-use).
 
 **Who:** anyone who sets `correlation_header`, `call_id_header` or a
-`cost_*_header` key (in the environment, a file or code) to a name that routes
-or frames the request (`Host`, `X-Forwarded-*`, `Content-Length`, …), carries
-credentials (`Authorization`, `Cookie`, `x-api-key`, `client_secret`, …), is
-already set by the SDK (`Content-Type`, `User-Agent`, the attribution and
-`x-cache-*` headers, …), is already used by another of these keys, or isn't a
-valid header name. Names compare case-insensitively.
+`cost_*_header` key (in the environment, a file or code) to a name that:
+
+- doesn't start with `X-` (for example `Team` or `Origin`);
+- routes or frames the request (`Host`, `X-Forwarded-*`, `Content-Length`, …);
+- can change the request's method or path (`X-HTTP-Method-Override`,
+  `X-Original-URL`, `X-Rewrite-URL`, …);
+- carries credentials (`Authorization`, `Cookie`, `x-api-key`, `client_secret`, …);
+- is already set by the SDK or a framework's SDK (`Content-Type`, `User-Agent`,
+  the attribution, `x-cache-*` and `x-stainless-*` headers, …);
+- is already used by another of these keys;
+- or isn't a valid header name.
+
+Names compare case-insensitively. All the default names start with `X-`.
 
 **Symptom:** building the config raises, whichever way it is built:
 
@@ -283,7 +296,7 @@ valid header name. Names compare case-insensitively.
 ConfigError: cost_team_header names the header 'Host', which can't be used: it controls where the request goes or how it is framed. cost_team_header is set in the environment (DONKEY_COST_TEAM_HEADER). Choose a different header name.
 ```
 
-**Fix:** choose a different header name.
+**Fix:** choose a different header name that starts with `X-`.
 
 ### 8. Config files that link outside the working directory are refused
 
@@ -394,6 +407,12 @@ built from the kwargs print credentials in their own `repr()`: LangGraph's
 **Symptom:** `exc.__cause__` is `None`. The LangChain error repeats the
 gateway's rejection text (for a PII block, the flagged values), and a traceback
 prints every chained exception.
+
+`typed_refusals()` is now a class-based context manager, so no frame in the
+error's traceback holds the LangChain error as a local variable either. Error
+reporters that print frame locals (Sentry, `pytest -l`) don't show it. The
+error itself is still on `exc.framework_error`, and Python keeps it on the
+suppressed `exc.__context__`; both hold the gateway's text.
 
 **Fix:** read `exc.framework_error` for the original LangChain error. See
 [Refusal messages don't repeat blocked content](website/content/errors.mdx#refusal-messages-dont-repeat-blocked-content).

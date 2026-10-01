@@ -149,15 +149,18 @@ exceptions regardless of the header names. See
 `correlation_header`, `call_id_header` and the four `cost_*_header` keys
 ([Cost-attribution tags](#cost-attribution-tags)) are checked whenever a config
 is built, whether from the environment, a file or code. Names compare
-case-insensitively. A key can't name:
+case-insensitively. A name must start with `X-` (all the defaults do), and a
+key can't name:
 
 | Header names | Why |
 |---|---|
 | `Host`, `Forwarded`, any `X-Forwarded-*`, `X-Real-IP`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Upgrade`, `TE`, `Trailer`, `Expect` | They decide where the request goes or how its body is framed. |
+| `X-HTTP-Method-Override`, `X-HTTP-Method`, `X-Method-Override`, `X-Original-URL`, `X-Original-URI`, `X-Rewrite-URL` | Some servers and gateways read them to change the request's method or path. |
 | `Authorization`, `Proxy-Authorization`, `Cookie`, `x-api-key`, `api-key`, `apikey`, `api_key`, `x-goog-api-key`, `client_id`, `client_secret`, `X-Client-Id` | They carry or select credentials. |
-| `X-Anypoint-Client-Application`, `X-Anypoint-Business-Group`, the `x-cache-*` headers, `Content-Type`, `Accept`, `Accept-Encoding`, `User-Agent` | The SDK or its HTTP client already sets them. |
+| `X-Anypoint-Client-Application`, `X-Anypoint-Business-Group`, the `x-cache-*` headers, any `x-stainless-*`, `Content-Type`, `Accept`, `Accept-Encoding`, `User-Agent` | The SDK, its HTTP client or a framework's SDK already sets them. |
 | A name another of these keys already uses, including its default | Two values would share one header. |
 | Anything that isn't a valid HTTP header name (for example, one with a space) | It can't be sent. |
+| Any other name that doesn't start with `X-` (for example `Team`, `Origin`, `Range`) | Standard and framework headers (`Content-Encoding`, `Via`, `anthropic-version`, …) change how the request is handled. |
 
 ```text
 ConfigError: cost_team_header names the header 'Host', which can't be used: it controls where the request goes or how it is framed. cost_team_header is set in the environment (DONKEY_COST_TEAM_HEADER). Choose a different header name.
@@ -404,8 +407,11 @@ A value counts as set in code once it differs from the value that was loaded,
 whichever way you changed it; a copy that keeps the value keeps its source.
 That includes `DonkeyConfig(**dataclasses.asdict(cfg))` in the same process. A
 config rebuilt in another process, for example from a serialized `asdict()`,
-keeps where its URLs came from, but its credentials count as set in code.
-`DonkeyConfig(...)` built directly reads no environment variable and no file:
+keeps where its URLs came from, but its credentials count as set in code. So a
+worker in another process (`multiprocessing` spawn, Celery, Ray) that receives
+a config with a URL from `.donkey-kit.toml` and credentials from
+`.donkey-kit.local.toml` refuses to send them; call `DonkeyConfig.from_env()` in
+the worker instead. `DonkeyConfig(...)` built directly reads no environment variable and no file:
 every value is the one you pass or the field default. `donkey.run(...)` cost
 tags apply on top of all of this for their block. `DONKEY_TRUST_PROJECT_CONFIG`
 and `DONKEY_ALLOW_HTTP` are read from the environment only.
