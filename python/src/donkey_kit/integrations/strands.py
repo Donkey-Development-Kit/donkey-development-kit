@@ -35,8 +35,6 @@ if TYPE_CHECKING:
 
 
 class StrandsAdapter(Adapter):
-    extra = "strands"
-
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIModel(model_id=…, **kwargs)`` you build
         yourself. Strands forwards ``client_args`` to the underlying OpenAI

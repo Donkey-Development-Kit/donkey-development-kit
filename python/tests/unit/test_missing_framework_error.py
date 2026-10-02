@@ -211,3 +211,20 @@ def test_access_fails_when_a_probed_dependency_is_missing(
         getattr(donkey, attr)
     _assert_curated(exc, attr)
     assert f"(no module named {dependency!r})" in str(exc.value)
+
+
+@pytest.mark.parametrize("attr", sorted(ADAPTERS))
+def test_adapter_extra_is_read_from_the_roster(attr: str) -> None:
+    # The pip extra is declared once, on ADAPTERS; the adapter reads it (#720).
+    spec = ADAPTERS[attr]
+    cls = getattr(importlib.import_module(spec.module, "donkey_kit.integrations"), spec.cls)
+    assert "extra" not in vars(cls)
+    assert object.__new__(cls).extra == spec.extra
+
+
+def test_an_adapter_off_the_roster_has_no_extra() -> None:
+    class Unlisted(_base.Adapter):
+        def connection_kwargs(self) -> dict[str, Any]:
+            return {}
+
+    assert object.__new__(Unlisted).extra == ""

@@ -51,7 +51,6 @@ _CHAT_CLIENT_CLASSES: dict[str, str] = {
 
 
 class AgentFrameworkAdapter(Adapter):
-    extra = "agent_framework"
     # Kept False while the conformance exemption table lists Agent Framework; its
     # calls now go through the shared client (async_client).
     observes_last_call = False

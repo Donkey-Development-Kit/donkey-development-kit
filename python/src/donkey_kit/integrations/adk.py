@@ -43,7 +43,6 @@ if TYPE_CHECKING:
 
 
 class ADKAdapter(Adapter):
-    extra = "adk"
     # Kept False for ``model()`` while the conformance kit lists its
     # correlation_id_propagated exemption (#362), although its calls now go
     # through the shared client. ``gemini()`` observes (#691), recorded per
