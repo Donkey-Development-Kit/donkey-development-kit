@@ -127,6 +127,8 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
     "import-linter>=2.0",
+    # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
+    "vulture>=2.11",
     # stubs so mypy --strict typechecks the CLI/provisioning yaml handling.
     "types-PyYAML>=6.0",
     "typer>=0.15.4",
@@ -235,6 +237,13 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).
 "src/donkey_kit/provisioning/cli.py" = ["B008"]
+
+# --- vulture: dead-code check in CI (#720) ---
+# Reads src/ only, so code that only the tests use is reported as dead; names
+# used from outside src/ are listed in vulture_whitelist.py.
+[tool.vulture]
+paths = ["src", "vulture_whitelist.py"]
+min_confidence = 60
 
 # --- import-linter: enforce the layered architecture rule in CI, from day one ---
 [tool.importlinter]

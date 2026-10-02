@@ -1,6 +1,10 @@
 """Centralized home for every gateway or control-plane value the verification
 discipline governs: endpoint paths, header names, and hosts.
 
+Header-name strings are defined once, in ``core/_wire``; this module binds the
+governed ones to their verification status (and wraps the unconfirmed ones in
+:class:`Unverified`), so callers keep reading them from here.
+
 Working instruction #2: *never invent an endpoint, header name, or class name.*
 
 Each value here is one of:
@@ -27,6 +31,8 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
+
+from . import _wire
 
 
 class UnverifiedValueWarning(UserWarning):
@@ -77,12 +83,12 @@ def blocked(what: str) -> NotImplementedError:
 # These names are GUESSES. The gateway may read entirely different header names.
 ATTRIBUTION_APP_HEADER = Unverified(
     key="attribution.application_header",
-    placeholder="X-Anypoint-Client-Application",
+    placeholder=_wire.ATTRIBUTION_APP_HEADER_PLACEHOLDER,
     doc_ref="docs/verified-apis.md §3",
 )
 ATTRIBUTION_BUSINESS_GROUP_HEADER = Unverified(
     key="attribution.business_group_header",
-    placeholder="X-Anypoint-Business-Group",
+    placeholder=_wire.ATTRIBUTION_BUSINESS_GROUP_HEADER_PLACEHOLDER,
     doc_ref="docs/verified-apis.md §3",
 )
 
@@ -107,10 +113,10 @@ ATTRIBUTION_BUSINESS_GROUP_HEADER = Unverified(
 # caller opts in with ``send_cost_headers`` — by default nothing is sent to a
 # gateway that reads nothing — so each is a plain constant: there is nothing
 # left to discover, and a warning would lie by silence.
-COST_TEAM_HEADER = "X-Anypoint-Cost-Team"
-COST_PROJECT_HEADER = "X-Anypoint-Cost-Project"
-COST_ENV_HEADER = "X-Anypoint-Cost-Env"
-COST_ENDUSER_HEADER = "X-Anypoint-Cost-Enduser-Id"
+COST_TEAM_HEADER = _wire.COST_TEAM_HEADER
+COST_PROJECT_HEADER = _wire.COST_PROJECT_HEADER
+COST_ENV_HEADER = _wire.COST_ENV_HEADER
+COST_ENDUSER_HEADER = _wire.COST_ENDUSER_HEADER
 
 # --- Correlation / call-id request headers (BG §1.1, #195) ------------------
 # VERIFIED (LIVE 2026-09-22, #522) against the deployed Omni Gateway proxy
@@ -131,8 +137,8 @@ COST_ENDUSER_HEADER = "X-Anypoint-Cost-Enduser-Id"
 # confirmed read by the gateway, and the call-id name is confirmed to be a
 # client-side construct the gateway ignores — neither is an open worklist item,
 # and a warning would lie by silence. See docs/verified-apis.md §3.
-CORRELATION_ID_HEADER = "X-Correlation-Id"
-CALL_ID_HEADER = "X-Donkey-Request-Id"
+CORRELATION_ID_HEADER = _wire.CORRELATION_ID_HEADER
+CALL_ID_HEADER = _wire.CALL_ID_HEADER
 
 # --- Semantic caching (docs/verified-apis.md §2 "Semantic caching", #587/#588) —
 # VERIFIED (LIVE 2026-09-24) ------------
@@ -147,19 +153,19 @@ CALL_ID_HEADER = "X-Donkey-Request-Id"
 # transport injects them lowercase as written. Plain constants because the names
 # are confirmed live and there is nothing left to discover — a warning would lie
 # by silence.
-CACHE_SKIP_HEADER = "x-cache-skip"
-CACHE_NO_STORE_HEADER = "x-cache-no-store"
-CACHE_TTL_HEADER = "x-cache-ttl"
-CACHE_THRESHOLD_HEADER = "x-cache-threshold"
-CACHE_PRINCIPAL_ID_HEADER = "x-cache-principal-id"
+CACHE_SKIP_HEADER = _wire.CACHE_SKIP_HEADER
+CACHE_NO_STORE_HEADER = _wire.CACHE_NO_STORE_HEADER
+CACHE_TTL_HEADER = _wire.CACHE_TTL_HEADER
+CACHE_THRESHOLD_HEADER = _wire.CACHE_THRESHOLD_HEADER
+CACHE_PRINCIPAL_ID_HEADER = _wire.CACHE_PRINCIPAL_ID_HEADER
 # The two RESPONSE signal headers the gateway states its outcome on: the status
 # (``hit`` / ``miss`` / ``bypass`` / ``no-store``, present on every cached route)
 # and, on a ``hit`` only, the similarity score (four-dp string, e.g. ``0.9518``).
 # Parsed onto ``donkey.last_call`` — plain confirmed names, the lastcall
 # response-header style (not sent, so not overridable), living here beside the
 # request names so the whole caching header contract has one home (#587).
-SEMANTIC_CACHE_STATUS_HEADER = "x-semantic-cache-status"
-SEMANTIC_CACHE_SCORE_HEADER = "x-semantic-cache-score"
+SEMANTIC_CACHE_STATUS_HEADER = _wire.SEMANTIC_CACHE_STATUS_HEADER
+SEMANTIC_CACHE_SCORE_HEADER = _wire.SEMANTIC_CACHE_SCORE_HEADER
 
 # --- Control-plane token endpoint (docs/verified-apis.md §1) ----------------
 # Path is appended to the region base URL. VERIFIED (docs/verified-apis.md §12.1) from
@@ -173,8 +179,8 @@ OAUTH_TOKEN_PATH = "/accounts/api/v2/oauth2/token"
 # `client_id` + `client_secret` REQUEST-header pair (client-id-enforcement
 # 1.3.3), NOT a bearer token. This pair IS the per-agent attribution unit. These
 # are confirmed header names, not placeholders — see docs/verified-apis.md §2/§3.
-LLM_PROXY_CLIENT_ID_HEADER = "client_id"
-LLM_PROXY_CLIENT_SECRET_HEADER = "client_secret"
+LLM_PROXY_CLIENT_ID_HEADER = _wire.LLM_PROXY_CLIENT_ID_HEADER
+LLM_PROXY_CLIENT_SECRET_HEADER = _wire.LLM_PROXY_CLIENT_SECRET_HEADER
 
 # --- LLM proxy model-wallet ingress (docs/verified-apis.md §2/§3, #372) —
 # VERIFIED (LIVE 2026-09-21) ------------
@@ -186,17 +192,12 @@ LLM_PROXY_CLIENT_SECRET_HEADER = "client_secret"
 # Sandbox), fixtures in tests/fixtures/anypoint/model_wallet/. The transport
 # emits this path when ``llm_proxy_auth = "jwt"`` (#509).
 #   * the wallet-selector REQUEST header (value = the wallet's generated clientId);
-LLM_PROXY_WALLET_CLIENT_ID_HEADER = "X-Client-Id"
+LLM_PROXY_WALLET_CLIENT_ID_HEADER = _wire.LLM_PROXY_WALLET_CLIENT_ID_HEADER
 #   * the JWT rides as `Authorization: Bearer <JWT>` (jwtOrigin
 #     httpBearerAuthenticationHeader); Bearer was an assumption in the doc read,
 #     confirmed live;
-LLM_PROXY_WALLET_JWT_HEADER = "Authorization"
-LLM_PROXY_WALLET_JWT_SCHEME = "Bearer"
-#   * the JWT claim the LLM Proxy Core Policy reads as the caller id, published by
-#     JWT Validation and read via `#[authentication.properties.claims.client_id]`;
-LLM_PROXY_WALLET_JWT_CLIENT_ID_CLAIM = "client_id"
-#   * the response header the gateway echoes naming the matched wallet.
-LLM_PROXY_WALLET_SELECTED_HEADER = "x-model-wallet-selected"
+LLM_PROXY_WALLET_JWT_HEADER = _wire.LLM_PROXY_WALLET_JWT_HEADER
+LLM_PROXY_WALLET_JWT_SCHEME = _wire.LLM_PROXY_WALLET_JWT_SCHEME
 
 # --- Region host map (docs/verified-apis.md §1) ------------------------------
 # The US host is VERIFIED (CLI) 2026-08-28. The eu/ca/jp hosts are UNVERIFIED:

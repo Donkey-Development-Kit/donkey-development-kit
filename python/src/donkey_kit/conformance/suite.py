@@ -54,7 +54,7 @@ __all__ = [
 ]
 
 # A distinctive, deterministic id the correlation scenario binds via
-# ``run_context`` and then greps for in the agent's logs. Fixed rather than
+# ``donkey.run()`` and then greps for in the agent's logs. Fixed rather than
 # random so the check never flakes and the value is easy to spot in output.
 PROBE_CORRELATION_ID = "donkey-conformance-correlation-probe"
 

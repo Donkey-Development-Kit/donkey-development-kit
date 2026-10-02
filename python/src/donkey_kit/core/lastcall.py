@@ -70,6 +70,18 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from ._verify import SEMANTIC_CACHE_SCORE_HEADER, SEMANTIC_CACHE_STATUS_HEADER
+from ._wire import (
+    AMZN_REQUEST_ID_HEADER,
+    ANTHROPIC_REQUEST_ID_HEADER,
+    APIM_REQUEST_ID_HEADER,
+    DECORATOR_OPERATION_HEADER,
+    LLM_MODEL_HEADER,
+    LLM_PROVIDER_HEADER,
+    REQUEST_ID_HEADER,
+    ROUTING_FALLBACK_HEADER,
+    ROUTING_TYPE_HEADER,
+    SEMANTIC_ROUTING_SUCCESS_HEADER,
+)
 
 if TYPE_CHECKING:
     import httpx
@@ -91,14 +103,12 @@ if TYPE_CHECKING:
 # success and refusal paths report it on identical terms.
 # ``x-envoy-decorator-operation`` encodes the API-instance id and environment id
 # as ``api-instance-<instanceId>.<environmentId>.svc``.
-REQUEST_ID_HEADER = "x-request-id"
 REQUEST_ID_HEADERS: tuple[str, ...] = (
     REQUEST_ID_HEADER,
-    "x-amzn-requestid",
-    "apim-request-id",
-    "request-id",
+    AMZN_REQUEST_ID_HEADER,
+    APIM_REQUEST_ID_HEADER,
+    ANTHROPIC_REQUEST_ID_HEADER,
 )
-DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 
 # docs/verified-apis.md §3 "Gateway identity on response"
 # (``responses.success.headers.txt``). The gateway states what it did
@@ -107,11 +117,7 @@ DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 # and the routing strategy. All four are consumed here on the success path
 # (#309) — a substitution the developer did not choose is otherwise invisible.
 # ``LLM_PROVIDER_HEADER`` is also the SOLE source of ``gen_ai.system`` on the
-# span, so ``core/transport.py`` imports it from here (one definition, verification discipline).
-ROUTING_TYPE_HEADER = "x-llm-proxy-routing-type"
-ROUTING_FALLBACK_HEADER = "x-llm-proxy-routing-fallback"
-LLM_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
-LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
+# span. The names are defined in ``core/_wire``.
 
 # docs/verified-apis.md §3 semantic-routing row
 # (``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
@@ -126,7 +132,7 @@ LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 # (#590). Parsed for :attr:`LastCall.matched_topic` / :attr:`LastCall.routing_score`;
 # the prose is tolerated with two independent patterns so a drift in the
 # provider/model portion never loses the topic or the score (verification discipline).
-SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
+# The name (``SEMANTIC_ROUTING_SUCCESS_HEADER``) is defined in ``core/_wire``.
 
 # docs/verified-apis.md §2 "Semantic caching"
 # (``python/tests/fixtures/anypoint/semantic_cache/``, #587/#588). A proxy fronted

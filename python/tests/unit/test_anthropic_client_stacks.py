@@ -39,7 +39,7 @@ from donkey_kit.core.errors import (  # noqa: E402
     classify,
 )
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call  # noqa: E402
-from donkey_kit.core.telemetry import run_context  # noqa: E402
+from donkey_kit.core.telemetry import run_scope  # noqa: E402
 from donkey_kit.integrations.anthropic import AnthropicAdapter  # noqa: E402
 
 _ON_HTTPX2 = not issubclass(anthropic.DefaultAsyncHttpxClient, httpx.AsyncClient)
@@ -157,7 +157,7 @@ async def test_a_refusal_classifies_with_the_ids_that_were_sent(
 
     async with shared_client(handler) as shared:
         llm = AnthropicAdapter(CFG, shared).client(max_retries=0)
-        with run_context("run-42"), pytest.raises(framework_error) as info:
+        with run_scope("run-42"), pytest.raises(framework_error) as info:
             await llm.messages.create(**BODY)
 
     err = classify(info.value.response)  # type: ignore[attr-defined]
