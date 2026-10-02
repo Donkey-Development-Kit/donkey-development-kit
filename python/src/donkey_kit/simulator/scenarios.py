@@ -162,7 +162,7 @@ class PiiBlockScenario:
         self._every = every
         self._count = 0
 
-    def on_call(self, text: str) -> ScenarioHit | None:
+    def on_call(self, text: str) -> ScenarioHit | None:  # noqa: ARG002 - Scenario protocol
         self._count += 1
         if self._count % self._every == 0:
             return ScenarioHit(_PII_SHAPE)
@@ -224,7 +224,7 @@ class BudgetScenario:
             elapsed_ms = 0.0
         self._reset_ms = max(0, int(self._window_ms - elapsed_ms))
 
-    def on_call(self, text: str) -> ScenarioHit | None:
+    def on_call(self, text: str) -> ScenarioHit | None:  # noqa: ARG002 - Scenario protocol
         self._advance_window()
         if self._remaining <= 0:
             return ScenarioHit(

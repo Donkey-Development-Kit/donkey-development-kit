@@ -119,7 +119,7 @@ class Governance:
         )
 
     # ---- verb 3: resolve (runtime, READ-ONLY) -----------------------------
-    async def resolve(self, donkey: Any) -> GatewayTarget:
+    async def resolve(self, donkey: Any) -> GatewayTarget:  # noqa: ANN401 - Donkey is a higher layer
         """READ-ONLY: verify the declared policies are actually applied on the
         provisioned gateway and return its route. Raises
         :class:`~donkey_kit.core.errors.GovernanceDrift` on mismatch.
@@ -167,7 +167,7 @@ class SimulationContext:
                 skipped.append((p, reason))
         return skipped
 
-    async def __aenter__(self) -> Any:
+    async def __aenter__(self) -> Any:  # noqa: ANN401 - blocked; result type unverified
         raise _verify.blocked(
             "running a Governance spec's policies locally (BG §1.4, the Verification "
             "milestone). The loud skipped-policy report (skipped_policies()) is scaffolded. "

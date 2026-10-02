@@ -16,18 +16,18 @@ import pytest
 
 pytest.importorskip("starlette")
 
-import httpx  # noqa: E402
+import httpx
 
-from donkey_kit import Budget  # noqa: E402
-from donkey_kit.core.errors import (  # noqa: E402
+from donkey_kit import Budget
+from donkey_kit.core.errors import (
     PIIDetected,
     PromptInjectionBlocked,
     TokenBudgetExceeded,
     classify,
 )
-from donkey_kit.simulator import build_app  # noqa: E402
-from donkey_kit.simulator.app import SIMULATOR_HEADER, SimulatorConfig  # noqa: E402
-from donkey_kit.simulator.scenarios import parse_scenarios  # noqa: E402
+from donkey_kit.simulator import build_app
+from donkey_kit.simulator.app import SIMULATOR_HEADER, SimulatorConfig
+from donkey_kit.simulator.scenarios import parse_scenarios
 
 
 def _client(*specs: str) -> httpx.AsyncClient:

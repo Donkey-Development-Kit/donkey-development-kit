@@ -87,7 +87,7 @@ class _ToolsFacade:
         domain: str | None = None,
         tags: list[str] | None = None,
         governed: bool | GovernanceCriteria | None = None,
-        governance: Any | None = None,
+        governance: object | None = None,
         locked: bool = False,
     ) -> ToolSet:
         """Discover a governed tool catalog and return a bindable ``ToolSet``.
@@ -477,7 +477,7 @@ class Donkey:
                 coro_fn = cast(Callable[_P, Awaitable[Any]], fn)
 
                 @functools.wraps(fn)
-                async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
+                async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> object:
                     async with self.run(
                         team=team, project=project, env=env, enduser_id=enduser_id
                     ):

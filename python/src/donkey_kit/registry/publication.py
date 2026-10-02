@@ -70,7 +70,7 @@ class Publication:
     version_strategy: VersionStrategy = VersionStrategy.PINNED
 
     # ---- verb: preview (laptop) -------------------------------------------
-    async def preview(self, donkey: Any) -> str:
+    async def preview(self, donkey: Any) -> str:  # noqa: ANN401 - Donkey is a higher layer
         """Render the Exchange entry as it would appear (BG §2.5). Blocked until
         descriptor derivation + Exchange render shape are verified (BG §2.5)."""
         raise _verify.blocked(
@@ -92,7 +92,7 @@ class Publication:
         )
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------
-    async def verify(self, donkey: Any, *, raise_on_drift: bool = False) -> None:
+    async def verify(self, donkey: Any, *, raise_on_drift: bool = False) -> None:  # noqa: ANN401
         """Compare the live server against the published descriptor; raise
         :class:`~donkey_kit.core.errors.PublicationDrift` on mismatch (BG §2.5).
         Defaults to warn-and-continue — a drifted catalog must be loud but must

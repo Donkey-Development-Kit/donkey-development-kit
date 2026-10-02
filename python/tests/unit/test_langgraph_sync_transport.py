@@ -27,7 +27,7 @@ from donkey_kit.integrations.langgraph import typed_refusals
 from donkey_kit.simulator.fixtures import load, replay_headers
 
 pytest.importorskip("langchain_openai")
-from langchain_core.messages import HumanMessage  # noqa: E402
+from langchain_core.messages import HumanMessage
 
 
 def _cfg(**kw: Any) -> DonkeyConfig:

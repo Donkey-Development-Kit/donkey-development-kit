@@ -155,7 +155,7 @@ class _ScenarioItem(pytest.Item):
         if result.status == "exempt":
             self.add_report_section("call", "exempt", result.detail)
 
-    def repr_failure(self, excinfo: Any, style: Any = None) -> Any:
+    def repr_failure(self, excinfo: Any, style: Any = None) -> Any:  # noqa: ARG002 - pytest API
         if isinstance(excinfo.value, _ConformanceFailure):
             return str(excinfo.value)
         return super().repr_failure(excinfo)
@@ -211,9 +211,7 @@ def _result_for(config: pytest.Config, scenario_name: str) -> Result:
     raise KeyError(f"no conformance result for scenario {scenario_name!r}")
 
 
-def pytest_terminal_summary(
-    terminalreporter: Any, exitstatus: int, config: pytest.Config
-) -> None:
+def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> None:
     """Print the scenario→status table once, after the run. Only fires when the
     conformance suite actually ran (results are cached on the stash)."""
     results = config.stash.get(_RESULTS_KEY, None)

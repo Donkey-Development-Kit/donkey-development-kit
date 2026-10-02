@@ -117,8 +117,8 @@ def _last_call_handler() -> Any:
 
         def on_chat_model_start(
             self,
-            serialized: dict[str, Any],
-            messages: list[list[Any]],
+            serialized: dict[str, Any],  # noqa: ARG002 - langchain callback API
+            messages: list[list[Any]],  # noqa: ARG002
             *,
             run_id: UUID,
             **kwargs: Any,
@@ -126,10 +126,10 @@ def _last_call_handler() -> Any:
             if kwargs.get("batch_size", 1) == 1:
                 self._bridges[run_id] = open_last_call_bridge()
 
-        def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:
+        def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:  # noqa: ARG002
             self._close(run_id)
 
-        def on_llm_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
+        def on_llm_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:  # noqa: ARG002
             self._close(run_id)
 
         def _close(self, run_id: UUID) -> None:

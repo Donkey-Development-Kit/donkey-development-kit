@@ -1,4 +1,5 @@
 """registry/ — Exchange discovery + governed-only predicate (BG §2.7)."""
+from __future__ import annotations
 
 from .exchange import ExchangeRegistry
 from .governance import STRICT, Check, GovernanceCriteria, GovernanceReport, evaluate

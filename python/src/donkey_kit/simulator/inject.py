@@ -74,7 +74,7 @@ class _SwappableClient(Protocol):
 
     _transport: Any
 
-    def _swap_transport(self, transport: Any) -> None: ...
+    def _swap_transport(self, transport: Any) -> None: ...  # noqa: ANN401 - see docstring
 
 
 class _Countdown:
@@ -106,7 +106,7 @@ class _FixtureTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
     consumes exactly one count.
     """
 
-    def __init__(self, inner: Any, fixture: Fixture, countdown: _Countdown) -> None:
+    def __init__(self, inner: Any, fixture: Fixture, countdown: _Countdown) -> None:  # noqa: ANN401
         self._inner = inner
         self._fixture = fixture
         self._countdown = countdown

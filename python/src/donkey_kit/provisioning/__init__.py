@@ -4,6 +4,7 @@ Separate entry point from the runtime SDK. Nothing in the runtime path mutates
 shared state (working instruction #11); every mutation lives here and runs in CI
 from a reviewed spec under platform-controlled credentials.
 """
+from __future__ import annotations
 
 from .applier import ApplyResult, PolicyAllowList
 from .lint import Finding, LintResult, Severity
