@@ -22,9 +22,9 @@ from donkey_kit.core.transport import DonkeyAsyncClient
 
 pytest.importorskip("llama_index.llms.openai_like")
 
-from llama_index.core.base.llms.types import ChatMessage  # noqa: E402
+from llama_index.core.base.llms.types import ChatMessage
 
-from donkey_kit.integrations.llamaindex import LlamaIndexAdapter  # noqa: E402
+from donkey_kit.integrations.llamaindex import LlamaIndexAdapter
 
 
 def _cfg() -> DonkeyConfig:

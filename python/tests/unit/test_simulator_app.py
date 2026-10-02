@@ -18,10 +18,10 @@ import pytest
 
 pytest.importorskip("starlette")
 
-import httpx  # noqa: E402
+import httpx
 
-from donkey_kit import Budget  # noqa: E402
-from donkey_kit.core.errors import (  # noqa: E402
+from donkey_kit import Budget
+from donkey_kit.core.errors import (
     AgentKilled,
     AuthError,
     ContentSafetyBlocked,
@@ -34,9 +34,9 @@ from donkey_kit.core.errors import (  # noqa: E402
     UpstreamRequestError,
     classify,
 )
-from donkey_kit.simulator import build_app  # noqa: E402
-from donkey_kit.simulator import fixtures as fx  # noqa: E402
-from donkey_kit.simulator.app import (  # noqa: E402
+from donkey_kit.simulator import build_app
+from donkey_kit.simulator import fixtures as fx
+from donkey_kit.simulator.app import (
     RATELIMIT_HEADER,
     SIM_MODEL_PREFIX,
     SIMULATOR_HEADER,

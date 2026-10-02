@@ -99,7 +99,7 @@ class _FixtureTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
     consumes exactly one count.
     """
 
-    def __init__(self, inner: Any, fixture: Fixture, countdown: _Countdown) -> None:
+    def __init__(self, inner: Any, fixture: Fixture, countdown: _Countdown) -> None:  # noqa: ANN401
         self._inner = inner
         self._fixture = fixture
         self._countdown = countdown

@@ -1023,11 +1023,11 @@ def _pii_summary(status: int, spans: list[_PiiSpan]) -> str:
     )
 
 
-def _int_or_none(value: Any) -> int | None:
+def _int_or_none(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-def _parse_json(response: httpx.Response) -> Any:
+def _parse_json(response: httpx.Response) -> object:
     """The response's parsed JSON body (of any shape — object, list, scalar), or
     ``None`` when the body is absent or not JSON. Never raises on the caller's
     request path (verification discipline). An unread streamed body
@@ -1071,7 +1071,7 @@ def _nested_error(response: httpx.Response) -> dict[str, Any] | None:
     return error_obj if isinstance(error_obj, dict) else None
 
 
-def _code_str(value: Any) -> str | None:
+def _code_str(value: object) -> str | None:
     """The provider's error ``code`` as a string. OpenAI sends a string
     (``model_not_found``); Gemini sends a number (400, #548). Both are carried;
     any other type (``bool`` included) is dropped."""
@@ -1114,5 +1114,5 @@ def _content_safety_reject(response: httpx.Response) -> tuple[str, list[str]] | 
     return None
 
 
-def _str_or_none(value: Any) -> str | None:
+def _str_or_none(value: object) -> str | None:
     return value if isinstance(value, str) else None

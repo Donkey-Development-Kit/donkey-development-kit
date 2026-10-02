@@ -1248,7 +1248,7 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             )
         if "mounts" not in kw:
 
-            def build_mount(pattern: Any) -> httpx.AsyncBaseTransport:
+            def build_mount(pattern: Any) -> httpx.AsyncBaseTransport:  # noqa: ANN401 - httpx-private key
                 client = fresh()
                 return client._mounts.get(pattern) or client._transport  # noqa: SLF001
 
@@ -1863,10 +1863,10 @@ class _NoTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
     """A view's own transport. Never used, because a view's ``send()`` delegates;
     passing it keeps httpx from building a connection pool for the view."""
 
-    def handle_request(self, request: httpx.Request) -> httpx.Response:
+    def handle_request(self, request: httpx.Request) -> httpx.Response:  # noqa: ARG002
         raise RuntimeError("a DonkeyClientView sends through its shared client")
 
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:  # noqa: ARG002
         raise RuntimeError("a DonkeyAsyncClientView sends through its shared client")
 
 

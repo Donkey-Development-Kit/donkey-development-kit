@@ -49,8 +49,8 @@ def test_parse_injection() -> None:
 def test_parse_budget_with_duration_units() -> None:
     s = parse_scenario("budget:limit=20000,window=60s")
     assert isinstance(s, BudgetScenario)
-    assert s._window_ms == 60_000  # noqa: SLF001 — asserting the parse result
-    assert s._limit == 20_000  # noqa: SLF001
+    assert s._window_ms == 60_000
+    assert s._limit == 20_000
 
 
 @pytest.mark.parametrize(
@@ -60,7 +60,7 @@ def test_parse_budget_with_duration_units() -> None:
 def test_parse_budget_durations(raw: str, expected_ms: int) -> None:
     s = parse_scenario(f"budget:limit=100,window={raw}")
     assert isinstance(s, BudgetScenario)
-    assert s._window_ms == expected_ms  # noqa: SLF001
+    assert s._window_ms == expected_ms
 
 
 @pytest.mark.parametrize(
