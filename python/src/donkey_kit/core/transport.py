@@ -465,6 +465,49 @@ def _retry_delay(attempt: int, response: httpx.Response) -> float:
     return exp * (0.5 + random.random() / 2.0)  # full-ish jitter
 
 
+def _log_target(request: httpx.Request) -> str:
+    """``METHOD scheme://host/path`` for a log record: the query string is dropped,
+    and no header is ever read, so a record never carries a credential (#717)."""
+    url = request.url
+    return f"{request.method} {url.scheme}://{url.host}{url.path}"
+
+
+def _log_retry(
+    request: httpx.Request, response: httpx.Response, attempt: int, attempts: int, delay: float
+) -> None:
+    """DEBUG record for one retry: the status, which retry this is, and the delay."""
+    _log.debug(
+        "%s returned %d; retry %d of %d in %.2fs",
+        _log_target(request),
+        response.status_code,
+        attempt + 1,
+        attempts - 1,
+        delay,
+    )
+
+
+def _log_no_retry(
+    request: httpx.Request, response: httpx.Response, attempt: int, attempts: int
+) -> None:
+    """DEBUG record when a retryable status is returned without a retry: either the
+    gateway already failed over (routing fallback, #309) or retries ran out."""
+    if response.status_code not in _RETRYABLE_STATUS:
+        return
+    if is_fallback(response):
+        _log.debug(
+            "%s returned %d after a gateway routing fallback; not retrying",
+            _log_target(request),
+            response.status_code,
+        )
+    elif attempt >= attempts - 1:
+        _log.debug(
+            "%s returned %d; giving up after %d attempt(s)",
+            _log_target(request),
+            response.status_code,
+            attempts,
+        )
+
+
 def _no_attempts(max_retries: object) -> ConfigError:
     """The error for a retry loop that sent nothing: ``max_retries`` is below 0.
     ``DonkeyConfig`` refuses that value, so only a config altered after
@@ -1426,6 +1469,10 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             if response.status_code == 401 and can_refresh:
                 assert provider is not None  # narrowed by can_refresh
                 refreshed_once = True
+                _log.debug(
+                    "%s returned 401; refreshing the token and re-sending once",
+                    _log_target(request),
+                )
                 await response.aclose()
                 await provider.invalidate()
                 # A 401 refresh is an auth re-send, not a rate-limit backoff, so it
@@ -1448,11 +1495,13 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
                 and attempt < attempts - 1
             ):
                 delay = _retry_delay(attempt, response)
+                _log_retry(request, response, attempt, attempts, delay)
                 await response.aclose()
                 await asyncio.sleep(delay)
                 attempt += 1
                 continue
 
+            _log_no_retry(request, response, attempt, attempts)
             return await self._finish(request, response, gspan, streaming=streaming)
 
         if last_response is None:
@@ -1715,10 +1764,12 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
                 and attempt < attempts - 1
             ):
                 delay = _retry_delay(attempt, response)
+                _log_retry(request, response, attempt, attempts, delay)
                 response.close()
                 time.sleep(delay)
                 continue
 
+            _log_no_retry(request, response, attempt, attempts)
             return self._finish(request, response, gspan, streaming=streaming)
 
         if last_response is None:

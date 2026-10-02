@@ -234,7 +234,8 @@ target-version = "py310"
 [tool.ruff.lint]
 # SLF001: no reaching into another object's private members (#719); RUF022:
 # every __all__ is sorted (#719).
-select = ["E", "F", "I", "UP", "B", "SLF001", "RUF022"]
+# BLE/LOG/G: no blind except without a reason, and logging-call hygiene (#717).
+select = ["E", "F", "I", "UP", "B", "BLE", "LOG", "G", "SLF001", "RUF022"]
 
 [tool.ruff.lint.per-file-ignores]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).

@@ -18,7 +18,7 @@ from .filter import ToolDescriptor, ToolFilter, resolve_collisions
 
 __all__ = ["ToolSet"]
 
-_log = logging.getLogger("donkey_kit.tools")
+_log = logging.getLogger(__name__)
 
 
 class ToolSet:
