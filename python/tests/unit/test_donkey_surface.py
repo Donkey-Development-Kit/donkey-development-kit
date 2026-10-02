@@ -87,11 +87,25 @@ def test_openai_never_probes_the_agents_sdk(monkeypatch: pytest.MonkeyPatch) -> 
         assert isinstance(fab.openai(), openai.AsyncOpenAI)
 
 
-def test_run_context_binds_correlation_id() -> None:
+def test_run_context_is_a_deprecated_alias_for_run() -> None:
     from donkey_kit.core.telemetry import current_correlation_id
 
     fab = Donkey(_cfg())
-    with fab.run_context("abc123") as rid:
+    with pytest.warns(DeprecationWarning, match=r"donkey\.run\(id=\.\.\.\)"):
+        scope = fab.run_context("abc123")
+    with scope as rid:
+        assert rid == "abc123"
+        assert current_correlation_id() == "abc123"
+    assert current_correlation_id() is None
+
+
+def test_core_run_context_is_a_deprecated_alias_for_run_scope() -> None:
+    from donkey_kit.core import run_context
+    from donkey_kit.core.telemetry import current_correlation_id
+
+    with pytest.warns(DeprecationWarning, match="run_scope"):
+        scope = run_context("abc123")
+    with scope as rid:
         assert rid == "abc123"
         assert current_correlation_id() == "abc123"
     assert current_correlation_id() is None

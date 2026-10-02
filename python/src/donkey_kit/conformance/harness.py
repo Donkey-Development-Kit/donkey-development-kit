@@ -335,7 +335,7 @@ class ConformanceHarness:
         raised: BaseException | None = None
         returned: Any = None
         bind = (
-            self._donkey.run_context(correlation_id)
+            self._donkey.run(correlation_id)
             if correlation_id is not None and self._donkey is not None
             else nullcontext()
         )

@@ -765,7 +765,7 @@ async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None
 
     from donkey_kit.core.errors import UpstreamRequestError, classify
     from donkey_kit.core.lastcall import LastCallStatus, current_last_call
-    from donkey_kit.core.telemetry import run_context
+    from donkey_kit.core.telemetry import run_scope
     from donkey_kit.integrations.adk import ADKAdapter
 
     seen: list[httpx.Request] = []
@@ -799,7 +799,7 @@ async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None
         )
 
     async with http:
-        with run_context("run-691"):
+        with run_scope("run-691"):
             m = adapter.gemini("gemini-2.5-flash", base_url="https://gw/ddk-gemini-inbound/")
             async for _ in m.generate_content_async(_request("gemini-2.5-flash")):
                 pass
