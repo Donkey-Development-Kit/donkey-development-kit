@@ -172,7 +172,8 @@ export function RoadmapPhase({
   children?: React.ReactNode
 }) {
   const roadmap = useRoadmap()
-  const m = roadmap.milestones.find(x => x.title.startsWith(milestone))
+  // Prefix match ending at a word boundary: 'Phase 1' must not pick up 'Phase 1.1 — …'.
+  const m = roadmap.milestones.find(x => x.title === milestone || x.title.startsWith(`${milestone} `))
   if (!m) return null
   const total = m.open + m.closed
   const pct = total ? Math.round((m.closed / total) * 100) : 0

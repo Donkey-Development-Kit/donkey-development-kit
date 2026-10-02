@@ -21,6 +21,7 @@ of the **milestone being shipped**. The milestone titles are the ground truth
 | Milestone (exact title) | Ships version |
 | --- | --- |
 | `Phase 1 — Build the MVP (0.1.0)` | `0.1.0` |
+| `Phase 1.1 — Stabilize the MVP (0.1.1)` | `0.1.1` |
 | `Phase 2 — Differentiate, go beyond (0.2.0)` | `0.2.0` |
 | `Phase 3 — Platform capabilities (0.3.0)` | `0.3.0` |
 | `Phase 4 — Enterprise readiness (0.4.0)` | `0.4.0` |

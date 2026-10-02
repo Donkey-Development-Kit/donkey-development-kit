@@ -1,6 +1,6 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-09-25T14:34:59.819Z",
+  "generatedAt": "2026-10-02T09:10:29.071Z",
   "milestones": [
     {
       "number": 11,
@@ -958,11 +958,595 @@
       ]
     },
     {
+      "number": 19,
+      "title": "Phase 1.1 — Stabilize the MVP (0.1.1)",
+      "state": "open",
+      "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/19",
+      "open": 2,
+      "closed": 80,
+      "issues": [
+        {
+          "number": 630,
+          "title": "Adapter factories raise TypeError when a governed kwarg is overridden",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/630",
+          "epic": false
+        },
+        {
+          "number": 631,
+          "title": "LangGraph agent example misdescribes last_call and budget after the loop",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/631",
+          "epic": false
+        },
+        {
+          "number": 658,
+          "title": "langgraph: surface the gateway's served provider/model per message, not just on last_call",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/658",
+          "epic": false
+        },
+        {
+          "number": 659,
+          "title": "docs/langgraph: explain model_provider vs the served provider, and how to read it per call and per message",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/659",
+          "epic": false
+        },
+        {
+          "number": 660,
+          "title": "docs(contributing): codify live-capture, attribution and multi-PR guidelines",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/660",
+          "epic": false
+        },
+        {
+          "number": 661,
+          "title": "docs: state that Omni/Flex Gateway Local Mode is not supported; the simulator is the local dev loop",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/661",
+          "epic": false
+        },
+        {
+          "number": 663,
+          "title": "Add a PyPI version badge to the docs site top bar",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/663",
+          "epic": false
+        },
+        {
+          "number": 664,
+          "title": "Add a PyPI version badge to the org homepage README",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/664",
+          "epic": false
+        },
+        {
+          "number": 669,
+          "title": "reject.injection-protection fixture has an empty body; live capture returned the real 79-byte message",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/669",
+          "epic": false
+        },
+        {
+          "number": 670,
+          "title": "reject.injection-protection fixture headers capture only 3 of ~10 live response headers",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/670",
+          "epic": false
+        },
+        {
+          "number": 671,
+          "title": "Add a PyPI version badge to the package README and drop the hardcoded version",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/671",
+          "epic": false
+        },
+        {
+          "number": 674,
+          "title": "Split release.yml into publish-pypi and publish-testpypi workflows",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/674",
+          "epic": false
+        },
+        {
+          "number": 675,
+          "title": "Remove the rebrand-completeness CI guard and migration scaffolding",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/675",
+          "epic": false
+        },
+        {
+          "number": 680,
+          "title": "Track §8 verification-ledger follow-ups from PR #679 review",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/680",
+          "epic": true
+        },
+        {
+          "number": 681,
+          "title": "Reconcile §8 constructor-status vocabulary in verified-apis.md",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/681",
+          "epic": false
+        },
+        {
+          "number": 682,
+          "title": "Fix stale §4 cross-reference for the /responses data plane (should be §2)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/682",
+          "epic": false
+        },
+        {
+          "number": 683,
+          "title": "Deduplicate the CrewAI return-class finding across §8 and §8.1",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/683",
+          "epic": false
+        },
+        {
+          "number": 684,
+          "title": "donkey.crewai.llm() is annotated -> crewai.LLM but returns OpenAICompletion",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/684",
+          "epic": false
+        },
+        {
+          "number": 687,
+          "title": "Refresh docs/releasing.md wording that predates the 0.1.0 publish",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/687",
+          "epic": false
+        },
+        {
+          "number": 688,
+          "title": "docs: document how to configure the local simulator's port (CLI flag, serve(), no env var)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/688",
+          "epic": false
+        },
+        {
+          "number": 691,
+          "title": "ADK: donkey.adk.gemini() — native Gemini model bound to a Format=Gemini proxy",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/691",
+          "epic": false
+        },
+        {
+          "number": 692,
+          "title": "Add production-only Cloudflare Web Analytics beacon to the docs site",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/692",
+          "epic": false
+        },
+        {
+          "number": 694,
+          "title": "classify() mis-types the Agent Kill Switch 403 as UpstreamRequestError",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/694",
+          "epic": false
+        },
+        {
+          "number": 697,
+          "title": "pip install donkey-kit[all] fails with resolution-too-deep",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/697",
+          "epic": false
+        },
+        {
+          "number": 701,
+          "title": "donkey.anthropic.client() raises TypeError with anthropic>=1.0 (httpx2)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/701",
+          "epic": false
+        },
+        {
+          "number": 715,
+          "title": "bug(errors): export every documented error and give every DonkeyError a remediation",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/715",
+          "epic": false
+        },
+        {
+          "number": 716,
+          "title": "bug(typing): make governed() and the adapter API type-check for downstream mypy --strict users",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/716",
+          "epic": false
+        },
+        {
+          "number": 718,
+          "title": "docs(src): stop restating verification status in docstrings and fix the drifted ones",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/718",
+          "epic": false
+        },
+        {
+          "number": 725,
+          "title": "bug(adapters): back module-level adapter factories with one process-default governed runtime",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/725",
+          "epic": false
+        },
+        {
+          "number": 733,
+          "title": "bug(adapters): never hand the owning shared client to a framework (Strands closes it after one call)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/733",
+          "epic": false
+        },
+        {
+          "number": 734,
+          "title": "bug(adapters): turn off framework retries so a policy refusal is sent exactly once",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/734",
+          "epic": false
+        },
+        {
+          "number": 735,
+          "title": "bug(adk): guard gemini() against google-adk versions that silently drop the governed client",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/735",
+          "epic": false
+        },
+        {
+          "number": 736,
+          "title": "bug(langgraph): route sync invoke() through the governed transport and define sync support per adapter",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/736",
+          "epic": false
+        },
+        {
+          "number": 737,
+          "title": "bug(conformance): never pass, and never reach the network, when the agent bypasses the Donkey client",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/737",
+          "epic": false
+        },
+        {
+          "number": 738,
+          "title": "bug(anthropic): keep correlation and call IDs on refusals that pass through the httpx2 bridge",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/738",
+          "epic": false
+        },
+        {
+          "number": 739,
+          "title": "bug(agent-framework): fix or withdraw policy_middleware()",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/739",
+          "epic": false
+        },
+        {
+          "number": 741,
+          "title": "bug(adapters): raise the same curated missing-dependency error from every form",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/741",
+          "epic": false
+        },
+        {
+          "number": 743,
+          "title": "bug(deps): raise the extras floors to the lowest verified versions",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/743",
+          "epic": false
+        },
+        {
+          "number": 773,
+          "title": "docs(config): remove non-existent from_env() kwargs and document the real construction and precedence",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/773",
+          "epic": false
+        },
+        {
+          "number": 775,
+          "title": "docs: reconcile adapter verification status across README, ARCHITECTURE, the site and verified-apis §8",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/775",
+          "epic": false
+        },
+        {
+          "number": 777,
+          "title": "docs(migration): fix the conformance flag, the CLI list and the never-emitted telemetry names",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/777",
+          "epic": false
+        },
+        {
+          "number": 779,
+          "title": "docs(site): label roadmap features on the home page and README extras, and align the discovery sketch",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/779",
+          "epic": false
+        },
+        {
+          "number": 781,
+          "title": "docs(config): update the header and attribution docs to the verified gateway facts",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/781",
+          "epic": false
+        },
+        {
+          "number": 783,
+          "title": "docs(conformance): publish the missing JWT-refresh exemption and correct the JWT-capable adapter list",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/783",
+          "epic": false
+        },
+        {
+          "number": 785,
+          "title": "docs(contributing): remove links to untracked files, dead docs-sync targets and a harness that doesn't exist",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/785",
+          "epic": false
+        },
+        {
+          "number": 787,
+          "title": "docs(site): fix broken links and anchors, make the PyPI README links absolute, and point site links at main",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/787",
+          "epic": false
+        },
+        {
+          "number": 789,
+          "title": "docs(architecture): fix the ARCHITECTURE.md divergences from the code",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/789",
+          "epic": false
+        },
+        {
+          "number": 791,
+          "title": "docs(refusals): fix the typed-refusals example whose except clauses can never fire",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/791",
+          "epic": false
+        },
+        {
+          "number": 793,
+          "title": "docs(examples): use DonkeyConfig.validated() in the examples and fix the verification contradictions",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/793",
+          "epic": false
+        },
+        {
+          "number": 801,
+          "title": "bug(simulator): simulate(), donkey mock and the conformance harness must stay offline under HTTP(S)_PROXY",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/801",
+          "epic": false
+        },
+        {
+          "number": 803,
+          "title": "bug(telemetry): stop binding one correlation ID to the whole async context outside donkey.run()",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/803",
+          "epic": false
+        },
+        {
+          "number": 805,
+          "title": "bug(telemetry): classify streamed refusals before recording the span",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/805",
+          "epic": false
+        },
+        {
+          "number": 807,
+          "title": "bug(transport): make the shared async client safe to reuse across event loops",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/807",
+          "epic": false
+        },
+        {
+          "number": 809,
+          "title": "bug(config): validate config values and raise ConfigError instead of builtin exceptions",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/809",
+          "epic": false
+        },
+        {
+          "number": 811,
+          "title": "bug(cli): make doctor honour --config/--env, route the entry point through main(), and avoid SystemExit at import",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/811",
+          "epic": false
+        },
+        {
+          "number": 813,
+          "title": "bug(errors): raise typed errors on the documented surfaces (doctor outage detection, token fetch, closed client)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/813",
+          "epic": false
+        },
+        {
+          "number": 815,
+          "title": "bug(config): read [targets] from the XDG config, and never return a negative retry_after",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/815",
+          "epic": false
+        },
+        {
+          "number": 817,
+          "title": "bug(telemetry): a failing span recorder silently drops streamed usage from donkey.last_call",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/817",
+          "epic": false
+        },
+        {
+          "number": 825,
+          "title": "bug(refusals): stop typing the bare-model-name 400 as a PolicyViolation",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/825",
+          "epic": false
+        },
+        {
+          "number": 826,
+          "title": "bug(agent-framework): chat_client() hits /responses; Azure routes 404",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/826",
+          "epic": false
+        },
+        {
+          "number": 827,
+          "title": "bug(anthropic): last_call misses request-id, cache and streamed tokens",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/827",
+          "epic": false
+        },
+        {
+          "number": 828,
+          "title": "bug(adapters): jwt mode sends the api_key placeholder as the bearer",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/828",
+          "epic": false
+        },
+        {
+          "number": 829,
+          "title": "bug(llamaindex): prefixed names get temperature 0.1 and a 3,900 window",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/829",
+          "epic": false
+        },
+        {
+          "number": 830,
+          "title": "upstream: Gemini-routed chat streams one chat.completion, not chunk deltas",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/830",
+          "epic": false
+        },
+        {
+          "number": 833,
+          "title": "bug(transport): send LLM-proxy-only headers only on data-plane requests",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/833",
+          "epic": false
+        },
+        {
+          "number": 834,
+          "title": "bug(ci): install the local and otel extras in the nightly langgraph job so its example smoke step can pass",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/834",
+          "epic": false
+        },
+        {
+          "number": 835,
+          "title": "bug(adapters): raise ConfigError from the header-only adapter forms in jwt mode",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/835",
+          "epic": false
+        },
+        {
+          "number": 836,
+          "title": "feat(adapters): add a first-class bearer-token option for LLM-proxy model calls",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/836",
+          "epic": false
+        },
+        {
+          "number": 837,
+          "title": "bug(config): read ~/.config/.donkey-kit.toml when XDG_CONFIG_HOME is unset",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/837",
+          "epic": false
+        },
+        {
+          "number": 838,
+          "title": "chore(release): close the pending security advisories after 0.1.1",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/838",
+          "epic": false
+        },
+        {
+          "number": 850,
+          "title": "donkey.last_call stays UNOBSERVED after ChatOpenAI.ainvoke()",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/850",
+          "epic": false
+        },
+        {
+          "number": 865,
+          "title": "LangGraph interrupt() in async nodes fails on Python 3.10",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/865",
+          "epic": false
+        },
+        {
+          "number": 881,
+          "title": "develop is red: CLI entrypoint test asserts the pre-#857 region error",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/881",
+          "epic": false
+        },
+        {
+          "number": 882,
+          "title": "CLI entrypoint test asserts the pre-#857 unknown-region message, failing CI on every PR",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/882",
+          "epic": false
+        },
+        {
+          "number": 883,
+          "title": "test_cli_entrypoint asserts the pre-#857 region error, so CI on develop is red",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/883",
+          "epic": false
+        },
+        {
+          "number": 891,
+          "title": "Make ModelNotRoutable simulatable via simulate() and donkey mock",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/891",
+          "epic": false
+        },
+        {
+          "number": 899,
+          "title": "Check whether non-LangGraph adapters leave last_call UNOBSERVED after a single async call",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/899",
+          "epic": false
+        },
+        {
+          "number": 901,
+          "title": "test_main_reports_donkey_error_without_traceback fails on develop after #857 reworded the region error",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/901",
+          "epic": false
+        },
+        {
+          "number": 903,
+          "title": "Teach the shared-client test helpers about anthropic>=1's bridged httpx2 client",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/903",
+          "epic": false
+        },
+        {
+          "number": 907,
+          "title": "docs(examples): resync demo 08's verification wording in the framework-objects example",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/907",
+          "epic": false
+        },
+        {
+          "number": 909,
+          "title": "Serve the SDK docs site from the docs.donkey-kit.dev custom domain",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/909",
+          "epic": false
+        },
+        {
+          "number": 915,
+          "title": "Update release docs and version references for the 0.1.1 release",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/915",
+          "epic": false
+        }
+      ]
+    },
+    {
       "number": 12,
       "title": "Phase 2 — Differentiate, go beyond (0.2.0)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/12",
-      "open": 48,
+      "open": 47,
       "closed": 1,
       "issues": [
         {
@@ -1201,13 +1785,6 @@
           "title": "scanner: define how a @donkey.tool is attributed to an MCP server / Exchange asset",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/503",
-          "epic": false
-        },
-        {
-          "number": 515,
-          "title": "Archive daily PyPI adoption metrics; TestPyPI publishes none",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/515",
           "epic": false
         },
         {
@@ -1555,8 +2132,8 @@
       "title": "Verification",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/16",
-      "open": 27,
-      "closed": 7,
+      "open": 34,
+      "closed": 12,
       "issues": [
         {
           "number": 1,
@@ -1610,7 +2187,7 @@
         {
           "number": 65,
           "title": "Verify Local Mode capabilities: can it run the LLM Proxy and MCP Bridge, and does it need a licence artifact",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/65",
           "epic": false
         },
@@ -1680,7 +2257,7 @@
         {
           "number": 256,
           "title": "verify: the Agent Kill Switch rejection shape",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/256",
           "epic": false
         },
@@ -1715,7 +2292,7 @@
         {
           "number": 301,
           "title": "verify: model-wallet spend headers and the threshold-warning signal",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/301",
           "epic": false
         },
@@ -1794,6 +2371,90 @@
           "title": "Scope and verify mTLS as a consumer auth option for the LLM proxy",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/607",
+          "epic": false
+        },
+        {
+          "number": 636,
+          "title": "verify(adk): installed constructor, MCP binding and descriptor APIs (§§8–10)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/636",
+          "epic": false
+        },
+        {
+          "number": 637,
+          "title": "verify(strands): installed constructor, MCP binding and descriptor APIs (§§8–10)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/637",
+          "epic": false
+        },
+        {
+          "number": 638,
+          "title": "verify(openai_agents): installed constructor, MCP binding and descriptor APIs (§§8–10)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/638",
+          "epic": false
+        },
+        {
+          "number": 639,
+          "title": "verify(anthropic): installed constructor, MCP binding and descriptor APIs (§§8–10)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/639",
+          "epic": false
+        },
+        {
+          "number": 640,
+          "title": "verify(crewai): installed constructor, MCP binding and descriptor APIs (§§8–10)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/640",
+          "epic": false
+        },
+        {
+          "number": 641,
+          "title": "verify(llamaindex): installed constructor, MCP binding and descriptor APIs (§§8–10)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/641",
+          "epic": false
+        },
+        {
+          "number": 642,
+          "title": "verify(langgraph): installed constructor, MCP binding and descriptor APIs (§§8–10)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/642",
+          "epic": false
+        },
+        {
+          "number": 650,
+          "title": "verify(local): registration prerequisite and stock-image policy probes",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/650",
+          "epic": false
+        },
+        {
+          "number": 652,
+          "title": "verify(agent-framework): MCP binding and descriptor APIs (§§9–10)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/652",
+          "epic": false
+        },
+        {
+          "number": 653,
+          "title": "verify(fastmcp): native versus protocol tool descriptors (§10)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/653",
+          "epic": false
+        },
+        {
+          "number": 704,
+          "title": "verify: model-wallet Spend (USD) budget refusal shape",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/704",
+          "epic": false
+        },
+        {
+          "number": 894,
+          "title": "verification: capture /chat/completions and /responses per upstream as §2 fixtures",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/894",
           "epic": false
         }
       ]

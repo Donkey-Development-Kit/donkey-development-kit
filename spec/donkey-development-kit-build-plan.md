@@ -72,12 +72,14 @@ deep adapter, and the on-ramps that make the six pieces reachable.
 
 ## Phases and milestones
 
-Seven milestones. Five are sequential product phases carrying a semver
-target; two are standing and unversioned.
+Eight milestones. Five are sequential product phases carrying a semver
+target; one is a patch release that stabilises Phase 1; two are standing and
+unversioned.
 
 | Milestone | Issues | Scope |
 |---|---|---|
 | `Phase 1 — Build the MVP (0.1.0)` | 30 | Skeleton + the six-piece minimum (typed refusals, budget, simulator, simulate()+conformance, OTel GenAI, correlation/cost tags), one deep LangGraph adapter, decorators + CLI, docs, PyPI. Build guide 1.1-1.10. |
+| `Phase 1.1 — Stabilize the MVP (0.1.1)` | — | Patch release after the 0.1.0 publish: fixes, hardening and small additions to the Phase 1 surface — credential scoping and endpoint trust, secret-free output, adapter and transport fixes, the Agent Kill Switch refusal type, an installable `all` extra, `donkey.adk.gemini()`, and docs corrections. No Phase 2 scope. |
 | `Phase 2 — Differentiate, go beyond (0.2.0)` | 21 | Refusal handlers, classification registry, HITL, identity helpers, in-repo scanner + Action, kill-switch, MCP discovery, second adapter, A2A serve/expose/dev. Build guide 2.1-2.9. |
 | `Phase 3 — Platform capabilities (0.3.0)` | 6 | Policy handshake, to-the-code push, structured output + eval hooks. Largely gated on the Upstream gaps milestone. Build guide 3.2-3.4. |
 | `Phase 4 — Enterprise readiness (0.4.0)` | 10 | Security review, performance budget, error-message pass, migration and deprecation policy, compliance evidence, log shipping, residency, workload identity, support model. |

@@ -1,11 +1,12 @@
 # Migration guide
 
-## Next release: credential handling, endpoint trust and printed output
+## 0.1.1: credential handling, endpoint trust and printed output
 
-Changes since `0.1.1.dev2` that can affect existing code, grouped by what you
+Changes since `0.1.0` that can affect existing code, grouped by what you
 would notice. Sections 1 to 11 change what the SDK sends or accepts; sections
-12 to 15 change only what it prints or how errors are chained. The reference for each rule is linked from its
-section.
+12 to 15 change only what it prints or how errors are chained; sections 16 and
+17 change how a refusal is typed and what `donkey-kit[all]` installs. The
+reference for each rule is linked from its section.
 
 ### 1. Non-loopback `http://` endpoints are refused
 
@@ -412,6 +413,34 @@ suppressed `exc.__context__`; both hold the gateway's text.
 
 **Fix:** read `exc.framework_error` for the original LangChain error. See
 [Refusal messages don't repeat blocked content](website/content/errors.mdx#refusal-messages-dont-repeat-blocked-content).
+
+### 16. An Agent Kill Switch block raises `AgentKilled`
+
+Reference: [The rejection shapes `classify()` types](website/content/errors.mdx#the-rejection-shapes-classify-types).
+
+**Who:** code that catches the 403 the gateway returns when the Agent Kill
+Switch has blocked the agent.
+
+**Symptom:** that 403 (nested error `code` `agent_killed`) now raises
+`AgentKilled`, a `PolicyViolation`. In 0.1.0 it raised `UpstreamRequestError`,
+so an `except UpstreamRequestError` no longer catches it. It is still terminal
+and not retried.
+
+**Fix:** catch `AgentKilled` (or `PolicyViolation`), and ask an administrator to
+restore the agent's model access in Governance > Security.
+
+### 17. `donkey-kit[all]` leaves out the seven `connection_kwargs()` frameworks
+
+**Who:** anyone who installs `donkey-kit[all]` to get a framework other than
+LangGraph.
+
+**Symptom:** `all` now installs `llm`, `langgraph`, `mcp`, `otel`, `cli`,
+`local` and `test` only. In 0.1.0 it also listed `adk`, `strands`,
+`agent_framework`, `openai-agents`, `anthropic`, `crewai` and `llamaindex`,
+whose current releases can't be installed together, so pip failed with
+`resolution-too-deep`.
+
+**Fix:** add the framework you use: `pip install "donkey-kit[all,crewai]"`.
 
 ## `agent-fabric` → `donkey-kit` (the DDK rebrand)
 

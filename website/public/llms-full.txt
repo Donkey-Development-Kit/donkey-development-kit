@@ -9192,8 +9192,9 @@ Source: https://docs.donkey-kit.dev/roadmap.md
 
 DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
 goal; the progress bars and issue lists below are loaded from those milestones
-when you open the page. Phase 1 is complete and released as `donkey-kit`
-0.1.0 on [PyPI](https://pypi.org/project/donkey-kit/); Phase 2 is next.
+when you open the page. Phase 1 shipped as `donkey-kit` 0.1.0, and its
+stabilisation release, 0.1.1, is the current release on
+[PyPI](https://pypi.org/project/donkey-kit/). Phase 2 is next.
 
   Complete every issue in the milestone is closed ·{' '}
   In progress work has landed and more is open ·{' '}
@@ -9216,6 +9217,20 @@ when you open the page. Phase 1 is complete and released as `donkey-kit`
   `last_call`, and fixing model-substitution detection when the gateway strips
   a provider prefix.
 
+## Phase 1.1 — Stabilize the MVP
+
+  **Version 0.1.1 · Goal:** make the 0.1.0 surface safe and dependable to
+  build on, without adding Phase 2 scope.
+
+  Credentials scoped to the plane and the config source they belong to,
+  endpoint trust (no credentials sent to unchecked or non-loopback `http://`
+  endpoints), and secrets kept out of printed output and refusal messages.
+  Adapter and transport fixes across the frameworks, a typed `AgentKilled`
+  refusal for the Agent Kill Switch, an `all` extra that installs, a native
+  `donkey.adk.gemini()` model for Gemini-format proxies, and a pass over the
+  docs. Upgrading from 0.1.0? See the
+  [migration guide](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/MIGRATION.md).
+
 ## Phase 2 — Differentiate, go beyond
 
   **Version 0.2.0 · Goal:** capabilities no generic LLM client offers,
@@ -9235,7 +9250,7 @@ when you open the page. Phase 1 is complete and released as `donkey-kit`
   access to [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
   a System One decision model, with the same typed refusals, spans, budget and
   simulator support as LLM calls, plus worked patterns for confidence-gated
-  review, tool ranking and budget-aware routing. Now that 0.1.0 is published,
+  review, tool ranking and budget-aware routing. Now that the package is published,
   the phase also picks up archiving daily PyPI adoption metrics.
 
 ## Phase 3 — Platform capabilities
