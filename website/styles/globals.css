@@ -829,6 +829,17 @@ a.af-card:hover .af-card-title::after {
   border-radius: 3px;
 }
 
+/* Nextra renders <Navbar> children after the search field, so the PyPI badge
+   is moved before it with flex order: logo, page links, badge, then search. */
+.nextra-navbar nav > :first-child {
+  order: -2;
+}
+
+.nextra-navbar nav > .nextra-scrollbar,
+.nextra-navbar nav > .af-nav-pypi {
+  order: -1;
+}
+
 footer a[href^='https://www.mulesoft.com'] {
   color: var(--af-accent);
   text-decoration: underline;

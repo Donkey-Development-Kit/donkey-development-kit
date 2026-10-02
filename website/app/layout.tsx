@@ -73,12 +73,12 @@ const navbar = (
       href="https://pypi.org/project/donkey-kit/"
       target="_blank"
       rel="noreferrer"
-      className="af-nav-link"
+      className="af-nav-link af-nav-pypi"
       aria-label="donkey-kit on PyPI"
       title="donkey-kit on PyPI"
     >
       <img
-        src="https://img.shields.io/pypi/v/donkey-kit?logo=pypi&logoColor=white&label=PyPI"
+        src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fpypi.org%2Fpypi%2Fdonkey-kit%2Fjson&query=%24.info.version&prefix=v&label=PyPI&logo=pypi&logoColor=white&color=blue&cacheSeconds=300"
         alt="PyPI"
         className="af-nav-badge"
       />
