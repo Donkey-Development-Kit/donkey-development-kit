@@ -18,6 +18,12 @@ __all__ = ["ADAPTERS", "AdapterSpec", "missing_framework_error"]
 
 @dataclass(frozen=True)
 class AdapterSpec:
+    """How ``Donkey`` finds one framework adapter: its attribute, module, class and pip extra.
+
+    ``Donkey.__getattr__`` probes ``probe`` before importing ``module``, so a
+    missing extra raises an ``ImportError`` carrying the install command (BG §1.8).
+    """
+
     attr: str
     module: str
     cls: str

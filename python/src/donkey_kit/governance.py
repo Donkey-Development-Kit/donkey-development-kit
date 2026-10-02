@@ -59,6 +59,8 @@ class PolicyPortability(Enum):
 
 @dataclass(frozen=True)
 class PolicyBinding:
+    """One policy declared on a :class:`Governance` spec: its Exchange asset, version and config."""
+
     asset_id: str
     version: str
     config: dict[str, Any] = field(default_factory=dict)
@@ -68,6 +70,8 @@ class PolicyBinding:
 
 @dataclass(frozen=True)
 class GatewayTarget:
+    """The gateway a :class:`Governance` spec targets: mode, base URL and environment."""
+
     mode: GatewayMode
     base_url: str
     environment: str | None = None
@@ -99,6 +103,15 @@ class GatewayTarget:
 
 @dataclass(frozen=True)
 class Governance:
+    """A named governance spec: a gateway target plus the policies it should carry.
+
+    One object, three verbs: :meth:`simulate` (local), :meth:`export` (writes a
+    ``donkey.yaml`` fragment) and :meth:`resolve` (read-only runtime lookup). See
+    the module docstring for the trust level of each.
+
+    Docs: https://docs.donkey-kit.dev/policies
+    """
+
     name: str
     gateway: GatewayTarget
     policies: list[PolicyBinding] = field(default_factory=list)

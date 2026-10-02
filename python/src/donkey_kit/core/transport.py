@@ -1375,6 +1375,16 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         request: httpx.Request,
         **kwargs: object,
     ) -> httpx.Response:
+        """Send ``request`` with the governed headers, retry policy and GenAI span.
+
+        Retries a retryable status (not one the gateway already failed over) up to
+        ``max_retries`` times, and re-sends once with a fresh token after a 401.
+        A refusal is returned as the response, not raised here.
+
+        Raises:
+            GatewayUnavailable: The gateway could not be reached (DNS, refused
+                connection, TLS, timeout).
+        """
         model = _request_model(request)
         # A GenAI span is opened only for a model call (a JSON body carrying a
         # ``model``); GETs, token fetches and bodyless POSTs open none and stay
@@ -1641,6 +1651,12 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
             self._mounts = {}
 
     def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
+        """Build a request, refusing in a token auth mode.
+
+        Raises:
+            ConfigError: ``llm_proxy_auth`` is ``jwt`` or ``bearer``, whose token
+                providers are async-only.
+        """
         if self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES:
             raise sync_token_auth_error(self._cfg.llm_proxy_auth)
         return super().build_request(*args, **kwargs)
@@ -1691,6 +1707,11 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
         self._transport = transport
 
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
+        """The blocking twin of :meth:`DonkeyAsyncClient.send`: same headers, retries and span.
+
+        Raises:
+            GatewayUnavailable: The gateway could not be reached.
+        """
         model = _request_model(request)
         enabled = self._cfg.telemetry and model is not None  # see DonkeyAsyncClient.send
         if model is not None and bool(kwargs.get("stream")):
@@ -1868,9 +1889,11 @@ class DonkeyAsyncClientView(httpx.AsyncClient):
 
     @property
     def is_closed(self) -> bool:
+        """Whether the shared client is closed (closing this view does not close it)."""
         return self._shared.is_closed
 
     async def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
+        """Run this view's own event hooks around a send through the shared client."""
         for hook in self.event_hooks["request"]:
             await hook(request)
         response = await self._shared.send(request, **kwargs)
@@ -1903,9 +1926,15 @@ class DonkeyClientView(httpx.Client):
 
     @property
     def is_closed(self) -> bool:
+        """Whether the shared client is closed (closing this view does not close it)."""
         return self._shared.is_closed
 
     def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
+        """Build a request, refusing in a token auth mode as the shared client does.
+
+        Raises:
+            ConfigError: ``llm_proxy_auth`` is ``jwt`` or ``bearer``.
+        """
         # The shared client refuses here in a token mode; a view must refuse too.
         # Same-module collaborator: a view reads the config of the client it wraps.
         mode = self._shared._cfg.llm_proxy_auth  # noqa: SLF001
@@ -1914,6 +1943,7 @@ class DonkeyClientView(httpx.Client):
         return super().build_request(*args, **kwargs)
 
     def send(self, request: httpx.Request, **kwargs: object) -> httpx.Response:
+        """Run this view's own event hooks around a send through the shared client."""
         for hook in self.event_hooks["request"]:
             hook(request)
         response = self._shared.send(request, **kwargs)

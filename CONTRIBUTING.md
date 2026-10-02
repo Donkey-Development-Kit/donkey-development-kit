@@ -465,6 +465,12 @@ build plan has the rationale behind each rule:
   a standing invariant by its `§` label or name (`§1.1`, verification
   discipline), or a `Phase N`. A principled deviation gets a leading comment
   naming what it trades against.
+- **Docstrings on every public symbol.** Each public class, method and function
+  in `src/` has a docstring (ruff `D101`-`D103`, blocking; tests, examples and
+  scripts are exempt). Say what it does, its key parameters and the errors it
+  raises (Google-style `Args:` / `Raises:`), and on a main entry point link its
+  page on <https://docs.donkey-kit.dev/>, since that is what `help()` and an IDE
+  hover show.
 - **Trademark-descriptive language (the trademark/support boundary).** "Agent Fabric", "Anypoint", "Omni
   Gateway", and "MuleSoft" are Salesforce trademarks. Write the package as a
   descriptive, third-party SDK for *consuming* Agent Fabric, never as a

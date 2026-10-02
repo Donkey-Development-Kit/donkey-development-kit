@@ -22,6 +22,16 @@ _log = logging.getLogger(__name__)
 
 
 class ToolSet:
+    """A governed set of MCP tools, from ``donkey.tools.discover()`` (BG §2.7).
+
+    :meth:`filter` narrows it and :attr:`name_map` explains collision renames.
+    The per-framework binding methods (:meth:`langgraph`, :meth:`adk`, ...)
+    return each framework's native tool objects; they raise
+    ``NotImplementedError`` for now (docs/verified-apis.md §9).
+
+    Docs: https://docs.donkey-kit.dev/tool-access/binding
+    """
+
     def __init__(
         self,
         servers: list[McpServerHandle],
@@ -83,38 +93,78 @@ class ToolSet:
     # ---- per-framework binding (native types BG §2.7, gated on verification discipline,
     # docs/verified-apis.md §9) ------
     def langgraph(self) -> list[object]:  # -> list[BaseTool]
+        """Bind the tool set as LangChain ``BaseTool`` objects.
+
+        Raises:
+            NotImplementedError: Always, for now; see docs/verified-apis.md §9.
+        """
         raise _verify.blocked(
             "langchain_mcp_adapters.client.MultiServerMCPClient binding "
             "(docs/verified-apis.md §9)."
         )
 
     def adk(self) -> list[object]:  # -> list[McpToolset]
+        """Bind the tool set as Google ADK ``McpToolset`` objects.
+
+        Raises:
+            NotImplementedError: Always, for now; see docs/verified-apis.md §9.
+        """
         raise _verify.blocked(
             "ADK McpToolset / StreamableHTTPConnectionParams (docs/verified-apis.md §9)."
         )
 
     def strands(self) -> list[object]:  # -> list[MCPClient]
+        """Bind the tool set as Strands ``MCPClient`` objects.
+
+        Raises:
+            NotImplementedError: Always, for now; see docs/verified-apis.md §9.
+        """
         raise _verify.blocked(
             "Strands MCPClient(streamablehttp_client(...)) (docs/verified-apis.md §9)."
         )
 
     def llamaindex(self) -> list[object]:  # -> list[FunctionTool]
+        """Bind the tool set as LlamaIndex ``FunctionTool`` objects.
+
+        Raises:
+            NotImplementedError: Always, for now; see docs/verified-apis.md §9.
+        """
         raise _verify.blocked("LlamaIndex BasicMCPClient + McpToolSpec (docs/verified-apis.md §9).")
 
     def openai(self) -> list[object]:  # -> list[agents.mcp.MCPServer]
+        """Bind the tool set as OpenAI Agents SDK MCP server objects.
+
+        Raises:
+            NotImplementedError: Always, for now; see docs/verified-apis.md §9.
+        """
         raise _verify.blocked(
             "OpenAI Agents SDK agents.mcp.MCPServerStreamableHttp (docs/verified-apis.md §9)."
         )
 
     def anthropic(self) -> list[object]:  # -> list[MCP tool defs]
+        """Bind the tool set as Anthropic SDK MCP tool definitions.
+
+        Raises:
+            NotImplementedError: Always, for now; see docs/verified-apis.md §9.
+        """
         raise _verify.blocked(
             "Anthropic SDK MCP tool / mcp_servers binding (docs/verified-apis.md §9)."
         )
 
     def crewai(self) -> list[object]:  # -> list[crewai BaseTool]
+        """Bind the tool set as CrewAI ``BaseTool`` objects.
+
+        Raises:
+            NotImplementedError: Always, for now; see docs/verified-apis.md §9.
+        """
         raise _verify.blocked(
             "CrewAI crewai_tools.MCPServerAdapter binding (docs/verified-apis.md §9)."
         )
 
     def agent_framework(self) -> list[object]:
+        """Bind the tool set as Microsoft Agent Framework tool objects.
+
+        Raises:
+            NotImplementedError: Always, for now; see docs/verified-apis.md §9.
+        """
         raise _verify.blocked("Agent Framework MCP client/tool class (docs/verified-apis.md §9).")

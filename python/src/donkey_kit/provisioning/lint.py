@@ -18,6 +18,8 @@ __all__ = ["Finding", "LintResult", "Severity"]
 
 
 class Severity(Enum):
+    """How serious a lint :class:`Finding` is; ``ERROR`` fails the run."""
+
     ERROR = "error"
     WARNING = "warning"
     INFO = "info"
@@ -25,6 +27,8 @@ class Severity(Enum):
 
 @dataclass(frozen=True)
 class Finding:
+    """One lint finding: the rule, its severity, a message and where it applies."""
+
     rule: str
     severity: Severity
     message: str
@@ -33,6 +37,8 @@ class Finding:
 
 @dataclass(frozen=True)
 class LintResult:
+    """Every finding from one lint run."""
+
     findings: list[Finding]
 
     @property
@@ -41,6 +47,7 @@ class LintResult:
         return any(f.severity is Severity.ERROR for f in self.findings)
 
     def render(self) -> str:
+        """Render the findings as indented text lines for the CLI."""
         if not self.findings:
             return "lint: no findings."
         return "\n".join(

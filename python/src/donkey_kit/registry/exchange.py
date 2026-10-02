@@ -20,6 +20,20 @@ __all__ = ["ExchangeRegistry"]
 
 
 class ExchangeRegistry:
+    """The Exchange client behind ``donkey.registry``: search, resolve and explain assets (BG §2.7).
+
+    Uses the control-plane credential and caches lookups for
+    ``registry_cache_ttl_s`` seconds (``DONKEY_NO_CACHE=1`` bypasses the cache).
+    Methods that need an Exchange or API Manager endpoint raise
+    ``NotImplementedError`` for now (docs/verified-apis.md §7).
+
+    Args:
+        cfg: The resolved configuration.
+        http_client: The control-plane client.
+
+    Docs: https://docs.donkey-kit.dev/tool-access/discovery
+    """
+
     def __init__(self, cfg: DonkeyConfig, http_client: DonkeyAsyncClient) -> None:
         self._cfg = cfg
         self._http = http_client
@@ -36,6 +50,12 @@ class ExchangeRegistry:
         governed: bool | GovernanceCriteria | None = None,
         limit: int = 50,
     ) -> list[AssetRef]:
+        """Search Exchange for assets matching the given filters.
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §7.
+        """
         self._cfg.validated(need="control_plane")
         raise _verify.blocked(
             "Exchange search API (endpoint, query params, response shape — "
@@ -44,12 +64,24 @@ class ExchangeRegistry:
         )
 
     async def resolve_mcp(self, ref: AssetRef | str) -> McpServerHandle:
+        """Resolve an MCP server asset to a connectable handle.
+
+        Raises:
+            ValueError: ``ref`` is not ``group_id/asset_id/version``.
+            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §7.
+        """
         AssetRef.parse(ref)  # validate shape now; resolution needs verified API
         raise _verify.blocked(
             "Exchange asset-resolution API for MCP servers (docs/verified-apis.md §7)."
         )
 
     async def resolve_agent(self, ref: AssetRef | str) -> AgentHandle:
+        """Resolve an A2A agent asset to a handle.
+
+        Raises:
+            ValueError: ``ref`` is not ``group_id/asset_id/version``.
+            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §7.
+        """
         AssetRef.parse(ref)
         raise _verify.blocked(
             "Exchange asset-resolution API for A2A agents (docs/verified-apis.md §7)."
@@ -92,4 +124,5 @@ class ExchangeRegistry:
         )
 
     def refresh(self) -> None:
+        """Drop every cached registry lookup."""
         self._index_cache.invalidate()

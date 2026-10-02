@@ -152,6 +152,7 @@ class InjectionScenario:
         self._pattern = pattern.lower()
 
     def on_call(self, text: str) -> ScenarioHit | None:
+        """Reject with the prompt-injection shape when ``text`` contains the pattern."""
         if self._pattern in text.lower():
             return ScenarioHit(_INJECTION_SHAPE)
         return None
@@ -169,6 +170,7 @@ class PiiBlockScenario:
         self._count = 0
 
     def on_call(self, text: str) -> ScenarioHit | None:
+        """Reject with the PII shape on every Nth call."""
         self._count += 1
         if self._count % self._every == 0:
             return ScenarioHit(_PII_SHAPE)
@@ -233,6 +235,7 @@ class BudgetScenario:
         self._reset_ms = max(0, int(self._window_ms - elapsed_ms))
 
     def on_call(self, text: str) -> ScenarioHit | None:
+        """Spend this call's tokens; reject with the token-budget shape once the window is spent."""
         self._advance_window()
         if self._remaining <= 0:
             return ScenarioHit(

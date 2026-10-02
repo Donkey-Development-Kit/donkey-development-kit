@@ -52,6 +52,8 @@ class HttpMapping(BaseModel):
 
 
 class ApiSpec(BaseModel):
+    """One Exchange API a bridge fronts, with the tools derived from it."""
+
     assetId: str
     version: str
     upstream: str
@@ -60,12 +62,16 @@ class ApiSpec(BaseModel):
 
 
 class PolicySpec(BaseModel):
+    """One policy applied to a bridge: its Exchange asset, version and config."""
+
     assetId: str
     version: str
     config: dict[str, Any] = Field(default_factory=dict)
 
 
 class McpBridgeSpec(BaseModel):
+    """One MCP bridge: the gateway it runs on, its APIs and its policies."""
+
     name: str
     gateway: str
     apis: list[ApiSpec] = Field(default_factory=list)
@@ -73,12 +79,16 @@ class McpBridgeSpec(BaseModel):
 
 
 class SpecMetadata(BaseModel):
+    """The spec's name, target environment and optional business group."""
+
     name: str
     environment: str
     businessGroup: str | None = None
 
 
 class DonkeySpec(BaseModel):
+    """The root of a ``donkey.yaml`` provisioning spec (``apiVersion: donkey/v1``)."""
+
     apiVersion: Literal["donkey/v1"] = "donkey/v1"
     kind: Literal["DonkeySpec"] = "DonkeySpec"
     metadata: SpecMetadata
@@ -86,6 +96,11 @@ class DonkeySpec(BaseModel):
 
     @classmethod
     def from_yaml(cls, text: str) -> DonkeySpec:
+        """Parse and validate a ``donkey.yaml`` document.
+
+        Raises:
+            pydantic.ValidationError: The document does not match the spec schema.
+        """
         import yaml  # part of the [cli] extra
 
         data = yaml.safe_load(text)

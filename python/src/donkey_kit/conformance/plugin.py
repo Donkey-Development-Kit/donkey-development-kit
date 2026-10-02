@@ -54,6 +54,10 @@ class _ConformanceFailure(AssertionError):
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register the ``--donkey-conformance`` and ``--agent`` pytest options.
+
+    Docs: https://docs.donkey-kit.dev/testing
+    """
     group = parser.getgroup("donkey", "Donkey conformance")
     group.addoption(
         "--donkey-conformance",
