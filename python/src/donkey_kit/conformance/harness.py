@@ -51,6 +51,7 @@ __all__ = [
     "DEFAULT_RUN_INPUT",
     "ConformanceHarness",
     "ConformanceUsageError",
+    "offline_config",
     "run_conformance",
 ]
 
