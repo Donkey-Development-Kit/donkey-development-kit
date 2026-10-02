@@ -18,6 +18,8 @@ docs/verified-apis.md.
 
 from __future__ import annotations
 
+import logging as _logging
+
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope
 from .core.config import DonkeyConfig, Region
@@ -62,6 +64,10 @@ from .registry import (
     Publication,
     PublicationAssetType,
 )
+
+# A library attaches only a NullHandler to its root logger, so the SDK's DEBUG
+# records stay silent until the application configures logging (#717).
+_logging.getLogger(__name__).addHandler(_logging.NullHandler())
 
 __version__ = "0.1.2.dev0"
 

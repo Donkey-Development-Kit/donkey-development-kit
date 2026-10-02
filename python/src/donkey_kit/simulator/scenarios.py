@@ -35,6 +35,7 @@ second ``build_app`` call needs a freshly parsed set.
 from __future__ import annotations
 
 import json
+import logging
 import time
 import warnings
 from typing import Any, Protocol, runtime_checkable
@@ -59,6 +60,8 @@ __all__ = [
     "parse_scenarios",
     "request_text",
 ]
+
+_log = logging.getLogger(__name__)
 
 # Fixed shape names (owned by the fixtures table) each scenario serves. Named
 # here rather than inlined so a shape rename fails loudly at import against the
@@ -180,6 +183,8 @@ def _default_cost() -> int:
         total = int(body.get("usage", {}).get("total_tokens", 0))
         return total if total > 0 else _FALLBACK_COST
     except Exception:  # noqa: BLE001 — any parse trouble falls back to the constant
+        # A packaged fixture that will not parse is a bug, not a user condition.
+        _log.debug("success fixture unreadable; using the fallback cost", exc_info=True)
         return _FALLBACK_COST
 
 
