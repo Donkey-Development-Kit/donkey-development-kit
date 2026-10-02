@@ -74,6 +74,36 @@ from ._verify import SEMANTIC_CACHE_SCORE_HEADER, SEMANTIC_CACHE_STATUS_HEADER
 if TYPE_CHECKING:
     import httpx
 
+__all__ = [
+    "DECORATOR_OPERATION_HEADER",
+    "LLM_MODEL_HEADER",
+    "LLM_PROVIDER_HEADER",
+    "REQUEST_ID_HEADER",
+    "REQUEST_ID_HEADERS",
+    "ROUTING_FALLBACK_HEADER",
+    "ROUTING_TYPE_HEADER",
+    "SEMANTIC_ROUTING_SUCCESS_HEADER",
+    "UNOBSERVED",
+    "LastCall",
+    "LastCallBridge",
+    "LastCallStatus",
+    "current_last_call",
+    "is_cache_hit",
+    "is_fallback",
+    "is_substitution",
+    "observe_last_call",
+    "observe_usage",
+    "open_last_call_bridge",
+    "parse_usage",
+    "request_id",
+    "routing_fallback",
+    "semantic_cache",
+    "semantic_routing",
+    "unavailable",
+    "usage_from_response",
+    "usage_mapping",
+]
+
 # docs/verified-apis.md §3. The request
 # id is the UPSTREAM PROVIDER's own id, passed through by the gateway unchanged —
 # NOT a value the gateway mints, so the header NAME differs by provider and there

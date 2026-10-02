@@ -16,6 +16,8 @@ from ..core.transport import DonkeyAsyncClient
 from .criteria import GovernanceCriteria, GovernanceReport
 from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
 
+__all__ = ["ExchangeRegistry"]
+
 
 class ExchangeRegistry:
     def __init__(self, cfg: DonkeyConfig, http_client: DonkeyAsyncClient) -> None:

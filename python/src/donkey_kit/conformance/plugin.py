@@ -39,6 +39,8 @@ from .suite import SCENARIOS, Result, Scenario, validate_known_limitations
 if TYPE_CHECKING:  # keep the heavy import out of the auto-loaded module body
     from .harness import AgentFactory
 
+__all__ = ["donkey", "gateway", "pytest_addoption", "pytest_collection", "pytest_terminal_summary"]
+
 # Stash keys carry collection-time state to the run/summary phases without
 # module globals (pytest recommends config.stash over ad-hoc attributes).
 _FACTORY_KEY = pytest.StashKey[Callable[..., Any]]()

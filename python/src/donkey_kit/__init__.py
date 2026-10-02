@@ -19,7 +19,7 @@ docs/verified-apis.md.
 from __future__ import annotations
 
 from .core.budget import Budget
-from .core.cachecontrol import CacheControls
+from .core.cachecontrol import CacheControls, CacheScope
 from .core.config import DonkeyConfig, Region
 from .core.cost import CostTags
 from .core.errors import (
@@ -46,13 +46,18 @@ from .core.errors import (
     UpstreamRequestError,
     classify,
 )
+from .core.lastcall import LastCall, LastCallStatus
+from .core.telemetry import RunScope
 from .core.toolspec import ToolSpec, registered_tools
-from .donkey import Donkey
+from .core.transport import DonkeyAsyncClientView, DonkeyClientView
+from .donkey import Donkey, ToolsFacade
+from .llm.client import LLMClient
 from .registry import (
     STRICT,
     AssetRef,
     AssetType,
     Contact,
+    ExchangeRegistry,
     GovernanceCriteria,
     Publication,
     PublicationAssetType,
@@ -69,16 +74,23 @@ __all__ = [
     "Budget",
     "BudgetReserveReached",
     "CacheControls",
+    "CacheScope",
     "ConfigError",
     "Contact",
     "ContentSafetyBlocked",
     "CostTags",
     "Donkey",
+    "DonkeyAsyncClientView",
+    "DonkeyClientView",
     "DonkeyConfig",
     "DonkeyError",
+    "ExchangeRegistry",
     "GatewayUnavailable",
     "GovernanceCriteria",
     "GovernanceDrift",
+    "LLMClient",
+    "LastCall",
+    "LastCallStatus",
     "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
@@ -91,9 +103,11 @@ __all__ = [
     "PublicationDrift",
     "Region",
     "RegistryError",
+    "RunScope",
     "TokenBudgetExceeded",
     "ToolInvocationError",
     "ToolSpec",
+    "ToolsFacade",
     "UpstreamModelError",
     "UpstreamRequestError",
     "__version__",

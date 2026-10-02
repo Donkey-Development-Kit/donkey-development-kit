@@ -62,6 +62,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from crewai import BaseLLM
 
+__all__ = ["CrewAIAdapter", "llm"]
+
 
 class CrewAIAdapter(Adapter):
     extra = "crewai"

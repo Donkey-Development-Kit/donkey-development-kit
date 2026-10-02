@@ -32,6 +32,24 @@ from ..core.endpoints import ALLOW_HTTP_ENV
 from ..core.errors import DonkeyError
 from .spec import DonkeySpec
 
+__all__ = [
+    "app",
+    "apply",
+    "doctor",
+    "drift",
+    "generate",
+    "init",
+    "lint",
+    "main",
+    "mock",
+    "plan",
+    "publish",
+    "status",
+    "test",
+    "validate",
+    "verify",
+]
+
 app = typer.Typer(
     add_completion=False,
     help="SDK for Agent Fabric — governed model access, refusals, budgets, and telemetry.",

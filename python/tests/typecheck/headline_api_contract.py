@@ -15,10 +15,17 @@ from typing import Any
 from openai import AsyncOpenAI, OpenAI
 from typing_extensions import assert_type
 
-from donkey_kit import CostTags, Donkey, DonkeyConfig
-from donkey_kit.core.cachecontrol import CacheScope
-from donkey_kit.core.lastcall import LastCall
-from donkey_kit.core.telemetry import RunScope
+# Every type a Donkey member returns comes from the package root (#719).
+from donkey_kit import (
+    CacheScope,
+    CostTags,
+    Donkey,
+    DonkeyConfig,
+    LastCall,
+    LastCallStatus,
+    RunScope,
+    ToolsFacade,
+)
 from donkey_kit.integrations._base import Adapter
 from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 from donkey_kit.integrations.langgraph import LangGraphAdapter
@@ -73,6 +80,8 @@ async def check_scopes(donkey: Donkey) -> None:
 
     assert_type(donkey.last_call, LastCall)
     assert_type(donkey.last_call.total_tokens, int | None)
+    assert_type(donkey.last_call.status, LastCallStatus)
+    assert_type(donkey.tools, ToolsFacade)
 
     assert_type(donkey.openai(), AsyncOpenAI)
     assert_type(donkey.openai(sync=True), OpenAI)

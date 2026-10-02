@@ -99,6 +99,28 @@ from .telemetry import (
     start_genai_span,
 )
 
+__all__ = [
+    "CALL_ID_HEADER",
+    "CORRELATION_HEADER",
+    "CREDENTIAL_HEADERS",
+    "PROXY_API_KEY_SENTINEL",
+    "DonkeyAsyncClient",
+    "DonkeyAsyncClientView",
+    "DonkeyClient",
+    "DonkeyClientView",
+    "Origin",
+    "attribution_headers",
+    "build_http_client",
+    "build_sync_http_client",
+    "cost_headers",
+    "effective_cost_tags",
+    "origin_of",
+    "proxy_api_key",
+    "proxy_auth_headers",
+    "strip_credential_headers",
+    "sync_token_auth_error",
+]
+
 # Default request-header NAMES for the two correlation ids (BG §1.1, #195;
 # docs/verified-apis.md §3): the gateway reads and echoes ``X-Correlation-Id``,
 # and ``X-Donkey-Request-Id`` is the SDK's own per-call id. A customer overrides

@@ -42,6 +42,8 @@ from ..core.errors import (
 from .app import SIMULATOR_HEADER
 from .fixtures import Fixture, load, replay_headers
 
+__all__ = ["resolve_fixture", "simulate"]
+
 # Exception type -> the fixture shape whose captured bytes classify() maps back
 # to that exception. The inverse of the simulator's model-id sentinel table; the
 # classify() round-trip asserted in :func:`resolve_fixture` proves the mapping still

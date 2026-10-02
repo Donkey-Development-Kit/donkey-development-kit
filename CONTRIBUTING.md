@@ -435,6 +435,14 @@ build plan has the rationale behind each rule:
 - **pydantic v2** idioms (`model_validate`, `Field`, `model_config`); the
   `pydantic.mypy` plugin is on. The package ships `py.typed` (PEP 561) — keep the
   public API fully annotated so downstream users get types.
+- **Public API surface.** Every public module (no `_` in its path) declares a
+  sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey`
+  signature is exported from `donkey_kit` (or `donkey_kit.core`), and no class
+  name means two different types across those `__all__` lists
+  (`tests/unit/test_public_api_surface.py`). Submodule paths are not API. Don't
+  reach into another object's private members (ruff `SLF001`): the dev-only
+  simulator and conformance siblings go through `donkey_kit._testing`, and each
+  remaining exception carries a `# noqa: SLF001` with its reason.
 - **Three ergonomic forms per governed surface** — the `donkey.<framework>`
   factory, a `connection_kwargs()` accessor, and a module-level factory. Keep all
   three when adding an adapter (they must stay in lockstep). Hand the framework

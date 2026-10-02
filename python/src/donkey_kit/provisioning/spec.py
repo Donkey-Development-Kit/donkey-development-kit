@@ -20,6 +20,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+__all__ = [
+    "ApiSpec",
+    "ApiToolSpec",
+    "DonkeySpec",
+    "HttpMapping",
+    "McpBridgeSpec",
+    "PolicySpec",
+    "SpecMetadata",
+]
+
 
 class ApiToolSpec(BaseModel):
     """One MCP tool an :class:`ApiSpec` exposes: an API operation, by method and

@@ -24,6 +24,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from agents import OpenAIChatCompletionsModel
 
+__all__ = ["OpenAIAgentsAdapter", "model"]
+
 
 class OpenAIAgentsAdapter(Adapter):
     extra = "openai-agents"

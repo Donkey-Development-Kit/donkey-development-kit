@@ -36,6 +36,23 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
 
+__all__ = [
+    "LOCAL_TOML_NAME",
+    "TOKEN_AUTH_MODES",
+    "TOML_NAME",
+    "TRUST_PROJECT_CONFIG_ENV",
+    "Capability",
+    "ConfigOverrides",
+    "ConfigSource",
+    "DonkeyConfig",
+    "LlmProxyAuth",
+    "OnModelSubstitution",
+    "Region",
+    "SourceKind",
+    "load_config_table",
+    "missing_llm_auth_error",
+]
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.

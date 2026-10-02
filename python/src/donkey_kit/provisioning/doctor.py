@@ -52,6 +52,16 @@ from ..core.errors import (
 if TYPE_CHECKING:
     from ..core.budget import Budget
 
+__all__ = [
+    "DoctorCheck",
+    "Level",
+    "Probe",
+    "ProbeResult",
+    "format_report",
+    "has_failure",
+    "run_diagnostics",
+]
+
 #: The three llm-proxy fields ``config`` reports on (mirrors ``validated(need="llm")``).
 _LLM_FIELDS = ("llm_proxy_url", "llm_proxy_client_id", "llm_proxy_client_secret")
 
