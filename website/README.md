@@ -95,6 +95,16 @@ analytics. The site token is public by design and appears in the page source.
 Unset the variable and redeploy to remove the beacon. Collection and reporting
 live in the private `donkey-development-kit-metrics` dashboard.
 
+**One-time setup:** in Cloudflare (**Analytics & Logs → Web Analytics → Add a
+site**), register the hostname `docs.donkey-kit.dev`, choose the manual
+JavaScript snippet, and copy the token from its `data-cf-beacon` attribute
+into the `CF_WEB_ANALYTICS_TOKEN` variable. Because only `main` is published,
+the beacon goes live on the first Pages deploy after both the variable is set
+and the beacon code has reached `main`. Confirm it in browser devtools:
+`beacon.min.js` loads and the page reports to
+`cloudflareinsights.com/cdn-cgi/rum` with no console or Content Security Policy
+errors.
+
 `npm test` runs the beacon gate's unit tests.
 
 ## Structure
