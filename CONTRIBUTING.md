@@ -165,6 +165,7 @@ pytest -q          # the `test` matrix job (3.10/3.11/3.12 in CI)
 mypy               # mypy --strict, BLOCKING
 ruff check .       # E,F,I,UP,B; line-length 100
 lint-imports       # the layered, framework-free-core contract
+vulture            # dead code in src/; allowed names in vulture_whitelist.py
 ```
 
 If the diff touches an adapter or framework wiring, also run the signature check
