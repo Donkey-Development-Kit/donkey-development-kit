@@ -532,7 +532,7 @@ class Donkey:
                 coro_fn = cast(Callable[_P, Awaitable[Any]], fn)
 
                 @functools.wraps(fn)
-                async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
+                async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> object:
                     async with self.run(
                         team=team, project=project, env=env, enduser_id=enduser_id
                     ):

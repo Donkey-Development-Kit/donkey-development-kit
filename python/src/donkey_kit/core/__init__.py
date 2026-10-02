@@ -3,6 +3,7 @@
 HARD RULE (the layered architecture): nothing in this package may import from
 ``donkey_kit.integrations``. Enforced by import-linter in CI.
 """
+from __future__ import annotations
 
 from .auth import AnypointConnectedApp, AuthProvider, ChainedAuth, StaticToken
 from .budget import Budget

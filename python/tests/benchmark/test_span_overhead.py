@@ -26,7 +26,7 @@ import pytest
 
 pytest.importorskip("opentelemetry.sdk")
 
-from donkey_kit.core import telemetry  # noqa: E402 — after importorskip
+from donkey_kit.core import telemetry
 
 pytestmark = pytest.mark.benchmark
 

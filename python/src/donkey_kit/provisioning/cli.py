@@ -101,7 +101,7 @@ def _global(
 def _load_spec(file: Path) -> DonkeySpec:
     try:
         return DonkeySpec.from_yaml(file.read_text())
-    except Exception as exc:  # noqa: BLE001 - surface a clean message
+    except Exception as exc:
         typer.secho(f"Invalid spec {file}: {exc}", fg="red", err=True)
         raise typer.Exit(2) from exc
 

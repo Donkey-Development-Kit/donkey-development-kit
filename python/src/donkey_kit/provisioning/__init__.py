@@ -4,9 +4,9 @@ Separate entry point from the runtime SDK. Nothing in the runtime path mutates
 shared state (working instruction #11); every mutation lives here and runs in CI
 from a reviewed spec under platform-controlled credentials.
 """
+from __future__ import annotations
 
 import warnings
-from typing import Any
 
 from .applier import ApplyResult, PolicyAllowList
 from .lint import Finding, LintResult, Severity
@@ -41,7 +41,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> type[ApiToolSpec]:
     # Deprecated alias (#719): ``ToolSpec`` collided with ``donkey_kit.ToolSpec``.
     if name == "ToolSpec":
         warnings.warn(

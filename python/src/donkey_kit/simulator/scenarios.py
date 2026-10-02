@@ -38,7 +38,7 @@ import json
 import logging
 import time
 import warnings
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from .fixtures import (
     LIMIT_HEADER,
@@ -169,7 +169,7 @@ class PiiBlockScenario:
         self._every = every
         self._count = 0
 
-    def on_call(self, text: str) -> ScenarioHit | None:
+    def on_call(self, text: str) -> ScenarioHit | None:  # noqa: ARG002 - Scenario protocol
         """Reject with the PII shape on every Nth call."""
         self._count += 1
         if self._count % self._every == 0:
@@ -234,7 +234,7 @@ class BudgetScenario:
             elapsed_ms = 0.0
         self._reset_ms = max(0, int(self._window_ms - elapsed_ms))
 
-    def on_call(self, text: str) -> ScenarioHit | None:
+    def on_call(self, text: str) -> ScenarioHit | None:  # noqa: ARG002 - Scenario protocol
         """Spend this call's tokens; reject with the token-budget shape once the window is spent."""
         self._advance_window()
         if self._remaining <= 0:
@@ -344,7 +344,7 @@ def parse_scenarios(specs: list[str]) -> tuple[FaultScenario, ...]:
     return tuple(parse_scenario(s) for s in specs)
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> type[FaultScenario]:
     # Deprecated alias (#719): ``Scenario`` collided with ``conformance.Scenario``.
     if name == "Scenario":
         warnings.warn(

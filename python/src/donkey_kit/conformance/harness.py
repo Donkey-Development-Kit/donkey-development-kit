@@ -198,10 +198,10 @@ def _block_real_transports(attempts: list[str]) -> Iterator[None]:
             )
             return error
 
-        def blocked_sync(self: Any, request: Any) -> Any:
+        def blocked_sync(_self: Any, request: Any) -> Any:
             raise refuse(request)
 
-        async def blocked_async(self: Any, request: Any) -> Any:
+        async def blocked_async(_self: Any, request: Any) -> Any:
             raise refuse(request)
 
         for cls, method, blocked in (

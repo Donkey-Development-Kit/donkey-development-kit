@@ -237,24 +237,68 @@ target-version = "py310"
 # BLE/LOG/G: no blind except without a reason, and logging-call hygiene (#717).
 # D101-D103: every public class, method and function in src/ has a docstring
 # (#722). Only these three D rules are on; tests/examples/scripts are exempt below.
+# #721, "the style guide is the config": each CONTRIBUTING §3 rule maps to an
+# enforcing rule. I002 (with isort.required-imports below) makes
+# `from __future__ import annotations` mandatory; FA backs it for PEP 604/585
+# syntax; RUF100 drops stale noqa; TRY203 forbids bare re-raise handlers; ARG
+# flags unused arguments; ANN401 forbids `Any` in signatures outside the
+# pass-through seams listed in per-file-ignores.
 select = [
     "E", "F", "I", "UP", "B", "BLE", "LOG", "G", "SLF001", "RUF022",
     "D101", "D102", "D103",
+    "I002", "FA", "RUF100", "TRY203", "ARG", "ANN401",
 ]
 
 [tool.ruff.lint.pydocstyle]
 # Google-style "Args:" / "Raises:" sections; the prose-only docstrings fit it too.
 convention = "google"
 
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.lint.flake8-annotations]
+# `*args: Any` / `**kwargs: Any` that pass straight through to a framework or
+# httpx constructor are the sanctioned use of Any (ANN401); everything else is
+# either typed or listed per-file below with its reason.
+allow-star-arg-any = true
+
+[tool.ruff.lint.flake8-unused-arguments]
+# Same pass-through rule for ARG: a `**kwargs` accepted to honour an upstream
+# callback signature is not an unused argument.
+ignore-variadic-names = true
+
 [tool.ruff.lint.per-file-ignores]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).
-"src/donkey_kit/provisioning/cli.py" = ["B008"]
+# The blocked CLI commands also keep their final options (ARG001, see below).
+"src/donkey_kit/provisioning/cli.py" = ["B008", "ARG001"]
+# Verification-blocked stubs (§0.3): each raises `_verify.blocked(...)` but keeps
+# its final, documented signature, so its arguments are unused until the API is
+# verified. Remove the entry when the module's stubs are implemented.
+"src/donkey_kit/donkey.py" = ["ARG002"]
+"src/donkey_kit/governance.py" = ["ARG002"]
+"src/donkey_kit/provisioning/applier.py" = ["ARG001"]
+"src/donkey_kit/provisioning/planner.py" = ["ARG001"]
+"src/donkey_kit/provisioning/publish.py" = ["ARG001"]
+"src/donkey_kit/registry/exchange.py" = ["ARG002"]
+"src/donkey_kit/registry/introspect.py" = ["ARG001"]
+"src/donkey_kit/registry/publication.py" = ["ARG002"]
 # The one sanctioned seam module: the dev-only simulator and conformance siblings
-# reach Donkey's and its clients' private members only through it (#719).
-"src/donkey_kit/_testing.py" = ["SLF001"]
+# reach Donkey's and its clients' private members only through it (#719). Its
+# transport arguments stay `Any` (ANN401): the sync and async clients take
+# different httpx transport types, and a union would break the Protocol match.
+"src/donkey_kit/_testing.py" = ["SLF001", "ANN401"]
+# ANN401 seams: these modules bind objects from optional dependencies that are
+# imported lazily (framework extras, §1.1; opentelemetry; starlette) or from the
+# user's own agent and pytest, so `Any` is the honest annotation there.
+"src/donkey_kit/integrations/**" = ["ANN401"]
+"src/donkey_kit/conformance/**" = ["ANN401"]
+"src/donkey_kit/simulator/app.py" = ["ANN401"]
+"src/donkey_kit/core/telemetry.py" = ["ANN401"]
 # White-box tests inspect and swap private state by design (#719); docstring
-# rules apply to the shipped package only (#722).
-"tests/**" = ["SLF001", "D101", "D102", "D103"]
+# rules apply to the shipped package only (#722). Tests also request fixtures for
+# their side effects and write doubles that mirror third-party signatures, so
+# unused and `Any`-typed arguments are expected there.
+"tests/**" = ["SLF001", "D101", "D102", "D103", "ARG", "ANN401"]
 "examples/**" = ["D101", "D102", "D103"]
 "scripts/**" = ["D101", "D102", "D103"]
 

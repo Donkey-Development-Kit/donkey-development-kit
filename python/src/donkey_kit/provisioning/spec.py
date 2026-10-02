@@ -107,7 +107,7 @@ class DonkeySpec(BaseModel):
         return cls.model_validate(data)
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> type[ApiToolSpec]:
     # Deprecated alias (#719): ``ToolSpec`` collided with ``donkey_kit.ToolSpec``.
     if name == "ToolSpec":
         warnings.warn(

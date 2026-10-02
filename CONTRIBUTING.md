@@ -163,7 +163,7 @@ non-zero exit means stop and fix before opening the PR:
 cd python
 pytest -q          # the `test` matrix job (3.10/3.11/3.12 in CI)
 mypy               # mypy --strict, BLOCKING
-ruff check .       # E,F,I,UP,B,BLE,LOG,G; line-length 100
+ruff check .       # rule families in pyproject.toml (see the §3 map); line-length 100
 lint-imports       # the layered, framework-free-core contract
 vulture            # dead code in src/; allowed names in vulture_whitelist.py
 ```
@@ -402,9 +402,11 @@ build plan has the rationale behind each rule:
 
 - **`mypy --strict`, blocking.** The whole `src/donkey_kit` tree and the
   downstream public-API contracts under `tests/typecheck/` are strict-checked.
-  Annotate every public signature; no untyped defs, no implicit `Any`. Prefer
+  Annotate every public signature; no untyped defs, no implicit `Any`, and an
+  explicit `Any` only for a `*args`/`**kwargs` pass-through or an optional-dep
+  seam listed in `pyproject.toml` (ruff `ANN401`). Prefer
   `X | None` over `Optional[X]` (ruff `UP` rewrites the old form), and put
-  `from __future__ import annotations` at the top of every module (house style).
+  `from __future__ import annotations` at the top of every module (ruff `I002`).
   Don't silence a real signature mismatch with an unexplained `# type: ignore`
   — the single `[[tool.mypy.overrides]]` block already handles optional/absent
   framework deps.
@@ -487,9 +489,56 @@ build plan has the rationale behind each rule:
   regular files or links that stay inside the working directory. The LLM proxy authenticates on
   a `client_id`/`client_secret` header pair (consumer auth), separate from any
   Anypoint control-plane credential.
+- **No dead parameters or stale suppressions.** An argument a function never
+  reads is removed (ruff `ARG`); when an override, protocol or blocked stub fixes
+  the signature, it stays with a `# noqa: ARG00x` naming that API, or with a
+  `per-file-ignores` entry for a module of blocked stubs; a `# noqa` that suppresses nothing is deleted (ruff `RUF100`); and an
+  `except` that only re-raises is dropped (ruff `TRY203`).
+- **Error contract.** Every `DonkeyError` subclass ships its own non-empty
+  default `remediation` (overridable, never blank) and is exported from
+  `donkey_kit`, as is `classify`. A domain failure raises a `DonkeyError`
+  subclass, never a builtin exception.
+- **One source of truth, no dead code.** Gateway header names live only in
+  `core/_wire.py`; import them, never retype the string. Each env var is named
+  once, in `core/config.py`'s field table. Code nothing in `src/` uses is
+  deleted (`vulture`); a name used only from outside `src/` goes in
+  `vulture_whitelist.py` (its docstring says when), and a public symbol is
+  deprecated with a `DeprecationWarning` before it is removed.
+
+### Rule-to-enforcement map
+
+The style guide is the config (#721): every rule above is enforced by a tool or
+a test in the pre-PR gate, or is marked review-only. When you add a
+rule, add its row; a rule that nothing can check is a review note, not a rule.
+
+| Rule | Enforced by | Where it runs |
+| --- | --- | --- |
+| `mypy --strict`, annotated public API | mypy `strict = true` over `src/donkey_kit` and `tests/typecheck/` | `typecheck-and-lint`: `mypy` |
+| Examples type-check too | mypy `--strict`, one `python/examples/` directory per run | `typecheck-and-lint` (LangGraph: `langgraph-demo`) |
+| No explicit `Any` outside listed seams | ruff `ANN401` (`allow-star-arg-any`; seams in `per-file-ignores`) | `ruff check .` |
+| No unexplained `# type: ignore` | mypy `warn_unused_ignores` (part of `strict`) catches stale ones; the explanation is review-only | `mypy` |
+| `X \| None`, PEP 585/604 syntax | ruff `UP`, `FA` | `ruff check .` |
+| `from __future__ import annotations` in every module | ruff `I002` (`isort.required-imports`) | `ruff check .` |
+| Framework-free core, layering | import-linter contracts in `pyproject.toml` | `lint-imports` |
+| Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
+| Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
+| Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |
+| 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
+| `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
+| Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it (the `pydantic.mypy` plugin types the one boundary, `provisioning/spec.py`) | review |
+| Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
+| Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
+| Trademark-descriptive language | Review-only | review |
+| Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py` | `pytest` |
+| No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
+| Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
+| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py` | `ruff check .`, `pytest` |
+| Docstrings on public symbols (#722) | ruff `D101`-`D103` on `src/`; `tests/unit/test_public_docstrings.py` (summary + docs link on the headline entry points) | `ruff check .`, `pytest` |
+| Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
+| One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |
 
 Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .`,
-`lint-imports`, `pytest`), plus `verify_frameworks.py` if you touched adapters.
+`lint-imports`, `vulture`, `pytest`), plus `verify_frameworks.py` if you touched adapters.
 
 ### Logging
 

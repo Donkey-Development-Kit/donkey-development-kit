@@ -24,26 +24,26 @@ import pytest
 
 pytest.importorskip("openai")
 
-import openai  # noqa: E402 — after importorskip
+import openai
 
-from donkey_kit.conformance import harness as harness_module  # noqa: E402
-from donkey_kit.conformance import run_conformance, validate_known_limitations  # noqa: E402
-from donkey_kit.conformance.harness import (  # noqa: E402
+from donkey_kit.conformance import harness as harness_module
+from donkey_kit.conformance import run_conformance, validate_known_limitations
+from donkey_kit.conformance.harness import (
     _PLACEHOLDER,
     _PLACEHOLDER_URL,
     ConformanceUsageError,
     _build_agent,
     offline_config,
 )
-from donkey_kit.conformance.suite import (  # noqa: E402
+from donkey_kit.conformance.suite import (
     NO_MODEL_CALL,
     SCENARIOS,
     Observation,
     _no_model_call,
 )
-from donkey_kit.core.errors import classify  # noqa: E402
-from donkey_kit.core.telemetry import current_correlation_id  # noqa: E402
-from donkey_kit.donkey import Donkey  # noqa: E402
+from donkey_kit.core.errors import classify
+from donkey_kit.core.telemetry import current_correlation_id
+from donkey_kit.donkey import Donkey
 
 _LOG = logging.getLogger("donkey_kit.tests.toy_agent")
 
