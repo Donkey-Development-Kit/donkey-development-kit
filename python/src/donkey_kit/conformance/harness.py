@@ -34,6 +34,7 @@ from typing import Any
 
 import httpx
 
+from ..core import _wire
 from ..core.config import DonkeyConfig
 from ..core.errors import DonkeyError
 from ..donkey import Donkey
@@ -114,7 +115,9 @@ def _fixture_responder(
     def respond(request: httpx.Request) -> httpx.Response:
         headers = replay_headers(fixture)
         if strip_budget:
-            headers = {k: v for k, v in headers.items() if not k.startswith("x-token-")}
+            headers = {
+                k: v for k, v in headers.items() if not k.startswith(_wire.TOKEN_HEADER_PREFIX)
+            }
         if fixture.content_type is not None:
             headers["content-type"] = fixture.content_type
         headers[SIMULATOR_HEADER] = "true"

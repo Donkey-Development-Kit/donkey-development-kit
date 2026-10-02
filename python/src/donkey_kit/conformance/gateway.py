@@ -32,6 +32,7 @@ from collections.abc import Awaitable, Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
+from ..core import _wire
 from ..simulator.app import ASGIApp, SimulatorConfig, build_app
 from ..simulator.scenarios import Scenario, parse_scenario
 
@@ -49,7 +50,9 @@ _LOCAL_EXTRA_HINT = (
 # Request headers whose values are redacted in the spy: the consumer-auth secret
 # (BG §1.1 — the `client_secret` request header the transport sends) and any
 # bearer token. Matched case-insensitively; ASGI already lowercases header names.
-_REDACTED_HEADERS = frozenset({"client_secret", "authorization"})
+_REDACTED_HEADERS = frozenset(
+    {_wire.LLM_PROXY_CLIENT_SECRET_HEADER, _wire.LLM_PROXY_WALLET_JWT_HEADER.lower()}
+)
 _REDACTED = "***"
 
 # How long to wait for uvicorn to report `started` before giving up.
