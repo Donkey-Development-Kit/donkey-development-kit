@@ -17,6 +17,7 @@ import functools
 import importlib
 import importlib.util
 import inspect
+import warnings
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
@@ -39,8 +40,8 @@ from .core.transport import (
 )
 from .integrations import ADAPTERS, missing_framework_error
 from .llm.client import LLMClient
+from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
-from .registry.governance import GovernanceCriteria
 from .tools.session import ToolSet
 
 if TYPE_CHECKING:
@@ -56,6 +57,8 @@ if TYPE_CHECKING:
     from .integrations.llamaindex import LlamaIndexAdapter
     from .integrations.openai_agents import OpenAIAgentsAdapter
     from .integrations.strands import StrandsAdapter
+
+__all__ = ["Donkey", "ToolsFacade"]
 
 
 _Callable = TypeVar("_Callable", bound=Callable[..., Any])
@@ -75,7 +78,7 @@ def _missing_module(probe: tuple[str, ...]) -> str | None:
     return None
 
 
-class _ToolsFacade:
+class ToolsFacade:
     """``donkey.tools`` — discovery + lock (BG §2.7)."""
 
     def __init__(self, registry: ExchangeRegistry) -> None:
@@ -87,7 +90,6 @@ class _ToolsFacade:
         domain: str | None = None,
         tags: list[str] | None = None,
         governed: bool | GovernanceCriteria | None = None,
-        governance: Any | None = None,
         locked: bool = False,
     ) -> ToolSet:
         """Discover a governed tool catalog and return a bindable ``ToolSet``.
@@ -149,7 +151,7 @@ class Donkey:
         self._control_http: DonkeyAsyncClient = self._runtime.control_http
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
         self._registry = ExchangeRegistry(self._cfg, self._control_http)
-        self._tools = _ToolsFacade(self._registry)
+        self._tools = ToolsFacade(self._registry)
         self._adapter_cache: dict[str, Adapter] = {}
 
     @classmethod
@@ -306,7 +308,7 @@ class Donkey:
         return self._registry
 
     @property
-    def tools(self) -> _ToolsFacade:
+    def tools(self) -> ToolsFacade:
         return self._tools
 
     def run(
@@ -354,7 +356,13 @@ class Donkey:
         return run_scope(id, override if not override.is_empty else None)
 
     def run_context(self, run_id: str | None = None) -> RunScope:
-        """Back-compat alias for :meth:`run` (BG §1.7). Prefer ``donkey.run(id=…)``."""
+        """Deprecated alias for :meth:`run` (BG §1.7): use ``donkey.run(id=…)``.
+        Emits a :class:`DeprecationWarning` (#720)."""
+        warnings.warn(
+            "Donkey.run_context() is deprecated; use donkey.run(id=...) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.run(run_id)
 
     def cache(

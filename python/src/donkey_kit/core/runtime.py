@@ -32,6 +32,8 @@ from .transport import (
     build_sync_http_client,
 )
 
+__all__ = ["Runtime", "close_default", "default"]
+
 _log = logging.getLogger(__name__)
 
 

@@ -13,8 +13,10 @@ from ..core import _verify
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
 from ..core.transport import DonkeyAsyncClient
-from .governance import GovernanceCriteria, GovernanceReport
+from .criteria import GovernanceCriteria, GovernanceReport
 from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
+
+__all__ = ["ExchangeRegistry"]
 
 
 class ExchangeRegistry:
@@ -68,7 +70,7 @@ class ExchangeRegistry:
         raise _verify.blocked(
             "governed-state join: per-instance 'deployed' readability and ruleset results API (the "
             "Verification milestone). Until verified, explain() cannot produce real Check rows; "
-            "see registry/governance.py for the pure evaluation logic."
+            "see registry/criteria.py for the pure evaluation logic."
         )
 
     async def warm(self, *, environment: str | None = None) -> None:

@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+__all__ = ["ToolDescriptor", "ToolFilter", "resolve_collisions"]
+
 
 @dataclass(frozen=True)
 class ToolDescriptor:

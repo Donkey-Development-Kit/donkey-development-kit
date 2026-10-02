@@ -47,20 +47,23 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from . import _wire
 from .errors import BudgetReserveReached
 from .lastcall import is_cache_hit
 
+__all__ = ["LIMIT_HEADER", "RATELIMIT_HEADER", "REMAINING_HEADER", "RESET_HEADER", "Budget"]
+
 # The three numeric budget headers of the token-rate-limit policy
 # (docs/verified-apis.md §4, row `Token rate limiting`) — present on the
-# 429. Named here so the one place that parses them is greppable.
-LIMIT_HEADER = "x-token-limit"
-REMAINING_HEADER = "x-token-remaining"
-RESET_HEADER = "x-token-reset"
+# 429. The names are defined in ``core/_wire``.
+LIMIT_HEADER = _wire.TOKEN_LIMIT_HEADER
+REMAINING_HEADER = _wire.TOKEN_REMAINING_HEADER
+RESET_HEADER = _wire.TOKEN_RESET_HEADER
 
 # The prose fallback: one header carrying all three values as an English sentence,
 # emitted on the 200 (and the 403) that never carry the numeric trio (#352). Listed
 # in the API's CORS `exposedHeaders`, so it is an intended part of the contract.
-RATELIMIT_HEADER = "x-llm-proxy-ratelimit"
+RATELIMIT_HEADER = _wire.RATELIMIT_HEADER
 
 # Matches `… 10000 tokens remaining of 10000 limit. Reset in 56711ms.`. Requires
 # all three values: a partial or reworded sentence fails to match and is treated

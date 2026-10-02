@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from ..core import _verify
 from .spec import DonkeySpec
 
+__all__ = ["Change", "Plan", "build_plan"]
+
 
 @dataclass(frozen=True)
 class Change:

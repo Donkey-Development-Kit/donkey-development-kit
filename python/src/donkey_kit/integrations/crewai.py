@@ -62,9 +62,10 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from crewai import BaseLLM
 
+__all__ = ["CrewAIAdapter", "llm"]
+
 
 class CrewAIAdapter(Adapter):
-    extra = "crewai"
     # CrewAI's provider owns the transport, so no response reaches donkey.last_call
     # (#362, the same reason as the conformance kit's correlation_id_propagated exemption).
     observes_last_call = False

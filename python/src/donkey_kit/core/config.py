@@ -36,6 +36,23 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
 
+__all__ = [
+    "LOCAL_TOML_NAME",
+    "TOKEN_AUTH_MODES",
+    "TOML_NAME",
+    "TRUST_PROJECT_CONFIG_ENV",
+    "Capability",
+    "ConfigOverrides",
+    "ConfigSource",
+    "DonkeyConfig",
+    "LlmProxyAuth",
+    "OnModelSubstitution",
+    "Region",
+    "SourceKind",
+    "load_config_table",
+    "missing_llm_auth_error",
+]
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
@@ -123,8 +140,8 @@ class ConfigOverrides(TypedDict, total=False):
     send_cost_headers: bool
 
 
-_TOML_NAME = ".donkey-kit.toml"
-_LOCAL_TOML_NAME = ".donkey-kit.local.toml"
+TOML_NAME = ".donkey-kit.toml"
+LOCAL_TOML_NAME = ".donkey-kit.local.toml"
 TRUST_PROJECT_CONFIG_ENV = "DONKEY_TRUST_PROJECT_CONFIG"
 
 SourceKind = Literal["explicit", "env", "project", "local", "user", "default"]
@@ -143,32 +160,64 @@ _SOURCE_LABELS: dict[SourceKind, str] = {
 _WORKDIR_KINDS: frozenset[SourceKind] = frozenset({"project", "local"})
 _FILE_KINDS: frozenset[SourceKind] = _WORKDIR_KINDS | {"user"}
 
-# The keys that name a request header: key, env var, and the default name.
-_HEADER_KEYS: tuple[tuple[str, str, str], ...] = (
-    ("correlation_header", "DONKEY_CORRELATION_HEADER", _verify.CORRELATION_ID_HEADER),
-    ("call_id_header", "DONKEY_CALL_ID_HEADER", _verify.CALL_ID_HEADER),
-    ("cost_team_header", "DONKEY_COST_TEAM_HEADER", _verify.COST_TEAM_HEADER),
-    ("cost_project_header", "DONKEY_COST_PROJECT_HEADER", _verify.COST_PROJECT_HEADER),
-    ("cost_env_header", "DONKEY_COST_ENV_HEADER", _verify.COST_ENV_HEADER),
-    ("cost_enduser_header", "DONKEY_COST_ENDUSER_HEADER", _verify.COST_ENDUSER_HEADER),
-)
-
-# Keys that should never sit in the committed project file.
-_SECRET_KEYS = ("client_secret", "llm_proxy_client_secret", "llm_proxy_key")
-
-# The fields whose values are checked on construction (#809), each with the env
-# var that sets it, for error messages.
-_CHECKED_ENV_VARS: dict[str, str] = {
+# The environment variable that sets each field: the one table from_env(),
+# missing_fields() and the error messages read. ``cost`` is set per dimension
+# instead (``_COST_KEYS``). A unit test pins that it covers every other field.
+_ENV_VARS: dict[str, str] = {
+    "client_id": "ANYPOINT_CLIENT_ID",
+    "client_secret": "ANYPOINT_CLIENT_SECRET",
+    "org_id": "ANYPOINT_ORG_ID",
+    "environment": "ANYPOINT_ENV",
     "region": "ANYPOINT_REGION",
+    "base_url": "ANYPOINT_BASE_URL",
+    "llm_proxy_url": "DONKEY_LLM_PROXY_URL",
+    "llm_proxy_client_id": "DONKEY_LLM_PROXY_CLIENT_ID",
+    "llm_proxy_client_secret": "DONKEY_LLM_PROXY_CLIENT_SECRET",
+    "llm_proxy_key": "DONKEY_LLM_PROXY_KEY",
     "llm_proxy_auth": "DONKEY_LLM_PROXY_AUTH",
-    "on_model_substitution": "DONKEY_ON_MODEL_SUBSTITUTION",
+    "llm_proxy_wallet_client_id": "DONKEY_LLM_PROXY_WALLET_CLIENT_ID",
+    "application_name": "DONKEY_APP_NAME",
+    "business_group": "DONKEY_BUSINESS_GROUP",
+    "correlation_header": "DONKEY_CORRELATION_HEADER",
+    "call_id_header": "DONKEY_CALL_ID_HEADER",
+    "cost_team_header": "DONKEY_COST_TEAM_HEADER",
+    "cost_project_header": "DONKEY_COST_PROJECT_HEADER",
+    "cost_env_header": "DONKEY_COST_ENV_HEADER",
+    "cost_enduser_header": "DONKEY_COST_ENDUSER_HEADER",
     "timeout_s": "DONKEY_TIMEOUT_S",
     "max_retries": "DONKEY_MAX_RETRIES",
     "registry_cache_ttl_s": "DONKEY_REGISTRY_CACHE_TTL_S",
     "telemetry": "DONKEY_TELEMETRY",
     "telemetry_capture_content": "DONKEY_TELEMETRY_CAPTURE_CONTENT",
+    "on_model_substitution": "DONKEY_ON_MODEL_SUBSTITUTION",
     "send_cost_headers": "DONKEY_SEND_COST_HEADERS",
 }
+
+# The keys that name a request header, each with its default name.
+_HEADER_KEYS: tuple[tuple[str, str], ...] = (
+    ("correlation_header", _verify.CORRELATION_ID_HEADER),
+    ("call_id_header", _verify.CALL_ID_HEADER),
+    ("cost_team_header", _verify.COST_TEAM_HEADER),
+    ("cost_project_header", _verify.COST_PROJECT_HEADER),
+    ("cost_env_header", _verify.COST_ENV_HEADER),
+    ("cost_enduser_header", _verify.COST_ENDUSER_HEADER),
+)
+
+# Keys that should never sit in the committed project file.
+_SECRET_KEYS = ("client_secret", "llm_proxy_client_secret", "llm_proxy_key")
+
+# The fields whose values are checked on construction (#809).
+_CHECKED_KEYS: tuple[str, ...] = (
+    "region",
+    "llm_proxy_auth",
+    "on_model_substitution",
+    "timeout_s",
+    "max_retries",
+    "registry_cache_ttl_s",
+    "telemetry",
+    "telemetry_capture_content",
+    "send_cost_headers",
+)
 
 # The allowed values of each choice field.
 _CHOICES: dict[str, tuple[str, ...]] = {
@@ -252,26 +301,24 @@ def _as_loaded(name: str, entry: object) -> _Loaded:
 @dataclass(frozen=True)
 class DonkeyConfig:
     # --- Anypoint control plane (registry + provisioning) ---
-    client_id: str | None = None          # env: ANYPOINT_CLIENT_ID
-    client_secret: str | None = field(default=None, repr=False)  # env: ANYPOINT_CLIENT_SECRET
-    org_id: str | None = None             # env: ANYPOINT_ORG_ID
-    environment: str = "Sandbox"          # env: ANYPOINT_ENV
-    region: Region = "us"                 # env: ANYPOINT_REGION
+    client_id: str | None = None
+    client_secret: str | None = field(default=None, repr=False)
+    org_id: str | None = None
+    environment: str = "Sandbox"
+    region: Region = "us"
     base_url: str | None = None           # override; else derived from region
 
     # --- LLM proxy (data plane) — SEPARATE credential from the control plane ---
     # Auth is a client_id/client_secret REQUEST-header pair (client-id-enforcement),
     # docs/verified-apis.md §2/§3. NOT a bearer token.
-    llm_proxy_url: str | None = None            # env: DONKEY_LLM_PROXY_URL
-    llm_proxy_client_id: str | None = None      # env: DONKEY_LLM_PROXY_CLIENT_ID
-    llm_proxy_client_secret: str | None = field(  # env: DONKEY_LLM_PROXY_CLIENT_SECRET
-        default=None, repr=False
-    )
+    llm_proxy_url: str | None = None
+    llm_proxy_client_id: str | None = None
+    llm_proxy_client_secret: str | None = field(default=None, repr=False)
     # Optional: the value for the client's API-key slot, sent to the LLM proxy
     # (``Authorization: Bearer`` from OpenAI-compatible clients, ``x-api-key`` from
     # Anthropic, ``x-goog-api-key`` from ADK's gemini()). A client-id proxy ignores
     # it; leave unset to send a sentinel.
-    llm_proxy_key: str | None = field(default=None, repr=False)  # env: DONKEY_LLM_PROXY_KEY
+    llm_proxy_key: str | None = field(default=None, repr=False)
 
     # --- LLM proxy auth mode (BG §1.1, #509) ---
     # Which data-plane ingress the proxy uses. Default ``"client-id"`` (the
@@ -281,36 +328,36 @@ class DonkeyConfig:
     # client ID sent as the ``X-Client-Id`` header (docs/verified-apis.md §2/§3, #372).
     # ``"bearer"`` sends only ``Authorization: Bearer <token>`` from that provider
     # (#836).
-    llm_proxy_auth: LlmProxyAuth = "client-id"  # env: DONKEY_LLM_PROXY_AUTH
+    llm_proxy_auth: LlmProxyAuth = "client-id"
     # The wallet-selector client ID sent as ``X-Client-Id`` in JWT mode — the
     # wallet's system-generated clientId (read from the omni API, see the
     # ddk-configure-llm-proxy-model-wallet skill). Durable, not rotating, so it IS
     # a config field (the rotating JWT is not); required in JWT mode. Ignored in
     # client-id mode.
-    llm_proxy_wallet_client_id: str | None = None  # env: DONKEY_LLM_PROXY_WALLET_CLIENT_ID
+    llm_proxy_wallet_client_id: str | None = None
 
     # --- Attribution (real header names: see docs/verified-apis.md §3) ---
-    application_name: str | None = None   # env: DONKEY_APP_NAME
-    business_group: str | None = None     # env: DONKEY_BUSINESS_GROUP
+    application_name: str | None = None
+    business_group: str | None = None
 
     # --- Correlation request-header NAME overrides (BG §1.1, #195) ---
     # Override the correlation/call-id request-header names (docs/verified-apis.md
     # §3) without a release. Unset → the defaults in ``core/_verify``.
     # These and the ``cost_*_header`` names are checked on construction: see
     # ``core/header_names`` for the names they may not use.
-    correlation_header: str | None = None  # env: DONKEY_CORRELATION_HEADER
-    call_id_header: str | None = None      # env: DONKEY_CALL_ID_HEADER
+    correlation_header: str | None = None
+    call_id_header: str | None = None
 
     # --- Cost-attribution tags + request-header NAME overrides (docs/verified-apis.md §3, #196) ---
     # The fixed dimensions (team/project/env/enduser.id), set once and emitted on
     # every call. The gateway ingests no cost-tag header (docs/verified-apis.md
     # §3), so these are sent only with ``send_cost_headers``; the ``cost_*_header``
     # overrides rename them — unset → the defaults in ``core/_verify``.
-    cost: CostTags = CostTags()            # env: DONKEY_COST_{TEAM,PROJECT,ENV,ENDUSER_ID}
-    cost_team_header: str | None = None    # env: DONKEY_COST_TEAM_HEADER
-    cost_project_header: str | None = None  # env: DONKEY_COST_PROJECT_HEADER
-    cost_env_header: str | None = None     # env: DONKEY_COST_ENV_HEADER
-    cost_enduser_header: str | None = None  # env: DONKEY_COST_ENDUSER_HEADER
+    cost: CostTags = CostTags()
+    cost_team_header: str | None = None
+    cost_project_header: str | None = None
+    cost_env_header: str | None = None
+    cost_enduser_header: str | None = None
 
     # --- Behaviour ---
     timeout_s: float = 60.0
@@ -333,7 +380,7 @@ class DonkeyConfig:
     # ``enduser.id`` header would carry an end-user identifier for no reader.
     # When enabled, the headers go on data-plane (model) requests only, never on
     # a control-plane client's (#833).
-    send_cost_headers: bool = False  # env: DONKEY_SEND_COST_HEADERS
+    send_cost_headers: bool = False
 
     # --- Provenance (config resolution) ---
     # Where each field was resolved from and a keyed digest of the value it had
@@ -353,18 +400,16 @@ class DonkeyConfig:
         """Refuse out-of-range numbers, non-boolean switches and unknown choices,
         listing every bad field in one error. Runs on every construction, so
         :meth:`with_overrides` and ``dataclasses.replace`` re-check too (#809)."""
-        values = {key: getattr(self, key) for key in _CHECKED_ENV_VARS}
-        problems = _value_problems(
-            values, lambda key: _where(self.source_of(key), _CHECKED_ENV_VARS[key])
-        )
+        values = {key: getattr(self, key) for key in _CHECKED_KEYS}
+        problems = _value_problems(values, lambda key: _where(self.source_of(key), _ENV_VARS[key]))
         if problems:
             raise _invalid_config(problems)
 
     def _check_header_names(self) -> None:
         """Refuse a configurable header name that isn't safe to send, or that
         two keys share (see :mod:`donkey_kit.core.header_names`)."""
-        in_use = {key: getattr(self, key) or dflt for key, _, dflt in _HEADER_KEYS}
-        for key, env_var, _ in _HEADER_KEYS:
+        in_use = {key: getattr(self, key) or dflt for key, dflt in _HEADER_KEYS}
+        for key, _ in _HEADER_KEYS:
             name = getattr(self, key)
             if name is None:
                 continue
@@ -376,7 +421,7 @@ class DonkeyConfig:
             if problem is not None:
                 raise ConfigError(
                     f"{key} names the header {name!r}, which can't be used: {problem}. "
-                    f"{key} is set in {_where(self.source_of(key), env_var)}. "
+                    f"{key} is set in {_where(self.source_of(key), _ENV_VARS[key])}. "
                     "Choose a different header name."
                 )
 
@@ -391,7 +436,8 @@ class DonkeyConfig:
         table, file_sources = _load_config_files()
         sources: dict[str, ConfigSource] = {}
 
-        def pick(env: str, key: str, default: object) -> object:
+        def pick(key: str, default: object) -> object:
+            env = _ENV_VARS[key]
             if env in os.environ:
                 sources[key] = ConfigSource("env")
                 return os.environ[env]
@@ -406,12 +452,12 @@ class DonkeyConfig:
         problems: dict[str, str] = {}
 
         def parse(key: str, default: _T, convert: Callable[[object], _T]) -> _T:
-            env = _CHECKED_ENV_VARS[key]
-            raw = pick(env, key, default)
+            raw = pick(key, default)
             try:
                 return convert(raw)
             except ValueError as exc:
-                problems[key] = f"{key} is {raw!r}, set in {_where(sources[key], env)}; {exc}"
+                where = _where(sources[key], _ENV_VARS[key])
+                problems[key] = f"{key} is {raw!r}, set in {where}; {exc}"
                 return default
 
         toml_cost = table.get("cost")
@@ -425,40 +471,26 @@ class DonkeyConfig:
 
         values = ConfigOverrides(
             cost=_resolve_cost_tags(toml_cost),
-            client_id=_opt(pick("ANYPOINT_CLIENT_ID", "client_id", None)),
-            client_secret=_opt(pick("ANYPOINT_CLIENT_SECRET", "client_secret", None)),
-            org_id=_opt(pick("ANYPOINT_ORG_ID", "org_id", None)),
-            environment=str(pick("ANYPOINT_ENV", "environment", "Sandbox")),
+            client_id=_opt(pick("client_id", None)),
+            client_secret=_opt(pick("client_secret", None)),
+            org_id=_opt(pick("org_id", None)),
+            environment=str(pick("environment", "Sandbox")),
             region=cast(Region, parse("region", "us", str)),
-            base_url=_opt(pick("ANYPOINT_BASE_URL", "base_url", None)),
-            llm_proxy_url=_opt(pick("DONKEY_LLM_PROXY_URL", "llm_proxy_url", None)),
-            llm_proxy_client_id=_opt(
-                pick("DONKEY_LLM_PROXY_CLIENT_ID", "llm_proxy_client_id", None)
-            ),
-            llm_proxy_client_secret=_opt(
-                pick("DONKEY_LLM_PROXY_CLIENT_SECRET", "llm_proxy_client_secret", None)
-            ),
-            llm_proxy_key=_opt(pick("DONKEY_LLM_PROXY_KEY", "llm_proxy_key", None)),
+            base_url=_opt(pick("base_url", None)),
+            llm_proxy_url=_opt(pick("llm_proxy_url", None)),
+            llm_proxy_client_id=_opt(pick("llm_proxy_client_id", None)),
+            llm_proxy_client_secret=_opt(pick("llm_proxy_client_secret", None)),
+            llm_proxy_key=_opt(pick("llm_proxy_key", None)),
             llm_proxy_auth=cast(LlmProxyAuth, parse("llm_proxy_auth", "client-id", _as_token)),
-            llm_proxy_wallet_client_id=_opt(
-                pick("DONKEY_LLM_PROXY_WALLET_CLIENT_ID", "llm_proxy_wallet_client_id", None)
-            ),
-            application_name=_opt(pick("DONKEY_APP_NAME", "application_name", None)),
-            business_group=_opt(pick("DONKEY_BUSINESS_GROUP", "business_group", None)),
-            correlation_header=_opt(
-                pick("DONKEY_CORRELATION_HEADER", "correlation_header", None)
-            ),
-            call_id_header=_opt(pick("DONKEY_CALL_ID_HEADER", "call_id_header", None)),
-            cost_team_header=_opt(
-                pick("DONKEY_COST_TEAM_HEADER", "cost_team_header", None)
-            ),
-            cost_project_header=_opt(
-                pick("DONKEY_COST_PROJECT_HEADER", "cost_project_header", None)
-            ),
-            cost_env_header=_opt(pick("DONKEY_COST_ENV_HEADER", "cost_env_header", None)),
-            cost_enduser_header=_opt(
-                pick("DONKEY_COST_ENDUSER_HEADER", "cost_enduser_header", None)
-            ),
+            llm_proxy_wallet_client_id=_opt(pick("llm_proxy_wallet_client_id", None)),
+            application_name=_opt(pick("application_name", None)),
+            business_group=_opt(pick("business_group", None)),
+            correlation_header=_opt(pick("correlation_header", None)),
+            call_id_header=_opt(pick("call_id_header", None)),
+            cost_team_header=_opt(pick("cost_team_header", None)),
+            cost_project_header=_opt(pick("cost_project_header", None)),
+            cost_env_header=_opt(pick("cost_env_header", None)),
+            cost_enduser_header=_opt(pick("cost_enduser_header", None)),
             timeout_s=parse("timeout_s", 60.0, _as_float),
             max_retries=parse("max_retries", 3, _as_int),
             registry_cache_ttl_s=parse("registry_cache_ttl_s", 300, _as_int),
@@ -469,10 +501,8 @@ class DonkeyConfig:
             ),
             send_cost_headers=parse("send_cost_headers", False, _as_bool),
         )
-        parsed = {k: v for k, v in values.items() if k in _CHECKED_ENV_VARS and k not in problems}
-        out_of_range = _value_problems(
-            parsed, lambda key: _where(sources[key], _CHECKED_ENV_VARS[key])
-        )
+        parsed = {k: v for k, v in values.items() if k in _CHECKED_KEYS and k not in problems}
+        out_of_range = _value_problems(parsed, lambda key: _where(sources[key], _ENV_VARS[key]))
         if problems or out_of_range:
             raise _invalid_config([*problems.values(), *out_of_range])
         key_id = _key_id()
@@ -532,8 +562,8 @@ class DonkeyConfig:
             joined = "\n  - ".join(missing)
             raise ConfigError(
                 f"Configuration for {need!r} is incomplete. Missing:\n  - {joined}\n"
-                f"Set them via kwargs, environment variables, or {_TOML_NAME} "
-                f"(secrets in {_LOCAL_TOML_NAME})."
+                f"Set them via kwargs, environment variables, or {TOML_NAME} "
+                f"(secrets in {LOCAL_TOML_NAME})."
             )
         self.check_endpoints(need=need)
         return self
@@ -544,14 +574,14 @@ class DonkeyConfig:
         missing: list[str] = []
         if need == "control_plane":
             if not self.client_id:
-                missing.append("client_id (env ANYPOINT_CLIENT_ID)")
+                missing.append(_needs("client_id"))
             if not self.client_secret:
-                missing.append("client_secret (env ANYPOINT_CLIENT_SECRET)")
+                missing.append(_needs("client_secret"))
             if not self.org_id:
-                missing.append("org_id (env ANYPOINT_ORG_ID)")
+                missing.append(_needs("org_id"))
         elif need == "llm":
             if not self.llm_proxy_url:
-                missing.append("llm_proxy_url (env DONKEY_LLM_PROXY_URL)")
+                missing.append(_needs("llm_proxy_url"))
             if self.llm_proxy_auth == "jwt":
                 # Model-wallet ingress (#509): NO client_secret — CIE is disabled
                 # and the caller is identified from the JWT. The rotating JWT is
@@ -561,19 +591,17 @@ class DonkeyConfig:
                 # required here is the durable wallet-selector client ID.
                 if not self.llm_proxy_wallet_client_id:
                     missing.append(
-                        "llm_proxy_wallet_client_id (env DONKEY_LLM_PROXY_WALLET_CLIENT_ID) "
-                        "— the wallet-selector X-Client-Id, required in jwt auth mode"
+                        _needs("llm_proxy_wallet_client_id")
+                        + " — the wallet-selector X-Client-Id, required in jwt auth mode"
                     )
             elif self.llm_proxy_auth == "client-id":
                 # client-id enforcement (default): the CIE pair. In bearer mode
                 # (#836) only the URL is required: the token comes from the
                 # llm_auth provider, checked where the provider is known.
                 if not self.llm_proxy_client_id:
-                    missing.append("llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)")
+                    missing.append(_needs("llm_proxy_client_id"))
                 if not self.llm_proxy_client_secret:
-                    missing.append(
-                        "llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)"
-                    )
+                    missing.append(_needs("llm_proxy_client_secret"))
         else:
             raise ConfigError(f"Unknown capability {need!r} passed to validated().")
         return missing
@@ -597,12 +625,12 @@ class DonkeyConfig:
         """
         runtime_credential = code_credential
         if need == "control_plane":
-            key, env_var, url = "base_url", "ANYPOINT_BASE_URL", self.control_plane_url
+            key, url = "base_url", self.control_plane_url
             credentials: tuple[str, ...] = ("client_id", "client_secret")
         elif need == "llm":
             if not self.llm_proxy_url:
                 return
-            key, env_var, url = "llm_proxy_url", "DONKEY_LLM_PROXY_URL", self.llm_proxy_url
+            key, url = "llm_proxy_url", self.llm_proxy_url
             if self.llm_proxy_auth == "jwt":
                 credentials = ("llm_proxy_wallet_client_id",)
                 runtime_credential = "the JWT from the llm_auth provider"
@@ -633,7 +661,7 @@ class DonkeyConfig:
         if outside:
             raise _binding_error(
                 key=key,
-                env_var=env_var,
+                env_var=_ENV_VARS[key],
                 url=url,
                 origin=origin,
                 credentials=outside,
@@ -655,7 +683,7 @@ def _binding_error(
     assert origin.path is not None  # file sources always carry their path
     options = [f"set the URL in the environment instead ({env_var}=https://...)"]
     if offer_local_file:
-        local = origin.path.parent / _LOCAL_TOML_NAME
+        local = origin.path.parent / LOCAL_TOML_NAME
         options.append(f"keep the credentials in {local}, next to the project file")
     options.append(
         f"trust this directory's config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
@@ -666,6 +694,11 @@ def _binding_error(
         "files are only sent to hosts those files name when you opt in. To continue, "
         "do one of:\n  - " + "\n  - ".join(options)
     )
+
+
+def _needs(key: str) -> str:
+    """A missing field as :meth:`DonkeyConfig.missing_fields` reports it."""
+    return f"{key} (env {_ENV_VARS[key]})"
 
 
 def _where(source: ConfigSource, env_var: str) -> str:
@@ -802,7 +835,7 @@ def _invalid_config(problems: list[str]) -> ConfigError:
     joined = "\n  - ".join(problems)
     return ConfigError(
         f"Configuration is invalid:\n  - {joined}\n"
-        f"Fix each value where it is set: in code, an environment variable, or {_TOML_NAME}."
+        f"Fix each value where it is set: in code, an environment variable, or {TOML_NAME}."
     )
 
 
@@ -827,14 +860,14 @@ def _load_config_files(
 
     cwd = Path.cwd()
     layers: list[tuple[ConfigSource, dict[str, object]]] = []
-    project = cwd / _TOML_NAME
+    project = cwd / TOML_NAME
     if project.is_file():
         _require_inside(project, cwd)
         table = _read_table(project, name)
         if name == "donkey":
             _warn_on_secrets(project, table)
         layers.append((ConfigSource("project", project), table))
-    local = cwd / _LOCAL_TOML_NAME
+    local = cwd / LOCAL_TOML_NAME
     if local.is_file():
         _require_inside(local, cwd)
         layers.append((ConfigSource("local", local), _read_table(local, name)))
@@ -856,9 +889,9 @@ def _user_config_file() -> Path | None:
     default (#837). ``None`` when no home directory can be determined."""
     xdg = os.environ.get("XDG_CONFIG_HOME", "")
     if os.path.isabs(xdg):
-        return Path(xdg) / _TOML_NAME
+        return Path(xdg) / TOML_NAME
     try:
-        return Path.home() / ".config" / _TOML_NAME
+        return Path.home() / ".config" / TOML_NAME
     except RuntimeError:
         return None
 
@@ -920,7 +953,7 @@ def _warn_on_secrets(path: Path, table: dict[str, object]) -> None:
     if found:
         warnings.warn(
             f"{path} contains {', '.join(found)}. Keep secrets out of the committed "
-            f"project file: move them to {_LOCAL_TOML_NAME} next to it (and gitignore "
+            f"project file: move them to {LOCAL_TOML_NAME} next to it (and gitignore "
             "it) or to environment variables.",
             ConfigWarning,
             stacklevel=4,

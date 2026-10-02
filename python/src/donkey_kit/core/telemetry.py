@@ -41,6 +41,52 @@ from .errors import (
     TokenBudgetExceeded,
 )
 
+__all__ = [
+    "DONKEY_BUDGET_REMAINING",
+    "DONKEY_CACHE_SCORE",
+    "DONKEY_CACHE_STATUS",
+    "DONKEY_CORRELATION_ID",
+    "DONKEY_COST_ENDUSER",
+    "DONKEY_COST_ENV",
+    "DONKEY_COST_PROJECT",
+    "DONKEY_COST_TEAM",
+    "DONKEY_POLICY_DECISION",
+    "DONKEY_POLICY_TYPE",
+    "DONKEY_ROUTING_FALLBACK",
+    "DONKEY_ROUTING_MATCHED_TOPIC",
+    "DONKEY_ROUTING_SCORE",
+    "DONKEY_ROUTING_TYPE",
+    "DONKEY_USAGE_CACHED_TOKENS",
+    "DONKEY_USAGE_CACHE_WRITE_TOKENS",
+    "DONKEY_USAGE_REASONING_TOKENS",
+    "GEN_AI_COMPLETION",
+    "GEN_AI_PROMPT",
+    "GEN_AI_REQUEST_MODEL",
+    "GEN_AI_RESPONSE_MODEL",
+    "GEN_AI_SEMCONV_VERSION",
+    "GEN_AI_SYSTEM",
+    "GEN_AI_USAGE_INPUT_TOKENS",
+    "GEN_AI_USAGE_OUTPUT_TOKENS",
+    "POLICY_DECISION_ALLOW",
+    "POLICY_DECISION_REFUSE",
+    "SPAN_LLM_CHAT",
+    "GenAiSpan",
+    "RunScope",
+    "TelemetryExportWarning",
+    "build_genai_attributes",
+    "configure_otlp_export",
+    "current_correlation_id",
+    "current_cost_tags",
+    "genai_span",
+    "new_call_id",
+    "new_correlation_id",
+    "policy_type_slug",
+    "request_correlation_id",
+    "run_context",
+    "run_scope",
+    "start_genai_span",
+]
+
 _log = logging.getLogger(__name__)
 
 _correlation_id: ContextVar[str | None] = ContextVar("donkey_correlation_id", default=None)
@@ -52,9 +98,6 @@ _cost_tags: ContextVar[CostTags | None] = ContextVar("donkey_cost_tags", default
 
 # Span name constants (BG §1.6).
 SPAN_LLM_CHAT = "donkey.llm.chat"
-SPAN_REGISTRY_RESOLVE = "donkey.registry.resolve"
-SPAN_TOOL_CALL = "donkey.tool.call"
-SPAN_PROVISION_APPLY = "donkey.provision.apply"
 
 # --- GenAI span attribute contract (#192, BG §1.6) --------------------------
 # Two namespaces on one span (see :func:`genai_span`):
@@ -96,9 +139,7 @@ GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
 # These are the ONLY attributes gated behind ``telemetry_capture_content`` (#306):
 # the semconv defines them as opt-in, and emitting them by default would
 # re-export prompts/completions upstream of the gateway's PII masking. They are
-# deliberately kept OUT of :data:`_ALLOWED_SPAN_ATTRIBUTES` so the generic
-# :func:`span` can never carry them, and are dropped by :meth:`GenAiSpan.record`
-# unless the caller opted in.
+# dropped by :meth:`GenAiSpan.record` unless the caller opted in.
 GEN_AI_PROMPT = "gen_ai.prompt"
 GEN_AI_COMPLETION = "gen_ai.completion"
 
@@ -153,42 +194,8 @@ POLICY_DECISION_REFUSE = "refuse"
 # explicit ``telemetry_capture_content=True`` opt-in — see :data:`GEN_AI_PROMPT`.
 # Adding a new content-bearing attribute (e.g. tool-call arguments/results, when
 # that span grows one) means adding it HERE, so the single switch keeps covering
-# it and it stays out of the allowlist below.
+# it.
 _CONTENT_ATTRIBUTES = frozenset({GEN_AI_PROMPT, GEN_AI_COMPLETION})
-
-# The allowlist for the generic :func:`span` emitter: every non-content span
-# attribute the SDK is permitted to set. The mechanism is an allowlist, not a
-# denylist, so a content attribute (or any future key) cannot reach a span by
-# accident from any call site — only a key added here is ever emitted, and
-# content keys are deliberately excluded. Kept in sync by construction: it is
-# the union of the metadata constants, with :data:`_CONTENT_ATTRIBUTES` removed.
-_ALLOWED_SPAN_ATTRIBUTES = frozenset(
-    {
-        GEN_AI_SYSTEM,
-        GEN_AI_REQUEST_MODEL,
-        GEN_AI_RESPONSE_MODEL,
-        GEN_AI_USAGE_INPUT_TOKENS,
-        GEN_AI_USAGE_OUTPUT_TOKENS,
-        DONKEY_USAGE_CACHED_TOKENS,
-        DONKEY_USAGE_CACHE_WRITE_TOKENS,
-        DONKEY_USAGE_REASONING_TOKENS,
-        DONKEY_CORRELATION_ID,
-        DONKEY_POLICY_DECISION,
-        DONKEY_POLICY_TYPE,
-        DONKEY_BUDGET_REMAINING,
-        DONKEY_COST_TEAM,
-        DONKEY_COST_PROJECT,
-        DONKEY_COST_ENV,
-        DONKEY_COST_ENDUSER,
-        DONKEY_ROUTING_TYPE,
-        DONKEY_ROUTING_FALLBACK,
-        DONKEY_ROUTING_MATCHED_TOPIC,
-        DONKEY_ROUTING_SCORE,
-        DONKEY_CACHE_STATUS,
-        DONKEY_CACHE_SCORE,
-    }
-)
-
 
 def new_correlation_id() -> str:
     return uuid.uuid4().hex
@@ -198,7 +205,7 @@ def new_call_id() -> str:
     """A fresh per-request **call id** (BG §1.1, #195).
 
     Unlike the run/correlation id — which is contextvar-bound and shared across
-    every request in a :func:`run_context` / ``donkey.run()`` block — this is
+    every request in a ``donkey.run()`` block — this is
     generated anew for each logical request, so one call can be pinpointed within
     a run. It is client-generated, so it exists even when a request fails before
     any response (a transport error carries no gateway ``x-request-id``)."""
@@ -215,22 +222,6 @@ def current_cost_tags() -> CostTags | None:
     over the configured tags, per field, so a run-scope dimension wins for its
     block and the rest fall back to config."""
     return _cost_tags.get()
-
-
-@contextlib.contextmanager
-def run_context(run_id: str | None = None) -> Iterator[str]:
-    """Bind a correlation ID for the duration of a logical agent run.
-
-    ``with donkey.run_context(run_id=...)`` lets callers supply their own ID;
-    otherwise one is generated. Nested calls restore the previous value on exit.
-    """
-
-    rid = run_id or new_correlation_id()
-    token = _correlation_id.set(rid)
-    try:
-        yield rid
-    finally:
-        _correlation_id.reset(token)
 
 
 class RunScope:
@@ -303,11 +294,25 @@ def run_scope(run_id: str | None = None, cost: CostTags | None = None) -> RunSco
     return RunScope(run_id, cost)
 
 
+def run_context(run_id: str | None = None) -> RunScope:
+    """Deprecated: use :func:`run_scope`, or ``donkey.run(id=...)``.
+
+    Binds a correlation ID for the block, exactly as :func:`run_scope` does,
+    and emits a :class:`DeprecationWarning` (#720)."""
+    warnings.warn(
+        "donkey_kit.core.run_context() is deprecated; use donkey.run(id=...) "
+        "or donkey_kit.core.telemetry.run_scope() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return run_scope(run_id)
+
+
 def request_correlation_id() -> str:
     """The bound run's correlation ID, or a fresh one that is deliberately *not*
     bound (#803).
 
-    Only a ``donkey.run()`` / :func:`run_context` block binds a correlation ID; a
+    Only a ``donkey.run()`` block binds a correlation ID; a
     call outside one is its own run. Binding on first use would pin the very
     first request's ID to the ambient context for its whole lifetime — the rest
     of a blocking process, or the rest of a long-lived ``asyncio.run(main())``
@@ -490,36 +495,6 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
     trace.set_tracer_provider(provider)
     _otlp_export_configured = True
     _log.debug("OTLP export installed (protocol %s)", _otlp_protocol())
-
-
-@contextlib.contextmanager
-def span(name: str, *, enabled: bool, **attributes: Any) -> Iterator[None]:
-    """Start an OTel span if telemetry is enabled and OTel is installed.
-
-    Always attaches the correlation ID. A no-op (and never an error) when
-    telemetry is off or OTel is not installed — telemetry must never be a hard
-    dependency of the library.
-
-    Only attributes in :data:`_ALLOWED_SPAN_ATTRIBUTES` are set: the emitter is
-    allowlist-driven, so a content attribute (or any unrecognised key) handed in
-    from any call site is dropped rather than exported (#306). Message content
-    has no path through this function at all — it is carried only by the GenAI
-    span, and only under an explicit opt-in (see :meth:`GenAiSpan.record`).
-    """
-
-    if not enabled:
-        yield
-        return
-    tracer = _tracer()
-    if tracer is None:
-        yield
-        return
-    with tracer.start_as_current_span(name) as sp:  # pragma: no cover - needs otel
-        sp.set_attribute(DONKEY_CORRELATION_ID, request_correlation_id())
-        for key, value in attributes.items():
-            if value is not None and key in _ALLOWED_SPAN_ATTRIBUTES:
-                sp.set_attribute(key, value)
-        yield
 
 
 # --- GenAI chat span (#192, BG §1.6) ----------------------------------------

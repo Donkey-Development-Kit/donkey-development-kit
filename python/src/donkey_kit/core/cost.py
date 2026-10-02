@@ -25,6 +25,8 @@ from dataclasses import dataclass, fields, replace
 
 from .errors import ConfigError
 
+__all__ = ["CostTags"]
+
 # The fixed external key names (what a user writes in ``[donkey.cost]`` toml or a
 # mapping) → the Python field. ``enduser.id`` keeps the OTel-style dotted name
 # as its external key; the field is the identifier-safe ``enduser_id``.

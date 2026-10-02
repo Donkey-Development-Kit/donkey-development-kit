@@ -16,6 +16,8 @@ from ..core import _verify
 from ..registry.models import McpServerHandle
 from .filter import ToolDescriptor, ToolFilter, resolve_collisions
 
+__all__ = ["ToolSet"]
+
 _log = logging.getLogger(__name__)
 
 

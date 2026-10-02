@@ -32,6 +32,15 @@ from .core import _verify
 from .core.config import load_config_table
 from .core.errors import ConfigError, PlatformTeamOnly
 
+__all__ = [
+    "GatewayMode",
+    "GatewayTarget",
+    "Governance",
+    "PolicyBinding",
+    "PolicyPortability",
+    "SimulationContext",
+]
+
 GatewayMode = Literal["local", "managed", "self-managed"]
 
 
