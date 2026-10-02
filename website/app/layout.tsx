@@ -73,7 +73,7 @@ const navbar = (
       href="https://pypi.org/project/donkey-kit/"
       target="_blank"
       rel="noreferrer"
-      className="af-nav-link"
+      className="af-nav-link af-nav-pypi"
       aria-label="donkey-kit on PyPI"
       title="donkey-kit on PyPI"
     >
