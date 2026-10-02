@@ -1171,13 +1171,19 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         def fresh() -> httpx.AsyncClient:
             return httpx.AsyncClient(**kw)  # type: ignore[arg-type]
 
+        # httpx exposes no public accessor for the transport/mounts a client
+        # built from ``kw``; reading its private ``_transport``/``_mounts`` is the
+        # only way to reuse httpx's own construction (the SLF001 exemptions here).
         if "transport" not in kw:
-            self._transport = _LoopLocalTransport(self._transport, lambda: fresh()._transport)
+            self._transport = _LoopLocalTransport(
+                self._transport,
+                lambda: fresh()._transport,  # noqa: SLF001
+            )
         if "mounts" not in kw:
 
             def build_mount(pattern: Any) -> httpx.AsyncBaseTransport:
                 client = fresh()
-                return client._mounts.get(pattern) or client._transport
+                return client._mounts.get(pattern) or client._transport  # noqa: SLF001
 
             self._mounts = {
                 pattern: None
@@ -1826,7 +1832,8 @@ class DonkeyClientView(httpx.Client):
 
     def build_request(self, *args: Any, **kwargs: Any) -> httpx.Request:
         # The shared client refuses here in a token mode; a view must refuse too.
-        mode = self._shared._cfg.llm_proxy_auth
+        # Same-module collaborator: a view reads the config of the client it wraps.
+        mode = self._shared._cfg.llm_proxy_auth  # noqa: SLF001
         if mode in TOKEN_AUTH_MODES:
             raise sync_token_auth_error(mode)
         return super().build_request(*args, **kwargs)

@@ -230,11 +230,18 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# SLF001: no reaching into another object's private members (#719); RUF022:
+# every __all__ is sorted (#719).
+select = ["E", "F", "I", "UP", "B", "SLF001", "RUF022"]
 
 [tool.ruff.lint.per-file-ignores]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).
 "src/donkey_kit/provisioning/cli.py" = ["B008"]
+# The one sanctioned seam module: the dev-only simulator and conformance siblings
+# reach Donkey's and its clients' private members only through it (#719).
+"src/donkey_kit/_testing.py" = ["SLF001"]
+# White-box tests inspect and swap private state by design (#719).
+"tests/**" = ["SLF001"]
 
 # --- import-linter: enforce the layered architecture rule in CI, from day one ---
 [tool.importlinter]

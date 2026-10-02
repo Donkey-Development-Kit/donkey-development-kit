@@ -245,7 +245,8 @@ def default_adapter(cls: type[A]) -> A:
     with _DEFAULT_ADAPTERS_LOCK:
         inst = _DEFAULT_ADAPTERS.get(cls)
         # Rebuild if the default runtime was closed and replaced since.
-        if inst is None or inst._http is not rt.http:
+        # Same-module collaborator: Adapter's own client, compared by identity.
+        if inst is None or inst._http is not rt.http:  # noqa: SLF001
             inst = cls(rt.config, rt.http, rt.sync_http)
             _DEFAULT_ADAPTERS[cls] = inst
     return cast(A, inst)

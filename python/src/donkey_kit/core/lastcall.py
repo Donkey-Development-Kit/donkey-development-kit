@@ -733,7 +733,8 @@ def _record(record: LastCall) -> None:
     bridge, write through it, so a later usage merge in the same task reaches the
     caller too. A closed bridge is replaced by the plain record."""
     current = _last_call.get()
-    if isinstance(current, LastCallBridge) and current._open:
+    # Same-module collaborator: the bridge's open flag is this module's own state.
+    if isinstance(current, LastCallBridge) and current._open:  # noqa: SLF001
         current.record = record
     else:
         _last_call.set(record)

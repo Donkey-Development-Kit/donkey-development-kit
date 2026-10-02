@@ -184,7 +184,7 @@ framework that may not be installed.
   | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
   | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
   | `_on_refusal` | never — no caller today; `classify()` raises the typed error directly, and the LangGraph bridge maps it without the hook | typed-refusal reaction handlers (`BG §1.2`, #208); the framework-agnostic typed-refusal bridge is #724 |
-  | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
+  | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
 
   Correlation, attribution, cache-control and opt-in cost-tag headers
   (`BG §1.7`) are set on every attempt by the `_inject_headers` request event
