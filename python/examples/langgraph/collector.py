@@ -75,7 +75,7 @@ class LocalOTLPCollector:
         sink = self.sink
 
         class _Handler(BaseHTTPRequestHandler):
-            def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+            def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length) if length else b""
                 if self.path.rstrip("/").endswith("/v1/traces"):
@@ -107,6 +107,7 @@ class LocalOTLPCollector:
         """The base OTLP endpoint (no ``/v1/traces`` suffix) to hand to
         ``OTEL_EXPORTER_OTLP_ENDPOINT``; the exporter appends the signal path."""
         host, port = self._server.server_address[:2]
+        assert isinstance(host, str)  # AF_INET: the host is always a str
         return f"http://{host}:{port}"
 
     def __enter__(self) -> LocalOTLPCollector:

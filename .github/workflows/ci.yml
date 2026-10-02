@@ -84,6 +84,20 @@ jobs:
       - run: pip install -e ".[dev,llm,cli]"
       - name: mypy --strict (blocking, working instruction #8)
         run: mypy
+      # #721: the examples are user-facing code, so they get the same --strict
+      # config, one directory per invocation (each is its own program). The
+      # framework extras are absent here, so their imports resolve through the
+      # absence-only overrides in pyproject.toml. LangGraph is the exception: it
+      # is not in those overrides and is checked against the real package in the
+      # langgraph-demo job below.
+      - name: mypy --strict over python/examples (#721)
+        run: |
+          for dir in examples/*/; do
+            name="$(basename "$dir")"
+            if [ "$name" = langgraph ]; then continue; fi
+            echo "mypy -p examples.$name"
+            mypy -p "examples.$name"
+          done
       - run: ruff check .
       - name: import-linter (framework-free core, §1.1)
         run: lint-imports
@@ -274,6 +288,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[dev,llm,langgraph,local,otel]"
+      - name: mypy --strict over the LangGraph example, langgraph installed (#721)
+        run: mypy -p examples.langgraph
       - name: run the gateway-free Scenario-A demo (must exit 0, no credentials)
         run: timeout 120 python -m examples.langgraph.main
       - name: conformance passes against the demo's own agent factory
