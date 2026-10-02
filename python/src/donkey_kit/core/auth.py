@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import logging
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
     import httpx
 
     from .config import DonkeyConfig
+
+_log = logging.getLogger(__name__)
 
 _EXPIRY_SAFETY_MARGIN_S = 60.0
 
@@ -145,6 +148,7 @@ class AnypointConnectedApp(AuthProvider):
         return self._lock
 
     async def invalidate(self) -> None:
+        _log.debug("connected-app token invalidated; the next call fetches a fresh one")
         self._cached = None
         self._expires_at = 0.0
 
@@ -153,6 +157,8 @@ class AnypointConnectedApp(AuthProvider):
         require_secure_url(url, name="token endpoint")
         if self._endpoint_check is not None:
             self._endpoint_check()
+        # The URL only: the form body carries the client secret (#717).
+        _log.debug("fetching a connected-app token from %s", url)
         resp = await self._http.post(
             url,
             data={
@@ -240,7 +246,16 @@ class ChainedAuth(AuthProvider):
         for provider in self._providers:
             try:
                 return await provider.token()
-            except Exception as exc:  # noqa: BLE001 - fall through to next provider
+            # Blind on purpose: a custom provider (e.g. a vault plugin) may raise
+            # anything, and the chain's contract is to try the next one. The last
+            # error is surfaced in the AuthError below, so nothing is lost.
+            except Exception as exc:  # noqa: BLE001 - any provider failure falls through
+                # Type only: a provider's message is not ours to vet for secrets.
+                _log.debug(
+                    "auth provider %s failed with %s; trying the next provider",
+                    type(provider).__name__,
+                    type(exc).__name__,
+                )
                 last = exc
         raise AuthError(
             f"No auth provider yielded a token. Last error: {last}",

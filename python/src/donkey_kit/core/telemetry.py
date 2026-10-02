@@ -19,6 +19,7 @@ observability view (a headline feature, BG §1.6).
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import uuid
 import warnings
@@ -39,6 +40,8 @@ from .errors import (
     PromptInjectionBlocked,
     TokenBudgetExceeded,
 )
+
+_log = logging.getLogger(__name__)
 
 _correlation_id: ContextVar[str | None] = ContextVar("donkey_correlation_id", default=None)
 # Per-run cost-tag overrides bound by ``donkey.run(team=..., ...)`` (#196). Like
@@ -466,7 +469,14 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
         return
     provider = _build_tracer_provider(config)
     if provider is None:
-        return  # inert: opt-out, no endpoint, or [otel]/exporter absent.
+        # inert: opt-out, no endpoint, or [otel]/exporter absent. DEBUG only, and
+        # silent behind the package NullHandler, so "inert and silent" holds.
+        _log.debug(
+            "OTLP export not installed (telemetry=%s, endpoint configured=%s)",
+            config.telemetry,
+            _otlp_endpoint_configured(),
+        )
+        return
     from opentelemetry import trace
     from opentelemetry.sdk.trace import TracerProvider
 
@@ -475,9 +485,11 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
         # one we just built so its batch thread does not linger unused.
         provider.shutdown()
         _otlp_export_configured = True
+        _log.debug("OTLP export: keeping the host's TracerProvider; spans ride it")
         return
     trace.set_tracer_provider(provider)
     _otlp_export_configured = True
+    _log.debug("OTLP export installed (protocol %s)", _otlp_protocol())
 
 
 @contextlib.contextmanager

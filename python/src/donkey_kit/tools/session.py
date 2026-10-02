@@ -16,7 +16,7 @@ from ..core import _verify
 from ..registry.models import McpServerHandle
 from .filter import ToolDescriptor, ToolFilter, resolve_collisions
 
-_log = logging.getLogger("donkey_kit.tools")
+_log = logging.getLogger(__name__)
 
 
 class ToolSet:
