@@ -39,6 +39,8 @@ from typing import Any
 from . import _verify
 from .errors import ConfigError
 
+__all__ = ["CacheControls", "CacheScope", "cache_scope", "current_cache_controls"]
+
 # A principal-id long enough to be a smuggled document is refused — the same
 # ceiling and control-char rule cost tags apply, and for the same reason: the
 # value is emitted as a request header, so a newline would corrupt the request.

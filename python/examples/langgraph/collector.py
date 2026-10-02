@@ -33,7 +33,7 @@ try:
     )
 
     _PROTO_OK = True
-except Exception:  # pragma: no cover - only if opentelemetry-proto is absent
+except ImportError:  # pragma: no cover - only if opentelemetry-proto is absent
     _PROTO_OK = False
 
 

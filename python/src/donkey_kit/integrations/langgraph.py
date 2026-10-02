@@ -37,9 +37,30 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from langchain_openai import ChatOpenAI
 
+__all__ = ["LangGraphAdapter", "chat_model", "typed_refusals"]
+
 
 class LangGraphAdapter(Adapter):
-    extra = "langgraph"
+    """Governed LangChain objects, reached as ``donkey.langgraph``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``chat_model(model)`` builds a
+    ``ChatOpenAI``. ``connection_kwargs()`` returns the same settings for building
+    it yourself.
+
+    The one deep, conformance-tested adapter (`BG §1.8`): its factories and
+    ``connection_kwargs()`` are held to the conformance suite in CI.
+
+    ``typed_refusals()`` re-raises a gateway refusal as the typed
+    :class:`~donkey_kit.core.errors.DonkeyError` subclass.
+
+    Raises:
+        ImportError: ``donkey.langgraph`` was read without the ``langgraph`` extra
+            installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/langgraph
+    """
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs to spread into a ``ChatOpenAI(model=…, **kwargs)`` you

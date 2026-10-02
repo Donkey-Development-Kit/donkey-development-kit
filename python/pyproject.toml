@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "donkey-kit"
-version = "0.1.1"
+version = "0.1.2.dev0"
 description = "An SDK for consuming Agent Fabric capabilities (governed model and tool access) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -127,6 +127,8 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
     "import-linter>=2.0",
+    # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
+    "vulture>=2.11",
     # stubs so mypy --strict typechecks the CLI/provisioning yaml handling.
     "types-PyYAML>=6.0",
     "typer>=0.15.4",
@@ -230,19 +232,26 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# SLF001: no reaching into another object's private members (#719); RUF022:
+# every __all__ is sorted (#719).
+# BLE/LOG/G: no blind except without a reason, and logging-call hygiene (#717).
+# D101-D103: every public class, method and function in src/ has a docstring
+# (#722). Only these three D rules are on; tests/examples/scripts are exempt below.
 # #721, "the style guide is the config": each CONTRIBUTING §3 rule maps to an
 # enforcing rule. I002 (with isort.required-imports below) makes
 # `from __future__ import annotations` mandatory; FA backs it for PEP 604/585
 # syntax; RUF100 drops stale noqa; TRY203 forbids bare re-raise handlers; ARG
 # flags unused arguments; ANN401 forbids `Any` in signatures outside the
 # pass-through seams listed in per-file-ignores.
-extend-select = ["I002", "FA", "RUF100", "TRY203", "ARG", "ANN401"]
+select = [
+    "E", "F", "I", "UP", "B", "BLE", "LOG", "G", "SLF001", "RUF022",
+    "D101", "D102", "D103",
+    "I002", "FA", "RUF100", "TRY203", "ARG", "ANN401",
+]
 
-# BLE001 (#717) and SLF001 (#719) are selected by sibling branches; until they
-# land, RUF100 must not strip the noqa comments those rules will need. Drop this
-# line once both are in `select`.
-external = ["BLE001", "SLF001"]
+[tool.ruff.lint.pydocstyle]
+# Google-style "Args:" / "Raises:" sections; the prose-only docstrings fit it too.
+convention = "google"
 
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]
@@ -273,6 +282,11 @@ ignore-variadic-names = true
 "src/donkey_kit/registry/exchange.py" = ["ARG002"]
 "src/donkey_kit/registry/introspect.py" = ["ARG001"]
 "src/donkey_kit/registry/publication.py" = ["ARG002"]
+# The one sanctioned seam module: the dev-only simulator and conformance siblings
+# reach Donkey's and its clients' private members only through it (#719). Its
+# transport arguments stay `Any` (ANN401): the sync and async clients take
+# different httpx transport types, and a union would break the Protocol match.
+"src/donkey_kit/_testing.py" = ["SLF001", "ANN401"]
 # ANN401 seams: these modules bind objects from optional dependencies that are
 # imported lazily (framework extras, §1.1; opentelemetry; starlette) or from the
 # user's own agent and pytest, so `Any` is the honest annotation there.
@@ -280,9 +294,20 @@ ignore-variadic-names = true
 "src/donkey_kit/conformance/**" = ["ANN401"]
 "src/donkey_kit/simulator/app.py" = ["ANN401"]
 "src/donkey_kit/core/telemetry.py" = ["ANN401"]
-# Tests request fixtures for their side effects and write doubles that mirror
-# third-party signatures, so unused and `Any`-typed arguments are expected there.
-"tests/**" = ["ARG", "ANN401"]
+# White-box tests inspect and swap private state by design (#719); docstring
+# rules apply to the shipped package only (#722). Tests also request fixtures for
+# their side effects and write doubles that mirror third-party signatures, so
+# unused and `Any`-typed arguments are expected there.
+"tests/**" = ["SLF001", "D101", "D102", "D103", "ARG", "ANN401"]
+"examples/**" = ["D101", "D102", "D103"]
+"scripts/**" = ["D101", "D102", "D103"]
+
+# --- vulture: dead-code check in CI (#720) ---
+# Reads src/ only, so code that only the tests use is reported as dead; names
+# used from outside src/ are listed in vulture_whitelist.py.
+[tool.vulture]
+paths = ["src", "vulture_whitelist.py"]
+min_confidence = 60
 
 # --- import-linter: enforce the layered architecture rule in CI, from day one ---
 [tool.importlinter]

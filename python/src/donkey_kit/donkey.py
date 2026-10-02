@@ -17,6 +17,7 @@ import functools
 import importlib
 import importlib.util
 import inspect
+import warnings
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
@@ -39,8 +40,8 @@ from .core.transport import (
 )
 from .integrations import ADAPTERS, missing_framework_error
 from .llm.client import LLMClient
+from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
-from .registry.governance import GovernanceCriteria
 from .tools.session import ToolSet
 
 if TYPE_CHECKING:
@@ -56,6 +57,8 @@ if TYPE_CHECKING:
     from .integrations.llamaindex import LlamaIndexAdapter
     from .integrations.openai_agents import OpenAIAgentsAdapter
     from .integrations.strands import StrandsAdapter
+
+__all__ = ["Donkey", "ToolsFacade"]
 
 
 _Callable = TypeVar("_Callable", bound=Callable[..., Any])
@@ -75,7 +78,7 @@ def _missing_module(probe: tuple[str, ...]) -> str | None:
     return None
 
 
-class _ToolsFacade:
+class ToolsFacade:
     """``donkey.tools`` — discovery + lock (BG §2.7)."""
 
     def __init__(self, registry: ExchangeRegistry) -> None:
@@ -87,7 +90,6 @@ class _ToolsFacade:
         domain: str | None = None,
         tags: list[str] | None = None,
         governed: bool | GovernanceCriteria | None = None,
-        governance: object | None = None,
         locked: bool = False,
     ) -> ToolSet:
         """Discover a governed tool catalog and return a bindable ``ToolSet``.
@@ -114,6 +116,36 @@ class _ToolsFacade:
 
 
 class Donkey:
+    """The SDK entry point: one governed handle on Agent Fabric (`BG §1.1`).
+
+    A ``Donkey`` holds the resolved :class:`~donkey_kit.core.config.DonkeyConfig`,
+    the auth providers and the shared governed transports. Every surface hangs off
+    it: ``donkey.llm`` and :meth:`openai` for model calls, ``donkey.registry`` and
+    ``donkey.tools`` for Exchange, and one lazy attribute per framework adapter
+    (``donkey.langgraph``, ``donkey.adk``, ``donkey.crewai``, ...)::
+
+        async with Donkey.from_env() as donkey:
+            client = donkey.openai()
+
+    Args:
+        config: The resolved configuration. ``None`` resolves it from the
+            environment, as :meth:`from_env` does without cost tags.
+        auth: The control-plane auth provider. ``None`` builds the default for
+            ``config``.
+        llm_auth: The data-plane auth provider, when it differs from ``auth``.
+
+    Raises:
+        ConfigError: The configuration is incomplete or inconsistent.
+        ImportError: A framework adapter attribute is read whose extra is not
+            installed; the message carries the install command.
+
+    Close it with :meth:`aclose` (or ``async with``); sync-only callers use
+    :meth:`close` (or ``with``). Refusals surface as
+    :class:`~donkey_kit.core.errors.DonkeyError` subclasses.
+
+    Docs: https://docs.donkey-kit.dev/quickstart
+    """
+
     # Adapters are resolved lazily by __getattr__ so an uninstalled framework
     # never breaks ``import donkey_kit``. These annotations exist purely so an
     # editor knows what each one is: without them a type checker only sees the
@@ -149,7 +181,7 @@ class Donkey:
         self._control_http: DonkeyAsyncClient = self._runtime.control_http
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
         self._registry = ExchangeRegistry(self._cfg, self._control_http)
-        self._tools = _ToolsFacade(self._registry)
+        self._tools = ToolsFacade(self._registry)
         self._adapter_cache: dict[str, Adapter] = {}
 
     @classmethod
@@ -193,10 +225,19 @@ class Donkey:
     # --- framework-free surfaces -------------------------------------------
     @property
     def config(self) -> DonkeyConfig:
+        """The resolved configuration this Donkey was built with (read-only).
+
+        Docs: https://docs.donkey-kit.dev/reference/configuration
+        """
         return self._cfg
 
     @property
     def llm(self) -> LLMClient:
+        """The governed model-call surface: native OpenAI-compatible clients and
+        per-framework connection kwargs pointed at the proxy (`BG §1.1`).
+
+        Docs: https://docs.donkey-kit.dev/quickstart
+        """
         return self._llm
 
     @property
@@ -303,10 +344,18 @@ class Donkey:
 
     @property
     def registry(self) -> ExchangeRegistry:
+        """The Exchange registry client used for tool discovery and resolution (BG §2.7).
+
+        Docs: https://docs.donkey-kit.dev/tool-access/discovery
+        """
         return self._registry
 
     @property
-    def tools(self) -> _ToolsFacade:
+    def tools(self) -> ToolsFacade:
+        """Governed tool discovery and the ``donkey.lock`` lockfile (BG §2.7).
+
+        Docs: https://docs.donkey-kit.dev/tool-access
+        """
         return self._tools
 
     def run(
@@ -354,7 +403,13 @@ class Donkey:
         return run_scope(id, override if not override.is_empty else None)
 
     def run_context(self, run_id: str | None = None) -> RunScope:
-        """Back-compat alias for :meth:`run` (BG §1.7). Prefer ``donkey.run(id=…)``."""
+        """Deprecated alias for :meth:`run` (BG §1.7): use ``donkey.run(id=…)``.
+        Emits a :class:`DeprecationWarning` (#720)."""
+        warnings.warn(
+            "Donkey.run_context() is deprecated; use donkey.run(id=...) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.run(run_id)
 
     def cache(

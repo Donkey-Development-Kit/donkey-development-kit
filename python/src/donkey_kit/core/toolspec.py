@@ -20,6 +20,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
+__all__ = ["TOOL_MARKER", "ToolSpec", "register_tool", "registered_tools", "tool_spec"]
+
 # The attribute ``@donkey.tool`` attaches to a marked callable. Reading
 # ``getattr(fn, TOOL_MARKER, None)`` (or :func:`tool_spec`) is how a scanner or
 # card generator recognises a governed tool without importing this module's

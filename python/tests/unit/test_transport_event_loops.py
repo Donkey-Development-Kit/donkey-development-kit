@@ -144,7 +144,7 @@ def test_concurrent_loops_in_threads_get_separate_pools(url: str) -> None:
             after.wait(10)
         try:
             results[name] = asyncio.run(main())
-        except BaseException as exc:  # recorded, then asserted below
+        except BaseException as exc:  # noqa: BLE001 - any outcome is recorded, then asserted below
             results[name] = repr(exc)
         finally:
             if name == "b":

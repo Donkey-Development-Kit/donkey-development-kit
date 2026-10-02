@@ -15,12 +15,27 @@ Design boundaries baked in here:
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+__all__ = [
+    "ApiSpec",
+    "ApiToolSpec",
+    "DonkeySpec",
+    "HttpMapping",
+    "McpBridgeSpec",
+    "PolicySpec",
+    "SpecMetadata",
+]
 
-class ToolSpec(BaseModel):
+
+class ApiToolSpec(BaseModel):
+    """One MCP tool an :class:`ApiSpec` exposes: an API operation, by method and
+    resource. Named ``ToolSpec`` before #719; it is a different type from the
+    top-level :class:`donkey_kit.ToolSpec` (a ``@Donkey.tool`` registration)."""
+
     name: str
     method: str
     resource: str
@@ -37,20 +52,26 @@ class HttpMapping(BaseModel):
 
 
 class ApiSpec(BaseModel):
+    """One Exchange API a bridge fronts, with the tools derived from it."""
+
     assetId: str
     version: str
     upstream: str
-    tools: list[ToolSpec] = Field(default_factory=list)
+    tools: list[ApiToolSpec] = Field(default_factory=list)
     httpMapping: HttpMapping | None = None
 
 
 class PolicySpec(BaseModel):
+    """One policy applied to a bridge: its Exchange asset, version and config."""
+
     assetId: str
     version: str
     config: dict[str, Any] = Field(default_factory=dict)
 
 
 class McpBridgeSpec(BaseModel):
+    """One MCP bridge: the gateway it runs on, its APIs and its policies."""
+
     name: str
     gateway: str
     apis: list[ApiSpec] = Field(default_factory=list)
@@ -58,12 +79,16 @@ class McpBridgeSpec(BaseModel):
 
 
 class SpecMetadata(BaseModel):
+    """The spec's name, target environment and optional business group."""
+
     name: str
     environment: str
     businessGroup: str | None = None
 
 
 class DonkeySpec(BaseModel):
+    """The root of a ``donkey.yaml`` provisioning spec (``apiVersion: donkey/v1``)."""
+
     apiVersion: Literal["donkey/v1"] = "donkey/v1"
     kind: Literal["DonkeySpec"] = "DonkeySpec"
     metadata: SpecMetadata
@@ -71,7 +96,24 @@ class DonkeySpec(BaseModel):
 
     @classmethod
     def from_yaml(cls, text: str) -> DonkeySpec:
+        """Parse and validate a ``donkey.yaml`` document.
+
+        Raises:
+            pydantic.ValidationError: The document does not match the spec schema.
+        """
         import yaml  # part of the [cli] extra
 
         data = yaml.safe_load(text)
         return cls.model_validate(data)
+
+
+def __getattr__(name: str) -> type[ApiToolSpec]:
+    # Deprecated alias (#719): ``ToolSpec`` collided with ``donkey_kit.ToolSpec``.
+    if name == "ToolSpec":
+        warnings.warn(
+            "donkey_kit.provisioning.spec.ToolSpec is deprecated; use ApiToolSpec.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return ApiToolSpec
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -27,9 +27,28 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from llama_index.llms.openai_like import OpenAILike
 
+__all__ = ["LlamaIndexAdapter", "llm"]
+
 
 class LlamaIndexAdapter(Adapter):
-    extra = "llamaindex"
+    """Governed LlamaIndex objects, reached as ``donkey.llamaindex``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``llm(model)`` builds an
+    ``OpenAILike``. ``connection_kwargs()`` returns the same settings for building
+    it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.llamaindex`` was read without the ``llamaindex`` extra
+            installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/llamaindex
+    """
+
     # Kept False while the conformance exemption table lists LlamaIndex; its
     # calls now go through the shared clients (http_client/async_http_client).
     observes_last_call = False

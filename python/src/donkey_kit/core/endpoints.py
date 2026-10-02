@@ -16,6 +16,16 @@ from urllib.parse import SplitResult, urlsplit
 from ._verify import REGION_HOSTS
 from .errors import ConfigError, ConfigWarning
 
+__all__ = [
+    "ALLOW_HTTP_ENV",
+    "STANDARD_CONTROL_PLANE_HOSTS",
+    "allow_http_enabled",
+    "allow_http_setting",
+    "host_of",
+    "is_loopback",
+    "require_secure_url",
+]
+
 #: The Anypoint control-plane hosts the SDK already knows, one per region.
 STANDARD_CONTROL_PLANE_HOSTS: frozenset[str] = frozenset(
     host for url in REGION_HOSTS.values() if (host := urlsplit(url).hostname)
@@ -51,6 +61,7 @@ def host_of(url: str) -> str | None:
 
 
 def is_loopback(url: str) -> bool:
+    """True when ``url``'s host is ``localhost`` or a loopback IP address."""
     host = host_of(url)
     if host is None:
         return False

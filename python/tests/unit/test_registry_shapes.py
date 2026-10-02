@@ -22,8 +22,8 @@ import pytest
 from donkey_kit import AssetRef, AssetType, Publication, PublicationAssetType
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import DonkeyAsyncClient
+from donkey_kit.registry.criteria import GovernanceCriteria
 from donkey_kit.registry.exchange import ExchangeRegistry
-from donkey_kit.registry.governance import GovernanceCriteria
 from donkey_kit.registry.introspect import derive_descriptor
 from donkey_kit.registry.models import McpServerHandle
 from donkey_kit.tools.filter import ToolDescriptor, resolve_collisions

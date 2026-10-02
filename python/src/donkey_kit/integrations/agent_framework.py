@@ -42,6 +42,8 @@ if TYPE_CHECKING:
 
     from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
+__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client"]
+
 ChatAPI = Literal["responses", "chat_completions"]
 # The agent-framework.openai class each ``api=`` value builds (docs/verified-apis.md §8).
 _CHAT_CLIENT_CLASSES: dict[str, str] = {
@@ -51,7 +53,25 @@ _CHAT_CLIENT_CLASSES: dict[str, str] = {
 
 
 class AgentFrameworkAdapter(Adapter):
-    extra = "agent_framework"
+    """Governed Microsoft Agent Framework objects, reached as ``donkey.agent_framework``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``chat_client(model)`` builds an
+    ``OpenAIChatClient``. ``connection_kwargs()`` returns the same settings for
+    building it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.agent_framework`` was read without the
+            ``agent_framework`` extra installed; the message carries the install
+            command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/agent-framework
+    """
+
     # Kept False while the conformance exemption table lists Agent Framework; its
     # calls now go through the shared client (async_client).
     observes_last_call = False

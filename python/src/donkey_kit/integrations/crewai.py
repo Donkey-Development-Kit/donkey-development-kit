@@ -62,9 +62,31 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from crewai import BaseLLM
 
+__all__ = ["CrewAIAdapter", "llm"]
+
 
 class CrewAIAdapter(Adapter):
-    extra = "crewai"
+    """Governed CrewAI objects, reached as ``donkey.crewai``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``llm(model)`` builds a
+    ``crewai.LLM``. ``connection_kwargs()`` returns the same settings for building
+    it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    CrewAI's native provider owns its transport, so the ``jwt`` auth mode is refused
+    with :class:`~donkey_kit.core.errors.ConfigError`; use client-id auth.
+
+    Raises:
+        ImportError: ``donkey.crewai`` was read without the ``crewai`` extra
+            installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/crewai
+    """
+
     # CrewAI's provider owns the transport, so no response reaches donkey.last_call
     # (#362, the same reason as the conformance kit's correlation_id_propagated exemption).
     observes_last_call = False

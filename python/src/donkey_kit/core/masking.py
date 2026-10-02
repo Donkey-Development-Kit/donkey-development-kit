@@ -18,6 +18,8 @@ from typing import Any, TypeVar, cast
 
 from . import _verify
 
+__all__ = ["MASK", "SENSITIVE_NAMES", "MaskedDict", "is_sensitive", "masked"]
+
 V = TypeVar("V")
 
 #: What a masked value renders as.
@@ -62,6 +64,7 @@ class MaskedDict(dict[str, V]):
     __str__ = __repr__
 
     def copy(self) -> MaskedDict[V]:
+        """Return a shallow copy that still masks its secrets."""
         return MaskedDict(self)
 
     __copy__ = copy

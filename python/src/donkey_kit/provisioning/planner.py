@@ -18,9 +18,13 @@ from dataclasses import dataclass, field
 from ..core import _verify
 from .spec import DonkeySpec
 
+__all__ = ["Change", "Plan", "build_plan"]
+
 
 @dataclass(frozen=True)
 class Change:
+    """One planned change: the action (create, update or remove) on one resource."""
+
     action: str  # "create" | "update" | "remove"
     kind: str    # "mcpBridge" | "tool" | "policy"
     name: str
@@ -29,9 +33,12 @@ class Change:
 
 @dataclass(frozen=True)
 class Plan:
+    """The ordered changes that would bring the platform in line with a spec."""
+
     changes: list[Change] = field(default_factory=list)
 
     def render(self) -> str:
+        """Render the plan as ``+``/``~``/``-`` lines, as ``donkey plan`` prints it."""
         if not self.changes:
             return "No changes. Infrastructure matches the spec."
         sign = {"create": "+", "update": "~", "remove": "-"}
@@ -45,6 +52,11 @@ class Plan:
 
 
 async def build_plan(spec: DonkeySpec, donkey: object) -> Plan:
+    """Compare ``spec`` with what is provisioned and return the changes needed.
+
+    Raises:
+        NotImplementedError: Always, for now; see docs/verified-apis.md §5.
+    """
     raise _verify.blocked(
         "MCP Bridge provisioning read API for read-before-write planning "
         "(provisioning-as-code). If verification finds it UI-only, pivot to Terraform generation "

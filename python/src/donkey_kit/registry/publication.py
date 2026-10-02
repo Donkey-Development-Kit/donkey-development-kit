@@ -23,6 +23,15 @@ from typing import Any
 
 from ..core import _verify
 
+__all__ = [
+    "Contact",
+    "DescriptionIssue",
+    "Publication",
+    "PublicationAssetType",
+    "VersionStrategy",
+    "check_description_quality",
+]
+
 
 class PublicationAssetType(Enum):
     """SDK publication categories; exact Exchange token strings are UNVERIFIED."""
@@ -34,6 +43,8 @@ class PublicationAssetType(Enum):
 
 
 class VersionStrategy(Enum):
+    """How a :class:`Publication` picks its version; ``PINNED`` (the default) never bumps."""
+
     PINNED = "pinned"            # default — no implicit bumps in a shared catalog
     FROM_PACKAGE = "from-package"
     SEMANTIC_AUTO = "semantic-auto"
@@ -41,12 +52,16 @@ class VersionStrategy(Enum):
 
 @dataclass(frozen=True)
 class Contact:
+    """The owning team and contact email shown on a published Exchange entry."""
+
     team: str
     email: str
 
 
 @dataclass(frozen=True)
 class DescriptionIssue:
+    """A tool description that is missing, tautological or too short."""
+
     tool: str
     kind: str  # "missing" | "tautological" | "too-short"
     detail: str
@@ -54,6 +69,15 @@ class DescriptionIssue:
 
 @dataclass(frozen=True)
 class Publication:
+    """A code-first asset to register in Exchange (BG §2.5).
+
+    There is no runtime ``publish()``: :meth:`preview` and :meth:`export` run on
+    a laptop, CI publishes the exported spec, and :meth:`verify` is the read-only
+    runtime drift check. See the module docstring.
+
+    Docs: https://docs.donkey-kit.dev/publishing
+    """
+
     asset_type: PublicationAssetType
     group_id: str
     asset_id: str

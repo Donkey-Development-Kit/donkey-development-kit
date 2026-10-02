@@ -163,8 +163,9 @@ non-zero exit means stop and fix before opening the PR:
 cd python
 pytest -q          # the `test` matrix job (3.10/3.11/3.12 in CI)
 mypy               # mypy --strict, BLOCKING
-ruff check .       # E,F,I,UP,B; line-length 100
+ruff check .       # rule families in pyproject.toml (see the §3 map); line-length 100
 lint-imports       # the layered, framework-free-core contract
+vulture            # dead code in src/; allowed names in vulture_whitelist.py
 ```
 
 If the diff touches an adapter or framework wiring, also run the signature check
@@ -245,7 +246,7 @@ scenario nobody reviews). Pick by what the change exercises:
 
 | The change exercises… | Surface |
 | --- | --- |
-| Framework-free logic (`core/`, `registry/`, errors, config, transport) using only httpx + pydantic | **`tests/unit/`** — the `base-only` CI job |
+| Framework-free logic (`core/`, `registry/`, errors, config, transport) with no agent framework installed | **`tests/unit/`** — the `base-only` CI job |
 | An adapter's behavior against a fixed scenario set (any of the eight frameworks) | **`tests/conformance/suite.py`** — the conformance kit |
 | Behavior pinned to a **real captured** Anypoint request/response | **fixture-driven** test reading `tests/fixtures/anypoint/**` |
 | The pure-Python local gateway simulator (`donkey mock`, no Docker) | `@pytest.mark.local_gateway` (off by default) |
@@ -409,8 +410,9 @@ build plan has the rationale behind each rule:
   Don't silence a real signature mismatch with an unexplained `# type: ignore`
   — the single `[[tool.mypy.overrides]]` block already handles optional/absent
   framework deps.
-- **Framework-free core & lazy imports.** `core/` depends on **httpx + pydantic
-  only** — no agent framework, ever. Adapters import their framework **lazily,
+- **Framework-free core & lazy imports.** `core/` depends on **httpx only** (the
+  build plan allows pydantic too, but core imports none) — no agent framework,
+  ever. Adapters import their framework **lazily,
   inside the method that uses it**, never at module top level; import the
   framework's *types* only under `if TYPE_CHECKING:`. This is what lets
   `import donkey_kit` succeed with no framework installed, and the `base-only`
@@ -434,9 +436,25 @@ build plan has the rationale behind each rule:
   `tomllib` is stdlib only on 3.11+, so `tomli` is backfilled below 3.11;
   `typing-extensions` is pulled in below 3.12. Don't use 3.11+ syntax/stdlib
   without a backfill.
-- **pydantic v2** idioms (`model_validate`, `Field`, `model_config`); the
-  `pydantic.mypy` plugin is on. The package ships `py.typed` (PEP 561) — keep the
-  public API fully annotated so downstream users get types.
+- **Value objects are frozen dataclasses** (`@dataclass(frozen=True)`), not
+  pydantic models: config, catalog entries, registry assets and results. Change
+  one by building a new instance (`dataclasses.replace(...)`, or a typed helper
+  such as `DonkeyConfig.with_overrides(...)`), and type keyword-override bags
+  with `TypedDict` + `Unpack`. A plain `@dataclass` is only for mutable internal
+  state. pydantic is used only at an external-schema boundary, where the SDK
+  validates a document it doesn't control; today that is only the legacy
+  `provisioning/spec.py`, which is why `pydantic` is still a base dependency and
+  the `pydantic.mypy` plugin is on. See
+  [ADR 0001](docs/adr/0001-value-objects.md). The package ships `py.typed`
+  (PEP 561) — keep the public API fully annotated so downstream users get types.
+- **Public API surface.** Every public module (no `_` in its path) declares a
+  sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey`
+  signature is exported from `donkey_kit` (or `donkey_kit.core`), and no class
+  name means two different types across those `__all__` lists
+  (`tests/unit/test_public_api_surface.py`). Submodule paths are not API. Don't
+  reach into another object's private members (ruff `SLF001`): the dev-only
+  simulator and conformance siblings go through `donkey_kit._testing`, and each
+  remaining exception carries a `# noqa: SLF001` with its reason.
 - **Three ergonomic forms per governed surface** — the `donkey.<framework>`
   factory, a `connection_kwargs()` accessor, and a module-level factory. Keep all
   three when adding an adapter (they must stay in lockstep). Hand the framework
@@ -449,6 +467,12 @@ build plan has the rationale behind each rule:
   a standing invariant by its `§` label or name (`§1.1`, verification
   discipline), or a `Phase N`. A principled deviation gets a leading comment
   naming what it trades against.
+- **Docstrings on every public symbol.** Each public class, method and function
+  in `src/` has a docstring (ruff `D101`-`D103`, blocking; tests, examples and
+  scripts are exempt). Say what it does, its key parameters and the errors it
+  raises (Google-style `Args:` / `Raises:`), and on a main entry point link its
+  page on <https://docs.donkey-kit.dev/>, since that is what `help()` and an IDE
+  hover show.
 - **Trademark-descriptive language (the trademark/support boundary).** "Agent Fabric", "Anypoint", "Omni
   Gateway", and "MuleSoft" are Salesforce trademarks. Write the package as a
   descriptive, third-party SDK for *consuming* Agent Fabric, never as a
@@ -470,12 +494,21 @@ build plan has the rationale behind each rule:
   the signature, it stays with a `# noqa: ARG00x` naming that API, or with a
   `per-file-ignores` entry for a module of blocked stubs; a `# noqa` that suppresses nothing is deleted (ruff `RUF100`); and an
   `except` that only re-raises is dropped (ruff `TRY203`).
+- **Error contract.** Every `DonkeyError` subclass ships its own non-empty
+  default `remediation` (overridable, never blank) and is exported from
+  `donkey_kit`, as is `classify`. A domain failure raises a `DonkeyError`
+  subclass, never a builtin exception.
+- **One source of truth, no dead code.** Gateway header names live only in
+  `core/_wire.py`; import them, never retype the string. Each env var is named
+  once, in `core/config.py`'s field table. Code nothing in `src/` uses is
+  deleted (`vulture`); a name used only from outside `src/` goes in
+  `vulture_whitelist.py` (its docstring says when), and a public symbol is
+  deprecated with a `DeprecationWarning` before it is removed.
 
 ### Rule-to-enforcement map
 
 The style guide is the config (#721): every rule above is enforced by a tool or
-a test in the pre-PR gate, or is marked review-only. Rows marked "once #N
-merges" are enforced on that issue's branch and land with it. When you add a
+a test in the pre-PR gate, or is marked review-only. When you add a
 rule, add its row; a rule that nothing can check is a review note, not a rule.
 
 | Rule | Enforced by | Where it runs |
@@ -491,19 +524,44 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
 | Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |
 | 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
-| pydantic v2, `py.typed` | `pydantic>=2` floor + `pydantic.mypy` plugin; `py.typed` presence in `tests/unit/test_house_style_config.py` | `mypy`, `pytest` |
-| Value objects are frozen dataclasses (#723) | Review-only: ADR 0001 records the decision; no tool checks it | review |
+| `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
+| Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it (the `pydantic.mypy` plugin types the one boundary, `provisioning/spec.py`) | review |
 | Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py` | `pytest` |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
-| Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py`; once #717 merges | `ruff check .`, `pytest` |
-| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py`; once #719 merges | `ruff check .`, `pytest` |
-| Docstrings on public symbols (#722) | ruff `D101`-`D103` on `src/`; once #722 merges | `ruff check .` |
+| Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
+| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py` | `ruff check .`, `pytest` |
+| Docstrings on public symbols (#722) | ruff `D101`-`D103` on `src/`; `tests/unit/test_public_docstrings.py` (summary + docs link on the headline entry points) | `ruff check .`, `pytest` |
+| Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
+| One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |
 
 Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .`,
 `lint-imports`, `pytest`), plus `verify_frameworks.py` if you touched adapters.
+
+### Logging
+
+- **One logger per module that logs:** `_log = logging.getLogger(__name__)`.
+  Never hard-code a logger name. The package root (`donkey_kit/__init__.py`)
+  attaches a `NullHandler` to `"donkey_kit"` and nothing else: the application
+  owns handlers, levels, and formatting.
+- **DEBUG** for what the SDK does on the caller's behalf: each retry (status,
+  attempt, delay), the 401 token refresh, fallbacks (a gateway routing fallback
+  that is not retried, an auth provider falling through), and the OTLP export
+  bootstrap.
+- **WARNING** only for a condition the user can act on. A one-time
+  configuration problem the user must fix is usually a `warnings.warn(...)`
+  category instead (see `TelemetryExportWarning`).
+- **Never log a header value**, a request body, or an exception message that
+  could echo one. Log the method, host, and path (no query string), the status,
+  and type names. `tests/unit/test_logging.py` asserts that no record carries a
+  sent credential.
+- **No silent swallowing.** An `except` that does not re-raise either logs
+  `_log.debug(..., exc_info=True)` or says inline why the failure is expected.
+  Ruff selects `BLE`, `LOG`, and `G`, so a blind `except Exception` needs a
+  `# noqa: BLE001 — <reason>` that states the reason. Pass log arguments
+  lazily (`_log.debug("%s", x)`), never as an f-string.
 
 ---
 
@@ -528,7 +586,7 @@ this is a PR-time discipline. The surface→page map (code paths under
 | `simulator/*` | `simulator.mdx` |
 | `conformance/*`, `donkey.simulate()` | `testing.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
-| `registry/governance.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
+| `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
 | `tools/session.py` | `tool-access/binding.mdx` |
 | `governance.py` | none today: its verbs are `_verify.blocked(...)`, so no page documents them. Unblocking one needs a page (or a follow-up issue for one) |

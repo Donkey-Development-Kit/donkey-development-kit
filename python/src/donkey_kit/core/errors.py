@@ -30,11 +30,39 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from . import _verify
+from . import _verify, _wire
 from .lastcall import request_id as read_request_id
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+__all__ = [
+    "AgentKilled",
+    "AuthError",
+    "BudgetReserveReached",
+    "ConfigError",
+    "ConfigWarning",
+    "ContentSafetyBlocked",
+    "DonkeyError",
+    "GatewayUnavailable",
+    "GovernanceDrift",
+    "ModelNotRoutable",
+    "ModelSubstituted",
+    "PIIDetected",
+    "PlatformTeamOnly",
+    "PolicyViolation",
+    "PromptInjectionBlocked",
+    "ProvisioningError",
+    "PublicationDrift",
+    "RegistryError",
+    "TokenBudgetExceeded",
+    "ToolInvocationError",
+    "UpstreamModelError",
+    "UpstreamRequestError",
+    "classify",
+    "gateway_unavailable",
+    "parse_retry_after",
+]
 
 
 class DonkeyError(Exception):
@@ -190,6 +218,23 @@ class PolicyViolation(DonkeyError):
 
 
 class TokenBudgetExceeded(PolicyViolation):
+    """A token-rate-limit policy refused the request: the budget window is spent.
+
+    Raised on the gateway's 429 token-budget rejection (BG §1.3). Terminal and
+    never retried by the SDK, like every :class:`PolicyViolation`.
+
+    Args:
+        message: The human-readable refusal text.
+        retry_after: Seconds until the caller may retry, read from the
+            ``retry-after`` or ``x-token-reset`` response header; ``None`` when
+            the gateway sent neither.
+
+    To pace calls before hitting the limit, use ``donkey.budget`` and
+    :class:`BudgetReserveReached` instead.
+
+    Docs: https://docs.donkey-kit.dev/errors
+    """
+
     policy = "token-rate-limit"
     remediation: str = (
         "A token-rate-limit policy exhausted the budget window. Wait for it "
@@ -281,6 +326,15 @@ class ModelSubstituted(DonkeyError):
 
 
 class PromptInjectionBlocked(PolicyViolation):
+    """The prompt-injection-protection policy flagged the request as an injection attempt.
+
+    Identified from the ``x-injection-protection`` header or the regex prompt
+    guard's ``matched_patterns``. Terminal and never retried by the SDK, like
+    every :class:`PolicyViolation`. The raw body is on ``.response``.
+
+    Docs: https://docs.donkey-kit.dev/errors
+    """
+
     policy = "prompt-injection-protection"
     remediation: str = (
         "The prompt-injection-protection policy flagged this request as a "
@@ -321,7 +375,12 @@ class PIIDetected(PolicyViolation):
     ``gateway_message`` is the gateway's own rejection text, which echoes every
     flagged value verbatim; it is kept for callers that need it and is not
     rendered by ``str()`` or ``repr()``. The raw body is also on ``.response``.
-    Treat both as carrying the blocked content."""
+    Treat both as carrying the blocked content.
+
+    Terminal and never retried by the SDK, like every :class:`PolicyViolation`.
+
+    Docs: https://docs.donkey-kit.dev/errors
+    """
 
     policy = "pii-detection"
     remediation: str = (
@@ -741,7 +800,7 @@ def classify(
     # generic 4xx / nested-error branch so an injection block wins even if its
     # body happens to be shaped like an upstream error envelope. A 400 WITHOUT
     # this header is an ordinary refusal, never PromptInjectionBlocked (AC (a)).
-    if response.headers.get("x-injection-protection") == "blocked":
+    if response.headers.get(_wire.INJECTION_PROTECTION_HEADER) == "blocked":
         return PromptInjectionBlocked(
             f"Request blocked by the injection-protection policy ({status}).",
             # remediation: PromptInjectionBlocked's canonical class default (#182).
@@ -755,7 +814,7 @@ def classify(
     # to the honest generic PolicyViolation below rather than being mis-typed as
     # auth (#184). ``donkey doctor``'s (#202) credentials diagnosis stays intact: a
     # wrong-credential 401 still lands here.
-    if status == 401 or (status == 403 and "www-authenticate" in response.headers):
+    if status == 401 or (status == 403 and _wire.WWW_AUTHENTICATE_HEADER in response.headers):
         return AuthError(
             f"Authentication/authorization failed ({status}). Check the consumer "
             "client_id/client_secret pair and its API Manager authorization "
@@ -810,7 +869,9 @@ def classify(
         # envelope branch above owns the nested case), so the observable
         # discriminators are the status and any gateway policy headers present.
         policy_headers = sorted(
-            name for name in response.headers if name.lower().startswith("x-llm-proxy-")
+            name
+            for name in response.headers
+            if name.lower().startswith(_wire.LLM_PROXY_HEADER_PREFIX)
         )
         observed = f"status {status}"
         if policy_headers:
@@ -874,10 +935,10 @@ def _retry_after(response: httpx.Response) -> float | None:
     """Seconds until the caller may retry. Prefers the standard ``retry-after``
     (delta-seconds) header; falls back to the LLM token-rate-limit policy's
     ``x-token-reset`` header, which is captured in **milliseconds** (docs/verified-apis.md §4)."""
-    seconds = parse_retry_after(response.headers.get("retry-after"))
+    seconds = parse_retry_after(response.headers.get(_wire.RETRY_AFTER_HEADER))
     if seconds is not None:
         return seconds
-    reset_ms = response.headers.get("x-token-reset")
+    reset_ms = response.headers.get(_wire.TOKEN_RESET_HEADER)
     if reset_ms is not None:
         try:
             return max(0.0, float(reset_ms) / 1000.0)
@@ -1029,13 +1090,13 @@ def _code_str(value: object) -> str | None:
 # #253/#568).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
     (
-        "x-llm-proxy-azure-content-safety-action",
-        "x-llm-proxy-azure-content-safety-reason",
+        _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
+        _wire.AZURE_CONTENT_SAFETY_REASON_HEADER,
         "Azure Content Safety",
     ),
     (
-        "x-llm-proxy-bedrock-guardrail-action",
-        "x-llm-proxy-bedrock-guardrail-reason",
+        _wire.BEDROCK_GUARDRAIL_ACTION_HEADER,
+        _wire.BEDROCK_GUARDRAIL_REASON_HEADER,
         "Amazon Bedrock Guardrails",
     ),
 )

@@ -58,6 +58,8 @@ if TYPE_CHECKING:
     import httpx2
     from anthropic import AsyncAnthropic
 
+__all__ = ["AnthropicAdapter", "client"]
+
 
 def _anthropic_uses_httpx2() -> bool:
     """True when the installed ``anthropic`` is built on ``httpx2`` (1.0 and
@@ -74,7 +76,23 @@ def _anthropic_uses_httpx2() -> bool:
 
 
 class AnthropicAdapter(Adapter):
-    extra = "anthropic"
+    """Governed Anthropic SDK objects, reached as ``donkey.anthropic``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``client()`` builds an
+    ``AsyncAnthropic``. ``connection_kwargs()`` returns the same settings for
+    building it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.anthropic`` was read without the ``anthropic`` extra
+            installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/anthropic
+    """
 
     def __init__(
         self,
