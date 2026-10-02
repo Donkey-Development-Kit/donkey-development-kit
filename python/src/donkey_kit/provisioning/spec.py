@@ -15,13 +15,26 @@ Design boundaries baked in here:
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+__all__ = [
+    "ApiSpec",
+    "ApiToolSpec",
+    "DonkeySpec",
+    "HttpMapping",
+    "McpBridgeSpec",
+    "PolicySpec",
+    "SpecMetadata",
+]
 
-class ToolSpec(BaseModel):
-    """One MCP tool a bridge exposes, mapped to an API method and resource."""
+
+class ApiToolSpec(BaseModel):
+    """One MCP tool an :class:`ApiSpec` exposes: an API operation, by method and
+    resource. Named ``ToolSpec`` before #719; it is a different type from the
+    top-level :class:`donkey_kit.ToolSpec` (a ``@Donkey.tool`` registration)."""
 
     name: str
     method: str
@@ -44,7 +57,7 @@ class ApiSpec(BaseModel):
     assetId: str
     version: str
     upstream: str
-    tools: list[ToolSpec] = Field(default_factory=list)
+    tools: list[ApiToolSpec] = Field(default_factory=list)
     httpMapping: HttpMapping | None = None
 
 
@@ -92,3 +105,15 @@ class DonkeySpec(BaseModel):
 
         data = yaml.safe_load(text)
         return cls.model_validate(data)
+
+
+def __getattr__(name: str) -> Any:
+    # Deprecated alias (#719): ``ToolSpec`` collided with ``donkey_kit.ToolSpec``.
+    if name == "ToolSpec":
+        warnings.warn(
+            "donkey_kit.provisioning.spec.ToolSpec is deprecated; use ApiToolSpec.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return ApiToolSpec
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -41,6 +41,8 @@ if TYPE_CHECKING:
     from google.adk.models import Gemini
     from google.adk.models.lite_llm import LiteLlm
 
+__all__ = ["ADKAdapter", "gemini", "model"]
+
 
 class ADKAdapter(Adapter):
     """Governed Google ADK objects, reached as ``donkey.adk``.
@@ -61,7 +63,6 @@ class ADKAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/adk
     """
 
-    extra = "adk"
     # Kept False for ``model()`` while the conformance kit lists its
     # correlation_id_propagated exemption (#362), although its calls now go
     # through the shared client. ``gemini()`` observes (#691), recorded per

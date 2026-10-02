@@ -32,7 +32,7 @@ import importlib
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS
 
 from donkey_kit.core.config import DonkeyConfig
-from donkey_kit.core.telemetry import run_context
+from donkey_kit.core.telemetry import run_scope
 from donkey_kit.core.transport import build_http_client
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.integrations._base import Adapter
@@ -134,7 +134,7 @@ async def test_header_only_correlation_exemptions_match_connection_kwargs() -> N
     for attr in _HEADER_ONLY_ADAPTERS:
         client = build_http_client(cfg, None)
         try:
-            with run_context("run-123"):
+            with run_scope("run-123"):
                 headers = _adapter_class(attr)(cfg, client).connection_kwargs()[
                     "default_headers"
                 ]

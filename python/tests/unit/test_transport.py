@@ -18,7 +18,7 @@ from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
 from donkey_kit.core.errors import ConfigError, GatewayUnavailable, PIIDetected, classify
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call
-from donkey_kit.core.telemetry import current_correlation_id, run_context, run_scope
+from donkey_kit.core.telemetry import current_correlation_id, run_scope
 from donkey_kit.core.transport import (
     CALL_ID_HEADER,
     CORRELATION_HEADER,
@@ -81,7 +81,7 @@ async def test_correlation_and_attribution_headers_injected() -> None:
         # comes from the still-UNVERIFIED application/business-group attribution
         # placeholder names (verification discipline).
         with pytest.warns(UnverifiedValueWarning):
-            with run_context("run-1"):
+            with run_scope("run-1"):
                 await client.get("https://x/thing")
 
     assert seen[CORRELATION_HEADER.lower()] == "run-1"
@@ -291,7 +291,7 @@ def test_sync_correlation_and_attribution_headers_injected() -> None:
     # No pytest.warns here: _verify warns once per key per process, so the async
     # case above has already consumed it. That contract is asserted there.
     with _sync_client(handler, cfg) as client:
-        with run_context("run-1"):
+        with run_scope("run-1"):
             client.get("https://x/thing")
 
     assert seen[CORRELATION_HEADER.lower()] == "run-1"
@@ -300,7 +300,7 @@ def test_sync_correlation_and_attribution_headers_injected() -> None:
 
 
 def test_sync_requests_do_not_pin_a_correlation_id_to_the_process() -> None:
-    """A blocking call outside run_context() must not bind its ID to the ambient
+    """A blocking call outside run_scope() must not bind its ID to the ambient
     context: doing so would make every later unrelated call report the same run."""
     seen: list[str] = []
 
@@ -389,14 +389,14 @@ def test_sync_unbound_correlation_id_is_stable_across_retries() -> None:
     assert current_correlation_id() is None
 
 
-def test_sync_requests_share_one_id_inside_a_run_context() -> None:
+def test_sync_requests_share_one_id_inside_a_run_scope() -> None:
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.headers[CORRELATION_HEADER])
         return httpx.Response(200)
 
-    with _sync_client(handler) as client, run_context("run-7"):
+    with _sync_client(handler) as client, run_scope("run-7"):
         client.get("https://x")
         client.get("https://x")
 
@@ -418,7 +418,7 @@ async def test_call_id_is_unique_per_call_and_distinct_from_run_id() -> None:
         return httpx.Response(200)
 
     async with _client(handler) as client:
-        with run_context("run-42"):
+        with run_scope("run-42"):
             await client.get("https://x/a")
             await client.get("https://x/b")
 
@@ -443,7 +443,7 @@ async def test_call_id_is_stable_across_retries() -> None:
         return httpx.Response(503) if calls["n"] < 3 else httpx.Response(200)
 
     async with _client(handler, DonkeyConfig(max_retries=3)) as client:
-        with run_context("run-r"):
+        with run_scope("run-r"):
             await client.get("https://x")
 
     assert calls["n"] == 3  # two retries then success
@@ -462,7 +462,7 @@ async def test_config_overrides_correlation_and_call_id_header_names() -> None:
 
     cfg = DonkeyConfig(correlation_header="X-Trace-Id", call_id_header="X-Req-Seq")
     async with _client(handler, cfg) as client:
-        with run_context("run-ovr"):
+        with run_scope("run-ovr"):
             await client.get("https://x")
 
     assert seen["x-trace-id"] == "run-ovr"
@@ -494,7 +494,7 @@ async def test_overridden_header_names_survive_classify_round_trip() -> None:
 
     cfg = DonkeyConfig(correlation_header="X-Trace-Id", call_id_header="X-Req-Seq")
     async with _client(handler, cfg) as client:
-        with run_context("run-42"):
+        with run_scope("run-42"):
             await client.get("https://x")
 
     request = captured["req"]
@@ -515,7 +515,7 @@ async def test_default_header_names_survive_classify_round_trip() -> None:
         return httpx.Response(200)
 
     async with _client(handler) as client:  # no override
-        with run_context("run-def"):
+        with run_scope("run-def"):
             await client.get("https://x")
 
     request = captured["req"]
@@ -536,7 +536,7 @@ async def test_classify_round_trip_emits_no_unverified_warning() -> None:
         return httpx.Response(200)
 
     async with _client(handler) as client:
-        with run_context("run-w"):
+        with run_scope("run-w"):
             await client.get("https://x")
 
     request = captured["req"]
@@ -560,7 +560,7 @@ def test_sync_overridden_header_names_survive_classify_round_trip() -> None:
 
     cfg = DonkeyConfig(correlation_header="X-Trace-Id", call_id_header="X-Req-Seq")
     with _sync_client(handler, cfg) as client:
-        with run_context("run-sync"):
+        with run_scope("run-sync"):
             client.get("https://x")
 
     request = captured["req"]
@@ -585,7 +585,7 @@ async def test_concurrent_runs_do_not_leak_correlation_ids() -> None:
 
         async def one_run(run_id: str) -> set[str]:
             seen: set[str] = set()
-            with run_context(run_id):
+            with run_scope(run_id):
                 for _ in range(4):
                     resp = await client.get("https://x")
                     seen.add(resp.headers["x-echo"])
@@ -610,7 +610,7 @@ async def test_run_id_reaches_a_request_fired_from_a_child_task() -> None:
         return httpx.Response(200)
 
     async with _client(handler) as client:
-        with run_context("run-child"):
+        with run_scope("run-child"):
             await asyncio.create_task(client.get("https://x"))
 
     assert seen == ["run-child"]
@@ -1104,9 +1104,9 @@ async def test_llm_post_emits_one_span_with_both_namespaces(monkeypatch) -> None
     client = DonkeyAsyncClient(
         _LLM_CFG, None, budget=budget, transport=httpx.MockTransport(handler)
     )
-    # run_context is a sync CM (it binds a contextvar); nest it outside the async
-    # client so the correlation ID is bound for the duration of the post().
-    with run_context("run-7f3a"):
+    # Bind the run scope outside the async client so the correlation ID is bound
+    # for the duration of the post().
+    with run_scope("run-7f3a"):
         async with client:
             resp = await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
     assert resp.status_code == 200
@@ -1185,7 +1185,7 @@ async def test_every_span_in_a_run_shares_the_run_id(monkeypatch) -> None:
         return httpx.Response(200, headers={_PROVIDER_HEADER: "openai"}, json=_SUCCESS_BODY)
 
     client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
-    with run_context("run-multi"):
+    with run_scope("run-multi"):
         async with client:
             await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "a"})
             await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "b"})
@@ -1306,7 +1306,7 @@ def test_sync_llm_post_emits_one_span_with_both_namespaces(monkeypatch) -> None:
 
     budget = Budget()
     client = DonkeyClient(_LLM_CFG, budget=budget, transport=httpx.MockTransport(handler))
-    with client, run_context("run-sync"):
+    with client, run_scope("run-sync"):
         resp = client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
     assert resp.status_code == 200
 
@@ -1941,7 +1941,7 @@ async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         async with _client(handler, cfg) as client:
-            with run_context("run-522"):
+            with run_scope("run-522"):
                 await client.get("https://x/thing")
 
     assert seen[CORRELATION_HEADER.lower()] == "run-522"
@@ -2363,7 +2363,7 @@ async def test_gateway_unavailable_carries_the_sent_ids() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UnverifiedValueWarning)
         async with client:
-            with run_context("run-boom"):
+            with run_scope("run-boom"):
                 with pytest.raises(GatewayUnavailable) as ei:
                     await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
     assert ei.value.correlation_id == "run-boom"

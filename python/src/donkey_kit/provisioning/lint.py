@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+__all__ = ["Finding", "LintResult", "Severity"]
+
 
 class Severity(Enum):
     """How serious a lint :class:`Finding` is; ``ERROR`` fails the run."""

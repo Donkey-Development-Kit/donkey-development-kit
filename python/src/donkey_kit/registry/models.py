@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+__all__ = ["AgentHandle", "AssetRef", "AssetType", "McpServerHandle"]
+
 AssetType = Literal["mcp", "a2a-agent", "agent", "api"]
 
 

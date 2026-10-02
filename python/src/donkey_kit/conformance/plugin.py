@@ -39,6 +39,8 @@ from .suite import SCENARIOS, Result, Scenario, validate_known_limitations
 if TYPE_CHECKING:  # keep the heavy import out of the auto-loaded module body
     from .harness import AgentFactory
 
+__all__ = ["donkey", "gateway", "pytest_addoption", "pytest_collection", "pytest_terminal_summary"]
+
 # Stash keys carry collection-time state to the run/summary phases without
 # module globals (pytest recommends config.stash over ad-hoc attributes).
 _FACTORY_KEY = pytest.StashKey[Callable[..., Any]]()
@@ -239,9 +241,9 @@ def donkey() -> Any:
     is preserved. Torn down synchronously; the async transport opens no
     connection unless a real request is made (which ``simulate()`` intercepts)."""
     from ..donkey import Donkey
-    from .harness import _offline_config
+    from .harness import offline_config
 
-    fab = Donkey(_offline_config())
+    fab = Donkey(offline_config())
     try:
         yield fab
     finally:

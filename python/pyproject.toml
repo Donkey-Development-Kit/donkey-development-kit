@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "donkey-kit"
-version = "0.1.1"
+version = "0.1.2.dev0"
 description = "An SDK for consuming Agent Fabric capabilities (governed model and tool access) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -127,6 +127,8 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
     "import-linter>=2.0",
+    # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
+    "vulture>=2.11",
     # stubs so mypy --strict typechecks the CLI/provisioning yaml handling.
     "types-PyYAML>=6.0",
     "typer>=0.15.4",
@@ -230,9 +232,15 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
+# SLF001: no reaching into another object's private members (#719); RUF022:
+# every __all__ is sorted (#719).
+# BLE/LOG/G: no blind except without a reason, and logging-call hygiene (#717).
 # D101-D103: every public class, method and function in src/ has a docstring
 # (#722). Only these three D rules are on; tests/examples/scripts are exempt below.
-select = ["E", "F", "I", "UP", "B", "D101", "D102", "D103"]
+select = [
+    "E", "F", "I", "UP", "B", "BLE", "LOG", "G", "SLF001", "RUF022",
+    "D101", "D102", "D103",
+]
 
 [tool.ruff.lint.pydocstyle]
 # Google-style "Args:" / "Raises:" sections; the prose-only docstrings fit it too.
@@ -241,10 +249,21 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).
 "src/donkey_kit/provisioning/cli.py" = ["B008"]
-# Docstring rules apply to the shipped package only (#722).
-"tests/**" = ["D101", "D102", "D103"]
+# The one sanctioned seam module: the dev-only simulator and conformance siblings
+# reach Donkey's and its clients' private members only through it (#719).
+"src/donkey_kit/_testing.py" = ["SLF001"]
+# White-box tests inspect and swap private state by design (#719); docstring
+# rules apply to the shipped package only (#722).
+"tests/**" = ["SLF001", "D101", "D102", "D103"]
 "examples/**" = ["D101", "D102", "D103"]
 "scripts/**" = ["D101", "D102", "D103"]
+
+# --- vulture: dead-code check in CI (#720) ---
+# Reads src/ only, so code that only the tests use is reported as dead; names
+# used from outside src/ are listed in vulture_whitelist.py.
+[tool.vulture]
+paths = ["src", "vulture_whitelist.py"]
+min_confidence = 60
 
 # --- import-linter: enforce the layered architecture rule in CI, from day one ---
 [tool.importlinter]

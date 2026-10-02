@@ -19,6 +19,8 @@ from pathlib import Path
 from ..core import _verify
 from .planner import Plan
 
+__all__ = ["ApplyResult", "PolicyAllowList", "apply"]
+
 
 @dataclass(frozen=True)
 class PolicyAllowList:

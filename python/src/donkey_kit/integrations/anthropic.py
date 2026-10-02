@@ -58,6 +58,8 @@ if TYPE_CHECKING:
     import httpx2
     from anthropic import AsyncAnthropic
 
+__all__ = ["AnthropicAdapter", "client"]
+
 
 def _anthropic_uses_httpx2() -> bool:
     """True when the installed ``anthropic`` is built on ``httpx2`` (1.0 and
@@ -91,8 +93,6 @@ class AnthropicAdapter(Adapter):
 
     Docs: https://docs.donkey-kit.dev/frameworks/anthropic
     """
-
-    extra = "anthropic"
 
     def __init__(
         self,

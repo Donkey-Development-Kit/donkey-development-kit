@@ -52,6 +52,16 @@ from ..core.errors import (
 if TYPE_CHECKING:
     from ..core.budget import Budget
 
+__all__ = [
+    "DoctorCheck",
+    "Level",
+    "Probe",
+    "ProbeResult",
+    "format_report",
+    "has_failure",
+    "run_diagnostics",
+]
+
 #: The three llm-proxy fields ``config`` reports on (mirrors ``validated(need="llm")``).
 _LLM_FIELDS = ("llm_proxy_url", "llm_proxy_client_id", "llm_proxy_client_secret")
 
@@ -71,7 +81,7 @@ _GLYPH = {Level.OK: "[ok]", Level.FAIL: "[!!]", Level.INFO: "[i] ", Level.SKIP: 
 
 
 @dataclass(frozen=True)
-class Check:
+class DoctorCheck:
     """One line of the report: a named diagnosis, its level, a human detail, and
     (on a failure) the remediation lifted verbatim from the taxonomy."""
 
@@ -116,7 +126,7 @@ def _humanize(seconds: float) -> str:
     return f"{s // 86400}d"
 
 
-def _config_check(cfg: DonkeyConfig) -> tuple[Check, bool]:
+def _config_check(cfg: DonkeyConfig) -> tuple[DoctorCheck, bool]:
     """Resolve config without any network call and report llm-proxy completeness.
     Returns the check plus whether it's safe to probe (all required fields set)."""
     set_fields = [f for f in _LLM_FIELDS if getattr(cfg, f)]
@@ -129,7 +139,7 @@ def _config_check(cfg: DonkeyConfig) -> tuple[Check, bool]:
         # The ConfigError message already lists every missing field AND the ways
         # to set them — that IS the remediation, one source of wording.
         return (
-            Check(
+            DoctorCheck(
                 "config",
                 Level.FAIL,
                 f"{source} ({resolved}/{len(_LLM_FIELDS)} llm fields)",
@@ -137,21 +147,21 @@ def _config_check(cfg: DonkeyConfig) -> tuple[Check, bool]:
             ),
             False,
         )
-    return Check("config", Level.OK, f"{source} ({resolved} fields)"), True
+    return DoctorCheck("config", Level.OK, f"{source} ({resolved} fields)"), True
 
 
 def _endpoint_detail(url: str, source: ConfigSource) -> str:
     return f"{host_of(url) or 'no host'} ({source})"
 
 
-def _endpoint_checks(cfg: DonkeyConfig) -> list[Check]:
+def _endpoint_checks(cfg: DonkeyConfig) -> list[DoctorCheck]:
     """One line per resolved endpoint: its host and where it came from. The
     probe only exercises the LLM proxy, so a control-plane problem is shown
     with its remediation but does not fail the report."""
-    checks: list[Check] = []
+    checks: list[DoctorCheck] = []
     if cfg.llm_proxy_url:
         checks.append(
-            Check(
+            DoctorCheck(
                 "llm endpoint",
                 Level.INFO,
                 _endpoint_detail(cfg.llm_proxy_url, cfg.source_of("llm_proxy_url")),
@@ -164,7 +174,7 @@ def _endpoint_checks(cfg: DonkeyConfig) -> list[Check]:
         except ConfigError as exc:
             remediation = str(exc)
     checks.append(
-        Check(
+        DoctorCheck(
             "control plane",
             Level.INFO,
             _endpoint_detail(cfg.control_plane_url, cfg.source_of("base_url")),
@@ -173,7 +183,7 @@ def _endpoint_checks(cfg: DonkeyConfig) -> list[Check]:
     )
     if allow_http_enabled():
         checks.append(
-            Check(
+            DoctorCheck(
                 "plain http",
                 Level.INFO,
                 f"allowed to non-loopback hosts ({allow_http_setting()} in env)",
@@ -182,25 +192,26 @@ def _endpoint_checks(cfg: DonkeyConfig) -> list[Check]:
     return checks
 
 
-def _probe_checks(result: ProbeResult) -> list[Check]:
+def _probe_checks(result: ProbeResult) -> list[DoctorCheck]:
     """Turn one probe outcome into the gateway / credentials / model lines. A
     downstream diagnosis that can't be reached (credentials when the gateway is
     unreachable) is reported ``[--]`` not-checked rather than guessed."""
     err = result.error
-    gateway = Check("gateway", Level.OK, "reachable, responded")
-    creds = Check("credentials", Level.OK, "client_id accepted")
-    model = Check("model", Level.OK, "accepted by the proxy")
+    gateway = DoctorCheck("gateway", Level.OK, "reachable, responded")
+    creds = DoctorCheck("credentials", Level.OK, "client_id accepted")
+    model = DoctorCheck("model", Level.OK, "accepted by the proxy")
 
     if isinstance(err, GatewayUnavailable):
         where = err.base_url or "the configured URL"
-        gateway = Check("gateway", Level.FAIL, f"unreachable — {where}", err.remediation)
+        gateway = DoctorCheck("gateway", Level.FAIL, f"unreachable — {where}", err.remediation)
         not_checked = "not checked — gateway unreachable"
-        return [gateway, Check("credentials", Level.SKIP, not_checked),
-                Check("model", Level.SKIP, not_checked)]
+        return [gateway, DoctorCheck("credentials", Level.SKIP, not_checked),
+                DoctorCheck("model", Level.SKIP, not_checked)]
 
     if isinstance(err, AuthError):
-        creds = Check("credentials", Level.FAIL, "rejected by the gateway", err.remediation)
-        return [gateway, creds, Check("model", Level.SKIP, "not checked — credentials rejected")]
+        creds = DoctorCheck("credentials", Level.FAIL, "rejected by the gateway", err.remediation)
+        skipped = DoctorCheck("model", Level.SKIP, "not checked — credentials rejected")
+        return [gateway, creds, skipped]
 
     # The model rejection is the provider passthrough (docs/verified-apis.md §4: 400
     # model_not_found), which classify() maps to UpstreamRequestError carrying
@@ -209,7 +220,7 @@ def _probe_checks(result: ProbeResult) -> list[Check]:
     if isinstance(err, UpstreamRequestError) and (
         err.code == "model_not_found" or err.param == "model"
     ):
-        model = Check("model", Level.FAIL, str(err).split(": ", 1)[-1] or "rejected",
+        model = DoctorCheck("model", Level.FAIL, str(err).split(": ", 1)[-1] or "rejected",
                       _model_remediation(err))
         return [gateway, creds, model]
 
@@ -219,7 +230,7 @@ def _probe_checks(result: ProbeResult) -> list[Check]:
     if err is not None:
         detail = getattr(err, "remediation", None)
         return [gateway, creds, model,
-                Check("policy", Level.INFO, str(err), detail)]
+                DoctorCheck("policy", Level.INFO, str(err), detail)]
 
     return [gateway, creds, model]
 
@@ -233,12 +244,12 @@ def _model_remediation(err: UpstreamRequestError) -> str:
     )
 
 
-def _budget_check(budget: Budget | None) -> Check:
+def _budget_check(budget: Budget | None) -> DoctorCheck:
     """The budget line: remaining/limit, reset, and — always — how stale the
     reading is. Never implies live data (AC3): the proxy has no budget endpoint,
     so ``observed_at`` is the only truth about freshness."""
     if budget is None or budget.observed_at is None:
-        return Check("budget", Level.INFO,
+        return DoctorCheck("budget", Level.INFO,
                      "not yet observed — no call has returned a budget window")
     ago = _humanize((_utcnow() - budget.observed_at).total_seconds())
     remaining = f"{budget.remaining:,}" if budget.remaining is not None else "?"
@@ -247,7 +258,7 @@ def _budget_check(budget: Budget | None) -> Check:
     if budget.reset_at is not None:
         parts.append(f"resets in {_humanize((budget.reset_at - _utcnow()).total_seconds())}")
     parts.append(f"observed {ago} ago")
-    return Check("budget", Level.INFO, ", ".join(parts))
+    return DoctorCheck("budget", Level.INFO, ", ".join(parts))
 
 
 def _live_probe(cfg: DonkeyConfig, model: str) -> ProbeResult:
@@ -292,7 +303,7 @@ def _bridge(exc: Exception, cfg: DonkeyConfig) -> DonkeyError:
     return gateway_unavailable(base_url=cfg.llm_proxy_url, cause=exc)
 
 
-def run_diagnostics(model: str, *, probe: Probe | None = None) -> list[Check]:
+def run_diagnostics(model: str, *, probe: Probe | None = None) -> list[DoctorCheck]:
     """Run every check and return the report lines. ``probe`` defaults to a live
     governed call; tests inject a canned :class:`ProbeResult` to exercise each
     diagnosis without a gateway."""
@@ -301,7 +312,7 @@ def run_diagnostics(model: str, *, probe: Probe | None = None) -> list[Check]:
     checks = [config_check, *_endpoint_checks(cfg)]
     if not can_probe:
         nc = "not checked — config check failed"
-        checks += [Check(n, Level.SKIP, nc) for n in ("credentials", "gateway", "model")]
+        checks += [DoctorCheck(n, Level.SKIP, nc) for n in ("credentials", "gateway", "model")]
         checks.append(_budget_check(None))
         return checks
 
@@ -311,7 +322,7 @@ def run_diagnostics(model: str, *, probe: Probe | None = None) -> list[Check]:
     return checks
 
 
-def format_report(checks: list[Check]) -> str:
+def format_report(checks: list[DoctorCheck]) -> str:
     """Render the ``[ok] name  detail`` report, remediation indented under any
     failure — the exact shape #202 specifies."""
     width = max((len(c.name) for c in checks), default=0)
@@ -323,6 +334,6 @@ def format_report(checks: list[Check]) -> str:
     return "\n".join(lines)
 
 
-def has_failure(checks: list[Check]) -> bool:
+def has_failure(checks: list[DoctorCheck]) -> bool:
     """True if any check is a hard failure — the CI-preflight exit signal (AC4)."""
     return any(c.level is Level.FAIL for c in checks)

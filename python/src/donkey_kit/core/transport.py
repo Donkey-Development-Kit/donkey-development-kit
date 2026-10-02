@@ -55,6 +55,12 @@ from typing import Any, Protocol
 import httpx
 
 from . import _verify
+from ._wire import (
+    LLM_MODEL_HEADER,
+    LLM_PROVIDER_HEADER,
+    RETRY_AFTER_HEADER,
+    ROUTING_TYPE_HEADER,
+)
 from .auth import AuthProvider
 from .budget import Budget
 from .cachecontrol import current_cache_controls
@@ -70,9 +76,6 @@ from .errors import (
     parse_retry_after,
 )
 from .lastcall import (
-    LLM_MODEL_HEADER,
-    LLM_PROVIDER_HEADER,
-    ROUTING_TYPE_HEADER,
     is_fallback,
     is_substitution,
     observe_last_call,
@@ -98,6 +101,28 @@ from .telemetry import (
     request_correlation_id,
     start_genai_span,
 )
+
+__all__ = [
+    "CALL_ID_HEADER",
+    "CORRELATION_HEADER",
+    "CREDENTIAL_HEADERS",
+    "PROXY_API_KEY_SENTINEL",
+    "DonkeyAsyncClient",
+    "DonkeyAsyncClientView",
+    "DonkeyClient",
+    "DonkeyClientView",
+    "Origin",
+    "attribution_headers",
+    "build_http_client",
+    "build_sync_http_client",
+    "cost_headers",
+    "effective_cost_tags",
+    "origin_of",
+    "proxy_api_key",
+    "proxy_auth_headers",
+    "strip_credential_headers",
+    "sync_token_auth_error",
+]
 
 # Default request-header NAMES for the two correlation ids (BG §1.1, #195;
 # docs/verified-apis.md §3): the gateway reads and echoes ``X-Correlation-Id``,
@@ -433,11 +458,54 @@ def _retry_delay(attempt: int, response: httpx.Response) -> float:
     # raise ValueError on a negative argument, which would turn the retryable
     # status the loop exists to absorb into an unhandled exception (#286). The
     # HTTP-date form parses to None and falls through to backoff.
-    retry_after = parse_retry_after(response.headers.get("retry-after"))
+    retry_after = parse_retry_after(response.headers.get(RETRY_AFTER_HEADER))
     if retry_after is not None:
         return min(retry_after, _BACKOFF_CAP_S)
     exp = min(_BACKOFF_BASE_S * (2.0**attempt), _BACKOFF_CAP_S)
     return exp * (0.5 + random.random() / 2.0)  # full-ish jitter
+
+
+def _log_target(request: httpx.Request) -> str:
+    """``METHOD scheme://host/path`` for a log record: the query string is dropped,
+    and no header is ever read, so a record never carries a credential (#717)."""
+    url = request.url
+    return f"{request.method} {url.scheme}://{url.host}{url.path}"
+
+
+def _log_retry(
+    request: httpx.Request, response: httpx.Response, attempt: int, attempts: int, delay: float
+) -> None:
+    """DEBUG record for one retry: the status, which retry this is, and the delay."""
+    _log.debug(
+        "%s returned %d; retry %d of %d in %.2fs",
+        _log_target(request),
+        response.status_code,
+        attempt + 1,
+        attempts - 1,
+        delay,
+    )
+
+
+def _log_no_retry(
+    request: httpx.Request, response: httpx.Response, attempt: int, attempts: int
+) -> None:
+    """DEBUG record when a retryable status is returned without a retry: either the
+    gateway already failed over (routing fallback, #309) or retries ran out."""
+    if response.status_code not in _RETRYABLE_STATUS:
+        return
+    if is_fallback(response):
+        _log.debug(
+            "%s returned %d after a gateway routing fallback; not retrying",
+            _log_target(request),
+            response.status_code,
+        )
+    elif attempt >= attempts - 1:
+        _log.debug(
+            "%s returned %d; giving up after %d attempt(s)",
+            _log_target(request),
+            response.status_code,
+            attempts,
+        )
 
 
 def _no_attempts(max_retries: object) -> ConfigError:
@@ -533,8 +601,7 @@ def _lifecycle_error(
 # response") is the SOLE source of gen_ai.system; absent → the
 # attribute is omitted, never guessed (verification discipline), because the proxy routes to
 # several providers and defaulting one would misattribute the call. The header
-# NAME is defined once in ``lastcall`` (which also parses it onto ``last_call``)
-# and imported here as ``LLM_PROVIDER_HEADER`` so there is a single source (#309).
+# NAME is defined once, in ``core/_wire`` (#309).
 # Streaming (SSE) responses carry no usage on the envelope; it lives in a
 # terminal event, captured by the span-closing stream wrapper (#193).
 _STREAM_CONTENT_TYPE = "text/event-stream"
@@ -1171,13 +1238,19 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
         def fresh() -> httpx.AsyncClient:
             return httpx.AsyncClient(**kw)  # type: ignore[arg-type]
 
+        # httpx exposes no public accessor for the transport/mounts a client
+        # built from ``kw``; reading its private ``_transport``/``_mounts`` is the
+        # only way to reuse httpx's own construction (the SLF001 exemptions here).
         if "transport" not in kw:
-            self._transport = _LoopLocalTransport(self._transport, lambda: fresh()._transport)
+            self._transport = _LoopLocalTransport(
+                self._transport,
+                lambda: fresh()._transport,  # noqa: SLF001
+            )
         if "mounts" not in kw:
 
             def build_mount(pattern: Any) -> httpx.AsyncBaseTransport:
                 client = fresh()
-                return client._mounts.get(pattern) or client._transport
+                return client._mounts.get(pattern) or client._transport  # noqa: SLF001
 
             self._mounts = {
                 pattern: None
@@ -1406,6 +1479,10 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
             if response.status_code == 401 and can_refresh:
                 assert provider is not None  # narrowed by can_refresh
                 refreshed_once = True
+                _log.debug(
+                    "%s returned 401; refreshing the token and re-sending once",
+                    _log_target(request),
+                )
                 await response.aclose()
                 await provider.invalidate()
                 # A 401 refresh is an auth re-send, not a rate-limit backoff, so it
@@ -1428,11 +1505,13 @@ class DonkeyAsyncClient(_CheckedEndpoints, httpx.AsyncClient):
                 and attempt < attempts - 1
             ):
                 delay = _retry_delay(attempt, response)
+                _log_retry(request, response, attempt, attempts, delay)
                 await response.aclose()
                 await asyncio.sleep(delay)
                 attempt += 1
                 continue
 
+            _log_no_retry(request, response, attempt, attempts)
             return await self._finish(request, response, gspan, streaming=streaming)
 
         if last_response is None:
@@ -1706,10 +1785,12 @@ class DonkeyClient(_CheckedEndpoints, httpx.Client):
                 and attempt < attempts - 1
             ):
                 delay = _retry_delay(attempt, response)
+                _log_retry(request, response, attempt, attempts, delay)
                 response.close()
                 time.sleep(delay)
                 continue
 
+            _log_no_retry(request, response, attempt, attempts)
             return self._finish(request, response, gspan, streaming=streaming)
 
         if last_response is None:
@@ -1855,7 +1936,8 @@ class DonkeyClientView(httpx.Client):
             ConfigError: ``llm_proxy_auth`` is ``jwt`` or ``bearer``.
         """
         # The shared client refuses here in a token mode; a view must refuse too.
-        mode = self._shared._cfg.llm_proxy_auth
+        # Same-module collaborator: a view reads the config of the client it wraps.
+        mode = self._shared._cfg.llm_proxy_auth  # noqa: SLF001
         if mode in TOKEN_AUTH_MODES:
             raise sync_token_auth_error(mode)
         return super().build_request(*args, **kwargs)

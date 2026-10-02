@@ -27,6 +27,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from llama_index.llms.openai_like import OpenAILike
 
+__all__ = ["LlamaIndexAdapter", "llm"]
+
 
 class LlamaIndexAdapter(Adapter):
     """Governed LlamaIndex objects, reached as ``donkey.llamaindex``.
@@ -47,7 +49,6 @@ class LlamaIndexAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/llamaindex
     """
 
-    extra = "llamaindex"
     # Kept False while the conformance exemption table lists LlamaIndex; its
     # calls now go through the shared clients (http_client/async_http_client).
     observes_last_call = False

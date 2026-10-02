@@ -29,7 +29,7 @@ from donkey_kit.core.errors import (
 )
 from donkey_kit.provisioning import doctor
 from donkey_kit.provisioning.doctor import (
-    Check,
+    DoctorCheck,
     Level,
     ProbeResult,
     run_diagnostics,
@@ -46,7 +46,7 @@ def llm_env(monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
 
 
-def _by_name(checks: list[Check], name: str) -> Check:
+def _by_name(checks: list[DoctorCheck], name: str) -> DoctorCheck:
     return next(c for c in checks if c.name == name)
 
 
@@ -374,8 +374,8 @@ def test_unobserved_budget_says_so(llm_env: None) -> None:
 
 def test_report_renders_glyphs_and_indented_remediation() -> None:
     checks = [
-        Check("config", Level.OK, "env (3 fields)"),
-        Check("gateway", Level.FAIL, "unreachable", remediation="do the thing"),
+        DoctorCheck("config", Level.OK, "env (3 fields)"),
+        DoctorCheck("gateway", Level.FAIL, "unreachable", remediation="do the thing"),
     ]
     report = doctor.format_report(checks)
     assert "[ok] config" in report

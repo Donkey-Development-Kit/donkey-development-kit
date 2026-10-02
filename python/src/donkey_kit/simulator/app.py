@@ -33,14 +33,14 @@ from .fixtures import (
     render_ratelimit_prose,
     replay_headers,
 )
-from .scenarios import BudgetScenario, Scenario, request_text
+from .scenarios import BudgetScenario, FaultScenario, request_text
 
 __all__ = [
-    "ASGIApp",
-    "SimulatorConfig",
+    "RATELIMIT_HEADER",
     "SIMULATOR_HEADER",
     "SIM_MODEL_PREFIX",
-    "RATELIMIT_HEADER",
+    "ASGIApp",
+    "SimulatorConfig",
     "build_app",
 ]
 
@@ -126,7 +126,7 @@ class SimulatorConfig:
     # Scripted fault-injection rules applied per POST /responses (#188). Parsed
     # from the CLI's repeatable --scenario flag. Stateful and single-use: one set
     # drives one simulator instance (see donkey_kit.simulator.scenarios).
-    scenarios: tuple[Scenario, ...] = ()
+    scenarios: tuple[FaultScenario, ...] = ()
 
 
 class _Simulator:
@@ -145,7 +145,7 @@ class _Simulator:
             (s for s in config.scenarios if isinstance(s, BudgetScenario)), None
         )
         _order = {"injection": 0, "pii_block": 1}
-        self._reject_scenarios: list[Scenario] = sorted(
+        self._reject_scenarios: list[FaultScenario] = sorted(
             (s for s in config.scenarios if not isinstance(s, BudgetScenario)),
             key=lambda s: _order.get(s.name, 99),
         )

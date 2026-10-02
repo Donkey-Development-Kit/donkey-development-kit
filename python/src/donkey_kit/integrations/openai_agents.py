@@ -24,6 +24,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from agents import OpenAIChatCompletionsModel
 
+__all__ = ["OpenAIAgentsAdapter", "model"]
+
 
 class OpenAIAgentsAdapter(Adapter):
     """Governed OpenAI Agents SDK objects, reached as ``donkey.openai_agents``.
@@ -43,8 +45,6 @@ class OpenAIAgentsAdapter(Adapter):
 
     Docs: https://docs.donkey-kit.dev/frameworks/openai
     """
-
-    extra = "openai-agents"
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatCompletionsModel(model=…, **kwargs)``

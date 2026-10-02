@@ -9,7 +9,7 @@ the scenario's check.
 
 It is the in-process sibling of the local gateway simulator, and it reuses the
 simulator's machinery so the injected refusal is the *same captured bytes*
-``classify()`` is tested against (:func:`donkey_kit.simulator.inject._resolve`
+``classify()`` is tested against (:func:`donkey_kit.simulator.inject.resolve_fixture`
 gives us that fixture and asserts the classify() round-trip). The one deliberate
 difference from ``simulate()``'s transport: this one counts *every* wire send
 rather than deduping retries, because counting re-sends is exactly how the retry
@@ -34,6 +34,8 @@ from typing import Any
 
 import httpx
 
+from .._testing import http_clients, resolved_adapters, swap_transport
+from ..core import _wire
 from ..core.config import DonkeyConfig
 from ..core.errors import DonkeyError
 from ..donkey import Donkey
@@ -43,13 +45,14 @@ from ..simulator.fixtures import Fixture, load, replay_headers
 # Reuse the simulator's single exception->fixture mapping (and its classify()
 # round-trip assertion) rather than duplicating the table: if the mapping ever
 # drifts, simulate() and this harness fail together — the "same files" rule.
-from ..simulator.inject import _resolve as _refusal_fixture
+from ..simulator.inject import resolve_fixture as _refusal_fixture
 from .suite import SCENARIOS, Observation, Outcome, Result, Scenario, validate_known_limitations
 
 __all__ = [
     "DEFAULT_RUN_INPUT",
     "ConformanceHarness",
     "ConformanceUsageError",
+    "offline_config",
     "run_conformance",
 ]
 
@@ -74,7 +77,7 @@ class ConformanceUsageError(Exception):
     as a hard error, never a fail verdict."""
 
 
-def _offline_config() -> DonkeyConfig:
+def offline_config() -> DonkeyConfig:
     """The customer's own config with every endpoint credential replaced (#737).
 
     Non-secret settings (model catalog, attribution, header names) are kept so
@@ -114,7 +117,9 @@ def _fixture_responder(
     def respond(request: httpx.Request) -> httpx.Response:
         headers = replay_headers(fixture)
         if strip_budget:
-            headers = {k: v for k, v in headers.items() if not k.startswith("x-token-")}
+            headers = {
+                k: v for k, v in headers.items() if not k.startswith(_wire.TOKEN_HEADER_PREFIX)
+            }
         if fixture.content_type is not None:
             headers["content-type"] = fixture.content_type
         headers[SIMULATOR_HEADER] = "true"
@@ -288,7 +293,7 @@ class ConformanceHarness:
         this harness, and tear the ``Donkey`` down — so no transport swap, budget
         state, or agent state leaks between scenarios. Real network transports
         are blocked from before the agent is built until it is torn down."""
-        self._donkey = Donkey(_offline_config())
+        self._donkey = Donkey(offline_config())
         self._probe = None
         self._bypass_attempts = []
         try:
@@ -343,7 +348,7 @@ class ConformanceHarness:
         raised: BaseException | None = None
         returned: Any = None
         bind = (
-            self._donkey.run_context(correlation_id)
+            self._donkey.run(correlation_id)
             if correlation_id is not None and self._donkey is not None
             else nullcontext()
         )
@@ -377,7 +382,7 @@ class ConformanceHarness:
         return tuple(
             sorted(
                 name
-                for name, adapter in donkey._adapter_cache.items()
+                for name, adapter in resolved_adapters(donkey).items()
                 if not adapter.observes_last_call
             )
         )
@@ -390,8 +395,8 @@ class ConformanceHarness:
         donkey = self._donkey
         assert donkey is not None  # set by run_scenario before any check runs
         self._probe = _ProbeTransport(responder)
-        donkey._http._swap_transport(self._probe)
-        donkey._sync_http_client()._swap_transport(self._probe)
+        for client in http_clients(donkey):
+            swap_transport(client, self._probe)
 
 
 async def run_conformance(

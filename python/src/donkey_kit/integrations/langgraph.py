@@ -37,6 +37,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from langchain_openai import ChatOpenAI
 
+__all__ = ["LangGraphAdapter", "chat_model", "typed_refusals"]
+
 
 class LangGraphAdapter(Adapter):
     """Governed LangChain objects, reached as ``donkey.langgraph``.
@@ -59,8 +61,6 @@ class LangGraphAdapter(Adapter):
 
     Docs: https://docs.donkey-kit.dev/frameworks/langgraph
     """
-
-    extra = "langgraph"
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs to spread into a ``ChatOpenAI(model=…, **kwargs)`` you

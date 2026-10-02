@@ -33,7 +33,7 @@ from donkey_kit.conformance.harness import (  # noqa: E402
     _PLACEHOLDER_URL,
     ConformanceUsageError,
     _build_agent,
-    _offline_config,
+    offline_config,
 )
 from donkey_kit.conformance.suite import (  # noqa: E402
     NO_MODEL_CALL,
@@ -267,7 +267,7 @@ def test_validate_known_limitations_returns_plain_dict() -> None:
 
 
 def _fresh_donkey() -> Donkey:
-    return Donkey(_offline_config())
+    return Donkey(offline_config())
 
 
 def test_build_agent_passes_donkey_positionally() -> None:
@@ -487,7 +487,7 @@ def real_credentials(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
 def test_offline_config_replaces_configured_credentials(
     real_credentials: dict[str, str],
 ) -> None:
-    cfg = _offline_config()
+    cfg = offline_config()
     assert cfg.llm_proxy_url == _PLACEHOLDER_URL
     assert cfg.llm_proxy_client_id == _PLACEHOLDER
     assert cfg.llm_proxy_client_secret == _PLACEHOLDER

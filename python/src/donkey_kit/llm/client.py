@@ -38,6 +38,8 @@ from .catalog import ModelHandle, heuristic_capabilities
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
 
+__all__ = ["LLMClient"]
+
 
 class LLMClient:
     """The framework-free proxy client factory."""
