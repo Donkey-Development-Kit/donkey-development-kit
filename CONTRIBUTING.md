@@ -163,7 +163,7 @@ non-zero exit means stop and fix before opening the PR:
 cd python
 pytest -q          # the `test` matrix job (3.10/3.11/3.12 in CI)
 mypy               # mypy --strict, BLOCKING
-ruff check .       # E,F,I,UP,B; line-length 100
+ruff check .       # E,F,I,UP,B,BLE,LOG,G; line-length 100
 lint-imports       # the layered, framework-free-core contract
 ```
 
@@ -466,6 +466,29 @@ build plan has the rationale behind each rule:
 
 Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .`,
 `lint-imports`, `pytest`), plus `verify_frameworks.py` if you touched adapters.
+
+### Logging
+
+- **One logger per module that logs:** `_log = logging.getLogger(__name__)`.
+  Never hard-code a logger name. The package root (`donkey_kit/__init__.py`)
+  attaches a `NullHandler` to `"donkey_kit"` and nothing else: the application
+  owns handlers, levels, and formatting.
+- **DEBUG** for what the SDK does on the caller's behalf: each retry (status,
+  attempt, delay), the 401 token refresh, fallbacks (a gateway routing fallback
+  that is not retried, an auth provider falling through), and the OTLP export
+  bootstrap.
+- **WARNING** only for a condition the user can act on. A one-time
+  configuration problem the user must fix is usually a `warnings.warn(...)`
+  category instead (see `TelemetryExportWarning`).
+- **Never log a header value**, a request body, or an exception message that
+  could echo one. Log the method, host, and path (no query string), the status,
+  and type names. `tests/unit/test_logging.py` asserts that no record carries a
+  sent credential.
+- **No silent swallowing.** An `except` that does not re-raise either logs
+  `_log.debug(..., exc_info=True)` or says inline why the failure is expected.
+  Ruff selects `BLE`, `LOG`, and `G`, so a blind `except Exception` needs a
+  `# noqa: BLE001 — <reason>` that states the reason. Pass log arguments
+  lazily (`_log.debug("%s", x)`), never as an f-string.
 
 ---
 
