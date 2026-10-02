@@ -538,7 +538,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |
 
 Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .`,
-`lint-imports`, `pytest`), plus `verify_frameworks.py` if you touched adapters.
+`lint-imports`, `vulture`, `pytest`), plus `verify_frameworks.py` if you touched adapters.
 
 ### Logging
 
