@@ -5,22 +5,26 @@ shared state (working instruction #11); every mutation lives here and runs in CI
 from a reviewed spec under platform-controlled credentials.
 """
 
+import warnings
+from typing import Any
+
 from .applier import ApplyResult, PolicyAllowList
 from .lint import Finding, LintResult, Severity
 from .planner import Change, Plan
 from .publish import content_digest
 from .spec import (
     ApiSpec,
+    ApiToolSpec,
     DonkeySpec,
     HttpMapping,
     McpBridgeSpec,
     PolicySpec,
     SpecMetadata,
-    ToolSpec,
 )
 
 __all__ = [
     "ApiSpec",
+    "ApiToolSpec",
     "ApplyResult",
     "Change",
     "DonkeySpec",
@@ -33,6 +37,17 @@ __all__ = [
     "PolicySpec",
     "Severity",
     "SpecMetadata",
-    "ToolSpec",
     "content_digest",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    # Deprecated alias (#719): ``ToolSpec`` collided with ``donkey_kit.ToolSpec``.
+    if name == "ToolSpec":
+        warnings.warn(
+            "donkey_kit.provisioning.ToolSpec is deprecated; use ApiToolSpec.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return ApiToolSpec
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

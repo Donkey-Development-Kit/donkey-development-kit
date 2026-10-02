@@ -1,7 +1,7 @@
 """registry/ — Exchange discovery + governed-only predicate (BG §2.7)."""
 
+from .criteria import STRICT, Check, GovernanceCriteria, GovernanceReport, evaluate
 from .exchange import ExchangeRegistry
-from .governance import STRICT, Check, GovernanceCriteria, GovernanceReport, evaluate
 from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
 from .publication import (
     Contact,

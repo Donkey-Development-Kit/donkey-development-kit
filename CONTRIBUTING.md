@@ -490,7 +490,7 @@ this is a PR-time discipline. The surface→page map (code paths under
 | `simulator/*` | `simulator.mdx` |
 | `conformance/*`, `donkey.simulate()` | `testing.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
-| `registry/governance.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
+| `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
 | `tools/session.py` | `tool-access/binding.mdx` |
 | `governance.py` | none today: its verbs are `_verify.blocked(...)`, so no page documents them. Unblocking one needs a page (or a follow-up issue for one) |

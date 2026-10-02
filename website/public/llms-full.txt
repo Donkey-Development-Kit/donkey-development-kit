@@ -4425,7 +4425,7 @@ and it is **environment-scoped**: an asset governed in Production may be
 ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit:
 
 ```python
-from donkey_kit.registry.governance import GovernanceCriteria, STRICT
+from donkey_kit import STRICT, GovernanceCriteria
 
 @dataclass(frozen=True)
 class GovernanceCriteria:

@@ -39,8 +39,8 @@ from .core.transport import (
 )
 from .integrations import ADAPTERS, missing_framework_error
 from .llm.client import LLMClient
+from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
-from .registry.governance import GovernanceCriteria
 from .tools.session import ToolSet
 
 if TYPE_CHECKING:

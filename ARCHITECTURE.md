@@ -211,8 +211,10 @@ framework that may not be installed.
   mismatch); a separate platform-team-only `apply()` is the deliberate escape
   hatch. **All of these are currently `_verify.blocked`** — the `simulate()`
   harness included — pending the Verification milestone, so today the object is the
-  shape, not yet the behaviour. Do not confuse it with `registry/governance.py`,
-  which types governed-state *assets* one layer down.
+  shape, not yet the behaviour. The governed-state *asset* criteria one layer
+  down (`GovernanceCriteria`, `STRICT`, `evaluate`) live in `registry/criteria.py`
+  (renamed from `registry/governance.py` in #719 so the two modules no longer
+  share a name; the old path is a deprecated alias).
 
 Every governed surface ships in three ergonomic forms that must stay in lockstep:
 the `donkey.<framework>` factory, a `connection_kwargs()` accessor, and a
