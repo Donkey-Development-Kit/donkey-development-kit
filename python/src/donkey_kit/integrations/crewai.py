@@ -62,6 +62,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from crewai import BaseLLM
 
+__all__ = ["CrewAIAdapter", "llm"]
+
 
 class CrewAIAdapter(Adapter):
     # CrewAI's provider owns the transport, so no response reaches donkey.last_call

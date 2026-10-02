@@ -445,6 +445,14 @@ build plan has the rationale behind each rule:
   the `pydantic.mypy` plugin is on. See
   [ADR 0001](docs/adr/0001-value-objects.md). The package ships `py.typed`
   (PEP 561) — keep the public API fully annotated so downstream users get types.
+- **Public API surface.** Every public module (no `_` in its path) declares a
+  sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey`
+  signature is exported from `donkey_kit` (or `donkey_kit.core`), and no class
+  name means two different types across those `__all__` lists
+  (`tests/unit/test_public_api_surface.py`). Submodule paths are not API. Don't
+  reach into another object's private members (ruff `SLF001`): the dev-only
+  simulator and conformance siblings go through `donkey_kit._testing`, and each
+  remaining exception carries a `# noqa: SLF001` with its reason.
 - **Three ergonomic forms per governed surface** — the `donkey.<framework>`
   factory, a `connection_kwargs()` accessor, and a module-level factory. Keep all
   three when adding an adapter (they must stay in lockstep). Hand the framework
@@ -500,7 +508,7 @@ this is a PR-time discipline. The surface→page map (code paths under
 | `simulator/*` | `simulator.mdx` |
 | `conformance/*`, `donkey.simulate()` | `testing.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
-| `registry/governance.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
+| `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
 | `tools/session.py` | `tool-access/binding.mdx` |
 | `governance.py` | none today: its verbs are `_verify.blocked(...)`, so no page documents them. Unblocking one needs a page (or a follow-up issue for one) |

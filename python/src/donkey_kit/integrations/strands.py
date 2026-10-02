@@ -33,6 +33,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from strands.models.openai import OpenAIModel
 
+__all__ = ["StrandsAdapter", "model"]
+
 
 class StrandsAdapter(Adapter):
     def connection_kwargs(self) -> dict[str, Any]:

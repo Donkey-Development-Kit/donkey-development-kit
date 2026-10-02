@@ -14,6 +14,8 @@ from typing import Any
 
 from ..core import _verify
 
+__all__ = ["content_digest", "publish_if_changed"]
+
 
 def content_digest(descriptor: dict[str, Any], metadata: dict[str, Any]) -> str:
     """Stable hash over the canonical descriptor + metadata (BG §2.5).

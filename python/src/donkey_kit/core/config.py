@@ -36,6 +36,23 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
 
+__all__ = [
+    "LOCAL_TOML_NAME",
+    "TOKEN_AUTH_MODES",
+    "TOML_NAME",
+    "TRUST_PROJECT_CONFIG_ENV",
+    "Capability",
+    "ConfigOverrides",
+    "ConfigSource",
+    "DonkeyConfig",
+    "LlmProxyAuth",
+    "OnModelSubstitution",
+    "Region",
+    "SourceKind",
+    "load_config_table",
+    "missing_llm_auth_error",
+]
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
@@ -123,8 +140,8 @@ class ConfigOverrides(TypedDict, total=False):
     send_cost_headers: bool
 
 
-_TOML_NAME = ".donkey-kit.toml"
-_LOCAL_TOML_NAME = ".donkey-kit.local.toml"
+TOML_NAME = ".donkey-kit.toml"
+LOCAL_TOML_NAME = ".donkey-kit.local.toml"
 TRUST_PROJECT_CONFIG_ENV = "DONKEY_TRUST_PROJECT_CONFIG"
 
 SourceKind = Literal["explicit", "env", "project", "local", "user", "default"]
@@ -545,8 +562,8 @@ class DonkeyConfig:
             joined = "\n  - ".join(missing)
             raise ConfigError(
                 f"Configuration for {need!r} is incomplete. Missing:\n  - {joined}\n"
-                f"Set them via kwargs, environment variables, or {_TOML_NAME} "
-                f"(secrets in {_LOCAL_TOML_NAME})."
+                f"Set them via kwargs, environment variables, or {TOML_NAME} "
+                f"(secrets in {LOCAL_TOML_NAME})."
             )
         self.check_endpoints(need=need)
         return self
@@ -666,7 +683,7 @@ def _binding_error(
     assert origin.path is not None  # file sources always carry their path
     options = [f"set the URL in the environment instead ({env_var}=https://...)"]
     if offer_local_file:
-        local = origin.path.parent / _LOCAL_TOML_NAME
+        local = origin.path.parent / LOCAL_TOML_NAME
         options.append(f"keep the credentials in {local}, next to the project file")
     options.append(
         f"trust this directory's config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
@@ -818,7 +835,7 @@ def _invalid_config(problems: list[str]) -> ConfigError:
     joined = "\n  - ".join(problems)
     return ConfigError(
         f"Configuration is invalid:\n  - {joined}\n"
-        f"Fix each value where it is set: in code, an environment variable, or {_TOML_NAME}."
+        f"Fix each value where it is set: in code, an environment variable, or {TOML_NAME}."
     )
 
 
@@ -843,14 +860,14 @@ def _load_config_files(
 
     cwd = Path.cwd()
     layers: list[tuple[ConfigSource, dict[str, object]]] = []
-    project = cwd / _TOML_NAME
+    project = cwd / TOML_NAME
     if project.is_file():
         _require_inside(project, cwd)
         table = _read_table(project, name)
         if name == "donkey":
             _warn_on_secrets(project, table)
         layers.append((ConfigSource("project", project), table))
-    local = cwd / _LOCAL_TOML_NAME
+    local = cwd / LOCAL_TOML_NAME
     if local.is_file():
         _require_inside(local, cwd)
         layers.append((ConfigSource("local", local), _read_table(local, name)))
@@ -872,9 +889,9 @@ def _user_config_file() -> Path | None:
     default (#837). ``None`` when no home directory can be determined."""
     xdg = os.environ.get("XDG_CONFIG_HOME", "")
     if os.path.isabs(xdg):
-        return Path(xdg) / _TOML_NAME
+        return Path(xdg) / TOML_NAME
     try:
-        return Path.home() / ".config" / _TOML_NAME
+        return Path.home() / ".config" / TOML_NAME
     except RuntimeError:
         return None
 
@@ -936,7 +953,7 @@ def _warn_on_secrets(path: Path, table: dict[str, object]) -> None:
     if found:
         warnings.warn(
             f"{path} contains {', '.join(found)}. Keep secrets out of the committed "
-            f"project file: move them to {_LOCAL_TOML_NAME} next to it (and gitignore "
+            f"project file: move them to {LOCAL_TOML_NAME} next to it (and gitignore "
             "it) or to environment variables.",
             ConfigWarning,
             stacklevel=4,

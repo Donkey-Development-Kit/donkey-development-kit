@@ -34,7 +34,9 @@ from .errors import (
     UpstreamRequestError,
     classify,
 )
+from .lastcall import LastCall, LastCallStatus
 from .telemetry import (
+    RunScope,
     current_correlation_id,
     current_cost_tags,
     new_correlation_id,
@@ -72,6 +74,8 @@ __all__ = [
     "DonkeyError",
     "GatewayUnavailable",
     "GovernanceDrift",
+    "LastCall",
+    "LastCallStatus",
     "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
@@ -82,6 +86,7 @@ __all__ = [
     "PublicationDrift",
     "Region",
     "RegistryError",
+    "RunScope",
     "StaticToken",
     "TTLCache",
     "TokenBudgetExceeded",

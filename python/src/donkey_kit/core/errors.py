@@ -36,6 +36,34 @@ from .lastcall import request_id as read_request_id
 if TYPE_CHECKING:
     from datetime import datetime
 
+__all__ = [
+    "AgentKilled",
+    "AuthError",
+    "BudgetReserveReached",
+    "ConfigError",
+    "ConfigWarning",
+    "ContentSafetyBlocked",
+    "DonkeyError",
+    "GatewayUnavailable",
+    "GovernanceDrift",
+    "ModelNotRoutable",
+    "ModelSubstituted",
+    "PIIDetected",
+    "PlatformTeamOnly",
+    "PolicyViolation",
+    "PromptInjectionBlocked",
+    "ProvisioningError",
+    "PublicationDrift",
+    "RegistryError",
+    "TokenBudgetExceeded",
+    "ToolInvocationError",
+    "UpstreamModelError",
+    "UpstreamRequestError",
+    "classify",
+    "gateway_unavailable",
+    "parse_retry_after",
+]
+
 
 class DonkeyError(Exception):
     """Base for all SDK errors. Carries correlation/call/request IDs and the raw
