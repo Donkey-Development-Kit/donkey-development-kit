@@ -230,11 +230,21 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# D101-D103: every public class, method and function in src/ has a docstring
+# (#722). Only these three D rules are on; tests/examples/scripts are exempt below.
+select = ["E", "F", "I", "UP", "B", "D101", "D102", "D103"]
+
+[tool.ruff.lint.pydocstyle]
+# Google-style "Args:" / "Raises:" sections; the prose-only docstrings fit it too.
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).
 "src/donkey_kit/provisioning/cli.py" = ["B008"]
+# Docstring rules apply to the shipped package only (#722).
+"tests/**" = ["D101", "D102", "D103"]
+"examples/**" = ["D101", "D102", "D103"]
+"scripts/**" = ["D101", "D102", "D103"]
 
 # --- import-linter: enforce the layered architecture rule in CI, from day one ---
 [tool.importlinter]
