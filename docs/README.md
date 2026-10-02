@@ -14,9 +14,9 @@ against a real Anypoint sandbox versus what is still assumed or blocked.
 
 | File | What it is |
 | --- | --- |
-| [`verified-apis.md`](verified-apis.md) | **The verification ledger** — the single source of truth for every endpoint, header, and class name the SDK touches and its status (`VERIFIED (LIVE)` / `VERIFIED (CLI)` / `VERIFIED (plugin)` / `UNVERIFIED` / blocked). When a value is confirmed against a sandbox, flip its row here **and** set `verified=True` in `core/_verify.py` — the two edits move together. |
+| [`verified-apis.md`](verified-apis.md) | **The verification ledger** — the single source of truth for every endpoint, header, and class name the SDK touches and its status (`VERIFIED (LIVE)` / `VERIFIED (CLI)` / `VERIFIED (plugin)` / `UNVERIFIED` / blocked). When a value is confirmed against a sandbox, flip its row here **and** replace its `Unverified(...)` placeholder in `core/_verify.py` with a plain constant — the two edits move together. |
 | [`unsupported-boundary.md`](unsupported-boundary.md) | **The procurement doc** — classifies every platform API the SDK calls (public / no-SLA / undocumented), so enterprise-buyer questions get a five-minute answer instead of a two-week stall. Its "Undocumented surfaces" section is designed to stay empty. |
-| [`releasing.md`](releasing.md) | **How a release reaches PyPI** — the Trusted Publishing (OIDC) workflow wired as `.github/workflows/release.yml` (#206), the public API surface semver governs, and the one-time human step to register the trusted publisher. The version scheme and tagging live in the `ddk-release` skill; this is the publish half. |
+| [`releasing.md`](releasing.md) | **How a release reaches PyPI** — the Trusted Publishing (OIDC) workflows wired as `.github/workflows/publish-pypi.yml` and `.github/workflows/publish-testpypi.yml` (#206, #674), the public API surface semver governs, and the one-time human step to register the trusted publisher. The version scheme and tag convention are in its *Versioning & naming* section. |
 
 *"Agent Fabric", "Anypoint", and "Omni Gateway" are Salesforce trademarks; this
 project is a descriptive, non-first-party SDK for consuming those capabilities

@@ -2,23 +2,23 @@
 
 Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 
-**What this shows.** A one-line factory call attempts to build a native
-Agent Framework OpenAI-compatible chat client pointed at the governed
-Agent Fabric LLM proxy. The proxy *contract* (base URL, `client_id`/
-`client_secret` header auth, attribution headers) is live-verified. The
-chat-client class name/path itself — `agent_framework.openai.OpenAIChatClient`
-— and its base-URL kwarg (`model_id`) are **UNVERIFIED** (docs/verified-apis.md §8): Agent
-Framework is a young package that has renamed classes recently. If the
-import fails, the factory raises a `NotImplementedError` ("blocked on
-verification") rather than guessing further; this example catches that and
-prints it plainly. This example only constructs the object; it deliberately
+**What this shows.** A one-line factory call builds a native Agent Framework
+chat client, `agent_framework.openai.OpenAIChatClient`, pointed at the
+governed Agent Fabric LLM proxy. That client calls the proxy's `/responses`
+route. docs/verified-apis.md §2 records the proxy contract (base URL,
+`client_id`/`client_secret` header auth, the route) and §8 records the class
+path and its kwargs (`model`, not `model_id`). Agent Framework is a young
+package that has renamed classes before. If the import or the construction
+fails, the factory raises a `NotImplementedError` ("blocked on verification")
+rather than guessing further; this example catches that and prints it
+plainly. This example only constructs the object; it deliberately
 does not attempt a live inference call, since Agent Framework drives chat
 clients through its own `Agent` object rather than a method on the client
 itself.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
-> **[Microsoft Agent Framework](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/agent-framework)**.
+> **[Microsoft Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework)**.
 > This README duplicates the runnable essentials on purpose so you can run it in
 > place; if the two ever differ, the docs page is canonical.
 
@@ -34,18 +34,25 @@ export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
 python examples/agent_framework/main.py
 ```
 
+The script reads its settings the way the SDK does (environment variables, then
+`.donkey-kit.toml`) and stops with the SDK's own `ConfigError`, listing every
+missing setting, when one is absent. For a model-wallet proxy, set
+`DONKEY_LLM_PROXY_AUTH=jwt` and `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` instead of
+the client id and secret; the wallet JWT comes from an `AuthProvider` you pass
+to `Donkey(llm_auth=...)` in your own code
+([Configuration](https://docs.donkey-kit.dev/reference/configuration#jwt--model-wallet-auth-mode)).
+
 ## The manual equivalent
 
-The factory call is equivalent to attempting to build the chat client
-yourself with the governed connection values (BG §1.8) — **class name and
-kwarg UNVERIFIED (docs/verified-apis.md §8), confirm against your installed version**:
+The factory call is equivalent to building the chat client yourself with the
+governed connection values (BG §1.8). docs/verified-apis.md §8 records the
+agent-framework version these names were checked against:
 
 ```python
-# CLASS NAME/PATH AND KWARG NAMES UNVERIFIED (docs/verified-apis.md §8) — confirm before relying on this
 from agent_framework.openai import OpenAIChatClient
 
 client = OpenAIChatClient(
-    model_id="gpt-4o",  # kwarg name UNVERIFIED
+    model="gpt-4o",  # `model`, not `model_id`
     base_url=DONKEY_LLM_PROXY_URL,
     api_key="unused",  # the proxy enforces client_id/client_secret headers instead
     default_headers={
@@ -58,7 +65,12 @@ client = OpenAIChatClient(
 The factory (`donkey_kit.integrations.agent_framework.chat_client`) fills
 in `base_url`, `api_key`, and `default_headers` from one governed config
 source, and raises a clear "blocked on verification" error instead of
-silently guessing if the class import fails.
+silently guessing if the class import or construction fails.
+
+`OpenAIChatClient` calls the Responses API (`POST /responses`). A proxy route
+that does not serve it, such as Azure OpenAI (a 404), needs the Chat
+Completions client instead: `chat_client("…", api="chat_completions")` builds
+an `agent_framework.openai.OpenAIChatCompletionClient` with the same kwargs.
 
 ## Links
 

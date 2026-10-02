@@ -22,10 +22,9 @@ const WEBSITE = resolve(HERE, '..')
 const CONTENT = join(WEBSITE, 'content')
 const PUBLIC = join(WEBSITE, 'public')
 
-// The deployed GitHub Pages URL. The site is served under the project sub-path
-// (basePath = /donkey-development-kit); the true domain-root /llms.txt waits on
-// a custom domain (#205 ACs). Links therefore carry the full deployed prefix.
-const SITE = 'https://donkey-development-kit.github.io/donkey-development-kit'
+// The deployed site URL. GitHub Pages serves it from the root of the
+// docs.donkey-kit.dev custom domain (#909), so /llms.txt sits at the domain root.
+const SITE = 'https://docs.donkey-kit.dev'
 
 const TITLE = 'Donkey Development Kit'
 const TAGLINE =

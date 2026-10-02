@@ -16,7 +16,7 @@ method call on the model.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
-> **[Strands Agents](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/strands)**.
+> **[Strands Agents](https://docs.donkey-kit.dev/frameworks/strands)**.
 > This README duplicates the runnable essentials on purpose so you can run it in
 > place; if the two ever differ, the docs page is canonical.
 
@@ -31,6 +31,14 @@ export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
 
 python examples/strands/main.py
 ```
+
+The script reads its settings the way the SDK does (environment variables, then
+`.donkey-kit.toml`) and stops with the SDK's own `ConfigError`, listing every
+missing setting, when one is absent. For a model-wallet proxy, set
+`DONKEY_LLM_PROXY_AUTH=jwt` and `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` instead of
+the client id and secret; the wallet JWT comes from an `AuthProvider` you pass
+to `Donkey(llm_auth=...)` in your own code
+([Configuration](https://docs.donkey-kit.dev/reference/configuration#jwt--model-wallet-auth-mode)).
 
 ## The manual equivalent
 
@@ -52,6 +60,7 @@ m = OpenAIModel(
         },
         "http_client": httpx.AsyncClient(...),
     },
+    stream=False,  # a Gemini-routed proxy sends no chunk deltas when streaming
 )
 ```
 

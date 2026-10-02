@@ -10,7 +10,10 @@ import { Callout } from 'nextra/components'
 model call** in the current context. It is an immutable snapshot: every governed
 response replaces the record wholesale rather than mutating it, so a reader
 always sees one internally-consistent call. It is contextvar-scoped, so a
-fan-out of concurrent calls each reads its own record.
+fan-out of concurrent calls each reads its own record. When a framework sends a
+single call from a task of its own, as LangChain's `ainvoke` does, the
+`donkey.langgraph(...)` model still brings that call's record back to the caller
+(see [LangGraph](/frameworks/langgraph#which-provider-served-this)).
 
 ```python
 donkey = Donkey.from_env()
@@ -25,7 +28,7 @@ r.total_tokens    # 1730
 Every response-derived field defaults to `None`. `None` always means **not
 observed** — never `0`, and never a fabricated value. A count of `0` is a real
 observation (an empty completion) and is distinct from `None` (no usage was
-reported at all). See [Verification discipline](/concepts/verification) for why
+reported at all). See [Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline) for why
 the SDK never guesses a value it did not see on the wire.
 
 ## Observability status
@@ -43,10 +46,11 @@ even on a cold read.
 
 <Callout type="info">
   `donkey.last_call` is populated only when the governed response passes through
-  the SDK's shared httpx client. Adapters that route outside that response path
-  (LiteLLM-backed, or `default_headers`-only) report `UNAVAILABLE` with the
-  surface named. See [When `last_call` is
-  unavailable](/telemetry#when-last_call-is-unavailable).
+  the SDK's shared httpx client. CrewAI, whose framework owns the transport,
+  routes outside it. A cold read on a `Donkey` that resolved only CrewAI,
+  LlamaIndex, MS Agent Framework or ADK's `model()` reports `UNAVAILABLE` with
+  the surface named. See
+  [When `last_call` is unavailable](/telemetry#when-last_call-is-unavailable).
 </Callout>
 
 ## Gateway identity
@@ -56,7 +60,7 @@ for quoting to a provider's support team.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id`). `None` when the gateway forwarded none. |
+| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id` / Anthropic's `request-id`). `None` when the gateway forwarded none. |
 | `api_instance_id` | `str \| None` | The API Manager instance id that served the call. |
 | `environment_id` | `str \| None` | The Anypoint environment id that served the call. |
 
@@ -65,7 +69,9 @@ for quoting to a provider's support team.
 What the gateway *did* with the request — which provider and model served it, how
 it routed, and whether that was a failover. Read live off the shared transport,
 so the raw `donkey.llm.client()` path gets them with no framework required. See
-[Routing & resilience](/telemetry#routing--resilience) for the operational story.
+[Routing & resilience](/telemetry#routing--resilience) for the operational story,
+or [Which provider served this?](/frameworks/langgraph#which-provider-served-this)
+for why a LangGraph message's own `model_provider` field disagrees with these.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -92,7 +98,7 @@ Each is `None` (never `0`) when unobserved or absent.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call. |
+| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call, as the provider reports them. OpenAI's count includes `cached_tokens`. Anthropic's excludes both `cached_tokens` and `cache_write_tokens`. |
 | `output_tokens` | `int \| None` | Completion/output tokens produced (includes `reasoning_tokens`). |
 | `total_tokens` | `int \| None` | Total tokens the gateway attributed to this call. |
 | `cached_tokens` | `int \| None` | Input tokens served from the prompt cache (billed at the cached rate). |

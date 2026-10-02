@@ -10,19 +10,20 @@ Omni Gateway later is an environment change, not a code change.
 
 | Capability | Status | Learn more |
 |---|---|---|
-| Governed model access for 8 frameworks | Live | [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) |
-| Typed refusals | Live | [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) |
-| Budget & pacing | Live | [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) |
-| OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) |
-| Local simulator & `simulate()` | Live | [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) |
-| Conformance testing with pytest | Live | [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `test`) & decorators | Live | [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) |
-| Governed tool access (MCP) | Roadmap | [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md) |
-| A2A agents (`serve`, `expose`, `dev`) | Roadmap | [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md) |
-| On-behalf-of identity | Roadmap | [Identity](https://donkey-development-kit.github.io/donkey-development-kit/identity.md) |
-| Human-in-the-loop | Roadmap | [Human-in-the-loop](https://donkey-development-kit.github.io/donkey-development-kit/hitl.md) |
-| Scan & publish to the registry | Roadmap | [Scan & publish](https://donkey-development-kit.github.io/donkey-development-kit/publishing.md) |
-| Policy handshake | Roadmap | [Policy handshake](https://donkey-development-kit.github.io/donkey-development-kit/policies.md) |
+| Governed model access (the raw client, through the proxy data plane) | Live | [Frameworks](https://docs.donkey-kit.dev/frameworks.md) |
+| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified ADK `gemini()` · Signature-confirmed the rest | [Frameworks](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) |
+| Typed refusals | Live | [Typed refusals](https://docs.donkey-kit.dev/errors.md) |
+| Budget & pacing | Live | [Budget & pacing](https://docs.donkey-kit.dev/budget.md) |
+| OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
+| Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
+| Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
+| CLI (`init`, `doctor`, `mock`, `test`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| Governed tool access (MCP) | Roadmap | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
+| A2A agents (`serve`, `expose`, `dev`) | Roadmap | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| On-behalf-of identity | Roadmap | [Identity](https://docs.donkey-kit.dev/identity.md) |
+| Human-in-the-loop | Roadmap | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
+| Scan & publish to the registry | Roadmap | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
 ## Your first governed call
 
@@ -46,6 +47,13 @@ donkey mock
 The simulator listens on `127.0.0.1:8080` and replays real gateway responses,
 including every refusal shape. It enforces no policy and ignores
 credentials, and every response carries `x-donkey-simulator: true`.
+
+Port `8080` already taken? Run `donkey mock --port 9000` — see
+[Choosing a port or host](https://docs.donkey-kit.dev/simulator.md#choosing-a-port-or-host).
+
+  "Local gateway" here means DDK's pure-Python simulator, not Omni/Flex
+  Gateway running in Local Mode — that deployment target isn't supported
+  (see the [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)).
 
 ### Point DDK at it
 
@@ -85,7 +93,7 @@ ask; against your Omni Gateway the model answers your actual prompt.
 
   Prefer one command? Run `python -m examples.quickstart.main` from the
   `python/` directory of the
-  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/python/examples/quickstart):
+  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/quickstart):
   it boots the simulator for you and runs the steps above end to end.
 
 ## Catch a typed refusal Live
@@ -116,7 +124,7 @@ blocked, entities: ['Email']
 
 A PII block is not an auth error, and a policy `429` must never be retried —
 typed refusals let the agent react correctly. The framework adapters
-(`donkey.langgraph`, …) classify for you. See [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+(`donkey.langgraph`, …) classify for you. See [Typed refusals](https://docs.donkey-kit.dev/errors.md).
 
 ## Pace against the budget Live
 
@@ -136,7 +144,7 @@ async with Donkey.from_env() as donkey:
             await donkey.budget.wait_for_reset()
 ```
 
-See [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md).
+See [Budget & pacing](https://docs.donkey-kit.dev/budget.md).
 
 ## See a span Live
 
@@ -191,12 +199,13 @@ story, the console prints the span:
 Each `donkey.llm.chat` span carries `gen_ai.usage.*` token counts,
 `donkey.policy.decision`, `donkey.budget.remaining` and the correlation ID.
 Set `OTEL_EXPORTER_OTLP_ENDPOINT` and DDK exports over OTLP with no code at
-all. See [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md).
+all. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
 
 ## Attribute cost to a run Live
 
-Group one logical task under a single correlation ID and cost tags, so the
-gateway record, your logs and your spans all join up:
+Group one logical task under a single correlation ID and cost tags. The
+correlation ID joins the gateway record, your logs and your spans; the cost
+tags land on your spans:
 
 ```python
 async with donkey.run(id=ticket.id, team="support", project="triage"):
@@ -210,7 +219,7 @@ Or fold it into one line with a decorator:
 async def handle_ticket(ticket): ...
 ```
 
-See [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md).
+See [CLI & decorators](https://docs.donkey-kit.dev/cli.md).
 
 ## Test the refusal branch Live
 
@@ -224,7 +233,7 @@ with donkey.simulate(PIIDetected):
 ```
 
 Then grade your own agent against every refusal shape with the pytest
-conformance suite. See [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md).
+conformance suite. See [Testing & conformance](https://docs.donkey-kit.dev/testing.md).
 
 ## Connect to your Omni Gateway
 
@@ -254,11 +263,13 @@ donkey doctor
 ```
 
 ```text
-[ok] config       env (3 fields)
-[ok] gateway      reachable, responded
-[ok] credentials  client_id accepted
-[ok] model        accepted by the proxy
-[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+[ok] config         env (3 fields)
+[i]  llm endpoint   <ingress-gw> (env)
+[i]  control plane  anypoint.mulesoft.com (default)
+[ok] gateway        reachable, responded
+[ok] credentials    client_id accepted
+[ok] model          accepted by the proxy
+[i]  budget         99,000 / 100,000 remaining, resets in 59s, observed 0s ago
 ```
 
 `donkey doctor` tells a wrong URL from wrong credentials from a model that is
@@ -266,9 +277,9 @@ not on the proxy's allow-list, instead of one opaque failure.
 
 ## Next steps
 
-- **[Pick your framework](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)** — get a native LangGraph, ADK,
+- **[Pick your framework](https://docs.donkey-kit.dev/frameworks.md)** — get a native LangGraph, ADK,
   Strands, LlamaIndex, CrewAI, OpenAI Agents SDK, Anthropic SDK or Agent
   Framework object in three lines.
-- **[Examples](https://donkey-development-kit.github.io/donkey-development-kit/examples.md)** — runnable demos for every capability on this page.
-- **[Scenarios](https://donkey-development-kit.github.io/donkey-development-kit/scenarios.md)** — support triage, a nightly batch and an internal
+- **[Examples](https://docs.donkey-kit.dev/examples.md)** — runnable demos for every capability on this page.
+- **[Scenarios](https://docs.donkey-kit.dev/scenarios.md)** — support triage, a nightly batch and an internal
   copilot, built end to end.

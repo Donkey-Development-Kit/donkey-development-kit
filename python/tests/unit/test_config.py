@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import warnings
+from dataclasses import fields
+from typing import get_type_hints
+
 import pytest
 
-from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core import _verify
+from donkey_kit.core._verify import UnverifiedValueWarning
+from donkey_kit.core.config import ConfigOverrides, DonkeyConfig, Region
 from donkey_kit.core.cost import CostTags
 from donkey_kit.core.errors import ConfigError
 
@@ -43,6 +49,7 @@ def test_validated_llm_requires_client_id_and_secret_not_bearer() -> None:
     assert "llm_proxy_client_secret" in msg
 
 
+@pytest.mark.usefixtures("fresh_unverified_warnings")
 def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANYPOINT_CLIENT_ID", "cid")
     monkeypatch.setenv("ANYPOINT_REGION", "eu")
@@ -51,7 +58,35 @@ def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.client_id == "cid"
     assert cfg.region == "eu"
     assert cfg.telemetry is False
-    assert cfg.control_plane_url.startswith("https://eu1")
+    with pytest.warns(UnverifiedValueWarning, match="docs/verified-apis.md §1"):
+        assert cfg.control_plane_url.startswith("https://eu1")
+
+
+@pytest.fixture
+def fresh_unverified_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the one-time ``Unverified`` dedup so each test sees the first read."""
+    monkeypatch.setattr(_verify, "_warned", set())
+
+
+@pytest.mark.usefixtures("fresh_unverified_warnings")
+@pytest.mark.parametrize("region", ["eu", "ca", "jp"])
+def test_unconfirmed_region_host_warns_once(region: Region) -> None:
+    # docs/verified-apis.md §1: only the US host is confirmed.
+    cfg = DonkeyConfig(region=region)
+    with pytest.warns(UnverifiedValueWarning, match=f"anypoint.region_host.{region}"):
+        assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
+
+
+@pytest.mark.usefixtures("fresh_unverified_warnings")
+def test_us_region_and_base_url_override_are_quiet() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        assert DonkeyConfig().control_plane_url == "https://anypoint.mulesoft.com"
+        override = DonkeyConfig(region="eu", base_url="https://eu1.example.test")
+        assert override.control_plane_url == "https://eu1.example.test"
 
 
 def test_unknown_region_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,7 +97,7 @@ def test_unknown_region_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # --- telemetry_capture_content resolution (#306, BG §1.6) -------------------
 # Safe by default: content is emitted on spans only when the developer opts in,
-# through the normal kwarg → env → toml → default precedence.
+# through the normal set-in-code → env → toml → default precedence.
 
 
 def test_capture_content_defaults_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -280,3 +315,69 @@ def test_cost_header_name_overrides_resolve(
     assert cfg.cost_project_header == "x-cost-project"
     assert cfg.cost_env_header == "x-cost-env"
     assert cfg.cost_enduser_header == "x-cost-enduser"
+
+
+def test_config_overrides_lists_every_public_field_with_its_type() -> None:
+    # with_overrides() is typed by ConfigOverrides (#716); a field added to the
+    # dataclass but not here would be rejected by mypy for a valid override.
+    hints = get_type_hints(DonkeyConfig)
+    public = {f.name: hints[f.name] for f in fields(DonkeyConfig) if not f.name.startswith("_")}
+    assert get_type_hints(ConfigOverrides) == public
+
+
+def test_with_overrides_replaces_the_named_fields() -> None:
+    cfg = DonkeyConfig(timeout_s=60.0).with_overrides(timeout_s=1.0, telemetry=False)
+    assert (cfg.timeout_s, cfg.telemetry) == (1.0, False)
+
+
+# --- user config file location (XDG Base Directory default, #837) ---------------------------------
+
+
+@pytest.mark.parametrize("xdg", [None, "", "relative/dir"])
+def test_user_file_defaults_to_home_config_when_xdg_unset(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, xdg: str | None
+) -> None:
+    home = tmp_path / "home"
+    (home / ".config").mkdir(parents=True)
+    user = home / ".config" / ".donkey-kit.toml"
+    user.write_text('[donkey]\norg_id = "home-org"\n')
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("ANYPOINT_ORG_ID", raising=False)
+    if xdg is None:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    else:
+        monkeypatch.setenv("XDG_CONFIG_HOME", xdg)
+
+    cfg = DonkeyConfig.from_env()
+
+    assert cfg.org_id == "home-org"
+    assert cfg.source_of("org_id").kind == "user"
+    assert cfg.source_of("org_id").path == user
+
+
+def test_user_file_reads_only_xdg_config_home_when_set(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / ".config").mkdir(parents=True)
+    (home / ".config" / ".donkey-kit.toml").write_text('[donkey]\norg_id = "home-org"\n')
+    xdg = tmp_path / "xdg"
+    xdg.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    monkeypatch.delenv("ANYPOINT_ORG_ID", raising=False)
+
+    assert DonkeyConfig.from_env().org_id is None
+
+    (xdg / ".donkey-kit.toml").write_text('[donkey]\norg_id = "xdg-org"\n')
+    cfg = DonkeyConfig.from_env()
+    assert cfg.org_id == "xdg-org"
+    assert cfg.source_of("org_id").kind == "user"

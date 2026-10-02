@@ -6,10 +6,12 @@ import httpx
 import pytest
 
 from donkey_kit.core.errors import (
+    AgentKilled,
     AuthError,
     ContentSafetyBlocked,
     DonkeyError,
     GatewayUnavailable,
+    ModelNotRoutable,
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
@@ -51,6 +53,19 @@ def test_429_is_token_budget_with_retry_after() -> None:
     err = classify(_resp(429, {"retry-after": "42"}))
     assert isinstance(err, TokenBudgetExceeded)
     assert err.retry_after == 42.0
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{"retry-after": "-1"}, {"x-token-reset": "-5000"}],
+    ids=["retry-after", "x-token-reset"],
+)
+def test_negative_retry_after_is_floored_at_zero(headers: dict[str, str]) -> None:
+    """#815: classify() shares the transport's Retry-After parser (the #286
+    floor), so a raised error never advertises a negative wait."""
+    err = classify(_resp(429, headers))
+    assert isinstance(err, TokenBudgetExceeded)
+    assert err.retry_after == 0.0
 
 
 def test_injection_protection_header_is_prompt_injection_blocked() -> None:
@@ -120,6 +135,44 @@ def test_content_safety_action_allow_is_not_content_safety_blocked() -> None:
     assert not isinstance(err, AuthError)
     assert isinstance(err, PolicyViolation)
     assert "shape unconfirmed" in str(err)
+
+
+# --- bare model name on a multi-provider proxy (#825) -----------------------
+# The live capture is pinned in test_llm_proxy_contract.py; these pin the edges
+# of the discriminator.
+
+_UNROUTABLE = (
+    "Failed to parse model from request: Model 'gpt-5-mini' is not in the known "
+    "unique model map and multiple providers are configured. Use 'provider/model' format."
+)
+
+
+def test_bare_model_name_400_is_model_not_routable_not_a_refusal() -> None:
+    err = classify(httpx.Response(400, json={"error": _UNROUTABLE}))
+    assert isinstance(err, ModelNotRoutable)
+    assert not isinstance(err, PolicyViolation)
+    assert err.model == "gpt-5-mini"
+    assert "provider/model" in str(err)
+    assert "file an issue" not in err.remediation.lower()
+
+
+def test_nested_envelope_with_the_unroutable_text_stays_upstream() -> None:
+    """The nested upstream envelope is checked first and keeps its own type."""
+    err = classify(httpx.Response(400, json={"error": {"message": _UNROUTABLE}}))
+    assert isinstance(err, UpstreamRequestError)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"error": "Request rejected by policy"},  # flat, but a different sentence
+        {"message": _UNROUTABLE},  # not the captured envelope; not guessed at
+    ],
+)
+def test_other_flat_400s_still_fall_through(body: dict[str, str]) -> None:
+    err = classify(httpx.Response(400, json=body))
+    assert isinstance(err, PolicyViolation)
+    assert err.policy == "unknown"
 
 
 # --- honest fall-through for unrecognised refusals (#184) -------------------
@@ -242,6 +295,12 @@ def test_classify_request_id_from_azure_apim_header_on_a_refusal() -> None:
     assert err.request_id == "apim-req-2"
 
 
+def test_classify_request_id_from_anthropic_header_on_a_refusal() -> None:
+    # The native Format=Anthropic ingress forwards only Anthropic's `request-id` (#827).
+    err = classify(_resp(429, {"request-id": "req_anthropic-3"}))
+    assert err.request_id == "req_anthropic-3"
+
+
 def test_classify_request_id_prefers_x_request_id() -> None:
     err = classify(_resp(500, {"x-request-id": "gw-1", "x-amzn-requestid": "amzn-2"}))
     assert err.request_id == "gw-1"
@@ -311,6 +370,7 @@ def test_every_policy_violation_type_ships_its_own_nonempty_default() -> None:
         TokenBudgetExceeded,
         PromptInjectionBlocked,
         ContentSafetyBlocked,
+        AgentKilled,
     } <= types
     for cls in types:
         assert "remediation" in vars(cls), f"{cls.__name__} ships no own remediation default"
@@ -357,6 +417,70 @@ def test_classify_token_budget_falls_back_to_the_class_default_remediation() -> 
     err = classify(_resp(429))
     assert isinstance(err, TokenBudgetExceeded)
     assert err.remediation is TokenBudgetExceeded.remediation
+
+
+# --- Agent Kill Switch (#694, docs/verified-apis.md §4) ---------------------
+# The kill switch rejects with a 403 whose nested error carries
+# `code: agent_killed` and no `type`. The body code is the discriminator — the
+# same nested envelope from an upstream provider, or with any other code, must
+# keep classifying exactly as before.
+
+_KILLED_BODY = {
+    "error": {
+        "code": "agent_killed",
+        "message": "This agent has been blocked by an active kill switch.",
+    }
+}
+
+
+def test_agent_killed_code_is_agent_killed_with_class_default_remediation() -> None:
+    err = classify(_json_resp(403, _KILLED_BODY))
+    assert isinstance(err, AgentKilled)
+    assert not isinstance(err, UpstreamRequestError)
+    assert err.policy == "agent-kill-switch"
+    assert err.remediation is AgentKilled.remediation
+    assert str(err) == "This agent has been blocked by an active kill switch."
+
+
+def test_message_less_kill_body_still_types_as_agent_killed() -> None:
+    """The body code alone types it: a message-less kill body still classifies,
+    with a fallback message naming the kill switch."""
+    err = classify(_json_resp(403, {"error": {"code": "agent_killed"}}))
+    assert isinstance(err, AgentKilled)
+    assert "kill switch" in str(err)  # fallback message when the body has none
+
+
+def test_agent_killed_in_a_gemini_list_envelope_is_agent_killed() -> None:
+    err = classify(_json_list_resp(403, [_KILLED_BODY]))
+    assert isinstance(err, AgentKilled)
+
+
+def test_403_nested_error_with_another_code_is_still_upstream_request_error() -> None:
+    """No regression for the upstream passthrough: a nested error object with a
+    different ``code`` stays an UpstreamRequestError, never AgentKilled."""
+    err = classify(
+        _json_resp(403, {"error": {"code": "insufficient_quota", "message": "over quota"}})
+    )
+    assert isinstance(err, UpstreamRequestError)
+    assert not isinstance(err, AgentKilled)
+    assert err.code == "insufficient_quota"
+
+
+def test_pii_block_is_not_agent_killed() -> None:
+    err = classify(_json_resp(403, {"error": {"type": "pii_detected", "message": "blocked"}}))
+    assert type(err) is PIIDetected
+
+
+def test_403_with_www_authenticate_and_no_kill_code_is_still_auth_error() -> None:
+    err = classify(
+        _json_resp(
+            403,
+            {"error": {"code": "forbidden", "message": "nope"}},
+            {"www-authenticate": 'Bearer realm="anypoint"'},
+        )
+    )
+    assert isinstance(err, AuthError)
+    assert not isinstance(err, AgentKilled)
 
 
 # --- upstream request error, both envelope shapes (#548) --------------------

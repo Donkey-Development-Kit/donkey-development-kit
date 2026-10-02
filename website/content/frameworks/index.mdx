@@ -7,8 +7,6 @@ import { Badge, Card, CardGrid } from '../../components'
 
 # Model access
 
-<Badge tone="live">Live</Badge>
-
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
@@ -30,32 +28,44 @@ seven are **supported at `connection_kwargs()`**: the governed connection
 settings are tested, and each exposes factory methods that return the native
 object.
 
+Each card shows what has been proven about that adapter, in the terms the
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) uses:
+
+| Status | Means |
+|---|---|
+| <Badge tone="accent">Conformance-tested</Badge> | Runs the conformance suite against the [local simulator](/simulator) in CI. |
+| <Badge tone="live">Live-verified</Badge> | Has made a real round-trip through a governed proxy. |
+| <Badge tone="neutral">Signature-confirmed</Badge> | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
+
+The proxy data plane every adapter calls (base URL, credential headers,
+streaming, rejection shapes) is live-verified.
+
 <CardGrid>
-  <Card title="LangGraph" href="/frameworks/langgraph" badge="Deep" badgeTone="accent">
+  <Card title="LangGraph" href="/frameworks/langgraph" badge="Conformance-tested" badgeTone="accent">
     `chat_model()` → `langchain_openai.ChatOpenAI`
   </Card>
-  <Card title="Google ADK" href="/frameworks/adk" badge="Supported" badgeTone="neutral">
-    `model()` → `google.adk … LiteLlm`
+  <Card title="Google ADK" href="/frameworks/adk" badge="Signature-confirmed" badgeTone="neutral">
+    `model()` → `google.adk … LiteLlm` (signature-confirmed); `gemini()` → `google.adk.models.Gemini` (live-verified)
   </Card>
-  <Card title="Strands" href="/frameworks/strands" badge="Supported" badgeTone="neutral">
+  <Card title="Strands" href="/frameworks/strands" badge="Signature-confirmed" badgeTone="neutral">
     `model()` → `strands … OpenAIModel`
   </Card>
-  <Card title="MS Agent Framework" href="/frameworks/agent-framework" badge="Supported" badgeTone="neutral">
+  <Card title="MS Agent Framework" href="/frameworks/agent-framework" badge="Signature-confirmed" badgeTone="neutral">
     `chat_client()` → Agent Framework chat client
   </Card>
-  <Card title="OpenAI Agents SDK" href="/frameworks/openai" badge="Supported" badgeTone="neutral">
+  <Card title="OpenAI Agents SDK" href="/frameworks/openai" badge="Signature-confirmed" badgeTone="neutral">
     `model()` → `agents.OpenAIChatCompletionsModel`
   </Card>
-  <Card title="Anthropic SDK" href="/frameworks/anthropic" badge="Supported" badgeTone="neutral">
+  <Card title="Anthropic SDK" href="/frameworks/anthropic" badge="Signature-confirmed" badgeTone="neutral">
     `client()` → `anthropic.AsyncAnthropic`
   </Card>
-  <Card title="CrewAI" href="/frameworks/crewai" badge="Supported" badgeTone="neutral">
-    `llm()` → `crewai.LLM` (LiteLLM-backed)
+  <Card title="CrewAI" href="/frameworks/crewai" badge="Signature-confirmed" badgeTone="neutral">
+    `llm()` → `crewai.BaseLLM` (`OpenAICompletion`)
   </Card>
-  <Card title="LlamaIndex" href="/frameworks/llamaindex" badge="Supported" badgeTone="neutral">
+  <Card title="LlamaIndex" href="/frameworks/llamaindex" badge="Signature-confirmed" badgeTone="neutral">
     `llm()` → `OpenAILike` (`is_chat_model=True`)
   </Card>
-  <Card title="No framework" href="/quickstart" badge="Live" badgeTone="live">
+  <Card title="No framework" href="/quickstart" badge="Conformance-tested" badgeTone="accent">
     `donkey.llm.client()` → `openai.AsyncOpenAI` (or `OpenAI` with `sync=True`)
   </Card>
 </CardGrid>
@@ -77,10 +87,39 @@ Each framework page shows the factory name, the native class you get back, the
 three ways to construct it, and **the manual equivalent** — the plain framework
 constructor call the factory makes for you.
 
+### Printing `connection_kwargs()` hides the secrets
+
+`connection_kwargs()` returns a `dict` that prints `'***'` in place of
+`api_key`, the `client_secret` header, `Authorization` and other credential
+keys, including inside nested header mappings. The framework still receives the
+real values, and `json.dumps`, `dict(...)`, `{**kwargs}` or `kwargs.items()`
+still expose the top-level `api_key`. Some framework objects built from the
+kwargs (LangGraph's `ChatOpenAI`, LlamaIndex's `OpenAILike`, CrewAI's
+`OpenAICompletion`) print credentials themselves. See
+[What printed output hides](/reference/configuration#what-printed-output-hides)
+for exactly what is and isn't masked.
+
+Where the framework's dependencies are installed, `connection_kwargs()` also
+carries the SDK's HTTP client in the form that framework takes: `http_client`
+and `http_async_client` (LangGraph), `http_client` and `async_http_client`
+(LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
+or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
+Each HTTP client is a non-owning view of the SDK's shared client: it sends
+through the shared client, and closing it (as Strands does after every call, or
+`async with` on an OpenAI client) leaves the shared client open. Only
+`donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
+returns the same view if you build a framework client by hand.
+
+```python
+kwargs = donkey.llamaindex.connection_kwargs()
+print(kwargs["default_headers"])      # {'client_id': 'my-client-id', 'client_secret': '***'}
+OpenAILike(model="gpt-4o", **kwargs)  # receives the real secret
+```
+
 ## Match the adapter to your proxy's wire format
 
-Every adapter on this page except Anthropic — and the raw `donkey.llm.client()`
-— speaks the **OpenAI wire format**. The format your proxy accepts is the
+Every adapter on this page except Anthropic and ADK's `gemini()` — and the raw
+`donkey.llm.client()` — speaks the **OpenAI wire format**. The format your proxy accepts is the
 **Format** (OpenAI / Anthropic / Gemini) chosen when the proxy was provisioned.
 It is a property of the proxy, not an SDK setting, so there is no config field
 for it: pick the adapter that matches your proxy.
@@ -89,7 +128,7 @@ for it: pick the adapter that matches your proxy.
 |---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter. Default DDK proxies are `Format=OpenAI`. |
 | **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`). The proxy serves the native Messages route at `POST /<base-path>/v1/messages`; OpenAI-shape `/chat/completions` returns 404. |
-| **Gemini** | No SDK adapter. Point a native `google-genai` client at `…/models/<model>:generateContent` yourself, or reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
+| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](/frameworks/adk#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
 
 <Callout type="info">
   **Ingress Format is not the same as the upstream provider.** The ingress
@@ -120,19 +159,53 @@ calls.
 How much of the SDK's HTTP layer reaches the request depends on what each
 framework's constructor accepts. With **header injection**, the proxy auth and
 attribution headers are sent. With **transport injection**, the SDK's shared
-HTTP client is also used, which adds per-run correlation IDs and
-`donkey.last_call`.
+HTTP client is also used, which adds per-run correlation IDs, retries, spans,
+`donkey.last_call`, the `jwt`-mode JWT, and
+[credentials only to checked endpoints](/reference/configuration#credentials-go-only-to-checked-endpoints).
 
 | Framework | Header injection | Transport injection | Notes |
 |---|---|---|---|
-| LangGraph | ✅ | ✅ | `default_headers` plus a custom async client. |
+| LangGraph | ✅ | ✅ | `default_headers` plus the SDK's async client (`ainvoke`) and blocking client (`invoke`). |
 | Strands | ✅ | ✅ | Via `client_args`. |
 | OpenAI Agents SDK | ✅ | ✅ | The adapter builds the `AsyncOpenAI` client itself. |
-| Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object — see the [Anthropic page](/frameworks/anthropic). |
-| LlamaIndex | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. `is_chat_model=True` is forced. |
-| MS Agent Framework | ✅ | ❌ | Static `default_headers` snapshot: no per-run correlation or `donkey.last_call`. |
-| Google ADK | ✅ (`extra_headers`) | ❌ | Calls go through ADK's `LiteLlm` model: correlation is per client and `donkey.last_call` is not populated. |
-| CrewAI | ✅ (`extra_headers`) | ❌ | Calls go through CrewAI's LiteLLM layer: same behaviour as Google ADK. |
+| Anthropic SDK | ✅ | ✅ | Returns a bare `client()`, not a model-bound object. On `anthropic` 1.0 and later, transport injection goes through a bridged `httpx2` client — see the [Anthropic page](/frameworks/anthropic). |
+| LlamaIndex | ✅ | ✅ | Via `http_client` (sync) and `async_http_client`. `is_chat_model=True` is forced. |
+| MS Agent Framework | ✅ | ✅ | Via an `async_client` built on the SDK's client. |
+| Google ADK — `model()` | ✅ (`extra_headers`) | ✅ | LiteLLM gets a pre-built OpenAI `client` that sends through the SDK's client. |
+| Google ADK — `gemini()` | ✅ | ✅ | Via `HttpOptions.httpx_async_client`, on a `Format=Gemini` proxy. |
+| CrewAI | ✅ (`extra_headers`) | ❌ | CrewAI's native OpenAI provider builds its own HTTP client: correlation is per client and `donkey.last_call` is not populated. An `interceptor` keeps credentials to checked endpoints. |
 
-See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for how each constructor
+## Retries happen once, in the SDK
+
+The SDK's transport retries `502`, `503` and `504` with backoff, up to
+`max_retries` times, and never retries a `4xx`. On the proxy a `429` is a
+token-budget refusal (`TokenBudgetExceeded`), so sending it again would only
+spend more of a budget that is already gone. Every adapter therefore turns off
+the provider SDK's own retries (`max_retries=0`). The transport also marks every
+final `4xx` with `x-should-retry: false`, which the `openai` and `anthropic`
+SDKs honour, so a client you build yourself from `connection_kwargs()` with its
+own retry setting doesn't re-send a refusal either.
+
+Some frameworks retry above the provider SDK, where the SDK can't reach:
+
+| Framework | A budget `429` is sent | A persistent `503` is sent | What to do |
+|---|---|---|---|
+| LangGraph, OpenAI Agents SDK, Anthropic SDK, LlamaIndex, MS Agent Framework, Google ADK | once | `max_retries + 1` times | Nothing. |
+| Strands | once from the model; up to 6 times from a default `Agent` | `max_retries + 1` times | Build the agent with `Agent(retry_strategy=None)`. |
+| CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](/frameworks/crewai#notes). |
+
+Transport injection also decides whether `jwt` mode works: the rotating JWT is
+attached only by the SDK's shared async client. CrewAI can't carry it, so it
+raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
+also raise `ConfigError` instead of sending. See the
+[`jwt` mode note](/reference/configuration#jwt--model-wallet-auth-mode).
+[`bearer` mode](/reference/configuration#bearer-token-auth-mode) has the same
+reach; there, CrewAI raises `ConfigError` instead of sending no token.
+
+A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
+or Strands' `client_args["base_url"]`) must pass the same
+[`https://` rule](/reference/configuration#endpoints-must-use-https) as the
+configured proxy URL; it then receives the configured credentials.
+
+See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.

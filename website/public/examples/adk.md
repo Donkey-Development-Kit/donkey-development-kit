@@ -1,10 +1,9 @@
 # Google ADK
 
 Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
-**`/chat/completions`, which is not live-verified on the DDK proxies**, and
-owns the transport: the credentials go on the wire, but there is **no run id,
-no `last_call`, and no typed refusals**. Script 02 exists to show that last
-gap.
+the proxy's `/chat/completions` route. It sends through the SDK's shared HTTP client, so the credentials and the run id
+go on the wire, but LiteLLM raises its own errors, so there are **no typed
+refusals**. Script 02 exists to show that gap.
 
 Both scripts need a live gateway; there is no offline ADK script.
 
@@ -15,7 +14,7 @@ Both scripts need a live gateway; there is no offline ADK script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,adk]"
@@ -40,7 +39,11 @@ print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
 ```
 
 **You should see:** a one-sentence answer, `total tokens` from the last
-event's `usage_metadata`, and `last_call unavailable …`. LiteLLM also logs a
+event's `usage_metadata`, and `last_call unavailable …`. The record is set in
+the `Runner`'s own task, not where the script reads it, and a cold read on
+this adapter reports `unavailable` rather than `unobserved` ([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)). Read it
+in an `after_model_callback` instead, as shown under
+[Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). LiteLLM also logs a
 provider-list banner, which is harmless.
 
 ## 02 — A refusal that is not typed
@@ -66,12 +69,14 @@ except litellm.exceptions.APIError as err:
 should see:** `APIError 403` and the first line of the proxy's message — **not**
 `PIIDetected`. Without the policy it prints `NO REFUSAL`.
 
-  If you need typed refusals, `last_call` or run ids with ADK today, prefer a
-  framework path where the SDK owns the transport, such as
-  [OpenAI](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md) or [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/examples/langgraph.md). A `404`
+  If you need typed refusals with ADK, use
+  `donkey.adk.gemini("gemini-2.5-flash")` on a `Format=Gemini` proxy and
+  `classify()` its error (see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)).
+  Otherwise prefer a framework path where the SDK owns the transport, such as
+  [OpenAI](https://docs.donkey-kit.dev/examples/openai.md) or [LangGraph](https://docs.donkey-kit.dev/examples/langgraph.md). A `404`
   here means the proxy's upstream has no `/chat/completions` route.
 
-**Learn more:** [Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk.md)
+**Learn more:** [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md)
 
 **Source:**
 [`demos/human-made/adk/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/adk)

@@ -56,19 +56,18 @@ def test_scenario_is_registered() -> None:
     )
 
 
-def test_jwt_exemption_recorded_for_transport_detached_adapters() -> None:
-    # A rotating model-wallet JWT can only be refreshed per-send by our transport
-    # (#509). The adapters that own their transport (LiteLLM) or take only a
-    # one-time default_headers snapshot pin the token at construction, so jwt auth
-    # mode is unsupported on them — asserted here, exactly like the last_call and
-    # correlation-id exemptions, never a silent skip. That is the SAME set of four
-    # non-transport-routed adapters.
+def test_jwt_exemption_recorded_only_for_crewai() -> None:
+    # A rotating model-wallet JWT is added per-send only by our transport (#509).
+    # Every adapter that sends through it carries the JWT, including LlamaIndex,
+    # Agent Framework and ADK model(). CrewAI's native OpenAI provider builds its
+    # own clients and refuses jwt mode with a ConfigError (#828) — asserted here,
+    # never a silent skip.
     exempted = {
         adapter
         for adapter, limits in KNOWN_LIMITATIONS.items()
         if _JWT_SCENARIO in limits
     }
-    assert exempted == {"adk", "crewai", "llamaindex", "agent_framework"}
+    assert exempted == {"crewai"}
 
 
 def test_every_known_limitation_names_a_real_scenario() -> None:
@@ -101,6 +100,26 @@ def test_exemption_matches_observes_last_call_flag() -> None:
     # And it must be a non-empty set — a conformance surface with zero recorded
     # exemptions here would mean every adapter observes, which is not true.
     assert non_observing == {"adk", "crewai", "llamaindex", "agent_framework"}
+
+
+async def test_adk_gemini_is_not_exempt() -> None:
+    # The adk exemptions are scoped to model() (LiteLLM). adk.gemini() is handed
+    # the shared DonkeyAsyncClient — the fact that makes correlation, last_call and
+    # per-send JWT work — and so observes per factory (#691, #741).
+    cfg = DonkeyConfig(
+        llm_proxy_url="https://proxy",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+    )
+    client = build_http_client(cfg, None)
+    try:
+        adapter = _adapter_class("adk")(cfg, client)
+        kw = adapter.gemini_connection_kwargs()  # type: ignore[attr-defined]
+        assert kw["client_kwargs"]["http_options"]["httpx_async_client"] is client.view()
+    finally:
+        await client.aclose()
+    for reason in KNOWN_LIMITATIONS["adk"].values():
+        assert reason.startswith("adk.model() only:")
 
 
 async def test_header_only_correlation_exemptions_match_connection_kwargs() -> None:

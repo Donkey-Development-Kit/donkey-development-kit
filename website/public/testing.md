@@ -20,7 +20,7 @@ pip install "donkey-kit[test,local]"    # add the gateway fixture
 
 A context manager that makes the next N calls through a `Donkey` return a
 chosen refusal. It injects the **same captured rejection fixture** the error
-classifier and the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) use, so your agent sees exactly
+classifier and the [local simulator](https://docs.donkey-kit.dev/simulator.md) use, so your agent sees exactly
 that typed refusal — not a hand-rolled stand-in. No network, no server, fast
 enough for unit tests:
 
@@ -40,18 +40,22 @@ async def test_agent_masks_pii():
   nested `simulate()` blocks compose.
 - Every injected response carries `x-donkey-simulator: true`, so a simulated
   refusal is never mistaken for a real gateway response in a log or trace.
+- Injected calls stay in-process even when `HTTP_PROXY`, `HTTPS_PROXY` or
+  `ALL_PROXY` is set. Calls that proceed after `times` still go through the
+  configured proxy.
 
 The selectable refusals are the ones produced from a captured fixture:
 `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
-`ContentSafetyBlocked`, `UpstreamRequestError`, `UpstreamModelError`,
-`AuthError`, and the generic `PolicyViolation` (the content-moderation shape).
+`ContentSafetyBlocked`, `AgentKilled`, `UpstreamRequestError`, `ModelNotRoutable`,
+`UpstreamModelError`, `AuthError`, and the generic `PolicyViolation` (the
+content-moderation shape).
 Asking for a refusal no gateway response produces — for example a client-side
 `ConfigError` — raises a `ValueError`.
 
   `simulate()` injects the fixture verbatim. For scripted behaviour such as
   every-Nth-call PII blocks or a shrinking budget window, use the
   [`gateway` fixture](#the-gateway-fixture) with
-  `set_scenarios(...)`, or [`donkey mock --scenario`](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting).
+  `set_scenarios(...)`, or [`donkey mock --scenario`](https://docs.donkey-kit.dev/simulator.md#scenario-scripting).
 
 ## The conformance plugin — run it against your agent
 
@@ -75,11 +79,22 @@ scenario → pass / fail / **exempt**. A failure reads as a finding about your
 agent — for example, *"your agent retried a budget refusal 3 times"* — found in
 CI, before production.
 
+The suite grades what it sees on the `Donkey`'s transport, so your agent's model
+calls must go through the `donkey` it is given. A scenario in which no call
+reaches that transport **fails** with *"no model call went through the Donkey
+client"*, never passes by default. That covers an agent that makes no call, one
+that builds its own `httpx` or OpenAI client, and an adapter that sends calls
+outside the shared transport (CrewAI, LlamaIndex, Microsoft Agent Framework,
+and ADK `model()`). The finding names the adapter. If the gap is expected,
+record an asserted exemption for it. The run never reaches the network: the
+harness replaces the configured proxy URL and every credential with
+placeholders, and it refuses any request that would leave the process.
+
 The factory is called once per scenario and receives the `donkey` fixture if it
 declares one. With `--donkey-conformance`, the plugin runs the suite
 exclusively in place of normal test collection; without the flag it is inert.
 You can also run it through the CLI with `donkey test --agent my_app.agent:build`
-(see [CLI](https://donkey-development-kit.github.io/donkey-development-kit/cli.md#donkey-test)).
+(see [CLI](https://docs.donkey-kit.dev/cli.md#donkey-test)).
 
 ### Exemptions
 
@@ -100,7 +115,7 @@ manual `curl`. Those need a real listener on a real port — and often you need
 to know *what the gateway actually received*. "Did my agent stop after the
 refusal, or retry four more times?" is answerable only from the gateway's side.
 
-The `gateway` fixture boots the [local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) on an ephemeral
+The `gateway` fixture boots the [local simulator](https://docs.donkey-kit.dev/simulator.md) on an ephemeral
 port, hands your test its `.url`, and records every request:
 
 ```python
@@ -117,7 +132,7 @@ async def test_agent_stops_after_a_refusal(gateway):
 - The port is bound to `0`, so parallel `pytest -n` runs never collide.
 - `gateway.requests_received` counts requests; `gateway.requests` exposes each
   one's method, path, and headers, with `client_secret` **redacted**.
-- `gateway.set_scenarios(...)` arms [scenario scripting](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md#scenario-scripting)
+- `gateway.set_scenarios(...)` arms [scenario scripting](https://docs.donkey-kit.dev/simulator.md#scenario-scripting)
   (`pii_block`, `injection`, `budget`) **per test**.
 - Every response carries `x-donkey-simulator: true`.
 - The server is torn down when the test exits, including on failure.
@@ -127,7 +142,7 @@ without that extra raises an `ImportError` naming the exact `pip install`.
 
 ## Choosing a tool
 
-| | [`donkey mock`](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) | `gateway` fixture | `simulate()` |
+| | [`donkey mock`](https://docs.donkey-kit.dev/simulator.md) | `gateway` fixture | `simulate()` |
 |---|---|---|---|
 | Shape | A **server** you run | A **server** a test starts | **In-process** context manager |
 | Port | You pick it (`--port`) | Ephemeral (`0`), on `.url` | None |

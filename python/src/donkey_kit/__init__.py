@@ -23,6 +23,7 @@ from .core.cachecontrol import CacheControls
 from .core.config import DonkeyConfig, Region
 from .core.cost import CostTags
 from .core.errors import (
+    AgentKilled,
     AuthError,
     BudgetReserveReached,
     ConfigError,
@@ -30,8 +31,10 @@ from .core.errors import (
     DonkeyError,
     GatewayUnavailable,
     GovernanceDrift,
+    ModelNotRoutable,
     ModelSubstituted,
     PIIDetected,
+    PlatformTeamOnly,
     PolicyViolation,
     PromptInjectionBlocked,
     ProvisioningError,
@@ -40,6 +43,8 @@ from .core.errors import (
     TokenBudgetExceeded,
     ToolInvocationError,
     UpstreamModelError,
+    UpstreamRequestError,
+    classify,
 )
 from .core.toolspec import ToolSpec, registered_tools
 from .donkey import Donkey
@@ -53,10 +58,11 @@ from .registry import (
     PublicationAssetType,
 )
 
-__version__ = "0.1.1.dev0"
+__version__ = "0.1.1"
 
 __all__ = [
     "STRICT",
+    "AgentKilled",
     "AssetRef",
     "AssetType",
     "AuthError",
@@ -73,8 +79,10 @@ __all__ = [
     "GatewayUnavailable",
     "GovernanceCriteria",
     "GovernanceDrift",
+    "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
+    "PlatformTeamOnly",
     "PolicyViolation",
     "PromptInjectionBlocked",
     "Publication",
@@ -87,6 +95,8 @@ __all__ = [
     "ToolInvocationError",
     "ToolSpec",
     "UpstreamModelError",
+    "UpstreamRequestError",
     "__version__",
+    "classify",
     "registered_tools",
 ]

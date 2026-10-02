@@ -14,7 +14,7 @@ attaches there once, so you never wire it call by call.
   
     **Purpose:** point any of eight agent frameworks at your governed Omni
     Gateway proxy. **Advantage:** you get your framework's own object —
-    `ChatOpenAI`, `LiteLlm`, `OpenAIModel`, `crewai.LLM` … — with credentials,
+    `ChatOpenAI`, `LiteLlm`, `OpenAIModel`, `crewai.BaseLLM` … — with credentials,
     correlation, attribution and retry policy injected. No wrapper to code
     around, three lines to eject.
   
@@ -29,12 +29,13 @@ attaches there once, so you never wire it call by call.
 |---|---|---|
 | LangGraph | `donkey.langgraph.chat_model("gpt-4o")` | `langchain_openai.ChatOpenAI` |
 | Google ADK | `donkey.adk.model("gpt-4o")` | `LiteLlm` |
+| Google ADK on a `Format=Gemini` proxy | `donkey.adk.gemini("gemini-2.5-flash")` | `google.adk.models.Gemini` |
 | Strands | `donkey.strands.model("gpt-4o")` | `OpenAIModel` |
 | MS Agent Framework | `donkey.agent_framework.chat_client("gpt-4o")` | Agent Framework chat client |
 | LlamaIndex | `donkey.llamaindex.llm("gpt-4o")` | `OpenAILike` |
 | OpenAI Agents SDK | `donkey.openai_agents.model("gpt-4o")` | `OpenAIChatCompletionsModel` |
 | Anthropic SDK | `donkey.anthropic.client()` | `anthropic.AsyncAnthropic` |
-| CrewAI | `donkey.crewai.llm("gpt-4o")` | `crewai.LLM` |
+| CrewAI | `donkey.crewai.llm("gpt-4o")` | `crewai.BaseLLM` |
 
 Every adapter offers the same governed connection three ways — a factory on a
 shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
@@ -141,4 +142,4 @@ reproduce them. Policy enforcement, semantic caching, provisioning, agent
 scanners, kill switch, trusted agent identity, approval UIs and evaluation all
 stay with Agent Fabric and Omni Gateway. Where the platform exposes a signal,
 such as a semantic-cache hit or the routing decision, DDK surfaces it to your
-code. See the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md#what-ddk-will-not-build) for the full list.
+code. See the [Roadmap](https://docs.donkey-kit.dev/roadmap.md#what-ddk-will-not-build) for the full list.

@@ -36,8 +36,10 @@ curl -s http://localhost:8080/responses \
 
 The selectable shapes are `token-rate-limit`, `pii-detected`,
 `injection-protection`, `regex-prompt-guard`, `content-safety`,
-`content-moderation`, `model-not-found`, `upstream-5xx`, and `client-id-missing`
-— the eight documented rejections plus the consumer-auth `401`. One happy-path
+`content-moderation`, `agent-killed`, `model-not-found`, `upstream-5xx`,
+`client-id-missing`, and `model-not-routable` — the nine documented rejections
+plus the consumer-auth `401` and the gateway's `400` for a bare model name on a
+multi-provider proxy (`ModelNotRoutable`). One happy-path
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see
@@ -49,6 +51,75 @@ interprets it.
 Because each body is the *same fixture* the SDK's error classifier is tested
 against, a sentinel request surfaces in your agent as the typed exception — a
 [`PIIDetected`](/errors), not a raw `403`.
+
+## Choosing a port or host
+
+`donkey mock` binds `127.0.0.1:8080` by default. Two flags move it:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--port` | `8080` | TCP port to bind. Pass another value if `8080` is in use. |
+| `--host` | `127.0.0.1` | Interface to bind. `0.0.0.0` exposes it beyond localhost. |
+
+```bash
+donkey mock --port 9000 --host 0.0.0.0
+```
+
+<Callout type="warning">
+  Binding `0.0.0.0` makes the simulator reachable from other machines on your
+  network. It is a fixture replay that enforces no policy and ignores
+  credentials, so only expose it on a network you trust.
+</Callout>
+
+Point your client at the same address: set
+`DONKEY_LLM_PROXY_URL=http://127.0.0.1:<port>` (for the example above,
+`http://127.0.0.1:9000`). The SDK accepts plain `http://` for loopback hosts
+(`localhost`, `127.0.0.0/8`, `::1`); `http://0.0.0.0:…` is refused. To reach the
+simulator from another machine or container by LAN address or hostname (for
+example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
+environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
+[Endpoints must use `https://`](/reference/configuration#endpoints-must-use-https).
+
+<Callout type="info">
+  Behind an HTTP proxy (`HTTP_PROXY` or `ALL_PROXY` set, as on many corporate
+  machines and CI runners), the client sends loopback requests to the proxy
+  too, and the proxy usually cannot reach your simulator. Add the simulator's
+  host to `NO_PROXY`, for example `NO_PROXY=127.0.0.1,localhost`.
+</Callout>
+
+The simulator's port is **not** read from an environment variable or
+`.donkey-kit.toml` — the `--port`/`--host` flags (or the `serve()` keyword
+arguments below) are the only way to change it.
+
+Set the simulator URL in the environment (or in code), as above. If you keep it
+in `.donkey-kit.toml` instead, put the credentials in `.donkey-kit.local.toml`
+next to it: a URL from the working directory's config files, loopback included,
+only receives credentials from those files. See
+[Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
+
+<Callout type="info">
+  If you run the simulator's ASGI app under `uvicorn` yourself instead of
+  through `donkey mock`, remember uvicorn's own default port is `8000`, not
+  `8080`. Using `donkey mock` (or `serve()`) gives you the documented `8080`
+  default.
+</Callout>
+
+### Running the simulator from Python
+
+`donkey mock` is a thin wrapper over `serve()`. To boot the simulator from your
+own code, call it directly (the `[local]` extra must be installed):
+
+```python
+from donkey_kit.simulator import serve
+
+serve(host="127.0.0.1", port=9000)
+```
+
+`serve(*, host="127.0.0.1", port=8080, config=None)` is keyword-only and blocks
+until the process is stopped. Pass a `SimulatorConfig` (also importable from
+`donkey_kit.simulator`) as `config=` to script the same fault-injection
+scenarios the `--scenario` flag builds. If the `[local]` extra is missing,
+`serve()` raises `ImportError`.
 
 ## Budget windows on the happy path
 
@@ -153,8 +224,11 @@ guardrailed bot is exercised before it faces a real attack.
   [error taxonomy](/errors) cannot drift apart. The wheel ships a sha256
   integrity manifest of every fixture, so a changed byte fails loudly rather
   than silently altering what the simulator replays.
-- **It is pure Python.** `pip install "donkey-kit[local]"` adds Starlette and
-  Uvicorn; no Docker required.
+- **It is pure Python — not Omni/Flex Gateway running in Local Mode.**
+  `pip install "donkey-kit[local]"` adds Starlette and Uvicorn; no Docker
+  required. DDK does not support Local Mode as a deployment target (see the
+  [unsupported boundary](/reference/unsupported-boundary)); real-gateway
+  behavior is exercised against a hosted (Connected Mode) proxy instead.
 
 ## Related
 

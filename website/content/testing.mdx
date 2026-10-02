@@ -47,11 +47,15 @@ async def test_agent_masks_pii():
   nested `simulate()` blocks compose.
 - Every injected response carries `x-donkey-simulator: true`, so a simulated
   refusal is never mistaken for a real gateway response in a log or trace.
+- Injected calls stay in-process even when `HTTP_PROXY`, `HTTPS_PROXY` or
+  `ALL_PROXY` is set. Calls that proceed after `times` still go through the
+  configured proxy.
 
 The selectable refusals are the ones produced from a captured fixture:
 `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
-`ContentSafetyBlocked`, `UpstreamRequestError`, `UpstreamModelError`,
-`AuthError`, and the generic `PolicyViolation` (the content-moderation shape).
+`ContentSafetyBlocked`, `AgentKilled`, `UpstreamRequestError`, `ModelNotRoutable`,
+`UpstreamModelError`, `AuthError`, and the generic `PolicyViolation` (the
+content-moderation shape).
 Asking for a refusal no gateway response produces — for example a client-side
 `ConfigError` — raises a `ValueError`.
 
@@ -83,6 +87,17 @@ Each scenario becomes one pytest item, and the run prints a table of
 scenario → pass / fail / **exempt**. A failure reads as a finding about your
 agent — for example, *"your agent retried a budget refusal 3 times"* — found in
 CI, before production.
+
+The suite grades what it sees on the `Donkey`'s transport, so your agent's model
+calls must go through the `donkey` it is given. A scenario in which no call
+reaches that transport **fails** with *"no model call went through the Donkey
+client"*, never passes by default. That covers an agent that makes no call, one
+that builds its own `httpx` or OpenAI client, and an adapter that sends calls
+outside the shared transport (CrewAI, LlamaIndex, Microsoft Agent Framework,
+and ADK `model()`). The finding names the adapter. If the gap is expected,
+record an asserted exemption for it. The run never reaches the network: the
+harness replaces the configured proxy URL and every credential with
+placeholders, and it refuses any request that would leave the process.
 
 The factory is called once per scenario and receives the `donkey` fixture if it
 declares one. With `--donkey-conformance`, the plugin runs the suite

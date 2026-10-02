@@ -100,27 +100,51 @@ Why the hierarchy is shaped this way
 What that looks like in your agent
 ──────────────────────────────────
 
-    try:
-        response = await client.responses.create(model=..., input=...)
-    except openai.APIStatusError as exc:
-        raise classify(exc.response) from exc
-    
-    except PIIDetected as e:          # 403, and e.entities says what tripped
-        redact_and_retry(e.entities)
-    except ContentSafetyBlocked as e: # 403, e.categories is the moderation analog
-        revise(e.categories)
-    except TokenBudgetExceeded as e:  # 429, terminal — never retry it
-        await donkey.budget.wait_for_reset()
-    except PolicyViolation as e:      # any other gateway refusal
-        escalate(e.remediation)
-    except GatewayUnavailable as e:   # NO response — not a refusal
-        diagnose(e.base_url, e.cause) # checkpoint / shed / donkey doctor
-    except ModelSubstituted as e:     # NOT classify() — you opted in (demo 10)
-        pin_or_accept(e.served_model)
-    except UpstreamRequestError as e: # your request was wrong (e.code)
-        fix(e.code)
-    except UpstreamModelError:        # provider 5xx — this one IS retryable
-        retry_with_backoff()
+    def ask(client: Any, prompt: str) -> str:
+        try:
+            try:
+                response = client.responses.create(model="gpt-4o", input=prompt)
+            except openai.APIStatusError as exc:      # the gateway answered: type it
+                raise classify(exc.response) from exc
+            except openai.APIConnectionError as exc:  # raised on the transport, wrapped
+                cause = exc.__cause__                 # GatewayUnavailable, ModelSubstituted
+                if isinstance(cause, DonkeyError):
+                    raise cause from cause.__cause__  # keep its own cause chain
+                raise
+            return response.output_text
+        except PIIDetected as e:           # 403, and e.entities says what tripped
+            return f"redact {e.entities} and retry"
+        except ContentSafetyBlocked as e:  # 403, e.categories is the moderation analog
+            return f"revise for {e.categories}"
+        except TokenBudgetExceeded as e:   # 429, terminal — never retry it
+            return f"wait {e.retry_after}s for the budget to reset"
+        except PolicyViolation as e:       # any other gateway refusal
+            return f"escalate the {e.policy} refusal"
+        except GatewayUnavailable as e:    # NO response — not a refusal
+            return f"checkpoint and shed: {e.base_url} is unreachable"
+        except ModelSubstituted as e:      # NOT classify() — you opted in (demo 10)
+            return f"pin or accept {e.served_model}"
+        except UpstreamRequestError as e:  # your request was wrong (e.code)
+            return f"fix the request: {e.code}"
+        except UpstreamModelError:         # provider 5xx — this one IS retryable
+            return "retry with backoff"
+
+  The bridge is an INNER try. An exception raised inside one except clause is never
+  handed to a sibling clause of the same try, so the typed handlers have to sit one
+  level out. The bridge has two arms because the OpenAI client reports two ways: a
+  refusal is an APIStatusError carrying the gateway's response, and an error the
+  transport raises itself is an APIConnectionError with the typed DonkeyError on
+  __cause__.
+
+  PIIDetected            redact ['Email'] and retry
+  ContentSafetyBlocked   revise for ['severity_hate', 'severity_violence']
+  TokenBudgetExceeded    wait 41.728s for the budget to reset
+  PromptInjectionBlocked escalate the prompt-injection-protection refusal
+  UpstreamRequestError   fix the request: model_not_found
+  UpstreamModelError     retry with backoff
+  GatewayUnavailable     checkpoint and shed: http://127.0.0.1:9 is unreachable
+
+  PASS  the flat version — typed handlers as siblings of the classify() clause — lets PIIDetected escape: its handler never runs
 
 What is typed from docs, and what is still unnamed
 ──────────────────────────────────────────────────
@@ -188,29 +212,47 @@ python "demos/human-made/openai/11 - gateway-unavailable.py"      # no gateway
 
 ## Key code
 
-The handler shape the hierarchy is designed for (narrative demo 02, act 3):
+The handler shape the hierarchy is designed for (narrative demo 02, act 3 —
+the demo runs this exact function against a simulated refusal of each type):
 
 ```python
-try:
-    response = await client.responses.create(model=..., input=...)
-except openai.APIStatusError as exc:
-    raise classify(exc.response) from exc
-
-except PIIDetected as e:          # 403, and e.entities says what tripped
-    redact_and_retry(e.entities)
-except ContentSafetyBlocked as e: # 403, e.categories is the moderation analog
-    revise(e.categories)
-except TokenBudgetExceeded as e:  # 429, terminal — never retry it
-    await donkey.budget.wait_for_reset()
-except PolicyViolation as e:      # any other gateway refusal
-    escalate(e.remediation)
-except GatewayUnavailable as e:   # NO response — not a refusal
-    diagnose(e.base_url, e.cause) # checkpoint / shed / donkey doctor
-except UpstreamRequestError as e: # your request was wrong (e.code)
-    fix(e.code)
-except UpstreamModelError:        # provider 5xx — this one IS retryable
-    retry_with_backoff()
+def ask(client: Any, prompt: str) -> str:
+    try:
+        try:
+            response = client.responses.create(model="gpt-4o", input=prompt)
+        except openai.APIStatusError as exc:      # the gateway answered: type it
+            raise classify(exc.response) from exc
+        except openai.APIConnectionError as exc:  # raised on the transport, wrapped
+            cause = exc.__cause__                 # GatewayUnavailable, ModelSubstituted
+            if isinstance(cause, DonkeyError):
+                raise cause from cause.__cause__  # keep its own cause chain
+            raise
+        return response.output_text
+    except PIIDetected as e:           # 403, and e.entities says what tripped
+        return f"redact {e.entities} and retry"
+    except ContentSafetyBlocked as e:  # 403, e.categories is the moderation analog
+        return f"revise for {e.categories}"
+    except TokenBudgetExceeded as e:   # 429, terminal — never retry it
+        return f"wait {e.retry_after}s for the budget to reset"
+    except PolicyViolation as e:       # any other gateway refusal
+        return f"escalate the {e.policy} refusal"
+    except GatewayUnavailable as e:    # NO response — not a refusal
+        return f"checkpoint and shed: {e.base_url} is unreachable"
+    except ModelSubstituted as e:      # NOT classify() — you opted in (demo 10)
+        return f"pin or accept {e.served_model}"
+    except UpstreamRequestError as e:  # your request was wrong (e.code)
+        return f"fix the request: {e.code}"
+    except UpstreamModelError:         # provider 5xx — this one IS retryable
+        return "retry with backoff"
 ```
+
+The bridge is an **inner** `try`. An exception raised inside one `except`
+clause is never handed to a sibling clause of the same `try`, so typed handlers
+written next to the `classify()` clause would never run. The bridge has two
+arms because the OpenAI client reports failures two ways: a gateway refusal is
+an `openai.APIStatusError` carrying the response, and an error the transport
+raises itself (`GatewayUnavailable`, `ModelSubstituted`) arrives as an
+`openai.APIConnectionError` with the typed error on `__cause__`.
 
 A live refusal on a blocking client (OpenAI script 04):
 
@@ -261,7 +303,7 @@ wrong, the gateway did not say no. `GatewayUnavailable` is not a
 undiscriminated `content-moderation` 4xx falls through to a generic
 `PolicyViolation`.
 
-**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md)
+**Learn more:** [Typed refusals](https://docs.donkey-kit.dev/errors.md)
 
 **Source:**
 [narrative demo 02](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/02_typed_refusals) ·

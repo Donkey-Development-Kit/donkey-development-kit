@@ -9,31 +9,32 @@ Two design points that matter:
    the framework boundary so host frameworks do not silently retry a refusal.
    It is NEVER retried by our transport.
 2. ``remediation`` is a structurally-guaranteed, human-readable next step —
-   worth more than a stack trace. Every :class:`PolicyViolation` carries one:
-   the constructor refuses to build an instance whose remediation is empty or
-   whitespace, and every concrete subclass ships a canonical default (BG §1.2,
-   #182). That default is the single source ``donkey doctor`` (#202) reuses, so
+   worth more than a stack trace. Every :class:`DonkeyError` carries one: the
+   base constructor refuses to build an instance whose remediation is empty or
+   whitespace, and every subclass ships a canonical default (BG §1.2, #182,
+   #715). That default is the single source ``donkey doctor`` (#202) reuses, so
    a diagnosis and the exception it stands for can never disagree.
 
-The concrete HTTP-response → exception mapping lives in :func:`classify`, which
-is driven by a table that MUST be populated from real captured fixtures (BG §1.5),
-not hand-written guesses. Until fixtures exist, :func:`classify` maps only the
-status-code families it can defensibly infer and otherwise returns a generic
-:class:`DonkeyError`.
+The concrete HTTP-response → exception mapping lives in :func:`classify`: an
+ordered series of discriminators, each keyed on a rejection shape captured from
+a real gateway (docs/verified-apis.md §4, ``tests/fixtures/anypoint/llm_proxy/``,
+BG §1.5) rather than a hand-written guess. A shape it does not recognise falls
+through to a generic :class:`PolicyViolation` or :class:`DonkeyError`.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING, Any
+
+import httpx
 
 from . import _verify
 from .lastcall import request_id as read_request_id
 
 if TYPE_CHECKING:
     from datetime import datetime
-
-    import httpx
 
 
 class DonkeyError(Exception):
@@ -55,18 +56,47 @@ class DonkeyError(Exception):
       it to the provider's support team. Absent on a transport error (no response)
       — and on any route where the provider forwarded none — unlike the two
       client-sent ids above. The gateway-side join key is ``correlation_id``.
+
+    ``remediation`` names the caller's next step and is **structurally
+    mandatory** on every error in the tree (#182, #715), so a handler written
+    as ``except DonkeyError as e: log(e.remediation)`` never fails inside its
+    own ``except``. An explicit ``remediation=`` wins; otherwise the most-derived
+    class default applies. The constructor raises :class:`ValueError` if the
+    resolved value is empty or whitespace.
     """
+
+    #: The framework exception this error was mapped from, if any. Kept here
+    #: rather than chained as ``__cause__`` because its message can repeat
+    #: request content, and a traceback renders every chained exception.
+    framework_error: BaseException | None = None
+
+    #: Default next-step wording. This base value covers the generic
+    #: ``DonkeyError`` :func:`classify` returns for a response it cannot type;
+    #: every subclass overrides it.
+    remediation: str = (
+        "The SDK could not map this failure to a more specific error. Inspect "
+        ".response (status, headers, body) and quote .correlation_id and "
+        ".request_id when reporting it."
+    )
 
     def __init__(
         self,
         message: str,
         *,
+        remediation: str | None = None,
         correlation_id: str | None = None,
         call_id: str | None = None,
         request_id: str | None = None,
         response: httpx.Response | None = None,
     ) -> None:
         super().__init__(message)
+        resolved = remediation if remediation is not None else type(self).remediation
+        if not resolved.strip():
+            raise ValueError(
+                f"{type(self).__name__} requires a non-empty remediation naming the "
+                "caller's next step (BG §1.2, #182)."
+            )
+        self.remediation = resolved
         self.correlation_id = correlation_id
         self.call_id = call_id
         self.request_id = request_id
@@ -74,7 +104,24 @@ class DonkeyError(Exception):
 
 
 class ConfigError(DonkeyError):
-    """Configuration is missing or invalid. Reports ALL problems at once (config resolution)."""
+    """Configuration is missing or invalid, or an endpoint may not receive the
+    credentials that would be sent to it (see ``DonkeyConfig.check_endpoints``).
+    Raised locally before any request; reports ALL missing fields at once
+    (config resolution). The transport also raises it, with its own
+    remediation, for a send on a closed client or from a closed event loop
+    (#813)."""
+
+    remediation: str = (
+        "Fix the configuration the message names — set each missing or invalid "
+        "field as a keyword argument, a DONKEY_* environment variable, or in "
+        ".donkey-kit.toml — then re-run. `donkey doctor` checks the resolved "
+        "configuration."
+    )
+
+
+class ConfigWarning(UserWarning):
+    """A config file holds something that belongs elsewhere, or an env switch
+    relaxes a config check (config resolution)."""
 
 
 class AuthError(DonkeyError):
@@ -83,8 +130,7 @@ class AuthError(DonkeyError):
     The class-level ``remediation`` is the LLM-proxy data-plane default that
     ``donkey doctor`` (#202) reuses. Control-plane callers override it with one
     of the canonical class values below, so the next step matches the auth
-    provider that failed (#484). This is not the constructor-enforced
-    :class:`PolicyViolation` contract."""
+    provider that failed (#484)."""
 
     #: Single source of next-step wording for a rejected-credentials diagnosis.
     remediation: str = (
@@ -105,27 +151,16 @@ class AuthError(DonkeyError):
         "a connected app, also verify its required scopes (docs/verified-apis.md §1)."
     )
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        remediation: str | None = None,
-        **kw: Any,
-    ) -> None:
-        super().__init__(message, **kw)
-        if remediation is not None:
-            self.remediation = remediation
-
 
 class PolicyViolation(DonkeyError):
     """Base for gateway-enforced refusals. NEVER retried.
 
     ``remediation`` names the concrete next step the caller can take, e.g.
     "Token budget exceeded for business group `finance`; limit resets in 42m;
-    request an increase in API Manager". It is **structurally mandatory** (#182):
-    the constructor raises :class:`ValueError` if the resolved remediation is
-    empty or whitespace, because a typed refusal with no next step is just a
-    renamed exception. When no ``remediation`` is passed, the class-level
+    request an increase in API Manager". It is **structurally mandatory** (#182),
+    enforced by the :class:`DonkeyError` constructor, because a typed refusal
+    with no next step is just a renamed exception. When no ``remediation`` is
+    passed, the class-level
     :attr:`remediation` default applies; every concrete subclass ships its own,
     and that default is the single source ``donkey doctor`` (#202) reuses so the
     CLI and the exception never disagree. It names the *action*, not the policy
@@ -139,32 +174,17 @@ class PolicyViolation(DonkeyError):
     #: cannot pin more precisely); every concrete subclass overrides it.
     remediation: str = (
         "A gateway policy refused this request. This is terminal and was NOT "
-        "retried. PII (403), token-budget (429), prompt-injection (the "
-        "x-injection-protection header or the regex prompt guard's "
-        "matched_patterns) and content-safety (Azure Content Safety, Amazon "
-        "Bedrock Guardrails) rejections are identified specifically; only "
+        "retried. PII (403), agent kill switch (403, error code agent_killed), "
+        "token-budget (429), prompt-injection (the x-injection-protection "
+        "header or the regex prompt guard's matched_patterns) and "
+        "content-safety (Azure Content Safety, Amazon Bedrock Guardrails) "
+        "rejections are identified specifically; only "
         "federated-guardrail verdicts and otherwise-unrecognised shapes fall "
         "through to here. Inspect .response for the raw body."
     )
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        remediation: str | None = None,
-        policy: str | None = None,
-        **kw: Any,
-    ) -> None:
+    def __init__(self, message: str, *, policy: str | None = None, **kw: Any) -> None:
         super().__init__(message, **kw)
-        # An explicit remediation wins; otherwise the concrete class's default
-        # (resolved via the instance type, so the most-derived default applies).
-        resolved = remediation if remediation is not None else type(self).remediation
-        if not resolved.strip():
-            raise ValueError(
-                f"{type(self).__name__} requires a non-empty remediation naming the "
-                "caller's next step (BG §1.2, #182)."
-            )
-        self.remediation = resolved
         if policy is not None:
             self.policy = policy
 
@@ -238,6 +258,13 @@ class ModelSubstituted(DonkeyError):
     and populated from the response, so a substitution can be quoted in a ticket
     on the same terms as any other gateway event."""
 
+    remediation: str = (
+        "The gateway served a different model than requested (a routing "
+        "fallback). Accept the completion on .response, retry once the requested "
+        "model is available, or leave on_model_substitution unset to observe "
+        "substitutions on donkey.last_call.substituted instead of raising."
+    )
+
     def __init__(
         self,
         message: str,
@@ -284,6 +311,18 @@ class ContentSafetyBlocked(PolicyViolation):
 
 
 class PIIDetected(PolicyViolation):
+    """The PII-detection policy blocked the request or response.
+
+    ``entities`` lists the flagged entity types (e.g. ``["Email"]``). The message
+    (``str(exc)``, ``exc.args``, ``repr(exc)``) names those types with their count
+    and character offsets but never the flagged values, so logging the exception
+    or printing it in ``donkey doctor`` does not re-emit what the policy blocked.
+
+    ``gateway_message`` is the gateway's own rejection text, which echoes every
+    flagged value verbatim; it is kept for callers that need it and is not
+    rendered by ``str()`` or ``repr()``. The raw body is also on ``.response``.
+    Treat both as carrying the blocked content."""
+
     policy = "pii-detection"
     remediation: str = (
         "The PII-detection policy blocked this request because the prompt "
@@ -292,13 +331,43 @@ class PIIDetected(PolicyViolation):
         "list / action in API Manager."
     )
 
-    def __init__(self, message: str, *, entities: list[str] | None = None, **kw: Any) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        entities: list[str] | None = None,
+        gateway_message: str | None = None,
+        **kw: Any,
+    ) -> None:
         super().__init__(message, **kw)
         self.entities = entities or []
+        self.gateway_message = gateway_message
+
+
+class AgentKilled(PolicyViolation):
+    """The gateway's Agent Kill Switch blocked this agent — it is quarantined in
+    Governance > Security, or listed in the policy's *Killed Agent IDs*.
+
+    The upstream model was never called: the gateway refused the agent itself,
+    not the request, so no change to the prompt or parameters can succeed. The
+    live capture carries only ``code`` + ``message`` — no kill reason (#314)."""
+
+    policy = "agent-kill-switch"
+    remediation: str = (
+        "An administrator has blocked this agent via the Agent Kill Switch. "
+        "This is terminal and was NOT retried; ask them to restore model "
+        "access in Governance > Security."
+    )
 
 
 class UpstreamModelError(DonkeyError):
     """Provider-side failure (5xx). Retryable."""
+
+    remediation: str = (
+        "The upstream provider failed (5xx); the transport already retried "
+        "502/503/504. Retry later, and if it persists escalate to the provider "
+        "quoting .request_id."
+    )
 
 
 class UpstreamRequestError(DonkeyError):
@@ -311,7 +380,7 @@ class UpstreamRequestError(DonkeyError):
     caller can act (fix the model, the params, etc.).
 
     ``remediation`` is a class attribute so ``donkey doctor`` (#202) has one
-    canonical wording for a model-rejected diagnosis (the LIVE-VERIFIED
+    canonical wording for a model-rejected diagnosis (the
     ``model_not_found`` passthrough, docs/verified-apis.md §4) rather than a
     second copy."""
 
@@ -338,6 +407,34 @@ class UpstreamRequestError(DonkeyError):
         self.code = code
         self.error_type = error_type
         self.param = param
+
+
+class ModelNotRoutable(DonkeyError):
+    """The gateway could not pick a provider for the requested model, so it
+    rejected the request before any upstream call (#825).
+
+    Seen on a model-based-routing proxy with more than one provider configured:
+    a bare model name (``gpt-5-mini``) is ambiguous unless the gateway knows it
+    from exactly one provider, so it answers ``400`` with a flat-string
+    ``error`` asking for ``provider/model`` (docs/verified-apis.md §4). This is a
+    client configuration mistake, NOT a gateway policy refusal (so it is not a
+    :class:`PolicyViolation`) and NOT an upstream rejection (the provider was
+    never called, so it is not an :class:`UpstreamRequestError`). Terminal,
+    never retried.
+
+    ``model`` is the name the gateway echoed back, or ``None`` when it could not
+    be read from the message."""
+
+    #: Single source of next-step wording for the bare-model-name rejection.
+    remediation: str = (
+        "This proxy routes to more than one provider, so it cannot resolve a bare "
+        "model name. Use the 'provider/model' form for the model, e.g. "
+        "openai/gpt-5-mini instead of gpt-5-mini."
+    )
+
+    def __init__(self, message: str, *, model: str | None = None, **kw: Any) -> None:
+        super().__init__(message, **kw)
+        self.model = model
 
 
 class GatewayUnavailable(DonkeyError):
@@ -381,14 +478,11 @@ class GatewayUnavailable(DonkeyError):
         *,
         base_url: str | None = None,
         cause: BaseException | None = None,
-        remediation: str | None = None,
         **kw: Any,
     ) -> None:
         super().__init__(message, **kw)
         self.base_url = base_url
         self.cause = cause
-        if remediation is not None:
-            self.remediation = remediation
 
 
 def gateway_unavailable(
@@ -416,21 +510,64 @@ def gateway_unavailable(
 class ToolInvocationError(DonkeyError):
     """An MCP tool call failed."""
 
+    remediation: str = (
+        "An MCP tool call failed. Check the tool's arguments and the server's "
+        "reported error in the message, then retry or handle the failure in the agent."
+    )
+
 
 class RegistryError(DonkeyError):
     """Exchange discovery / resolution failed."""
+
+    remediation: str = (
+        "Exchange discovery or resolution failed. Check the asset reference "
+        "(group, asset id, version) and that the control-plane credentials can "
+        "read it in Exchange."
+    )
 
 
 class ProvisioningError(DonkeyError):
     """plan/apply/drift failed."""
 
+    remediation: str = (
+        "A provisioning step (plan/apply/drift) failed. Correct the spec the "
+        "message names and re-run; changes to shared environments go through CI "
+        "under platform-controlled credentials."
+    )
+
 
 class GovernanceDrift(DonkeyError):
     """resolve(): a declared policy is not actually applied on the gateway."""
 
+    remediation: str = (
+        "A declared policy is not applied on the gateway. Ask the platform team to "
+        "apply it through the reviewed provisioning pipeline, or remove it from the "
+        "declaration; do not apply it from runtime code."
+    )
+
 
 class PublicationDrift(DonkeyError):
     """verify(): the live server no longer matches the Exchange descriptor (BG §2.5)."""
+
+    remediation: str = (
+        "The live server no longer matches its Exchange descriptor. Republish the "
+        "descriptor, or roll the server back, so the two agree."
+    )
+
+
+class PlatformTeamOnly(DonkeyError, PermissionError):
+    """A platform-team-only operation (``Governance.apply()``) was called without
+    the explicit ``i_am_the_platform_team=True`` opt-in.
+
+    Also a :class:`PermissionError`, which ``Governance.apply()`` raised before
+    this type existed, so existing ``except PermissionError`` handlers still
+    catch it (#715)."""
+
+    remediation: str = (
+        "Runtime code should use Governance.resolve(), which is read-only. If you "
+        "are the platform team automating your own gateway, pass "
+        "i_am_the_platform_team=True and use a connected app that holds write scopes."
+    )
 
 
 def classify(
@@ -457,7 +594,14 @@ def classify(
     * **PII detection** rejects with **403** and a *nested* error object whose
       ``type`` is ``"pii_detected"`` (and, unlike a genuine auth failure, NO
       ``www-authenticate`` header). So a 403 is NOT automatically an auth error —
-      the error ``type`` is checked first.
+      the error ``type`` is checked first. The gateway's message echoes each
+      flagged value, so the exception message is rebuilt from the entity types
+      and offsets and the original is kept on ``PIIDetected.gateway_message``.
+    * **Agent Kill Switch** rejects with **403** and a *nested* error object whose
+      ``code`` is ``"agent_killed"`` (no ``type``, no ``www-authenticate``) →
+      :class:`AgentKilled`. Keyed on the body ``code``, not the status, and
+      checked BEFORE the auth and generic-4xx rules so a killed agent is not
+      mis-typed as an :class:`UpstreamRequestError` (#694).
     * **Token rate limit** rejects with **429** and an **empty body**; the budget
       state is entirely in headers (``x-token-limit`` / ``x-token-remaining`` /
       ``x-token-reset`` in ms). There is NO standard ``retry-after``.
@@ -465,6 +609,10 @@ def classify(
       and a ``www-authenticate`` header → auth.
     * **Upstream provider passthrough** (e.g. OpenAI ``model_not_found``) is a
       non-429 4xx with a nested error object carrying ``code``/``type``/``param``.
+    * **Bare model name on a multi-provider proxy** rejects with **400** and a
+      *flat-string* ``error`` saying the model "is not in the known unique model
+      map" → :class:`ModelNotRoutable` (a client mistake, not a policy refusal;
+      #825). Keyed on that gateway sentence.
     * **Injection protection** rejects with the ``x-injection-protection:
       blocked`` header (the header, not the status, is the discriminator; #181)
       → :class:`PromptInjectionBlocked`.
@@ -478,19 +626,10 @@ def classify(
       (flagged reasons parsed from the sibling ``...-reason`` header). Also
       checked before the auth rule.
 
-    All three provider-backed guardrail shapes are now **live-verified**: Regex
-    Prompt Guard against ``ddk-injection-guard`` and Azure Content Safety against
-    ``ddk-azure-content-safety`` (both 2026-09-22, #253), and Amazon Bedrock
-    Guardrails against ``ddk-bedrock-guardrails`` (2026-09-24, #568) — the same
-    ``...-action: reject`` header family, now confirmed against a real Bedrock
-    upstream (docs/verified-apis.md §4). These shapes have no ``_verify.py``
-    constant — ``classify()`` reads them straight from the response — so the
-    record is the §4 rows, not a ``verified=True`` flip. The Injection Protection
-    body (``x-injection-protection: blocked``, a distinct policy) is the only
-    content-moderation shape that stays documented-only — no proxy running it is
-    deployed to capture (#253). Any other content-moderation / federated-guardrail
-    shape still falls
-    through to a generic
+    These shapes have no ``_verify.py`` constant — ``classify()`` reads them
+    straight from the response — so their verification record is the
+    docs/verified-apis.md §4 rows. Any other content-moderation /
+    federated-guardrail shape falls through to a generic
     :class:`PolicyViolation` whose message names what was observed and says the
     shape is unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate``
     shape (docs/verified-apis.md §4), a **403 carrying no ``www-authenticate`` header** and matching
@@ -535,17 +674,31 @@ def classify(
     # Gateway PII policy: 403 + nested object, type == "pii_detected". Checked
     # BEFORE the 401/403 → auth rule because a PII block is not an auth failure.
     if error_type == "pii_detected":
-        message = _str_or_none(error_obj.get("message")) if error_obj else None
+        gateway_message = _str_or_none(error_obj.get("message")) if error_obj else None
+        spans = _pii_spans(gateway_message)
         return PIIDetected(
-            message or f"Request blocked: personally identifiable information detected ({status}).",
-            entities=_pii_entities(message),
+            _pii_summary(status, spans),
+            entities=[entity for entity, _start, _end in spans],
+            gateway_message=gateway_message,
             # remediation: PIIDetected's canonical class default (#182).
             **kw,
         )
 
+    # Agent Kill Switch: 403 + nested object, code == "agent_killed" (no `type`).
+    # docs/verified-apis.md §4 (#694). Keyed on the body code, not the status, and
+    # checked before the auth and generic-4xx rules: a killed agent is neither an
+    # auth failure nor an upstream mistake.
+    if error_obj is not None and error_obj.get("code") == "agent_killed":
+        message = _str_or_none(error_obj.get("message"))
+        return AgentKilled(
+            message or f"Agent blocked by an active kill switch ({status}).",
+            # remediation: AgentKilled's canonical class default (#182).
+            **kw,
+        )
+
     # Content-safety / guardrails policy: 403 + a vendor `...-action: reject`
-    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4).
-    # Azure verified LIVE 2026-09-22, Bedrock verified LIVE 2026-09-24 (#253/#568).
+    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4,
+    # #253/#568).
     # Checked before the 401/403 → auth rule because a moderation block is not an
     # auth failure. Keyed on the header, not the body, so a reject with an
     # unexpected or absent body is still caught.
@@ -566,8 +719,7 @@ def classify(
 
     # Regex Prompt Guard policy: 403 + a top-level `matched_patterns` list
     # (flat-string `error`, so NOT the nested upstream envelope; docs/verified-apis.md §4).
-    # Verified LIVE 2026-09-22 against ddk-injection-guard (#253); body matched
-    # the committed fixture byte-for-byte. Checked before the 401/403 → auth
+    # #253. Checked before the 401/403 → auth
     # rule so a deny-list block is not mis-typed as an auth failure.
     matched = body.get("matched_patterns") if body is not None else None
     if isinstance(matched, list):
@@ -636,6 +788,20 @@ def classify(
                 param=_str_or_none(error_obj.get("param")),
                 **kw,
             )
+        # Model-based routing could not resolve a bare model name on a
+        # multi-provider proxy: a flat-string ``error`` naming the model and
+        # asking for ``provider/model`` (docs/verified-apis.md §4, #825). Keyed on
+        # the gateway's own sentence, since the status and envelope match the
+        # unconfirmed fall-through below.
+        flat_error = _str_or_none(body.get("error")) if body is not None else None
+        unroutable = _MODEL_NOT_ROUTABLE_RE.search(flat_error) if flat_error else None
+        if unroutable is not None:
+            return ModelNotRoutable(
+                f"The gateway could not route the requested model ({status}): {flat_error}",
+                model=unroutable.group("model"),
+                # remediation: ModelNotRoutable's canonical class default.
+                **kw,
+            )
         # An unrecognised non-429 4xx with no nested provider envelope: a refusal
         # whose contract we cannot pin (content-moderation / federated-guardrail
         # shapes are still under-documented, #253). Surface it honestly — name what
@@ -684,9 +850,7 @@ def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     importing ``DonkeyConfig`` — it only reads a plain dict carried on the same
     object ``response.request`` returns. When the stamp is absent (a response not
     produced by our transport — e.g. a hand-built stock-client response), the
-    placeholder names are used directly, **not** ``Unverified.get()``, so reading
-    an id back never emits the verification discipline's unverified warning; that warning belongs at
-    injection time, in the transport.
+    default names from ``core/_verify`` are used.
 
     Returns ``(None, None)`` when the request is unavailable (httpx raises if it
     was never set on the response)."""
@@ -697,11 +861,11 @@ def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     headers = request.headers
     corr_name = (
         request.extensions.get("donkey_correlation_header")
-        or _verify.CORRELATION_ID_HEADER.placeholder
+        or _verify.CORRELATION_ID_HEADER
     )
     call_name = (
         request.extensions.get("donkey_call_id_header")
-        or _verify.CALL_ID_HEADER.placeholder
+        or _verify.CALL_ID_HEADER
     )
     return headers.get(corr_name), headers.get(call_name)
 
@@ -710,28 +874,51 @@ def _retry_after(response: httpx.Response) -> float | None:
     """Seconds until the caller may retry. Prefers the standard ``retry-after``
     (delta-seconds) header; falls back to the LLM token-rate-limit policy's
     ``x-token-reset`` header, which is captured in **milliseconds** (docs/verified-apis.md §4)."""
-    raw = response.headers.get("retry-after")
-    if raw is not None:
-        try:
-            return float(raw)
-        except ValueError:
-            pass  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
+    seconds = parse_retry_after(response.headers.get("retry-after"))
+    if seconds is not None:
+        return seconds
     reset_ms = response.headers.get("x-token-reset")
     if reset_ms is not None:
         try:
-            return float(reset_ms) / 1000.0
+            return max(0.0, float(reset_ms) / 1000.0)
         except ValueError:
             return None
     return None
 
 
+def parse_retry_after(raw: str | None) -> float | None:
+    """A ``Retry-After`` delta-seconds value, floored at 0, or ``None`` when it
+    is absent or not a number. The one parser behind both the transport's retry
+    sleep and an error's ``retry_after``: a negative value (e.g. ``"-1"``) means
+    "retry now", never a negative wait (#286, #815)."""
+    if raw is None:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
+
+
+# The model-based-routing rejection for a bare model name on a multi-provider
+# proxy (docs/verified-apis.md §4, #825). Live text: "Failed to parse model from
+# request: Model 'gpt-5-mini' is not in the known unique model map and multiple
+# providers are configured. Use 'provider/model' format."
+_MODEL_NOT_ROUTABLE_RE = re.compile(
+    r"Model '(?P<model>[^']*)' is not in the known unique model map"
+)
+
 _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
 
+#: One flagged PII entity: ``(entity type, start offset, end offset)``.
+_PiiSpan = tuple[str, int | None, int | None]
 
-def _pii_entities(message: str | None) -> list[str]:
-    """Best-effort extraction of the flagged PII entity types from the PII
-    policy's rejection message (a JSON-ish list of ``{"pii_type": "...", ...}``
-    objects; docs/verified-apis.md §4). Returns an empty list if none can be parsed.
+
+def _pii_spans(message: str | None) -> list[_PiiSpan]:
+    """Best-effort ``(entity type, start, end)`` for each entity the PII policy
+    flagged, parsed from its rejection message (a JSON list of ``{"pii_type",
+    "value", "start", "end"}`` objects; docs/verified-apis.md §4). The ``value``
+    is never read. Offsets are ``None`` when the list does not parse; an empty
+    list means no ``pii_type`` markers were found.
 
     Deliberately best-effort (#289): the LLM PII Detection policy documents only
     the ``{"error":{"message","type":"pii_detected"}}`` envelope, not a structured
@@ -741,16 +928,53 @@ def _pii_entities(message: str | None) -> list[str]:
     against a documented entity field if one lands (#253)."""
     if not message:
         return []
-    return _PII_TYPE_RE.findall(message)
+    bracket = message.find("[")
+    if bracket != -1:
+        try:
+            parsed = json.loads(message[bracket:])
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, list):
+            spans = [
+                (item["pii_type"], _int_or_none(item.get("start")), _int_or_none(item.get("end")))
+                for item in parsed
+                if isinstance(item, dict) and isinstance(item.get("pii_type"), str)
+            ]
+            if spans:
+                return spans
+    return [(entity, None, None) for entity in _PII_TYPE_RE.findall(message)]
+
+
+def _pii_summary(status: int, spans: list[_PiiSpan]) -> str:
+    """The :class:`PIIDetected` message: the entity types, their count and
+    offsets — never the flagged values the gateway echoes back."""
+    base = f"Request blocked: personally identifiable information detected ({status})"
+    if not spans:
+        return f"{base}."
+    parts = [
+        entity if start is None or end is None else f"{entity} at chars {start}-{end}"
+        for entity, start, end in spans
+    ]
+    noun = "entity" if len(spans) == 1 else "entities"
+    return (
+        f"{base}: {len(spans)} {noun} ({', '.join(parts)}). "
+        "Values withheld; the gateway's text is on .gateway_message."
+    )
+
+
+def _int_or_none(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _parse_json(response: httpx.Response) -> Any:
     """The response's parsed JSON body (of any shape — object, list, scalar), or
     ``None`` when the body is absent or not JSON. Never raises on the caller's
-    request path (verification discipline)."""
+    request path (verification discipline). An unread streamed body
+    (``ResponseNotRead``) is "absent" too: the transport reads a streamed refusal
+    before classifying it (#805), so this only guards a direct caller."""
     try:
         return response.json()
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, httpx.ResponseNotRead):
         return None
 
 
@@ -801,10 +1025,8 @@ def _code_str(value: Any) -> str | None:
 
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
-# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4).
-# Azure Content Safety verified LIVE 2026-09-22 against ddk-azure-content-safety
-# (#253); Amazon Bedrock Guardrails verified LIVE 2026-09-24 against
-# ddk-bedrock-guardrails (#568).
+# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
+# #253/#568).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
     (
         "x-llm-proxy-azure-content-safety-action",

@@ -13,6 +13,8 @@ the file is collected but its framework-dependent tests skip on the base path.
 
 from __future__ import annotations
 
+import sys
+
 import httpx
 import pytest
 
@@ -77,8 +79,10 @@ def test_typed_refusals_converts_openai_status_error_to_typed() -> None:
         with typed_refusals():
             raise err
 
-    # The framework error is preserved as the cause (raise ... from exc).
-    assert excinfo.value.__cause__ is err
+    # The framework error is kept on .framework_error, not chained: its message
+    # repeats the gateway text, which tracebacks would render.
+    assert excinfo.value.framework_error is err
+    assert excinfo.value.__cause__ is None
     assert "EMAIL" in excinfo.value.entities
 
 
@@ -124,7 +128,23 @@ async def test_refusal_inside_a_node_surfaces_typed_out_of_the_graph() -> None:
 
 # --- AC4: interrupt() and a typed refusal compose without swallowing ------------
 
+# On Python 3.10, ``interrupt()`` cannot run under ``graph.ainvoke()``, from an
+# async or a sync node: asyncio tasks only take an explicit context from 3.11,
+# so langgraph's ``get_config()`` never sees the run's config and raises
+# ``RuntimeError: Called get_config outside of a runnable context``. It takes no
+# config argument to pass through instead. This is upstream behaviour at every
+# langgraph from the extra's floor to 1.2.12 (#865, docs/verified-apis.md §8.2),
+# so the async test is an asserted exemption on 3.10 and the sync test below
+# proves the composition there.
+_ASYNC_INTERRUPT_NEEDS_311 = pytest.mark.xfail(
+    sys.version_info < (3, 11),
+    raises=RuntimeError,
+    strict=True,
+    reason="langgraph interrupt() under ainvoke() needs Python 3.11+ (#865)",
+)
 
+
+@_ASYNC_INTERRUPT_NEEDS_311
 async def test_interrupt_and_typed_refusal_compose() -> None:
     """A graph that pauses at ``interrupt()`` and then hits a refusal proves the
     two mechanisms don't swallow each other: the first invoke pauses cleanly
@@ -169,3 +189,49 @@ async def test_interrupt_and_typed_refusal_compose() -> None:
                 await graph.ainvoke(Command(resume="yes"), thread)
     finally:
         await fab.aclose()
+
+
+def test_interrupt_and_typed_refusal_compose_sync() -> None:
+    """The same composition through ``graph.invoke()``, which works on every
+    supported Python, 3.10 included (#865). The pause is read from the
+    checkpoint rather than an ``__interrupt__`` key, which older langgraph
+    releases omit from a sync ``invoke()`` result."""
+    pytest.importorskip("langchain_openai")
+    graph_mod = pytest.importorskip("langgraph.graph")
+    StateGraph, END = graph_mod.StateGraph, graph_mod.END
+    MemorySaver = pytest.importorskip("langgraph.checkpoint.memory").MemorySaver
+    types_mod = pytest.importorskip("langgraph.types")
+    interrupt, Command = types_mod.interrupt, types_mod.Command
+
+    fab = Donkey(_cfg())
+    model = fab.langgraph.chat_model("gpt-4o")
+
+    def gate(_state: dict) -> dict:
+        decision = interrupt("approve this run?")
+        return {"approved": decision}
+
+    def call_model(_state: dict) -> dict:
+        with typed_refusals():
+            model.invoke([("user", "hi")])
+        return {}
+
+    builder = StateGraph(dict)
+    builder.add_node("gate", gate)
+    builder.add_node("call_model", call_model)
+    builder.set_entry_point("gate")
+    builder.add_edge("gate", "call_model")
+    builder.add_edge("call_model", END)
+    graph = builder.compile(checkpointer=MemorySaver())
+    thread = {"configurable": {"thread_id": "compose-sync-1"}}
+
+    try:
+        # First invoke pauses at the interrupt — no refusal surfaces yet.
+        graph.invoke({}, thread)
+        assert graph.get_state(thread).next == ("gate",)
+
+        # Resume: the model node now runs and the armed refusal comes back typed.
+        with fab.simulate(PIIDetected):
+            with pytest.raises(PIIDetected):
+                graph.invoke(Command(resume="yes"), thread)
+    finally:
+        fab.close()

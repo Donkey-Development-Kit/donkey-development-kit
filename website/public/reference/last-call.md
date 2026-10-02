@@ -4,7 +4,10 @@
 model call** in the current context. It is an immutable snapshot: every governed
 response replaces the record wholesale rather than mutating it, so a reader
 always sees one internally-consistent call. It is contextvar-scoped, so a
-fan-out of concurrent calls each reads its own record.
+fan-out of concurrent calls each reads its own record. When a framework sends a
+single call from a task of its own, as LangChain's `ainvoke` does, the
+`donkey.langgraph(...)` model still brings that call's record back to the caller
+(see [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md#which-provider-served-this)).
 
 ```python
 donkey = Donkey.from_env()
@@ -19,7 +22,7 @@ r.total_tokens    # 1730
 Every response-derived field defaults to `None`. `None` always means **not
 observed** — never `0`, and never a fabricated value. A count of `0` is a real
 observation (an empty completion) and is distinct from `None` (no usage was
-reported at all). See [Verification discipline](https://donkey-development-kit.github.io/donkey-development-kit/concepts/verification) for why
+reported at all). See [Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline) for why
 the SDK never guesses a value it did not see on the wire.
 
 ## Observability status
@@ -36,10 +39,11 @@ even on a cold read.
 | `surface` | `str \| None` | For `UNAVAILABLE`, the adapter surface(s) that cannot observe (e.g. `"adk"`); else `None`. |
 
   `donkey.last_call` is populated only when the governed response passes through
-  the SDK's shared httpx client. Adapters that route outside that response path
-  (LiteLLM-backed, or `default_headers`-only) report `UNAVAILABLE` with the
-  surface named. See [When `last_call` is
-  unavailable](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#when-last_call-is-unavailable).
+  the SDK's shared httpx client. CrewAI, whose framework owns the transport,
+  routes outside it. A cold read on a `Donkey` that resolved only CrewAI,
+  LlamaIndex, MS Agent Framework or ADK's `model()` reports `UNAVAILABLE` with
+  the surface named. See
+  [When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
 
 ## Gateway identity
 
@@ -48,7 +52,7 @@ for quoting to a provider's support team.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id`). `None` when the gateway forwarded none. |
+| `request_id` | `str \| None` | The upstream provider's own request id, passed through by the gateway (`x-request-id` / `x-amzn-requestid` / `apim-request-id` / Anthropic's `request-id`). `None` when the gateway forwarded none. |
 | `api_instance_id` | `str \| None` | The API Manager instance id that served the call. |
 | `environment_id` | `str \| None` | The Anypoint environment id that served the call. |
 
@@ -57,7 +61,9 @@ for quoting to a provider's support team.
 What the gateway *did* with the request — which provider and model served it, how
 it routed, and whether that was a failover. Read live off the shared transport,
 so the raw `donkey.llm.client()` path gets them with no framework required. See
-[Routing & resilience](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#routing--resilience) for the operational story.
+[Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience) for the operational story,
+or [Which provider served this?](https://docs.donkey-kit.dev/frameworks/langgraph.md#which-provider-served-this)
+for why a LangGraph message's own `model_provider` field disagrees with these.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -82,7 +88,7 @@ Each is `None` (never `0`) when unobserved or absent.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call. |
+| `input_tokens` | `int \| None` | Prompt/input tokens billed for this call, as the provider reports them. OpenAI's count includes `cached_tokens`. Anthropic's excludes both `cached_tokens` and `cache_write_tokens`. |
 | `output_tokens` | `int \| None` | Completion/output tokens produced (includes `reasoning_tokens`). |
 | `total_tokens` | `int \| None` | Total tokens the gateway attributed to this call. |
 | `cached_tokens` | `int \| None` | Input tokens served from the prompt cache (billed at the cached rate). |
@@ -93,13 +99,13 @@ Each is `None` (never `0`) when unobserved or absent.
 
 When the proxy is fronted by the Anypoint **semantic-caching** policy, the
 gateway reports what it did with each request. Steer it per block with
-[`donkey.cache(...)`](https://donkey-development-kit.github.io/donkey-development-kit/budget.md#semantic-cache-steering); read the outcome here.
+[`donkey.cache(...)`](https://docs.donkey-kit.dev/budget.md#semantic-cache-steering); read the outcome here.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `cache_status` | `str \| None` | What the caching policy did (`x-semantic-cache-status`): `"hit"` / `"miss"` / `"bypass"` / `"no-store"`. `None` on a proxy with no caching policy (the header is absent) or a simulated response. |
 | `cache_score` | `float \| None` | On a cache **hit**, the similarity score of the matched entry (`x-semantic-cache-score`). `None` on miss/bypass/no-store (the header is hit-only) or when the score did not parse. |
-| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) (a replay is no fresh spend). |
+| `cache_hit` | `bool` | `True` iff `cache_status == "hit"` — a verbatim replay with no provider round-trip. A hit never advances the [budget](https://docs.donkey-kit.dev/budget.md) (a replay is no fresh spend). |
 
   A cache **hit** replays a stored completion byte-for-byte, including its
   original `usage` block — so the token counts above describe the *cached*
@@ -115,4 +121,4 @@ for each governed call, under the pinned `gen_ai.*` keys and the stable
 `donkey.routing.matched_topic` / `donkey.routing.score`, and — on a cached
 proxy — `donkey.cache.status` / `donkey.cache.score`, alongside the usage
 counts. A field that is `None` is omitted from the span entirely. See
-[Telemetry](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) for the full attribute list.
+[Telemetry](https://docs.donkey-kit.dev/telemetry.md) for the full attribute list.

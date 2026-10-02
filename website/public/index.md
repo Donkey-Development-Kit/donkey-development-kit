@@ -38,8 +38,8 @@ world into your agent code:
   the agent can redact and continue instead of retrying;
 - the remaining token budget is an object the agent can **pace** against,
   instead of a limit it discovers by failing;
-- every call carries a correlation ID and cost tags, and emits an
-  OpenTelemetry span that lines up with the gateway's own audit trail;
+- every call carries a correlation ID and emits an OpenTelemetry span, tagged
+  with your cost dimensions, that lines up with the gateway's own audit trail;
 - and you can rehearse all of it on your laptop, against a local simulator,
   before an agent ever meets production policy.
 
@@ -72,13 +72,14 @@ agents in production.
   an official Salesforce or MuleSoft product** and is not supported by
   Salesforce. "Agent Fabric", "Anypoint", "MuleSoft" and "Omni Gateway" are
   Salesforce trademarks; DDK uses them only to describe the platform it
-  connects to. Meet the people behind it on the [Team](https://donkey-development-kit.github.io/donkey-development-kit/community/team.md) page.
+  connects to. Meet the people behind it on the [Team](https://docs.donkey-kit.dev/community/team.md) page.
 
 ## Architecture
 
-DDK sits inside your agent process and speaks to the platform on three
-fronts: governed calls through the gateway, assets published to the control
-plane, and telemetry to your observability stack.
+DDK sits inside your agent process. Today it speaks to the platform on two
+fronts: governed calls through the gateway, and telemetry to your
+observability stack. A third front, publishing assets to the control plane,
+is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
 
 **The AI control plane** is where the platform team manages the AI estate:
 the agent registry, cost control, gateway federation, and governance and
@@ -108,9 +109,10 @@ framework client your agent already uses and adds:
   decision, policy type, budget and correlation ID, exported to whatever
   observability stack you run (Grafana, Datadog, Jaeger, and others) and
   joined to the gateway's audit record through the correlation ID.
-- **Registry and agent-to-agent** — scanning your code to publish tools and
-  agent cards to the control plane, and serving or exposing your agent to
-  other agents over A2A.
+- **Registry and agent-to-agent** Roadmap —
+  planned, not shipped: scanning your code to publish tools and agent cards
+  to the control plane, discovering governed MCP tools, and serving or
+  exposing your agent to other agents over A2A.
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK
@@ -223,7 +225,7 @@ curl "${DONKEY_LLM_PROXY_URL}chat/completions" \
 `donkey.llamaindex.llm("gpt-4o")` returns a real `OpenAILike`. Hand them
 straight to `create_agent`, a LlamaIndex query engine or a Strands `Agent`.
 And if you ever want to drop DDK, you eject to three lines of native
-constructor code — every [framework page](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) shows exactly which
+constructor code — every [framework page](https://docs.donkey-kit.dev/frameworks.md) shows exactly which
 three.
 
 A stock client with a `base_url` and two headers can reach the gateway. What

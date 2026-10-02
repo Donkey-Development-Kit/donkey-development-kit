@@ -71,7 +71,7 @@ Run context
     Configuration for 'llm' is incomplete. Missing:
       - llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)
       - llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)
-    Set them via kwargs, environment variables, or .donkey-kit.toml.
+    Set them via kwargs, environment variables, or .donkey-kit.toml (secrets in .donkey-kit.local.toml).
 
   Two missing fields, one error, each naming the environment variable that sets it. And
   note the LLM proxy credential is validated separately from the Anypoint control-plane
@@ -141,6 +141,7 @@ Run context
     default_headers.client_id      <redacted> (36 chars)
     default_headers.client_secret  <redacted> (40 chars)
     http_async_client              <donkey_kit.core.transport.DonkeyAsyncClient object at 0x10aac2a50>
+    http_client                    <donkey_kit.core.transport.DonkeyClient object at 0x10aac2c10>
     max_retries                    0
     use_responses_api              True
 
@@ -148,19 +149,27 @@ Run context
   own constructor. Bringing a framework up to the deep bar is demand-driven and happens
   one at a time, so this is not a stepping stone that everything is queued behind — it
   is the supported surface.
-  LangGraph is the only adapter held to the conformance bar, and it sets
-  use_responses_api=True so ChatOpenAI calls the live-verified /responses route rather
-  than the unverified /chat/completions default.
+  LangGraph is the only adapter held to the conformance bar. It sets
+  use_responses_api=True so ChatOpenAI calls /responses rather than its
+  /chat/completions default: /responses is the raw client's route and the only one the
+  local simulator serves.
 
 What is and is not verified here
 ────────────────────────────────
   The proxy contract these objects are configured against is live-verified: the base URL
-  shape, the credential header pair, the rejection shapes. The exact framework class
-  names and constructor kwargs are not — they are checked against installed packages by
-  a nightly matrix rather than asserted from documentation.
-  Where a class name cannot be confirmed, the adapter raises 'blocked on verification'
-  rather than guessing. A guessed class name that fails on a developer's first import
-  costs more than the missing adapter.
+  shape, the credential header pair, the rejection shapes. The adapters themselves are
+  held to three bars (docs/verified-apis.md §8):
+  • Conformance-tested against the simulator: the raw client and LangGraph.
+  • Signature-confirmed offline: every other adapter, ADK's model() included. The SDK's
+    scripts/verify_frameworks.py builds each native object against the installed
+    framework; Agent Framework's model= kwarg (not model_id) is confirmed that way
+    against 1.19.0.
+  • Live-verified: ADK's gemini(), through a Format=Gemini proxy.
+
+  The adapters build the framework's native object directly. They refuse with 'blocked
+  on verification' only when the installed framework version lacks the class or field
+  the adapter depends on: an Agent Framework class rename, or ADK's gemini() before
+  google-adk 2.4.
 
 ────────────────────────────────────────────────────────────────────────────────────────
 ```
@@ -212,17 +221,20 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 
   `donkey.openai_agents` is the OpenAI Agents SDK adapter; `donkey.openai()` is
   the raw OpenAI client factory. The LangGraph adapter sets
-  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. Where
-  an adapter cannot confirm a framework's class name or constructor, it raises
-  "blocked on verification" rather than guessing.
+  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. The
+  adapters build the native object directly. They refuse with "blocked on
+  verification" only when the installed framework version lacks the class or
+  field the adapter depends on (for example, `gemini()` on google-adk older than
+  2.4). See [Model access](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) for each adapter's
+  verification status.
 
 `resolve()` capabilities are heuristics derived from the model id, not a
 governed catalog. The gateway returns 404 for `GET /models` because
 model-based routing only routes requests that already carry `model` in the
 body. When a live call fails — wrong URL, wrong credentials, or a model the
-allow-list does not include — [`donkey doctor`](https://donkey-development-kit.github.io/donkey-development-kit/cli.md) tells those apart.
+allow-list does not include — [`donkey doctor`](https://docs.donkey-kit.dev/cli.md) tells those apart.
 
-**Learn more:** [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) · [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [CLI & decorators](https://donkey-development-kit.github.io/donkey-development-kit/cli.md)
+**Learn more:** [Model access](https://docs.donkey-kit.dev/frameworks.md) · [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [CLI & decorators](https://docs.donkey-kit.dev/cli.md)
 
 **Source:**
 [narrative demo 07](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/07_model_handles) ·

@@ -8,13 +8,21 @@ is needed. Needs only ``[dev]``.
 
 from __future__ import annotations
 
+import os
+import socket
+import warnings
 from datetime import timedelta
+from pathlib import Path
 
+import httpx
 import pytest
 
+from donkey_kit.core._verify import UnverifiedValueWarning
 from donkey_kit.core.budget import Budget
+from donkey_kit.core.config import ConfigWarning
 from donkey_kit.core.errors import (
     AuthError,
+    ConfigError,
     GatewayUnavailable,
     PIIDetected,
     UpstreamRequestError,
@@ -127,11 +135,213 @@ def test_non_model_typed_error_leaves_model_ok_and_notes_it(llm_env: None) -> No
     assert _by_name(checks, "policy").level is Level.INFO
 
 
+# --- the live probe's error bridge (#813) --------------------------------------
+
+
+def test_live_probe_reports_the_transports_own_outage() -> None:
+    """Through the OpenAI client the transport's GatewayUnavailable arrives only
+    on ``APIConnectionError.__cause__``; the probe must surface that instance, not
+    rebuild a generic one from the wrapper."""
+    pytest.importorskip("openai")
+    from donkey_kit.core.config import DonkeyConfig
+
+    # A just-released loopback port: nothing listens, so no network is touched.
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    cfg = DonkeyConfig(
+        llm_proxy_url=f"http://127.0.0.1:{port}/",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="secret",
+        timeout_s=2.0,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnverifiedValueWarning)
+        result = doctor._live_probe(cfg, "gpt-4o")
+
+    err = result.error
+    assert isinstance(err, GatewayUnavailable)
+    assert isinstance(err.__cause__, httpx.TransportError)  # not the SDK's wrapper
+    assert err.base_url == f"http://127.0.0.1:{port}"
+    assert err.call_id is not None  # the ids the transport sent, carried through
+    gw = _by_name(doctor._probe_checks(result), "gateway")
+    assert gw.level is Level.FAIL
+
+
+def test_bridge_prefers_a_typed_cause_over_an_outage_guess() -> None:
+    """A typed error the transport raised (here a closed-client ConfigError) is
+    reported as itself, never misreported as the gateway being unreachable."""
+    cause = ConfigError("closed", remediation="make a new Donkey")
+    wrapper = RuntimeError("Connection error.")
+    wrapper.__cause__ = cause
+    cfg = object.__new__(doctor.DonkeyConfig)
+
+    assert doctor._bridge(wrapper, cfg) is cause
+
+
 def test_clean_success_is_all_ok(llm_env: None) -> None:
     checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
     for name in ("config", "gateway", "credentials", "model"):
         assert _by_name(checks, name).level is Level.OK
     assert not doctor.has_failure(checks)
+
+
+# --- endpoint sources + binding ------------------------------------------------
+
+
+@pytest.fixture
+def clean_project(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """An empty project cwd, an empty user config dir, and no ANYPOINT_*/DONKEY_* env."""
+    for var in list(os.environ):
+        if var.startswith(("ANYPOINT_", "DONKEY_")):
+            monkeypatch.delenv(var)
+    project = tmp_path / "project"
+    project.mkdir()
+    (tmp_path / "xdg").mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    return project
+
+
+def test_endpoint_lines_name_host_and_source(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (clean_project / ".donkey-kit.toml").write_text(
+        '[donkey]\nllm_proxy_url = "https://llm.example.test/proxy/"\n'
+    )
+    (clean_project / ".donkey-kit.local.toml").write_text(
+        '[donkey]\nllm_proxy_client_id = "cid"\nllm_proxy_client_secret = "secret"\n'
+    )
+
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    assert _by_name(checks, "llm endpoint").detail == "llm.example.test (project file)"
+    assert _by_name(checks, "control plane").detail == "anypoint.mulesoft.com (default)"
+    assert not doctor.has_failure(checks)
+
+
+@pytest.mark.parametrize(
+    ("where", "label"),
+    [("env", "env"), ("local", "local overlay"), ("user", "user file")],
+)
+def test_endpoint_source_labels(
+    clean_project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    where: str,
+    label: str,
+) -> None:
+    url = "https://llm.example.test/proxy/"
+    if where == "env":
+        monkeypatch.setenv("DONKEY_LLM_PROXY_URL", url)
+    elif where == "local":
+        (clean_project / ".donkey-kit.local.toml").write_text(
+            f'[donkey]\nllm_proxy_url = "{url}"\n'
+        )
+    else:
+        (tmp_path / "xdg" / ".donkey-kit.toml").write_text(
+            f'[donkey]\nllm_proxy_url = "{url}"\n'
+        )
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    assert f"({label})" in _by_name(checks, "llm endpoint").detail
+
+
+def test_project_url_with_env_credentials_fails_config_without_probing(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (clean_project / ".donkey-kit.toml").write_text(
+        '[donkey]\nllm_proxy_url = "https://llm.example.test/proxy/"\n'
+    )
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    def _boom(_c: object, _m: object) -> ProbeResult:
+        raise AssertionError("no request may be sent to a project-file host")
+
+    checks = run_diagnostics("gpt-4o", probe=_boom)
+
+    config = _by_name(checks, "config")
+    assert config.level is Level.FAIL
+    assert "llm.example.test" in (config.remediation or "")
+    assert str(clean_project / ".donkey-kit.toml") in (config.remediation or "")
+    assert "project file" in _by_name(checks, "llm endpoint").detail
+    assert doctor.has_failure(checks)
+
+
+def test_unused_control_plane_binding_is_reported_but_does_not_fail(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """doctor probes the LLM proxy only; a control-plane endpoint problem is
+    shown with its remediation but does not fail the LLM diagnosis."""
+    (clean_project / ".donkey-kit.toml").write_text(
+        '[donkey]\nbase_url = "https://cp.example.test"\n'
+    )
+    monkeypatch.setenv("ANYPOINT_CLIENT_ID", "cid")
+    monkeypatch.setenv("ANYPOINT_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    cp = _by_name(checks, "control plane")
+    assert "cp.example.test (project file)" in cp.detail
+    assert cp.level is not Level.FAIL
+    assert "DONKEY_TRUST_PROJECT_CONFIG" in (cp.remediation or "")
+    assert not doctor.has_failure(checks)
+
+
+def test_project_loopback_control_plane_shows_binding_remediation(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (clean_project / ".donkey-kit.toml").write_text(
+        '[donkey]\nbase_url = "http://127.0.0.1:8081"\n'
+    )
+    monkeypatch.setenv("ANYPOINT_CLIENT_ID", "cid")
+    monkeypatch.setenv("ANYPOINT_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    cp = _by_name(checks, "control plane")
+    assert "127.0.0.1 (project file)" in cp.detail
+    assert "DONKEY_TRUST_PROJECT_CONFIG" in (cp.remediation or "")
+
+
+@pytest.mark.parametrize("value", ["1", "true"])
+def test_allow_http_switch_is_shown_when_on(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", value)
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "http://llm.example.test/proxy/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    with pytest.warns(ConfigWarning):
+        checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    line = _by_name(checks, "plain http")
+    assert line.level is Level.INFO
+    assert line.detail == f"allowed to non-loopback hosts (DONKEY_ALLOW_HTTP={value} in env)"
+    assert _by_name(checks, "config").level is Level.OK
+
+
+def test_allow_http_line_is_absent_when_off(
+    clean_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/proxy/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(None, Budget())))
+
+    assert "plain http" not in [c.name for c in checks]
 
 
 # --- budget staleness (AC3) ---------------------------------------------------

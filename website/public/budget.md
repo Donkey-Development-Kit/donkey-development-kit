@@ -93,7 +93,7 @@ peak — rather than explaining an outage afterwards.
 This is why `observed_at` is part of the public surface: a dashboard reading
 `remaining` without checking `observed_at` is reporting history, not state.
 A budget-query endpoint on the gateway would make this object live rather than
-last-known-good — see [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+last-known-good — see [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
 
 ## Semantic cache steering
 
@@ -103,7 +103,7 @@ When the proxy is fronted by the Anypoint **semantic-caching** policy, the
 gateway can answer a request from a stored completion when a semantically
 similar prompt was seen before — no provider round-trip, no fresh token spend.
 DDK caches nothing and computes no embeddings itself (that stays on the
-[do-not-build](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) list); it lets you **steer** the gateway's cache per
+[do-not-build](https://docs.donkey-kit.dev/roadmap.md) list); it lets you **steer** the gateway's cache per
 block and **surfaces** the outcome.
 
 ```python
@@ -117,7 +117,7 @@ async with donkey.cache(threshold=0.9, ttl=60):
 ```
 
 `donkey.cache(...)` is a dual sync/async context manager — like
-[`donkey.run(...)`](https://donkey-development-kit.github.io/donkey-development-kit/identity.md), the controls bind to a context variable, so they
+[`donkey.run(...)`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids), the controls bind to a context variable, so they
 reach every governed call in the block (including calls on framework-spawned
 `asyncio` tasks) with no threading through framework state. The five controls:
 
@@ -129,14 +129,19 @@ reach every governed call in the block (including calls on framework-spawned
 | `threshold` | `float` | Override the similarity threshold, in `[0.0, 1.0]`. |
 | `principal_id` | `str` | Override the id the similarity filter partitions on. |
 
+The controls travel as `x-cache-*` request headers on model requests to the
+LLM proxy only. Control-plane requests inside the block (the connected-app
+token request, registry and tool calls) never carry them, so `principal_id`
+doesn't leave the data plane.
+
 An invalid control (a negative `ttl`, a `threshold` outside `[0.0, 1.0]`, a
 `principal_id` with a control character) raises `ConfigError` **at the call
 site**, not on the first request. The **outcome** of each call is on
-[`donkey.last_call.cache_status`](https://donkey-development-kit.github.io/donkey-development-kit/reference/last-call.md#semantic-cache) /
+[`donkey.last_call.cache_status`](https://docs.donkey-kit.dev/reference/last-call.md#semantic-cache) /
 `.cache_score` and the OTel span. The same
-[degradation](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) as `donkey.run(...)` applies: a `connection_kwargs()`
-/ LiteLLM-backed adapter that does not route through the shared transport does
-not see the context variable, so its calls are not steered.
+[degradation](https://docs.donkey-kit.dev/frameworks.md) as `donkey.run(...)` applies: a
+`connection_kwargs()`-only adapter that does not route through the shared
+transport does not see the context variable, so its calls are not steered.
 
 ## Behaviour guarantees
 

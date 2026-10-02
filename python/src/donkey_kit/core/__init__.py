@@ -11,14 +11,18 @@ from .cachecontrol import CacheControls, CacheScope, cache_scope, current_cache_
 from .config import DonkeyConfig, Region
 from .cost import CostTags
 from .errors import (
+    AgentKilled,
     AuthError,
     BudgetReserveReached,
     ConfigError,
     ContentSafetyBlocked,
     DonkeyError,
+    GatewayUnavailable,
     GovernanceDrift,
+    ModelNotRoutable,
     ModelSubstituted,
     PIIDetected,
+    PlatformTeamOnly,
     PolicyViolation,
     PromptInjectionBlocked,
     ProvisioningError,
@@ -27,6 +31,7 @@ from .errors import (
     TokenBudgetExceeded,
     ToolInvocationError,
     UpstreamModelError,
+    UpstreamRequestError,
     classify,
 )
 from .telemetry import (
@@ -37,7 +42,9 @@ from .telemetry import (
 )
 from .transport import (
     DonkeyAsyncClient,
+    DonkeyAsyncClientView,
     DonkeyClient,
+    DonkeyClientView,
     attribution_headers,
     build_http_client,
     build_sync_http_client,
@@ -45,6 +52,7 @@ from .transport import (
 )
 
 __all__ = [
+    "AgentKilled",
     "AnypointConnectedApp",
     "AuthError",
     "AuthProvider",
@@ -57,12 +65,17 @@ __all__ = [
     "ContentSafetyBlocked",
     "CostTags",
     "DonkeyAsyncClient",
+    "DonkeyAsyncClientView",
     "DonkeyClient",
+    "DonkeyClientView",
     "DonkeyConfig",
     "DonkeyError",
+    "GatewayUnavailable",
     "GovernanceDrift",
+    "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
+    "PlatformTeamOnly",
     "PolicyViolation",
     "PromptInjectionBlocked",
     "ProvisioningError",
@@ -74,6 +87,7 @@ __all__ = [
     "TokenBudgetExceeded",
     "ToolInvocationError",
     "UpstreamModelError",
+    "UpstreamRequestError",
     "attribution_headers",
     "build_http_client",
     "build_sync_http_client",

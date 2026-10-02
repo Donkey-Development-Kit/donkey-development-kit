@@ -19,16 +19,17 @@ from pathlib import Path
 
 try:
     import typer
-except ImportError:  # pragma: no cover - install-time guidance
-    print(
-        'The CLI needs the [cli] extra. Install it with:\n'
-        '    pip install "donkey-kit[cli]"',
-        file=sys.stderr,
-    )
-    raise SystemExit(1) from None
+except ImportError as exc:
+    # A curated ImportError, not SystemExit: importing this module must not
+    # kill the interpreter (test collection, docs tooling), #811.
+    raise ImportError(
+        'The donkey CLI needs the [cli] extra. Install it with:\n'
+        '    pip install "donkey-kit[cli]"'
+    ) from exc
 
-from ..core.config import _TOML_NAME, DonkeyConfig
-from ..core.errors import ConfigError, DonkeyError
+from ..core.config import _LOCAL_TOML_NAME, _TOML_NAME, TRUST_PROJECT_CONFIG_ENV, DonkeyConfig
+from ..core.endpoints import ALLOW_HTTP_ENV
+from ..core.errors import DonkeyError
 from .spec import DonkeySpec
 
 app = typer.Typer(
@@ -41,17 +42,41 @@ app = typer.Typer(
 def _global(
     ctx: typer.Context,
     config: Path | None = typer.Option(
-        None, "--config", metavar="PATH", help=f"Path to {_TOML_NAME} (default: cwd)."
+        None,
+        "--config",
+        metavar="PATH",
+        help=f"Where `init` writes {_TOML_NAME} (default: cwd). init only.",
     ),
     env: str | None = typer.Option(
-        None, "--env", metavar="NAME", help="Anypoint environment override (e.g. Sandbox)."
+        None,
+        "--env",
+        metavar="NAME",
+        help="Anypoint environment `init` writes (e.g. Sandbox). init only.",
     ),
     as_json: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON where the command supports it."
     ),
 ) -> None:
-    """Global flags shared by every command (provisioning-as-code). Precede the subcommand:
-    ``donkey --json init``, ``donkey --config ./cfg.toml doctor``."""
+    """Global flags. Precede the subcommand: ``donkey --json init``,
+    ``donkey --config ./cfg.toml init``.
+
+    ``--config`` and ``--env`` only apply to ``init``. Any other command
+    resolves config from env and the working directory's files, so it rejects
+    them rather than silently diagnosing a different configuration (#811).
+    Pointing the loader at an explicit file is #727."""
+    command = ctx.invoked_subcommand
+    if command != "init":
+        given = [flag for flag, value in (("--config", config), ("--env", env)) if value]
+        if given:
+            typer.secho(
+                f"{' and '.join(given)} only apply to `donkey init`; `donkey {command}` "
+                "resolves config from environment variables and the working directory's "
+                f"{_TOML_NAME} / {_LOCAL_TOML_NAME}. Set ANYPOINT_ENV or run from the "
+                "directory holding the config file instead.",
+                fg="red",
+                err=True,
+            )
+            raise typer.Exit(2)
     ctx.obj = {"config": config, "env": env, "json": as_json}
 
 
@@ -156,8 +181,8 @@ _INIT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 # Written NEVER — as commented placeholders only. A committed config file is
-# the wrong home for a secret (config resolution); these belong in env vars or a gitignored
-# .donkey-kit.local.toml.
+# the wrong home for a secret (config resolution); these belong in a gitignored
+# .donkey-kit.local.toml (which the SDK overlays on this file) or in env vars.
 _SECRET_FIELDS: tuple[tuple[str, str], ...] = (
     ("client_secret", "ANYPOINT_CLIENT_SECRET"),
     ("llm_proxy_client_secret", "DONKEY_LLM_PROXY_CLIENT_SECRET"),
@@ -173,18 +198,14 @@ def _toml_str(value: str) -> str:
 
 def _collect_missing(config: DonkeyConfig) -> list[str]:
     """Every missing required field across BOTH capabilities, in one list —
-    reusing ``DonkeyConfig.validated`` as the single source of truth for what
-    is required (config resolution), rather than duplicating the field set here."""
-    missing: list[str] = []
-    for need in ("control_plane", "llm"):
-        try:
-            config.validated(need=need)
-        except ConfigError as exc:
-            for line in str(exc).splitlines():
-                stripped = line.strip()
-                if stripped.startswith("- "):
-                    missing.append(stripped[2:])
-    return missing
+    reusing ``DonkeyConfig.missing_fields`` (what ``validated`` reports) as the
+    single source of truth for what is required (config resolution), rather than
+    duplicating the field set here."""
+    return [
+        item
+        for need in ("control_plane", "llm")
+        for item in config.missing_fields(need=need)
+    ]
 
 
 def _render_toml(config: DonkeyConfig, missing: list[str]) -> str:
@@ -192,14 +213,25 @@ def _render_toml(config: DonkeyConfig, missing: list[str]) -> str:
     values. No dependency on a TOML *writer*; the reader (`tomllib`) is enough."""
     lines: list[str] = [
         f"# {_TOML_NAME} — generated by `donkey init` from your current environment.",
-        "# Review before committing. Resolution order at runtime: kwargs → env →",
-        "# this file → defaults (config resolution).",
+        "# Review before committing. Resolution order at runtime: values set in",
+        f"# code → env → {_LOCAL_TOML_NAME} → this file → defaults (config resolution).",
         "#",
-        "# SECRETS ARE NEVER WRITTEN HERE. Provide them via environment variables",
-        "# (or a gitignored .donkey-kit.local.toml):",
+        f"# SECRETS ARE NEVER WRITTEN HERE. Put them in a gitignored {_LOCAL_TOML_NAME}",
+        "# next to this file (same [donkey] table), or in environment variables:",
     ]
     for field, envvar in _SECRET_FIELDS:
         lines.append(f"#   - {field:<24} → env {envvar}")
+    lines += [
+        "#",
+        "# A base_url or llm_proxy_url set here (localhost included) only receives",
+        f"# credentials from this file or {_LOCAL_TOML_NAME}. If your credentials are",
+        "# in environment variables, set the URL there too (ANYPOINT_BASE_URL /",
+        f"# DONKEY_LLM_PROXY_URL), or set {TRUST_PROJECT_CONFIG_ENV}=1 to trust this",
+        "# directory's config files.",
+        "#",
+        "# URLs must use https://. Plain http:// is accepted for localhost; for other",
+        f"# hosts only with {ALLOW_HTTP_ENV}=1 in the environment (not in this file).",
+    ]
     if missing:
         lines += [
             "#",
@@ -449,7 +481,9 @@ def doctor(
         raise typer.Exit(1)
 
 
-def main() -> None:  # pragma: no cover
+def main() -> None:
+    """The ``donkey`` console script. A :class:`DonkeyError` any command lets
+    escape exits 1 with its message, never a traceback (#811)."""
     try:
         app()
     except DonkeyError as exc:

@@ -3,7 +3,7 @@ description: Governed by the gateway, understood by your code. DDK brings Agent 
 ---
 
 import { Callout, Tabs } from 'nextra/components'
-import { Card, CardGrid, Figure, Hero } from '../components'
+import { Badge, Card, CardGrid, Figure, Hero } from '../components'
 
 <Hero
   eyebrow="Open-source SDK for Agent Fabric"
@@ -56,8 +56,8 @@ world into your agent code:
   the agent can redact and continue instead of retrying;
 - the remaining token budget is an object the agent can **pace** against,
   instead of a limit it discovers by failing;
-- every call carries a correlation ID and cost tags, and emits an
-  OpenTelemetry span that lines up with the gateway's own audit trail;
+- every call carries a correlation ID and emits an OpenTelemetry span, tagged
+  with your cost dimensions, that lines up with the gateway's own audit trail;
 - and you can rehearse all of it on your laptop, against a local simulator,
   before an agent ever meets production policy.
 
@@ -98,13 +98,14 @@ agents in production.
 
 ## Architecture
 
-DDK sits inside your agent process and speaks to the platform on three
-fronts: governed calls through the gateway, assets published to the control
-plane, and telemetry to your observability stack.
+DDK sits inside your agent process. Today it speaks to the platform on two
+fronts: governed calls through the gateway, and telemetry to your
+observability stack. A third front, publishing assets to the control plane,
+is on the [Roadmap](/roadmap).
 
 <Figure
   src="/img/gateway-sdk-architecture.jpg"
-  alt="Architecture: the AI Control Plane (agent registry, cost control, gateway federation, govern and observe) is connected to the Omni Gateway, which fronts APIs, MCP, LLM and agent traffic with policies and enforcement — auth and identity, token budgets and rate limits, PII detection, content safety and guardrails, model routing and fallback, audit trails, contract drift and tool-poisoning checks — and manages upstream APIs, MCP servers, LLM providers and AI apps. DDK, inside the agent, makes governed calls and receives typed refusals, scans code and publishes assets to the control plane, serves and exposes A2A agents, and emits OpenTelemetry spans to the observability stack."
+  alt="Architecture: the AI Control Plane (agent registry, cost control, gateway federation, govern and observe) is connected to the Omni Gateway, which fronts APIs, MCP, LLM and agent traffic with policies and enforcement — auth and identity, token budgets and rate limits, PII detection, content safety and guardrails, model routing and fallback, audit trails, contract drift and tool-poisoning checks — and manages upstream APIs, MCP servers, LLM providers and AI apps. DDK, inside the agent, makes governed calls and receives typed refusals and emits OpenTelemetry spans to the observability stack; scanning code and publishing assets to the control plane, and serving and exposing A2A agents, are on the roadmap."
   width={1800}
   height={1012}
 />
@@ -137,9 +138,10 @@ framework client your agent already uses and adds:
   decision, policy type, budget and correlation ID, exported to whatever
   observability stack you run (Grafana, Datadog, Jaeger, and others) and
   joined to the gateway's audit record through the correlation ID.
-- **Registry and agent-to-agent** — scanning your code to publish tools and
-  agent cards to the control plane, and serving or exposing your agent to
-  other agents over A2A.
+- **Registry and agent-to-agent** <Badge tone="roadmap">Roadmap</Badge> —
+  planned, not shipped: scanning your code to publish tools and agent cards
+  to the control plane, discovering governed MCP tools, and serving or
+  exposing your agent to other agents over A2A.
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK

@@ -9,7 +9,7 @@ import { Card, CardGrid } from '../../components'
 
 DDK is open source under the Apache-2.0 licence, and contributions of every
 size are welcome. This page is the short version; the full runbook is
-[`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/CONTRIBUTING.md)
+[`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/CONTRIBUTING.md)
 in the repository.
 
 ## Ways to help
@@ -22,7 +22,7 @@ in the repository.
   <Card title="Pick up a good first issue" href="https://github.com/Donkey-Development-Kit/donkey-development-kit/labels/good%20first%20issue" icon="★">
     Small, well-scoped issues that are a good way into the codebase.
   </Card>
-  <Card title="Improve the docs" href="https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/website" icon="✎">
+  <Card title="Improve the docs" href="https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/website" icon="✎">
     This site lives in `website/` (Nextra). Every page has an "Edit this page"
     link.
   </Card>
@@ -90,7 +90,9 @@ git checkout -b docs/13-verified-apis-update upstream/develop
 
 Open the PR from your fork into `Donkey-Development-Kit:develop` and tick
 **Allow edits by maintainers**. A maintainer sets the milestone and labels,
-runs the secret-gated checks that GitHub does not run on fork PRs, and merges.
+runs the secret-gated checks that GitHub does not run on fork PRs, re-captures
+any live fixture on the team sandbox before a `verified-apis.md` row flips,
+and merges.
 
 ## Keep the docs in sync
 
@@ -107,5 +109,5 @@ npm run generate:llms
   **Verification discipline.** DDK never documents or codes against an
   endpoint, header or class name that has not been confirmed against the real
   platform. If you can't confirm one, say so in the issue rather than guessing
-  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md).
+  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md).
 </Callout>

@@ -26,21 +26,21 @@ FlexSearch). It indexes the built HTML, so the `postbuild` hook runs
 `pagefind --site out --output-subdir _pagefind` after every `next build` — which
 means **search only works against the built export, not `npm run dev`.**
 
-To preview exactly as GitHub Pages serves it — under the project sub-path:
+The preview command serves the generated static files from `out/`, matching
+GitHub Pages more closely than the Next.js development server. The deployed site
+is served from the domain root, so a plain `npm run build` is what ships. To
+check a build hosted under a project sub-path instead, set the same variable for
+both commands:
 
 ```bash
 DOCS_BASE_PATH=/donkey-development-kit npm run build
-npm run preview:pages
+DOCS_BASE_PATH=/donkey-development-kit npm run preview:pages
 # Open http://localhost:4173/donkey-development-kit/
 ```
 
-The preview command serves the generated static files from `out/`, matching
-GitHub Pages more closely than the Next.js development server. The preview
-script maps the `/donkey-development-kit` project prefix back to the export root so
-pages, stylesheets, fonts, and scripts resolve at the same URLs used after
-deployment. GitHub's Jekyll preview instructions do not apply here: this site
-is a Nextra/Next.js static export, and the Pages workflow disables Jekyll
-before deployment.
+GitHub's Jekyll preview instructions do not apply here: this site is a
+Nextra/Next.js static export, and the Pages workflow disables Jekyll before
+deployment.
 
 ## AI-readable docs (`llms.txt`)
 
@@ -66,17 +66,46 @@ npm run generate:llms   # regenerate after editing pages; commit the result
 
 The site is published by [`.github/workflows/docs.yml`](../.github/workflows/docs.yml)
 on every push to `main` that touches `website/**` (and on manual
-`workflow_dispatch`). The workflow builds the static export with
-`DOCS_BASE_PATH=/donkey-development-kit`, adds `.nojekyll`, and deploys the `out/`
-artifact to Pages. The published site lives at
-`https://donkey-development-kit.github.io/donkey-development-kit/`.
+`workflow_dispatch`). The workflow builds the static export for the domain
+root (no `DOCS_BASE_PATH`), adds `.nojekyll`, and deploys the `out/` artifact to
+Pages. The published site lives at the custom domain
+`https://docs.donkey-kit.dev/`, declared by `public/CNAME` (#909). GitHub Pages
+redirects the old `donkey-development-kit.github.io/donkey-development-kit/`
+URLs there.
 
 **One-time setup:** in repo **Settings → Pages**, set **Source = "GitHub
-Actions"**. The workflow cannot flip that switch; until it is set, the deploy
-job has nowhere to publish.
+Actions"** and **Custom domain = `docs.donkey-kit.dev`** (with **Enforce
+HTTPS**). DNS: a `CNAME` record `docs` → `donkey-development-kit.github.io` at
+the `donkey-kit.dev` registrar. The workflow cannot flip these switches; until
+the source is set, the deploy job has nowhere to publish.
 
-`basePath`/`assetPrefix` are gated on `DOCS_BASE_PATH`, so `npm run dev` and a
-future custom domain serve at the root without the sub-path.
+`basePath`/`assetPrefix` are gated on `DOCS_BASE_PATH`, so `npm run dev` and the
+deployed custom domain both serve at the root without a sub-path.
+
+### Web analytics
+
+Production pages load the cookie-less
+[Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/)
+beacon when the repository variable `CF_WEB_ANALYTICS_TOKEN` holds the site
+token (Settings → Secrets and variables → Actions → Variables). The workflow
+passes it to the build as `NEXT_PUBLIC_CF_WEB_ANALYTICS_TOKEN`; the root layout
+renders the beacon only for a well-formed 32-character hex token (see
+`lib/analytics.mjs`), so `npm run dev` and unconfigured builds ship no
+analytics. The site token is public by design and appears in the page source.
+Unset the variable and redeploy to remove the beacon. Collection and reporting
+live in the private `donkey-development-kit-metrics` dashboard.
+
+**One-time setup:** in Cloudflare (**Analytics & Logs → Web Analytics → Add a
+site**), register the hostname `docs.donkey-kit.dev`, choose the manual
+JavaScript snippet, and copy the token from its `data-cf-beacon` attribute
+into the `CF_WEB_ANALYTICS_TOKEN` variable. Because only `main` is published,
+the beacon goes live on the first Pages deploy after both the variable is set
+and the beacon code has reached `main`. Confirm it in browser devtools:
+`beacon.min.js` loads and the page reports to
+`cloudflareinsights.com/cdn-cgi/rum` with no console or Content Security Policy
+errors.
+
+`npm test` runs the beacon gate's unit tests.
 
 ## Structure
 
@@ -122,6 +151,6 @@ npm run generate:roadmap
 ## Editing rules (inherited from the SDK — verification discipline)
 
 **Never document an endpoint, header, or class name that isn't verified.** Where
-a value is unconfirmed, say so on the page (see the "Verification policy" page).
+a value is unconfirmed, say so on the page itself rather than omitting it.
 The engineering source of truth for what is verified is
 [`../docs/verified-apis.md`](../docs/verified-apis.md).

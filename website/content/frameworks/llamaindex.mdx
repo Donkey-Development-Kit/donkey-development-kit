@@ -14,10 +14,12 @@ proxy, with the chat-model flag a chat-only gateway requires already set.
 **What you get**
 
 - A native `llama_index.llms.openai_like.OpenAILike`.
-- `is_chat_model=True` and `is_function_calling_model=True` set for you.
-- Supported at `connection_kwargs()`. The client receives a static
-  `default_headers` snapshot, so per-run correlation and `donkey.last_call` are
-  not available (see [Notes](#notes)).
+- `is_chat_model=True` and `is_function_calling_model=True` set for you, and
+  `max_retries=0` so `OpenAILike` doesn't retry on top of the SDK's transport.
+- Supported at `connection_kwargs()`. Sync and async calls send through the
+  SDK's HTTP clients (`http_client`, `async_http_client`), so per-run
+  correlation, retries, spans and `donkey.last_call` apply (see
+  [Notes](#notes)).
 
 ## Install
 
@@ -92,11 +94,15 @@ model = OpenAILike(
     default_headers=...,              # client_id / client_secret header pair
     is_chat_model=True,               # required — see below
     is_function_calling_model=True,
+    http_client=...,                  # the SDK's blocking client
+    async_http_client=...,            # the SDK's async client
+    max_retries=0,                    # the SDK's transport retries
 )
 ```
 
 LlamaIndex uses `api_base` rather than `base_url`; `connection_kwargs()`
-already translates for you.
+already translates for you. An `api_base` passed to `llm()` must pass the
+[`https://` rule](/reference/configuration#endpoints-must-use-https).
 
 ## Notes
 
@@ -106,13 +112,33 @@ already translates for you.
   Gateway LLM proxy. `connection_kwargs()` always sets it (and
   `is_function_calling_model=True`); set it yourself if you construct
   `OpenAILike` outside the adapter.
-- **No per-run correlation or `donkey.last_call`.** The client receives a
-  static `default_headers` snapshot, which excludes the correlation ID bound
-  later by `donkey.run(id=...)`, and the SDK's httpx client is not used. No
-  response reaches the SDK, so gateway identity, routing, and usage fields
-  can't be observed. When every adapter resolved on a `Donkey` is like this
-  one, `donkey.last_call` reports `status == LastCallStatus.UNAVAILABLE` and
-  `available == False`, and names the resolved adapters in `surface`. The
-  conformance suite asserts both as documented exemptions.
+- **`llm()` sets model defaults from the bare name.** LlamaIndex looks models
+  up by their exact OpenAI name, so a provider-prefixed name like
+  `openai/gpt-5-mini` would miss its reasoning-model handling and its
+  context-window table. `llm()` strips one `<provider>/` prefix before both
+  lookups, and still sends the prefixed name to the proxy:
+  - `context_window` comes from LlamaIndex's table (400,000 for `gpt-5-mini`).
+    For a name the table doesn't list, such as a Gemini or Bedrock model, it
+    stays at `OpenAILike`'s default of 3,900 tokens. That default also caps
+    agent memory and RAG prompt packing, so pass `context_window=` for those
+    models.
+  - A prefixed reasoning model (gpt-5, o-series) gets `temperature=1.0`, sends
+    `max_tokens` as `max_completion_tokens`, and sends `reasoning_effort`.
+    LlamaIndex already does the same for the bare name.
+
+  Any `temperature=`, `context_window=` or `additional_kwargs=` you pass takes
+  precedence. `connection_kwargs()` carries no model, so if you build
+  `OpenAILike` yourself, set these yourself.
+- **`donkey.last_call` is set in the context that made the call.** A cold read
+  (no call yet in this context) on a `Donkey` that resolved only adapters like
+  this one still reports `status == LastCallStatus.UNAVAILABLE` rather than
+  `UNOBSERVED`, because LlamaIndex is still listed as not observing calls. Aligning
+  that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+- **`jwt` mode is async-only.** `acomplete()` / `achat()` carry the JWT; sync
+  `complete()` / `chat()` go through the blocking client, which can't fetch
+  one, so they raise `ConfigError` before sending anything.
+- **Printing the model shows credentials.** `OpenAILike`'s own `repr()` /
+  `str()` include `client_secret` and `api_key`. Don't print or log it; see
+  [What printed output hides](/reference/configuration#what-printed-output-hides).
 
 <AdapterErrorTaxonomyNote />

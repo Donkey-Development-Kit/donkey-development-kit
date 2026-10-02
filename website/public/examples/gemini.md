@@ -1,8 +1,10 @@
 # Gemini
 
-No Gemini adapter ships, so these are plain `httpx` against a proxy
-provisioned **`Format=Gemini`** (for example `ddk-gemini-inbound`) with the
-same `client_id` / `client_secret` pair. The route is
+These scripts show the wire: plain `httpx` against a proxy provisioned
+**`Format=Gemini`** (for example `ddk-gemini-inbound`) with the same
+`client_id` / `client_secret` pair. For an agent, ADK's native `Gemini` model is
+bound to the same proxy by `donkey.adk.gemini("gemini-2.5-flash")` — see
+[Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). The route is
 `<proxy URL>/models/<model>:generateContent`. `DonkeyConfig` still resolves
 and validates the credentials, and `classify()` still types the errors.
 
@@ -16,7 +18,7 @@ script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm]"   # httpx + classify()
@@ -80,7 +82,7 @@ print(error)
 and error type, and the message. Typing Gemini's list envelope needs
 `donkey-kit` 0.1.0.dev9 or later.
 
-**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) · [Model access](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md)
+**Learn more:** [Typed refusals](https://docs.donkey-kit.dev/errors.md) · [Model access](https://docs.donkey-kit.dev/frameworks.md)
 
 **Source:**
 [`demos/human-made/gemini/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/gemini)

@@ -28,7 +28,7 @@ framework pages are measured against it.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,local]"
@@ -151,7 +151,7 @@ PolicyViolation  (policy: unknown)
   request_id     None
 
 simulate(GatewayUnavailable)
-  simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AuthError, ContentSafetyBlocked, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
+  simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AgentKilled, AuthError, ContentSafetyBlocked, ModelNotRoutable, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
 ```
 
 `request_id` is `None` throughout because a simulated response carries no
@@ -486,8 +486,8 @@ class as Azure in 13, with the vendor in the message. Bedrock's own id rides
 content-safety ['content_filter']`, the message, `x-request-id None` and a
 populated `request_id`.
 
-**Learn more:** [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) · [Budget & pacing](https://donkey-development-kit.github.io/donkey-development-kit/budget.md) ·
-[Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) · [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md)
+**Learn more:** [Typed refusals](https://docs.donkey-kit.dev/errors.md) · [Budget & pacing](https://docs.donkey-kit.dev/budget.md) ·
+[Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) · [Local simulator](https://docs.donkey-kit.dev/simulator.md)
 
 **Source:**
 [`demos/human-made/openai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/openai)

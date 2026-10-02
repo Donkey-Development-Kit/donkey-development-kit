@@ -1,17 +1,20 @@
 # Microsoft Agent Framework
 
 Microsoft Agent Framework gets a governed chat client pointed at the Omni
-Gateway LLM proxy, plus policy middleware that stops a run on a governance
-rejection instead of letting the agent loop retry.
+Gateway LLM proxy, plus policy middleware that ends a run on a governance
+rejection with the SDK's typed refusal.
 
 **What you get**
 
-- A native `agent_framework.openai.OpenAIChatClient`, checked against
-  agent-framework 1.19.0.
-- `policy_middleware()` for terminating a run on a `PolicyViolation`.
-- Supported at `connection_kwargs()`. The client receives a static
-  `default_headers` snapshot, so per-run correlation and `donkey.last_call` are
-  not available (see [Notes](#notes)).
+- A native `agent_framework.openai.OpenAIChatClient`, which calls the
+  Responses API (`POST /responses`), checked against agent-framework 1.19.0.
+  Pass `api="chat_completions"` for the Chat Completions client (see
+  [Which API](#which-api)).
+- `policy_middleware()`, which ends a run on a proxy refusal with a typed
+  `PolicyViolation` such as `PIIDetected`.
+- Supported at `connection_kwargs()`. The client gets an `async_client` that
+  sends through the SDK's shared HTTP client, so per-run correlation, retries,
+  spans, `donkey.last_call` and the `jwt`-mode JWT apply (see [Notes](#notes)).
 
 ## Install
 
@@ -94,34 +97,90 @@ llm = OpenAIChatClient(
     base_url=...,         # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,  # client_id / client_secret header pair
+    async_client=...,     # an AsyncOpenAI on the SDK's shared client
 )
 ```
 
+`async_client` is present when the `openai` package is installed. The
+constructor uses it as given, so a `base_url` passed to `chat_client()` gets a
+client built on that URL; the URL must pass the
+[`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
+The same kwargs work with `OpenAIChatCompletionClient`, the Chat Completions
+client.
+
+## Which API
+
+agent-framework-openai has two OpenAI-compatible chat clients, and
+`chat_client()` picks one with `api=`:
+
+| `api=` | Client | Request |
+| --- | --- | --- |
+| `"responses"` (default) | `OpenAIChatClient` | `POST /responses` |
+| `"chat_completions"` | `OpenAIChatCompletionClient` | `POST /chat/completions` |
+
+The default is the Responses API because it is the proxy route the SDK has
+verified live, the same one `donkey.llm` and the LangGraph adapter use. It is
+verified on an OpenAI upstream only. A proxy can route a model to any
+upstream, and not every upstream serves `/responses`: a route to Azure OpenAI
+answers it with `404 Resource not found`, which reaches you as a
+`ChatClientException`. For such a route, ask for the Chat Completions client:
+
+```python
+llm = chat_client("azure/gpt-4.1-mini", api="chat_completions")
+```
+
+Both clients work with `policy_middleware()`. The local simulator serves
+`/responses` only, so keep the default when you run against it.
+
 ## Policy middleware
 
-`donkey.agent_framework.policy_middleware()` returns an async
-`(context, next)` middleware that lets a `PolicyViolation` propagate, so the
-host ends the run instead of retrying. It is a plain async wrapper whose
-signature has not been confirmed against Agent Framework's middleware
-protocol, so check it in your host before relying on it. Setting Agent
-Framework's explicit "terminate run" signal instead of re-raising is planned
-Roadmap.
+`donkey.agent_framework.policy_middleware()` returns a chat middleware for
+`Agent(..., middleware=[...])`:
+
+```python
+from agent_framework import Agent
+from donkey_kit import Donkey, PIIDetected
+
+async with Donkey.from_env() as donkey:
+    agent = Agent(
+        client=donkey.agent_framework.chat_client("gpt-4o"),
+        middleware=[donkey.agent_framework.policy_middleware()],
+    )
+    try:
+        await agent.run("...")
+    except PIIDetected as err:
+        print(err.correlation_id, err.entities)
+```
+
+Without it, a proxy refusal reaches you as Agent Framework's generic
+`ChatClientException`. With it, the refusal goes through
+`donkey_kit.core.errors.classify()` and the run ends with the typed error,
+for example `PIIDetected` or `TokenBudgetExceeded`. The error carries the
+correlation and call ids that were sent, and keeps the original exception on
+`.framework_error`. This also works for streaming runs
+(`agent.run(..., stream=True)`): the typed error is raised while you iterate
+the stream. The chat client sends with retries off, so a refused request is
+sent once.
+
+Errors that have no proxy response behind them, such as a connection failure,
+pass through unchanged. The middleware is marked with Agent Framework's
+`@chat_middleware` decorator. That is confirmed offline against
+agent-framework 1.19.0, with no live round-trip yet. If the decorator is
+missing from your installed version, `policy_middleware()` raises a
+`NotImplementedError` naming it.
 
 ## Notes
 
-- **Constructor signature.** `OpenAIChatClient` takes `model`, `base_url`,
-  `api_key`, and `default_headers` (agent-framework 1.19.0; `model_id` is not
-  accepted). If the import fails or an upstream release renames a kwarg,
+- **Constructor signature.** `OpenAIChatClient` and
+  `OpenAIChatCompletionClient` both take `model`, `base_url`, `api_key`, and
+  `default_headers` (agent-framework 1.19.0; `model_id` is not accepted). If the import fails or an upstream release renames a kwarg,
   `chat_client()` raises a `NotImplementedError` naming the class path or
   signature to check, rather than a raw `ImportError` or `TypeError`.
-- **No per-run correlation or `donkey.last_call`.** The client receives a
-  static `default_headers` snapshot, which excludes the correlation ID bound
-  later by `donkey.run(id=...)`, and the SDK's httpx client is not used. No
-  response reaches the SDK, so gateway identity, routing, and usage fields
-  can't be observed. When every adapter resolved on a `Donkey` is like this
-  one, `donkey.last_call` reports `status == LastCallStatus.UNAVAILABLE` and
-  `available == False`, and names the resolved adapters in `surface`. The
-  conformance suite asserts both as documented exemptions.
+- **`donkey.last_call` is set in the context that made the call.** A cold read
+  (no call yet in this context) on a `Donkey` that resolved only adapters like
+  this one still reports `status == LastCallStatus.UNAVAILABLE` rather than
+  `UNOBSERVED`, because MS Agent Framework is still listed as not observing calls. Aligning
+  that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for the full `PolicyViolation` hierarchy
-that `policy_middleware()` lets through.
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for the full `PolicyViolation` hierarchy
+that `policy_middleware()` raises.

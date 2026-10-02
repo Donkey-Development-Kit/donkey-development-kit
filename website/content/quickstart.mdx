@@ -17,7 +17,8 @@ Omni Gateway later is an environment change, not a code change.
 
 | Capability | Status | Learn more |
 |---|---|---|
-| Governed model access for 8 frameworks | <Badge tone="live">Live</Badge> | [Frameworks](/frameworks) |
+| Governed model access (the raw client, through the proxy data plane) | <Badge tone="live">Live</Badge> | [Frameworks](/frameworks) |
+| Framework adapters for 8 frameworks | <Badge tone="accent">Conformance-tested</Badge> LangGraph · <Badge tone="live">Live-verified</Badge> ADK `gemini()` · <Badge tone="neutral">Signature-confirmed</Badge> the rest | [Frameworks](/frameworks#supported-frameworks) |
 | Typed refusals | <Badge tone="live">Live</Badge> | [Typed refusals](/errors) |
 | Budget & pacing | <Badge tone="live">Live</Badge> | [Budget & pacing](/budget) |
 | OpenTelemetry spans & cost attribution | <Badge tone="live">Live</Badge> | [Telemetry & cost](/telemetry) |
@@ -55,6 +56,15 @@ donkey mock
 The simulator listens on `127.0.0.1:8080` and replays real gateway responses,
 including every refusal shape. It enforces no policy and ignores
 credentials, and every response carries `x-donkey-simulator: true`.
+
+Port `8080` already taken? Run `donkey mock --port 9000` — see
+[Choosing a port or host](/simulator#choosing-a-port-or-host).
+
+<Callout type="info">
+  "Local gateway" here means DDK's pure-Python simulator, not Omni/Flex
+  Gateway running in Local Mode — that deployment target isn't supported
+  (see the [unsupported boundary](/reference/unsupported-boundary)).
+</Callout>
 
 ### Point DDK at it
 
@@ -99,7 +109,7 @@ ask; against your Omni Gateway the model answers your actual prompt.
 <Callout type="info">
   Prefer one command? Run `python -m examples.quickstart.main` from the
   `python/` directory of the
-  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/python/examples/quickstart):
+  [SDK repository](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/quickstart):
   it boots the simulator for you and runs the steps above end to end.
 </Callout>
 
@@ -214,8 +224,9 @@ all. See [Telemetry & cost](/telemetry).
 
 ## Attribute cost to a run <Badge tone="live">Live</Badge>
 
-Group one logical task under a single correlation ID and cost tags, so the
-gateway record, your logs and your spans all join up:
+Group one logical task under a single correlation ID and cost tags. The
+correlation ID joins the gateway record, your logs and your spans; the cost
+tags land on your spans:
 
 ```python
 async with donkey.run(id=ticket.id, team="support", project="triage"):
@@ -274,11 +285,13 @@ donkey doctor
 
 <Output>
 ```text
-[ok] config       env (3 fields)
-[ok] gateway      reachable, responded
-[ok] credentials  client_id accepted
-[ok] model        accepted by the proxy
-[i]  budget       99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+[ok] config         env (3 fields)
+[i]  llm endpoint   <ingress-gw> (env)
+[i]  control plane  anypoint.mulesoft.com (default)
+[ok] gateway        reachable, responded
+[ok] credentials    client_id accepted
+[ok] model          accepted by the proxy
+[i]  budget         99,000 / 100,000 remaining, resets in 59s, observed 0s ago
 ```
 </Output>
 

@@ -6,7 +6,7 @@ retry policy apply. ``client(sync=True)`` returns the blocking ``OpenAI`` with
 the same governance. This is the framework-free surface; the per-framework
 adapters live in ``integrations/``.
 
-VERIFICATION NOTES (LIVE-VERIFIED 2026-08-28, docs/verified-apis.md §2/§3):
+VERIFICATION NOTES (docs/verified-apis.md §2/§3):
   * The proxy base URL does **NOT** include ``/v1``; it is
     ``https://<ingress-gw>/<instance>/`` (e.g. ``…/openai-sdk/``) and the OpenAI
     SDK appends the route (``/responses`` etc.) directly.
@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
-from ..core.config import DonkeyConfig
+from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, missing_llm_auth_error
 from ..core.errors import ConfigError
 from ..core.transport import (
     DonkeyAsyncClient,
@@ -31,6 +31,7 @@ from ..core.transport import (
     build_sync_http_client,
     proxy_api_key,
     proxy_auth_headers,
+    sync_token_auth_error,
 )
 from .catalog import ModelHandle, heuristic_capabilities
 
@@ -56,7 +57,9 @@ class LLMClient:
 
     def _own_sync_client(self) -> DonkeyClient:
         if self._owned_sync is None:
-            self._owned_sync = build_sync_http_client(self._cfg)
+            self._owned_sync = build_sync_http_client(
+                self._cfg, origins=self._http.checked_origins
+            )
         return self._owned_sync
 
     @overload
@@ -77,33 +80,32 @@ class LLMClient:
         The two are declared as overloads on ``Literal`` rather than returning a
         union, so the call site narrows to one concrete class and editors keep
         offering completions on the result.
+
+        A ``base_url`` override must pass the same https check as the configured
+        proxy URL; it then receives the configured credentials.
         """
 
         self._cfg.validated(need="llm")
-        if self._cfg.llm_proxy_auth == "jwt":
-            # The rotating JWT enters through an AuthProvider on the shared async
-            # transport, never a config field (#509). Two things config alone
-            # cannot check, enforced here where the provider is known:
+        mode = self._cfg.llm_proxy_auth
+        if mode in TOKEN_AUTH_MODES:
+            # The rotating token enters through an AuthProvider on the shared async
+            # transport, never a config field (#509, #836). Two things config
+            # alone cannot check, enforced here where the provider is known:
             if sync:
-                # Proposal 6 / AC 7: jwt mode is async-only. The blocking
+                # Proposal 6 / AC 7: the token modes are async-only. The blocking
                 # DonkeyClient takes no AuthProvider (the protocol is async-only),
                 # so a sync client could only send a stale or absent token — never
                 # hand one back silently unauthenticated.
-                raise ConfigError(
-                    "JWT / model-wallet auth mode (llm_proxy_auth='jwt') is async-only: "
-                    "the credential is a rotating JWT fetched from an async AuthProvider, "
-                    "and the blocking client cannot await it. Use the async client — "
-                    "`donkey.llm.client()` / `donkey.openai()` without sync=True — or switch "
-                    "to client-id auth for a synchronous caller."
-                )
+                raise sync_token_auth_error(mode)
             if self._http.token_provider is None:
-                # AC 1: jwt mode with no provider attached fails with actionable guidance.
-                raise ConfigError(
-                    "llm_proxy_auth='jwt' requires an AuthProvider that supplies the "
-                    "model-wallet JWT, but none is attached. Pass one when constructing "
-                    "Donkey, e.g. `Donkey(llm_auth=StaticToken(jwt))` or a custom "
-                    "AuthProvider that refreshes the token (see donkey_kit.core.auth)."
-                )
+                # AC 1: a token mode with no provider attached fails with actionable guidance.
+                raise missing_llm_auth_error(mode)
+        http = self._sync_http() if sync else self._http
+        # The client gets a non-owning view, so closing it (``async with
+        # donkey.openai()``) leaves the shared client open (#733).
+        view = http.view()
+        if kw.get("base_url") is not None:
+            http.allow_endpoint(str(kw["base_url"]), name="base_url")
         try:
             from openai import AsyncOpenAI, OpenAI
         except ImportError as exc:  # pragma: no cover - install-time guidance
@@ -133,14 +135,14 @@ class LLMClient:
         # this typechecks clean under BOTH majors: a bare `# type: ignore` is
         # `unused-ignore` under openai<3 where the types already match (#597).
         if sync:
-            return OpenAI(http_client=cast(Any, self._sync_http()), **shared)
-        return AsyncOpenAI(http_client=cast(Any, self._http), **shared)
+            return OpenAI(http_client=cast(Any, view), **shared)
+        return AsyncOpenAI(http_client=cast(Any, view), **shared)
 
     async def list_models(self, *, live: bool = False) -> list[ModelHandle]:
         """List logical models the proxy exposes.
 
         The governed proxy has **no** catalog endpoint — ``GET /models`` returns
-        ``404`` (LIVE-VERIFIED, docs/verified-apis.md §2): model-based-routing only routes requests
+        ``404`` (docs/verified-apis.md §2): model-based-routing only routes requests
         that carry ``model`` in the body. So ``live=True`` cannot be satisfied,
         and we say so plainly rather than guess a path. Use :meth:`resolve` for a
         heuristic :class:`ModelHandle` from a known model id, or source the

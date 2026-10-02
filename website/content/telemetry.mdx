@@ -22,7 +22,7 @@ for the governance layer that generic instrumentation cannot know about:
 
 ```
 donkey.policy.decision      = allow | refuse
-donkey.policy.type          = pii_detected | token_budget | injection | …
+donkey.policy.type          = pii_detected | token_budget | injection | agent_killed | …
 donkey.budget.remaining     = 18450
 donkey.correlation_id       = …
 donkey.cost.team            = support
@@ -326,14 +326,23 @@ correlation id. They do **not** carry prompt or completion text.
 Turn it on only when your collector is a trusted sink and you have accepted
 responsibility for the content that lands there:
 
-```python
-# kwarg, or DONKEY_TELEMETRY_CAPTURE_CONTENT=true, or
-# telemetry_capture_content = true in .donkey-kit.toml
-donkey = Donkey.from_env(telemetry_capture_content=True)
+```bash
+export DONKEY_TELEMETRY_CAPTURE_CONTENT=true
+# or: telemetry_capture_content = true under [donkey] in .donkey-kit.toml
 ```
 
-`telemetry_capture_content` resolves along the standard precedence
-(kwarg → env → `.donkey-kit.toml` → default) and **defaults to `False`**. When
+In code, layer it over the resolved config. It isn't a `Donkey.from_env()`
+kwarg:
+
+```python
+from donkey_kit import Donkey, DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_capture_content=True))
+```
+
+`telemetry_capture_content` resolves along the standard
+[precedence](/reference/configuration#precedence) (set in code → env → config
+files → default) and **defaults to `False`**. When
 enabled, content is emitted under the pinned semconv attribute names —
 `gen_ai.prompt` and `gen_ai.completion` — and no others. When off, those
 attributes never reach a span, and the allowlist that builds every span drops
@@ -393,21 +402,27 @@ through every field.
 ### When `last_call` is unavailable
 
 `donkey.last_call` is populated only when the governed response passes through
-the SDK's shared httpx client. Four `connection_kwargs()`-only adapters route
-outside that response path: ADK and CrewAI send requests through LiteLLM, while
-LlamaIndex and Microsoft Agent Framework receive only `default_headers`.
-That static snapshot excludes the correlation ID bound later by
-`donkey.run(id=...)`, so those two adapters also do not propagate the run's
-correlation ID.
+the SDK's shared HTTP client, and only in the context that made the call.
+CrewAI routes outside that client: its native OpenAI provider builds its own,
+so no response reaches the record and the run's correlation ID isn't sent.
 
-When every adapter resolved on a `Donkey` is one of those four, a cold read
-reports the limitation explicitly. For a `Donkey` that resolved only ADK:
+LlamaIndex, Microsoft Agent Framework and ADK's `model()` send through the
+shared client, so a call populates the record in its own context and carries
+the run's correlation ID. They are still listed as not observing calls, so a
+cold read on a `Donkey` that resolved only these adapters or CrewAI reports
+`UNAVAILABLE` rather than `UNOBSERVED`. Aligning that is tracked in
+[#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+ADK's `gemini()` uses the shared client and observes calls once it has been
+called (see [Native Gemini](/frameworks/adk#native-gemini) for reading
+`last_call` inside an ADK run).
+
+For a `Donkey` that resolved only CrewAI:
 
 ```python
 r = donkey.last_call
 r.status       # LastCallStatus.UNAVAILABLE
 r.available    # False
-r.surface      # "adk"
+r.surface      # "crewai"
 ```
 
 This is different from `UNOBSERVED`, which means the current context has not
@@ -415,6 +430,17 @@ yet received a governed response. On an unavailable surface the SDK cannot
 observe any response-derived `last_call` field, including gateway identity,
 routing, fallback, and usage. If multiple non-observing adapters were resolved,
 `surface` lists their names.
+
+An agent runner that sends the model call from a task of its own leaves its
+caller reading `UNOBSERVED`, even though the SDK observed the call: the record
+lands in that task. The OpenAI Agents SDK's `Runner` sends a run's first turn
+that way (and every turn of `run_streamed`), and ADK's `Runner` runs the whole
+agent that way. Read `last_call` in the framework's model hook, which runs in the
+call's own task: `RunHooks.on_llm_end` for the
+[OpenAI Agents SDK](/frameworks/openai#donkeylast_call), `after_model_callback`
+for [ADK](/frameworks/adk#native-gemini). Calling the model directly (Strands'
+`Agent.invoke_async`, `AsyncAnthropic.messages.create`, a model's own async
+method) records in the caller's context.
 
 ### Two behaviours worth knowing
 
@@ -443,7 +469,10 @@ example `openai/gpt-5-mini`), and the gateway reports the served model without
 the prefix (`gpt-5-mini`), with the provider in its own header. A prefix that
 names the served provider is not counted as a difference, so asking for
 `openai/gpt-5-mini` and being served `gpt-5-mini` by `openai` is not a
-substitution. The same model served by a different provider still is.
+substitution. The same model served by a different provider still is. On a
+proxy with more than one provider, a bare name the gateway cannot pin to one
+provider is rejected with a `400` before any upstream call, and DDK raises
+[`ModelNotRoutable`](/errors).
 
 ### Semantic caching & semantic routing <Badge tone="live">Live</Badge>
 
@@ -522,9 +551,8 @@ directly.
 
 ## Cost-attribution tags
 
-A small, fixed set of tags — `team`, `project`, `env`, `enduser.id` — set once
-and emitted on every call, both as request headers and as `donkey.cost.*` span
-attributes:
+A small, fixed set of tags (`team`, `project`, `env`, `enduser.id`) set once
+and recorded on every model call's span:
 
 ```python
 donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
@@ -533,22 +561,47 @@ async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
     await triage_agent.run(ticket)
 ```
 
-The tags resolve along the standard precedence — `Donkey.from_env(team=…)`
-kwargs, then `DONKEY_COST_*` env vars, then a `[donkey.cost]` table in
-`.donkey-kit.toml`. Per-run overrides layer on top: `donkey.run(team=…,
-project=…, env=…, enduser_id=…)` wins **per field** for its block and the rest
-fall back to the configured tags. The key set is **fixed** — an unknown
-dimension is a configuration error, never a silently-dropped header. Values are
-**validated** — fixed keys, bounded length — so nobody stuffs a JSON blob into a
-header.
+The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
+`DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
+[Configuration](/reference/configuration#cost-attribution-tags)). Per-run
+overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
+wins **per field** for its block, and the rest fall back to the configured
+tags. The key set is **fixed**: an unknown dimension is a configuration error,
+never a silently dropped tag. Values are **validated** (fixed keys, bounded
+length), so nobody stuffs a JSON blob into a span attribute or header.
+
+### Where the tags go
+
+| Carrier | Names | When | Goes to |
+|---|---|---|---|
+| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
+| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
+
+Each header carries the tag's value unchanged (for example
+`X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
+neither carrier.
+
+The Anypoint LLM Gateway doesn't read cost tags from request headers: it meters
+cost from token usage per API instance and consuming client application. So the
+span attributes are the carrier that matters. Turn the headers on only when
+something of your own reads them.
 
 <Callout type="info">
-  The Anypoint LLM Gateway does not ingest cost tags from request headers — it
-  meters cost from token usage per API instance and consuming client
-  application. The **authoritative** carrier is the `donkey.cost.*` OTel span
-  attribute. The `X-Anypoint-Cost-*` request headers are a convention nothing
-  currently reads; their names are overridable (`cost_*_header`) for a gateway
-  that does read one.
+  **With `send_cost_headers` on, the headers go only on model requests to the
+  LLM proxy.** The connected-app token request and other Anypoint
+  control-plane requests never carry them, so the end-user ID doesn't reach
+  those hosts. Adapters with transport injection also send per-run
+  `donkey.run(...)` values; adapters that get only a `default_headers` snapshot
+  send the configured tags.
+</Callout>
+
+<Callout type="info">
+  **The end-user ID reaches your trace backend regardless of
+  `send_cost_headers`.** If `enduser_id` is set, every model-call span carries
+  `donkey.cost.enduser.id`, and any exporter you've configured receives it. To
+  keep it out of traces, don't set `enduser_id` (`DONKEY_COST_ENDUSER_ID`,
+  `"enduser.id"` in `[donkey.cost]`, or `donkey.run(enduser_id=…)`), drop the
+  attribute in your collector, or turn spans off with `DONKEY_TELEMETRY=false`.
 </Callout>
 
 ### The question this answers
@@ -559,5 +612,5 @@ With tags it is a group-by.
 
 For compliance — *"prove the HR bot's answer to user X on date Y went through
 the content-safety policy"* — the correlation ID on the log line joins to the
-gateway record, and the span carries `enduser.id` and `donkey.policy.type`. An
+gateway record, and the span carries `donkey.cost.enduser.id` and `donkey.policy.type`. An
 EU AI Act Article 12 log request becomes one query, not an investigation.

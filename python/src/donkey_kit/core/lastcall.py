@@ -9,7 +9,7 @@ into an OTel span attribute that needs a backend to read, or dropped. So
 "which gateway instance served this, and what id do I quote in a ticket?" was
 answerable after a failure and unanswerable after a success. This record closes
 that asymmetry — one named container, populated on every governed model call
-from the LIVE-VERIFIED docs/verified-apis.md §3 response headers, reachable at ``donkey.last_call``.
+from the docs/verified-apis.md §3 response headers, reachable at ``donkey.last_call``.
 
 **One container, defined once (#362).** #307 (cached/reasoning token counts) and
 #309 (gateway routing + fallback) each sketched a *different* accessor for the
@@ -29,10 +29,13 @@ framework-spawned ``asyncio`` task copies the current context at creation, so a
 model call inside it sets *its own* task's record and never clobbers a sibling's
 (and never leaks back to the parent that scattered the tasks). Each task reads
 the call it actually made. This matches how ``core.telemetry`` already scopes the
-correlation id.
+correlation id. The one exception is a framework that spawns a task for a
+*single* call, such as LangChain's ``ainvoke`` (#850). There the caller made the
+call, so an adapter opens a :class:`LastCallBridge` for it: the record reaches
+the caller, and nothing written after the call ends does.
 
 **Three honest states (hazard #3).** A bare ``request_id is None`` is a lie of
-omission on the adapters where the SDK does not own the transport (ADK, CrewAI,
+omission on the adapters where the SDK does not own the transport (ADK ``model()``, CrewAI,
 LlamaIndex, MS Agent Framework — see
 :attr:`donkey_kit.integrations._base.Adapter.observes_last_call`).
 A developer there would read ``None`` as "the gateway sent no id" when the truth
@@ -50,8 +53,8 @@ it ``correlation_id`` here would collide with the run id on ``DonkeyError`` and
 bake that ambiguity into the public API, so the field is not added until #300
 lands and settles the semantics under an unambiguous name.
 
-Every field traces to the LIVE-VERIFIED docs/verified-apis.md §3 "Gateway identity on response" row
-(``responses.success.headers.txt``, 2026-08-28), so this is a consumption task,
+Every field traces to the docs/verified-apis.md §3 "Gateway identity on response" row
+(``responses.success.headers.txt``), so this is a consumption task,
 not a verification one: no ``_verify.Unverified(...)`` guard, no
 ``UnverifiedValueWarning``. Unparseable or absent headers leave a field ``None``
 and never raise on the caller's request path (verification discipline).
@@ -71,13 +74,15 @@ from ._verify import SEMANTIC_CACHE_SCORE_HEADER, SEMANTIC_CACHE_STATUS_HEADER
 if TYPE_CHECKING:
     import httpx
 
-# VERIFIED (LIVE, docs/verified-apis.md §3, 2026-08-28 / 2026-09-23). The request
+# docs/verified-apis.md §3. The request
 # id is the UPSTREAM PROVIDER's own id, passed through by the gateway unchanged —
 # NOT a value the gateway mints, so the header NAME differs by provider and there
 # is no single header that is present on every route (#542):
 #   * ``x-request-id``     — OpenAI's own id (Azure OpenAI also sends it);
 #   * ``x-amzn-requestid`` — Amazon Bedrock (which sends NO ``x-request-id``);
-#   * ``apim-request-id``  — Azure OpenAI's APIM-side id.
+#   * ``apim-request-id``  — Azure OpenAI's APIM-side id;
+#   * ``request-id``       — Anthropic's own id (``req_…``) on the native
+#     ``Format=Anthropic`` ingress, which sends no ``x-request-id`` (#827).
 # So it is resolved from an ordered fallback list, failing open to ``None`` when
 # none is present (verification discipline). This is the id a provider's support
 # team needs; the gateway-side join key is instead ``x-correlation-id`` (the id
@@ -91,11 +96,12 @@ REQUEST_ID_HEADERS: tuple[str, ...] = (
     REQUEST_ID_HEADER,
     "x-amzn-requestid",
     "apim-request-id",
+    "request-id",
 )
 DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 
-# VERIFIED (LIVE, docs/verified-apis.md §3 "Gateway identity on response",
-# 2026-08-28, ``responses.success.headers.txt``). The gateway states what it did
+# docs/verified-apis.md §3 "Gateway identity on response"
+# (``responses.success.headers.txt``). The gateway states what it did
 # with the request: which provider/model actually served it, whether that was a
 # routing FALLBACK (the "Enhanced Resilience for Intelligent Routing" failover),
 # and the routing strategy. All four are consumed here on the success path
@@ -107,8 +113,8 @@ ROUTING_FALLBACK_HEADER = "x-llm-proxy-routing-fallback"
 LLM_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
 LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 
-# VERIFIED (LIVE, docs/verified-apis.md §3 semantic-routing row, 2026-09-24,
-# ``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
+# docs/verified-apis.md §3 semantic-routing row
+# (``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
 # SEMANTIC-routing proxy (``routing_type == "Semantic"``) additionally states
 # WHICH topic the prompt matched and how confident the match was, in a single
 # prose header. The four routing headers above are emitted identically to
@@ -122,8 +128,8 @@ LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 # provider/model portion never loses the topic or the score (verification discipline).
 SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
 
-# VERIFIED (LIVE, docs/verified-apis.md §2 "Semantic caching", 2026-09-24,
-# ``python/tests/fixtures/anypoint/semantic_cache/``, #587/#588). A proxy fronted
+# docs/verified-apis.md §2 "Semantic caching"
+# (``python/tests/fixtures/anypoint/semantic_cache/``, #587/#588). A proxy fronted
 # by the semantic-caching policy states its outcome on every response: the STATUS
 # — one of ``hit`` / ``miss`` / ``bypass`` / ``no-store`` — and, on a ``hit``
 # ONLY, the similarity SCORE (a four-dp string, e.g. ``0.9518``; absent on
@@ -166,8 +172,9 @@ class LastCallStatus(str, Enum):
     #: No governed model call has returned in this context yet (a cold read).
     UNOBSERVED = "unobserved"
     #: This adapter surface cannot be observed — the SDK does not own its
-    #: transport (LiteLLM-backed) or was handed only ``default_headers`` — so no
-    #: response ever reaches the record here. Distinct from a mere cold read.
+    #: transport (the framework builds its own client) or was handed only
+    #: ``default_headers`` — so no response ever reaches the record here.
+    #: Distinct from a mere cold read.
     UNAVAILABLE = "unavailable"
 
 
@@ -273,8 +280,8 @@ def is_substitution(
 def request_id(response: httpx.Response) -> str | None:
     """The upstream provider's request id for a response, resolved from the first
     present of :data:`REQUEST_ID_HEADERS` (``x-request-id``, then
-    ``x-amzn-requestid``, then ``apim-request-id``), or ``None`` when the gateway
-    passed none through (#542).
+    ``x-amzn-requestid``, then ``apim-request-id``, then Anthropic's
+    ``request-id``), or ``None`` when the gateway passed none through (#542, #827).
 
     The gateway does not mint its own per-response id; it forwards the upstream
     provider's, and the header name differs by provider — Bedrock sends only
@@ -342,10 +349,10 @@ def is_fallback(response: httpx.Response) -> bool:
 
 
 # --- per-call usage token counts (#307, BG §1.3) ----------------------------
-# LIVE-VERIFIED (docs/verified-apis.md §3, ``responses.success.body.json``,
-# 2026-08-28): the gateway returns token counts in the response BODY's ``usage``
-# object, not a header. So unlike the identity fields these are parsed from the
-# parsed JSON body, and only for a buffered 2xx — a streaming body carries its
+# docs/verified-apis.md §3 (``responses.success.body.json``): the gateway returns
+# token counts in the response BODY's ``usage`` object, not a header. So unlike
+# the identity fields these are parsed from the parsed JSON body, and only for a
+# buffered 2xx — a streaming body carries its
 # usage in a terminal SSE event read later (filled by :func:`observe_usage`), and
 # a refusal carries none. The six fields, and why cached/reasoning matter:
 #   * ``cached_tokens`` — input tokens served from the prompt cache, typically
@@ -354,10 +361,20 @@ def is_fallback(response: httpx.Response) -> bool:
 #   * ``reasoning_tokens`` — output tokens spent on reasoning the developer never
 #     sees. A reasoning model can spend most of its output here, so reading only
 #     ``total_tokens`` draws the wrong conclusion about both cost and latency.
-# Both wire shapes are read so the raw client, the deep LangGraph adapter, and any
-# OpenAI-compatible call populate identically: the Responses API
-# (``input_tokens`` + ``input_tokens_details``) and Chat Completions
-# (``prompt_tokens`` + ``prompt_tokens_details``).
+# All three wire shapes are read so the raw client, the deep LangGraph adapter,
+# any OpenAI-compatible call and a native Gemini call populate identically: the
+# Responses API (``input_tokens`` + ``input_tokens_details``), Chat Completions
+# (``prompt_tokens`` + ``prompt_tokens_details``), and Gemini's ``usageMetadata``
+# (``promptTokenCount`` / ``candidatesTokenCount`` / ``totalTokenCount`` /
+# ``cachedContentTokenCount`` / ``thoughtsTokenCount``; LIVE, #540/#691). Gemini's
+# ``totalTokenCount`` already includes the thoughts, so it is taken as reported.
+# Anthropic's Messages API (native ``Format=Anthropic`` ingress, #827) shares the
+# Responses API's ``input_tokens`` / ``output_tokens`` keys but carries its cache
+# counts flat, as ``cache_read_input_tokens`` / ``cache_creation_input_tokens``,
+# and reports no total. Its ``input_tokens`` EXCLUDES both cache counts, while
+# OpenAI's ``input_tokens`` / ``prompt_tokens`` includes ``cached_tokens``; every
+# count is taken as reported, so a cost rollup across providers must add
+# Anthropic's cache counts back in to compare like with like.
 _USAGE_FIELDS = (
     "input_tokens",
     "output_tokens",
@@ -394,8 +411,10 @@ def parse_usage(usage: object) -> dict[str, int | None]:
     dict keyed by :data:`_USAGE_FIELDS`.
 
     Handles the Responses API (``input_tokens`` / ``input_tokens_details`` /
-    ``output_tokens_details``) and Chat Completions (``prompt_tokens`` /
-    ``prompt_tokens_details`` / ``completion_tokens_details``) shapes. A non-dict
+    ``output_tokens_details``), Chat Completions (``prompt_tokens`` /
+    ``prompt_tokens_details`` / ``completion_tokens_details``), Gemini
+    ``usageMetadata`` (flat camelCase counts) and Anthropic Messages (flat
+    ``cache_read_input_tokens`` / ``cache_creation_input_tokens``) shapes. A non-dict
     ``usage`` (absent, ``None``, wrong type) yields all-``None`` — an absent count
     is ``None``, never ``0`` (the same honesty rule ``Budget`` applies to an
     unobserved window). Never raises (verification discipline)."""
@@ -410,27 +429,50 @@ def parse_usage(usage: object) -> dict[str, int | None]:
         }
     input_details = _usage_details(usage, "input_tokens_details", "prompt_tokens_details")
     output_details = _usage_details(usage, "output_tokens_details", "completion_tokens_details")
+    cached = _first_int(input_details, "cached_tokens")
+    cache_write = _first_int(input_details, "cache_write_tokens")
+    reasoning = _first_int(output_details, "reasoning_tokens")
     return {
-        "input_tokens": _first_int(usage, "input_tokens", "prompt_tokens"),
-        "output_tokens": _first_int(usage, "output_tokens", "completion_tokens"),
-        "total_tokens": _first_int(usage, "total_tokens"),
-        "cached_tokens": _first_int(input_details, "cached_tokens"),
-        "cache_write_tokens": _first_int(input_details, "cache_write_tokens"),
-        "reasoning_tokens": _first_int(output_details, "reasoning_tokens"),
+        "input_tokens": _first_int(usage, "input_tokens", "prompt_tokens", "promptTokenCount"),
+        "output_tokens": _first_int(
+            usage, "output_tokens", "completion_tokens", "candidatesTokenCount"
+        ),
+        "total_tokens": _first_int(usage, "total_tokens", "totalTokenCount"),
+        "cached_tokens": cached
+        if cached is not None
+        else _first_int(usage, "cachedContentTokenCount", "cache_read_input_tokens"),
+        "cache_write_tokens": cache_write
+        if cache_write is not None
+        else _first_int(usage, "cache_creation_input_tokens"),
+        "reasoning_tokens": reasoning
+        if reasoning is not None
+        else _first_int(usage, "thoughtsTokenCount"),
     }
+
+
+def _body_usage(body: dict[str, object]) -> object:
+    """A response body's usage object: OpenAI's ``usage``, else Gemini's
+    ``usageMetadata``."""
+    usage = body.get("usage")
+    return usage if usage is not None else body.get("usageMetadata")
 
 
 def usage_mapping(obj: object) -> dict[str, object] | None:
     """The ``usage`` mapping from a parsed SSE ``data:`` object, or ``None``.
 
-    Handles Chat Completions (top-level ``usage``) and the Responses API (``usage``
+    Handles Chat Completions (top-level ``usage``), the Responses API (``usage``
     nested under ``response``, as the terminal ``response.completed`` event
-    carries it). Feeds the streaming scanner, which then :func:`parse_usage` it."""
+    carries it), Gemini (top-level ``usageMetadata`` on each chunk) and Anthropic
+    Messages (``usage`` nested under ``message`` on ``message_start`` — the only
+    event carrying ``input_tokens`` — then top-level on ``message_delta``, #827).
+    Feeds the streaming scanner, which then :func:`parse_usage` it."""
     if not isinstance(obj, dict):
         return None
-    usage = obj.get("usage")
-    if not isinstance(usage, dict):
-        nested = obj.get("response")
+    usage = _body_usage(obj)
+    for key in ("response", "message"):
+        if isinstance(usage, dict):
+            break
+        nested = obj.get(key)
         usage = nested.get("usage") if isinstance(nested, dict) else None
     return usage if isinstance(usage, dict) else None
 
@@ -449,7 +491,7 @@ def usage_from_response(response: httpx.Response) -> dict[str, int | None]:
         return parse_usage(None)
     if not isinstance(body, dict):
         return parse_usage(None)
-    return parse_usage(body.get("usage"))
+    return parse_usage(_body_usage(body))
 
 
 @dataclass(frozen=True)
@@ -466,7 +508,8 @@ class LastCall:
 
     status: LastCallStatus
     #: The upstream provider's own request id, passed through by the gateway
-    #: (``x-request-id`` / ``x-amzn-requestid`` / ``apim-request-id``, #542) —
+    #: (``x-request-id`` / ``x-amzn-requestid`` / ``apim-request-id`` /
+    #: ``request-id``, #542, #827) —
     #: quote it to the provider's support team. ``None`` when the gateway forwarded
     #: none. Mirrors :attr:`DonkeyError.request_id` on the refusal path; the
     #: gateway-side join key is instead the run ``correlation_id``.
@@ -506,7 +549,9 @@ class LastCall:
     # --- per-call usage token counts (#307), from the response BODY's ``usage``.
     # ``None`` (never ``0``) when unobserved or absent; on a stream they land once
     # the terminal SSE event is scanned (:func:`observe_usage`), not at record time.
-    #: Prompt/input tokens billed for this call.
+    #: Prompt/input tokens billed for this call. As the provider reports it:
+    #: OpenAI's count includes ``cached_tokens``, Anthropic's excludes both
+    #: ``cached_tokens`` and ``cache_write_tokens`` (#827).
     input_tokens: int | None = None
     #: Completion/output tokens produced by this call (includes ``reasoning_tokens``).
     output_tokens: int | None = None
@@ -556,8 +601,9 @@ class LastCall:
     @property
     def available(self) -> bool:
         """False only when the current surface structurally cannot be observed
-        (LiteLLM-backed / ``default_headers``-only adapters); a plain cold read is
-        still ``available`` — it just has not observed anything yet."""
+        (the framework owns the transport, or the adapter gets only
+        ``default_headers``); a plain cold read is still ``available`` — it just
+        has not observed anything yet."""
         return self.status is not LastCallStatus.UNAVAILABLE
 
     @classmethod
@@ -622,18 +668,75 @@ def unavailable(surface: str) -> LastCall:
     return LastCall(status=LastCallStatus.UNAVAILABLE, surface=surface)
 
 
+class LastCallBridge:
+    """Carries one logical model call's record back to the context that started
+    it, across a task the framework spawns for that call (#850).
+
+    LangChain's ``BaseChatModel.agenerate`` runs the request inside
+    ``asyncio.gather``, so the transport records into a *copy* of the caller's
+    context and ``donkey.last_call`` stays a cold read. An adapter that sees the
+    call start in the caller's context opens a bridge there with
+    :func:`open_last_call_bridge`. The spawned task inherits it, and the
+    transport records through it, so the caller and the task read the same
+    record.
+
+    It is closed when the call ends, so a task the caller spawns *later* (which
+    also inherits the bridge) can never write through it. That keeps the
+    hazard #2 rule: a fan-out never leaks a sibling's record back to the parent.
+    One bridge serves one call; an adapter must not open one for a batch whose
+    requests run side by side.
+    """
+
+    __slots__ = ("record", "_open")
+
+    def __init__(self, record: LastCall | None) -> None:
+        #: The newest record for this context. Starts as the record the context
+        #: held before the call, so a read mid-call is not a false cold read.
+        self.record = record
+        self._open = True
+
+    def close(self) -> None:
+        """Stop accepting records. Idempotent."""
+        self._open = False
+
+
 # Contextvar-scoped, never instance-scoped (hazard #2): the record for the call
 # made in *this* context. Set by the transport's ``_on_response`` on every
 # governed model response; read by ``donkey.last_call``. ``None`` means no call
 # has been observed in this context — a cold read, surfaced as :data:`UNOBSERVED`.
-_last_call: ContextVar[LastCall | None] = ContextVar("donkey_last_call", default=None)
+# It holds a :class:`LastCallBridge` instead while a bridged call is in flight
+# (or until the next record is observed in this context).
+_last_call: ContextVar[LastCall | LastCallBridge | None] = ContextVar(
+    "donkey_last_call", default=None
+)
 
 
 def current_last_call() -> LastCall | None:
     """The record observed in this context, or ``None`` for a cold read. The
     ``donkey.last_call`` accessor turns a ``None`` into :data:`UNOBSERVED` or an
     :func:`unavailable` record depending on which adapters have been used."""
-    return _last_call.get()
+    current = _last_call.get()
+    return current.record if isinstance(current, LastCallBridge) else current
+
+
+def open_last_call_bridge() -> LastCallBridge:
+    """Open a :class:`LastCallBridge` in this context and return it. Call this in
+    the caller's own context, before the framework spawns the call's task, and
+    :meth:`~LastCallBridge.close` it when the call ends."""
+    bridge = LastCallBridge(current_last_call())
+    _last_call.set(bridge)
+    return bridge
+
+
+def _record(record: LastCall) -> None:
+    """Make ``record`` this context's last call. While the context holds an open
+    bridge, write through it, so a later usage merge in the same task reaches the
+    caller too. A closed bridge is replaced by the plain record."""
+    current = _last_call.get()
+    if isinstance(current, LastCallBridge) and current._open:
+        current.record = record
+    else:
+        _last_call.set(record)
 
 
 def observe_last_call(
@@ -648,7 +751,7 @@ def observe_last_call(
     model it already parsed from the request body. Returns the record it set, for
     tests. ``now`` is injectable; production uses the wall clock (UTC)."""
     record = LastCall.from_response(response, requested_model=requested_model, now=now)
-    _last_call.set(record)
+    _record(record)
     return record
 
 
@@ -663,7 +766,7 @@ def observe_usage(counts: dict[str, int | None]) -> LastCall | None:
     seen, so a partial terminal event never overwrites a known count with ``None``.
     A no-op — returning ``None`` — when there is no ``OBSERVED`` record to merge
     into (the transport always sets one before the stream is consumed)."""
-    current = _last_call.get()
+    current = current_last_call()
     if current is None or current.status is not LastCallStatus.OBSERVED:
         return None
 
@@ -684,5 +787,5 @@ def observe_usage(counts: dict[str, int | None]) -> LastCall | None:
         cache_write_tokens=_pick("cache_write_tokens", current.cache_write_tokens),
         reasoning_tokens=_pick("reasoning_tokens", current.reasoning_tokens),
     )
-    _last_call.set(merged)
+    _record(merged)
     return merged

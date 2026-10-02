@@ -2,7 +2,7 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 Governed tool catalogs change under you. A platform team edits an MCP server's
 tool schema, bumps a policy, or republishes an asset — and if your agent
@@ -59,11 +59,13 @@ tools = await donkey.tools.discover(domain="hr", locked=True)
 ## Registry caching
 
 Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`,
-`resolve_agent()` — see [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md))
+`resolve_agent()` — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md))
 are cached with a configurable TTL (default 300 seconds):
 
 ```python
-donkey = Donkey.from_env(registry_cache_ttl_s=300)
+from donkey_kit import Donkey, DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(registry_cache_ttl_s=60))
 ```
 
 - `donkey.registry.refresh()` invalidates the cache and re-fetches on next use —

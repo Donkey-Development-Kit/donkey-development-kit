@@ -20,7 +20,7 @@ back into the SDK's typed refusal.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,local,langgraph]" "langchain>=1.0"
@@ -31,9 +31,9 @@ set -a; source .env.local; set +a
 `langchain>=1.0` provides `create_agent` (03, 04, 05, 09); it is not part of
 any `donkey-kit` extra.
 
-  **Async only.** The governed transport is `ChatOpenAI`'s
-  `http_async_client`, so every gateway script uses `ainvoke` / `astream`. A
-  sync `.invoke()` would bypass governance.
+  The scripts use `ainvoke` / `astream`. Sync `invoke()` / `stream()` are
+  governed the same way, through `ChatOpenAI`'s `http_client`, except in `jwt`
+  mode, where they raise `ConfigError`.
 
 ## 01 — Stock ChatOpenAI, no gateway
 
@@ -151,7 +151,7 @@ python "demos/human-made/langgraph/06 - otel exporter simple.py"
 ```
 
 The host owns the `TracerProvider` and Donkey rides it, as in
-[OpenAI 06](https://donkey-development-kit.github.io/donkey-development-kit/examples/openai.md#06--opentelemetry-host-owned-provider). Two
+[OpenAI 06](https://docs.donkey-kit.dev/examples/openai.md#06--opentelemetry-host-owned-provider). Two
 `ainvoke` calls run in one tagged `donkey.run(...)`. **You should see:** two
 replies locally, and two spans with one correlation id in the collector.
 
@@ -236,7 +236,7 @@ requests 2
 
 The "ok" text is the simulator's canned completion, not a reply to the ticket.
 
-**Learn more:** [LangGraph](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/langgraph.md) · [LangGraph agent](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/langgraph-agent.md)
+**Learn more:** [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [LangGraph agent](https://docs.donkey-kit.dev/examples/general/langgraph-agent.md)
 
 **Source:**
 [`demos/human-made/langgraph/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/langgraph)

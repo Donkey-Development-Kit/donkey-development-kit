@@ -17,26 +17,27 @@ import functools
 import importlib
 import importlib.util
 import inspect
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
 from .core import _verify
-from .core.auth import AnypointConnectedApp, AuthProvider
+from .core.auth import AuthProvider
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope, cache_scope
 from .core.config import DonkeyConfig, OnModelSubstitution
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
-from .core.telemetry import RunScope, configure_otlp_export, run_scope
+from .core.runtime import Runtime
+from .core.telemetry import RunScope, run_scope
 from .core.toolspec import register_tool
 from .core.transport import (
     DonkeyAsyncClient,
+    DonkeyAsyncClientView,
     DonkeyClient,
-    build_http_client,
-    build_sync_http_client,
+    DonkeyClientView,
 )
-from .integrations import ADAPTERS
+from .integrations import ADAPTERS, missing_framework_error
 from .llm.client import LLMClient
 from .registry.exchange import ExchangeRegistry
 from .registry.governance import GovernanceCriteria
@@ -58,15 +59,20 @@ if TYPE_CHECKING:
 
 
 _Callable = TypeVar("_Callable", bound=Callable[..., Any])
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
-def _framework_installed(probe: str) -> bool:
-    """Whether a framework's representative module can be located, without
-    importing it. Any error locating it means 'not installed'."""
-    try:
-        return importlib.util.find_spec(probe) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
+def _missing_module(probe: tuple[str, ...]) -> str | None:
+    """The first of a framework's required modules that cannot be located, or
+    ``None`` when all of them can. Any error locating one means 'not installed'."""
+    for module in probe:
+        try:
+            if importlib.util.find_spec(module) is None:
+                return module
+        except (ImportError, ValueError):
+            return module
+    return None
 
 
 class _ToolsFacade:
@@ -131,36 +137,18 @@ class Donkey:
         auth: AuthProvider | None = None,
         llm_auth: AuthProvider | None = None,
     ) -> None:
-        self._cfg = config or DonkeyConfig.from_env()
-        # Zero-config OTLP export (BG §1.6, #194): installs an exporter when an
-        # OTEL_EXPORTER_OTLP_ENDPOINT is set and telemetry is on; a no-op (and
-        # never an error) otherwise. This is the single funnel — from_env()
-        # delegates here — and it is idempotent across many Donkey() instances.
-        configure_otlp_export(self._cfg)
-        self._owned_auth_http: DonkeyAsyncClient | None = None
-        if auth is None:
-            self._auth, self._owned_auth_http = self._default_auth(self._cfg)
-        else:
-            self._auth = auth
-        # The data-plane (LLM proxy) credential is SEPARATE from the control-plane
-        # one (BG §1.1). In jwt/model-wallet mode (#509) the rotating JWT enters
-        # through this caller-supplied AuthProvider and drives the shared data-plane
-        # client; in the default client-id mode nothing changes — the control-plane
-        # provider (or None) rides the client exactly as before, and the CIE proxy
-        # ignores its bearer. So an existing client-id config is byte-identical.
-        self._llm_auth = llm_auth
-        data_plane_auth = llm_auth if self._cfg.llm_proxy_auth == "jwt" else self._auth
-        # One Budget per Donkey (never global, BG §1.3 / #185): both transports feed
-        # it in-band from every response's x-token-* headers.
-        self._budget = Budget()
-        self._http: DonkeyAsyncClient = build_http_client(
-            self._cfg, data_plane_auth, budget=self._budget
-        )
-        # Built only if someone asks for a blocking client, so the common async
-        # path never opens a connection pool it will not use.
-        self._sync_http: DonkeyClient | None = None
+        # Config, auth, budget, the shared clients and the OTLP bootstrap all
+        # live on the runtime, so this handle and the module-level factories
+        # (which use the process-default runtime) are built the same way (#725).
+        self._runtime = Runtime(config, auth=auth, llm_auth=llm_auth)
+        self._cfg = self._runtime.config
+        self._auth = self._runtime.auth
+        self._llm_auth = self._runtime.llm_auth
+        self._budget = self._runtime.budget
+        self._http: DonkeyAsyncClient = self._runtime.http
+        self._control_http: DonkeyAsyncClient = self._runtime.control_http
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
-        self._registry = ExchangeRegistry(self._cfg, self._http)
+        self._registry = ExchangeRegistry(self._cfg, self._control_http)
         self._tools = _ToolsFacade(self._registry)
         self._adapter_cache: dict[str, Adapter] = {}
 
@@ -233,7 +221,8 @@ class Donkey:
         :class:`~donkey_kit.core.errors.DonkeyError` hands you on a refusal.
 
         Usage counts are read from the response body, so they are ``None`` (never
-        ``0``) when the gateway sent no ``usage`` object; on a streamed response
+        ``0``) when the gateway sent no ``usage`` (or Gemini ``usageMetadata``)
+        object; on a streamed response
         they land once the terminal SSE event has been consumed, not at first read.
 
         Contextvar-scoped, not instance-scoped (hazard #2): under the parallel
@@ -249,11 +238,12 @@ class Donkey:
           it said nothing").
         * **UNOBSERVED** — no governed model call has returned in this context yet.
         * **UNAVAILABLE** — every adapter used on this Donkey routes outside our
-          transport (LiteLLM-backed ADK/CrewAI, or ``default_headers``-only
-          LlamaIndex / MS Agent Framework), so a response can never reach the
-          record. :attr:`LastCall.surface` names which. This is derived from the
-          adapters actually resolved, and the conformance suite asserts the
-          exemption rather than skipping it (the conformance kit).
+          transport (ADK ``model()`` via LiteLLM, CrewAI via its native OpenAI provider, or
+          ``default_headers``-only LlamaIndex / MS Agent Framework), so a
+          response can never reach the record. :attr:`LastCall.surface` names
+          which. This is derived from the adapters actually resolved, and the
+          conformance suite asserts the exemption rather than skipping it (the
+          conformance kit).
         """
         observed = current_last_call()
         if observed is not None:
@@ -264,7 +254,7 @@ class Donkey:
         # an indistinguishable UNOBSERVED (hazard #3). An empty cache (raw client
         # / not used yet) is a cold read, not UNAVAILABLE.
         used = list(self._adapter_cache.values())
-        if used and all(not a.observes_last_call for a in used):
+        if used and all(not a.observing_last_call() for a in used):
             return unavailable(", ".join(sorted(self._adapter_cache)))
         return UNOBSERVED
 
@@ -288,6 +278,28 @@ class Donkey:
         if sync:
             return self._llm.client(sync=True, **kw)
         return self._llm.client(sync=False, **kw)
+
+    @overload
+    def http_client(self, *, sync: Literal[False] = ...) -> DonkeyAsyncClientView: ...
+
+    @overload
+    def http_client(self, *, sync: Literal[True]) -> DonkeyClientView: ...
+
+    def http_client(self, *, sync: bool = False) -> DonkeyAsyncClientView | DonkeyClientView:
+        """The governed data-plane ``httpx`` client, for a framework or SDK that
+        takes one (``http_client=``, ``async_http_client=``, a pre-built
+        ``AsyncOpenAI``). Requests sent through it get the same headers, retries,
+        span, budget and ``donkey.last_call`` as every adapter.
+
+        It is a non-owning view of the shared client: closing it, as a framework
+        that owns its client's lifecycle does, leaves the shared client open, and
+        only :meth:`aclose`/:meth:`close` end the pool (#733). Defaults to the
+        ``httpx.AsyncClient``; ``sync=True`` returns the blocking ``httpx.Client``.
+        Event hooks added to it run for every request sent through it.
+        """
+        if sync:
+            return self._sync_http_client().view()
+        return self._http.view()
 
     @property
     def registry(self) -> ExchangeRegistry:
@@ -385,8 +397,8 @@ class Donkey:
         computes no embeddings; it steers and surfaces the *gateway's* cache.
 
         The same documented degradation as :meth:`run` applies (BG §1.8): a
-        ``connection_kwargs()`` / LiteLLM-backed adapter that does not route through
-        the shared transport does not see the contextvar, so its calls are not
+        ``connection_kwargs()``-only adapter that does not route through the
+        shared transport does not see the contextvar, so its calls are not
         steered. Invalid controls raise :class:`~donkey_kit.core.errors.ConfigError`
         at the call site, not on the first request.
         """
@@ -401,15 +413,39 @@ class Donkey:
         )
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
+    # The overloads keep the decorated callable's own signature, for both the
+    # bare and the keyword form, under a downstream ``mypy --strict`` (#716).
+    @overload
     def governed(
         self,
-        func: _Callable | None = None,
+        func: Callable[_P, _R],
         *,
         team: str | None = None,
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
-    ) -> _Callable | Callable[[_Callable], _Callable]:
+    ) -> Callable[_P, _R]: ...
+
+    @overload
+    def governed(
+        self,
+        func: None = None,
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
+
+    def governed(
+        self,
+        func: Callable[_P, _R] | None = None,
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]:
         """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
 
         The one-line on-ramp to governed execution: every governed model call
@@ -434,26 +470,29 @@ class Donkey:
         HITL (2.3) and are out of scope here (#200).
         """
 
-        def decorate(fn: _Callable) -> _Callable:
+        def decorate(fn: Callable[_P, _R]) -> Callable[_P, _R]:
             if inspect.iscoroutinefunction(fn):
+                # Here ``_R`` is the coroutine type, which mypy cannot narrow
+                # from ``iscoroutinefunction``; the casts restate that fact.
+                coro_fn = cast(Callable[_P, Awaitable[Any]], fn)
 
                 @functools.wraps(fn)
-                async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
                     async with self.run(
                         team=team, project=project, env=env, enduser_id=enduser_id
                     ):
-                        return await fn(*args, **kwargs)
+                        return await coro_fn(*args, **kwargs)
 
-                return async_wrapper  # type: ignore[return-value]
+                return cast(Callable[_P, _R], async_wrapper)
 
             @functools.wraps(fn)
-            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            def sync_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
                 with self.run(
                     team=team, project=project, env=env, enduser_id=enduser_id
                 ):
                     return fn(*args, **kwargs)
 
-            return sync_wrapper  # type: ignore[return-value]
+            return sync_wrapper
 
         # Bare ``@donkey.governed`` passes the callable positionally; the
         # parametrised ``@donkey.governed(...)`` passes nothing and returns the
@@ -491,7 +530,7 @@ class Donkey:
     ) -> AbstractContextManager[None]:
         """Inject a real gateway refusal in-process, no server (#190, BG §1.5).
 
-        Swaps a fixture-returning transport onto this Donkey's HTTP client(s) for
+        Swaps a fixture-returning transport onto this Donkey's data-plane HTTP client(s) for
         the next ``times`` calls, so the branch of your agent that handles a typed
         refusal runs with no network and no gateway::
 
@@ -508,39 +547,37 @@ class Donkey:
         ``times``+1 onward proceeds normally. Nesting composes and the previous
         transport is restored on exit, even if the block raises.
 
-        Swaps the async client always, and the blocking client only if it has
-        already been built (``client(sync=True)`` was called earlier); a sync
-        client created *inside* the block is not retro-swapped. Raises
+        Swaps both the async and the blocking client, building the blocking one
+        if nothing has yet, so a sync call — ``client(sync=True)``, or
+        ``ChatOpenAI.invoke()`` on a model built inside the block — is injected
+        into too (#736). Raises
         ``ValueError`` for a refusal type with no captured fixture (e.g.
-        :class:`~donkey_kit.core.errors.ContentSafetyBlocked`, still
-        under-documented, #253). Body-shaping (specific PII entities, a custom
+        :class:`~donkey_kit.core.errors.GatewayUnavailable`, which no gateway
+        response produces). Body-shaping (specific PII entities, a custom
         message) is the follow-up #188; this injects the fixture verbatim.
         """
         from .simulator.inject import simulate as _simulate
 
-        clients: list[Any] = [self._http]
-        if self._sync_http is not None:
-            clients.append(self._sync_http)
+        clients: list[Any] = [self._http, self._sync_http_client()]
         return _simulate(clients, error, times=times)
 
+    @property
+    def _sync_http(self) -> DonkeyClient | None:
+        return self._runtime.built_sync_http
+
+    @property
+    def _owned_auth_http(self) -> DonkeyAsyncClient | None:
+        return self._runtime.owned_auth_http
+
     def _sync_http_client(self) -> DonkeyClient:
-        if self._sync_http is None:
-            # Same Budget object as the async client, so a blocking caller updates
-            # donkey.budget on identical terms (BG §1.3, #185).
-            self._sync_http = build_sync_http_client(self._cfg, budget=self._budget)
-        return self._sync_http
+        return self._runtime.sync_http()
 
     async def aclose(self) -> None:
-        auth_http = self._owned_auth_http
-        self._owned_auth_http = None
-        try:
-            await self._http.aclose()
-        finally:
-            try:
-                if auth_http is not None:
-                    await auth_http.aclose()
-            finally:
-                self.close()
+        """Close every transport this Donkey owns: the data-plane and
+        control-plane clients, the connected-app token-fetch client it built (a
+        caller-supplied ``auth`` provider stays caller-owned), and the blocking
+        client. Each one is closed even if an earlier close raises."""
+        await self._runtime.aclose()
 
     async def __aenter__(self) -> Donkey:
         return self
@@ -551,13 +588,11 @@ class Donkey:
     def close(self) -> None:
         """Close the blocking transport.
 
-        This sync method cannot close either async transport. A sync-only caller
+        This sync method cannot close the async transports. A sync-only caller
         never opens them; mixed or async callers must use :meth:`aclose`, which
-        closes both async transports and calls this method for the blocking one.
+        closes every async transport and calls this method for the blocking one.
         """
-        if self._sync_http is not None:
-            self._sync_http.close()
-            self._sync_http = None
+        self._runtime.close()
 
     def __enter__(self) -> Donkey:
         """Sync context manager for the blocking surface. ``__exit__`` cannot
@@ -577,30 +612,11 @@ class Donkey:
             raise AttributeError(f"{type(self).__name__!r} has no attribute {name!r}")
         if name in self._adapter_cache:
             return self._adapter_cache[name]
-        if not _framework_installed(spec.probe):
-            raise ImportError(
-                f"The {name!r} integration is not installed. Install it with:\n"
-                f'    pip install "donkey-kit[{spec.extra}]"'
-            )
+        missing = _missing_module(spec.probe)
+        if missing is not None:
+            raise missing_framework_error(spec.extra, missing)
         module = importlib.import_module(spec.module, package="donkey_kit.integrations")
         adapter_cls = getattr(module, spec.cls)
-        adapter: Adapter = adapter_cls(self._cfg, self._http)
+        adapter: Adapter = adapter_cls(self._cfg, self._http, self._sync_http_client)
         self._adapter_cache[name] = adapter
         return adapter
-
-    @staticmethod
-    def _default_auth(
-        cfg: DonkeyConfig,
-    ) -> tuple[AuthProvider | None, DonkeyAsyncClient | None]:
-        """Build control-plane auth when credentials are present. The LLM proxy
-        credential is separate and handled by the OpenAI client (`BG §1.1`)."""
-        if cfg.client_id and cfg.client_secret:
-            http_client = build_http_client(cfg, None)  # token fetches need no auth
-            auth = AnypointConnectedApp(
-                client_id=cfg.client_id,
-                client_secret=cfg.client_secret,
-                control_plane_url=cfg.control_plane_url,
-                http_client=http_client,
-            )
-            return auth, http_client
-        return None, None

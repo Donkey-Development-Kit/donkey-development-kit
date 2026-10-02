@@ -22,4 +22,4 @@ them.
 
   DDK is an open-source community project, not an official Salesforce or
   MuleSoft product. Team members contribute in a personal capacity. Want to
-  join them? Start with [Contribute](https://donkey-development-kit.github.io/donkey-development-kit/community/contribute.md).
+  join them? Start with [Contribute](https://docs.donkey-kit.dev/community/contribute.md).

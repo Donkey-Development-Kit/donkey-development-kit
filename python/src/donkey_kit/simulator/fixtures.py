@@ -155,7 +155,8 @@ class _Spec:
 
 # The full shape table. Keys are the canonical shape names the simulator and the
 # tests share. The eight policy-rejection rows classify() is tested against, plus
-# the consumer-auth 401, the happy path, the SSE stream, and the /models 404.
+# the consumer-auth 401, the gateway's bare-model-name 400, the happy path, the
+# SSE stream, and the /models 404.
 SHAPES: dict[str, _Spec] = {
     # --- the documented rejection shapes (#181, +#289 regex-prompt-guard /
     #     content-safety) ---
@@ -169,7 +170,10 @@ SHAPES: dict[str, _Spec] = {
         403,
     ),
     "injection-protection": _Spec(
-        "rejections", "reject.injection-protection.headers.txt", None, 400
+        "rejections",
+        "reject.injection-protection.headers.txt",
+        "reject.injection-protection.body.json",
+        400,
     ),
     "regex-prompt-guard": _Spec(
         "rejections",
@@ -186,6 +190,13 @@ SHAPES: dict[str, _Spec] = {
     "content-moderation": _Spec(
         "rejections", "reject.content-moderation.headers.txt", None, 400
     ),
+    # Agent Kill Switch (docs/verified-apis.md §4, #694): nested error.code == "agent_killed".
+    "agent-killed": _Spec(
+        "rejections",
+        "reject.agent-killed.headers.txt",
+        "reject.agent-killed.body.json",
+        403,
+    ),
     "model-not-found": _Spec(
         # Captured body-only (no .headers.txt): matches test_row5's
         # httpx.Response(400, json=body) with no headers.
@@ -196,6 +207,14 @@ SHAPES: dict[str, _Spec] = {
         "application/json",
     ),
     "upstream-5xx": _Spec("rejections", "reject.upstream-5xx.headers.txt", None, 503),
+    # --- the gateway's own bare-model-name 400 (NOT one of the eight;
+    #     classify() → ModelNotRoutable, docs/verified-apis.md §4, #825/#891) ---
+    "model-not-routable": _Spec(
+        "anypoint/llm_proxy",
+        "reject.model-not-routable.headers.txt",
+        "reject.model-not-routable.body.json",
+        400,
+    ),
     # --- consumer-auth 401 (NOT one of the eight; classify() → AuthError) ---
     "client-id-missing": _Spec(
         "anypoint/llm_proxy",
@@ -210,7 +229,7 @@ SHAPES: dict[str, _Spec] = {
         "responses.success.body.json",
         200,
     ),
-    # A SEMANTIC-routing 200 (LIVE, docs/verified-apis.md §3 semantic-routing row,
+    # A SEMANTIC-routing 200 (docs/verified-apis.md §3 semantic-routing row,
     # #589/#590). The 'Finance' topic capture (openai/gpt-5-mini, score 0.62):
     # routing_type Semantic plus the semantic-only
     # ``x-llm-proxy-semantic-routing-success`` prose that ``LastCall`` parses for

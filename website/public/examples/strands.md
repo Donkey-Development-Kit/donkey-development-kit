@@ -2,13 +2,17 @@
 
 Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
 the governed client is passed in, the SDK owns the transport: run id,
-`last_call` and typed refusals all work. The calls go to
-**`/chat/completions`, which is not live-verified on the DDK proxies**
-(`/responses` is), so use a proxy whose upstream serves that route.
+`last_call` and typed refusals all work. The calls go to the proxy's
+`/chat/completions` route, so use a proxy whose upstream serves that route. The
+scripts use `gpt-4o`. If you point them at a model the proxy routes to Gemini,
+add `stream=False` to `OpenAIModel(...)`: Strands streams by default, and a
+Gemini-routed stream has no chunk deltas, so every turn fails (see
+[Streaming chat completions to a Gemini upstream](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)).
 
   **Why not `donkey.strands.model()`?** Strands opens and closes an OpenAI
   client per request from `client_args`. That closes the shared transport
-  after the first call, and the second fails with "client has been closed". A
+  after the first call, and the second fails with a `ConfigError` saying the
+  HTTP client is closed. A
   pre-built `client=` is reused and left open.
 
 | # | Script | Shows | Needs |
@@ -20,7 +24,7 @@ the governed client is passed in, the SDK owns the transport: run id,
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm]" "strands-agents[openai]"
@@ -120,7 +124,7 @@ for `AuthError`.
 first case. **You should see:** `<case> ->  <entities>` per case, or
 `<case> NO REFUSAL`.
 
-**Learn more:** [Strands](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/strands.md)
+**Learn more:** [Strands](https://docs.donkey-kit.dev/frameworks/strands.md)
 
 **Source:**
 [`demos/human-made/strands/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/strands)

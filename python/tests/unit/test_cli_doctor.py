@@ -9,7 +9,12 @@ extra are needed; runs under ``[dev]`` alone.
 from __future__ import annotations
 
 import json
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
@@ -114,6 +119,93 @@ def test_json_output_is_machine_readable(
     creds = next(r for r in payload if r["name"] == "credentials")
     assert creds["level"] == "fail"
     assert creds["remediation"] == AuthError.remediation
+
+
+def test_project_url_with_env_credentials_is_reported_without_sending(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The real probe path: doctor names the file and host, exits 1 with no
+    traceback, and nothing leaves the process."""
+    for var in list(os.environ):
+        if var.startswith(("ANYPOINT_", "DONKEY_")):
+            monkeypatch.delenv(var)
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    (project / ".donkey-kit.toml").write_text(
+        '[donkey]\nllm_proxy_url = "https://llm.example.test/proxy/"\n'
+    )
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+    sent: list[httpx.Request] = []
+
+    def _record(self: object, request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(599)
+
+    async def _arecord(self: object, request: httpx.Request) -> httpx.Response:
+        return _record(self, request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _record)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _arecord)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 1
+    out = _combined(result)
+    assert "[!!] config" in out
+    assert "llm.example.test" in out
+    assert str(project / ".donkey-kit.toml") in out
+    assert "Traceback" not in out
+    assert sent == []
+
+
+def test_project_loopback_url_with_env_credentials_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A loopback proxy URL from the project file gets the same treatment as
+    any other host: doctor refuses and the local listener receives nothing."""
+    received: list[str] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            received.append(self.path)
+            self.send_response(500)
+            self.end_headers()
+
+        def log_message(self, *args: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        for var in list(os.environ):
+            if var.startswith(("ANYPOINT_", "DONKEY_")):
+                monkeypatch.delenv(var)
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        port = server.server_address[1]
+        (project / ".donkey-kit.toml").write_text(
+            f'[donkey]\nllm_proxy_url = "http://127.0.0.1:{port}/proxy/"\n'
+        )
+        monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+        monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
+
+        result = runner.invoke(app, ["doctor"])
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert result.exit_code == 1
+    out = _combined(result)
+    assert "[!!] config" in out
+    assert str(project / ".donkey-kit.toml") in out
+    assert "Traceback" not in out
+    assert received == []
 
 
 def test_missing_llm_extra_prints_pip_install_and_exits_1(

@@ -822,6 +822,13 @@ a.af-card:hover .af-card-title::after {
   filter: invert(1);
 }
 
+.af-nav-badge {
+  height: 20px;
+  width: auto;
+  display: block;
+  border-radius: 3px;
+}
+
 footer a[href^='https://www.mulesoft.com'] {
   color: var(--af-accent);
   text-decoration: underline;

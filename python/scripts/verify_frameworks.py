@@ -13,8 +13,9 @@ Two independent checks per framework:
      import the native class via the adapter's factory and construct it. If the
      class path is wrong -> ImportError/AttributeError. If a kwarg name is wrong
      -> TypeError. Construction succeeding *is* the signature verification. The
-     script then confirms the object's real ``module.ClassName`` matches the
-     value recorded in docs/verified-apis.md §8, so a silently-renamed class is caught too.
+     script then confirms the object is an instance of the class ``FRAMEWORKS``
+     records (the docs/verified-apis.md §8 name), so a silently-renamed class is
+     caught too.
 
   B. LIVE ROUND-TRIP (``--live``, needs the 3 DONKEY_LLM_PROXY_* env vars):
      make one real completion through the framework's *own* native call and
@@ -34,8 +35,9 @@ Usage:
         # print docs/verified-apis.md §8 markdown rows to paste
     python scripts/verify_frameworks.py --json
 
-Exit code is non-zero if any *installed* framework fails its signature check, so
-this doubles as a CI gate (see .github/workflows/nightly-matrix.yml).
+Exit code is non-zero if any *installed* framework (its distribution is present)
+fails its signature check, so this doubles as a CI gate (see
+.github/workflows/nightly-matrix.yml).
 """
 
 from __future__ import annotations
@@ -49,28 +51,39 @@ import traceback
 from dataclasses import asdict, dataclass, field
 
 # --- ground truth: the exact docs/verified-apis.md §8 rows this script confirms ---
-# (framework key, factory import path, factory fn, expected native module.Class)
+# (framework key, factory import path, factory fn, expected native module.Class,
+#  the distribution the framework's extra installs — "installed" means it is present)
 # This stays the FULL eight-framework roster so the offline signature check can be
 # run on demand for any of them. Only LangGraph is conformance-tested and carried
 # in the nightly matrix (BG §1.8, #197); the other seven are supported at
 # connection_kwargs() only. `--only <fw>` targets one framework.
-FRAMEWORKS: list[tuple[str, str, str, str]] = [
+FRAMEWORKS: list[tuple[str, str, str, str, str]] = [
     ("langgraph", "donkey_kit.integrations.langgraph", "chat_model",
-     "langchain_openai.ChatOpenAI"),
+     "langchain_openai.ChatOpenAI", "langchain-openai"),
     ("adk", "donkey_kit.integrations.adk", "model",
-     "google.adk.models.lite_llm.LiteLlm"),
+     "google.adk.models.lite_llm.LiteLlm", "google-adk"),
+    # ADK's native Gemini on a Format=Gemini proxy (#691). A dotted key is a second
+    # factory of the same framework: `--only adk` selects both, and its extra is
+    # the part before the dot.
+    ("adk.gemini", "donkey_kit.integrations.adk", "gemini",
+     "google.adk.models.Gemini", "google-adk"),
     ("strands", "donkey_kit.integrations.strands", "model",
-     "strands.models.openai.OpenAIModel"),
+     "strands.models.openai.OpenAIModel", "strands-agents"),
     ("agent_framework", "donkey_kit.integrations.agent_framework", "chat_client",
-     "agent_framework.openai.OpenAIChatClient"),
+     "agent_framework.openai.OpenAIChatClient", "agent-framework"),
+    # The same factory with api="chat_completions" (#826).
+    ("agent_framework.chat_completions", "donkey_kit.integrations.agent_framework",
+     "chat_client", "agent_framework.openai.OpenAIChatCompletionClient", "agent-framework"),
     ("openai_agents", "donkey_kit.integrations.openai_agents", "model",
-     "agents.OpenAIChatCompletionsModel"),
+     "agents.OpenAIChatCompletionsModel", "openai-agents"),
     ("anthropic", "donkey_kit.integrations.anthropic", "client",
-     "anthropic.AsyncAnthropic"),
+     "anthropic.AsyncAnthropic", "anthropic"),
+    # crewai.LLM is a factory: openai/ + base_url returns this native provider.
+    # Pin the concrete class — every other provider is a crewai.BaseLLM too.
     ("crewai", "donkey_kit.integrations.crewai", "llm",
-     "crewai.LLM"),
+     "crewai.llms.providers.openai.completion.OpenAICompletion", "crewai"),
     ("llamaindex", "donkey_kit.integrations.llamaindex", "llm",
-     "llama_index.llms.openai_like.OpenAILike"),
+     "llama_index.llms.openai_like.OpenAILike", "llama-index-llms-openai-like"),
 ]
 
 PROXY_ENV = (
@@ -79,6 +92,10 @@ PROXY_ENV = (
     "DONKEY_LLM_PROXY_CLIENT_SECRET",
 )
 MODEL = os.environ.get("DEMO_MODEL", "gpt-4o")
+# adk.gemini needs a Format=Gemini proxy; the default DDK proxies are Format=OpenAI.
+# Its live round-trip runs only when this points at one (same consumer creds).
+GEMINI_PROXY_ENV = "DONKEY_GEMINI_PROXY_URL"
+GEMINI_MODEL = os.environ.get("DEMO_GEMINI_MODEL", "gemini-2.5-flash")
 
 
 @dataclass
@@ -101,7 +118,16 @@ class Result:
         if self.blocked:
             return "BLOCKED (verification discipline)"
         if self.signature_ok and self.class_matches:
-            return "VERIFIED" if self.live in ("ok", "not run") else "SIGNATURE OK / LIVE FAIL"
+            if self.live == "ok":
+                return "VERIFIED (LIVE)"
+            # An offline-only pass (no --live, or --live skipped) confirms
+            # construction + isinstance against the recorded class path — not
+            # a real-sandbox round-trip, so it must not read "VERIFIED" on its
+            # own (§0.3; docs/verified-apis.md §8 reserves that word for a
+            # live gateway request, #681).
+            if self.live.startswith("fail"):
+                return "UNVERIFIED (signature confirmed; live check FAILED)"
+            return "UNVERIFIED (signature confirmed)"
         if self.signature_ok and self.class_matches is False:
             return "CLASS RENAMED"
         return "SIGNATURE FAIL"
@@ -138,7 +164,19 @@ def _import_expected(path: str) -> type | None:
     return obj if isinstance(obj, type) else None
 
 
-def check_signature(res: Result, import_path: str, factory: str) -> object | None:
+def _distribution_installed(distribution: str) -> bool:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        version(distribution)
+    except PackageNotFoundError:
+        return False
+    return True
+
+
+def check_signature(
+    res: Result, import_path: str, factory: str, distribution: str
+) -> object | None:
     """Check A — construct the native object via the adapter factory."""
     import importlib
 
@@ -147,20 +185,30 @@ def check_signature(res: Result, import_path: str, factory: str) -> object | Non
     except ImportError:
         res.installed = False
         return None
+    # Decided by the distribution, never by an ImportError from the factory: a
+    # renamed class raises one, and crewai.LLM re-raises native-provider
+    # construction errors as one. Both must fail below, not read as absent.
+    if not _distribution_installed(distribution):
+        res.installed = False
+        return None
 
     fn = getattr(mod, factory)
     try:
         # Anthropic's native surface is a client; the model id is a per-call
         # argument, so its factory takes no positional model (BG §1.8 divergence).
-        obj: object = fn() if res.framework == "anthropic" else fn(MODEL)
+        obj: object
+        if res.framework == "anthropic":
+            obj = fn()
+        elif res.framework == "adk.gemini":
+            obj = fn(GEMINI_MODEL, base_url=os.environ.get(GEMINI_PROXY_ENV) or None)
+        elif res.framework == "agent_framework.chat_completions":
+            obj = fn(MODEL, api="chat_completions")
+        else:
+            obj = fn(MODEL)
     except NotImplementedError as exc:  # blocked on verification
         res.installed = True
         res.blocked = True
         res.detail = str(exc).splitlines()[0]
-        return None
-    except ImportError:
-        # The framework's own package isn't installed (factory imports it lazily).
-        res.installed = False
         return None
     except TypeError as exc:  # a kwarg name/signature is WRONG — the key failure
         res.installed = True
@@ -214,6 +262,29 @@ async def check_live(res: Result, obj: object) -> None:
         except Exception as exc:  # noqa: BLE001
             res.live = f"fail: {type(exc).__name__}: {exc}"
         return
+    if res.framework == "adk.gemini":
+        # ADK's model-level call (BaseLlm.generate_content_async), live-verified
+        # against ddk-gemini-inbound on 2026-09-29 (#691).
+        if not os.environ.get(GEMINI_PROXY_ENV):
+            res.live = f"skipped: set {GEMINI_PROXY_ENV} to a Format=Gemini proxy"
+            return
+        try:
+            from google.adk.models.llm_request import LlmRequest
+            from google.genai import types
+
+            request = LlmRequest(
+                model=GEMINI_MODEL,
+                contents=[types.Content(role="user", parts=[types.Part(text="Say hi.")])],
+            )
+            text = ""
+            async for resp in obj.generate_content_async(request):  # type: ignore[attr-defined]
+                if resp.content and resp.content.parts:
+                    text += "".join(p.text or "" for p in resp.content.parts)
+            res.live = "ok"
+            res.detail = f"completion: {text!r}"
+        except Exception as exc:  # noqa: BLE001
+            res.live = f"fail: {type(exc).__name__}: {exc}"
+        return
     res.live = (
         "skipped: framework runtime call API not verified (docs/verified-apis.md §8/§9); "
         "shared proxy path verified via raw client (docs/verified-apis.md §2)"
@@ -223,11 +294,11 @@ async def check_live(res: Result, obj: object) -> None:
 async def run(only: list[str] | None, live: bool) -> list[Result]:
     have_real = _ensure_proxy_env_for_offline()
     results: list[Result] = []
-    for key, import_path, factory, expected in FRAMEWORKS:
-        if only and key not in only:
+    for key, import_path, factory, expected, distribution in FRAMEWORKS:
+        if only and key not in only and key.partition(".")[0] not in only:
             continue
         res = Result(framework=key, expected_class=expected)
-        obj = check_signature(res, import_path, factory)
+        obj = check_signature(res, import_path, factory, distribution)
         if live and obj is not None and res.class_matches:
             if not have_real:
                 res.live = (
@@ -270,7 +341,14 @@ def emit_verified_rows(results: list[Result]) -> None:
     print("\n# Paste into docs/verified-apis.md §8 (maintainer sign-off still required):\n")
     for r in results:
         if r.signature_ok and r.class_matches:
-            status = "VERIFIED (LIVE)" if r.live == "ok" else "VERIFIED (signature)"
+            # Match the docs/verified-apis.md §8 vocabulary exactly (#681): only
+            # a real --live round-trip earns "VERIFIED"; an offline-only pass is
+            # "UNVERIFIED (signature confirmed)" until a maintainer signs off.
+            status = (
+                "VERIFIED (LIVE)"
+                if r.live == "ok"
+                else "UNVERIFIED (signature confirmed; pending maintainer --live + sign-off)"
+            )
             print(
                 f"| {r.framework} | `{r.expected_class}` | {status} "
                 f"| {r.actual_class} | {today} | verify_frameworks.py |"

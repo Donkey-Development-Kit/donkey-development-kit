@@ -2,9 +2,9 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
-Once [discovery](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md) hands you a `ToolSet`, binding turns
+Once [discovery](https://docs.donkey-kit.dev/tool-access/discovery.md) hands you a `ToolSet`, binding turns
 governed MCP servers into a framework's own tool objects — nothing wrapped,
 nothing re-implemented.
 
@@ -74,10 +74,10 @@ docstring calls out the difference.
 | Strands | `MCPClient(lambda: streamablehttp_client(url, headers=...))` — implements `ToolProvider`, so it can be passed directly into `Agent(tools=[...])` with automatic lifecycle management. |
 
 A binding failure or a `401` surfaces as a typed exception from the
-[error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md).
+[error taxonomy](https://docs.donkey-kit.dev/errors.md).
 
 ## Related
 
-- [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md) — produce the `ToolSet`.
-- [A2A agent tools](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/a2a.md) — bind a remote agent the same way.
-- [Frameworks](https://donkey-development-kit.github.io/donkey-development-kit/frameworks.md) — governed model access per framework.
+- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md) — produce the `ToolSet`.
+- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — bind a remote agent the same way.
+- [Frameworks](https://docs.donkey-kit.dev/frameworks.md) — governed model access per framework.

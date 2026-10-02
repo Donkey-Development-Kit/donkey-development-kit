@@ -1,11 +1,13 @@
-# Rejection contracts — the eight documented shapes (#181, #289, docs/verified-apis.md §4)
+# Rejection contracts — the nine documented shapes (#181, #289, #694, docs/verified-apis.md §4)
 
 The canonical index of the gateway rejection shapes `core/errors.classify()`
 discriminates, one row per shape. These fixtures are **shared with the local
-gateway simulator** (`donkey mock`, #187): the simulator replays these exact
-files, so contract drift fails `classify()` and the simulator at once. Keep them
-byte-faithful and parser-compatible (see `../anypoint/llm_proxy/README.md` for
-the `.headers.txt` / `.body.json` / `.body.empty` convention).
+gateway simulator** (`donkey mock`, #187): the simulator replays the semantic
+header subset from these files (see "Which headers each `.headers.txt`
+records" below) and serves bodies byte-faithfully, so contract drift fails
+`classify()` and the simulator at once. Keep bodies byte-faithful and headers
+parser-compatible (see `../anypoint/llm_proxy/README.md` for the
+`.headers.txt` / `.body.json` / `.body.empty` convention).
 
 ## Provenance & verification status (verification discipline)
 
@@ -25,12 +27,18 @@ introduced the policy) — no longer left open as "no URL recorded" (#253):
 **Live-capture status (#253, 2026-09-22):** rows 7 and 8 were re-confirmed
 against the deployed provisioning proxies — `ddk-injection-guard` (Regex Prompt
 Guard, instance 21179713, shared-omni-gateway) and `ddk-azure-content-safety`
-(Azure Content Safety, instance 21180957, private-space-omni-gateway). Row 3
-(Injection Protection, `x-injection-protection: blocked`) and row 4 (the
-fall-through) stay documented-only: **no Injection Protection policy proxy is
-deployed** to capture them, so their bytes remain honest placeholders (the
-deployed injection-lane proxy runs Regex Prompt Guard = row 7, a distinct
-policy). Rows 1/2/5 remain LIVE from the original 2026-08-28 captures.
+(Azure Content Safety, instance 21180957, private-space-omni-gateway). Rows
+1/2/5 remain LIVE from the original 2026-08-28 captures.
+
+**Injection Protection capture (#669, 2026-09-27):** row 3 (Injection
+Protection, `x-injection-protection: blocked`) is now also LIVE, captured
+against `ddk-injection-protection` (native Gemini ingress, instance 21200898,
+shared-omni-gateway) — a `400` carrying a real **79-byte** body,
+`{"message":"Injection attack detected - Rule: 'SQL Injection', Location: Body"}`,
+replacing the honest empty placeholder. Row 4 (the content-moderation
+fall-through) stays documented-only: no policy proxy produces an
+"unrecognised refusal" on demand, so its bytes remain an honest placeholder,
+and it is the sole residual keeping #253 open.
 
 **Bedrock Guardrails sibling (#568, 2026-09-24):** row 8's second vendor was
 live-captured against `ddk-bedrock-guardrails` — a `403` carrying
@@ -45,38 +53,91 @@ vendor `…-action: reject` header family), so, unlike every served fixture, it 
 deliberately **absent from `fixtures.lock`**; the contract test's assertions
 guard its bytes instead.
 
-## The eight rows
+**Agent Kill Switch capture (#694, 2026-09-29):** row 9 was live-captured
+against `ddk-agent-kill-switch` (DDK / Sandbox, API instance 21206201,
+shared-omni-gateway), called with a Keycloak JWT whose `act.sub` is a
+quarantined agent (`ddk-langgraph-agent`, `act.sub=21206128`; correlation id
+`e7641776-3160-4b59-814d-f6c354e7e177`). The gateway answered `403` with a
+nested `{"error":{"code":"agent_killed","message":…}}` body — no `type`, no
+`www-authenticate`, and no kill-reason field (#314). The body is the only
+discriminator, so `.headers.txt` records just the status line and
+`content-type`; the body is byte-faithful. No token or credential survived the
+capture (the JWT was a request header, never written to disk).
+
+## The nine rows
 
 | # | Shape | Fixture | classify() → | Discriminator | Provenance |
 |---|-------|---------|--------------|---------------|------------|
 | 1 | Token rate limit | `../anypoint/llm_proxy/reject.token-rate-limit.{headers.txt,body.empty}` | `TokenBudgetExceeded` | 429 + `x-token-limit`/`-remaining`/`-reset`, empty body | LIVE, 2026-08-28 (`llm-token-rate-limit` 1.0.2) |
 | 2 | PII detection | `../anypoint/llm_proxy/reject.pii-detected.{headers.txt,body.json}` | `PIIDetected` | nested `error.type == "pii_detected"`, no `www-authenticate` | LIVE, 2026-08-28 (`llm-pii-detection-policy` 1.0.0) |
-| 3 | Injection protection | `reject.injection-protection.{headers.txt,body.empty}` | `PromptInjectionBlocked` | header `x-injection-protection: blocked` (not status) | **Shape UNVERIFIED** — header discriminator only; body unknown → empty placeholder. [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection) (v1.12.0); still open on #253 — no Injection Protection proxy deployed. |
+| 3 | Injection protection | `reject.injection-protection.{headers.txt,body.json}` | `PromptInjectionBlocked` | header `x-injection-protection: blocked` (not status) | **VERIFIED (LIVE), 2026-09-27 (#669)** — real 79-byte body captured against `ddk-injection-protection` (instance 21200898). [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection) (v1.12.0). |
 | 4 | Content moderation / federated guardrails | `reject.content-moderation.{headers.txt,body.empty}` | generic `PolicyViolation` | falls through (no nested error, no injection/guard/safety discriminator) | **UNDER-DOCUMENTED** — minimal 4xx proving the fall-through stays generic. Blocked on #253. |
 | 5 | Upstream provider 4xx | `../anypoint/llm_proxy/reject.model-not-found.body.json` | `UpstreamRequestError` | non-429 4xx, nested `error` with `code`/`type`/`param` | LIVE, 2026-08-28 (OpenAI passthrough) |
 | 6 | Upstream 5xx | `reject.upstream-5xx.{headers.txt,body.empty}` | `UpstreamModelError` (retryable) | 5xx status range (no competing discriminator) | **SYNTHETIC** — status-range classification only; no live capture, no invented body. |
 | 7 | Regex Prompt Guard | `reject.regex-prompt-guard.{headers.txt,body.json}` | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | 403 + top-level `matched_patterns` list (flat-string `error`) | **VERIFIED (LIVE), 2026-09-22 (#253)** — body matches the live capture byte-for-byte against `ddk-injection-guard` (instance 21179713). [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4). |
 | 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **VERIFIED (LIVE)** — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0). |
+| 9 | Agent Kill Switch | `reject.agent-killed.{headers.txt,body.json}` | `AgentKilled` (`policy="agent-kill-switch"`) | nested `error.code == "agent_killed"` (no `type`, no `www-authenticate`) | **VERIFIED (LIVE), 2026-09-29 (#694)** — captured against `ddk-agent-kill-switch` (instance 21206201) with a quarantined agent's JWT. |
 
 Rows 1, 2, 5 **alias** the existing live captures in `../anypoint/llm_proxy/`
 (referenced, not copied — moving them would break that directory's contract-test
-helpers and provenance chain). Rows 3, 4, 6 live here because they are not (yet)
-live-captured; their bodies are zero-byte `.body.empty` placeholders — the honest
-"shape unknown" marker, never a guessed body.
+helpers and provenance chain). Row 4 (and only row 4) lives here because it is
+not (yet) live-captured; its body is a zero-byte `.body.empty` placeholder —
+the honest "shape unknown" marker, never a guessed body. Row 6 (upstream 5xx)
+is synthetic by design (status-range classification only), not pending capture.
 
-Rows 7 and 8 (#289) also live here and are now **VERIFIED (LIVE)**: their
-discriminators (the `matched_patterns` list, the vendor `…-action: reject`
-header) were confirmed against the deployed provisioning proxies — Regex Prompt
-Guard and Azure Content Safety on 2026-09-22 (#253), Bedrock Guardrails on
-2026-09-24 (#568) — not just pinned from the policy pages. The regex-prompt-guard
-body matched the committed bytes exactly; the content-safety fixtures carry a
-live-captured category set for each vendor. These shapes have **no `_verify.py` constant** to
-flip — `classify()` reads them straight from the response, so the verification
-record is the docs/verified-apis.md §4 rows plus this table, not an
-`Unverified(...)` guard. Unlike rows 3/4/6, row 7 needs a non-empty body: its
-discriminator is a body field (`matched_patterns`), so an empty placeholder could
-not exercise the path.
+Rows 3, 7, and 8 (#289, #669) also live here and are now **VERIFIED (LIVE)**:
+their discriminators (the `x-injection-protection: blocked` header, the
+`matched_patterns` list, the vendor `…-action: reject` header) were confirmed
+against the deployed provisioning proxies — Injection Protection on 2026-09-27
+(#669), Regex Prompt Guard and Azure Content Safety on 2026-09-22 (#253),
+Bedrock Guardrails on 2026-09-24 (#568) — not just pinned from the policy pages.
+The regex-prompt-guard body matched the committed bytes exactly; the
+content-safety fixtures carry a live-captured category set for each vendor; the
+injection-protection body is the real 79-byte capture. These shapes have **no
+`_verify.py` constant** to flip — `classify()` reads them straight from the
+response, so the verification record is the docs/verified-apis.md §4 rows plus
+this table, not an `Unverified(...)` guard. Row 7's discriminator is a body
+field (`matched_patterns`), so it needs a non-empty body to exercise the path;
+row 3's discriminator is the header alone, so its body is carried on
+`err.response` without classify() reading it.
 
 Client-ID enforcement (401 + `www-authenticate` → `AuthError`) is a separate
-**consumer-auth** case, deliberately **not** one of the eight policy-rejection
+**consumer-auth** case, deliberately **not** one of the nine policy-rejection
 rows.
+
+## Which headers each `.headers.txt` records (#670)
+
+A live gateway response carries far more headers than any fixture here
+records — a live capture against `ddk-injection-protection` (#670) returned
+**~10** response headers for row 3, while
+`reject.injection-protection.headers.txt` records **2**. That gap is
+deliberate, not a missed capture: every `.headers.txt` file in this directory
+records the **semantic subset** — the status line, the discriminator
+header(s) `classify()` reads, and `content-type` when the body is JSON —
+i.e. exactly what `classify()` and an SDK consumer actually consume. None of
+them records transport/CDN framing headers (`server`, `date`,
+`strict-transport-security`, `connection`) or the body-derived
+`content-length`.
+
+The reason lives in `simulator/fixtures.py`'s `replay_headers()`: it is an
+**allow-list**, not a deny-list (`_KEEP_EXACT` / `_KEEP_PREFIX`), and its
+comment names exactly those framing headers as dropped on replay — carrying
+them would misrepresent a fixture as a live gateway response and undercut the
+`x-donkey-simulator` honesty guarantee. So even if a `.headers.txt` recorded
+`server` or `Strict-Transport-Security`, the simulator would never emit them;
+recording them here would be dead weight, not a fuller fixture.
+
+One header from the row-3 live capture is deliberately excluded for a
+different reason: `x-llm-proxy-model-based-routing-success` matches the
+`x-llm-proxy-` allow-list prefix, so it *would* be replayed if recorded — but
+it is a **proxy-topology artifact** (present because `ddk-injection-protection`
+happens to sit on a model-based-routing proxy), not a property an injection
+rejection intrinsically has. Baking a proxy-specific header into the canonical
+fixture would misrepresent it as universal — §0.3 territory. `content-type`,
+by contrast, *is* semantic here and was added in #669/#673.
+
+When capturing a new rejection, or comparing a live capture against a
+committed fixture, use this rule rather than transcribing the full raw header
+block: keep the discriminator(s) plus `content-type` (when the body is JSON),
+drop framing headers, and question any header that looks specific to the
+capturing proxy's own configuration rather than to the policy itself.

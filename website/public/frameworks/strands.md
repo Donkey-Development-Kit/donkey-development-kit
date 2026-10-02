@@ -91,8 +91,10 @@ llm = OpenAIModel(
         "base_url": ...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
-        "http_client": ...,       # the SDK's shared httpx client
+        "http_client": ...,       # a non-owning view of the SDK's shared client
+        "max_retries": 0,         # the SDK retries in its own transport layer
     },
+    stream=False,                 # see Notes
 )
 ```
 
@@ -101,14 +103,31 @@ Strands forwards to its internal OpenAI client.
 
 ## Notes
 
+- **Build the agent with `retry_strategy=None`.** A Strands `Agent` retries a
+  throttled model call by default (up to 6 attempts), and Strands treats every
+  `429` as throttling. On the proxy a `429` is a budget refusal, so turn the
+  agent's retry off and let the SDK's transport handle the transient `5xx`:
+
+  ```python
+  from strands import Agent
+
+  agent = Agent(model=donkey.strands.model("gpt-4o"), retry_strategy=None)
+  ```
+
+  The model itself has `max_retries=0`, so the OpenAI client under it doesn't
+  retry either.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
-- Strands also exposes lifecycle hooks (`BeforeToolCallEvent` and friends).
-  The SDK uses them for the policy-termination pattern — see the error taxonomy
-  for how a `PolicyViolation` should end a run cleanly rather than trigger a
-  retry loop.
+- **The client stays open.** Strands opens and closes an OpenAI client for
+  every request (`async with AsyncOpenAI(**client_args)`). The `http_client` it
+  gets is a view whose close is a no-op, so the SDK's shared client survives
+  every call. Only `donkey.aclose()` ends the connection pool.
+- **Streaming is off by default.** The governed model sets `stream=False`. A
+  proxy routing to a Gemini upstream answers a streamed request with one whole
+  `chat.completion` and no chunk deltas, and Strands fails on it. Pass
+  `donkey.strands.model("gpt-4o", stream=True)` on routes that stream.
 
-See the [error taxonomy](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) for how proxy rejections surface as typed
-exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md) for
+See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface as typed
+exceptions, and the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for
 the current status of every constructor signature this adapter depends on.

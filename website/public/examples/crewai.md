@@ -1,8 +1,7 @@
 # CrewAI
 
 CrewAI 1.x with `donkey.crewai.llm("…")`. `openai/` models go through CrewAI's
-native OpenAI provider to **`/chat/completions`, which is not live-verified on
-the DDK proxies** (`/responses` is). CrewAI owns the transport: the
+native OpenAI provider to the proxy's `/chat/completions` route. CrewAI owns the transport: the
 credentials go on the wire, but there is **no run id and no `last_call`**.
 Refusals are still typed, because the native provider keeps the openai error's
 response.
@@ -16,7 +15,7 @@ Both scripts need a live gateway; there is no offline CrewAI script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,crewai]"
@@ -78,7 +77,7 @@ first case. **You should see:** `<case> ->  <entities>` per case, or
 `<case> NO REFUSAL`. A `404` means the proxy's upstream has no
 `/chat/completions` route.
 
-**Learn more:** [CrewAI](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/crewai.md)
+**Learn more:** [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md)
 
 **Source:**
 [`demos/human-made/crewai/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/crewai)

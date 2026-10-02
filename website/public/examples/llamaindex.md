@@ -2,10 +2,11 @@
 
 LlamaIndex with `donkey.llamaindex.llm("…")`, an `OpenAILike`. The adapter sets
 `is_chat_model=True` — the `OpenAILike` default of `False` hits
-`/completions` — so calls go to **`/chat/completions`, which is not
-live-verified on the DDK proxies**. Only `default_headers` are handed over:
-there is **no run id and no `last_call`**. `OpenAILike` re-raises the openai
-error unchanged, so `classify()` still types refusals.
+`/completions` — so calls go to the proxy's `/chat/completions` route. Sync
+and async calls send through the
+SDK's HTTP clients, so the run id reaches the proxy and `last_call` is
+populated. `OpenAILike` re-raises the openai error unchanged, so `classify()`
+types refusals.
 
 Both scripts need a live gateway; there is no offline LlamaIndex script.
 
@@ -16,7 +17,7 @@ Both scripts need a live gateway; there is no offline LlamaIndex script.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,llamaindex]"
@@ -41,8 +42,8 @@ print("total tokens", reply.raw.usage.total_tokens)
 print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
 ```
 
-**You should see:** two greetings, `total tokens`, and `last_call unavailable
-…`. A `404 … /completions` means `is_chat_model` was overridden back to
+**You should see:** two greetings, `total tokens`, and `last_call observed
+None`. A `404 … /completions` means `is_chat_model` was overridden back to
 `False`.
 
 ## 02 — Typed refusals, live
@@ -68,7 +69,7 @@ except openai.APIStatusError as err:
 first case. **You should see:** `<case> ->  <entities>` per case, or
 `<case> NO REFUSAL`.
 
-**Learn more:** [LlamaIndex](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/llamaindex.md)
+**Learn more:** [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md)
 
 **Source:**
 [`demos/human-made/llamaindex/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/llamaindex)

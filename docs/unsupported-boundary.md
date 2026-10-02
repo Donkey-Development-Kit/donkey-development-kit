@@ -25,7 +25,7 @@ Classification:
 | Client ID Enforcement request headers and `401` rejection contract | `core.transport.proxy_auth_headers`; `core.errors.classify` | **Documented and public** | The [Client ID Enforcement policy](https://docs.mulesoft.com/gateway/latest/policies-included-client-id-enforcement) documents the default header expressions and `WWW-Authenticate: Client-ID-Enforcement`. The configured proxy contract is `VERIFIED (LIVE)` in `verified-apis.md` §2 and §4. |
 | LLM Token Based Rate Limit `429` response: `x-token-limit`, `x-token-remaining`, and `x-token-reset` | `core.budget.Budget`; `core.errors.classify` | **Documented and public** | The [LLM Token Based Rate Limit policy](https://docs.mulesoft.com/gateway/latest/policies-included-llm-token-rate-limit) documents all three headers and the reset unit. The SDK's rejection fixture is `VERIFIED (LIVE)` in `verified-apis.md` §4. |
 | LLM PII Detection `403` rejection body (`error.type = "pii_detected"`) | `core.errors.classify` | **Documented and public** | The [LLM PII Detection policy](https://docs.mulesoft.com/gateway/latest/policies-included-llm-pii-detection) documents the rejection body. The SDK also captured it live; see `verified-apis.md` §4. |
-| Regex Prompt Guard body and Injection Protection response header | `core.errors.classify` | **Documented and public** | MuleSoft documents `matched_patterns` in [Regex Prompt Guard](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) and `x-injection-protection: blocked` in [Injection Protection](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection). These discriminators are documented but still pending direct live capture; see `verified-apis.md` §4. |
+| Regex Prompt Guard body and Injection Protection response header | `core.errors.classify` | **Documented and public** | MuleSoft documents `matched_patterns` in [Regex Prompt Guard](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) and `x-injection-protection: blocked` in [Injection Protection](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection). Both discriminators are now live-captured — Regex Prompt Guard 2026-09-22 (#253), Injection Protection 2026-09-27 (#669); see `verified-apis.md` §4. |
 | Azure Content Safety and Amazon Bedrock Guardrails rejection headers and bodies | `core.errors.classify` | **Documented and public** | The [Azure Content Safety](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) and [Amazon Bedrock Guardrails](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) policy pages document their action/reason headers and `403` bodies. Both are now live-captured — Azure 2026-09-22, Bedrock 2026-09-24 (#568); see `verified-apis.md` §4. |
 | Upstream provider error pass-through: non-`429` `4xx` nested error envelope; generic `5xx` status family | `core.errors.classify` | **Documented but no SLA for third-party use** | A real Model Proxy passed an OpenAI `400 model_not_found` envelope through verbatim, including `code`, `type`, and `param` (`VERIFIED (LIVE)`, `verified-apis.md` §4). MuleSoft's public Model Proxy page does not state a compatibility contract for provider error envelopes, whose schema ultimately belongs to the upstream provider. The SDK maps any generic `5xx` to `UpstreamModelError` by status only and assumes no body shape. Owner: DDK maintainers; retain the captured provider fixture and classify changed envelopes conservatively. |
 | Successful-response budget window in `x-llm-proxy-ratelimit` prose | `core.budget.Budget` | **Documented but no SLA for third-party use** | Captured from a real Model Proxy and parsed fail-open: an absent or changed sentence is ignored, never fatal. The exact prose contract is `VERIFIED (LIVE)` in `verified-apis.md` §4 but is not stated in the public policy page. Owner: DDK maintainers; re-capture on gateway-policy changes. |
@@ -39,11 +39,27 @@ Classification:
   They are therefore not called platform APIs and are not classified above.
 - `LLMClient.list_models(live=True)` does not call `GET /models`; live capture
   established that Model Proxy has no model-catalog endpoint.
-- Correlation, per-call, application/business-group attribution, and cost-tag
-  request-header names remain warning-emitting, overridable `Unverified`
-  placeholders (`verified-apis.md` §3). The SDK makes no claim that the gateway
-  reads them and does not depend on it doing so, so they are not represented as
-  supported platform contracts here.
+- Application/business-group attribution request-header names remain
+  warning-emitting `Unverified` placeholders (`verified-apis.md` §3). They are
+  the only names here that still warn, and they have no config key, so they
+  cannot be overridden; leaving `application_name` / `business_group` unset
+  sends neither header. The gateway reads and echoes the correlation request header; the per-call
+  and cost-tag request-header names are overridable SDK conventions it does not
+  read, and cost tags are carried on spans. The SDK does not depend on the
+  gateway reading any of these, so they are not represented as supported
+  platform contracts here.
+
+## Local Mode is not a supported deployment target
+
+Omni/Flex Gateway **Local Mode** is not supported by DDK. The pure-Python
+local gateway simulator (`donkey mock` / `simulate()`) is the supported local
+dev loop; real-gateway behavior — the LLM Proxy, MCP Bridge, and their
+policies — is exercised against a hosted (Connected Mode) proxy instead. A
+stock Flex Gateway 1.14.0 Local Mode image rejects the LLM Proxy and MCP
+Bridge policies as missing extensions and refuses configuration until
+registered to a control plane — enough to make this scope call, and bounded
+to that image version. See `verified-apis.md` §6 for the underlying findings
+and #661 for the decision.
 
 ## Undocumented surfaces
 

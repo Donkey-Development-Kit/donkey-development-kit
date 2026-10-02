@@ -8,25 +8,29 @@ client_credentials), :class:`StaticToken` (CI, token injected), and
 The control-plane credential and the LLM-proxy credential are SEPARATE and must
 not be conflated (BG §1.1).
 
-VERIFICATION NOTE: the default token endpoint path from
-``_verify.OAUTH_TOKEN_PATH`` is VERIFIED (plugin); see
-``docs/verified-apis.md`` §1 and §12.1. The scopes each operation needs and the
-operations that require an *admin* connected app with user context remain
-UNVERIFIED. The latter path is not yet implemented and raises a
-verification-blocked error where it is needed.
+VERIFICATION NOTE: the default token endpoint path is
+``_verify.OAUTH_TOKEN_PATH``; see ``docs/verified-apis.md`` §1 and §12.1. The
+scopes each operation needs and the operations that require an *admin*
+connected app with user context remain UNVERIFIED. The latter path is not yet
+implemented and raises a verification-blocked error where it is needed.
 """
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from . import _verify
-from .errors import AuthError
+from .endpoints import require_secure_url
+from .errors import AuthError, ConfigError
 
 if TYPE_CHECKING:
     import httpx
+
+    from .config import DonkeyConfig
 
 _EXPIRY_SAFETY_MARGIN_S = 60.0
 
@@ -69,21 +73,76 @@ class AnypointConnectedApp(AuthProvider):
         http_client: httpx.AsyncClient,
         token_path: str | None = None,
         clock: Callable[[], float] = time.monotonic,
+        endpoint_check: Callable[[], None] | None = None,
     ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
         self._base = control_plane_url.rstrip("/")
         self._http = http_client
-        # The default is VERIFIED (plugin); callers may override it for their environment.
-        self._token_path = token_path or _verify.OAUTH_TOKEN_PATH.get()
+        # The default is from core/_verify (docs/verified-apis.md §12.1); callers may
+        # override it for their environment.
+        self._token_path = token_path or _verify.OAUTH_TOKEN_PATH
         self._clock = clock
+        # Runs before every token POST; raises ConfigError to stop it.
+        self._endpoint_check = endpoint_check
         self._cached: str | None = None
         self._expires_at: float = 0.0
+        self._lock: asyncio.Lock | None = None
+        self._lock_loop: asyncio.AbstractEventLoop | None = None
+
+    @classmethod
+    def from_config(
+        cls,
+        cfg: DonkeyConfig,
+        *,
+        http_client: httpx.AsyncClient,
+        token_path: str | None = None,
+    ) -> AnypointConnectedApp:
+        """Build from a resolved config. Before the first token POST, the
+        control-plane endpoint is checked against where the credentials came from
+        (:meth:`DonkeyConfig.check_endpoints`), so nothing is sent to a host the
+        credentials are not bound to. The check is deferred to the first fetch so
+        an unused control plane never blocks LLM-only use."""
+        if not (cfg.client_id and cfg.client_secret):
+            raise ConfigError(
+                "The Anypoint connected app needs client_id and client_secret "
+                "(env ANYPOINT_CLIENT_ID / ANYPOINT_CLIENT_SECRET)."
+            )
+        return cls(
+            client_id=cfg.client_id,
+            client_secret=cfg.client_secret,
+            control_plane_url=cfg.control_plane_url,
+            http_client=http_client,
+            token_path=token_path,
+            endpoint_check=functools.partial(cfg.check_endpoints, need="control_plane"),
+        )
 
     async def token(self) -> str:
+        cached = self._fresh()
+        if cached is not None:
+            return cached
+        # Concurrent callers wait on one fetch instead of each POSTing (#813);
+        # the first to get the lock fetches, the rest find the fresh token.
+        async with self._fetch_lock():
+            cached = self._fresh()
+            if cached is not None:
+                return cached
+            return await self._fetch()
+
+    def _fresh(self) -> str | None:
         if self._cached is not None and self._clock() < self._expires_at:
             return self._cached
-        return await self._fetch()
+        return None
+
+    def _fetch_lock(self) -> asyncio.Lock:
+        """The lock for the running event loop. An ``asyncio.Lock`` binds to the
+        first loop that waits on it, so one provider used from successive
+        ``asyncio.run()`` calls gets a fresh lock per loop."""
+        loop = asyncio.get_running_loop()
+        if self._lock is None or self._lock_loop is not loop:
+            self._lock = asyncio.Lock()
+            self._lock_loop = loop
+        return self._lock
 
     async def invalidate(self) -> None:
         self._cached = None
@@ -91,6 +150,9 @@ class AnypointConnectedApp(AuthProvider):
 
     async def _fetch(self) -> str:
         url = f"{self._base}{self._token_path}"
+        require_secure_url(url, name="token endpoint")
+        if self._endpoint_check is not None:
+            self._endpoint_check()
         resp = await self._http.post(
             url,
             data={
@@ -117,8 +179,25 @@ class AnypointConnectedApp(AuthProvider):
                 remediation=AuthError.connected_app_remediation,
                 response=resp,
             )
-        body = resp.json()
-        token: str | None = body.get("access_token")
+        try:
+            body = resp.json()
+            token = body.get("access_token")
+            expires_in = float(body.get("expires_in", 3600))
+            if token is not None and not isinstance(token, str):
+                raise TypeError("access_token is not a string")
+        except (ValueError, TypeError, AttributeError) as exc:
+            # A body that is not JSON, not an object, or carries mistyped fields
+            # (#813). The response is attached; the parse error is not chained,
+            # since its message can repeat the body (see DonkeyError.framework_error).
+            raise AuthError(
+                f"Anypoint token endpoint returned a malformed token response "
+                f"({type(exc).__name__}). The expected response is a JSON object "
+                "with a string access_token and a numeric expires_in (see "
+                "docs/verified-apis.md §1 and §12.1); capture the unexpected "
+                "response as a fixture (BG §1.5).",
+                remediation=AuthError.connected_app_remediation,
+                response=resp,
+            ) from None
         if not token:
             raise AuthError(
                 "Token endpoint returned no access_token. The expected response shape "
@@ -127,10 +206,25 @@ class AnypointConnectedApp(AuthProvider):
                 remediation=AuthError.connected_app_remediation,
                 response=resp,
             )
-        expires_in = float(body.get("expires_in", 3600))
         self._cached = token
         self._expires_at = self._clock() + max(0.0, expires_in - _EXPIRY_SAFETY_MARGIN_S)
         return token
+
+
+class EndpointCheckedAuth(AuthProvider):
+    """Runs ``endpoint_check`` before each ``token()`` of ``provider``, so a
+    :class:`ConfigError` stops the token before it is fetched or sent."""
+
+    def __init__(self, provider: AuthProvider, endpoint_check: Callable[[], None]) -> None:
+        self._provider = provider
+        self._endpoint_check = endpoint_check
+
+    async def token(self) -> str:
+        self._endpoint_check()
+        return await self._provider.token()
+
+    async def invalidate(self) -> None:
+        await self._provider.invalidate()
 
 
 class ChainedAuth(AuthProvider):

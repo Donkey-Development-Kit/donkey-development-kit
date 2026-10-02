@@ -25,7 +25,9 @@ _CONTRACT_STATUS = {
     "regex-prompt-guard": 403,
     "content-safety": 403,
     "content-moderation": 400,
+    "agent-killed": 403,
     "model-not-found": 400,
+    "model-not-routable": 400,
     "upstream-5xx": 503,
     "client-id-missing": 401,
     "success": 200,
@@ -79,9 +81,22 @@ def test_model_not_found_uses_the_400_fallback_with_no_header_file() -> None:
 
 
 def test_empty_body_shapes_load_as_empty_bytes() -> None:
-    # Rows 1/3/4/6 are real empty-body captures — not a guessed body.
-    for shape in ("token-rate-limit", "injection-protection", "content-moderation", "upstream-5xx"):
+    # Rows 1/4/6 are real empty-body captures — not a guessed body. Row 3
+    # (injection-protection) gained a real 79-byte body, #669.
+    for shape in ("token-rate-limit", "content-moderation", "upstream-5xx"):
         assert fx.load(shape).body == b""
+
+
+def test_injection_protection_loads_the_live_captured_body() -> None:
+    # #669: the honest empty placeholder was replaced with a live 79-byte
+    # capture against ddk-injection-protection (instance 21200898).
+    f = fx.load("injection-protection")
+    assert f.body == (
+        b'{"message":"Injection attack detected - '
+        b"Rule: 'SQL Injection', Location: Body\"}"
+    )
+    assert len(f.body) == 79
+    assert f.content_type == "application/json; charset=UTF-8"
 
 
 def test_every_shape_body_matches_the_source_file_bytes() -> None:

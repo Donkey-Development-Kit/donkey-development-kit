@@ -5,16 +5,16 @@ output has to clear a **content-safety guardrail** before it reaches a person,
 and when the guardrail fires you need the refusal to (a) surface as something
 you can branch on and (b) carry an id that joins the block back to the run in
 your own logs. This page runs that content-safety branch against the [local
-simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md), and is honest about the parts of a full internal
+simulator](https://docs.donkey-kit.dev/simulator.md), and is honest about the parts of a full internal
 copilot that are still blocked on verification.
 
 ## What it demonstrates
 
 - **The content-safety branch executes** as a typed
-  [`ContentSafetyBlocked`](https://donkey-development-kit.github.io/donkey-development-kit/errors.md), driven by the `donkey-sim/content-safety`
+  [`ContentSafetyBlocked`](https://docs.donkey-kit.dev/errors.md), driven by the `donkey-sim/content-safety`
   sentinel — no need to craft a prompt that a real guardrail would reject.
 - **Per-run correlation joins the refusal to your logs.** Inside a
-  [`donkey.run(id=...)`](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) block the bound id becomes the
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block the bound id becomes the
   `X-Correlation-Id` on every request *and* lands on
   `ContentSafetyBlocked.correlation_id`, so a log line for the block joins to
   the gateway's own record with no extra wiring.
@@ -33,7 +33,7 @@ pip install "donkey-kit[llm,local]"
 donkey mock --port 8080
 ```
 
-No `--scenario` needed: the [`donkey-sim/<shape>` sentinel](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) lets
+No `--scenario` needed: the [`donkey-sim/<shape>` sentinel](https://docs.donkey-kit.dev/simulator.md) lets
 *you* pick which call fails by setting the request's `model`. The selectable
 shapes include `content-safety`.
 
@@ -67,8 +67,8 @@ asyncio.run(...)   # DONKEY_LLM_PROXY_URL=http://localhost:8080, throwaway creds
   **The raw client raises `openai.APIStatusError`, not a `DonkeyError`.**
   `donkey.llm.client()` is the real OpenAI SDK, so you bridge into the taxonomy
   with `classify(e.response)` — see [Bridging from the raw
-  client](https://donkey-development-kit.github.io/donkey-development-kit/errors.md#bridging-from-the-raw-client). An adapter that wraps calls in
-  `typed_refusals()` (as the [support-triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md) demo
+  client](https://docs.donkey-kit.dev/errors.md#bridging-from-the-raw-client). An adapter that wraps calls in
+  `typed_refusals()` (as the [support-triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) demo
   does) surfaces the typed refusal directly instead.
 
 ## What a full internal copilot also needs — and what's blocked
@@ -79,16 +79,18 @@ blocked on verification — this page shows the *shape* without inventing
 an endpoint:
 
   **Governed access to internal tools** — reaching company systems through
-  governed MCP tools rather than ad-hoc HTTP — is a [Phase 2 surface](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md).
+  governed MCP tools rather than ad-hoc HTTP — is a [Phase 2 surface](https://docs.donkey-kit.dev/roadmap.md).
   Exchange→MCP tool discovery is still blocked on verification; the SDK raises
   `NotImplementedError("blocked on verification: …")` at call time rather than
-  guessing an endpoint. See [Tool access](https://donkey-development-kit.github.io/donkey-development-kit/tool-access.md).
+  guessing an endpoint. See [Tool access](https://docs.donkey-kit.dev/tool-access.md).
 
   **Agent identity and a kill switch** — a verifiable identity for the copilot,
   and the ability to disable it centrally — are platform capabilities the SDK's
-  job is to make *reachable and typed*, not to reimplement. Both are
-  [Phase 2](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md) and gated on verifying the platform's own contract; see
-  [Identity](https://donkey-development-kit.github.io/donkey-development-kit/identity.md). Until then the SDK does not fabricate a stand-in.
+  job is to make *reachable and typed*, not to reimplement. The kill switch's
+  refusal is already typed: a blocked agent surfaces as
+  [`AgentKilled`](https://docs.donkey-kit.dev/errors.md), never retried. Stopping a run cleanly on it, and
+  identity itself, are [Phase 2](https://docs.donkey-kit.dev/roadmap.md); see [Identity](https://docs.donkey-kit.dev/identity.md). Until
+  then the SDK does not fabricate a stand-in.
 
 ## Verification status
 
@@ -103,9 +105,9 @@ and framework-agnostic.
 
 ## Where to go next
 
-- [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/errors.md) — the `ContentSafetyBlocked` shape and the
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md) — the `ContentSafetyBlocked` shape and the
   documented-but-not-captured caveat, plus the retryable cookbook.
-- [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md) — how the run id ties spans, logs, and the
+- [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) — how the run id ties spans, logs, and the
   gateway record together.
-- [Support triage](https://donkey-development-kit.github.io/donkey-development-kit/scenarios/support-triage.md) — the same governance surfacing a
+- [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) — the same governance surfacing a
   refusal directly through a framework adapter.

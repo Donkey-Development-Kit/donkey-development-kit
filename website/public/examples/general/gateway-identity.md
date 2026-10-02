@@ -44,9 +44,9 @@ Run context
   A bare None would be a lie of omission: you could not tell 'the gateway sent no id'
   from 'we never saw a response'. Budget uses the same honesty rule for an unobserved
   window (demo 03). UNAVAILABLE is the third state, for adapters that never route
-  through our transport — LiteLLM-backed ADK and CrewAI, or default_headers-only
-  LlamaIndex. Those surfaces report UNAVAILABLE by name rather than looking like a cold
-  read.
+  through our transport — ADK via LiteLLM, CrewAI via its native OpenAI provider,
+  default_headers-only LlamaIndex, or Agent Framework (observes_last_call = False).
+  Those surfaces report UNAVAILABLE by name rather than looking like a cold read.
 
 [2] One governed call, and the record is the success-path counterpart
 
@@ -194,7 +194,8 @@ except Exception as err:
   through the SDK's transport.
 - **`request_id` is the upstream provider's id, passed through by the
   gateway** — `x-request-id` for OpenAI, `x-amzn-requestid` for Amazon Bedrock,
-  `apim-request-id` for Azure OpenAI. Quote it to the provider's support team.
+  `apim-request-id` for Azure OpenAI, `request-id` for a native Anthropic
+  proxy. Quote it to the provider's support team.
   It is the same field `classify()` puts on a refusal, now present on a 200 too,
   and `None` on a route whose provider forwards no id.
 - **Absent counts are `None`, never `0`.** `cached_tokens` are billed at the
@@ -205,7 +206,7 @@ except Exception as err:
 - **A `provider/` prefix is not a substitution.** On a model-based routing
   proxy the gateway reports the served model without the `provider/` prefix;
   `substituted` ignores a prefix that names the served provider (see
-  [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md#two-behaviours-worth-knowing)).
+  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing)).
 
   The simulator's captured success response was recorded against `gpt-5.1`, so
   asking for any other model id shows up as a substitution in narrative demo
@@ -231,7 +232,7 @@ the same way — only these two are added.
 
 You can exercise this branch offline: point the simulator at the captured
 `Semantic` response by requesting the `donkey-sim/success-semantic` model id
-(the same sentinel mechanism the [simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) uses to force a
+(the same sentinel mechanism the [simulator](https://docs.donkey-kit.dev/simulator.md) uses to force a
 refusal shape, here forcing a happy-path variant).
 
 ```python
@@ -251,7 +252,7 @@ print("routing_score", last.routing_score)  # 0.62
   `x-llm-proxy-semantic-routing-success` header is semantic-only. An unparseable
   message leaves each field `None` rather than guessing a value.
 
-**Learn more:** [Feature overview](https://donkey-development-kit.github.io/donkey-development-kit/feature-overview.md) · [Telemetry & cost](https://donkey-development-kit.github.io/donkey-development-kit/telemetry.md)
+**Learn more:** [Feature overview](https://docs.donkey-kit.dev/feature-overview.md) · [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md)
 
 **Source:**
 [narrative demo 10](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/10_last_call) ·

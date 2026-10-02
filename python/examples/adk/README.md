@@ -16,7 +16,7 @@ machinery rather than a simple method call.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
-> **[Google ADK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/adk)**.
+> **[Google ADK](https://docs.donkey-kit.dev/frameworks/adk)**.
 > This README duplicates the runnable essentials on purpose so you can run it in
 > place; if the two ever differ, the docs page is canonical.
 
@@ -31,6 +31,14 @@ export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
 
 python examples/adk/main.py
 ```
+
+The script reads its settings the way the SDK does (environment variables, then
+`.donkey-kit.toml`) and stops with the SDK's own `ConfigError`, listing every
+missing setting, when one is absent. For a model-wallet proxy, set
+`DONKEY_LLM_PROXY_AUTH=jwt` and `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` instead of
+the client id and secret; the wallet JWT comes from an `AuthProvider` you pass
+to `Donkey(llm_auth=...)` in your own code
+([Configuration](https://docs.donkey-kit.dev/reference/configuration#jwt--model-wallet-auth-mode)).
 
 ## The manual equivalent
 
@@ -54,6 +62,23 @@ m = LiteLlm(
 The factory (`donkey_kit.integrations.adk.model`) fills in `api_base`,
 `api_key`, `extra_headers`, and the `openai/` prefix from one governed
 config source.
+
+## Native Gemini (`Format=Gemini` proxy)
+
+On a proxy provisioned **Format = Gemini**, `gemini()` returns ADK's native
+`google.adk.models.Gemini` with the SDK's shared http client injected, so
+per-run correlation, spans, usage and `donkey.last_call` all work. Pass
+`base_url` when the Gemini proxy is not `DONKEY_LLM_PROXY_URL`:
+
+```python
+from donkey_kit.integrations.adk import gemini
+
+m = gemini("gemini-2.5-flash", base_url="https://<ingress-gw>/<gemini-instance>/")
+```
+
+The manual equivalent is
+`Gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs())`;
+the docs page lists every kwarg it fills in.
 
 ## Links
 

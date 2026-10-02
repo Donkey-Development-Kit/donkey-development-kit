@@ -68,4 +68,5 @@ verified contract: capture it into `tests/fixtures/anypoint/llm_proxy/` with
 provenance recorded in that directory's README (org id, environment, proxy
 version, what produced the rejection, confirmation nothing sensitive survived),
 then flip the injection / content-moderation rows in `docs/verified-apis.md`
-and set `verified=True` in `core/_verify.py`.
+and, if a `core/_verify.py` placeholder backs the shape, replace it with a plain
+constant.

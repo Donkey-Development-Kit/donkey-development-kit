@@ -4,6 +4,8 @@ import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
+import { cloudflareBeacon } from '../lib/analytics.mjs'
+import { EDIT_REF, REPO_URL } from '../lib/repo.mjs'
 import '../styles/globals.css'
 
 const SITE_NAME = 'Donkey Development Kit'
@@ -14,6 +16,10 @@ const SITE_DESCRIPTION =
 // so reference the served copy under website/public/img/ with the base path
 // applied manually — same convention as components/index.tsx.
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
+
+// Cookie-less Cloudflare Web Analytics; the Pages workflow supplies the public
+// site token, so local and unconfigured builds ship no beacon.
+const CLOUDFLARE_BEACON = cloudflareBeacon(process.env.NEXT_PUBLIC_CF_WEB_ANALYTICS_TOKEN)
 
 const play = Play({
   subsets: ['latin'],
@@ -61,8 +67,22 @@ const navbar = (
         {SITE_NAME}
       </span>
     }
-    projectLink="https://github.com/Donkey-Development-Kit/donkey-development-kit"
+    projectLink={REPO_URL}
   >
+    <a
+      href="https://pypi.org/project/donkey-kit/"
+      target="_blank"
+      rel="noreferrer"
+      className="af-nav-link"
+      aria-label="donkey-kit on PyPI"
+      title="donkey-kit on PyPI"
+    >
+      <img
+        src="https://img.shields.io/pypi/v/donkey-kit?logo=pypi&logoColor=white&label=PyPI"
+        alt="PyPI"
+        className="af-nav-badge"
+      />
+    </a>
     <a
       href="https://www.mulesoft.com/"
       target="_blank"
@@ -118,12 +138,14 @@ export default async function RootLayout({
           navbar={navbar}
           footer={footer}
           pageMap={pageMap}
-          docsRepositoryBase="https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/develop/website/content"
+          // Nextra appends the page's path from the website root (content/…).
+          docsRepositoryBase={`${REPO_URL}/tree/${EDIT_REF}/website`}
           sidebar={{ defaultMenuCollapseLevel: 1, toggleButton: true }}
           toc={{ backToTop: 'Scroll to top' }}
         >
           {children}
         </Layout>
+        {CLOUDFLARE_BEACON && <script defer {...CLOUDFLARE_BEACON} />}
       </body>
     </html>
   )

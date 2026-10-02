@@ -25,8 +25,8 @@ threading through framework state, exactly like the run id and cost tags::
         ...                          # every governed call in the block bypasses the cache
 
 The same documented degradation as the run id / cost tags applies (BG §1.8): a
-``connection_kwargs()`` / LiteLLM-backed adapter that does not route through the
-shared transport never sees the contextvar, so its calls are not steered.
+``connection_kwargs()``-only adapter that does not route through the shared
+transport never sees the contextvar, so its calls are not steered.
 """
 
 from __future__ import annotations
@@ -128,17 +128,17 @@ class CacheControls:
         (do not steer) rather than inventing an untested ``x-cache-skip: false``
         (verification discipline)."""
         if self.skip is True:
-            yield _verify.CACHE_SKIP_HEADER.get(), "true"
+            yield _verify.CACHE_SKIP_HEADER, "true"
         if self.no_store is True:
-            yield _verify.CACHE_NO_STORE_HEADER.get(), "true"
+            yield _verify.CACHE_NO_STORE_HEADER, "true"
         if self.ttl is not None:
-            yield _verify.CACHE_TTL_HEADER.get(), str(self.ttl)
+            yield _verify.CACHE_TTL_HEADER, str(self.ttl)
         if self.threshold is not None:
             # Plain float text (e.g. ``"0.5"``); the gateway accepts it and echoes
             # a four-dp form (``"0.5000"``) — matching the live capture (#588).
-            yield _verify.CACHE_THRESHOLD_HEADER.get(), str(self.threshold)
+            yield _verify.CACHE_THRESHOLD_HEADER, str(self.threshold)
         if self.principal_id is not None:
-            yield _verify.CACHE_PRINCIPAL_ID_HEADER.get(), self.principal_id
+            yield _verify.CACHE_PRINCIPAL_ID_HEADER, self.principal_id
 
 
 # Per-request cache-steering controls bound by ``donkey.cache(...)`` (#587). Like

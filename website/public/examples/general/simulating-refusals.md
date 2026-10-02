@@ -73,13 +73,13 @@ Run context
         ...
 
   PASS  ValueError — no captured fixture maps back to it
-  message                simulate() cannot inject ToolInvocationError: no captured fixture maps back to it via classify(). Supported: AuthError, ContentSafetyBlocked, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
+  message                simulate() cannot inject ToolInvocationError: no captured fixture maps back to it via classify(). Supported: AgentKilled, AuthError, ContentSafetyBlocked, ModelNotRoutable, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
 
     with donkey.simulate(GatewayUnavailable):
         ...
 
   PASS  ValueError — a transport failure has no captured body to inject
-  message                simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AuthError, ContentSafetyBlocked, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
+  message                simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AgentKilled, AuthError, ContentSafetyBlocked, ModelNotRoutable, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
 
   Tool invocation, registry, and provisioning errors are not gateway refusals, and they
   have no captured wire shape. GatewayUnavailable is the same kind of gap for a
@@ -183,13 +183,13 @@ exhaustion until the window rolls over.
   `simulate(ToolInvocationError)` and `simulate(GatewayUnavailable)` raise
   `ValueError` instead of inventing one — a transport failure has no HTTP
   response to replay. To provoke `GatewayUnavailable`, point at a dead origin
-  (see [Typed refusals](https://donkey-development-kit.github.io/donkey-development-kit/examples/general/typed-refusals.md)).
+  (see [Typed refusals](https://docs.donkey-kit.dev/examples/general/typed-refusals.md)).
 
 Because the injection sits on the transport, it also reaches framework objects
 the SDK does not wrap — demo 04 drives `donkey.langgraph.chat_model("gpt-4o")`
 through `simulate(PIIDetected)` and gets the same taxonomy back.
 
-**Learn more:** [Local simulator](https://donkey-development-kit.github.io/donkey-development-kit/simulator.md) · [Testing & conformance](https://donkey-development-kit.github.io/donkey-development-kit/testing.md)
+**Learn more:** [Local simulator](https://docs.donkey-kit.dev/simulator.md) · [Testing & conformance](https://docs.donkey-kit.dev/testing.md)
 
 **Source:**
 [narrative demo 04](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/04_simulate_refusals) ·

@@ -2,7 +2,7 @@
 
 DDK is open source under the Apache-2.0 licence, and contributions of every
 size are welcome. This page is the short version; the full runbook is
-[`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/CONTRIBUTING.md)
+[`CONTRIBUTING.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/CONTRIBUTING.md)
 in the repository.
 
 ## Ways to help
@@ -29,7 +29,7 @@ in the repository.
 
 No change lands without a GitHub issue — the issue is the plan. Each issue
 carries exactly one milestone, which is the release it targets (see the
-[Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md)).
+[Roadmap](https://docs.donkey-kit.dev/roadmap.md)).
 
 ### Cut a branch from `develop`
 
@@ -77,7 +77,9 @@ git checkout -b docs/13-verified-apis-update upstream/develop
 
 Open the PR from your fork into `Donkey-Development-Kit:develop` and tick
 **Allow edits by maintainers**. A maintainer sets the milestone and labels,
-runs the secret-gated checks that GitHub does not run on fork PRs, and merges.
+runs the secret-gated checks that GitHub does not run on fork PRs, re-captures
+any live fixture on the team sandbox before a `verified-apis.md` row flips,
+and merges.
 
 ## Keep the docs in sync
 
@@ -93,4 +95,4 @@ npm run generate:llms
   **Verification discipline.** DDK never documents or codes against an
   endpoint, header or class name that has not been confirmed against the real
   platform. If you can't confirm one, say so in the issue rather than guessing
-  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/develop/docs/verified-apis.md).
+  — see the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md).

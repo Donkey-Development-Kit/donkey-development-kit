@@ -14,18 +14,22 @@ as they do for OpenAI.
 
 ## Install
 
-Follow the [examples setup](https://donkey-development-kit.github.io/donkey-development-kit/examples.md#setup) first, then:
+Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first, then:
 
 ```bash
-python -m pip install -e "../donkey-development-kit/python[llm,anthropic]" "anthropic<1"
+python -m pip install -e "../donkey-development-kit/python[llm,anthropic]"
 set -a; source .env.local; set +a
 export DONKEY_LLM_PROXY_URL=https://<host>/ddk-anthropic-inbound/   # 01 only; overrides the file
 ```
 
-  **Pin `anthropic<1`.** The `anthropic` 1.x releases (September 2026) moved
-  to `httpx2` and reject the SDK's `httpx`-based governed client with
-  `TypeError: Invalid http_client argument`. These examples were run with
-  `anthropic` 0.125.0.
+  **`anthropic` 0.x and 1.x both work.** The `anthropic` 1.x releases
+  (September 2026) moved to `httpx2` and reject an `httpx` client, so the SDK
+  hands them an `httpx2` client that sends through the governed transport
+  ([Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md#manual-equivalent)). Published
+  `donkey-kit` builds up to 0.1.1.dev1 predate this and fail on 1.x with
+  `TypeError: Invalid http_client argument`; with one of those, add
+  `"anthropic<1"` to the install line. These examples were run against the proxy
+  with `anthropic` 0.125.0.
 
 The client id and secret are the same pair as the other proxies. The model is
 `claude-haiku-4-5-20251001` (the `MODEL` constant).
@@ -95,7 +99,7 @@ The left column is what Anthropic's client alone would tell you — a 403 is a
 `PermissionDeniedError` whether it was PII or content safety. The right column
 is what the gateway actually decided.
 
-**Learn more:** [Anthropic SDK](https://donkey-development-kit.github.io/donkey-development-kit/frameworks/anthropic.md)
+**Learn more:** [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md)
 
 **Source:**
 [`demos/human-made/anthropic/`](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/human-made/anthropic)

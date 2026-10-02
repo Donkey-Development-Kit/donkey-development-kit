@@ -2,7 +2,7 @@
 
 Roadmap
 
-This capability is on the [Roadmap](https://donkey-development-kit.github.io/donkey-development-kit/roadmap.md); the API shown here is the planned design.
+This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
 Agent Broker is an A2A server, and A2A-compliant agents in the registry can be
 consumed directly from Python. `AgentHandle.as_tool()` wraps a remote A2A agent
@@ -33,7 +33,7 @@ pip install "donkey-kit[a2a]"
 
 - `AgentHandle` comes from `ExchangeRegistry.resolve_agent()` — the same
   registry surface that resolves MCP servers into `McpServerHandle`s. See
-  [Discovery, search & filter](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/discovery.md).
+  [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
 - `as_tool()` returns a framework-native callable, following the same
-  conventions as [Framework binding](https://donkey-development-kit.github.io/donkey-development-kit/tool-access/binding.md).
-- To make *your* agent callable by others over A2A, see [A2A agents](https://donkey-development-kit.github.io/donkey-development-kit/a2a.md).
+  conventions as [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
+- To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).

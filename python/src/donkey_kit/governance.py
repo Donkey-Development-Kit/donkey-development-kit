@@ -23,19 +23,14 @@ loudly report which declared policies are skipped locally and why.
 from __future__ import annotations
 
 import os
-import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal, cast
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
-    import tomli as tomllib
-
 from .core import _verify
-from .core.errors import ConfigError
+from .core.config import load_config_table
+from .core.errors import ConfigError, PlatformTeamOnly
 
 GatewayMode = Literal["local", "managed", "self-managed"]
 
@@ -101,12 +96,12 @@ class Governance:
 
     # ---- verb 1: simulate (local) -----------------------------------------
     def simulate(self) -> SimulationContext:
-        """Start an ephemeral local Omni Gateway harness (BG §1.4).
+        """Start an ephemeral local harness for this governance spec (BG §1.4). Roadmap.
 
-        Requires the ``[local]`` extra (docker). Whether Local Mode can run the
-        LLM Proxy / MCP Bridge at all is a gate in the Verification milestone; if not, LLM traffic
-        is served by a clearly-labelled local mock proxy. Either way, skipped
-        connected-only policies are reported loudly and non-suppressibly.
+        Entering the returned context is still ``_verify.blocked``. When it lands it is
+        meant to run on the pure-Python local simulator (the ``[local]`` extra), with no
+        Docker and no Omni/Flex Gateway Local Mode, which the SDK does not support (#661).
+        Skipped connected-only policies are reported loudly and non-suppressibly.
         """
 
         return SimulationContext(self)
@@ -140,7 +135,7 @@ class Governance:
         """Platform-team-only direct apply. Requires write scopes the
         default connected app will not hold; every use is logged at WARNING."""
         if not i_am_the_platform_team:
-            raise PermissionError(
+            raise PlatformTeamOnly(
                 "Governance.apply() inverts the platform-team ownership model "
                 "(provisioning-as-code). Runtime code should use resolve() (read-only). If you are "
                 "the platform team automating your own gateway, pass "
@@ -174,10 +169,10 @@ class SimulationContext:
 
     async def __aenter__(self) -> Any:
         raise _verify.blocked(
-            "local Omni Gateway docker harness + Local-Mode LLM-Proxy/MCP-Bridge "
-            "availability (BG §1.4, the Verification milestone). The [local] extra and the loud "
-            "skipped-policy report (skipped_policies()) are scaffolded; the docker "
-            "orchestration is gated on the Verification milestone's local-mode findings."
+            "running a Governance spec's policies locally (BG §1.4, the Verification "
+            "milestone). The loud skipped-policy report (skipped_policies()) is scaffolded. "
+            "For local refusals today use donkey.simulate() or the [local] simulator "
+            "(donkey mock); Omni/Flex Gateway Local Mode is not supported (#661)."
         )
 
     async def __aexit__(self, *exc: object) -> None:
@@ -185,12 +180,4 @@ class SimulationContext:
 
 
 def _load_targets() -> dict[str, dict[str, Any]]:
-    path = Path.cwd() / ".donkey-kit.toml"
-    if not path.is_file():
-        return {}
-    try:
-        data = tomllib.loads(path.read_text())
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"Malformed {path}: {exc}") from exc
-    targets = data.get("targets", {})
-    return targets if isinstance(targets, dict) else {}
+    return cast("dict[str, dict[str, Any]]", load_config_table("targets"))

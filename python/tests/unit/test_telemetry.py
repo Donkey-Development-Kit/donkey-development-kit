@@ -26,6 +26,7 @@ import pytest
 
 from donkey_kit.core import telemetry
 from donkey_kit.core.errors import (
+    AgentKilled,
     AuthError,
     ContentSafetyBlocked,
     DonkeyError,
@@ -230,6 +231,7 @@ def test_usage_detail_keys_are_in_the_span_allowlist() -> None:
         (PIIDetected("x", remediation="r"), "pii_detected"),
         (PromptInjectionBlocked("x", remediation="r"), "injection"),
         (ContentSafetyBlocked("x", remediation="r"), "content_safety"),
+        (AgentKilled("x", remediation="r"), "agent_killed"),
         (PolicyViolation("x", remediation="r"), "policy_violation"),
     ],
 )
@@ -501,8 +503,7 @@ def test_generic_span_allowlist_drops_content_and_unknown_keys(
 
     # A rogue content attribute AND an unrecognised key handed to the generic
     # span() are both dropped by the allowlist; an allowlisted key survives.
-    # run_context scopes the correlation binding so it resets on exit (span()
-    # calls ensure_correlation_id(), which would otherwise pin an ambient ID).
+    # run_context supplies the correlation ID the span attaches.
     with telemetry.run_context("run-allowlist"), telemetry.span(
         telemetry.SPAN_TOOL_CALL,
         enabled=True,
@@ -520,3 +521,22 @@ def test_generic_span_allowlist_drops_content_and_unknown_keys(
     assert "some.unknown.key" not in attrs
     assert attrs["gen_ai.request.model"] == "gpt-4o"
     assert "donkey.correlation_id" in attrs  # always attached
+
+
+def test_generic_span_outside_a_run_does_not_bind_a_correlation_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #803: span() attaches a correlation ID but must not bind it, or every later
+    # call in the same context would report this span's run.
+    tracer, exporter = _in_memory_tracer()
+    monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
+
+    with telemetry.span(telemetry.SPAN_TOOL_CALL, enabled=True):
+        pass
+    with telemetry.span(telemetry.SPAN_TOOL_CALL, enabled=True):
+        pass
+
+    first, second = exporter.get_finished_spans()
+    ids = {dict(s.attributes)["donkey.correlation_id"] for s in (first, second)}
+    assert len(ids) == 2
+    assert telemetry.current_correlation_id() is None

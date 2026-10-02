@@ -11,6 +11,9 @@ header, with NO `client_secret`. These tests pin the observed request/response
 *shape*; wiring the raw JWT-rejection → exception mapping into
 core/errors.classify() (and the SDK-side auth mode) is #509, deliberately not
 done here.
+
+The wallet spend-state / exhaustion captures (2026-09-30, instance 21189395,
+#301) are pinned at the bottom of this file.
 """
 
 from __future__ import annotations
@@ -18,9 +21,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
+
+from donkey_kit.core.budget import Budget
+from donkey_kit.core.errors import TokenBudgetExceeded, classify
 from donkey_kit.simulator.fixtures import parse_headers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "model_wallet"
+_TOKEN_WINDOW_429 = parse_headers(
+    (FIXTURES.parent / "llm_proxy" / "reject.token-rate-limit.headers.txt").read_text()
+)
 
 
 def _headers(name: str) -> dict[str, str]:
@@ -105,3 +115,92 @@ def test_wallet_definition_predicates_match_the_jwt_claims() -> None:
     preds = {p["claim"]: p["values"] for p in wallet["predicates"]}
     for claim, values in preds.items():
         assert claims[claim] in values
+
+
+# --- wallet spend state + exhaustion (docs/verified-apis.md §4, #301) --------
+# A live run drove `ddk-model-wallet`'s 2000 tokens/day openai budget to refusal.
+# These pin what the wire does and does NOT carry, so #315 builds against the
+# observed contract rather than the FinOps roadmap's description of it.
+
+_BUDGET_HEADER_KEYS = (
+    "x-token-limit",
+    "x-token-remaining",
+    "x-token-reset",
+    "x-llm-proxy-ratelimit",
+)
+
+
+def test_wallet_success_carries_no_in_band_wallet_state() -> None:
+    """§4 wallet row: a 200 through a wallet names the matched wallet and nothing
+    else — no limit/remaining/spent value, no currency, and neither of the
+    budget-window shapes `Budget.observe()` parses."""
+    for which in ("first", "last"):
+        h = _headers(f"responses.exhaustion-run.{which}.headers.txt")
+        assert h["x-model-wallet-selected"] == "ddk-model-wallet"
+        assert not any(k in h for k in _BUDGET_HEADER_KEYS)
+        wallet_keys = {k for k in h if "wallet" in k or k.startswith("x-mw-")}
+        assert wallet_keys == {"x-model-wallet-selected"}
+
+
+def test_no_threshold_warning_precedes_the_wallet_refusal() -> None:
+    """§4 wallet row: every 200 in the run up to the refusal carries the same
+    header keys as the first — no warning appears as the budget is approached."""
+    run = _load("probe.exhaustion-run.json")
+    assert isinstance(run, dict)
+    calls = run["calls"]
+    ok = [c for c in calls if c["status"] == 200]
+    refused = [c for c in calls if c["status"] != 200]
+    assert refused and all(c["status"] == 429 for c in refused)
+    assert calls.index(refused[0]) == len(ok)  # all successes precede the first refusal
+    # budgets are approximate: the refusal lands after the limit is overshot
+    assert ok[-1]["cumulative_total_tokens"] > run["wallet_limit"]["value"]
+    assert all(c["header_keys"] == ok[0]["header_keys"] for c in ok)
+
+
+def test_wallet_exhaustion_429_is_distinguishable_from_token_window_429() -> None:
+    """§4 wallet row: the wallet refusal is a 429 with a flat-string body, a
+    standard `retry-after` (seconds) and `x-model-wallet-selected` — and none of
+    the `x-token-*` trio. The token-window 429 (../llm_proxy/) is the inverse:
+    empty body, the trio, no `retry-after`."""
+    h = _headers("reject.wallet-exhausted.headers.txt")
+    body = _load("reject.wallet-exhausted.body.json")
+    assert h["x-model-wallet-selected"] == "ddk-model-wallet"
+    assert h["retry-after"] == "86400"
+    assert h["content-type"] == "text/plain"
+    assert not any(k in h for k in _BUDGET_HEADER_KEYS)
+    assert body == {"error": "token rate limit exceeded"}
+
+    window = _TOKEN_WINDOW_429
+    assert "retry-after" not in window
+    assert "x-model-wallet-selected" not in window
+    assert {"x-token-limit", "x-token-remaining", "x-token-reset"} <= set(window)
+
+
+def test_wallet_exhaustion_classifies_as_token_budget_exceeded_today() -> None:
+    """Characterises current behaviour for #315: the wallet 429 lands in the
+    generic 429 branch (TokenBudgetExceeded, retry_after from `retry-after`), and
+    `Budget.observe()` is a no-op because no budget-window header is present."""
+    h = _headers("reject.wallet-exhausted.headers.txt")
+    body = (FIXTURES / "reject.wallet-exhausted.body.json").read_bytes()
+    resp = httpx.Response(429, headers=h, content=body)
+    err = classify(resp)
+    assert isinstance(err, TokenBudgetExceeded)
+    assert err.retry_after == 86400.0
+
+    budget = Budget()
+    budget.observe(resp)
+    assert budget.observed_at is None
+
+
+def test_wallet_is_enforced_by_mw_policies_with_no_threshold_setting() -> None:
+    """§4 wallet row: wallets materialise into the auto-attached `mw-find-key-policy`
+    (keyed on arbitrary `jwtClaim` predicates) and are enforced by
+    `mw-token-rate-limit-policy` — neither config carries a threshold/alert."""
+    doc = _load("mw-policies.json")
+    assert isinstance(doc, dict)
+    by_asset = {p["assetId"]: p for p in doc["policies"]}
+    assert set(by_asset) == {"mw-find-key-policy", "mw-token-rate-limit-policy"}
+    keys = by_asset["mw-find-key-policy"]["configurationData"]["clientKeys"]
+    assert {p["type"] for k in keys for p in k["predicates"]} == {"jwtClaim"}
+    blob = json.dumps(doc["policies"]).lower()
+    assert not any(word in blob for word in ("threshold", "alert", "warn"))

@@ -2,7 +2,8 @@
 
 Maintainer-facing reference for how a release becomes an installable package:
 the **version & naming convention** it follows, and the **PyPI publish** wired as
-`.github/workflows/release.yml` (#206, #410). The branch model and the
+two workflows, `.github/workflows/publish-pypi.yml` and
+`.github/workflows/publish-testpypi.yml` (#206, #410, #674). The branch model and the
 **promotion merge** that puts release content on `main` (squash to `develop`,
 no-fast-forward merge to `main`) live in
 [`CONTRIBUTING.md` §1](../CONTRIBUTING.md#1-branch-pr--release-workflow).
@@ -20,6 +21,7 @@ of the **milestone being shipped**. The milestone titles are the ground truth
 | Milestone (exact title) | Ships version |
 | --- | --- |
 | `Phase 1 — Build the MVP (0.1.0)` | `0.1.0` |
+| `Phase 1.1 — Stabilize the MVP (0.1.1)` | `0.1.1` |
 | `Phase 2 — Differentiate, go beyond (0.2.0)` | `0.2.0` |
 | `Phase 3 — Platform capabilities (0.3.0)` | `0.3.0` |
 | `Phase 4 — Enterprise readiness (0.4.0)` | `0.4.0` |
@@ -38,15 +40,15 @@ every pre-release is strictly less than the final, and PyPI orders them
 correctly:
 
 ```
-0.1.0.dev0  <  0.1.0.dev1  <  …  <  0.1.0a1  <  0.1.0b1  <  0.1.0rc1  <  0.1.0
+X.Y.Z.dev0  <  X.Y.Z.dev1  <  …  <  X.Y.Za1  <  X.Y.Zb1  <  X.Y.Zrc1  <  X.Y.Z
    dev0            devN            alpha 1       beta 1      rc 1        final
 ```
 
-- **`.devN`** — pre-MVP groundwork: docs, spec, scaffolding, plumbing. No usable
-  feature surface yet. *(Today's `main` is here.)*
+- **`.devN`** — dev snapshots toward the next version: work in progress on the
+  way to the milestone's release, not yet promoted to a pre-release or final.
 - **`aN` / `bN`** — alpha/beta: real feature surface exists, still unstable.
 - **`rcN`** — release candidate: milestone all-but-complete, final validation.
-- **final** (`0.1.0`) — the milestone hit 0 open issues and was promoted.
+- **final** (`X.Y.Z`) — the milestone hit 0 open issues and was promoted.
 
 Spell pre-releases in the **normalised PEP 440 form** — `0.1.0a1`, never
 `0.1.0-alpha.1` — so the git tag and the PyPI package version match.
@@ -77,32 +79,42 @@ there is **no long-lived API token** stored in the repo or in Actions secrets.
 PyPI mints a short-lived token for the workflow run, keyed on the repository, the
 workflow filename, and the GitHub Environment.
 
-There are **two paths, one per destination** (#410), and they never overlap:
+There are **two workflows, one per destination** (#410, #674), and they never
+overlap:
 
-- **Dev snapshots → TestPyPI, via manual `workflow_dispatch`.** Dev builds are
-  deliberately **not** GitHub Releases — the Releases page is reserved for real
-  releases. To dry-run: bump the `.devN` counter (see
-  [Versioning & naming](#versioning--naming)) in **both** `python/pyproject.toml`
-  and `python/src/donkey_kit/__init__.py` (they must agree), push, then
-  **Actions → Release → Run workflow** on that ref. It publishes to
-  `https://test.pypi.org/legacy/` via OIDC — the same trusted-publishing path
-  prod uses. Each dry-run needs a fresh `.devN`: a filename, once uploaded to
-  TestPyPI, can never be reused, even after deletion.
-- **Final release → production PyPI, via a published GitHub Release.** The
-  **first published GitHub Release is `0.1.0`**; that and every later final
-  `X.Y.Z` route to prod. Finish the version's work on `develop`, promote
-  `develop → main` (the no-fast-forward merge in
-  [`CONTRIBUTING.md` §1](../CONTRIBUTING.md#1-branch-pr--release-workflow)), then
-  tag `main`'s tip and cut a **non-pre-release** GitHub Release. Publishing it
-  fires the prod path.
+- **Dev snapshots → TestPyPI, via `publish-testpypi.yml`'s manual
+  `workflow_dispatch`.** Dev builds are deliberately **not** GitHub Releases —
+  the Releases page is reserved for real releases. To dry-run: bump the
+  `.devN` counter (see [Versioning & naming](#versioning--naming)) in **both**
+  `python/pyproject.toml` and `python/src/donkey_kit/__init__.py` (they must
+  agree), push to `develop`, then **Actions → Publish to TestPyPI → Run
+  workflow** on `develop`. The publish job is guarded to
+  `refs/heads/develop` — a dispatch from any other ref is skipped. It
+  publishes to `https://test.pypi.org/legacy/` via OIDC — the same
+  trusted-publishing path prod uses. Each dry-run needs a fresh `.devN`: a
+  filename, once uploaded to TestPyPI, can never be reused, even after
+  deletion.
+- **Final release → production PyPI, via `publish-pypi.yml` reacting to a
+  published GitHub Release.** The **first published GitHub Release is
+  `0.1.0`**; that and every later final `X.Y.Z` route to prod. Finish the
+  version's work on `develop`, promote `develop → main` (the no-fast-forward
+  merge in
+  [`CONTRIBUTING.md` §1](../CONTRIBUTING.md#1-branch-pr--release-workflow)),
+  then tag `main`'s tip and cut a **non-pre-release** GitHub Release.
+  Publishing it fires the prod path. A pre-release GitHub Release, if one is
+  ever cut, publishes **nowhere** — `publish-pypi.yml`'s `publish-pypi` job
+  still gates on `prerelease == false`, and `publish-testpypi.yml` has no
+  `release:` trigger at all, so nothing picks it up. Prod stays protected
+  rather than a mis-flagged pre-release being silently routed anywhere.
 
-Either trigger runs the same `build` job first — sdist + wheel, `twine check`,
+Each workflow runs its own `build` job first — sdist + wheel, `twine check`,
 and the assertion that the built metadata carries only `>=` floors
 (floors-never-ceilings) — then uploads via `pypa/gh-action-pypi-publish`.
-A manual dispatch is **structurally incapable** of reaching prod: the
-`publish-pypi` job gates on `github.event_name == 'release'`, so only a published
-Release can trigger it. The workflow never creates tags or releases — it only
-reacts to them.
+Each is **structurally incapable** of reaching the other's destination:
+`publish-pypi.yml` has no `workflow_dispatch` trigger, so a manual run can
+never fire it; `publish-testpypi.yml` has no `release:` trigger, so a
+published Release can never fire it. Neither workflow creates tags or
+releases — they only react to them.
 
 ## The public API surface semver governs
 
@@ -133,22 +145,25 @@ usable SDK.
 
 ## One-time human setup: register the Trusted Publisher
 
-The workflow is inert until the trust is registered on PyPI's side. This is a
-manual step on the web UI (it cannot be done from CI), performed **once per
-index**. Because `donkey-kit` is not yet published, use the **pending publisher**
-form (Your projects → Publishing, or account → Publishing before the project
-exists). Enter, on the **GitHub** tab:
+Trust is registered **per index, and keyed on the workflow filename** — each
+index must point at the filename that actually publishes to it, or PyPI
+rejects the OIDC token. This is a manual step on the web UI (it cannot be
+done from CI), performed **once per index**. `donkey-kit` already exists on
+both PyPI and TestPyPI, so edit each project's **existing** trusted publisher
+(the project's Settings → Publishing) to point at the workflow filename in the
+table below. The **pending publisher** form (account → Publishing) is only the
+fallback for an index where the project does not exist yet. Enter, on the
+**GitHub** tab:
 
-| Field | Value |
-| --- | --- |
-| PyPI Project Name | `donkey-kit` |
-| Owner | `Donkey-Development-Kit` |
-| Repository name | `donkey-development-kit` |
-| Workflow name | `release.yml` |
-| Environment name | `pypi` (production) / `testpypi` (test.pypi.org) |
+| Field | On **pypi.org** | On **test.pypi.org** |
+| --- | --- | --- |
+| PyPI Project Name | `donkey-kit` | `donkey-kit` |
+| Owner | `Donkey-Development-Kit` | `Donkey-Development-Kit` |
+| Repository name | `donkey-development-kit` | `donkey-development-kit` |
+| Workflow name | `publish-pypi.yml` | `publish-testpypi.yml` |
+| Environment name | `pypi` | `testpypi` |
 
-These must match the workflow exactly or PyPI rejects the OIDC token. Do the
-same on **test.pypi.org** with Environment `testpypi` for the pre-release path.
+These must match the workflow exactly or PyPI rejects the OIDC token.
 
 Then, in the GitHub repo (Settings → Environments), create the `pypi` and
 `testpypi` **Environments**. Adding **required reviewers** to `pypi` is
@@ -156,6 +171,6 @@ recommended: the publish job then pauses for a human approval before the
 irreversible production upload — the go-ahead gate #339 requires.
 
 > A public PyPI publish is effectively irreversible (names can be squatted;
-> releases can only be *yanked*, never deleted). Do not submit the **production**
-> pending publisher or approve a `pypi` deployment until the release is genuinely
-> ready — see #339 for the first-publish checklist.
+> releases can only be *yanked*, never deleted). Do not change the
+> **production** publisher or approve a `pypi` deployment until the release is
+> genuinely ready — #339 was the first-publish checklist (completed 2026-09-25).
