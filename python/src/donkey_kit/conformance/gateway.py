@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..simulator.app import ASGIApp, SimulatorConfig, build_app
-from ..simulator.scenarios import Scenario, parse_scenario
+from ..simulator.scenarios import FaultScenario, parse_scenario
 
 __all__ = ["Gateway", "RecordedRequest", "start_gateway"]
 
@@ -138,10 +138,10 @@ class Gateway:
         """A snapshot of the recorded requests, oldest first (secret redacted)."""
         return list(self._recorder.requests)
 
-    def set_scenarios(self, *scenarios: str | Scenario) -> None:
+    def set_scenarios(self, *scenarios: str | FaultScenario) -> None:
         """Reconfigure the simulator's #188 fault-injection scenarios for this
         test, live (no restart). Each argument is either a parsed
-        :class:`~donkey_kit.simulator.scenarios.Scenario` or a ``--scenario`` spec
+        :class:`~donkey_kit.simulator.scenarios.FaultScenario` or a ``--scenario`` spec
         string (e.g. ``"pii_block:every=1"``). Scenarios are stateful and
         single-use, so this builds a fresh simulator each call; the request log is
         left untouched (use :meth:`reset` to clear it)."""
