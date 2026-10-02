@@ -23,6 +23,15 @@ from typing import Any
 
 from ..core import _verify
 
+__all__ = [
+    "Contact",
+    "DescriptionIssue",
+    "Publication",
+    "PublicationAssetType",
+    "VersionStrategy",
+    "check_description_quality",
+]
+
 
 class PublicationAssetType(Enum):
     """SDK publication categories; exact Exchange token strings are UNVERIFIED."""

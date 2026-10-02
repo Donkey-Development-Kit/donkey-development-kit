@@ -15,6 +15,16 @@ import re
 from . import _verify
 from .masking import SENSITIVE_NAMES
 
+__all__ = [
+    "CREDENTIAL_HEADERS",
+    "FRAMEWORK_PREFIXES",
+    "OVERRIDE_HEADERS",
+    "ROUTING_HEADERS",
+    "ROUTING_PREFIXES",
+    "SDK_HEADERS",
+    "header_name_problem",
+]
+
 # RFC 9110 field-name token.
 _TOKEN = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 

@@ -36,7 +36,8 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Protocol, runtime_checkable
+import warnings
+from typing import Any, Protocol, runtime_checkable
 
 from .fixtures import (
     LIMIT_HEADER,
@@ -49,9 +50,9 @@ from .fixtures import (
 
 __all__ = [
     "BudgetScenario",
+    "FaultScenario",
     "InjectionScenario",
     "PiiBlockScenario",
-    "Scenario",
     "ScenarioError",
     "ScenarioHit",
     "parse_scenario",
@@ -88,8 +89,10 @@ class ScenarioHit:
 
 
 @runtime_checkable
-class Scenario(Protocol):
-    """A stateful fault-injection rule evaluated once per ``POST /responses``."""
+class FaultScenario(Protocol):
+    """A stateful fault-injection rule evaluated once per ``POST /responses``.
+    Named ``Scenario`` before #719, which collided with the conformance kit's
+    :class:`donkey_kit.conformance.Scenario`."""
 
     name: str
 
@@ -289,7 +292,7 @@ def _parse_int(params: dict[str, str], key: str, scenario: str) -> int:
     return int(raw)
 
 
-def parse_scenario(spec: str) -> Scenario:
+def parse_scenario(spec: str) -> FaultScenario:
     """Parse one ``--scenario`` spec (``<name>:<k=v,k=v>``) into a fresh scenario.
 
     Raises :class:`ScenarioError` for an unknown name, a missing/invalid param,
@@ -328,6 +331,18 @@ def parse_scenario(spec: str) -> Scenario:
     )
 
 
-def parse_scenarios(specs: list[str]) -> tuple[Scenario, ...]:
+def parse_scenarios(specs: list[str]) -> tuple[FaultScenario, ...]:
     """Parse a list of ``--scenario`` specs into fresh scenario instances."""
     return tuple(parse_scenario(s) for s in specs)
+
+
+def __getattr__(name: str) -> Any:
+    # Deprecated alias (#719): ``Scenario`` collided with ``conformance.Scenario``.
+    if name == "Scenario":
+        warnings.warn(
+            "donkey_kit.simulator.scenarios.Scenario is deprecated; use FaultScenario.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return FaultScenario
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

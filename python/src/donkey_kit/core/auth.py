@@ -32,6 +32,14 @@ if TYPE_CHECKING:
 
     from .config import DonkeyConfig
 
+__all__ = [
+    "AnypointConnectedApp",
+    "AuthProvider",
+    "ChainedAuth",
+    "EndpointCheckedAuth",
+    "StaticToken",
+]
+
 _EXPIRY_SAFETY_MARGIN_S = 60.0
 
 

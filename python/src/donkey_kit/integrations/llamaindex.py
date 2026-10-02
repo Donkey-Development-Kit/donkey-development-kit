@@ -27,6 +27,8 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from llama_index.llms.openai_like import OpenAILike
 
+__all__ = ["LlamaIndexAdapter", "llm"]
+
 
 class LlamaIndexAdapter(Adapter):
     # Kept False while the conformance exemption table lists LlamaIndex; its

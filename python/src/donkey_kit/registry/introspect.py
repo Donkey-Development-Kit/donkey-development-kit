@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from ..core import _verify
 
+__all__ = ["DerivationMode", "derive_descriptor"]
+
 DerivationMode = str  # "auto" | "auto:live" | "auto:static" | "auto:check"
 
 

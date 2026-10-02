@@ -41,6 +41,8 @@ if TYPE_CHECKING:
     from google.adk.models import Gemini
     from google.adk.models.lite_llm import LiteLlm
 
+__all__ = ["ADKAdapter", "gemini", "model"]
+
 
 class ADKAdapter(Adapter):
     # Kept False for ``model()`` while the conformance kit lists its

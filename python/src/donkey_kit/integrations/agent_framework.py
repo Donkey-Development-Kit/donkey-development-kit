@@ -42,6 +42,8 @@ if TYPE_CHECKING:
 
     from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
+__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client"]
+
 ChatAPI = Literal["responses", "chat_completions"]
 # The agent-framework.openai class each ``api=`` value builds (docs/verified-apis.md §8).
 _CHAT_CLIENT_CLASSES: dict[str, str] = {
