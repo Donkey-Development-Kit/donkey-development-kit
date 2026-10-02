@@ -165,6 +165,7 @@ pytest -q          # the `test` matrix job (3.10/3.11/3.12 in CI)
 mypy               # mypy --strict, BLOCKING
 ruff check .       # E,F,I,UP,B; line-length 100
 lint-imports       # the layered, framework-free-core contract
+vulture            # dead code in src/; allowed names in vulture_whitelist.py
 ```
 
 If the diff touches an adapter or framework wiring, also run the signature check
@@ -245,7 +246,7 @@ scenario nobody reviews). Pick by what the change exercises:
 
 | The change exercises… | Surface |
 | --- | --- |
-| Framework-free logic (`core/`, `registry/`, errors, config, transport) using only httpx + pydantic | **`tests/unit/`** — the `base-only` CI job |
+| Framework-free logic (`core/`, `registry/`, errors, config, transport) with no agent framework installed | **`tests/unit/`** — the `base-only` CI job |
 | An adapter's behavior against a fixed scenario set (any of the eight frameworks) | **`tests/conformance/suite.py`** — the conformance kit |
 | Behavior pinned to a **real captured** Anypoint request/response | **fixture-driven** test reading `tests/fixtures/anypoint/**` |
 | The pure-Python local gateway simulator (`donkey mock`, no Docker) | `@pytest.mark.local_gateway` (off by default) |
@@ -407,8 +408,9 @@ build plan has the rationale behind each rule:
   Don't silence a real signature mismatch with an unexplained `# type: ignore`
   — the single `[[tool.mypy.overrides]]` block already handles optional/absent
   framework deps.
-- **Framework-free core & lazy imports.** `core/` depends on **httpx + pydantic
-  only** — no agent framework, ever. Adapters import their framework **lazily,
+- **Framework-free core & lazy imports.** `core/` depends on **httpx only** (the
+  build plan allows pydantic too, but core imports none) — no agent framework,
+  ever. Adapters import their framework **lazily,
   inside the method that uses it**, never at module top level; import the
   framework's *types* only under `if TYPE_CHECKING:`. This is what lets
   `import donkey_kit` succeed with no framework installed, and the `base-only`
@@ -432,9 +434,17 @@ build plan has the rationale behind each rule:
   `tomllib` is stdlib only on 3.11+, so `tomli` is backfilled below 3.11;
   `typing-extensions` is pulled in below 3.12. Don't use 3.11+ syntax/stdlib
   without a backfill.
-- **pydantic v2** idioms (`model_validate`, `Field`, `model_config`); the
-  `pydantic.mypy` plugin is on. The package ships `py.typed` (PEP 561) — keep the
-  public API fully annotated so downstream users get types.
+- **Value objects are frozen dataclasses** (`@dataclass(frozen=True)`), not
+  pydantic models: config, catalog entries, registry assets and results. Change
+  one by building a new instance (`dataclasses.replace(...)`, or a typed helper
+  such as `DonkeyConfig.with_overrides(...)`), and type keyword-override bags
+  with `TypedDict` + `Unpack`. A plain `@dataclass` is only for mutable internal
+  state. pydantic is used only at an external-schema boundary, where the SDK
+  validates a document it doesn't control; today that is only the legacy
+  `provisioning/spec.py`, which is why `pydantic` is still a base dependency and
+  the `pydantic.mypy` plugin is on. See
+  [ADR 0001](docs/adr/0001-value-objects.md). The package ships `py.typed`
+  (PEP 561) — keep the public API fully annotated so downstream users get types.
 - **Public API surface.** Every public module (no `_` in its path) declares a
   sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey`
   signature is exported from `donkey_kit` (or `donkey_kit.core`), and no class

@@ -76,8 +76,6 @@ def _anthropic_uses_httpx2() -> bool:
 
 
 class AnthropicAdapter(Adapter):
-    extra = "anthropic"
-
     def __init__(
         self,
         cfg: DonkeyConfig,

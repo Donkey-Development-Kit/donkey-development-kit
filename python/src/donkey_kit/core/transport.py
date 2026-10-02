@@ -55,6 +55,12 @@ from typing import Any, Protocol
 import httpx
 
 from . import _verify
+from ._wire import (
+    LLM_MODEL_HEADER,
+    LLM_PROVIDER_HEADER,
+    RETRY_AFTER_HEADER,
+    ROUTING_TYPE_HEADER,
+)
 from .auth import AuthProvider
 from .budget import Budget
 from .cachecontrol import current_cache_controls
@@ -70,9 +76,6 @@ from .errors import (
     parse_retry_after,
 )
 from .lastcall import (
-    LLM_MODEL_HEADER,
-    LLM_PROVIDER_HEADER,
-    ROUTING_TYPE_HEADER,
     is_fallback,
     is_substitution,
     observe_last_call,
@@ -455,7 +458,7 @@ def _retry_delay(attempt: int, response: httpx.Response) -> float:
     # raise ValueError on a negative argument, which would turn the retryable
     # status the loop exists to absorb into an unhandled exception (#286). The
     # HTTP-date form parses to None and falls through to backoff.
-    retry_after = parse_retry_after(response.headers.get("retry-after"))
+    retry_after = parse_retry_after(response.headers.get(RETRY_AFTER_HEADER))
     if retry_after is not None:
         return min(retry_after, _BACKOFF_CAP_S)
     exp = min(_BACKOFF_BASE_S * (2.0**attempt), _BACKOFF_CAP_S)
@@ -555,8 +558,7 @@ def _lifecycle_error(
 # response") is the SOLE source of gen_ai.system; absent → the
 # attribute is omitted, never guessed (verification discipline), because the proxy routes to
 # several providers and defaulting one would misattribute the call. The header
-# NAME is defined once in ``lastcall`` (which also parses it onto ``last_call``)
-# and imported here as ``LLM_PROVIDER_HEADER`` so there is a single source (#309).
+# NAME is defined once, in ``core/_wire`` (#309).
 # Streaming (SSE) responses carry no usage on the envelope; it lives in a
 # terminal event, captured by the span-closing stream wrapper (#193).
 _STREAM_CONTENT_TYPE = "text/event-stream"

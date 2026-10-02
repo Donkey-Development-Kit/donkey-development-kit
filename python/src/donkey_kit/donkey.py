@@ -17,6 +17,7 @@ import functools
 import importlib
 import importlib.util
 import inspect
+import warnings
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
@@ -89,7 +90,6 @@ class ToolsFacade:
         domain: str | None = None,
         tags: list[str] | None = None,
         governed: bool | GovernanceCriteria | None = None,
-        governance: Any | None = None,
         locked: bool = False,
     ) -> ToolSet:
         """Discover a governed tool catalog and return a bindable ``ToolSet``.
@@ -356,7 +356,13 @@ class Donkey:
         return run_scope(id, override if not override.is_empty else None)
 
     def run_context(self, run_id: str | None = None) -> RunScope:
-        """Back-compat alias for :meth:`run` (BG §1.7). Prefer ``donkey.run(id=…)``."""
+        """Deprecated alias for :meth:`run` (BG §1.7): use ``donkey.run(id=…)``.
+        Emits a :class:`DeprecationWarning` (#720)."""
+        warnings.warn(
+            "Donkey.run_context() is deprecated; use donkey.run(id=...) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.run(run_id)
 
     def cache(

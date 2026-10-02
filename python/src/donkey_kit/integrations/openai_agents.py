@@ -28,8 +28,6 @@ __all__ = ["OpenAIAgentsAdapter", "model"]
 
 
 class OpenAIAgentsAdapter(Adapter):
-    extra = "openai-agents"
-
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatCompletionsModel(model=…, **kwargs)``
         you build yourself. Unlike the OpenAI-compatible adapters this returns a

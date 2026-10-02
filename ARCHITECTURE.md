@@ -52,7 +52,7 @@ registry/       Exchange discovery, typed governed-state assets
       ↓
 llm/            framework-free OpenAI-compatible client factory + model catalog
       ↓
-core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but core imports none)
+core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but core imports none — value objects are frozen dataclasses, ADR 0001)
 ```
 
 **Not in the stack — `provisioning/`.** The package holds two different things:
@@ -84,6 +84,14 @@ an accidental top-level framework import leaking into a lower layer.
 Because of that rule, adapters import their framework **lazily, inside methods** —
 never at module top level — so importing the base package never drags in a
 framework that may not be installed.
+
+**Value objects are frozen dataclasses** ([ADR 0001](docs/adr/0001-value-objects.md)).
+Config, catalog entries, registry assets and results are `@dataclass(frozen=True)`
+and change by building a new instance (`dataclasses.replace(...)`,
+`DonkeyConfig.with_overrides(...)`). pydantic is used only at an external-schema
+boundary. The one such module today is the legacy `provisioning/spec.py`, which
+validates a user-authored YAML spec, and it is the only reason `pydantic` is
+still a base dependency. Dropping it from the base install is part of #730.
 
 ### How the pieces connect
 

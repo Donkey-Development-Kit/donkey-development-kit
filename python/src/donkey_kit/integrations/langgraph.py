@@ -41,8 +41,6 @@ __all__ = ["LangGraphAdapter", "chat_model", "typed_refusals"]
 
 
 class LangGraphAdapter(Adapter):
-    extra = "langgraph"
-
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs to spread into a ``ChatOpenAI(model=…, **kwargs)`` you
         build yourself (BG §1.8). Same values the factory uses — one source of

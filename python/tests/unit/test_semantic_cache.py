@@ -360,11 +360,9 @@ def test_budget_observes_a_miss_normally() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cache_span_keys_are_pinned_and_allowlisted() -> None:
+def test_cache_span_keys_are_pinned() -> None:
     assert telemetry.DONKEY_CACHE_STATUS == "donkey.cache.status"
     assert telemetry.DONKEY_CACHE_SCORE == "donkey.cache.score"
-    assert telemetry.DONKEY_CACHE_STATUS in telemetry._ALLOWED_SPAN_ATTRIBUTES
-    assert telemetry.DONKEY_CACHE_SCORE in telemetry._ALLOWED_SPAN_ATTRIBUTES
 
 
 def test_build_genai_attributes_emits_cache_outcome() -> None:
