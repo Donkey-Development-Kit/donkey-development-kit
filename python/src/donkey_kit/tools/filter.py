@@ -25,11 +25,14 @@ class ToolDescriptor:
 
 @dataclass(frozen=True)
 class ToolFilter:
+    """Allow-list, deny-list and predicate applied to tool descriptors; deny wins."""
+
     allow: frozenset[str] | None = None
     deny: frozenset[str] = frozenset()
     predicate: Callable[[ToolDescriptor], bool] | None = None
 
     def accepts(self, tool: ToolDescriptor) -> bool:
+        """True when ``tool`` passes the deny-list, the allow-list and the predicate."""
         if tool.name in self.deny:
             return False
         if self.allow is not None and tool.name not in self.allow:

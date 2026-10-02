@@ -61,6 +61,7 @@ def host_of(url: str) -> str | None:
 
 
 def is_loopback(url: str) -> bool:
+    """True when ``url``'s host is ``localhost`` or a loopback IP address."""
     host = host_of(url)
     if host is None:
         return False

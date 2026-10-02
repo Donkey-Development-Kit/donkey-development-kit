@@ -37,6 +37,24 @@ __all__ = ["StrandsAdapter", "model"]
 
 
 class StrandsAdapter(Adapter):
+    """Governed Strands Agents objects, reached as ``donkey.strands``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``model(model)`` builds an
+    ``OpenAIModel``. ``connection_kwargs()`` returns the same settings for building
+    it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.strands`` was read without the ``strands`` extra
+            installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/strands
+    """
+
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIModel(model_id=…, **kwargs)`` you build
         yourself. Strands forwards ``client_args`` to the underlying OpenAI

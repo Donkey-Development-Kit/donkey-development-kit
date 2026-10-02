@@ -218,6 +218,23 @@ class PolicyViolation(DonkeyError):
 
 
 class TokenBudgetExceeded(PolicyViolation):
+    """A token-rate-limit policy refused the request: the budget window is spent.
+
+    Raised on the gateway's 429 token-budget rejection (BG §1.3). Terminal and
+    never retried by the SDK, like every :class:`PolicyViolation`.
+
+    Args:
+        message: The human-readable refusal text.
+        retry_after: Seconds until the caller may retry, read from the
+            ``retry-after`` or ``x-token-reset`` response header; ``None`` when
+            the gateway sent neither.
+
+    To pace calls before hitting the limit, use ``donkey.budget`` and
+    :class:`BudgetReserveReached` instead.
+
+    Docs: https://docs.donkey-kit.dev/errors
+    """
+
     policy = "token-rate-limit"
     remediation: str = (
         "A token-rate-limit policy exhausted the budget window. Wait for it "
@@ -309,6 +326,15 @@ class ModelSubstituted(DonkeyError):
 
 
 class PromptInjectionBlocked(PolicyViolation):
+    """The prompt-injection-protection policy flagged the request as an injection attempt.
+
+    Identified from the ``x-injection-protection`` header or the regex prompt
+    guard's ``matched_patterns``. Terminal and never retried by the SDK, like
+    every :class:`PolicyViolation`. The raw body is on ``.response``.
+
+    Docs: https://docs.donkey-kit.dev/errors
+    """
+
     policy = "prompt-injection-protection"
     remediation: str = (
         "The prompt-injection-protection policy flagged this request as a "
@@ -349,7 +375,12 @@ class PIIDetected(PolicyViolation):
     ``gateway_message`` is the gateway's own rejection text, which echoes every
     flagged value verbatim; it is kept for callers that need it and is not
     rendered by ``str()`` or ``repr()``. The raw body is also on ``.response``.
-    Treat both as carrying the blocked content."""
+    Treat both as carrying the blocked content.
+
+    Terminal and never retried by the SDK, like every :class:`PolicyViolation`.
+
+    Docs: https://docs.donkey-kit.dev/errors
+    """
 
     policy = "pii-detection"
     remediation: str = (

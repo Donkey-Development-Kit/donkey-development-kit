@@ -28,6 +28,24 @@ __all__ = ["OpenAIAgentsAdapter", "model"]
 
 
 class OpenAIAgentsAdapter(Adapter):
+    """Governed OpenAI Agents SDK objects, reached as ``donkey.openai_agents``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``model(model)`` builds an
+    ``OpenAIChatCompletionsModel``. ``connection_kwargs()`` returns the same
+    settings for building it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.openai_agents`` was read without the ``openai-agents``
+            extra installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/openai
+    """
+
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatCompletionsModel(model=…, **kwargs)``
         you build yourself. Unlike the OpenAI-compatible adapters this returns a

@@ -25,22 +25,27 @@ class StatusCounts(dict[Status, int]):
 
     @property
     def passed(self) -> int:
+        """Number of scenarios that passed."""
         return self.get("pass", 0)
 
     @property
     def failed(self) -> int:
+        """Number of scenarios that failed."""
         return self.get("fail", 0)
 
     @property
     def exempt(self) -> int:
+        """Number of scenarios the adapter is exempt from."""
         return self.get("exempt", 0)
 
     @property
     def total(self) -> int:
+        """Number of scenarios run, of any status."""
         return self.passed + self.failed + self.exempt
 
 
 def count_statuses(results: Sequence[Result]) -> StatusCounts:
+    """Count ``results`` by status."""
     counts = StatusCounts()
     for result in results:
         counts[result.status] = counts.get(result.status, 0) + 1

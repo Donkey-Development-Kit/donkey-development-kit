@@ -59,6 +59,7 @@ class GovernanceReport:
     checks: list[Check]
 
     def reasons_failed(self) -> list[str]:
+        """``name: detail`` for every check that did not pass, UNKNOWN ones included."""
         return [f"{c.name}: {c.detail}" for c in self.checks if c.passed is not True]
 
 

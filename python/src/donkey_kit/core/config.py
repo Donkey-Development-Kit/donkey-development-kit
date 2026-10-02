@@ -300,6 +300,25 @@ def _as_loaded(name: str, entry: object) -> _Loaded:
 
 @dataclass(frozen=True)
 class DonkeyConfig:
+    """Everything the SDK needs to reach Agent Fabric, resolved once and immutable.
+
+    Build it with :meth:`from_env`, which resolves each field from code, then
+    environment variables, then ``.donkey-kit.toml``, then the default (see the
+    module docstring). A ``DonkeyConfig(...)`` built directly reads neither env
+    nor files. Change fields afterwards with :meth:`with_overrides`.
+
+    The control-plane credential (``client_id`` / ``client_secret``, for the
+    registry and provisioning) and the LLM-proxy credential (``llm_proxy_*``,
+    for model calls) are separate (BG §1.1). Call :meth:`validated` to get every
+    missing field for a capability in one error.
+
+    Raises:
+        ConfigError: A field holds an invalid value, such as a reserved header
+            name.
+
+    Docs: https://docs.donkey-kit.dev/reference/configuration
+    """
+
     # --- Anypoint control plane (registry + provisioning) ---
     client_id: str | None = None
     client_secret: str | None = field(default=None, repr=False)
@@ -542,6 +561,11 @@ class DonkeyConfig:
         return loaded.source
 
     def with_overrides(self, **kw: Unpack[ConfigOverrides]) -> DonkeyConfig:
+        """Return a copy with the given fields replaced.
+
+        Each overridden field counts as set in code, which matters to
+        :meth:`check_endpoints`.
+        """
         sources = {k: v for k, v in self._sources.items() if k not in kw}
         return replace(self, _sources=sources, **kw)
 
