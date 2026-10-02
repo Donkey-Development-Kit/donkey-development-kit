@@ -37,6 +37,7 @@ from pathlib import Path
 # and the client parse the identical strings (upward import, allowed under the layered
 # architecture).
 # RATELIMIT_HEADER is the prose budget header the live 200/403 carries (#352/#353).
+from ..core import _wire
 from ..core.budget import (
     LIMIT_HEADER,
     RATELIMIT_HEADER,
@@ -95,14 +96,14 @@ def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
 # of identity headers.
 _KEEP_EXACT = frozenset(
     {
-        "www-authenticate",
-        "x-injection-protection",
-        "x-correlation-id",
-        "x-request-id",
-        "x-envoy-decorator-operation",
+        _wire.WWW_AUTHENTICATE_HEADER,
+        _wire.INJECTION_PROTECTION_HEADER,
+        _wire.CORRELATION_ID_HEADER.lower(),
+        _wire.REQUEST_ID_HEADER,
+        _wire.DECORATOR_OPERATION_HEADER,
     }
 )
-_KEEP_PREFIX = ("x-token-", "x-llm-proxy-")
+_KEEP_PREFIX = (_wire.TOKEN_HEADER_PREFIX, _wire.LLM_PROXY_HEADER_PREFIX)
 
 
 def parse_headers(text: str) -> dict[str, str]:

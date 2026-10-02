@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from . import _verify
+from . import _verify, _wire
 from .lastcall import request_id as read_request_id
 
 if TYPE_CHECKING:
@@ -741,7 +741,7 @@ def classify(
     # generic 4xx / nested-error branch so an injection block wins even if its
     # body happens to be shaped like an upstream error envelope. A 400 WITHOUT
     # this header is an ordinary refusal, never PromptInjectionBlocked (AC (a)).
-    if response.headers.get("x-injection-protection") == "blocked":
+    if response.headers.get(_wire.INJECTION_PROTECTION_HEADER) == "blocked":
         return PromptInjectionBlocked(
             f"Request blocked by the injection-protection policy ({status}).",
             # remediation: PromptInjectionBlocked's canonical class default (#182).
@@ -755,7 +755,7 @@ def classify(
     # to the honest generic PolicyViolation below rather than being mis-typed as
     # auth (#184). ``donkey doctor``'s (#202) credentials diagnosis stays intact: a
     # wrong-credential 401 still lands here.
-    if status == 401 or (status == 403 and "www-authenticate" in response.headers):
+    if status == 401 or (status == 403 and _wire.WWW_AUTHENTICATE_HEADER in response.headers):
         return AuthError(
             f"Authentication/authorization failed ({status}). Check the consumer "
             "client_id/client_secret pair and its API Manager authorization "
@@ -810,7 +810,9 @@ def classify(
         # envelope branch above owns the nested case), so the observable
         # discriminators are the status and any gateway policy headers present.
         policy_headers = sorted(
-            name for name in response.headers if name.lower().startswith("x-llm-proxy-")
+            name
+            for name in response.headers
+            if name.lower().startswith(_wire.LLM_PROXY_HEADER_PREFIX)
         )
         observed = f"status {status}"
         if policy_headers:
@@ -874,10 +876,10 @@ def _retry_after(response: httpx.Response) -> float | None:
     """Seconds until the caller may retry. Prefers the standard ``retry-after``
     (delta-seconds) header; falls back to the LLM token-rate-limit policy's
     ``x-token-reset`` header, which is captured in **milliseconds** (docs/verified-apis.md §4)."""
-    seconds = parse_retry_after(response.headers.get("retry-after"))
+    seconds = parse_retry_after(response.headers.get(_wire.RETRY_AFTER_HEADER))
     if seconds is not None:
         return seconds
-    reset_ms = response.headers.get("x-token-reset")
+    reset_ms = response.headers.get(_wire.TOKEN_RESET_HEADER)
     if reset_ms is not None:
         try:
             return max(0.0, float(reset_ms) / 1000.0)
@@ -1029,13 +1031,13 @@ def _code_str(value: Any) -> str | None:
 # #253/#568).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
     (
-        "x-llm-proxy-azure-content-safety-action",
-        "x-llm-proxy-azure-content-safety-reason",
+        _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
+        _wire.AZURE_CONTENT_SAFETY_REASON_HEADER,
         "Azure Content Safety",
     ),
     (
-        "x-llm-proxy-bedrock-guardrail-action",
-        "x-llm-proxy-bedrock-guardrail-reason",
+        _wire.BEDROCK_GUARDRAIL_ACTION_HEADER,
+        _wire.BEDROCK_GUARDRAIL_REASON_HEADER,
         "Amazon Bedrock Guardrails",
     ),
 )

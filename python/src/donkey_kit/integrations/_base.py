@@ -22,12 +22,11 @@ from ..core.transport import (
     DonkeyAsyncClientView,
     DonkeyClient,
     DonkeyClientView,
-    attribution_headers,
     build_sync_http_client,
     proxy_api_key,
     proxy_auth_headers,
 )
-from . import missing_framework_error
+from . import ADAPTERS, missing_framework_error
 
 
 class Adapter(ABC):
@@ -35,9 +34,14 @@ class Adapter(ABC):
     and declaring the contract every adapter shares (BG §1.8): ``extra``,
     ``observes_last_call`` and :meth:`connection_kwargs`."""
 
-    #: pip extra that provides this adapter's framework, for the curated
-    #: ImportError raised on access when it is not installed (BG §1.8).
-    extra: str = ""
+    @property
+    def extra(self) -> str:
+        """The pip extra that provides this adapter's framework, for the curated
+        ImportError raised when it is not installed (BG §1.8). Read from the
+        ``ADAPTERS`` roster, the one place it is declared; empty for an adapter
+        not on it."""
+        cls = type(self).__name__
+        return next((s.extra for s in ADAPTERS.values() if s.cls == cls), "")
 
     #: Whether a governed model call through this adapter reaches ``donkey.last_call``
     #: (#362). True when the adapter hands the framework our shared
@@ -111,9 +115,6 @@ class Adapter(ABC):
                 self._cfg, origins=self._http.checked_origins
             )
         return self._owned_sync
-
-    def _attribution_headers(self) -> dict[str, str]:
-        return attribution_headers(self._cfg)
 
     def _proxy_headers(self) -> dict[str, str]:
         """Default headers for a native OpenAI-compatible client pointed at the
