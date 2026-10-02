@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import contextlib
 import functools
+import logging
 import threading
 from contextlib import AsyncExitStack
 
@@ -31,6 +31,8 @@ from .transport import (
     build_http_client,
     build_sync_http_client,
 )
+
+_log = logging.getLogger(__name__)
 
 
 class Runtime:
@@ -232,5 +234,7 @@ def close_default() -> None:
     except RuntimeError:
         # Best effort at exit: a pool left over from an earlier, already-closed
         # loop may refuse to close cleanly, and that must not mask the exit.
-        with contextlib.suppress(Exception):
+        try:
             asyncio.run(rt.aclose())
+        except Exception:  # noqa: BLE001 — best effort at exit; never mask the exit
+            _log.debug("closing the default runtime's async transports failed", exc_info=True)
