@@ -306,15 +306,26 @@ class ConformanceHarness:
     # --- ScenarioContext surface -------------------------------------------
     @property
     def agent(self) -> Any:
+        """The agent the factory built for the current scenario."""
         return self._agent
 
     def serve_refusal(self, error: type[DonkeyError]) -> None:
+        """Arm the gateway to answer the next model call with the captured refusal for ``error``."""
         self._arm(_fixture_responder(_refusal_fixture(error)))
 
     def serve_success(self, *, budget_headers: bool = True) -> None:
+        """Arm the gateway to answer with the captured success response.
+
+        ``budget_headers=False`` strips its ``x-token-*`` budget headers.
+        """
         self._arm(_fixture_responder(load("success"), strip_budget=not budget_headers))
 
     async def run(self, *, correlation_id: str | None = None) -> Observation:
+        """Drive ``agent.run(<input>)`` once and return what the harness observed.
+
+        Raises:
+            ConformanceUsageError: The agent has no callable ``run`` method.
+        """
         agent = self._agent
         run = getattr(agent, "run", None)
         if not callable(run):

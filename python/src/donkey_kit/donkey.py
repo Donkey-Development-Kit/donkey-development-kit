@@ -114,6 +114,36 @@ class _ToolsFacade:
 
 
 class Donkey:
+    """The SDK entry point: one governed handle on Agent Fabric (`BG §1.1`).
+
+    A ``Donkey`` holds the resolved :class:`~donkey_kit.core.config.DonkeyConfig`,
+    the auth providers and the shared governed transports. Every surface hangs off
+    it: ``donkey.llm`` and :meth:`openai` for model calls, ``donkey.registry`` and
+    ``donkey.tools`` for Exchange, and one lazy attribute per framework adapter
+    (``donkey.langgraph``, ``donkey.adk``, ``donkey.crewai``, ...)::
+
+        async with Donkey.from_env() as donkey:
+            client = donkey.openai()
+
+    Args:
+        config: The resolved configuration. ``None`` resolves it from the
+            environment, as :meth:`from_env` does without cost tags.
+        auth: The control-plane auth provider. ``None`` builds the default for
+            ``config``.
+        llm_auth: The data-plane auth provider, when it differs from ``auth``.
+
+    Raises:
+        ConfigError: The configuration is incomplete or inconsistent.
+        ImportError: A framework adapter attribute is read whose extra is not
+            installed; the message carries the install command.
+
+    Close it with :meth:`aclose` (or ``async with``); sync-only callers use
+    :meth:`close` (or ``with``). Refusals surface as
+    :class:`~donkey_kit.core.errors.DonkeyError` subclasses.
+
+    Docs: https://docs.donkey-kit.dev/quickstart
+    """
+
     # Adapters are resolved lazily by __getattr__ so an uninstalled framework
     # never breaks ``import donkey_kit``. These annotations exist purely so an
     # editor knows what each one is: without them a type checker only sees the
@@ -193,10 +223,19 @@ class Donkey:
     # --- framework-free surfaces -------------------------------------------
     @property
     def config(self) -> DonkeyConfig:
+        """The resolved configuration this Donkey was built with (read-only).
+
+        Docs: https://docs.donkey-kit.dev/reference/configuration
+        """
         return self._cfg
 
     @property
     def llm(self) -> LLMClient:
+        """The governed model-call surface: native OpenAI-compatible clients and
+        per-framework connection kwargs pointed at the proxy (`BG §1.1`).
+
+        Docs: https://docs.donkey-kit.dev/quickstart
+        """
         return self._llm
 
     @property
@@ -303,10 +342,18 @@ class Donkey:
 
     @property
     def registry(self) -> ExchangeRegistry:
+        """The Exchange registry client used for tool discovery and resolution (BG §2.7).
+
+        Docs: https://docs.donkey-kit.dev/tool-access/discovery
+        """
         return self._registry
 
     @property
     def tools(self) -> _ToolsFacade:
+        """Governed tool discovery and the ``donkey.lock`` lockfile (BG §2.7).
+
+        Docs: https://docs.donkey-kit.dev/tool-access
+        """
         return self._tools
 
     def run(

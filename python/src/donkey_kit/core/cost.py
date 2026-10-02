@@ -122,6 +122,7 @@ class CostTags:
     # ------------------------------------------------------------- accessors
     @property
     def is_empty(self) -> bool:
+        """True when no cost-attribution dimension is set."""
         return all(getattr(self, f.name) is None for f in fields(self))
 
     def items(self) -> Iterator[tuple[str, str]]:

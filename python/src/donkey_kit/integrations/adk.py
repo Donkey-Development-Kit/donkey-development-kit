@@ -43,6 +43,24 @@ if TYPE_CHECKING:
 
 
 class ADKAdapter(Adapter):
+    """Governed Google ADK objects, reached as ``donkey.adk``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``model(model)`` builds a
+    ``LiteLlm`` and ``gemini(model)`` a ``Gemini``. ``connection_kwargs()`` returns
+    the same settings for building it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.adk`` was read without the ``adk`` extra installed;
+            the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/adk
+    """
+
     extra = "adk"
     # Kept False for ``model()`` while the conformance kit lists its
     # correlation_id_propagated exemption (#362), although its calls now go

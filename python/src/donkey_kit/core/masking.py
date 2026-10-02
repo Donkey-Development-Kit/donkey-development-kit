@@ -62,6 +62,7 @@ class MaskedDict(dict[str, V]):
     __str__ = __repr__
 
     def copy(self) -> MaskedDict[V]:
+        """Return a shallow copy that still masks its secrets."""
         return MaskedDict(self)
 
     __copy__ = copy

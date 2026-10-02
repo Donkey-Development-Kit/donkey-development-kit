@@ -30,12 +30,29 @@ class _Entry(Generic[T]):
 
 
 class TTLCache(Generic[T]):
+    """A per-process, in-memory cache whose entries expire after a time-to-live.
+
+    Backs the token and registry-lookup caches. Setting ``DONKEY_NO_CACHE=1``
+    (or ``true`` / ``yes``) makes every :meth:`get` miss, for debugging (BG §2.7).
+    Not shared across processes.
+
+    Args:
+        ttl_s: Default lifetime of an entry, in seconds.
+        clock: Monotonic time source; injected so tests do not sleep.
+
+    Docs: https://docs.donkey-kit.dev/tool-access/lockfile#registry-caching
+    """
+
     def __init__(self, *, ttl_s: float, clock: Callable[[], float] = time.monotonic) -> None:
         self._ttl = ttl_s
         self._clock = clock
         self._store: dict[str, _Entry[T]] = {}
 
     def get(self, key: str) -> T | None:
+        """Return the live value for ``key``.
+
+        ``None`` when it is absent or expired, or when caching is disabled.
+        """
         if _cache_disabled():
             return None
         entry = self._store.get(key)
@@ -47,10 +64,12 @@ class TTLCache(Generic[T]):
         return entry.value
 
     def set(self, key: str, value: T, *, ttl_s: float | None = None) -> None:
+        """Store ``value`` under ``key`` for ``ttl_s`` seconds (the cache default when ``None``)."""
         ttl = self._ttl if ttl_s is None else ttl_s
         self._store[key] = _Entry(value=value, expires_at=self._clock() + ttl)
 
     def invalidate(self, key: str | None = None) -> None:
+        """Drop the entry for ``key``, or every entry when ``key`` is ``None``."""
         if key is None:
             self._store.clear()
         else:

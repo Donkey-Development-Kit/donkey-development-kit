@@ -27,6 +27,11 @@ class AssetRef:
 
     @classmethod
     def parse(cls, value: AssetRef | str) -> AssetRef:
+        """Return ``value`` as an :class:`AssetRef`, parsing the string form.
+
+        Raises:
+            ValueError: The string is not ``group_id/asset_id/version``.
+        """
         if isinstance(value, AssetRef):
             return value
         parts = value.split("/")
@@ -40,6 +45,7 @@ class AssetRef:
 
     @property
     def coordinates(self) -> str:
+        """The ``group_id/asset_id/version`` string."""
         return f"{self.group_id}/{self.asset_id}/{self.version}"
 
 

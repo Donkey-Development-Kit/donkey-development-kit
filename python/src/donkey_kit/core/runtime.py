@@ -103,6 +103,7 @@ class Runtime:
 
     @property
     def config(self) -> DonkeyConfig:
+        """The resolved configuration."""
         return self._cfg
 
     @property
@@ -112,10 +113,12 @@ class Runtime:
 
     @property
     def llm_auth(self) -> AuthProvider | None:
+        """The data-plane provider, used only in the ``jwt`` and ``bearer`` modes."""
         return self._llm_auth
 
     @property
     def budget(self) -> Budget:
+        """The token-budget window both data-plane transports update (BG §1.3)."""
         return self._budget
 
     @property

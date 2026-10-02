@@ -102,7 +102,9 @@ class ASGIApp(Protocol):
         scope: MutableMapping[str, Any],
         receive: Callable[[], Awaitable[MutableMapping[str, Any]]],
         send: Callable[[MutableMapping[str, Any]], Awaitable[None]],
-    ) -> None: ...
+    ) -> None:
+        """Handle one ASGI connection."""
+        ...
 
 
 @dataclass(frozen=True)

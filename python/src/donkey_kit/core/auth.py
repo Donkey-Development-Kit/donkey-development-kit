@@ -37,8 +37,32 @@ _EXPIRY_SAFETY_MARGIN_S = 60.0
 
 @runtime_checkable
 class AuthProvider(Protocol):
-    async def token(self) -> str: ...
-    async def invalidate(self) -> None: ...
+    """Where a bearer token comes from: the pluggable credential source (BG §1.1).
+
+    Any object with these two async methods is a provider, so you can back it
+    with your own vault or IdP. The SDK ships :class:`StaticToken`,
+    :class:`AnypointConnectedApp` and :class:`ChainedAuth`. Pass one as
+    ``Donkey(auth=...)`` for the control plane, or ``Donkey(llm_auth=...)`` for
+    the data plane in the ``jwt`` and ``bearer`` modes. The two credentials are
+    separate and never conflated.
+
+    Docs: https://docs.donkey-kit.dev/reference/configuration#auth-providers
+    """
+
+    async def token(self) -> str:
+        """Return a current token, fetching or refreshing it if needed.
+
+        Raises:
+            AuthError: No token could be obtained.
+        """
+        ...
+
+    async def invalidate(self) -> None:
+        """Drop any cached token, so the next :meth:`token` fetches a fresh one.
+
+        The transport calls this after a 401 and retries once.
+        """
+        ...
 
 
 class StaticToken(AuthProvider):
@@ -48,9 +72,11 @@ class StaticToken(AuthProvider):
         self._token = token
 
     async def token(self) -> str:
+        """Return the injected token unchanged."""
         return self._token
 
     async def invalidate(self) -> None:
+        """Do nothing: a static token cannot be refreshed."""
         # A static token cannot be refreshed; invalidation is a no-op. Callers
         # relying on refresh should use AnypointConnectedApp.
         return None
@@ -118,6 +144,16 @@ class AnypointConnectedApp(AuthProvider):
         )
 
     async def token(self) -> str:
+        """Return the cached token, or fetch a new one from the token endpoint.
+
+        Concurrent callers share one fetch.
+
+        Raises:
+            AuthError: The token endpoint refused the credentials or returned an
+                unexpected response.
+            ConfigError: The control-plane endpoint is not one these credentials
+                may be sent to.
+        """
         cached = self._fresh()
         if cached is not None:
             return cached
@@ -145,6 +181,7 @@ class AnypointConnectedApp(AuthProvider):
         return self._lock
 
     async def invalidate(self) -> None:
+        """Drop the cached token so the next :meth:`token` fetches a fresh one."""
         self._cached = None
         self._expires_at = 0.0
 
@@ -220,10 +257,16 @@ class EndpointCheckedAuth(AuthProvider):
         self._endpoint_check = endpoint_check
 
     async def token(self) -> str:
+        """Run the endpoint check, then return the wrapped provider's token.
+
+        Raises:
+            ConfigError: The endpoint check failed; no token is fetched.
+        """
         self._endpoint_check()
         return await self._provider.token()
 
     async def invalidate(self) -> None:
+        """Invalidate the wrapped provider."""
         await self._provider.invalidate()
 
 
@@ -236,6 +279,11 @@ class ChainedAuth(AuthProvider):
         self._providers = providers
 
     async def token(self) -> str:
+        """Return the first token any provider yields, trying them in order.
+
+        Raises:
+            AuthError: Every provider failed; the message carries the last error.
+        """
         last: Exception | None = None
         for provider in self._providers:
             try:
@@ -248,5 +296,6 @@ class ChainedAuth(AuthProvider):
         )
 
     async def invalidate(self) -> None:
+        """Invalidate every provider in the chain."""
         for provider in self._providers:
             await provider.invalidate()

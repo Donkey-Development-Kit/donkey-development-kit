@@ -28,6 +28,7 @@ class PolicyAllowList:
 
     @classmethod
     def load(cls, path: str | Path) -> PolicyAllowList:
+        """Read the allow-list from a ``policy-catalog.yaml`` (its ``allowedPolicies`` list)."""
         import yaml
 
         data = yaml.safe_load(Path(path).read_text()) or {}
@@ -41,6 +42,8 @@ class PolicyAllowList:
 
 @dataclass
 class ApplyResult:
+    """What an :func:`apply` run applied, what it did not, and the error that stopped it."""
+
     applied: list[str] = field(default_factory=list)
     not_applied: list[str] = field(default_factory=list)
     error: str | None = None
@@ -49,6 +52,11 @@ class ApplyResult:
 async def apply(
     plan: Plan, donkey: object, *, allow_list: PolicyAllowList | None = None
 ) -> ApplyResult:
+    """Apply ``plan`` in dependency order, stopping on the first failure.
+
+    Raises:
+        NotImplementedError: Always, for now; see docs/verified-apis.md §5.
+    """
     raise _verify.blocked(
         "MCP Bridge provisioning write API for apply (provisioning-as-code). "
         "Read-before-write + stop-on-first-failure semantics are specified; wire "

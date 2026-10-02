@@ -188,6 +188,7 @@ _ALLOWED_SPAN_ATTRIBUTES = frozenset(
 
 
 def new_correlation_id() -> str:
+    """A fresh random run/correlation id (32 hex characters)."""
     return uuid.uuid4().hex
 
 
@@ -203,6 +204,7 @@ def new_call_id() -> str:
 
 
 def current_correlation_id() -> str | None:
+    """The correlation id bound by the enclosing run scope, or ``None`` outside one."""
     return _correlation_id.get()
 
 
