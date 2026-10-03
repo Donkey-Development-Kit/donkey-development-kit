@@ -44,9 +44,9 @@ from donkey_kit.simulator.fixtures import load, replay_headers
 
 # The LIVE-VERIFIED BG §1.1 identity headers (responses.success.headers.txt, 2026-08-28).
 _REQUEST_ID = "req_f85003861d5348c9a1d152c276082b07"
-_DECORATOR = "api-instance-21133858.3e6ce455-e3e8-4402-b830-9fcf07d9207b.svc"
+_DECORATOR = "api-instance-21133858.00000000-0000-4000-8000-9be3001e93bf.svc"
 _API_INSTANCE_ID = "21133858"
-_ENVIRONMENT_ID = "3e6ce455-e3e8-4402-b830-9fcf07d9207b"
+_ENVIRONMENT_ID = "00000000-0000-4000-8000-9be3001e93bf"
 
 _IDENTITY_HEADERS = {
     "x-request-id": _REQUEST_ID,
