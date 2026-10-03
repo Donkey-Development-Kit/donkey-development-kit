@@ -43,6 +43,9 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 > Licensed under [Apache-2.0](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/LICENSE). See
 > [`docs/unsupported-boundary.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/unsupported-boundary.md) for exactly
 > which platform APIs this SDK calls and their support classification.
+>
+> **Security.** Report vulnerabilities privately, never in a public issue. See
+> [`SECURITY.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/SECURITY.md) for supported versions and how to report.
 
 ## Documentation
 
