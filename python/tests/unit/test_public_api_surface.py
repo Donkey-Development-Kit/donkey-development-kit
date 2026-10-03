@@ -14,7 +14,6 @@ import inspect
 import pkgutil
 import types
 import typing
-import warnings
 from collections.abc import Iterator, Mapping
 from typing import Any
 
@@ -151,22 +150,53 @@ def test_the_check_sees_the_types_it_must() -> None:
 
 
 def test_renamed_names_keep_deprecated_aliases() -> None:
-    from donkey_kit import provisioning
-    from donkey_kit.registry import criteria
-
-    with pytest.warns(DeprecationWarning, match="ApiToolSpec"):
-        assert provisioning.ToolSpec is provisioning.ApiToolSpec
-    from donkey_kit.provisioning import spec
-
-    with pytest.warns(DeprecationWarning, match="ApiToolSpec"):
-        assert spec.ToolSpec is spec.ApiToolSpec
-
     import sys
+
+    from donkey_kit.registry import criteria
 
     sys.modules.pop("donkey_kit.registry.governance", None)
     with pytest.warns(DeprecationWarning, match="registry.criteria"):
         legacy = importlib.import_module("donkey_kit.registry.governance")
     assert legacy.GovernanceCriteria is criteria.GovernanceCriteria
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        assert provisioning.ApiToolSpec is spec.ApiToolSpec
+
+
+# Types that exist only for a verification-blocked surface (registry discovery,
+# governed-state checks, publication, MCP tool calls). They live in
+# donkey_kit.experimental, never in the stable namespace (#730).
+_BLOCKED_ONLY = {
+    "STRICT",
+    "AssetRef",
+    "AssetType",
+    "Contact",
+    "GovernanceCriteria",
+    "Publication",
+    "PublicationAssetType",
+    "PublicationDrift",
+    "RegistryError",
+    "ToolInvocationError",
+}
+
+# Names of the refused provisioning control plane, deleted in #730.
+_REFUSED = {
+    "Governance",
+    "GovernanceDrift",
+    "GatewayTarget",
+    "PlatformTeamOnly",
+    "ProvisioningError",
+}
+
+
+def test_top_level_exports_no_blocked_or_refused_type() -> None:
+    leaked = (_BLOCKED_ONLY | _REFUSED) & set(donkey_kit.__all__)
+    assert not leaked, f"blocked/refused types in donkey_kit.__all__: {sorted(leaked)}"
+    for name in _BLOCKED_ONLY | _REFUSED:
+        assert not hasattr(donkey_kit, name), name
+
+
+def test_experimental_is_exactly_the_blocked_only_types() -> None:
+    from donkey_kit import experimental
+
+    assert set(experimental.__all__) == _BLOCKED_ONLY
+    for name in experimental.__all__:
+        assert getattr(experimental, name) is not None
+

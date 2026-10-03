@@ -14,6 +14,10 @@ Working-instruction reminder (verification discipline, #2): many platform endpoi
 names are UNVERIFIED. Those code paths raise
 ``NotImplementedError("blocked on verification: …")`` rather than guessing. See
 docs/verified-apis.md.
+
+Types that exist only for those blocked surfaces (``AssetRef``, ``Publication``,
+``GovernanceCriteria``, ``STRICT``, ``RegistryError``, …) live in
+:mod:`donkey_kit.experimental`, not here (#730, ADR 0008 in docs/adr/).
 """
 
 from __future__ import annotations
@@ -32,18 +36,12 @@ from .core.errors import (
     ContentSafetyBlocked,
     DonkeyError,
     GatewayUnavailable,
-    GovernanceDrift,
     ModelNotRoutable,
     ModelSubstituted,
     PIIDetected,
-    PlatformTeamOnly,
     PolicyViolation,
     PromptInjectionBlocked,
-    ProvisioningError,
-    PublicationDrift,
-    RegistryError,
     TokenBudgetExceeded,
-    ToolInvocationError,
     UpstreamModelError,
     UpstreamRequestError,
     classify,
@@ -54,16 +52,7 @@ from .core.toolspec import ToolSpec, registered_tools
 from .core.transport import DonkeyAsyncClientView, DonkeyClientView
 from .donkey import Donkey, ToolsFacade
 from .llm.client import LLMClient
-from .registry import (
-    STRICT,
-    AssetRef,
-    AssetType,
-    Contact,
-    ExchangeRegistry,
-    GovernanceCriteria,
-    Publication,
-    PublicationAssetType,
-)
+from .registry import ExchangeRegistry
 
 # A library attaches only a NullHandler to its root logger, so the SDK's DEBUG
 # records stay silent until the application configures logging (#717).
@@ -72,17 +61,13 @@ _logging.getLogger(__name__).addHandler(_logging.NullHandler())
 __version__ = "0.1.2.dev0"
 
 __all__ = [
-    "STRICT",
     "AgentKilled",
-    "AssetRef",
-    "AssetType",
     "AuthError",
     "Budget",
     "BudgetReserveReached",
     "CacheControls",
     "CacheScope",
     "ConfigError",
-    "Contact",
     "ContentSafetyBlocked",
     "CostTags",
     "Donkey",
@@ -92,26 +77,17 @@ __all__ = [
     "DonkeyError",
     "ExchangeRegistry",
     "GatewayUnavailable",
-    "GovernanceCriteria",
-    "GovernanceDrift",
     "LLMClient",
     "LastCall",
     "LastCallStatus",
     "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
-    "PlatformTeamOnly",
     "PolicyViolation",
     "PromptInjectionBlocked",
-    "ProvisioningError",
-    "Publication",
-    "PublicationAssetType",
-    "PublicationDrift",
     "Region",
-    "RegistryError",
     "RunScope",
     "TokenBudgetExceeded",
-    "ToolInvocationError",
     "ToolSpec",
     "ToolsFacade",
     "UpstreamModelError",

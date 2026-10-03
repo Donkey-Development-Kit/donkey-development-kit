@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from donkey_kit.provisioning import cli
-from donkey_kit.provisioning.cli import app
+from donkey_kit import cli
+from donkey_kit.cli import app
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -56,7 +56,7 @@ def test_doctor_rejects_init_only_flags(isolated: Path, flags: list[str]) -> Non
         raise AssertionError("doctor ran against a configuration other than the one requested")
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("donkey_kit.provisioning.doctor.run_diagnostics", _must_not_run)
+        mp.setattr("donkey_kit.cli.doctor.run_diagnostics", _must_not_run)
         result = runner.invoke(app, [*flags, "doctor"])
 
     assert result.exit_code == 2, _combined(result)
@@ -74,7 +74,7 @@ def test_init_honours_env_flag(isolated: Path) -> None:
 
 def test_console_script_targets_main() -> None:
     metadata = tomllib.loads((_PYTHON_ROOT / "pyproject.toml").read_text())
-    assert metadata["project"]["scripts"]["donkey"] == "donkey_kit.provisioning.cli:main"
+    assert metadata["project"]["scripts"]["donkey"] == "donkey_kit.cli:main"
 
 
 def test_main_reports_donkey_error_without_traceback(
@@ -97,7 +97,10 @@ def test_import_without_typer_raises_curated_import_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(sys.modules, "typer", None)  # makes `import typer` fail
-    monkeypatch.delitem(sys.modules, "donkey_kit.provisioning.cli")
+    # Drop the package and every command module, so each re-runs its imports.
+    cli_modules = [m for m in sys.modules if m.split(".")[:2] == ["donkey_kit", "cli"]]
+    for name in cli_modules:
+        monkeypatch.delitem(sys.modules, name)
 
     with pytest.raises(ImportError, match=r'pip install "donkey-kit\[cli\]"'):
-        importlib.import_module("donkey_kit.provisioning.cli")
+        importlib.import_module("donkey_kit.cli")

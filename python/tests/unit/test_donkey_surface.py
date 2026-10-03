@@ -18,18 +18,22 @@ def _cfg() -> DonkeyConfig:
     )
 
 
-def test_legacy_governance_scaffolding_is_not_top_level_public_api() -> None:
-    """The refused provisioning control plane remains importable from its module,
-    but its structural types are not promoted as first-class package exports."""
-    from donkey_kit.governance import Governance
+@pytest.mark.parametrize(
+    "module",
+    [
+        "donkey_kit.governance",
+        "donkey_kit.provisioning",
+        "donkey_kit.provisioning.cli",
+        "donkey_kit.provisioning.spec",
+    ],
+)
+def test_refused_control_plane_modules_are_gone(module: str) -> None:
+    """The refused provisioning control plane was deleted, not parked (#730,
+    ADR 0008 in docs/adr/). Its old import paths must fail, not half-work."""
+    import importlib
 
-    assert Governance.__module__ == "donkey_kit.governance"
-    assert {
-        "GatewayTarget",
-        "Governance",
-        "PolicyBinding",
-        "PolicyPortability",
-    }.isdisjoint(donkey_kit.__all__)
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(module)
     assert not hasattr(donkey_kit, "Governance")
 
 

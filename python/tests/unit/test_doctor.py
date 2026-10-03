@@ -17,6 +17,13 @@ from pathlib import Path
 import httpx
 import pytest
 
+from donkey_kit.cli import doctor
+from donkey_kit.cli.doctor import (
+    DoctorCheck,
+    Level,
+    ProbeResult,
+    run_diagnostics,
+)
 from donkey_kit.core._verify import UnverifiedValueWarning
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import ConfigWarning
@@ -26,13 +33,6 @@ from donkey_kit.core.errors import (
     GatewayUnavailable,
     PIIDetected,
     UpstreamRequestError,
-)
-from donkey_kit.provisioning import doctor
-from donkey_kit.provisioning.doctor import (
-    DoctorCheck,
-    Level,
-    ProbeResult,
-    run_diagnostics,
 )
 
 

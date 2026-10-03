@@ -45,14 +45,11 @@ __all__ = [
     "ContentSafetyBlocked",
     "DonkeyError",
     "GatewayUnavailable",
-    "GovernanceDrift",
     "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
-    "PlatformTeamOnly",
     "PolicyViolation",
     "PromptInjectionBlocked",
-    "ProvisioningError",
     "PublicationDrift",
     "RegistryError",
     "TokenBudgetExceeded",
@@ -585,47 +582,12 @@ class RegistryError(DonkeyError):
     )
 
 
-class ProvisioningError(DonkeyError):
-    """plan/apply/drift failed."""
-
-    remediation: str = (
-        "A provisioning step (plan/apply/drift) failed. Correct the spec the "
-        "message names and re-run; changes to shared environments go through CI "
-        "under platform-controlled credentials."
-    )
-
-
-class GovernanceDrift(DonkeyError):
-    """resolve(): a declared policy is not actually applied on the gateway."""
-
-    remediation: str = (
-        "A declared policy is not applied on the gateway. Ask the platform team to "
-        "apply it through the reviewed provisioning pipeline, or remove it from the "
-        "declaration; do not apply it from runtime code."
-    )
-
-
 class PublicationDrift(DonkeyError):
     """verify(): the live server no longer matches the Exchange descriptor (BG §2.5)."""
 
     remediation: str = (
         "The live server no longer matches its Exchange descriptor. Republish the "
         "descriptor, or roll the server back, so the two agree."
-    )
-
-
-class PlatformTeamOnly(DonkeyError, PermissionError):
-    """A platform-team-only operation (``Governance.apply()``) was called without
-    the explicit ``i_am_the_platform_team=True`` opt-in.
-
-    Also a :class:`PermissionError`, which ``Governance.apply()`` raised before
-    this type existed, so existing ``except PermissionError`` handlers still
-    catch it (#715)."""
-
-    remediation: str = (
-        "Runtime code should use Governance.resolve(), which is read-only. If you "
-        "are the platform team automating your own gateway, pass "
-        "i_am_the_platform_team=True and use a connected app that holds write scopes."
     )
 
 

@@ -24,6 +24,8 @@ import httpx
 import pytest
 from typer.testing import CliRunner
 
+from donkey_kit.cli import app, doctor
+from donkey_kit.cli.doctor import ProbeResult, format_report, run_diagnostics
 from donkey_kit.core import _verify, telemetry
 from donkey_kit.core.auth import AnypointConnectedApp, ChainedAuth, StaticToken
 from donkey_kit.core.config import DonkeyConfig
@@ -38,9 +40,6 @@ from donkey_kit.core.transport import (
 )
 from donkey_kit.integrations.langgraph import LangGraphAdapter
 from donkey_kit.llm.client import LLMClient
-from donkey_kit.provisioning import doctor
-from donkey_kit.provisioning.cli import app
-from donkey_kit.provisioning.doctor import ProbeResult, format_report, run_diagnostics
 from donkey_kit.simulator.fixtures import parse_headers
 
 LLM_PROXY = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "llm_proxy"

@@ -18,11 +18,12 @@ classifiers = [
 ]
 
 # core/ has ZERO agent-framework dependencies. httpx only. (the layered architecture hard rule)
+# No pydantic: nothing in the base install imports it (#730, tested by
+# tests/unit/test_base_install_deps.py).
 dependencies = [
     "httpx>=0.27",
-    "pydantic>=2.6",
     "typing-extensions>=4.10; python_version < '3.12'",
-    # stdlib tomllib is 3.11+; backfill for the 3.10 floor (config.py, governance.py).
+    # stdlib tomllib is 3.11+; backfill for the 3.10 floor (core/config.py).
     "tomli>=2.0; python_version < '3.11'",
 ]
 
@@ -94,10 +95,10 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.24",
 ]
 
-# --- CLI + provisioning ---
+# --- CLI: `donkey init|doctor|mock|test` (donkey_kit/cli) ---
 # typer 0.15.4 is the first that runs the CLI against a fresh click (8.2+);
 # below 0.13 it also rejects `Path | None` options.
-cli = ["typer>=0.15.4", "pyyaml>=6.0", "rich>=13.0"]
+cli = ["typer>=0.15.4", "rich>=13.0"]
 
 # --- Conformance pytest plugin (BG §1.5): `donkey-kit[test]` ---
 # The public, run-it-against-your-own-agent plugin
@@ -129,14 +130,11 @@ dev = [
     "import-linter>=2.0",
     # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
     "vulture>=2.11",
-    # stubs so mypy --strict typechecks the CLI/provisioning yaml handling.
-    "types-PyYAML>=6.0",
     "typer>=0.15.4",
-    "pyyaml>=6.0",
 ]
 
 [project.scripts]
-donkey = "donkey_kit.provisioning.cli:main"
+donkey = "donkey_kit.cli:main"
 
 [project.entry-points.pytest11]
 # Registers the conformance plugin (BG §1.5). Entry points are package metadata,
@@ -166,14 +164,13 @@ packages = ["src/donkey_kit"]
 strict = true
 python_version = "3.10"
 files = ["src/donkey_kit", "tests/typecheck"]
-plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 # Optional deps may be absent (CI installs only [dev,llm,cli]) or ship no stubs;
 # neither should fail the base typecheck. opentelemetry IS typed when the [otel]
 # extra is present, so it is listed here for absence only — telemetry.py must not
 # carry an inline ignore that goes stale the moment someone installs it.
-# tomli is the <3.11 tomllib backfill (config.py, governance.py): mypy targets
+# tomli is the <3.11 tomllib backfill (core/config.py): mypy targets
 # py3.10 so it analyzes the `import tomli` branch, but CI runs on 3.11 where tomli
 # is not installed — absence only, same rationale as the framework extras above.
 module = [
@@ -270,18 +267,14 @@ ignore-variadic-names = true
 [tool.ruff.lint.per-file-ignores]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).
 # The blocked CLI commands also keep their final options (ARG001, see below).
-"src/donkey_kit/provisioning/cli.py" = ["B008", "ARG001"]
+"src/donkey_kit/cli/**" = ["B008", "ARG001"]
 # Verification-blocked stubs (§0.3): each raises `_verify.blocked(...)` but keeps
 # its final, documented signature, so its arguments are unused until the API is
 # verified. Remove the entry when the module's stubs are implemented.
 "src/donkey_kit/donkey.py" = ["ARG002"]
-"src/donkey_kit/governance.py" = ["ARG002"]
-"src/donkey_kit/provisioning/applier.py" = ["ARG001"]
-"src/donkey_kit/provisioning/planner.py" = ["ARG001"]
-"src/donkey_kit/provisioning/publish.py" = ["ARG001"]
 "src/donkey_kit/registry/exchange.py" = ["ARG002"]
 "src/donkey_kit/registry/introspect.py" = ["ARG001"]
-"src/donkey_kit/registry/publication.py" = ["ARG002"]
+"src/donkey_kit/registry/publication.py" = ["ARG001", "ARG002"]
 # The one sanctioned seam module: the dev-only simulator and conformance siblings
 # reach Donkey's and its clients' private members only through it (#719). Its
 # transport arguments stay `Any` (ANN401): the sync and async clients take
@@ -390,3 +383,22 @@ source_modules = [
     "donkey_kit.integrations",
 ]
 forbidden_modules = ["donkey_kit.conformance"]
+
+[[tool.importlinter.contracts]]
+name = "the CLI is a front end: no library module imports donkey_kit.cli (#730)"
+type = "forbidden"
+# donkey_kit.cli is the console script's home (ADR 0008 in docs/adr/). It may
+# import any layer below it; nothing in the library may import it back, so typer
+# (the [cli] extra) never drifts onto the base `import donkey_kit` path.
+source_modules = [
+    "donkey_kit.core",
+    "donkey_kit.llm",
+    "donkey_kit.registry",
+    "donkey_kit.tools",
+    "donkey_kit.integrations",
+    "donkey_kit.simulator",
+    "donkey_kit.conformance",
+    "donkey_kit.donkey",
+    "donkey_kit.experimental",
+]
+forbidden_modules = ["donkey_kit.cli"]
