@@ -138,6 +138,7 @@ class ConfigOverrides(TypedDict, total=False):
     telemetry_capture_content: bool
     on_model_substitution: OnModelSubstitution
     send_cost_headers: bool
+    retry_model_calls_on_gateway_errors: bool
 
 
 TOML_NAME = ".donkey-kit.toml"
@@ -191,6 +192,7 @@ _ENV_VARS: dict[str, str] = {
     "telemetry_capture_content": "DONKEY_TELEMETRY_CAPTURE_CONTENT",
     "on_model_substitution": "DONKEY_ON_MODEL_SUBSTITUTION",
     "send_cost_headers": "DONKEY_SEND_COST_HEADERS",
+    "retry_model_calls_on_gateway_errors": "DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS",
 }
 
 # The keys that name a request header, each with its default name.
@@ -217,6 +219,7 @@ _CHECKED_KEYS: tuple[str, ...] = (
     "telemetry",
     "telemetry_capture_content",
     "send_cost_headers",
+    "retry_model_calls_on_gateway_errors",
 )
 
 # The allowed values of each choice field.
@@ -226,7 +229,12 @@ _CHOICES: dict[str, tuple[str, ...]] = {
     "on_model_substitution": ("off", "raise"),
 }
 
-_BOOL_KEYS = ("telemetry", "telemetry_capture_content", "send_cost_headers")
+_BOOL_KEYS = (
+    "telemetry",
+    "telemetry_capture_content",
+    "send_cost_headers",
+    "retry_model_calls_on_gateway_errors",
+)
 _TRUE_TOKENS = ("1", "true", "yes", "on")
 _FALSE_TOKENS = ("0", "false", "no", "off")
 
@@ -400,6 +408,12 @@ class DonkeyConfig:
     # When enabled, the headers go on data-plane (model) requests only, never on
     # a control-plane client's (#833).
     send_cost_headers: bool = False
+    # Re-send a model POST after a 502 or 504. Default FALSE: either status can
+    # follow an upstream call that completed and billed, so a re-send can bill
+    # twice, and docs/verified-apis.md records no gateway idempotency key that
+    # would make it safe (docs/adr/0009-*.md, #728). A 503 still retries, and
+    # so does every non-model request.
+    retry_model_calls_on_gateway_errors: bool = False
 
     # --- Provenance (config resolution) ---
     # Where each field was resolved from and a keyed digest of the value it had
@@ -519,6 +533,9 @@ class DonkeyConfig:
                 OnModelSubstitution, parse("on_model_substitution", "off", _as_token)
             ),
             send_cost_headers=parse("send_cost_headers", False, _as_bool),
+            retry_model_calls_on_gateway_errors=parse(
+                "retry_model_calls_on_gateway_errors", False, _as_bool
+            ),
         )
         parsed = {k: v for k, v in values.items() if k in _CHECKED_KEYS and k not in problems}
         out_of_range = _value_problems(parsed, lambda key: _where(sources[key], _ENV_VARS[key]))

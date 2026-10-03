@@ -68,8 +68,8 @@ def _donkey(seen: list[httpx.Request] | None = None) -> Donkey:
         return _completion(request)
 
     donkey = Donkey(CFG)
-    donkey._http._swap_transport(httpx.MockTransport(handler))
-    donkey._sync_http_client()._swap_transport(httpx.MockTransport(handler))
+    donkey._http.governed_transport.replace_inner(httpx.MockTransport(handler))
+    donkey._sync_http_client().governed_transport.replace_inner(httpx.MockTransport(handler))
     return donkey
 
 
@@ -137,7 +137,7 @@ def test_the_sync_view_refuses_in_jwt_mode_like_the_shared_client() -> None:
         seen.append(request)
         return httpx.Response(200, json={})
 
-    donkey._sync_http_client()._swap_transport(httpx.MockTransport(handler))
+    donkey._sync_http_client().governed_transport.replace_inner(httpx.MockTransport(handler))
 
     with pytest.raises(ConfigError):
         donkey.http_client(sync=True).post("https://proxy.example.com/p/x", json={})
@@ -225,14 +225,14 @@ def test_with_donkey_openai_sync_leaves_the_donkey_usable() -> None:
 def _http_clients(value: Any) -> list[Any]:
     """Every httpx client in a ``connection_kwargs()`` mapping, including the one
     inside a pre-built OpenAI client (``openai_agents``) and the bridged ``httpx2``
-    client anthropic>=1 gets (#701, #903). The bridge is recognised by its
+    client anthropic>=1 and openai>=3 get (#701, #903, #728). The bridge is recognised by its
     transport, so this module never imports ``httpx2``."""
     if isinstance(value, httpx.AsyncClient | httpx.Client) or _is_bridged(value):
         return [value]
     if isinstance(value, dict):
         return [c for v in value.values() for c in _http_clients(v)]
     inner = getattr(value, "_client", None)
-    if isinstance(inner, httpx.AsyncClient | httpx.Client):
+    if isinstance(inner, httpx.AsyncClient | httpx.Client) or _is_bridged(inner):
         return [inner]
     return []
 

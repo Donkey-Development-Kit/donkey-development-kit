@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -423,9 +425,10 @@ class UpstreamModelError(DonkeyError):
     """Provider-side failure (5xx). Retryable."""
 
     remediation: str = (
-        "The upstream provider failed (5xx); the transport already retried "
-        "502/503/504. Retry later, and if it persists escalate to the provider "
-        "quoting .request_id."
+        "The upstream provider failed (5xx); the transport already retried a "
+        "503, and a 502/504 too unless the request was a model call (retried "
+        "only with retry_model_calls_on_gateway_errors). Retry later, and if it "
+        "persists escalate to the provider quoting .request_id."
     )
 
 
@@ -696,207 +699,269 @@ def classify(
     refusals, not mis-typed as an :class:`AuthError`.
     """
 
-    sent_correlation, sent_call = _sent_ids(response)
-    status = response.status_code
-    kw: dict[str, Any] = {
-        # Explicit arg wins (e.g. a config-overridden header name); else the id
-        # the client actually sent, read back from the request (BG §1.1, #195).
-        "correlation_id": correlation_id if correlation_id is not None else sent_correlation,
-        "call_id": call_id if call_id is not None else sent_call,
-        # The upstream provider's request id — resolved from the per-provider
-        # header list, so a Bedrock refusal (x-amzn-requestid, no x-request-id) is
-        # not silently None. Same resolver LastCall uses (#542).
-        "request_id": read_request_id(response),
-        "response": response,
-    }
+    shape = _shape(response, correlation_id=correlation_id, call_id=call_id)
+    for matcher in _MATCHERS:
+        error = matcher(shape)
+        if error is not None:
+            return error
+    return DonkeyError(f"Unexpected response ({shape.status}).", **shape.kw)
 
-    # A nested ``{"error": {...}}`` object is emitted by BOTH the upstream
-    # provider AND some gateway LLM policies (e.g. PII). The ``type`` field —
-    # not the status code or the mere presence of a nested object — is the
-    # authoritative discriminator (docs/verified-apis.md §4). ``body`` is the top-level JSON
-    # object (used also to spot the Regex-Prompt-Guard ``matched_patterns`` key),
-    # ``None`` when the body is not a JSON object — e.g. Gemini's LIST-shaped
-    # error envelope (#548), whose nested error object ``_nested_error`` still
-    # recovers below. ``error_obj`` is the nested ``error`` object from either
-    # envelope shape, iff it is itself an object.
-    body = _json_body(response)
+
+@dataclass(frozen=True)
+class _Shape:
+    """What every :func:`classify` matcher reads off one response, parsed once.
+
+    ``body`` is the top-level JSON object (it also carries the Regex Prompt
+    Guard's ``matched_patterns`` key), ``None`` when the body is not a JSON
+    object, e.g. Gemini's LIST-shaped error envelope (#548), whose nested error
+    object ``_nested_error`` still recovers. ``error_obj`` is the nested
+    ``error`` object from either envelope shape, iff it is itself an object.
+    ``error_type`` is its ``type`` (the OpenAI-format discriminator:
+    ``pii_detected``, ``invalid_request_error`` …), or Gemini's string
+    ``status`` (``INVALID_ARGUMENT``), which stands in for it (#548). ``kw``
+    are the constructor kwargs every classified error shares."""
+
+    response: httpx.Response
+    status: int
+    body: dict[str, Any] | None
+    error_obj: dict[str, Any] | None
+    error_type: str | None
+    kw: dict[str, Any]
+
+
+def _shape(
+    response: httpx.Response, *, correlation_id: str | None, call_id: str | None
+) -> _Shape:
+    """Parse ``response`` once for :func:`classify`'s matchers."""
+    sent_correlation, sent_call = _sent_ids(response)
     error_obj = _nested_error(response)
-    # ``type`` is the OpenAI-format discriminator (``pii_detected``,
-    # ``invalid_request_error`` …); Gemini has no ``type`` but a string
-    # ``status`` (``INVALID_ARGUMENT``), which stands in for it (#548).
-    error_type = (
-        _str_or_none(error_obj.get("type") or error_obj.get("status"))
-        if error_obj is not None
-        else None
+    return _Shape(
+        response=response,
+        status=response.status_code,
+        body=_json_body(response),
+        error_obj=error_obj,
+        error_type=(
+            _str_or_none(error_obj.get("type") or error_obj.get("status"))
+            if error_obj is not None
+            else None
+        ),
+        kw={
+            # Explicit arg wins (e.g. a config-overridden header name); else the
+            # id the client actually sent, read back from the request (BG §1.1, #195).
+            "correlation_id": correlation_id if correlation_id is not None else sent_correlation,
+            "call_id": call_id if call_id is not None else sent_call,
+            # The upstream provider's request id — resolved from the per-provider
+            # header list, so a Bedrock refusal (x-amzn-requestid, no x-request-id)
+            # is not silently None. Same resolver LastCall uses (#542).
+            "request_id": read_request_id(response),
+            "response": response,
+        },
     )
 
-    # Gateway PII policy: 403 + nested object, type == "pii_detected". Checked
-    # BEFORE the 401/403 → auth rule because a PII block is not an auth failure.
-    if error_type == "pii_detected":
-        gateway_message = _str_or_none(error_obj.get("message")) if error_obj else None
-        spans = _pii_spans(gateway_message)
-        return PIIDetected(
-            _pii_summary(status, spans),
-            entities=[entity for entity, _start, _end in spans],
-            gateway_message=gateway_message,
-            # remediation: PIIDetected's canonical class default (#182).
-            **kw,
-        )
 
-    # Agent Kill Switch: 403 + nested object, code == "agent_killed" (no `type`).
-    # docs/verified-apis.md §4 (#694). Keyed on the body code, not the status, and
-    # checked before the auth and generic-4xx rules: a killed agent is neither an
-    # auth failure nor an upstream mistake.
-    if error_obj is not None and error_obj.get("code") == "agent_killed":
-        message = _str_or_none(error_obj.get("message"))
-        return AgentKilled(
-            message or f"Agent blocked by an active kill switch ({status}).",
-            # remediation: AgentKilled's canonical class default (#182).
-            **kw,
-        )
+# Next-step wording for the two classified shapes whose class default is not
+# the right sentence: one constant each, never inline. Every other shape uses its
+# class's own ``remediation`` (#728).
+_REGEX_PROMPT_GUARD_REMEDIATION = (
+    "The Regex Prompt Guard policy matched a denied pattern in the prompt. Remove "
+    "or rephrase the flagged content, or adjust the policy's deny-list patterns in "
+    "API Manager."
+)
+_UNCONFIRMED_REFUSAL_REMEDIATION = (
+    "This refusal matched no documented rejection shape, so its contract is "
+    "unconfirmed (#184, #253). It is terminal and was NOT retried. Please file an "
+    "issue on the donkey-development-kit repo with the response status, headers "
+    "and body (all carried on this exception's .response) so the shape can be typed."
+)
 
-    # Content-safety / guardrails policy: 403 + a vendor `...-action: reject`
-    # header (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4,
-    # #253/#568).
-    # Checked before the 401/403 → auth rule because a moderation block is not an
-    # auth failure. Keyed on the header, not the body, so a reject with an
-    # unexpected or absent body is still caught.
-    cs = _content_safety_reject(response)
-    if cs is not None:
-        vendor, categories = cs
-        cats = f" ({', '.join(categories)})" if categories else ""
-        return ContentSafetyBlocked(
-            f"Request blocked by {vendor}{cats} ({status}).",
-            categories=categories,
-            remediation=(
-                f"The {vendor} content-moderation policy blocked this request. "
-                "Revise the flagged content, or adjust the policy's categories / "
-                "severity thresholds in API Manager."
-            ),
-            **kw,
-        )
 
-    # Regex Prompt Guard policy: 403 + a top-level `matched_patterns` list
-    # (flat-string `error`, so NOT the nested upstream envelope; docs/verified-apis.md §4).
-    # #253. Checked before the 401/403 → auth
-    # rule so a deny-list block is not mis-typed as an auth failure.
-    matched = body.get("matched_patterns") if body is not None else None
-    if isinstance(matched, list):
-        pats = ", ".join(str(p) for p in matched)
-        return PromptInjectionBlocked(
-            f"Request blocked by the regex prompt-guard policy ({status})"
-            + (f": matched {pats}." if pats else "."),
-            policy="regex-prompt-guard",
-            remediation=(
-                "The Regex Prompt Guard policy matched a denied pattern in the "
-                "prompt. Remove or rephrase the flagged content, or adjust the "
-                "policy's deny-list patterns in API Manager."
-            ),
-            **kw,
-        )
+def _match_pii(s: _Shape) -> DonkeyError | None:
+    """Gateway PII policy: 403 + nested object, ``type == "pii_detected"``. Ahead
+    of the auth rule, because a PII block is not an auth failure. The gateway's
+    message echoes each flagged value, so the message is rebuilt from the entity
+    types and offsets."""
+    if s.error_type != "pii_detected":
+        return None
+    gateway_message = _str_or_none(s.error_obj.get("message")) if s.error_obj else None
+    spans = _pii_spans(gateway_message)
+    return PIIDetected(
+        _pii_summary(s.status, spans),
+        entities=[entity for entity, _start, _end in spans],
+        gateway_message=gateway_message,
+        **s.kw,
+    )
 
-    # Injection-protection policy: discriminated by the ``x-injection-protection:
-    # blocked`` header, NOT the status code (#181, docs/verified-apis.md §4). Checked before the
-    # generic 4xx / nested-error branch so an injection block wins even if its
-    # body happens to be shaped like an upstream error envelope. A 400 WITHOUT
-    # this header is an ordinary refusal, never PromptInjectionBlocked (AC (a)).
-    if response.headers.get(_wire.INJECTION_PROTECTION_HEADER) == "blocked":
-        return PromptInjectionBlocked(
-            f"Request blocked by the injection-protection policy ({status}).",
-            # remediation: PromptInjectionBlocked's canonical class default (#182).
-            **kw,
-        )
 
-    # Auth is discriminated by the verified client-id-enforcement shape (docs/verified-apis.md §4):
-    # a 401, or a 403 carrying a ``www-authenticate`` challenge. A 403 WITHOUT that
-    # header matched none of the policy discriminators above, so it is an
-    # unrecognised gateway policy refusal — not an auth failure — and falls through
-    # to the honest generic PolicyViolation below rather than being mis-typed as
-    # auth (#184). ``donkey doctor``'s (#202) credentials diagnosis stays intact: a
-    # wrong-credential 401 still lands here.
-    if status == 401 or (status == 403 and _wire.WWW_AUTHENTICATE_HEADER in response.headers):
-        return AuthError(
-            f"Authentication/authorization failed ({status}). Check the consumer "
-            "client_id/client_secret pair and its API Manager authorization "
-            "for this LLM-proxy instance (see docs/verified-apis.md §2).",
-            **kw,
-        )
+def _match_agent_killed(s: _Shape) -> DonkeyError | None:
+    """Agent Kill Switch: 403 + nested object, ``code == "agent_killed"`` (no
+    ``type``; docs/verified-apis.md §4, #694). Keyed on the body code, ahead of
+    the auth and generic-4xx rules: a killed agent is neither."""
+    if s.error_obj is None or s.error_obj.get("code") != "agent_killed":
+        return None
+    message = _str_or_none(s.error_obj.get("message"))
+    return AgentKilled(
+        message or f"Agent blocked by an active kill switch ({s.status}).", **s.kw
+    )
 
-    # Token rate limit: 429 with an empty body; budget state is header-only
-    # (x-token-limit / x-token-remaining / x-token-reset ms). No retry-after.
-    if status == 429:
-        return TokenBudgetExceeded(
-            "Token rate limit or budget exceeded (429).",
-            retry_after=_retry_after(response),
-            # remediation: TokenBudgetExceeded's canonical class default (#182).
-            **kw,
-        )
 
-    # Other non-429 4xx. If the body is the upstream provider envelope (nested
-    # error object with code/type), it is a request mistake passed through the
-    # gateway; otherwise it is an as-yet-unclassified gateway policy refusal.
-    if 400 <= status < 500:
-        if error_obj is not None:
-            return UpstreamRequestError(
-                f"The upstream model provider rejected the request ({status}): "
-                f"{error_obj.get('message') or 'see .response'}",
-                # OpenAI sends a string ``code`` (``model_not_found``); Gemini a
-                # numeric one (400). Carry both, stringified (#548).
-                code=_code_str(error_obj.get("code")),
-                error_type=error_type,
-                param=_str_or_none(error_obj.get("param")),
-                **kw,
-            )
-        # Model-based routing could not resolve a bare model name on a
-        # multi-provider proxy: a flat-string ``error`` naming the model and
-        # asking for ``provider/model`` (docs/verified-apis.md §4, #825). Keyed on
-        # the gateway's own sentence, since the status and envelope match the
-        # unconfirmed fall-through below.
-        flat_error = _str_or_none(body.get("error")) if body is not None else None
-        unroutable = _MODEL_NOT_ROUTABLE_RE.search(flat_error) if flat_error else None
-        if unroutable is not None:
-            return ModelNotRoutable(
-                f"The gateway could not route the requested model ({status}): {flat_error}",
-                model=unroutable.group("model"),
-                # remediation: ModelNotRoutable's canonical class default.
-                **kw,
-            )
-        # An unrecognised non-429 4xx with no nested provider envelope: a refusal
-        # whose contract we cannot pin (content-moderation / federated-guardrail
-        # shapes are still under-documented, #253). Surface it honestly — name what
-        # was observed and say the shape is unconfirmed — rather than coerce it into
-        # a subclass we have not verified (#184). ``error_obj`` is None here (the
-        # envelope branch above owns the nested case), so the observable
-        # discriminators are the status and any gateway policy headers present.
-        policy_headers = sorted(
-            name
-            for name in response.headers
-            if name.lower().startswith(_wire.LLM_PROXY_HEADER_PREFIX)
-        )
-        observed = f"status {status}"
-        if policy_headers:
-            observed += f"; policy headers: {', '.join(policy_headers)}"
-        return PolicyViolation(
-            f"Request refused by a gateway policy; shape unconfirmed ({observed}). "
-            "It matched no documented rejection contract.",
-            policy="unknown",
-            remediation=(
-                "This refusal matched no documented rejection shape, so its contract "
-                "is unconfirmed (#184, #253). It is terminal and was NOT retried. "
-                "Please file an issue on the donkey-development-kit repo with the response "
-                "status, headers and body (all carried on this exception's .response) "
-                "so the shape can be typed."
-            ),
-            **kw,
-        )
+def _match_content_safety(s: _Shape) -> DonkeyError | None:
+    """Content safety / guardrails: 403 + a vendor ``...-action: reject`` header
+    (Azure Content Safety / Amazon Bedrock Guardrails, docs/verified-apis.md §4,
+    #253/#568). Keyed on the header, so a reject with an unexpected or absent
+    body is still caught; ahead of the auth rule. The message names the vendor;
+    the remediation is the class default, which covers both vendors."""
+    cs = _content_safety_reject(s.response)
+    if cs is None:
+        return None
+    vendor, categories = cs
+    cats = f" ({', '.join(categories)})" if categories else ""
+    return ContentSafetyBlocked(
+        f"Request blocked by {vendor}{cats} ({s.status}).",
+        categories=categories,
+        **s.kw,
+    )
 
-    if 500 <= status < 600:
-        return UpstreamModelError(
-            f"Upstream/provider failure ({status}). Retryable.",
-            **kw,
-        )
 
-    return DonkeyError(f"Unexpected response ({status}).", **kw)
+def _match_regex_prompt_guard(s: _Shape) -> DonkeyError | None:
+    """Regex Prompt Guard: 403 + a top-level ``matched_patterns`` list (a
+    flat-string ``error``, not the nested upstream envelope;
+    docs/verified-apis.md §4, #253). Ahead of the auth rule."""
+    matched = s.body.get("matched_patterns") if s.body is not None else None
+    if not isinstance(matched, list):
+        return None
+    pats = ", ".join(str(p) for p in matched)
+    return PromptInjectionBlocked(
+        f"Request blocked by the regex prompt-guard policy ({s.status})"
+        + (f": matched {pats}." if pats else "."),
+        policy="regex-prompt-guard",
+        remediation=_REGEX_PROMPT_GUARD_REMEDIATION,
+        **s.kw,
+    )
+
+
+def _match_injection_protection(s: _Shape) -> DonkeyError | None:
+    """Injection protection: the ``x-injection-protection: blocked`` header, not
+    the status (#181, docs/verified-apis.md §4). Ahead of the generic 4xx rule
+    so it wins even over an upstream-shaped body; a 400 without the header is
+    never :class:`PromptInjectionBlocked`."""
+    if s.response.headers.get(_wire.INJECTION_PROTECTION_HEADER) != "blocked":
+        return None
+    return PromptInjectionBlocked(
+        f"Request blocked by the injection-protection policy ({s.status}).", **s.kw
+    )
+
+
+def _match_auth(s: _Shape) -> DonkeyError | None:
+    """Auth: the verified client-id-enforcement shape (docs/verified-apis.md §4),
+    a 401 or a 403 carrying a ``www-authenticate`` challenge. A 403 without it
+    falls through to the unconfirmed-refusal rule, not auth (#184)."""
+    challenged = _wire.WWW_AUTHENTICATE_HEADER in s.response.headers
+    if not (s.status == 401 or (s.status == 403 and challenged)):
+        return None
+    return AuthError(
+        f"Authentication/authorization failed ({s.status}). Check the consumer "
+        "client_id/client_secret pair and its API Manager authorization "
+        "for this LLM-proxy instance (see docs/verified-apis.md §2).",
+        **s.kw,
+    )
+
+
+def _match_token_budget(s: _Shape) -> DonkeyError | None:
+    """Token rate limit: 429 with an empty body; the budget state is header-only
+    (``x-token-limit`` / ``x-token-remaining`` / ``x-token-reset`` ms), with no
+    ``retry-after``."""
+    if s.status != 429:
+        return None
+    return TokenBudgetExceeded(
+        "Token rate limit or budget exceeded (429).",
+        retry_after=_retry_after(s.response),
+        **s.kw,
+    )
+
+
+def _match_upstream_request(s: _Shape) -> DonkeyError | None:
+    """Any other 4xx with the upstream provider's nested envelope: a request
+    mistake passed through the gateway (e.g. ``model_not_found``)."""
+    if not 400 <= s.status < 500 or s.error_obj is None:
+        return None
+    return UpstreamRequestError(
+        f"The upstream model provider rejected the request ({s.status}): "
+        f"{s.error_obj.get('message') or 'see .response'}",
+        # OpenAI sends a string ``code`` (``model_not_found``); Gemini a numeric
+        # one (400). Carry both, stringified (#548).
+        code=_code_str(s.error_obj.get("code")),
+        error_type=s.error_type,
+        param=_str_or_none(s.error_obj.get("param")),
+        **s.kw,
+    )
+
+
+def _match_model_not_routable(s: _Shape) -> DonkeyError | None:
+    """A bare model name on a multi-provider proxy: a 4xx flat-string ``error``
+    naming the model and asking for ``provider/model`` (docs/verified-apis.md
+    §4, #825). Keyed on the gateway's own sentence, since the status and
+    envelope match the unconfirmed fall-through."""
+    if not 400 <= s.status < 500:
+        return None
+    flat_error = _str_or_none(s.body.get("error")) if s.body is not None else None
+    unroutable = _MODEL_NOT_ROUTABLE_RE.search(flat_error) if flat_error else None
+    if unroutable is None:
+        return None
+    return ModelNotRoutable(
+        f"The gateway could not route the requested model ({s.status}): {flat_error}",
+        model=unroutable.group("model"),
+        **s.kw,
+    )
+
+
+def _match_unconfirmed_refusal(s: _Shape) -> DonkeyError | None:
+    """An unrecognised non-429 4xx with no nested provider envelope: a refusal
+    whose contract cannot be pinned (#253). Surfaced honestly, naming the status
+    and any gateway policy headers, never coerced into an unverified subclass
+    (#184)."""
+    if not 400 <= s.status < 500:
+        return None
+    policy_headers = sorted(
+        name
+        for name in s.response.headers
+        if name.lower().startswith(_wire.LLM_PROXY_HEADER_PREFIX)
+    )
+    observed = f"status {s.status}"
+    if policy_headers:
+        observed += f"; policy headers: {', '.join(policy_headers)}"
+    return PolicyViolation(
+        f"Request refused by a gateway policy; shape unconfirmed ({observed}). "
+        "It matched no documented rejection contract.",
+        policy="unknown",
+        remediation=_UNCONFIRMED_REFUSAL_REMEDIATION,
+        **s.kw,
+    )
+
+
+def _match_upstream_failure(s: _Shape) -> DonkeyError | None:
+    """A 5xx: a provider-side failure."""
+    if not 500 <= s.status < 600:
+        return None
+    return UpstreamModelError(f"Upstream/provider failure ({s.status}). Retryable.", **s.kw)
+
+
+#: :func:`classify`'s rules, most specific first. The order is the contract:
+#: every policy shape with its own discriminator (body ``type``/``code``, a
+#: vendor header, ``matched_patterns``) precedes the 401/403 auth rule, and the
+#: upstream envelope precedes the unconfirmed-refusal fall-through.
+_MATCHERS: tuple[Callable[[_Shape], DonkeyError | None], ...] = (
+    _match_pii,
+    _match_agent_killed,
+    _match_content_safety,
+    _match_regex_prompt_guard,
+    _match_injection_protection,
+    _match_auth,
+    _match_token_budget,
+    _match_upstream_request,
+    _match_model_not_routable,
+    _match_unconfirmed_refusal,
+    _match_upstream_failure,
+)
 
 
 def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:

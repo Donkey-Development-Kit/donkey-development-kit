@@ -1,14 +1,15 @@
-"""openai 3.x drives our httpx client end to end (#18, BG §1.8).
+"""openai 3.x drives our shared client end to end, via the core httpx2 bridge (#18, #728).
 
-The scare with `openai>=3.0` is that it retyped ``AsyncOpenAI(http_client=…)``
-to ``httpx2.AsyncClient`` — a class from a *separate* distribution
-(``httpx2``), distinct from the ``httpx`` our ``DonkeyAsyncClient`` /
-``DonkeyClient`` subclass. That is a **typecheck-only** mismatch: when an
-``http_client`` is injected, openai builds and sends every request *through
-that client*, so ``httpx2`` never touches our code path. These tests pin that
-runtime truth so a future openai release that actually broke injection would
-fail CI loudly (floors-never-ceilings, docs/verified-apis.md §8.1) — rather
-than us discovering it in a customer sandbox.
+``openai>=3.0`` is built on ``httpx2`` (a *separate* distribution from the
+``httpx`` our ``DonkeyAsyncClient`` / ``DonkeyClient`` subclass) and types
+``AsyncOpenAI(http_client=…)`` as an ``httpx2`` client. So ``donkey.llm`` hands
+it the core bridge (``core/transport/httpx2``): an ``httpx2`` client whose
+transport forwards every request through the shared client, exactly as for
+``anthropic>=1`` (#701). These tests pin that the bridged client is what openai
+gets, and that every request still reaches our transport as a plain
+``httpx.Request`` with the governed headers, so a future openai release that
+broke the bridge would fail CI loudly (floors-never-ceilings,
+docs/verified-apis.md §8.1) rather than in a customer sandbox.
 
 Guarded by ``importorskip("openai")`` at module top so the base-only CI job
 (``.[dev]`` only, no ``[llm]``) skips it cleanly; it runs in the full/nightly
@@ -25,7 +26,10 @@ import httpx  # noqa: E402
 
 from donkey_kit.core.config import DonkeyConfig  # noqa: E402
 from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient  # noqa: E402
+from donkey_kit.core.transport.views import built_on_httpx2  # noqa: E402
 from donkey_kit.llm.client import LLMClient  # noqa: E402
+
+_OPENAI_ON_HTTPX2 = built_on_httpx2(getattr(openai, "DefaultAsyncHttpxClient", None))
 
 # A base URL with NO `/v1` — the verified ingress shape (docs/verified-apis.md §2).
 # The trailing slash lets the OpenAI SDK append `chat/completions` directly.
@@ -89,11 +93,20 @@ def _assert_governed(seen: dict[str, object]) -> None:
     assert "/v1/" not in url
 
 
+def _assert_bridged(client: object) -> None:
+    """On openai>=3 the client's http_client is the core httpx2 bridge (#728)."""
+    if not _OPENAI_ON_HTTPX2:
+        return
+    transport = type(getattr(getattr(client, "_client", None), "_transport", None)).__name__
+    assert transport in ("DonkeyForwardingTransport", "DonkeyForwardingSyncTransport")
+
+
 async def test_async_openai_client_drives_our_httpx_client_end_to_end() -> None:
     seen: dict[str, object] = {}
     shared = DonkeyAsyncClient(_CFG, None, transport=httpx.MockTransport(_recording_handler(seen)))
     async with shared:
         client = LLMClient(_CFG, shared).client()  # AsyncOpenAI
+        _assert_bridged(client)
         resp = await client.chat.completions.create(
             model="gpt-4o", messages=[{"role": "user", "content": "hi"}]
         )
@@ -113,6 +126,7 @@ def test_sync_openai_client_drives_our_httpx_client_end_to_end() -> None:
     with sync_client:
         llm = LLMClient(_CFG, async_shared, sync_http_client=lambda: sync_client)
         client = llm.client(sync=True)  # OpenAI
+        _assert_bridged(client)
         resp = client.chat.completions.create(
             model="gpt-4o", messages=[{"role": "user", "content": "hi"}]
         )

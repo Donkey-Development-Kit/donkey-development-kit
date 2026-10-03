@@ -1,35 +1,47 @@
-"""Hand the shared ``DonkeyAsyncClient`` to a framework built on ``httpx2`` (#701).
+"""Hand a shared governed client to a framework built on ``httpx2`` (#701, #728).
 
 ``httpx2`` is Pydantic's continuation of ``httpx``: the same API, shipped as a
 separate distribution with its own classes. ``anthropic>=1.0`` is built on it and
-rejects any ``httpx`` object passed as ``http_client``, so the SDK's shared client
-(an ``httpx.AsyncClient`` subclass) cannot be handed over directly.
+rejects any ``httpx`` object passed as ``http_client``, and ``openai>=3`` types
+its ``http_client`` as an ``httpx2`` client, so the SDK's shared clients (``httpx``
+subclasses) are not handed over directly.
 
 :func:`bridged_client` returns an ``httpx2.AsyncClient`` whose transport sends
-every request through the shared client. The framework keeps its own client type,
-and the SDK keeps one HTTP stack: header injection, retries and the 401 refresh,
-the GenAI span, budget and ``donkey.last_call`` all run in
-``DonkeyAsyncClient.send()`` exactly as they do for an ``httpx`` framework. Only
+every request through the shared async client, and :func:`bridged_sync_client`
+the blocking twin over a :class:`~donkey_kit.core.transport.DonkeyClient`. The
+framework keeps its own client type, and the SDK keeps one HTTP stack: header
+injection, retries and the 401 refresh, the GenAI span, budget and
+``donkey.last_call`` all run in the shared client's ``send()`` exactly as they
+do for an ``httpx`` framework. Only
 the request and response objects are translated, never the wire call. The ids the
 shared client sends are copied back onto the framework's request, so
 ``classify(exc.response)`` joins a refusal to its run on either stack (#738).
 
-The bridge is async-only: it serves ``httpx2.AsyncClient``, the only client the
-Anthropic adapter builds. A sync ``httpx2.Client`` has no bridge.
-
-``httpx2`` is imported at module load, so import this module lazily, from an
-adapter method, once the framework is known to need it (BG §1.8).
+It lives in core, beside the clients it bridges, so ``donkey.llm`` and every
+adapter can use it without crossing the layering contract (#728). ``httpx2`` is
+not a base dependency and is imported at module load, so import this module
+lazily, from the method that builds a framework client, once that framework is
+known to need it (BG §1.8). Nothing imports it at package import.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import httpx
 import httpx2
 
-from ..core.transport import DonkeyAsyncClient
+from .async_client import DonkeyAsyncClient
+from .sync_client import DonkeyClient
+
+__all__ = [
+    "DonkeyForwardingSyncTransport",
+    "DonkeyForwardingTransport",
+    "bridged_client",
+    "bridged_sync_client",
+    "wants_stream",
+]
 
 # The Stainless-generated SDKs (anthropic, openai) set this request header to
 # "stream" for a raw streaming response (``.with_streaming_response``). That flag
@@ -85,6 +97,45 @@ def _copy_sent_ids(forwarded: httpx.Request, request: httpx2.Request) -> None:
                 request.headers[value] = sent
 
 
+def _forwarded(
+    request: httpx2.Request, body: bytes, client: httpx.AsyncClient | httpx.Client
+) -> httpx.Request:
+    """The framework's ``request`` as an ``httpx`` request for the shared client.
+    httpx reads the timeout from the request, not the client, once a request is
+    built; without it the send would have no timeout at all."""
+    return httpx.Request(
+        request.method,
+        str(request.url),
+        headers=request.headers.raw,
+        content=body,
+        extensions={"timeout": request.extensions.get("timeout") or client.timeout.as_dict()},
+    )
+
+
+def _extensions(response: httpx.Response) -> dict[str, object]:
+    return {
+        key: response.extensions[key]
+        for key in ("http_version", "reason_phrase")
+        if key in response.extensions
+    }
+
+
+def _buffered(response: httpx.Response, request: httpx2.Request) -> httpx2.Response:
+    """A closed, read ``response`` as an ``httpx2`` response. httpx has decoded
+    the body, so its encoding and length headers are dropped."""
+    return httpx2.Response(
+        response.status_code,
+        headers=[
+            (name, value)
+            for name, value in response.headers.raw
+            if name.decode("latin-1").lower() not in _DECODED_BODY_HEADERS
+        ],
+        content=response.content,
+        request=request,
+        extensions=_extensions(response),
+    )
+
+
 class _ForwardedStream(httpx2.AsyncByteStream):
     """The shared client's streamed body, as an ``httpx2`` byte stream. Yields the
     raw (still encoded) bytes, so ``httpx2`` decodes them exactly once, and closes
@@ -102,6 +153,19 @@ class _ForwardedStream(httpx2.AsyncByteStream):
         await self._response.aclose()
 
 
+class _ForwardedSyncStream(httpx2.SyncByteStream):
+    """Blocking twin of :class:`_ForwardedStream`."""
+
+    def __init__(self, response: httpx.Response) -> None:
+        self._response = response
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield from self._response.iter_raw()
+
+    def close(self) -> None:
+        self._response.close()
+
+
 class DonkeyForwardingTransport(httpx2.AsyncBaseTransport):
     """An ``httpx2`` transport that sends through a :class:`DonkeyAsyncClient`."""
 
@@ -109,56 +173,60 @@ class DonkeyForwardingTransport(httpx2.AsyncBaseTransport):
         self._client = client
 
     async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        """Send ``request`` through the shared client and translate the response."""
         body = await request.aread()
         stream = wants_stream(request, body)
-        forwarded = httpx.Request(
-            request.method,
-            str(request.url),
-            headers=request.headers.raw,
-            content=body,
-            # httpx reads the timeout from the request, not the client, once a
-            # request is built; without it the send would have no timeout at all.
-            extensions={
-                "timeout": request.extensions.get("timeout") or self._client.timeout.as_dict()
-            },
-        )
+        forwarded = _forwarded(request, body, self._client)
         response = await self._client.send(forwarded, stream=stream)
         _copy_sent_ids(forwarded, request)
-        extensions: dict[str, object] = {
-            key: response.extensions[key]
-            for key in ("http_version", "reason_phrase")
-            if key in response.extensions
-        }
         if stream and not response.is_stream_consumed:
             return httpx2.Response(
                 response.status_code,
                 headers=response.headers.raw,
                 stream=_ForwardedStream(response),
                 request=request,
-                extensions=extensions,
+                extensions=_extensions(response),
             )
         # A buffered response, or one whose body was read before it was returned:
         # an ``httpx.Response(content=...)`` from ``simulate()``, ``donkey mock`` or
         # a mock transport reads itself on construction. Either way httpx has
         # decoded the body, and closing it ends a streamed call's span.
         await response.aclose()
-        return httpx2.Response(
-            response.status_code,
-            headers=[
-                (name, value)
-                for name, value in response.headers.raw
-                if name.decode("latin-1").lower() not in _DECODED_BODY_HEADERS
-            ],
-            content=response.content,
-            request=request,
-            extensions=extensions,
-        )
+        return _buffered(response, request)
 
     async def aclose(self) -> None:
         """Leave the shared client open. The framework closes its own client (for
         example on ``async with AsyncAnthropic(...)`` exit), but the shared client
         also serves ``donkey.llm``, the registry and every other adapter, and
         ``Donkey.aclose()`` owns its lifecycle."""
+
+
+class DonkeyForwardingSyncTransport(httpx2.BaseTransport):
+    """Blocking twin of :class:`DonkeyForwardingTransport`, over a :class:`DonkeyClient`."""
+
+    def __init__(self, client: DonkeyClient) -> None:
+        self._client = client
+
+    def handle_request(self, request: httpx2.Request) -> httpx2.Response:
+        """Send ``request`` through the shared client and translate the response."""
+        body = request.read()
+        stream = wants_stream(request, body)
+        forwarded = _forwarded(request, body, self._client)
+        response = self._client.send(forwarded, stream=stream)
+        _copy_sent_ids(forwarded, request)
+        if stream and not response.is_stream_consumed:
+            return httpx2.Response(
+                response.status_code,
+                headers=response.headers.raw,
+                stream=_ForwardedSyncStream(response),
+                request=request,
+                extensions=_extensions(response),
+            )
+        response.close()  # see DonkeyForwardingTransport.handle_async_request
+        return _buffered(response, request)
+
+    def close(self) -> None:
+        """Leave the shared client open (see :meth:`DonkeyForwardingTransport.aclose`)."""
 
 
 def bridged_client(client: DonkeyAsyncClient) -> httpx2.AsyncClient:
@@ -168,9 +236,22 @@ def bridged_client(client: DonkeyAsyncClient) -> httpx2.AsyncClient:
     framework that reads them off its ``http_client`` behaves as it would with
     the shared client itself. ``trust_env`` is off because the shared client
     already applied the environment's settings to the connection that is used.
+    Closing it leaves ``client`` open.
     """
     return httpx2.AsyncClient(
         transport=DonkeyForwardingTransport(client),
+        timeout=httpx2.Timeout(**client.timeout.as_dict()),
+        follow_redirects=client.follow_redirects,
+        trust_env=False,
+    )
+
+
+def bridged_sync_client(client: DonkeyClient) -> httpx2.Client:
+    """Blocking twin of :func:`bridged_client`: an ``httpx2.Client`` that sends
+    every request through ``client``, for ``OpenAI(http_client=...)`` on
+    ``openai>=3`` (#728)."""
+    return httpx2.Client(
+        transport=DonkeyForwardingSyncTransport(client),
         timeout=httpx2.Timeout(**client.timeout.as_dict()),
         follow_redirects=client.follow_redirects,
         trust_env=False,

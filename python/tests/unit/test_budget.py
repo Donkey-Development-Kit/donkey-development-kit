@@ -304,7 +304,7 @@ def test_two_donkeys_never_share_budget_state() -> None:
 
 async def test_donkey_budget_updates_through_the_shared_client() -> None:
     donkey = Donkey(DonkeyConfig())
-    donkey._http._swap_transport(
+    donkey._http.governed_transport.replace_inner(
         httpx.MockTransport(
             lambda r: _resp(**{"x-token-limit": "2000", "x-token-remaining": "1500"})
         )

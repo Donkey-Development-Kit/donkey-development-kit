@@ -26,6 +26,7 @@ from ..core.transport import (
     proxy_api_key,
     proxy_auth_headers,
 )
+from ..llm.client import _openai_http_client
 from . import ADAPTERS, missing_framework_error
 
 
@@ -45,7 +46,7 @@ class Adapter(ABC):
 
     #: Whether a governed model call through this adapter reaches ``donkey.last_call``
     #: (#362). True when the adapter hands the framework our shared
-    #: :class:`DonkeyAsyncClient`, through its view or the ``_httpx2_bridge``
+    #: :class:`DonkeyAsyncClient`, through its view or the core ``httpx2`` bridge
     #: (its ``_on_response`` observes the response);
     #: False when the SDK does not own the transport — the framework builds its own
     #: client (ADK ``model()`` via LiteLLM, CrewAI via its native OpenAI provider) or the
@@ -151,16 +152,14 @@ class Adapter(ABC):
         with self._native_import():
             from openai import AsyncOpenAI
 
-        # openai 3.x retyped http_client to httpx2.AsyncClient (a distinct class from a
-        # separate distribution); our DonkeyAsyncClient is an httpx subclass, duck-typed
-        # at runtime. Typecheck-only mismatch — docs/verified-apis.md (openai >=3.0 row).
-        # `cast(Any, …)` erases the argument type so this typechecks clean under BOTH
-        # majors; a bare `# type: ignore` is `unused-ignore` under openai<3 (#597).
+        # openai>=3 is built on httpx2: it gets the core httpx2 bridge, openai<3 the
+        # shared client's view (#728). ``cast(Any, …)`` because the argument type
+        # differs by installed major (#597).
         return AsyncOpenAI(
             base_url=base_url or conn["base_url"],
             api_key=conn["api_key"],
             default_headers=conn["default_headers"],
-            http_client=cast(Any, self.http_client()),
+            http_client=cast(Any, _openai_http_client(self._http)),
             max_retries=0,  # we retry in transport (BG §1.1)
         )
 

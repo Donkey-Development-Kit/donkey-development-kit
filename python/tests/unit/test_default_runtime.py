@@ -108,7 +108,7 @@ async def test_default_runtime_sends_the_same_headers_as_donkey(
         return httpx.Response(200, json={})
 
     for client in (rt.http, donkey._http):
-        client._swap_transport(httpx.MockTransport(capture))
+        client.governed_transport.replace_inner(httpx.MockTransport(capture))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         async with donkey.run(id="run-1"):
@@ -222,11 +222,12 @@ def test_default_runtime_is_closed_at_interpreter_exit(tmp_path: Path) -> None:
 
 def test_no_http_client_is_built_outside_the_runtime() -> None:
     # The runtime is the one place shared async clients are built (#725); the
-    # factory itself is defined in core/transport.py.
+    # factory itself is defined in core/transport/async_client.py.
+    allowed = {"core/runtime.py", "core/transport/async_client.py"}
     offenders = [
         str(path.relative_to(_SRC))
         for path in sorted(_SRC.rglob("*.py"))
         if "build_http_client(" in path.read_text()
-        and path.relative_to(_SRC).as_posix() not in {"core/runtime.py", "core/transport.py"}
+        and path.relative_to(_SRC).as_posix() not in allowed
     ]
     assert offenders == []
