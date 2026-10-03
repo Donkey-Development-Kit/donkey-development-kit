@@ -48,13 +48,21 @@ pytest.importorskip("opentelemetry.exporter.otlp.proto.http.trace_exporter")
 
 _ENDPOINT_VARS = ("OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
 _PROTOCOL_VARS = ("OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
+# Ambient switches that would change which provider a probe ends up with: the
+# DDK telemetry flags, and OTel's own "load a provider from an entry point" var,
+# which makes the first get_tracer_provider() call set the global (#732).
+_PROVIDER_VARS = (
+    "DONKEY_TELEMETRY",
+    "DONKEY_TELEMETRY_INSTALL_GLOBAL",
+    "OTEL_PYTHON_TRACER_PROVIDER",
+)
 
 
 @pytest.fixture(autouse=True)
 def _clean_otel_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every test starts from a known OTel env and a fresh warning de-dupe set,
     so one test's endpoint/protocol/warning never leaks into the next."""
-    for var in _ENDPOINT_VARS + _PROTOCOL_VARS:
+    for var in _ENDPOINT_VARS + _PROTOCOL_VARS + _PROVIDER_VARS:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(telemetry, "_warned_missing_exporter", set())
 
@@ -183,8 +191,10 @@ def warnings_none(category: type[Warning]):  # type: ignore[no-untyped-def]
 
 def _run_probe(body: str, **env: str) -> str:
     """Run ``body`` in a fresh interpreter with ``env`` overlaid on the current
-    environment (minus the OTLP vars this suite controls) and return its stdout."""
-    child_env = {k: v for k, v in os.environ.items() if k not in _ENDPOINT_VARS + _PROTOCOL_VARS}
+    environment (minus the OTLP and provider vars this suite controls) and
+    return its stdout."""
+    controlled = _ENDPOINT_VARS + _PROTOCOL_VARS + _PROVIDER_VARS
+    child_env = {k: v for k, v in os.environ.items() if k not in controlled}
     child_env.update(env)
     proc = subprocess.run(
         [sys.executable, "-c", textwrap.dedent(body)],

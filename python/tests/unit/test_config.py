@@ -126,12 +126,14 @@ def test_capture_content_env_overrides_toml(tmp_path, monkeypatch: pytest.Monkey
 
 def test_install_global_defaults_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.delenv("DONKEY_TELEMETRY_INSTALL_GLOBAL", raising=False)
     assert DonkeyConfig().telemetry_install_global is False  # dataclass default
     assert DonkeyConfig.from_env().telemetry_install_global is False  # resolved default
 
 
 def test_install_global_env_overrides_toml(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_toml(tmp_path, monkeypatch, "[donkey]\ntelemetry_install_global = true\n")
+    monkeypatch.delenv("DONKEY_TELEMETRY_INSTALL_GLOBAL", raising=False)
     assert DonkeyConfig.from_env().telemetry_install_global is True  # toml layer
     monkeypatch.setenv("DONKEY_TELEMETRY_INSTALL_GLOBAL", "false")
     assert DonkeyConfig.from_env().telemetry_install_global is False  # env wins
