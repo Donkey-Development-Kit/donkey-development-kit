@@ -34,9 +34,13 @@
    - **Stable:** `donkey_kit.__all__`; the public methods and accessors of
      `Donkey`; the exception taxonomy and `classify()`; the `donkey.*` span
      attributes; the `donkey` CLI commands and flags; the conformance pytest
-     options; the `KNOWN_LIMITATIONS` schema.
-   - **Provisional:** `donkey_kit.core.*` and the keys inside each adapter's
-     `connection_kwargs()`. They are public and documented, and they may change
+     options; the `KNOWN_LIMITATIONS` schema; each
+     `donkey_kit.integrations.<framework>.__all__` (the adapter class and its
+     module-level factories, one of the three documented forms, ADR 0003).
+   - **Provisional:** `donkey_kit.core.*`, the keys inside each adapter's
+     `connection_kwargs()`, and the `__all__` of the other public modules
+     (`donkey_kit.simulator`, `donkey_kit.conformance`) until #236 rules on
+     them. They are public and documented, and they may change
      in a minor release with a migration note, without a deprecation cycle.
    - **Internal:** any name that starts with `_`, at any depth (`_on_request`,
      `_transport`, `donkey_kit._testing`), and any submodule path not listed
@@ -75,6 +79,9 @@
 
 - `docs/api-stability.md`, the `_deprecated()` helper and the snapshot test
   are #236's to add, along with the migration guide it asks for.
+- `docs/releasing.md` lists "each adapter's `connection_kwargs()` shape" in
+  the semver contract today. Rule 1 makes the keys provisional, so that line
+  is narrowed when #236 lands, and the release that does it says so.
 - `docs/releasing.md` moves the simulator, `donkey mock` and the conformance
   pytest options into the contract, since they are shipped features.
 - Removing blocked-only types from `__all__` (#730, ADR 0008) is a stable-tier
