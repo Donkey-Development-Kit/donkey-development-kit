@@ -68,6 +68,7 @@ def _openai_sync_http_client(http: DonkeyClient) -> object:
         return bridged_sync_client(http)
     return http.view()
 
+
 class LLMClient:
     """The framework-free proxy client factory."""
 
@@ -130,7 +131,7 @@ class LLMClient:
                 # AC 1: a token mode with no provider attached fails with actionable guidance.
                 raise missing_llm_auth_error(mode)
         sync_http = self._sync_http() if sync else None
-        http = sync_http or self._http
+        http = self._http if sync_http is None else sync_http
         if kw.get("base_url") is not None:
             http.allow_endpoint(str(kw["base_url"]), name="base_url")
         try:

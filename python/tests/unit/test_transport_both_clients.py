@@ -20,7 +20,12 @@ import pytest
 
 from donkey_kit.core import _wire
 from donkey_kit.core.config import DonkeyConfig
-from donkey_kit.core.errors import ModelSubstituted, PolicyViolation, TokenBudgetExceeded
+from donkey_kit.core.errors import (
+    ModelSubstituted,
+    PIIDetected,
+    PolicyViolation,
+    TokenBudgetExceeded,
+)
 from donkey_kit.core.telemetry import run_scope
 from donkey_kit.core.transport import (
     DonkeyAsyncClient,
@@ -201,6 +206,48 @@ def test_a_budget_refusal_is_sent_once_and_reaches_on_refusal(kind: str) -> None
     assert len(sent) == 1
     assert response.headers["x-should-retry"] == "false"
     assert [type(v) for v in refusals] == [TokenBudgetExceeded]
+
+
+@pytest.mark.parametrize("status", [401, 500, 503])
+@pytest.mark.parametrize("kind", KINDS)
+def test_a_non_policy_error_never_reaches_on_refusal(kind: str, status: int) -> None:
+    # An auth failure or an upstream 5xx is returned, but it is not a policy
+    # refusal, so the reaction-handler seam stays quiet (#208).
+    handler, _ = _counting([status] * 10)
+    response, refusals = _send(kind, handler)
+    assert response.status_code == status
+    assert refusals == []
+
+
+_PII_BODY = {"error": {"type": "pii_detected", "message": "PII found"}}
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_a_streamed_refusal_reaches_on_refusal_once(kind: str) -> None:
+    # A refusal on a stream request has its bounded body read before it is
+    # classified, so the hook sees the same typed violation as a buffered one.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json=_PII_BODY)
+
+    transport = httpx.MockTransport(handler)
+    body = {"model": "gpt-4o", "stream": True}
+    if kind == "sync":
+        with _Sync(_CFG, transport=transport) as client:
+            response = client.send(client.build_request("POST", _URL, json=body), stream=True)
+            response.close()
+            refusals = client.refusals
+    else:
+
+        async def run() -> list[PolicyViolation]:
+            async with _Async(_CFG, None, transport=transport) as client:
+                request = client.build_request("POST", _URL, json=body)
+                streamed = await client.send(request, stream=True)
+                await streamed.aclose()
+                assert streamed.status_code == 403
+                return client.refusals
+
+        refusals = asyncio.run(run())
+    assert [type(v) for v in refusals] == [PIIDetected]
 
 
 @pytest.mark.parametrize("kind", KINDS)

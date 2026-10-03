@@ -181,7 +181,6 @@ def _request_model(request: httpx.Request) -> str | None:
     return match.group(1) if match else None
 
 
-
 def refusal(response: httpx.Response) -> PolicyViolation | None:
     """The typed :class:`~.errors.PolicyViolation` a final response carries, or
     ``None`` for a 2xx or a non-policy error (auth, upstream, 5xx). One

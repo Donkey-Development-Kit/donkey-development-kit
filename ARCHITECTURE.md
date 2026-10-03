@@ -116,9 +116,13 @@ still a base dependency. Dropping it from the base install is part of #730.
     (opt-in) cost-tag headers; only the credentials differ.
 
   A framework built on `httpx2` that rejects `httpx` clients (`anthropic>=1.0`,
-  #701; `openai>=3`, #728) gets an `httpx2` client from the core bridge
-  `core/transport/httpx2.py` instead, whose transport forwards every request
-  through the same data-plane client, so it is still one transport. The bridge
+  #701), and every `OpenAI`/`AsyncOpenAI` the SDK builds itself on `openai>=3`
+  (`donkey.llm.client()` and `_proxy_openai_client`, #728), gets an `httpx2`
+  client from the core bridge `core/transport/httpx2.py` instead, whose
+  transport forwards every request through the same data-plane client, so it
+  is still one transport. A framework that builds its OpenAI client from an
+  `http_client` kwarg (LangGraph, Strands, LlamaIndex) still gets the `httpx`
+  view, which `openai>=3` accepts at runtime (docs/verified-apis.md). The bridge
   has an async and a blocking twin, and is imported lazily, because `httpx2`
   is not a base dependency.
 
@@ -215,10 +219,11 @@ still a base dependency. Dropping it from the base install is part of #730.
   | `streaming.py` | the bounded error-body read, the SSE usage scanner, the span-closing streams |
   | `governed.py` | `GovernedTransport` / `GovernedSyncTransport`, the mount routers, the per-event-loop pool |
   | `async_client.py`, `sync_client.py` | `DonkeyAsyncClient` / `DonkeyClient`: only the send loop's IO |
-  | `views.py` | the non-owning views (#733) |
+  | `failures.py` | the typed errors a send raises instead of an httpx failure (`GatewayUnavailable`, the lifecycle `ConfigError`s, `sync_token_auth_error`) |
+  | `views.py` | the non-owning views (#733) and `built_on_httpx2()` |
   | `httpx2.py` | the `httpx2` bridge (lazy, never imported at package import) |
 
-  A `502` or `504` on a model `POST` (a `POST` whose body names a model) is
+  A `502` or `504` on a model `POST` (a `POST` whose body, or native Gemini path, names a model) is
   not re-sent by default: the upstream call may have completed and billed, and
   no gateway idempotency key is verified (docs/verified-apis.md). Set
   `retry_model_calls_on_gateway_errors` to retry it; a `503`, and every other

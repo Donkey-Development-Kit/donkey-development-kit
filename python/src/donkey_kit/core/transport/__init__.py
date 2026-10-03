@@ -45,7 +45,8 @@ retry, refusal and substitution decisions), :mod:`.observe` (budget,
 ``last_call``, span attributes, log records), :mod:`.streaming` (the span-closing
 stream wrappers), :mod:`.pipeline` (the mixin both clients share),
 :mod:`.governed` (the swappable :class:`GovernedTransport` and the pools under
-it), :mod:`.async_client` / :mod:`.sync_client` / :mod:`.views`, and
+it), :mod:`.failures` (the typed errors a failed send raises),
+:mod:`.async_client` / :mod:`.sync_client` / :mod:`.views`, and
 :mod:`.httpx2`, the bridge for frameworks built on ``httpx2``. That last module
 imports ``httpx2``, which is not a base dependency, so it is never imported
 here. Every name below keeps its ``donkey_kit.core.transport`` import path.
