@@ -129,8 +129,14 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
         """The blocking twin of :meth:`DonkeyAsyncClient.send`: same headers, retries and span.
 
         Raises:
+            ConfigError: ``llm_proxy_auth`` is ``jwt`` or ``bearer``. A request
+                that did not come from :meth:`build_request` (the core ``httpx2``
+                bridge builds its own) is refused here too, so no path sends it
+                unauthenticated (#509, #728).
             GatewayUnavailable: The gateway could not be reached.
         """
+        if self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES:
+            raise sync_token_auth_error(self._cfg.llm_proxy_auth)
         model = _request_model(request)
         enabled = self._cfg.telemetry and model is not None  # see DonkeyAsyncClient.send
         capture = self._cfg.telemetry_capture_content

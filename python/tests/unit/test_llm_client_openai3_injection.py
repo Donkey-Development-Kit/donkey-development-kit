@@ -22,9 +22,13 @@ import pytest
 
 openai = pytest.importorskip("openai")
 
+from collections.abc import AsyncIterator, Iterator  # noqa: E402
+
 import httpx  # noqa: E402
 
 from donkey_kit.core.config import DonkeyConfig  # noqa: E402
+from donkey_kit.core.errors import ConfigError, PIIDetected, classify  # noqa: E402
+from donkey_kit.core.telemetry import run_scope  # noqa: E402
 from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient  # noqa: E402
 from donkey_kit.core.transport.views import built_on_httpx2  # noqa: E402
 from donkey_kit.llm.client import LLMClient  # noqa: E402
@@ -133,3 +137,146 @@ def test_sync_openai_client_drives_our_httpx_client_end_to_end() -> None:
     assert resp.choices[0].message.content == "hi there"
     assert resp.usage.total_tokens == 7
     _assert_governed(seen)
+
+
+# --- the bridge's streaming, refusal and lifecycle paths (#728) -------------
+
+_SSE_BODY = (
+    b'data: {"id":"c1","object":"chat.completion.chunk","created":0,"model":"gpt-4o",'
+    b'"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}\n\n'
+    b'data: {"id":"c1","object":"chat.completion.chunk","created":0,"model":"gpt-4o",'
+    b'"choices":[{"index":0,"delta":{"content":" there"},"finish_reason":"stop"}]}\n\n'
+    b"data: [DONE]\n\n"
+)
+_HI = {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}
+
+
+class _Chunks(httpx.SyncByteStream, httpx.AsyncByteStream):
+    """An SSE body that records whether the shared response was closed."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield _SSE_BODY
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield _SSE_BODY
+
+    def close(self) -> None:
+        self.closed = True
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def _sse(chunks: _Chunks) -> httpx.Response:
+    return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=chunks)
+
+
+def _pii(request: httpx.Request) -> httpx.Response:
+    body = {"error": {"type": "pii_detected", "message": "Found email at 10-25"}}
+    return httpx.Response(403, json=body)
+
+
+async def test_an_async_streamed_call_closes_the_shared_response() -> None:
+    chunks = _Chunks()
+    shared = DonkeyAsyncClient(_CFG, None, transport=httpx.MockTransport(lambda r: _sse(chunks)))
+    async with shared:
+        stream = await LLMClient(_CFG, shared).client().chat.completions.create(
+            **_HI, stream=True
+        )
+        text = "".join([c.choices[0].delta.content or "" async for c in stream])
+    assert text == "hi there"
+    assert chunks.closed
+
+
+def test_a_sync_streamed_call_closes_the_shared_response() -> None:
+    chunks = _Chunks()
+    async_shared = DonkeyAsyncClient(_CFG, None, transport=httpx.MockTransport(_pii))
+    with DonkeyClient(_CFG, transport=httpx.MockTransport(lambda r: _sse(chunks))) as shared:
+        llm = LLMClient(_CFG, async_shared, sync_http_client=lambda: shared)
+        stream = llm.client(sync=True).chat.completions.create(**_HI, stream=True)
+        text = "".join(c.choices[0].delta.content or "" for c in stream)
+    assert text == "hi there"
+    assert chunks.closed
+
+
+async def test_an_async_refusal_classifies_with_the_ids_that_were_sent() -> None:
+    # ``classify(exc.response)`` joins a refusal to its run on either stack (#738).
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return _pii(request)
+
+    shared = DonkeyAsyncClient(_CFG, None, transport=httpx.MockTransport(handler))
+    async with shared:
+        client = LLMClient(_CFG, shared).client()
+        with run_scope("run-7"), pytest.raises(openai.PermissionDeniedError) as info:
+            await client.chat.completions.create(**_HI)
+    err = classify(info.value.response)
+    assert isinstance(err, PIIDetected)
+    (wire,) = sent
+    assert err.correlation_id == "run-7"
+    assert err.call_id == wire.headers["x-donkey-request-id"]
+
+
+def test_a_sync_refusal_classifies_with_the_ids_that_were_sent() -> None:
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return _pii(request)
+
+    async_shared = DonkeyAsyncClient(_CFG, None, transport=httpx.MockTransport(_pii))
+    with DonkeyClient(_CFG, transport=httpx.MockTransport(handler)) as shared:
+        client = LLMClient(_CFG, async_shared, sync_http_client=lambda: shared).client(sync=True)
+        with run_scope("run-8"), pytest.raises(openai.PermissionDeniedError) as info:
+            client.chat.completions.create(**_HI)
+    err = classify(info.value.response)
+    assert isinstance(err, PIIDetected)
+    (wire,) = sent
+    assert err.correlation_id == "run-8"
+    assert err.call_id == wire.headers["x-donkey-request-id"]
+
+
+async def test_closing_the_openai_clients_leaves_the_shared_clients_open() -> None:
+    # #733 on both stacks: openai<3 gets the view, 3.x the bridge.
+    seen: dict[str, object] = {}
+    shared = DonkeyAsyncClient(_CFG, None, transport=httpx.MockTransport(_recording_handler(seen)))
+    sync_shared = DonkeyClient(_CFG, transport=httpx.MockTransport(_recording_handler(seen)))
+    llm = LLMClient(_CFG, shared, sync_http_client=lambda: sync_shared)
+    async with shared:
+        async with llm.client() as client:
+            await client.chat.completions.create(**_HI)
+        with llm.client(sync=True) as sync:
+            sync.chat.completions.create(**_HI)
+        assert not shared.is_closed
+        assert not sync_shared.is_closed
+        reply = await llm.client().chat.completions.create(**_HI)
+    sync_shared.close()
+    assert reply.choices[0].message.content == "hi there"
+
+
+def test_the_blocking_client_refuses_a_prebuilt_request_in_a_token_mode() -> None:
+    # The sync bridge builds its own httpx.Request, skipping
+    # DonkeyClient.build_request, so send() refuses too: no token-mode request
+    # leaves the blocking client unauthenticated (#509, #728).
+    cfg = DonkeyConfig(
+        llm_proxy_url=_BASE_URL,
+        llm_proxy_auth="bearer",
+        correlation_header="x-correlation-id",
+        call_id_header="x-donkey-request-id",
+    )
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200)
+
+    with DonkeyClient(cfg, transport=httpx.MockTransport(handler)) as client:
+        request = httpx.Request("POST", _BASE_URL + "chat/completions", json={"model": "m"})
+        with pytest.raises(ConfigError):
+            client.send(request)
+    assert sent == []
