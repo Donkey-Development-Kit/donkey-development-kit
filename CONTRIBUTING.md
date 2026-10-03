@@ -171,6 +171,15 @@ lint-imports       # the layered, framework-free-core contract
 vulture            # dead code in src/; allowed names in vulture_whitelist.py
 ```
 
+The secret scan runs outside `python/`, in its own `secret-scan` CI job (gitleaks
+over the full history, configured in `.gitleaks.toml`). Install the matching
+commit hook once per clone so a secret is caught before it is committed:
+
+```bash
+pipx install pre-commit   # or: pip install pre-commit
+pre-commit install        # from the repository root; runs gitleaks on staged changes
+```
+
 If the diff touches an adapter or framework wiring, also run the signature check
 (the executable form of the `docs/verified-apis.md §8` verification step, and the nightly-matrix gate):
 
@@ -498,6 +507,14 @@ build plan has the rationale behind each rule:
   regular files or links that stay inside the working directory. The LLM proxy authenticates on
   a `client_id`/`client_secret` header pair (consumer auth), separate from any
   Anypoint control-plane credential.
+  Local tooling config is gitignored too: `.mcp.json`,
+  `.claude/settings.local.json` and the `artifacts/` run-output directory. To
+  share an MCP client config, commit it under another name (for example
+  `.mcp.json.example`) and reference credentials through `${ENV_VAR}`
+  interpolation, never inline values. gitleaks scans every commit (pre-commit
+  hook and the `secret-scan` CI job), and GitHub push protection is on. To
+  silence a false positive, allowlist the exact synthetic value in
+  `.gitleaks.toml`, never a path.
 - **No dead parameters or stale suppressions.** An argument a function never
   reads is removed (ruff `ARG`); when an override, protocol or blocked stub fixes
   the signature, it stays with a `# noqa: ARG00x` naming that API, or with a
@@ -539,7 +556,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
-| Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py` | `pytest` |
+| Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
 | Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py` | `ruff check .`, `pytest` |
