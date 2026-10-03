@@ -100,10 +100,13 @@ Beside it:
 - **No production code imports `provisioning` or `governance`.** Only the CLI
   may; today the console script lives inside `provisioning` itself.
 - **`import donkey_kit` loads only the production layers.** The root `__init__`
-  never reaches the dev-only siblings or the legacy packages.
+  never reaches the dev-only siblings or the legacy packages. The contract has
+  to ignore `Donkey.simulate()`'s import, so it can't tell a lazy import from an
+  eager one; `test_import_donkey_kit_loads_only_the_production_layers` imports
+  the package in a fresh interpreter and checks `sys.modules`.
 - **core depends on httpx only.** A forbidden contract, with third-party
   packages in the graph, bars the LLM SDKs, `httpx2`, `pydantic`, every
-  adapter's framework and the dev-only and CLI dependencies from `core`,
+  adapter's framework, the MCP SDK and the dev-only and CLI dependencies from `core`,
   including imports inside functions, which the `base-only` job can't see. Its
   allowlist twin is `test_core_depends_only_on_httpx_and_the_stdlib`
   (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module

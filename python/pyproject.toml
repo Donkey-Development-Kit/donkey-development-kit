@@ -423,7 +423,9 @@ type = "forbidden"
 # typing_extensions) and opentelemetry (the optional [otel] extra, imported
 # lazily). This contract forbids the packages that have drifted, or could drift,
 # into a lower layer: the LLM SDKs, the httpx2 bridge, pydantic (ADR 0001), every
-# agent framework the adapters wrap, and the dev-only and CLI dependencies (#729).
+# agent framework the adapters wrap, the MCP SDK (the [mcp] extra), and the
+# dev-only and CLI dependencies (#729). A listed package nothing imports yet
+# (respx, rich) is still enforced: it fails the moment core imports it.
 # tests/unit/test_architecture.py checks the same rule as an allowlist.
 source_modules = ["donkey_kit.core"]
 forbidden_modules = [
@@ -439,9 +441,12 @@ forbidden_modules = [
     "langgraph",
     "litellm",
     "llama_index",
+    "mcp",
     "openai",
     "pydantic",
     "pytest",
+    "respx",
+    "rich",
     "starlette",
     "strands",
     "typer",

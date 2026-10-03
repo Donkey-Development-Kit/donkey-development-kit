@@ -531,7 +531,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | No unexplained `# type: ignore` | mypy `warn_unused_ignores` (part of `strict`) catches stale ones; the explanation is review-only | `mypy` |
 | `X \| None`, PEP 585/604 syntax | ruff `UP`, `FA` | `ruff check .` |
 | `from __future__ import annotations` in every module | ruff `I002` (`isort.required-imports`) | `ruff check .` |
-| Framework-free core, layering | import-linter contracts in `pyproject.toml` (whole-package and in-core layers, both exhaustive; no production import of `provisioning`/`governance`; the root package loads only production layers; core's forbidden third-party packages, #729); `tests/unit/test_architecture.py` (core's third-party imports as an allowlist, imports inside functions included) | `lint-imports`, `pytest` |
+| Framework-free core, layering | import-linter contracts in `pyproject.toml` (whole-package and in-core layers, both exhaustive; no production import of `provisioning`/`governance`; the root package loads only production layers; core's forbidden third-party packages, #729); `tests/unit/test_architecture.py` (core's third-party imports as an allowlist, imports inside functions included; `import donkey_kit` in a fresh interpreter loads no dev-only or legacy module) | `lint-imports`, `pytest` |
 | Small core modules (#729) | `tests/unit/test_architecture.py` (500-line budget; a ratchet for the five modules already past it) | `pytest` |
 | Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |

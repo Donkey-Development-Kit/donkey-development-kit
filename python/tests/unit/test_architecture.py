@@ -6,9 +6,12 @@ states, so each invariant cites the test that keeps it true:
 
 - core's dependencies: httpx and the stdlib only, checked as an allowlist over
   every import in ``core/``, including those inside functions (§1.1);
+- ``import donkey_kit`` loads only the production layers, checked in a fresh
+  interpreter (the import-linter contract must ignore ``Donkey.simulate()``);
 - no cross-package private import: ``from ..<pkg> import _name`` is banned
   across top-level packages, except through the named seam modules;
-- the module size budget for ``core/``, a ratchet over the files already past it;
+- the module size budget for ``core/`` (subpackages included), a ratchet over
+  the files already past it;
 - one shared client per credential plane (BG §1.1);
 - config precedence as the code resolves it today (§2.1 is #727);
 - the transport hook table matches both clients (BG §1.1, #179).
@@ -21,6 +24,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -125,6 +129,41 @@ def test_the_core_dependency_scan_sees_lazy_imports() -> None:
         ("pydantic", 5, False),
         ("yaml", 7, True),
     ]
+
+
+# --- import donkey_kit loads only the production layers (#729) ---------------
+
+# The packages `import donkey_kit` must never load: the dev-only siblings, the
+# legacy quarantine, and the third-party packages only they need.
+_NOT_ON_THE_IMPORT_PATH = (
+    "donkey_kit._testing",
+    "donkey_kit.conformance",
+    "donkey_kit.governance",
+    "donkey_kit.provisioning",
+    "donkey_kit.simulator",
+    "pytest",
+    "starlette",
+    "typer",
+    "uvicorn",
+    "yaml",
+)
+
+
+def test_import_donkey_kit_loads_only_the_production_layers() -> None:
+    """ARCHITECTURE.md, "Layered architecture": the root package reaches neither
+    the dev-only siblings nor the legacy packages. The import-linter contract has
+    to ignore Donkey.simulate()'s lazy import of simulator.inject, which would
+    also hide that import turning eager, so this checks a fresh interpreter."""
+    probe = (
+        "import sys, donkey_kit\n"
+        f"banned = {_NOT_ON_THE_IMPORT_PATH!r}\n"
+        "print(sorted(m for m in sys.modules if m in banned or m.startswith("
+        "tuple(b + '.' for b in banned))))\n"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    ).stdout
+    assert out.strip() == "[]"
 
 
 # --- no cross-package private imports (#719, #729) ----------------------------
@@ -292,10 +331,12 @@ def _lines(path: Path) -> int:
 
 
 def test_core_modules_stay_within_the_size_budget() -> None:
+    # Recursive, so a subpackage (the transport split, #728) is budgeted too.
     over = {
-        path.name: _lines(path)
-        for path in sorted(_CORE.glob("*.py"))
-        if path.name not in _OVERSIZED_CORE_MODULES and _lines(path) > _CORE_MODULE_BUDGET
+        name: _lines(path)
+        for path in sorted(_CORE.rglob("*.py"))
+        if (name := path.relative_to(_CORE).as_posix()) not in _OVERSIZED_CORE_MODULES
+        and _lines(path) > _CORE_MODULE_BUDGET
     }
     assert over == {}, f"core modules past {_CORE_MODULE_BUDGET} lines: split them"
 
