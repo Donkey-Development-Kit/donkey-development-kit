@@ -8,10 +8,12 @@ about what the package declares and ships.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from packaging.requirements import Requirement
 
 if sys.version_info >= (3, 11):
@@ -77,3 +79,58 @@ def test_every_direct_dependency_is_allowlisted() -> None:
 def test_package_ships_py_typed() -> None:
     """PEP 561 marker, so downstream users get the SDK's annotations."""
     assert (_PYTHON_ROOT / "src" / "donkey_kit" / "py.typed").is_file()
+
+
+_REPO_ROOT = _PYTHON_ROOT.parent
+_CI_MATRIX = re.compile(r"^\s*python-version:\s*\[([^\]]*)\]", re.MULTILINE)
+
+
+def _project() -> dict[str, object]:
+    project = tomllib.loads((_PYTHON_ROOT / "pyproject.toml").read_text())["project"]
+    assert isinstance(project, dict)
+    return project
+
+
+def _ci_matrix_versions() -> list[str]:
+    ci = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
+    if not ci.is_file():
+        pytest.skip("not a repo checkout (no .github/workflows/ci.yml)")
+    matrices = {
+        tuple(v.strip().strip("\"'") for v in m.split(","))
+        for m in _CI_MATRIX.findall(ci.read_text())
+    }
+    assert len(matrices) == 1, f"ci.yml matrices disagree: {matrices}"
+    return list(matrices.pop())
+
+
+def test_license_metadata_is_a_pep_639_expression() -> None:
+    """``License-Expression`` plus the shipped license file, not the legacy table (#745)."""
+    project = _project()
+    assert project["license"] == "Apache-2.0"
+    assert project["license-files"] == ["LICENSE"]
+    classifiers = project["classifiers"]
+    assert isinstance(classifiers, list)
+    assert not [c for c in classifiers if c.startswith("License ::")]
+
+
+def test_shipped_license_matches_the_repo_license() -> None:
+    """``python/LICENSE`` is a copy of the repo-root file hatch cannot reach."""
+    root = _REPO_ROOT / "LICENSE"
+    if not root.is_file():
+        pytest.skip("not a repo checkout (no repo-root LICENSE)")
+    assert (_PYTHON_ROOT / "LICENSE").read_text() == root.read_text()
+
+
+def test_version_classifiers_match_the_ci_matrix() -> None:
+    """A supported version is a tested version (docs/python-support.md)."""
+    matrix = _ci_matrix_versions()
+    classifiers = _project()["classifiers"]
+    assert isinstance(classifiers, list)
+    prefix = "Programming Language :: Python :: 3."
+    classified = [
+        c.removeprefix("Programming Language :: Python :: ")
+        for c in classifiers
+        if c.startswith(prefix)
+    ]
+    assert classified == matrix
+    assert _project()["requires-python"] == f">={matrix[0]}"
