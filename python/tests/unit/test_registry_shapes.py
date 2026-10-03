@@ -123,7 +123,7 @@ def test_mcp_server_spec_maps_to_handle() -> None:
     environments = _load("environments.sample.json")["environments"]
 
     # A production mcp_server endpoint exists in the captured environments.
-    asset_id = "370fbb9f-f0f5-400b-b120-19c7ee72dcb7"
+    asset_id = "00000000-0000-4000-8000-45f2a580d11e"
     endpoint = _endpoint_for(environments, asset_id, "prod")
 
     handle = McpServerHandle(
@@ -163,4 +163,4 @@ def test_a2d_uuid_identity_is_not_a_maven_ref() -> None:
     bridges the two is a real design gap recorded in docs/verified-apis.md."""
     server = _load("mcp_servers.list.json")["servers"][0]
     with pytest.raises(ValueError):
-        AssetRef.parse(server["id"])  # e.g. "00a87cda-f938-46ba-..."
+        AssetRef.parse(server["id"])  # e.g. "00000000-0000-4000-8000-..."

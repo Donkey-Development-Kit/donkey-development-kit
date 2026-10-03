@@ -340,6 +340,28 @@ organization/environment UUIDs and gateway hostnames**. This is why fixture
 provenance records a neutral environment description plus the instance ID —
 not an org id.
 
+**Scrub every capture before you commit it.** A raw capture carries the
+capturing tenant's identifiers: organization, environment and asset UUIDs,
+correlation ids, gateway and identity-provider hostnames, and the upstream
+provider's account headers (`openai-organization`, `openai-project`,
+`anthropic-workspace-id`). Some fixtures ship in the wheel, and a PyPI release
+can't be changed afterwards. So the procedure is **capture → scrub → relock**:
+
+```bash
+python scripts/scrub_fixtures.py tests/fixtures   # rewrite in place
+python -m donkey_kit.simulator.fixtures --relock
+```
+
+The scrub is deterministic: the same real value always maps to the same
+placeholder (`00000000-0000-4000-8000-…`, `<name>.example.invalid`), so
+cross-file references stay consistent. It also leaves every other byte alone,
+so byte-exact captures stay byte-exact. The numeric API instance ID is kept: it
+is the provenance the ledger row cites. CI runs `scrub_fixtures.py --check`
+over every tracked file and over the built wheel and sdist, and fails on any
+UUID outside the script's `ALLOWED_UUIDS`, any `*.cloudhub.io` or
+`*.herokuapp.com` host, or any unscrubbed provider account header. A UUID that
+is genuinely public goes in `ALLOWED_UUIDS`, with a reason.
+
 **Byte-exact captures.** When a capture must keep its exact bytes — CRLF in a
 `.headers.txt`, no trailing newline — add a **narrow** `.gitattributes` entry
 marking just those paths **`-text`** (never `binary`, which makes re-captures
@@ -557,6 +579,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |
+| No tenant identifiers in tracked files or built dists (#821) | `scripts/scrub_fixtures.py --check` (UUIDs outside `ALLOWED_UUIDS`, platform hosts, provider account headers) | `typecheck-and-lint`, `base-only` (wheel), publish workflows (wheel + sdist) |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
 | Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py` | `ruff check .`, `pytest` |
