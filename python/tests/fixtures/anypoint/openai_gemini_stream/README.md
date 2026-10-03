@@ -3,7 +3,7 @@
 Captured **2026-10-01** from two real OpenAI-format LLM proxies that route to a
 Gemini upstream (`gemini/gemini-2.5-flash`) through model-based routing, on the
 `shared-omni-gateway` Flex Gateway, env **Sandbox** (svc id
-`14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a`, from the `x-envoy-decorator-operation`
+`00000000-0000-4000-8000-5c4fd1a49fc3`, from the `x-envoy-decorator-operation`
 header):
 
 - `ddk-model-wallet` (API Manager instance **`21189395`**, JWT ingress, the proxy

@@ -165,7 +165,7 @@ def test_row9_agent_kill_switch_is_agent_killed_not_upstream_or_auth() -> None:
     request = httpx.Request(
         "POST",
         "https://gw.example/ddk-agent-kill-switch/chat/completions",
-        headers={"x-correlation-id": "e7641776-3160-4b59-814d-f6c354e7e177"},
+        headers={"x-correlation-id": "00000000-0000-4000-8000-ede8f2783ba7"},
     )
     err = classify(httpx.Response(403, headers=headers, json=body, request=request))
     assert isinstance(err, AgentKilled)
@@ -175,4 +175,4 @@ def test_row9_agent_kill_switch_is_agent_killed_not_upstream_or_auth() -> None:
     assert err.remediation.strip()  # required, non-empty
     assert "Governance > Security" in err.remediation
     assert str(err) == "This agent has been blocked by an active kill switch."
-    assert err.correlation_id == "e7641776-3160-4b59-814d-f6c354e7e177"
+    assert err.correlation_id == "00000000-0000-4000-8000-ede8f2783ba7"

@@ -15,8 +15,8 @@ x-llm-proxy-model-based-routing-success: Request successfully matched. Provider:
 x-llm-proxy-request-success: Request completed successfully. Provider: openai, Model: gpt-5-mini.
 date: Thu, 24 Sep 2026 15:31:17 GMT
 server: Anypoint Flex Gateway
-x-envoy-decorator-operation: api-instance-21195392.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
-x-correlation-id: cd458283-4b2f-40ef-bba2-ce840f5bbf70
+x-envoy-decorator-operation: api-instance-21195392.00000000-0000-4000-8000-5c4fd1a49fc3.svc
+x-correlation-id: 00000000-0000-4000-8000-1795865cb51c
 Strict-Transport-Security: max-age=31536000; includeSubdomains
 Connection: Keep-Alive
 
