@@ -45,6 +45,7 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8 (#34).
 from __future__ import annotations
 
 from collections.abc import Callable
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -52,6 +53,7 @@ import httpx
 from ..core.config import DonkeyConfig
 from ..core.masking import masked
 from ..core.transport import DonkeyAsyncClient, DonkeyAsyncClientView, DonkeyClient
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -94,6 +96,19 @@ class AnthropicAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/anthropic
     """
 
+    # AsyncAnthropic on the shared client, through the httpx2 bridge on anthropic>=1 (#726).
+    factories = MappingProxyType(
+        {
+            "client": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
+
     def __init__(
         self,
         cfg: DonkeyConfig,
@@ -126,7 +141,7 @@ class AnthropicAdapter(Adapter):
         ``anthropic<1`` and a bridged ``httpx2`` client on ``anthropic>=1.0`` (see
         the module docstring). The proxy's Anthropic-native route requires a
         ``Format=Anthropic`` proxy (docs/verified-apis.md §2)."""
-        conn = self._openai_connection()  # base_url, api_key, default_headers
+        conn = self._connection()  # base_url, api_key, default_headers
         return masked(
             {
                 "base_url": conn["base_url"],

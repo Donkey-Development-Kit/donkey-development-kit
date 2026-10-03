@@ -64,7 +64,7 @@ from ._wire import (
 from .auth import AuthProvider
 from .budget import Budget
 from .cachecontrol import current_cache_controls
-from .config import TOKEN_AUTH_MODES, DonkeyConfig, LlmProxyAuth
+from .config import TOKEN_AUTH_MODES, DonkeyConfig, LlmProxyAuth, missing_llm_auth_error
 from .cost import CostTags
 from .endpoints import require_secure_url
 from .errors import (
@@ -115,6 +115,7 @@ __all__ = [
     "attribution_headers",
     "build_http_client",
     "build_sync_http_client",
+    "checked_llm_config",
     "cost_headers",
     "effective_cost_tags",
     "origin_of",
@@ -159,6 +160,8 @@ def _mark_terminal(response: httpx.Response) -> None:
     retried it."""
     if 400 <= response.status_code < 500:
         response.headers[_SHOULD_RETRY_HEADER] = "false"
+
+
 # A non-2xx body on a stream request is read up to this many bytes before the
 # span is recorded, so classify() sees the same JSON a buffered refusal has
 # (#805). Proxy error envelopes are a few hundred bytes; past the cap the body is
@@ -1992,6 +1995,28 @@ def sync_token_auth_error(mode: LlmProxyAuth) -> ConfigError:
         "switch to client-id auth for a synchronous caller."
     )
 
+
+def checked_llm_config(
+    cfg: DonkeyConfig, http: DonkeyAsyncClient, *, sync: bool = False
+) -> DonkeyConfig:
+    """``cfg`` validated for a data-plane LLM call over ``http``, the shared client.
+
+    The one guard behind every governed LLM surface: ``donkey.llm.client()``
+    and each framework adapter's ``connection_kwargs()`` (#726). In a token auth
+    mode (jwt or bearer) it also checks the two things config alone cannot (#509,
+    #828, #836): a ``sync`` caller is refused with :func:`sync_token_auth_error`,
+    since the blocking client cannot await the token; and a shared client with
+    no ``AuthProvider`` is refused with ``missing_llm_auth_error``, since the
+    token rides only that provider and every call would otherwise 401.
+    """
+    checked = cfg.validated(need="llm")
+    mode = checked.llm_proxy_auth
+    if mode in TOKEN_AUTH_MODES:
+        if sync:
+            raise sync_token_auth_error(mode)
+        if http.token_provider is None:
+            raise missing_llm_auth_error(mode)
+    return checked
 
 
 def build_sync_http_client(

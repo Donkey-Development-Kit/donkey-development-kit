@@ -29,12 +29,13 @@ refusal instead of a generic ``ChatClientException`` (BG §1.2).
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from ..core import _verify
 from ..core.masking import masked
 from ..core.refusals import translate
-from . import typed_refusals
+from . import AdapterCapabilities, typed_refusals
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -74,9 +75,19 @@ class AgentFrameworkAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/agent-framework
     """
 
-    # Kept False while the conformance exemption table lists Agent Framework; its
-    # calls now go through the shared client (async_client).
-    observes_last_call = False
+    # The shared client, as async_client. observes_last_call is kept False while
+    # the conformance exemption table lists Agent Framework (#740).
+    factories = MappingProxyType(
+        {
+            "chat_client": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=False,
+            ),
+        }
+    )
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` (or
@@ -88,7 +99,7 @@ class AgentFrameworkAdapter(Adapter):
         the constructor uses it as given."""
         return masked(
             {
-                **self._openai_connection(),  # base_url, api_key, default_headers
+                **self._connection(),  # base_url, api_key, default_headers
                 **self._proxy_openai_client_kwarg("async_client"),
             }
         )
@@ -118,7 +129,7 @@ class AgentFrameworkAdapter(Adapter):
             raise ValueError(f"api must be 'responses' or 'chat_completions', not {api!r}")
         cls_name = _CHAT_CLIENT_CLASSES[api]
         self._allow_endpoints(kw, "base_url")
-        self._require_proxy()
+        self._connection()
         # A missing module (the package or a dependency of it) is the curated
         # install hint; a missing name in a module that imports is a rename.
         with self._native_import():

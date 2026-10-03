@@ -23,15 +23,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
-from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, missing_llm_auth_error
+from ..core.config import DonkeyConfig
 from ..core.errors import ConfigError
 from ..core.transport import (
     DonkeyAsyncClient,
     DonkeyClient,
     build_sync_http_client,
+    checked_llm_config,
     proxy_api_key,
     proxy_auth_headers,
-    sync_token_auth_error,
 )
 from .catalog import ModelHandle, heuristic_capabilities
 
@@ -87,21 +87,9 @@ class LLMClient:
         proxy URL; it then receives the configured credentials.
         """
 
-        self._cfg.validated(need="llm")
-        mode = self._cfg.llm_proxy_auth
-        if mode in TOKEN_AUTH_MODES:
-            # The rotating token enters through an AuthProvider on the shared async
-            # transport, never a config field (#509, #836). Two things config
-            # alone cannot check, enforced here where the provider is known:
-            if sync:
-                # Proposal 6 / AC 7: the token modes are async-only. The blocking
-                # DonkeyClient takes no AuthProvider (the protocol is async-only),
-                # so a sync client could only send a stale or absent token — never
-                # hand one back silently unauthenticated.
-                raise sync_token_auth_error(mode)
-            if self._http.token_provider is None:
-                # AC 1: a token mode with no provider attached fails with actionable guidance.
-                raise missing_llm_auth_error(mode)
+        # Validation plus the token-mode guards: a blocking client is refused,
+        # and so is a shared client with no AuthProvider (#509, #836).
+        checked_llm_config(self._cfg, self._http, sync=sync)
         http = self._sync_http() if sync else self._http
         # The client gets a non-owning view, so closing it (``async with
         # donkey.openai()``) leaves the shared client open (#733).

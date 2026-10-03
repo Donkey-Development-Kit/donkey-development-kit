@@ -19,9 +19,11 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core.masking import masked
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -49,9 +51,19 @@ class LlamaIndexAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/llamaindex
     """
 
-    # Kept False while the conformance exemption table lists LlamaIndex; its
-    # calls now go through the shared clients (http_client/async_http_client).
-    observes_last_call = False
+    # Both shared clients (http_client/async_http_client). observes_last_call is
+    # kept False while the conformance exemption table lists LlamaIndex (#740).
+    factories = MappingProxyType(
+        {
+            "llm": AdapterCapabilities(
+                transport="shared",
+                sync=True,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=False,
+            ),
+        }
+    )
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAILike(model=…, **kwargs)`` you build
@@ -60,7 +72,7 @@ class LlamaIndexAdapter(Adapter):
         ``api_base`` rather than ``base_url``. Sync and async calls send through
         the SDK's clients, which do not follow redirects and send credentials
         only to checked endpoints."""
-        conn = self._openai_connection()
+        conn = self._connection()
         return masked(
             {
                 "api_base": conn["base_url"],

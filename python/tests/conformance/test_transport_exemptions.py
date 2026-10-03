@@ -10,14 +10,15 @@ things so the exemption stays honest:
    exempting nothing) — the internal-matrix analogue of the customer plugin's
    collection-time validation.
 2. The set of adapters exempted from ``gateway_identity_observed`` is EXACTLY the
-   set whose :attr:`Adapter.observes_last_call` is ``False``. The exemption table
+   set whose default factory's ``capabilities().observes_last_call`` is ``False``
+   (#726). The exemption table
    and the code fact it documents cannot drift apart: add a non-observing adapter
    without recording the exemption (or vice-versa) and this fails.
 3. Header-only adapters do not receive the active run correlation ID in their
    static ``default_headers`` snapshot, and both record the corresponding
    ``correlation_id_propagated`` exemption.
 
-Reading ``observes_last_call`` off each adapter class imports only the adapter
+Reading ``capabilities()`` off each adapter class imports only the adapter
 modules, which import their framework lazily inside methods — so this needs no
 framework extra installed (it lives in ``tests/conformance``, not the base-only
 ``tests/unit`` job, but stays import-light regardless).
@@ -91,7 +92,7 @@ def test_exemption_matches_observes_last_call_flag() -> None:
         if _GATEWAY_SCENARIO in limits
     }
     non_observing = {
-        attr for attr in ADAPTERS if not _adapter_class(attr).observes_last_call
+        attr for attr in ADAPTERS if not _adapter_class(attr).capabilities().observes_last_call
     }
     assert exempted == non_observing, (
         "gateway_identity_observed exemptions and observes_last_call=False adapters "

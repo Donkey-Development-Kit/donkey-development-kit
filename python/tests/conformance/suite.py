@@ -80,7 +80,8 @@ _DEFAULT_HEADERS_CORRELATION_EXEMPTION = (
 # transport's _on_response, so an adapter that does not route through our httpx
 # client can never observe it. donkey.last_call reports UNAVAILABLE (naming the
 # surface) rather than a bare None — the honest-state contract (hazard #3) —
-# and mirrors Adapter.observes_last_call = False on each of these adapters.
+# and mirrors observes_last_call=False in each adapter's default-factory
+# AdapterCapabilities (#726; tests/unit/test_adapter_roster.py keeps them equal).
 _LITELLM_LAST_CALL_EXEMPTION = (
     "adk.model() only: LiteLLM owns the transport; no response reaches our _on_response, so "
     "donkey.last_call cannot observe the gateway identity of the call and "
@@ -101,7 +102,8 @@ _DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
 # transport (#509). Every adapter that sends through it carries the JWT; CrewAI's
 # native OpenAI provider builds its own clients, so it would send the api-key
 # placeholder as the bearer. The adapter refuses jwt mode with a ConfigError
-# instead (#828) — asserted here rather than silently skipped.
+# instead (#828) — asserted here rather than silently skipped. Mirrors
+# transport="framework" in its AdapterCapabilities (#726).
 _CREWAI_JWT_EXEMPTION = (
     "CrewAI's native OpenAI provider owns the transport, so the rotating model-wallet "
     "JWT, which only our httpx client adds per-send, never reaches its requests. "
@@ -112,7 +114,8 @@ _CREWAI_JWT_EXEMPTION = (
 # typed_refusal_bridged: the bridge types an error only when the SDK's transport
 # raised it or sent the request behind it (#724, ADR 0002). A framework that owns
 # the transport raises its own errors for a call the SDK never saw, so the bridge
-# leaves them as they are rather than guess at their shape.
+# leaves them as they are rather than guess at their shape. Mirrors
+# typed_refusals=False in the factory's AdapterCapabilities (#726).
 _LITELLM_REFUSAL_EXEMPTION = (
     "adk.model() only: LiteLLM owns the transport and raises its own errors, which do "
     "not carry the response our transport received; the typed-refusal bridge cannot "

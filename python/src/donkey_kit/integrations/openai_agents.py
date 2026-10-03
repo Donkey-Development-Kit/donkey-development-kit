@@ -16,9 +16,11 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core.masking import masked
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -45,6 +47,19 @@ class OpenAIAgentsAdapter(Adapter):
 
     Docs: https://docs.donkey-kit.dev/frameworks/openai
     """
+
+    # An AsyncOpenAI on the shared client (#726).
+    factories = MappingProxyType(
+        {
+            "model": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatCompletionsModel(model=…, **kwargs)``

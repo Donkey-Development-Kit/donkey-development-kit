@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
 from ..core.masking import masked
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -63,12 +64,27 @@ class ADKAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/adk
     """
 
-    # Kept False for ``model()`` while the conformance kit lists its
-    # correlation_id_propagated exemption (#362), although its calls now go
-    # through the shared client. ``gemini()`` observes (#691), recorded per
-    # factory rather than set on the instance (#741).
-    observes_last_call = False
-    factory_observes_last_call = MappingProxyType({"gemini": True})
+    # model() is kept unobserved and without typed refusals while the conformance
+    # kit lists its exemptions (#362), although its calls now go through the
+    # shared client. gemini() observes (#691). Each factory has its own (#741, #726).
+    factories = MappingProxyType(
+        {
+            "model": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=False,
+                observes_last_call=False,
+            ),
+            "gemini": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``LiteLlm(model="openai/<id>", **kwargs)`` you
@@ -77,7 +93,7 @@ class ADKAdapter(Adapter):
         sends through the SDK's shared client, which does not follow redirects
         and sends credentials only to checked endpoints; LiteLLM's OpenAI route
         uses it in place of the client it would build."""
-        conn = self._openai_connection()
+        conn = self._connection()
         return masked(
             {
                 "api_base": conn["base_url"],
@@ -102,7 +118,7 @@ class ADKAdapter(Adapter):
         client's. ``api_version=""`` because the proxy route has no
         ``/v1beta`` segment. A ``base_url`` passed here must pass the https check."""
         self._allow_endpoints({"base_url": base_url}, "base_url")
-        conn = self._openai_connection()
+        conn = self._connection("gemini")
         url = base_url or conn["base_url"]
         return masked(
             {

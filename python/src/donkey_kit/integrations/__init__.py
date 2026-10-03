@@ -4,26 +4,101 @@ Each adapter returns NATIVE framework objects (BG §1.8). Modules are imported
 lazily by :class:`donkey_kit.donkey.Donkey` so an uninstalled framework never
 breaks ``import donkey_kit``.
 
-The registry below maps the attribute name used on ``Donkey`` to the adapter's
-module + class + pip extra, so ``Donkey.__getattr__`` can raise a curated
-ImportError with the exact install command (BG §1.8).
+The :data:`ADAPTERS` roster below is the one place the adapter set is declared
+(#726, ADR 0004). It maps the attribute name
+used on ``Donkey`` to the adapter's module, class and pip extra, so
+``Donkey.__getattr__`` can raise a curated ImportError with the exact install
+command (BG §1.8). Everything else that lists the adapters (the pyproject
+extras, the import-linter independence contract, the mypy overrides, the
+``Donkey`` annotations, the conformance exemptions, the nightly matrix and
+``scripts/verify_frameworks.py``) is checked against it by
+``tests/unit/test_adapter_roster.py``.
+
+Every adapter meets :class:`AdapterProtocol` and declares a frozen
+:class:`AdapterCapabilities` per factory.
 """
 
 from __future__ import annotations
 
 import importlib
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from ..core.refusals import Translator, TypedRefusals
 
 __all__ = [
     "ADAPTERS",
+    "AdapterCapabilities",
+    "AdapterProtocol",
     "AdapterSpec",
+    "AdapterTransport",
     "missing_framework_error",
     "refusal_translators",
     "typed_refusals",
 ]
+
+#: Who sends an adapter's requests. ``"shared"``: the SDK's shared governed
+#: client, handed to the framework directly, as a view, inside a pre-built
+#: OpenAI client, or through the ``httpx2`` bridge. ``"framework"``: the
+#: framework builds its own HTTP clients and the SDK supplies only the
+#: connection values (CrewAI's native OpenAI provider).
+AdapterTransport = Literal["shared", "framework"]
+
+
+@dataclass(frozen=True)
+class AdapterCapabilities:
+    """What one adapter factory's native object gets from the SDK (#726).
+
+    Declared per factory, on the adapter class, and never changed at runtime:
+    ADK's ``model()`` and ``gemini()`` each have their own. Read it with
+    ``donkey.<framework>.capabilities("<factory>")``; with no argument, the
+    default factory's, which is the one ``connection_kwargs()`` configures.
+
+    Every field states a fact about the SDK's own wiring, never a claim about
+    the framework (§0.3). The conformance exemptions in ``KNOWN_LIMITATIONS``
+    are checked against these values.
+    """
+
+    #: Who sends the requests (:data:`AdapterTransport`). In a token auth mode
+    #: (jwt or bearer) a ``"framework"`` adapter is refused with ``ConfigError``:
+    #: only the shared client adds the rotating token (#828, #836).
+    transport: AdapterTransport
+    #: Whether the native object's blocking calls go through the SDK's blocking
+    #: client (LangGraph ``invoke()``, LlamaIndex ``complete()``). In a token
+    #: auth mode that client refuses each send, since the token is async-only.
+    sync: bool
+    #: False when the governed connection turns the framework's streaming off
+    #: (Strands sets ``stream=False``, #830); True when it is left as the
+    #: framework has it.
+    streaming: bool
+    #: Whether a gateway refusal from this object reaches the caller typed
+    #: through :func:`typed_refusals` (BG §1.2, #724). False where the framework
+    #: raises its own errors for a call the SDK did not send or observe.
+    typed_refusals: bool
+    #: Whether a call through this object populates ``donkey.last_call`` (#362).
+    observes_last_call: bool
+
+
+@runtime_checkable
+class AdapterProtocol(Protocol):
+    """The contract every framework adapter meets (#726, BG §1.8).
+
+    ``connection_kwargs()`` is the governed kwargs for the framework's own
+    constructor, the whole supported surface of a ``connection_kwargs()``-only
+    framework. ``capabilities()`` is the frozen :class:`AdapterCapabilities` of
+    one factory. Code that handles any adapter can be typed against this
+    instead of a concrete class.
+    """
+
+    def connection_kwargs(self) -> Mapping[str, Any]:
+        """The governed kwargs for the framework's own client constructor."""
+        ...
+
+    def capabilities(self, factory: str | None = None) -> AdapterCapabilities:
+        """The capabilities of ``factory``, by default the default factory's."""
+        ...
 
 
 @dataclass(frozen=True)
