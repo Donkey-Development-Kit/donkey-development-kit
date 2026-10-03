@@ -3108,18 +3108,44 @@ python -m my_app                              # spans flow, refused calls includ
 ```
 
 `Donkey.from_env()` reads `OTEL_EXPORTER_OTLP_ENDPOINT` (or the traces-specific
-`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, installs an OTLP
-exporter behind a batch processor. The network flush runs on that background
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, sets up an OTLP
+exporter behind a batch processor for DDK's own spans. The network flush runs on that background
 thread, off your request path, keeping instrumentation overhead under
 1&nbsp;ms per call. The `[otel]` extra ships the **http/protobuf** exporter;
 `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` is honoured only if you also install
 `opentelemetry-exporter-otlp-proto-grpc`.
 
 **With no endpoint set, the export path is inert and silent** — no exporter is
-built, nothing connects, nothing is printed. If your process already configures
-its own OpenTelemetry provider (say via `opentelemetry-instrument`), DDK rides it
-rather than replacing it, so your spans flow through the pipeline you already
-set up.
+built, nothing connects, nothing is printed.
+
+### DDK leaves the global provider to you
+
+OpenTelemetry lets a process set its global `TracerProvider` only once. So
+constructing a `Donkey` **never changes `trace.get_tracer_provider()`** by
+default. The exporter above sits on a provider that only DDK's spans use, and
+your other instrumentation is unaffected.
+
+- **Your process sets its own provider**, before *or after* `Donkey()` (say via
+  `opentelemetry-instrument`, or a `trace.set_tracer_provider(...)` call during
+  startup). DDK's spans go to that provider from then on, through the pipeline
+  you already set up, and DDK's own exporter goes unused.
+- **You want DDK's provider to be the global one**, so other libraries' spans
+  use the same exporter. Opt in:
+
+```bash
+export DONKEY_TELEMETRY_INSTALL_GLOBAL=true   # or telemetry_install_global = true in .donkey-kit.toml
+```
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.core.config import DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_install_global=True))
+```
+
+With the flag on and an endpoint set, the first `Donkey()` installs its provider
+as the global one, unless your process already set one. The flag does nothing
+without an endpoint.
 
 Opt out of telemetry entirely with a single flag:
 
@@ -7942,9 +7968,9 @@ python "demos/human-made/openai/10 - zero-config-otlp.py"                       
 OTEL_EXPORTER_OTLP_ENDPOINT=https://<collector> python "demos/human-made/openai/10 - zero-config-otlp.py"
 ```
 
-With no `TracerProvider` in the process, `Donkey.from_env()` installs an OTLP
-exporter itself when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, and stays silent
-when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
+With no `TracerProvider` in the process, `Donkey.from_env()` sets up an OTLP
+exporter for its own spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, without
+taking the global provider, and stays silent when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
 
 **You should see:** the endpoint (or `(unset — Donkey.from_env() will not
 install an exporter)`), the reply, and `last_call observed <model>`.
@@ -9773,6 +9799,7 @@ kwarg; in code, use
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
 | `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
+| `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | Install DDK's OTLP provider as the process-global OpenTelemetry provider (default **`false`**). See [DDK leaves the global provider to you](https://docs.donkey-kit.dev/telemetry.md#ddk-leaves-the-global-provider-to-you). |
 
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
@@ -9801,7 +9828,7 @@ request is sent. One error lists every bad field and where each was set:
 |---|---|
 | `timeout_s` | A number greater than `0` |
 | `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
-| `telemetry`, `telemetry_capture_content`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
+| `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
 | `region` | `us`, `eu`, `ca` or `jp` |
 | `llm_proxy_auth` | `client-id` or `jwt` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |

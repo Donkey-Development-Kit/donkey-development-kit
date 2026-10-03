@@ -129,6 +129,13 @@ still a base dependency. Dropping it from the base install is part of #730.
   every factory, and closed at interpreter exit. It lives in `core` because
   `integrations` may not import the top package (#725).
 
+  The OTLP bootstrap has no hidden global side effect: it builds a
+  **DDK-scoped** `TracerProvider` for DDK's own spans and never sets the
+  process-global OpenTelemetry provider unless `telemetry_install_global`
+  opts in. `_tracer()` in `core/telemetry.py` prefers any global provider the
+  host sets, even after `Donkey()`, so OTel's set-once rule never locks the
+  host out (#732, `docs/adr/0010-no-hidden-global-side-effects.md`).
+
   Each client attaches credentials only to its **checked endpoints**
   (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
   port: the plane's configured URL, plus any URL override a factory accepted
