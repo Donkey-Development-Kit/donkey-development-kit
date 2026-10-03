@@ -11,11 +11,16 @@ acceptance criteria:
 - **AC #4** — with no OTLP endpoint set, the bootstrap is inert and silent (it
   never builds a provider, so nothing connects and nothing prints).
 
+And the no-hidden-global rule of #732: constructing a ``Donkey`` leaves
+``trace.get_tracer_provider()`` alone unless ``telemetry_install_global`` opts
+in; DDK's spans export through a DDK-scoped provider, and a host provider set
+after ``Donkey()`` receives them.
+
 The decision logic (:func:`_build_tracer_provider`) is pure w.r.t. the OTel
-global singleton, so it is exercised in-process. Installation
-(:func:`configure_otlp_export`) mutates that process-global provider, which OTel
-lets you set exactly once — so those cases run in subprocesses to keep the
-singleton clean for the rest of the suite. The overhead bar (AC #3) is a
+global singleton, so it is exercised in-process. The cases that
+reach the process-global provider (the opt-in install, a host provider set
+before or after ``Donkey()``) run in subprocesses, because OTel lets it be set
+exactly once and the rest of the suite needs it pristine. The overhead bar (AC #3) is a
 separate benchmark under ``tests/benchmark`` (``pytest -m benchmark``).
 
 The SDK+exporter live in the ``[otel]`` extra; every test ``importorskip``s them
@@ -191,24 +196,85 @@ def _run_probe(body: str, **env: str) -> str:
     return proc.stdout
 
 
-def test_donkey_from_env_installs_the_global_provider_with_endpoint() -> None:
-    """AC #1 end to end: constructing a Donkey with only OTEL_EXPORTER_OTLP_ENDPOINT
-    set installs an SDK TracerProvider with a live span processor — no
-    SDK-specific env var."""
+def test_donkey_from_env_leaves_the_global_provider_alone_with_endpoint() -> None:
+    """#732: with only OTEL_EXPORTER_OTLP_ENDPOINT set, constructing a Donkey
+    builds DDK's exporter on a DDK-scoped provider and does NOT change
+    ``trace.get_tracer_provider()``."""
     out = _run_probe(
         """
         from donkey_kit import Donkey
+        from donkey_kit.core import telemetry
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        before = trace.get_tracer_provider()
+        Donkey.from_env()
+        after = trace.get_tracer_provider()
+        print("UNCHANGED", after is before)
+        print("SDK_PROVIDER", isinstance(after, TracerProvider))
+        print("SCOPED", telemetry._scoped_tracer is not None)
+        """,
+        OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318",
+    )
+    assert "UNCHANGED True" in out
+    assert "SDK_PROVIDER False" in out
+    assert "SCOPED True" in out
+
+
+def test_install_global_opt_in_installs_the_global_provider() -> None:
+    """AC #1 with the #732 opt-in: DONKEY_TELEMETRY_INSTALL_GLOBAL=true makes the
+    Donkey install its SDK TracerProvider, with a live span processor, as the
+    process-global provider."""
+    out = _run_probe(
+        """
+        from donkey_kit import Donkey
+        from donkey_kit.core import telemetry
         from opentelemetry import trace
         from opentelemetry.sdk.trace import TracerProvider
         Donkey.from_env()
         tp = trace.get_tracer_provider()
         print("SDK_PROVIDER", isinstance(tp, TracerProvider))
         print("HAS_PROCESSOR", tp._active_span_processor is not None)
+        print("SCOPED", telemetry._scoped_tracer is not None)
         """,
         OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318",
+        DONKEY_TELEMETRY_INSTALL_GLOBAL="true",
     )
     assert "SDK_PROVIDER True" in out
     assert "HAS_PROCESSOR True" in out
+    assert "SCOPED False" in out
+
+
+@pytest.mark.parametrize("endpoint", [True, False], ids=["endpoint", "no-endpoint"])
+def test_host_provider_set_after_donkey_receives_ddk_spans(endpoint: bool) -> None:
+    """#732: a host that configures its provider AFTER ``Donkey()`` is not locked
+    out by OTel's set-once rule, and DDK's spans reach it, whether or not an OTLP
+    endpoint made DDK build its own scoped provider first."""
+    env = {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318"} if endpoint else {}
+    out = _run_probe(
+        """
+        from donkey_kit import Donkey
+        from donkey_kit.core import telemetry
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+            InMemorySpanExporter,
+        )
+        Donkey.from_env()
+        exporter = InMemorySpanExporter()
+        host = TracerProvider()
+        host.add_span_processor(SimpleSpanProcessor(exporter))
+        trace.set_tracer_provider(host)
+        print("HOST_IS_GLOBAL", trace.get_tracer_provider() is host)
+        with telemetry.genai_span(enabled=True):
+            pass
+        names = [s.name for s in exporter.get_finished_spans()]
+        print("HOST_GOT", names == [telemetry.SPAN_LLM_CHAT])
+        """,
+        **env,
+    )
+    assert "HOST_IS_GLOBAL True" in out
+    assert "HOST_GOT True" in out
 
 
 def test_donkey_from_env_is_inert_without_an_endpoint() -> None:
@@ -261,3 +327,53 @@ def test_configure_does_not_clobber_a_host_provider() -> None:
         OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318",
     )
     assert "SAME True" in out
+
+
+# --- the DDK-scoped provider, in process (#732) -----------------------------
+#
+# The scoped path never touches the global provider, so it runs in process:
+# the exporter is swapped for an in-memory one and the host check is pinned, so
+# the result does not depend on what else in this process set a provider.
+
+
+def test_scoped_provider_exports_ddk_spans_without_touching_the_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    scoped = TracerProvider()
+    scoped.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(telemetry, "_build_tracer_provider", lambda _config: scoped)
+    monkeypatch.setattr(telemetry, "_host_provider_set", lambda: False)
+    monkeypatch.setattr(telemetry, "_otlp_export_configured", False)
+    monkeypatch.setattr(telemetry, "_scoped_tracer", None)
+
+    before = trace.get_tracer_provider()
+    telemetry.configure_otlp_export(DonkeyConfig())
+    assert trace.get_tracer_provider() is before
+    with telemetry.genai_span(enabled=True):
+        pass
+    assert [s.name for s in exporter.get_finished_spans()] == [telemetry.SPAN_LLM_CHAT]
+
+
+def test_a_host_provider_takes_over_from_the_scoped_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once the host sets a global provider, ``_tracer()`` stops handing out the
+    scoped tracer, so DDK's spans follow the host's pipeline."""
+    sentinel = object()
+    monkeypatch.setattr(telemetry, "_scoped_tracer", sentinel)
+    monkeypatch.setattr(telemetry, "_host_provider_set", lambda: False)
+    assert telemetry._tracer() is sentinel
+    monkeypatch.setattr(telemetry, "_host_provider_set", lambda: True)
+    assert telemetry._tracer() is not sentinel
+
+
+def test_the_suite_never_sees_an_ambient_otlp_endpoint() -> None:
+    """The root conftest drops any OTLP endpoint the shell exports, so unit tests
+    that build a ``Donkey`` never send spans to a real collector (#732)."""
+    assert telemetry._otlp_endpoint_configured() is False

@@ -54,10 +54,12 @@ class Runtime:
         llm_auth: AuthProvider | None = None,
     ) -> None:
         self._cfg = config or DonkeyConfig.from_env()
-        # Zero-config OTLP export (BG §1.6, #194): installs an exporter when an
+        # Zero-config OTLP export (BG §1.6, #194): builds an exporter when an
         # OTEL_EXPORTER_OTLP_ENDPOINT is set and telemetry is on; a no-op (and
-        # never an error) otherwise. This is the single funnel — every Donkey and
-        # the default runtime pass through here — and it is idempotent.
+        # never an error) otherwise. It leaves the global TracerProvider alone
+        # unless telemetry_install_global opts in (#732). This is the single
+        # funnel — every Donkey and the default runtime pass through here — and
+        # it is idempotent.
         configure_otlp_export(self._cfg)
         self._owned_auth_http: DonkeyAsyncClient | None = None
         if auth is None:

@@ -119,6 +119,24 @@ def test_capture_content_env_overrides_toml(tmp_path, monkeypatch: pytest.Monkey
     assert DonkeyConfig.from_env().telemetry_capture_content is True  # env wins
 
 
+# --- telemetry_install_global resolution (#732, BG §1.6) -------------------
+# No hidden global side effect: DDK takes the process-global OTel provider only
+# when the developer opts in, through the normal precedence.
+
+
+def test_install_global_defaults_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    assert DonkeyConfig().telemetry_install_global is False  # dataclass default
+    assert DonkeyConfig.from_env().telemetry_install_global is False  # resolved default
+
+
+def test_install_global_env_overrides_toml(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch, "[donkey]\ntelemetry_install_global = true\n")
+    assert DonkeyConfig.from_env().telemetry_install_global is True  # toml layer
+    monkeypatch.setenv("DONKEY_TELEMETRY_INSTALL_GLOBAL", "false")
+    assert DonkeyConfig.from_env().telemetry_install_global is False  # env wins
+
+
 # --- on_model_substitution resolution + validation (BG §1.1, #309) ---------------
 # Off by default: a routing substitution is surfaced passively on last_call
 # unless the developer opts into a hard error, through the normal precedence.
