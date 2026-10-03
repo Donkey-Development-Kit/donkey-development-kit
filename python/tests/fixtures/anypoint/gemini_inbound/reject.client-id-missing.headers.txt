@@ -4,6 +4,6 @@ content-type: application/json
 content-length: 36
 date: Wed, 23 Sep 2026 20:55:39 GMT
 server: Anypoint Flex Gateway
-x-correlation-id: 377a48b2-34d5-44af-a25f-fef5cc4ef81f
+x-correlation-id: 00000000-0000-4000-8000-966d69e575fa
 Strict-Transport-Security: max-age=31536000; includeSubdomains
 Connection: Close

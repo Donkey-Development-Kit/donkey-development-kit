@@ -57,7 +57,7 @@ guard its bytes instead.
 against `ddk-agent-kill-switch` (DDK / Sandbox, API instance 21206201,
 shared-omni-gateway), called with a Keycloak JWT whose `act.sub` is a
 quarantined agent (`ddk-langgraph-agent`, `act.sub=21206128`; correlation id
-`e7641776-3160-4b59-814d-f6c354e7e177`). The gateway answered `403` with a
+`00000000-0000-4000-8000-ede8f2783ba7`). The gateway answered `403` with a
 nested `{"error":{"code":"agent_killed","message":…}}` body — no `type`, no
 `www-authenticate`, and no kill-reason field (#314). The body is the only
 discriminator, so `.headers.txt` records just the status line and
