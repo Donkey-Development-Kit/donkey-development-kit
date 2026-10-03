@@ -1,5 +1,92 @@
 # Migration guide
 
+## 0.1.2: the public API surface, renames and removals
+
+Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public
+API (#927): a name is public when you can import it from `donkey_kit` or from
+a public module's `__all__`; submodule paths are not API. Sections 1 and 2
+still work but warn; sections 3 and 4 break code that used the old names.
+
+The deprecated names stay for the rest of 0.1.x. The release that removes them
+says so here and in its Release notes' Breaking changes section. To find every
+call site now, run your tests with `-W error::DeprecationWarning`.
+
+### 1. Three renamed names, with deprecated aliases
+
+**Who:** code that imports any name in the left column.
+
+**Symptom:** the import still works but emits a `DeprecationWarning` naming
+the replacement.
+
+| Was | Now | Why |
+| --- | --- | --- |
+| `donkey_kit.provisioning.ToolSpec` (also `provisioning.spec.ToolSpec`) | `donkey_kit.provisioning.ApiToolSpec` | It is the tool an `ApiSpec` exposes, a different type from `donkey_kit.ToolSpec`. |
+| `donkey_kit.registry.governance` | `donkey_kit.registry.criteria`, or import the names from `donkey_kit` | It shared a name with the top-level `donkey_kit.governance`. |
+| `donkey_kit.simulator.scenarios.Scenario` | `donkey_kit.simulator.scenarios.FaultScenario` | It clashed with `donkey_kit.conformance.Scenario`. |
+
+**Fix:**
+
+```diff
+- from donkey_kit.provisioning import ToolSpec
++ from donkey_kit.provisioning import ApiToolSpec
+- from donkey_kit.registry.governance import GovernanceCriteria, STRICT
++ from donkey_kit import GovernanceCriteria, STRICT
+- from donkey_kit.simulator.scenarios import Scenario
++ from donkey_kit.simulator.scenarios import FaultScenario
+```
+
+### 2. `run_context()` is deprecated
+
+**Who:** code that calls `Donkey.run_context()` or
+`donkey_kit.core.run_context()` (#926).
+
+**Symptom:** both still bind a correlation ID for the block, and both emit a
+`DeprecationWarning`.
+
+**Fix:**
+
+```diff
+- with donkey.run_context("order-42"):
++ with donkey.run(id="order-42"):
+```
+
+Without a `Donkey` instance, use `donkey_kit.core.telemetry.run_scope()`.
+
+### 3. Removed names
+
+These are gone, with no alias (#926). Each was unused or had no working caller.
+
+- **The `governance=` keyword of `donkey.tools.discover()`.** `discover()`
+  still raises blocked-on-verification, so no working call passed it. Drop the
+  argument.
+- **`donkey_kit.core.telemetry.span()`** and the span-name constants
+  **`SPAN_REGISTRY_RESOLVE`**, **`SPAN_TOOL_CALL`** and
+  **`SPAN_PROVISION_APPLY`**. Nothing in the SDK emitted those spans. If you
+  opened spans with `span()`, use your OpenTelemetry tracer directly.
+- **The class attributes behind `Adapter.extra`.** `extra` is now a read-only
+  property that reads the adapter roster. Reading it works as before;
+  assigning it raises `AttributeError`.
+
+### 4. Internal names renamed without an alias
+
+These were never public. They are listed only because the old names were
+importable in 0.1.1 (#927).
+
+| Was | Now |
+| --- | --- |
+| `donkey_kit.provisioning.doctor.Check` | `DoctorCheck` |
+| `donkey_kit.core.config._TOML_NAME` / `_LOCAL_TOML_NAME` | `TOML_NAME` / `LOCAL_TOML_NAME` |
+| `donkey_kit.simulator.inject._resolve` | `resolve_fixture` |
+| `donkey_kit.conformance.harness._offline_config` | `offline_config` |
+
+### New exports (not breaking)
+
+The types that public `Donkey` members return can now be imported from
+`donkey_kit`: `LastCall`, `LastCallStatus`, `RunScope`, `ToolsFacade` (was the
+private `_ToolsFacade`), `CacheScope`, `DonkeyAsyncClientView`,
+`DonkeyClientView`, `LLMClient` and `ExchangeRegistry`. Import them from
+`donkey_kit` rather than from their submodules.
+
 ## 0.1.1: credential handling, endpoint trust and printed output
 
 Changes since `0.1.0` that can affect existing code, grouped by what you

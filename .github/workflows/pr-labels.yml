@@ -1,0 +1,51 @@
+name: PR labels
+
+# Copies the type labels from the issues a PR closes onto the PR itself, so
+# .github/release.yml can group the generated release notes (#935). GitHub
+# groups notes by PR labels only; issues carry the labels in this repo.
+#
+# pull_request_target so fork PRs get a write token too. Safe because this
+# job never checks out or runs PR code: it only reads issue metadata via gh.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, ready_for_review, closed]
+
+permissions:
+  issues: read
+  pull-requests: write
+
+jobs:
+  copy-issue-labels:
+    if: github.event.action != 'closed' || github.event.pull_request.merged
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      # The labels release.yml groups by. Area/priority/size stay issue-only.
+      COPY: breaking-change enhancement bug documentation chore dependencies
+    steps:
+      - name: copy linked-issue type labels onto the PR
+        run: |
+          labels="$(gh api graphql \
+            -F owner="${REPO%/*}" -F name="${REPO#*/}" -F pr="$PR" \
+            -f query='query($owner: String!, $name: String!, $pr: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $pr) {
+                  closingIssuesReferences(first: 10) {
+                    nodes { labels(first: 50) { nodes { name } } }
+                  }
+                }
+              }
+            }' \
+            --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].labels.nodes[].name' \
+            | sort -u)"
+          add=()
+          for label in $COPY; do
+            if grep -qxF "$label" <<<"$labels"; then add+=(--add-label "$label"); fi
+          done
+          if [ "${#add[@]}" -eq 0 ]; then
+            echo "No linked issue with a type label; the PR will land under Other."
+            exit 0
+          fi
+          gh pr edit "$PR" --repo "$REPO" "${add[@]}"

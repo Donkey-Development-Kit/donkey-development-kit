@@ -115,9 +115,12 @@ find yourself on `main` about to start work, `git checkout develop` first.
    Donkey-Development-Kit/donkey-development-kit --search "<keywords>"`); file one if none
    matches. Every issue carries exactly one **milestone** — that milestone is the
    release the branch targets. Triage is by milestone + labels; there is no
-   Projects board. **(fork)** File the issue, but leave milestone/labels/assignee
-   to a maintainer — setting them needs write access; note in the issue that you
-   plan to work it.
+   Projects board. The issue's type label (`enhancement`, `bug`,
+   `documentation`, `chore`, `breaking-change`) is copied onto the PR that
+   closes it and decides its section in the release notes, so keep `Closes #N`
+   in the PR body ([`docs/releasing.md`](docs/releasing.md)). **(fork)** File
+   the issue, but leave milestone/labels/assignee to a maintainer — setting
+   them needs write access; note in the issue that you plan to work it.
 2. **Cut the branch from `develop`:**
    ```bash
    git fetch origin
@@ -166,6 +169,15 @@ mypy               # mypy --strict, BLOCKING
 ruff check .       # rule families in pyproject.toml (see the §3 map); line-length 100
 lint-imports       # the layered, framework-free-core contract
 vulture            # dead code in src/; allowed names in vulture_whitelist.py
+```
+
+The secret scan runs outside `python/`, in its own `secret-scan` CI job (gitleaks
+over the full history, configured in `.gitleaks.toml`). Install the matching
+commit hook once per clone so a secret is caught before it is committed:
+
+```bash
+pipx install pre-commit   # or: pip install pre-commit
+pre-commit install        # from the repository root; runs gitleaks on staged changes
 ```
 
 If the diff touches an adapter or framework wiring, also run the signature check
@@ -454,6 +466,12 @@ build plan has the rationale behind each rule:
   `pyproject.toml` — add `foo>=X`, never `foo<Y`. Known incompatibilities are
   documented in `docs/verified-apis.md §8.1` as dev constraints, not encoded as
   pins; the nightly matrix exists to surface breakage from newest releases early.
+- **Every direct dependency is a reviewed decision.** Adding a package to
+  `dependencies`, an extra, or a dependency group means adding its entry to
+  `python/dependency_allowlist.toml` (why it is needed, and the review date) in
+  the same PR, and removing a package means removing its entry. On a PR that
+  adds a name, CI also checks that the project exists on PyPI and warns when it
+  is young, abandoned, or one or two characters off another allowlisted name.
 - **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12.
   `tomllib` is stdlib only on 3.11+, so `tomli` is backfilled below 3.11;
   `typing-extensions` is pulled in below 3.12. Don't use 3.11+ syntax/stdlib
@@ -511,6 +529,14 @@ build plan has the rationale behind each rule:
   regular files or links that stay inside the working directory. The LLM proxy authenticates on
   a `client_id`/`client_secret` header pair (consumer auth), separate from any
   Anypoint control-plane credential.
+  Local tooling config is gitignored too: `.mcp.json`,
+  `.claude/settings.local.json` and the `artifacts/` run-output directory. To
+  share an MCP client config, commit it under another name (for example
+  `.mcp.json.example`) and reference credentials through `${ENV_VAR}`
+  interpolation, never inline values. gitleaks scans every commit (pre-commit
+  hook and the `secret-scan` CI job), and GitHub push protection is on. To
+  silence a false positive, allowlist the exact synthetic value in
+  `.gitleaks.toml`, never a path.
 - **No dead parameters or stale suppressions.** An argument a function never
   reads is removed (ruff `ARG`); when an override, protocol or blocked stub fixes
   the signature, it stays with a `# noqa: ARG00x` naming that API, or with a
@@ -545,13 +571,14 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
 | Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |
+| Every direct dependency is a reviewed decision (#936) | `tests/unit/test_house_style_config.py` (every declared name has a `dependency_allowlist.toml` entry with a reason and date, and no stale entry); `scripts/check_new_dependencies.py` (a new name exists on PyPI; age, staleness and lookalike warnings) | `pytest`; `new-dependencies` (PRs) |
 | 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
 | `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
 | Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it (the `pydantic.mypy` plugin types the one boundary, `provisioning/spec.py`) | review |
 | Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
-| Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py` | `pytest` |
+| Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |
 | No tenant identifiers in tracked files or built dists (#821) | `scripts/scrub_fixtures.py --check` (UUIDs outside `ALLOWED_UUIDS`, platform hosts, provider account headers) | `typecheck-and-lint`, `base-only` (wheel), publish workflows (wheel + sdist) |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |

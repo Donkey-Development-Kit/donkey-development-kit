@@ -112,6 +112,32 @@ jobs:
       - name: no dead code in src/ (vulture, whitelist in vulture_whitelist.py, #720)
         run: vulture
 
+  new-dependencies:
+    # #936: a direct dependency new to this PR must exist on PyPI, so a
+    # hallucinated or typosquatted name fails here instead of at install time.
+    # The allowlist itself is checked offline by test_house_style_config.py;
+    # this job adds the network check a unit test cannot make. The script is
+    # stdlib-only and exits early when no name is new, so it needs no install
+    # and no path filter.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      # Bind the base ref to an env var so it is never interpolated into a
+      # run: body directly (injection hardening).
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: fetch the base branch's pyproject.toml
+        # A base without python/pyproject.toml counts as declaring nothing.
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          git show "FETCH_HEAD:python/pyproject.toml" > "$RUNNER_TEMP/base-pyproject.toml" || true
+      - name: new direct dependencies exist on PyPI (#936)
+        run: python scripts/check_new_dependencies.py --base "$RUNNER_TEMP/base-pyproject.toml"
+
   test:
     runs-on: ubuntu-latest
     strategy:
