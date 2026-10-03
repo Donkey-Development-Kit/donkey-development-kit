@@ -81,7 +81,8 @@ def _global(
     ``--config`` and ``--env`` only apply to ``init``. Any other command
     resolves config from env and the working directory's files, so it rejects
     them rather than silently diagnosing a different configuration (#811).
-    Pointing the loader at an explicit file is #727."""
+    The loader can read an explicit file (``DonkeyConfig.resolve(path=...)``,
+    #727); wiring ``--config`` to it for ``doctor`` is a separate CLI change."""
     command = ctx.invoked_subcommand
     if command != "init":
         given = [flag for flag, value in (("--config", config), ("--env", env)) if value]

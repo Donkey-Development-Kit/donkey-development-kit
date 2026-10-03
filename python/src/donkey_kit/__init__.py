@@ -22,7 +22,7 @@ import logging as _logging
 
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope
-from .core.config import DonkeyConfig, Region
+from .core.config import ConfigOverrides, DonkeyConfig, Region
 from .core.cost import CostTags
 from .core.errors import (
     AgentKilled,
@@ -82,6 +82,7 @@ __all__ = [
     "CacheControls",
     "CacheScope",
     "ConfigError",
+    "ConfigOverrides",
     "Contact",
     "ContentSafetyBlocked",
     "CostTags",
