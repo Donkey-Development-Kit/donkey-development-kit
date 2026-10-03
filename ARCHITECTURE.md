@@ -12,6 +12,12 @@ their stable historical name; every other citation is a `BG §N.N`, a named
 invariant, or a `Phase N`. When a rule here feels arbitrary, read the cited
 section — the constraints are deliberate.
 
+Why each design decision was taken, and what was rejected, is recorded in the
+architecture decision records in [`docs/adr/`](docs/adr/README.md). Changing
+an invariant this document states, an import-linter contract, the API
+stability tiers or the dependency policy needs an ADR in the same PR
+([`CONTRIBUTING.md`](CONTRIBUTING.md#architecture-decision-records)).
+
 For *using* the SDK, see the consumer docs site (`website/`). For *working in*
 the repo — branch/PR flow, testing surfaces, coding conventions — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
@@ -127,7 +133,8 @@ still a base dependency. Dropping it from the base install is part of #730.
   on the process-default runtime from `runtime.default()`: built lazily under a
   lock from the environment, exactly as `Donkey.from_env()` would be, shared by
   every factory, and closed at interpreter exit. It lives in `core` because
-  `integrations` may not import the top package (#725).
+  `integrations` may not import the top package (#725,
+  [ADR 0003](docs/adr/0003-core-runtime.md)).
 
   Each client attaches credentials only to its **checked endpoints**
   (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
@@ -378,6 +385,9 @@ pytest plugin** users run against their own agent (#191).
   feature-by-feature scope and acceptance bars; cited as `BG §N.N`.
 - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
+- [`docs/adr/`](docs/adr/README.md) — the architecture decision records: why
+  each decision here was taken, the alternatives rejected, and the process for
+  changing one.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch/PR/release flow, testing surfaces,
   coding conventions, and the docs-sync map. It is the canonical contributor
   guide; maintainers' optional AI-agent tooling is not part of this repository
