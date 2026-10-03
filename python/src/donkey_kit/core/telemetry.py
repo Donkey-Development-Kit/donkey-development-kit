@@ -31,6 +31,7 @@ from .cost import CostTags
 
 if TYPE_CHECKING:
     from .config import DonkeyConfig
+    from .refusals import TypedRefusals
 from .errors import (
     AgentKilled,
     ContentSafetyBlocked,
@@ -249,12 +250,23 @@ class RunScope:
     configured tags per field. They ride the same enter/exit token discipline as
     the correlation id, so a nested run's overrides shadow and restore cleanly,
     and the correlation binding is unaffected when no cost fields are given.
+
+    With ``refusals`` (the typed-refusal bridge, #724), an exception leaving the
+    block is first unbound and then re-raised as its typed
+    :class:`~donkey_kit.core.errors.DonkeyError` when it stands for one, exactly
+    as :class:`~donkey_kit.core.refusals.TypedRefusals` does on its own.
     """
 
-    __slots__ = ("_run_id", "_cost", "_token", "_cost_token")
+    __slots__ = ("_run_id", "_cost", "_token", "_cost_token", "_refusals")
 
-    def __init__(self, run_id: str | None = None, cost: CostTags | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        cost: CostTags | None = None,
+        refusals: TypedRefusals | None = None,
+    ) -> None:
         self._run_id = run_id
+        self._refusals = refusals
         # Store only a non-empty override, so a plain ``donkey.run(id=...)`` binds
         # nothing on the cost contextvar and leaves any outer run's tags in place.
         self._cost = cost if (cost is not None and not cost.is_empty) else None
@@ -281,19 +293,34 @@ class RunScope:
 
     def __exit__(self, *exc: Any) -> None:
         self._unbind()
+        typed = self._refusals.resolve(exc[1]) if self._refusals is not None else None
+        # Drop the frame's reference to the framework error before raising, as
+        # TypedRefusals.__exit__ does.
+        del exc
+        if typed is not None:
+            raise typed from typed.__cause__
 
     async def __aenter__(self) -> str:
         return self._bind()
 
     async def __aexit__(self, *exc: Any) -> None:
         self._unbind()
+        typed = self._refusals.resolve(exc[1]) if self._refusals is not None else None
+        del exc
+        if typed is not None:
+            raise typed from typed.__cause__
 
 
-def run_scope(run_id: str | None = None, cost: CostTags | None = None) -> RunScope:
+def run_scope(
+    run_id: str | None = None,
+    cost: CostTags | None = None,
+    refusals: TypedRefusals | None = None,
+) -> RunScope:
     """Build a :class:`RunScope` — the dual sync/async run correlation binding
     behind ``donkey.run(id=...)`` (BG §1.1, #195), optionally carrying per-run
-    cost-tag overrides (#196)."""
-    return RunScope(run_id, cost)
+    cost-tag overrides (#196) and the typed-refusal bridge applied on exit
+    (#724)."""
+    return RunScope(run_id, cost, refusals)
 
 
 def run_context(run_id: str | None = None) -> RunScope:

@@ -20,7 +20,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
-from donkey_kit.core.errors import PIIDetected
+from donkey_kit.core.errors import DonkeyError, GatewayUnavailable, PIIDetected
 
 af = pytest.importorskip("agent_framework")
 from agent_framework.exceptions import ChatClientException  # noqa: E402
@@ -183,9 +183,11 @@ async def test_allowed_call_passes_through_unchanged(api: str) -> None:
     assert response.text == "hello"
 
 
-async def test_error_without_a_proxy_response_propagates_untouched(api: str) -> None:
+async def test_unreachable_gateway_surfaces_as_gateway_unavailable(api: str) -> None:
     """A failure with no HTTP response behind it (here, the transport cannot
-    connect) is not a gateway refusal and must not be masked as one."""
+    connect) is not a gateway refusal, but it is the transport's own typed
+    ``GatewayUnavailable``: the bridge sees through ``ChatClientException`` and
+    openai's ``APIConnectionError`` to it (#724), never masking it as a refusal."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route", request=request)
@@ -195,10 +197,29 @@ async def test_error_without_a_proxy_response_propagates_untouched(api: str) -> 
     agent = _agent(fab, api)
 
     try:
-        with pytest.raises(ChatClientException):
+        with pytest.raises(GatewayUnavailable) as excinfo:
             await agent.run("hi")  # type: ignore[attr-defined]
     finally:
         await fab.aclose()
+    assert isinstance(excinfo.value.framework_error, ChatClientException)
+
+
+async def test_a_non_refusal_error_propagates_untouched(api: str) -> None:
+    """An error with no transport behind it is not masked as a DonkeyError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise ValueError("a bug in the handler")
+
+    fab = Donkey(_cfg())
+    fab._http._swap_transport(httpx.MockTransport(handler))
+    agent = _agent(fab, api)
+
+    try:
+        with pytest.raises(Exception) as excinfo:
+            await agent.run("hi")  # type: ignore[attr-defined]
+    finally:
+        await fab.aclose()
+    assert not isinstance(excinfo.value, DonkeyError)
 
 
 @pytest.mark.parametrize(

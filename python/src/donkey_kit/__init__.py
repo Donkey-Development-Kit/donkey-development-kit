@@ -49,10 +49,12 @@ from .core.errors import (
     classify,
 )
 from .core.lastcall import LastCall, LastCallStatus
+from .core.refusals import TypedRefusals
 from .core.telemetry import RunScope
 from .core.toolspec import ToolSpec, registered_tools
 from .core.transport import DonkeyAsyncClientView, DonkeyClientView
 from .donkey import Donkey, ToolsFacade
+from .integrations import typed_refusals
 from .llm.client import LLMClient
 from .registry import (
     STRICT,
@@ -114,9 +116,11 @@ __all__ = [
     "ToolInvocationError",
     "ToolSpec",
     "ToolsFacade",
+    "TypedRefusals",
     "UpstreamModelError",
     "UpstreamRequestError",
     "__version__",
     "classify",
     "registered_tools",
+    "typed_refusals",
 ]

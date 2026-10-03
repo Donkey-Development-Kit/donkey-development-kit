@@ -17,6 +17,7 @@ from typing import Any, ClassVar, TypeVar, cast
 from ..core import runtime
 from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, missing_llm_auth_error
 from ..core.masking import masked
+from ..core.refusals import TypedRefusals
 from ..core.transport import (
     DonkeyAsyncClient,
     DonkeyAsyncClientView,
@@ -26,7 +27,7 @@ from ..core.transport import (
     proxy_api_key,
     proxy_auth_headers,
 )
-from . import ADAPTERS, missing_framework_error
+from . import ADAPTERS, missing_framework_error, typed_refusals
 
 
 class Adapter(ABC):
@@ -108,6 +109,15 @@ class Adapter(ABC):
         and the whole supported surface for a ``connection_kwargs()``-only
         framework (BG §1.8). Returned through
         :func:`~donkey_kit.core.masking.masked`, so printing it hides secrets."""
+
+    @staticmethod
+    def typed_refusals() -> TypedRefusals:
+        """The typed-refusal bridge, :func:`donkey_kit.typed_refusals` (#724).
+
+        Lets ``with donkey.strands.typed_refusals(): ...`` read naturally next
+        to the adapter's factories. Every adapter shares this one bridge: no
+        adapter holds classification logic of its own (ADR 0002)."""
+        return typed_refusals()
 
     def _own_sync_client(self) -> DonkeyClient:
         if self._owned_sync is None:

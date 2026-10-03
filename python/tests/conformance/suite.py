@@ -49,6 +49,12 @@ CONFORMANCE_SCENARIOS = [
     # builds its own transport, never sees the JWT, and refuses jwt mode with a
     # ConfigError; it records an asserted exemption below (BG §1.8, #828).
     "jwt_token_refreshed",
+    # Inside donkey.run() and @donkey.governed, a refusal or transport failure
+    # reaches user code as its typed DonkeyError, not the framework's generic
+    # connection or status error (BG §1.2, #724, ADR 0002). The bridge only types
+    # what the SDK's transport sent or raised, so the adapters whose framework
+    # owns the transport record an asserted exemption below.
+    "typed_refusal_bridged",
 ]
 
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
@@ -103,6 +109,22 @@ _CREWAI_JWT_EXEMPTION = (
     "adapter, or a transport-injected adapter for jwt mode (#509, #828)."
 )
 
+# typed_refusal_bridged: the bridge types an error only when the SDK's transport
+# raised it or sent the request behind it (#724, ADR 0002). A framework that owns
+# the transport raises its own errors for a call the SDK never saw, so the bridge
+# leaves them as they are rather than guess at their shape.
+_LITELLM_REFUSAL_EXEMPTION = (
+    "adk.model() only: LiteLLM owns the transport and raises its own errors, which do "
+    "not carry the response our transport received; the typed-refusal bridge cannot "
+    "tell a gateway refusal from any other failure there, so it passes them through "
+    "(#724). adk.gemini() is handed our httpx client and is bridged."
+)
+_CREWAI_REFUSAL_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport, so its errors come from a "
+    "client the SDK never saw; the typed-refusal bridge passes them through rather "
+    "than classify a response our transport did not send (#724)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # ADK's model() reaches models through LiteLLM and CrewAI through its native
     # OpenAI provider; either way the framework owns the transport (BG §1.8).
@@ -110,11 +132,13 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     "adk": {
         "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
+        "typed_refusal_bridged": _LITELLM_REFUSAL_EXEMPTION,
     },
     "crewai": {
         "correlation_id_propagated": _CREWAI_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _CREWAI_LAST_CALL_EXEMPTION,
         "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
+        "typed_refusal_bridged": _CREWAI_REFUSAL_EXEMPTION,
     },
     # LlamaIndex and MS Agent Framework now send through our httpx client, so they
     # carry the jwt-mode JWT per-send and record no jwt_token_refreshed exemption

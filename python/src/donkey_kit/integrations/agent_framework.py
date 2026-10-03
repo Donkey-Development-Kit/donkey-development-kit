@@ -29,12 +29,12 @@ refusal instead of a generic ``ChatClientException`` (BG §1.2).
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
-from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from ..core import _verify
 from ..core.masking import masked
+from ..core.refusals import translate
+from . import typed_refusals
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -42,7 +42,9 @@ if TYPE_CHECKING:
 
     from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
-__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client"]
+    from ..core.errors import DonkeyError
+
+__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client", "refusal_translator"]
 
 ChatAPI = Literal["responses", "chat_completions"]
 # The agent-framework.openai class each ``api=`` value builds (docs/verified-apis.md §8).
@@ -171,8 +173,9 @@ class AgentFrameworkAdapter(Adapter):
 
         Both chat clients wrap every openai error in a ``ChatClientException``
         (``OpenAIContentFilterException`` for a content-filter 400).
-        This middleware finds the ``openai.APIStatusError`` behind it and raises
-        :func:`~donkey_kit.core.errors.classify` of its response instead, so a
+        This middleware applies the SDK's typed-refusal bridge
+        (:func:`donkey_kit.typed_refusals`, #724), which sees through the wrapper
+        to the openai error and raises the typed refusal instead, so a
         PII block ends ``agent.run()`` as
         :class:`~donkey_kit.core.errors.PIIDetected` with the correlation and
         call ids that were sent. The original is kept on ``.framework_error``.
@@ -198,50 +201,34 @@ class AgentFrameworkAdapter(Adapter):
         async def donkey_policy_middleware(
             context: Any, call_next: Callable[[], Awaitable[None]]
         ) -> None:
-            with _TypedRefusals():
+            with typed_refusals():
                 await call_next()
             if context.stream and context.result is not None:
                 # A streamed refusal surfaces when the caller pulls the stream,
                 # after this middleware has returned.
-                context.result.with_pull_context_manager(_TypedRefusals)
+                context.result.with_pull_context_manager(typed_refusals)
 
         # Called, not applied with @: the decorator is untyped without the package.
         return cast("Callable[..., Any]", chat_middleware(donkey_policy_middleware))
 
 
-class _TypedRefusals(AbstractContextManager[None]):
-    """Re-raise an error caused by an ``openai.APIStatusError`` as the typed
-    refusal :func:`~donkey_kit.core.errors.classify` maps its response to.
+def refusal_translator(exc: BaseException) -> DonkeyError | None:
+    """See through Agent Framework's exception wrappers for the typed-refusal
+    bridge (#724).
 
-    A class, not ``@contextmanager``, for the reason given on LangGraph's
-    ``_TypedRefusals``: a generator frame would keep the framework error, whose
-    message repeats the gateway text, in the typed error's traceback.
+    Both chat clients raise the openai error ``from`` inside an
+    ``AgentFrameworkException`` subclass (``ChatClientException``, or
+    ``ChatClientContentFilterException`` for a content-filter 400), which carries
+    no ``request`` or ``response``. This hands the wrapped error back to
+    :func:`~donkey_kit.core.refusals.translate`; the classification itself stays
+    in core. Registered as the adapter's ``AdapterSpec.refusal_translator`` and
+    only consulted once ``agent_framework`` is imported.
     """
+    from agent_framework.exceptions import AgentFrameworkException
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        if exc is None:
-            return None
-        import openai  # lazy: only reached once the framework has raised
-
-        from ..core.errors import classify
-
-        # Agent Framework chains the openai error as __cause__ of its own
-        # ChatClientException; walk the chain rather than one level.
-        cause: BaseException | None = exc
-        while cause is not None and not isinstance(cause, openai.APIStatusError):
-            cause = cause.__cause__
-        if cause is None:
-            return None
-        # openai>=3 vendors its own httpx; cast for the reason in langgraph.py.
-        typed = classify(cast(Any, cause.response))
-        typed.framework_error = exc
-        del exc, exc_type, tb, cause
-        raise typed from None
+    if isinstance(exc, AgentFrameworkException) and exc.__cause__ is not None:
+        return translate(exc.__cause__, (refusal_translator,))
+    return None
 
 
 @overload

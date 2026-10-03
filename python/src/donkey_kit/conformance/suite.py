@@ -213,7 +213,7 @@ async def _swallows_pii_as_generic(ctx: ScenarioContext) -> Outcome:
     return Outcome(
         False,
         f"raised a bare {type(obs.raised).__name__} — the PII refusal was "
-        f"swallowed as a generic error (bridge it with classify())",
+        f"swallowed as a generic error (run it inside donkey.run() or typed_refusals())",
     )
 
 

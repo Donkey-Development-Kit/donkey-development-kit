@@ -39,6 +39,7 @@ from .core.transport import (
     DonkeyClientView,
 )
 from .integrations import ADAPTERS, missing_framework_error
+from .integrations import typed_refusals as _typed_refusals
 from .llm.client import LLMClient
 from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
@@ -366,6 +367,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        typed_refusals: bool = True,
     ) -> RunScope:
         """Group one logical agent run under a shared correlation id (BG §1.7, #195).
 
@@ -398,9 +400,22 @@ class Donkey:
         env=..., enduser_id=...)`` wins per field for every call inside, and the
         rest fall back to the configured tags. Like the run id, the binding rides
         the contextvar, so it reaches framework-spawned tasks and restores on exit.
+
+        **Typed refusals** (BG §1.2, #724): a governance refusal or a transport
+        failure leaving the block is re-raised as its typed
+        :class:`~donkey_kit.core.errors.DonkeyError` (``PIIDetected``,
+        ``GatewayUnavailable``, ``ModelSubstituted``, ...), whichever framework or
+        HTTP SDK wrapped it on the way out, so the caller writes one ``except``
+        for every framework. Anything that is not a refusal propagates unchanged.
+        It is the bridge :func:`donkey_kit.typed_refusals` applies on its own;
+        pass ``typed_refusals=False`` to get the framework's own errors instead.
         """
         override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
-        return run_scope(id, override if not override.is_empty else None)
+        return run_scope(
+            id,
+            override if not override.is_empty else None,
+            _typed_refusals() if typed_refusals else None,
+        )
 
     def run_context(self, run_id: str | None = None) -> RunScope:
         """Deprecated alias for :meth:`run` (BG §1.7): use ``donkey.run(id=…)``.
@@ -479,6 +494,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        typed_refusals: bool = True,
     ) -> Callable[_P, _R]: ...
 
     @overload
@@ -490,6 +506,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        typed_refusals: bool = True,
     ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
 
     def governed(
@@ -500,14 +517,17 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        typed_refusals: bool = True,
     ) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]:
         """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
 
         The one-line on-ramp to governed execution: every governed model call
         made inside the decorated function carries a fresh run/correlation id (a
-        "run of one"), the optional per-run cost tags, the OTel span and typed
-        refusals — exactly the scope :meth:`run` establishes (BG §1.7, #195), with
-        nothing to thread through framework state::
+        "run of one"), the optional per-run cost tags and the OTel span, and a
+        refusal leaves it as its typed :class:`~donkey_kit.core.errors.DonkeyError`
+        (#724) — exactly the scope :meth:`run` establishes (BG §1.7, #195), with
+        nothing to thread through framework state. ``typed_refusals=False`` opts
+        out of the typed re-raise, as it does on :meth:`run`::
 
             @donkey.governed(team="support")
             async def handle_ticket(ticket): ...
@@ -534,7 +554,11 @@ class Donkey:
                 @functools.wraps(fn)
                 async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> object:
                     async with self.run(
-                        team=team, project=project, env=env, enduser_id=enduser_id
+                        team=team,
+                        project=project,
+                        env=env,
+                        enduser_id=enduser_id,
+                        typed_refusals=typed_refusals,
                     ):
                         return await coro_fn(*args, **kwargs)
 
@@ -543,7 +567,11 @@ class Donkey:
             @functools.wraps(fn)
             def sync_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
                 with self.run(
-                    team=team, project=project, env=env, enduser_id=enduser_id
+                    team=team,
+                    project=project,
+                    env=env,
+                    enduser_id=enduser_id,
+                    typed_refusals=typed_refusals,
                 ):
                     return fn(*args, **kwargs)
 
