@@ -115,9 +115,12 @@ find yourself on `main` about to start work, `git checkout develop` first.
    Donkey-Development-Kit/donkey-development-kit --search "<keywords>"`); file one if none
    matches. Every issue carries exactly one **milestone** — that milestone is the
    release the branch targets. Triage is by milestone + labels; there is no
-   Projects board. **(fork)** File the issue, but leave milestone/labels/assignee
-   to a maintainer — setting them needs write access; note in the issue that you
-   plan to work it.
+   Projects board. The issue's type label (`enhancement`, `bug`,
+   `documentation`, `chore`, `breaking-change`) is copied onto the PR that
+   closes it and decides its section in the release notes, so keep `Closes #N`
+   in the PR body ([`docs/releasing.md`](docs/releasing.md)). **(fork)** File
+   the issue, but leave milestone/labels/assignee to a maintainer — setting
+   them needs write access; note in the issue that you plan to work it.
 2. **Cut the branch from `develop`:**
    ```bash
    git fetch origin
