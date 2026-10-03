@@ -63,7 +63,7 @@ Installing `donkey-kit[test]` registers a pytest plugin with a conformance suite
 you point at your own agent factory:
 
 ```bash
-pytest --donkey-conformance --agent=my_app.agent:build
+pytest --donkey-conformance --donkey-agent=my_app.agent:build
 ```
 
 It answers questions you probably cannot currently answer about your own code:
@@ -93,6 +93,7 @@ placeholders, and it refuses any request that would leave the process.
 The factory is called once per scenario and receives the `donkey` fixture if it
 declares one. With `--donkey-conformance`, the plugin runs the suite
 exclusively in place of normal test collection; without the flag it is inert.
+`--agent` is a deprecated alias for `--donkey-agent`.
 You can also run it through the CLI with `donkey test --agent my_app.agent:build`
 (see [CLI](https://docs.donkey-kit.dev/cli.md#donkey-test)).
 
@@ -102,7 +103,7 @@ You can also run it through the CLI with `donkey test --agent my_app.agent:build
   legitimately cannot satisfy a scenario, record it in a `KNOWN_LIMITATIONS`
   mapping of `{scenario: reason}` as an explicit, reviewable claim.
 
-By default the plugin reads a `KNOWN_LIMITATIONS` attribute from the `--agent`
+By default the plugin reads a `KNOWN_LIMITATIONS` attribute from the `--donkey-agent`
 module; point elsewhere with `--donkey-known-limitations=module:NAME`. The
 mapping is validated at collection time, so an unknown scenario key or an empty
 reason fails the run before any scenario executes.

@@ -101,7 +101,7 @@ cli = ["typer>=0.15.4", "pyyaml>=6.0", "rich>=13.0"]
 
 # --- Conformance pytest plugin (BG §1.5): `donkey-kit[test]` ---
 # The public, run-it-against-your-own-agent plugin
-# (`pytest --donkey-conformance --agent=my_app:build`), registered via the
+# (`pytest --donkey-conformance --donkey-agent=my_app:build`), registered via the
 # pytest11 entry point below. pytest-asyncio so a customer's own async agent
 # tests — and the `donkey` fixture used with `simulate()` — run under the
 # repo-standard asyncio_mode="auto". The plugin itself needs no framework and no
@@ -150,17 +150,25 @@ donkey_kit_conformance = "donkey_kit.conformance.plugin"
 [tool.hatch.build.targets.wheel]
 packages = ["src/donkey_kit"]
 
-# Package the captured fixtures the local gateway simulator (BG §1.4) replays
-# INTO the wheel, so `pip install "donkey-kit[local]" && donkey mock`
-# finds them. The loader (donkey_kit/simulator/fixtures.py) resolves this
-# packaged copy first, falling back to the source-checkout tests/fixtures/ tree.
-# The fixture directories are force-included file by file by hatch_build.py,
-# which leaves their READMEs (capture provenance, not runtime data) out of the
-# published wheel (#821).
-[tool.hatch.build.targets.wheel.hooks.custom]
+# The captured fixtures the local gateway simulator (BG §1.4) replays are package
+# data under src/donkey_kit/simulator/_fixtures/ (#746), so the wheel ships them
+# with no force-include and `pip install "donkey-kit[local]" && donkey mock`
+# finds them. Their READMEs are capture provenance for reviewers, not runtime
+# data, and stay out of the published (immutable) wheel (#821).
+exclude = ["src/donkey_kit/simulator/_fixtures/**/README.md"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"tests/fixtures/fixtures.lock" = "donkey_kit/simulator/_fixtures/fixtures.lock"
+# An explicit sdist file list, so local caches and scratch files never ship (#746).
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/examples",
+    "/scripts",
+    "/README.md",
+    "/dependency_allowlist.toml",
+    "/vulture_whitelist.py",
+]
+exclude = ["__pycache__", "*.py[cod]"]
 
 [tool.mypy]
 # Working instruction #8: mypy --strict, blocking in CI. Typecheck fixtures pin

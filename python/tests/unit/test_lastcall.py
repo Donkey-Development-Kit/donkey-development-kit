@@ -852,7 +852,8 @@ def test_no_unverified_warning_on_the_routing_read_path() -> None:
 
 
 # --- semantic routing: matched topic + similarity score (BG §1.1, #590) ----------
-# The LIVE-VERIFIED format (tests/fixtures/anypoint/semantic_routing/, 2026-09-24):
+# The LIVE-VERIFIED format (2026-09-24,
+# src/donkey_kit/simulator/_fixtures/anypoint/semantic_routing/):
 #   Request successfully matched '{topic}' topic (Provider: {p}, Model: {m}). Score: {s}.
 _SEMANTIC_SUCCESS = (
     "Request successfully matched 'Finance' topic "

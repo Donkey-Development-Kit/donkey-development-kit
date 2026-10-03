@@ -13,7 +13,7 @@ import pytest
 
 from donkey_kit.simulator import fixtures as fx
 
-_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+_FIXTURES = Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
 
 # shape -> the status classify() is contract-tested against for that shape. The
 # simulator MUST reproduce these exactly, or a stock client sees a different

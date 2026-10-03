@@ -44,8 +44,8 @@ jobs:
           "$venv_dir/bin/python" - <<'PY'
           from donkey_kit.simulator import fixtures
 
-          # Prove load() cannot silently fall back to checkout-only resources.
-          assert not fixtures._SOURCE_ROOT.exists(), fixtures._SOURCE_ROOT
+          # Prove load() reads the wheel's package data, not a checkout (#746).
+          assert "site-packages" in fixtures.LOCK_PATH.parts, fixtures.LOCK_PATH
           for shape in fixtures.SHAPES:
               fixtures.load(shape)
           assert fixtures.LOCK_PATH.exists(), fixtures.LOCK_PATH
@@ -327,9 +327,9 @@ jobs:
       - name: conformance passes against the demo's own agent factory
         # `python -m pytest` (not the bare `pytest` console script) so the
         # working directory (python/) lands on sys.path — that's what makes the
-        # `examples` namespace package importable for --agent=examples.langgraph.
+        # `examples` namespace package importable for --donkey-agent=examples.langgraph.
         # main:build. The bare script omits cwd from sys.path and fails to import.
-        run: python -m pytest -q --donkey-conformance --agent=examples.langgraph.main:build
+        run: python -m pytest -q --donkey-conformance --donkey-agent=examples.langgraph.main:build
 
   # Nightly framework matrix (§8.4) — runs the conformance kit against the
   # LATEST release of each framework and opens an issue on failure. Scheduled
