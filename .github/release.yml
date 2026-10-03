@@ -1,0 +1,32 @@
+# Groups `gh release create --generate-notes` output by PR label (#935).
+# The GitHub Release is the changelog (docs/releasing.md), so these sections
+# are what users scan. PRs get their linked issue's type label copied on by
+# .github/workflows/pr-labels.yml; anything unlabelled falls through to Other.
+# Categories match top-down and a PR lands in the first one that fits, so
+# breaking-change must stay first.
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+  categories:
+    - title: 💥 Breaking changes
+      labels:
+        - breaking-change
+    - title: Features
+      labels:
+        - enhancement
+    - title: Fixes
+      labels:
+        - bug
+    - title: Docs
+      labels:
+        - documentation
+    - title: Maintenance
+      labels:
+        - chore
+        - dependencies
+    - title: Other
+      labels:
+        - "*"
