@@ -94,7 +94,7 @@ async_client = AsyncOpenAI(
     base_url=...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,   # client_id / client_secret header pair
-    http_client=...,       # the SDK's shared httpx client
+    http_client=...,       # the shared client (an httpx2 bridge on openai 3.x)
 )
 
 llm = OpenAIChatCompletionsModel(

@@ -65,6 +65,12 @@ class DonkeyAsyncClient(httpx.AsyncClient):
     _transport: httpx.AsyncBaseTransport
 ```
 
+*As built (#728):* the request-side work moved to an every-attempt header hook
+(`_inject_headers`), so `_on_request` was removed; `_on_refusal` receives the
+`PolicyViolation` `classify()` made of a final refusal; and the swappable
+transport is `governed_transport.replace_inner()` rather than a bare
+`_transport`. `ARCHITECTURE.md` holds the current hook table.
+
 **Scenario.** Scenario B's script is 40 lines. The developer writes:
 
 ```python

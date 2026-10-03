@@ -404,7 +404,8 @@ method) records in the caller's context.
 ### Two behaviours worth knowing
 
 **The SDK never double-retries a fallback.** DDK retries `502/503/504` with
-backoff, but if the gateway already failed over internally, a `503` it marked as
+backoff (a `502`/`504` on a model call only with
+`retry_model_calls_on_gateway_errors`), but if the gateway already failed over internally, a `503` it marked as
 a fallback is **not** retried again — a second recovery layer stacked on a
 working first one just multiplies latency against an outage the gateway already
 handled.

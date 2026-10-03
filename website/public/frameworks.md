@@ -165,7 +165,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 ## Retries happen once, in the SDK
 
 The SDK's transport retries `502`, `503` and `504` with backoff, up to
-`max_retries` times, and never retries a `4xx`. On the proxy a `429` is a
+`max_retries` times, and never retries a `4xx`. A `502` or `504` on a model
+call is retried only with `retry_model_calls_on_gateway_errors`, since the
+provider may already have billed it. On the proxy a `429` is a
 token-budget refusal (`TokenBudgetExceeded`), so sending it again would only
 spend more of a budget that is already gone. Every adapter therefore turns off
 the provider SDK's own retries (`max_retries=0`). The transport also marks every
