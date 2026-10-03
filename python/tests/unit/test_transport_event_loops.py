@@ -17,6 +17,7 @@ import json
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import MappingProxyType
 from typing import Any
 
 import httpx
@@ -30,6 +31,7 @@ from donkey_kit.core.transport import (
     _AsyncMountRouter,
     _LoopLocalTransport,
 )
+from donkey_kit.integrations import AdapterCapabilities
 from donkey_kit.integrations._base import Adapter, default_adapter
 
 pytestmark = pytest.mark.filterwarnings("ignore::donkey_kit.core._verify.UnverifiedValueWarning")
@@ -92,6 +94,18 @@ def test_one_asyncio_run_per_request_does_not_pile_up_pools(url: str) -> None:
 
 
 class _Plain(Adapter):
+    factories = MappingProxyType(
+        {
+            "plain": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            )
+        }
+    )
+
     def connection_kwargs(self) -> dict[str, Any]:
         return {}
 

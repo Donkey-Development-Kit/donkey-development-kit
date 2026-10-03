@@ -223,7 +223,11 @@ def test_adapter_extra_is_read_from_the_roster(attr: str) -> None:
 
 
 def test_an_adapter_off_the_roster_has_no_extra() -> None:
+    from donkey_kit.integrations.langgraph import LangGraphAdapter
+
     class Unlisted(_base.Adapter):
+        factories = LangGraphAdapter.factories  # a concrete adapter must declare some
+
         def connection_kwargs(self) -> dict[str, Any]:
             return {}
 

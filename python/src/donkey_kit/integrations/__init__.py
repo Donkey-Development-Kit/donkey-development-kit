@@ -78,6 +78,9 @@ class AdapterCapabilities:
     #: raises its own errors for a call the SDK did not send or observe.
     typed_refusals: bool
     #: Whether a call through this object populates ``donkey.last_call`` (#362).
+    #: Conservative: ADK ``model()``, LlamaIndex and Agent Framework now send
+    #: through the shared client but still report False until their
+    #: conformance exemptions are retired and the claim is tested (#740).
     observes_last_call: bool
 
 

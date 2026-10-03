@@ -11,6 +11,7 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from types import MappingProxyType
 from typing import Any, ClassVar, TypeVar, cast
 
 from ..core import runtime
@@ -70,7 +71,13 @@ class Adapter(ABC):
         if "factories" in cls.__dict__:
             if not cls.factories:
                 raise TypeError(f"{cls.__name__}.factories declares no factory")
+            # Read-only whatever mapping the subclass wrote (#741).
+            cls.factories = MappingProxyType(dict(cls.factories))
             cls.observes_last_call = cls.capabilities().observes_last_call
+        elif not hasattr(cls, "factories") and not _still_abstract(cls):
+            # A concrete adapter with no capabilities would fail later, at
+            # donkey.last_call or capabilities(), far from the mistake.
+            raise TypeError(f"{cls.__name__} must declare factories (ADR 0004)")
 
     @classmethod
     def capabilities(cls, factory: str | None = None) -> AdapterCapabilities:
@@ -260,6 +267,16 @@ class Adapter(ABC):
             "rides only the SDK's shared client, never reaches the request. Use "
             "client-id auth with it."
         )
+
+
+def _still_abstract(cls: type) -> bool:
+    """Whether ``cls`` leaves an abstract method unimplemented. ``inspect.isabstract``
+    cannot answer this inside ``__init_subclass__``: ``ABCMeta`` sets the new
+    class's ``__abstractmethods__`` only after it returns."""
+    return any(
+        getattr(getattr(cls, name, None), "__isabstractmethod__", False)
+        for name in Adapter.__abstractmethods__
+    )
 
 
 A = TypeVar("A", bound=Adapter)

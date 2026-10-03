@@ -11,7 +11,10 @@ whole ``ADAPTERS`` roster, so a new adapter is held to the contract on arrival:
   config validation and the token-mode guards cannot be skipped by one adapter;
 - in a token auth mode with no ``AuthProvider``, every adapter refuses with
   ``ConfigError`` before anything is built;
-- capabilities are immutable and declared per factory.
+- capabilities are immutable and declared per factory, a concrete adapter
+  cannot leave them out, and ``transport``, ``sync`` and ``streaming`` are read
+  back from the governed kwargs each factory is built from, so they cannot
+  claim wiring the adapter does not have.
 
 Adapters import their framework only inside methods, and ``_connection()`` runs
 before any framework import, so none of this needs a framework installed.
@@ -31,7 +34,13 @@ import pytest
 from donkey_kit import DonkeyConfig
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.errors import ConfigError
-from donkey_kit.core.transport import DonkeyAsyncClient, build_http_client
+from donkey_kit.core.transport import (
+    DonkeyAsyncClient,
+    DonkeyAsyncClientView,
+    DonkeyClient,
+    DonkeyClientView,
+    build_http_client,
+)
 from donkey_kit.integrations import ADAPTERS, AdapterCapabilities, AdapterProtocol
 from donkey_kit.integrations._base import Adapter
 
@@ -244,3 +253,84 @@ def test_an_adapter_without_factories_is_refused_at_definition() -> None:
 
             def connection_kwargs(self) -> dict[str, Any]:
                 return {}
+
+
+def test_a_concrete_adapter_must_declare_factories() -> None:
+    # Without factories, capabilities() and donkey.last_call would fail later,
+    # far from the mistake; an abstract intermediate base may leave them out.
+    class _AbstractBase(Adapter):
+        pass
+
+    with pytest.raises(TypeError, match="must declare factories"):
+
+        class _Concrete(_AbstractBase):
+            def connection_kwargs(self) -> dict[str, Any]:
+                return {}
+
+
+def test_factories_written_as_a_dict_are_made_read_only() -> None:
+    caps = _adapter_class("langgraph").capabilities()
+
+    class _Dict(Adapter):
+        factories = {"build": caps}  # a plain dict, on purpose
+
+        def connection_kwargs(self) -> dict[str, Any]:
+            return {}
+
+    assert isinstance(_Dict.factories, MappingProxyType)
+    assert _Dict.capabilities() is caps
+
+
+def _leaves(value: Any) -> Iterator[Any]:
+    """Every leaf value of a (nested) kwargs mapping."""
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _leaves(item)
+    else:
+        yield value
+
+
+def _governed_kwargs(attr: str, factory: str, http: DonkeyAsyncClient) -> dict[str, Any]:
+    adapter = _adapter_class(attr)(_client_id_cfg(), http)
+    if (attr, factory) == ("adk", "gemini"):
+        return dict(adapter.gemini_connection_kwargs())  # type: ignore[attr-defined]
+    assert factory == next(iter(type(adapter).factories)), (
+        f"{attr}.{factory}() has no governed kwargs this test knows how to read"
+    )
+    try:
+        return dict(adapter.connection_kwargs())
+    except ImportError:
+        # A pre-built AsyncOpenAI needs the [llm] extra, absent base-only.
+        pytest.skip(f"{attr}'s connection needs a dependency not installed here")
+
+
+@pytest.mark.parametrize(("attr", "factory"), _FACTORIES)
+def test_capabilities_match_the_governed_wiring(
+    attr: str, factory: str, http: DonkeyAsyncClient
+) -> None:
+    # The capabilities are facts about what the SDK hands the framework (§0.3),
+    # so they are read back from the governed kwargs rather than restated: one
+    # of our async clients anywhere in them (directly, inside a pre-built
+    # OpenAI client, or behind anthropic>=1's httpx2 bridge transport) is the
+    # shared transport, one of our blocking clients is sync, and stream=False
+    # is streaming off.
+    caps = _adapter_class(attr).capabilities(factory)
+    kwargs = _governed_kwargs(attr, factory, http)
+    clients = [
+        c
+        for v in _leaves(kwargs)
+        for c in (
+            v,
+            getattr(v, "_client", None),
+            getattr(getattr(v, "_transport", None), "_client", None),
+        )
+    ]
+    shared = any(isinstance(c, (DonkeyAsyncClient, DonkeyAsyncClientView)) for c in clients)
+    blocking = any(isinstance(c, (DonkeyClient, DonkeyClientView)) for c in clients)
+    if not shared and importlib.util.find_spec("openai") is None:
+        # ADK model() and Agent Framework leave out the pre-built AsyncOpenAI
+        # when the [llm] extra is absent (base-only), so there is nothing to read.
+        pytest.skip(f"{attr}.{factory}()'s shared client needs the openai package")
+    assert (caps.transport == "shared") is shared
+    assert caps.sync is blocking
+    assert caps.streaming is (kwargs.get("stream") is not False)
