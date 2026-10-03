@@ -285,6 +285,43 @@ jobs:
           tests/unit/test_adapter_async_last_call.py
           tests/unit/test_adapter_ergonomics.py
 
+  adapter-contract:
+    # #742: the adapter contract suite, one leg per ADAPTERS extra, each with its
+    # real framework installed. DONKEY_CONTRACT_EXTRA turns that framework's
+    # skips into failures, so a broken install cannot pass as a skip. The matrix
+    # must list exactly the registry's extras: test_integration_checklist.py
+    # asserts it. `python -m pytest` puts python/ on sys.path, so the example
+    # conformance check can import examples.<fw>.main.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        extra:
+          - langgraph
+          - adk
+          - strands
+          - agent_framework
+          - openai-agents
+          - anthropic
+          - crewai
+          - llamaindex
+    name: adapter-contract (${{ matrix.extra }})
+    env:
+      # Bind the matrix value to an env var so it is never interpolated into a
+      # run: body directly (injection hardening).
+      DONKEY_CONTRACT_EXTRA: ${{ matrix.extra }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,llm,local,$DONKEY_CONTRACT_EXTRA]"
+      - run: >-
+          python -m pytest -q
+          tests/conformance/test_adapter_contract.py
+          tests/unit/test_framework_retries.py
+          tests/unit/test_missing_framework_error.py
+
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The
     # `benchmark`-marked test is deselected from the default run (addopts), so it
