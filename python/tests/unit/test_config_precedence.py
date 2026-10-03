@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import inspect
 import os
+from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
 from typing import get_type_hints
@@ -270,3 +271,94 @@ def test_donkey_from_env_cost_shorthands_merge_over_a_cost_override() -> None:
         assert donkey.config.cost == CostTags(team="b", project="p")
     finally:
         donkey.close()
+
+
+@pytest.mark.parametrize("spec", config_module._FIELDS, ids=lambda spec: spec.name)
+def test_donkey_from_env_sets_each_field_in_code(
+    layers: dict[str, Path], monkeypatch: pytest.MonkeyPatch, spec: config_module._Field
+) -> None:
+    # Each field's default, passed as a kwarg over a different env value: the
+    # kwarg wins and the field counts as set in code.
+    default = {f.name: f.default for f in fields(DonkeyConfig)}[spec.name]
+    if spec.name == "region":
+        monkeypatch.setenv(spec.env, "eu")
+    elif spec.check is None and spec.name not in {"llm_proxy_url", "base_url"}:
+        monkeypatch.setenv(spec.env, "X-From-Env")
+    donkey = Donkey.from_env(**{spec.name: default})  # type: ignore[misc]
+    try:
+        assert getattr(donkey.config, spec.name) == default
+        assert donkey.config.source_of(spec.name).kind == "explicit"
+    finally:
+        donkey.close()
+
+
+@pytest.mark.usefixtures("layers")
+def test_donkey_from_env_reports_a_non_cost_tags_cost_with_a_shorthand() -> None:
+    with pytest.raises(ConfigError, match="cost must be a CostTags"):
+        Donkey.from_env(cost=None, team="t")  # type: ignore[arg-type]
+
+
+def test_resolve_and_with_overrides_hints_resolve_at_runtime() -> None:
+    # Doc tools and the public API surface check resolve these annotations.
+    assert "overrides" in get_type_hints(DonkeyConfig.resolve)
+    assert "kw" in get_type_hints(DonkeyConfig.with_overrides)
+
+
+# --- merging the user file keeps the endpoint rule -----------------------------------------------
+
+
+def test_user_file_credentials_are_not_sent_to_a_project_file_url(
+    layers: dict[str, Path],
+) -> None:
+    # The user file now merges beneath the project file (#727). Its credentials
+    # must still not reach a URL that the project file names.
+    _write(layers["user"], llm_proxy_client_id="cid", llm_proxy_client_secret="user-secret")
+    _write(layers["project"], llm_proxy_url="https://proxy.example.com/agent/")
+    cfg = DonkeyConfig.resolve()
+    assert cfg.source_of("llm_proxy_client_secret").kind == "user"
+    with pytest.raises(ConfigError, match="Not sending llm_proxy_client_id") as exc:
+        cfg.validated(need="llm")
+    assert "user-secret" not in str(exc.value)
+
+
+def test_a_path_file_counts_as_a_project_file_for_the_endpoint_rule(
+    layers: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    chosen = tmp_path / "deploy.toml"
+    _write(chosen, llm_proxy_url="https://proxy.example.com/agent/")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "env-secret")
+    cfg = DonkeyConfig.resolve(path=chosen)
+    assert cfg.source_of("llm_proxy_url") == config_module.ConfigSource("project", chosen)
+    with pytest.raises(ConfigError, match="Not sending llm_proxy_client_id"):
+        cfg.validated(need="llm")
+    # Credentials in the overlay beside the named file are sent.
+    _write(
+        tmp_path / ".donkey-kit.local.toml",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="local-secret",
+    )
+    monkeypatch.delenv("DONKEY_LLM_PROXY_CLIENT_ID")
+    monkeypatch.delenv("DONKEY_LLM_PROXY_CLIENT_SECRET")
+    DonkeyConfig.resolve(path=chosen).validated(need="llm")
+
+
+# --- the secrets warning points at the caller ----------------------------------------------------
+
+
+def _donkey_from_env() -> None:
+    Donkey.from_env().close()
+
+
+@pytest.mark.parametrize(
+    "build",
+    [DonkeyConfig.resolve, DonkeyConfig.from_env, _donkey_from_env],
+    ids=["resolve", "DonkeyConfig.from_env", "Donkey.from_env"],
+)
+def test_the_secrets_warning_names_the_callers_file(
+    layers: dict[str, Path], build: Callable[[], object]
+) -> None:
+    _write(layers["project"], client_secret="s")
+    with pytest.warns(config_module.ConfigWarning, match="client_secret") as record:
+        build()
+    assert {Path(w.filename).name for w in record} == {Path(__file__).name}

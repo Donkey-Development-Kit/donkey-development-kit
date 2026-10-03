@@ -244,8 +244,10 @@ class Donkey:
         Docs: https://docs.donkey-kit.dev/reference/configuration#precedence
         """
         shorthand = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
-        if not shorthand.is_empty:
-            overrides["cost"] = overrides.get("cost", CostTags()).merge(shorthand)
+        base = overrides.get("cost", CostTags())
+        # A cost that isn't a CostTags is left for resolve() to report.
+        if not shorthand.is_empty and isinstance(base, CostTags):
+            overrides["cost"] = base.merge(shorthand)
         return cls(DonkeyConfig.resolve(path=path, **overrides))
 
     # --- framework-free surfaces -------------------------------------------

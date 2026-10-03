@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import inspect
 import os
 import secrets
 import sys
@@ -37,7 +38,7 @@ import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict, cast
+from typing import Literal, TypedDict, cast
 
 __all__ = [
     "LOCAL_TOML_NAME",
@@ -68,7 +69,11 @@ from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
 from .header_names import header_name_problem
 
-if TYPE_CHECKING:
+# Imported at runtime, not only for type checking, so ``typing.get_type_hints``
+# resolves the ``**overrides`` of resolve() and with_overrides() (#727).
+if sys.version_info >= (3, 11):
+    from typing import Unpack
+else:
     from typing_extensions import Unpack
 
 Region = Literal["us", "eu", "ca", "jp"]
@@ -109,9 +114,10 @@ Capability = Literal["control_plane", "llm"]
 
 class ConfigOverrides(TypedDict, total=False):
     """The public :class:`DonkeyConfig` fields, each optional, as keyword
-    arguments: what :meth:`DonkeyConfig.with_overrides` accepts, so a misspelt
-    field fails type checking (#716). Must list exactly the dataclass's public
-    fields; a unit test pins that."""
+    arguments: what :meth:`DonkeyConfig.resolve`, :meth:`DonkeyConfig.with_overrides`
+    and ``Donkey.from_env`` accept, so a misspelt field fails type checking
+    (#716, #727). Must list exactly the dataclass's public fields; a unit test
+    pins that."""
 
     client_id: str | None
     client_secret: str | None
@@ -1071,5 +1077,18 @@ def _warn_on_secrets(path: Path, table: dict[str, object]) -> None:
             f"project file: move them to {LOCAL_TOML_NAME} next to it (and gitignore "
             "it) or to environment variables.",
             ConfigWarning,
-            stacklevel=5,  # the caller of DonkeyConfig.from_env() / Donkey.from_env()
+            stacklevel=_caller_stacklevel(),
         )
+
+
+def _caller_stacklevel() -> int:
+    """The ``warnings.warn`` stacklevel, called from the function that warns, of
+    the first frame outside ``donkey_kit``: the user's call to ``resolve()``,
+    ``from_env()`` or ``Donkey.from_env()``, however many SDK frames sit between."""
+    frame = inspect.currentframe()
+    frame = frame.f_back if frame is not None else None  # the function that warns
+    level = 1
+    while frame is not None and frame.f_globals.get("__name__", "").split(".")[0] == "donkey_kit":
+        frame = frame.f_back
+        level += 1
+    return level
