@@ -15,7 +15,9 @@ the collector only because DDK had installed its exporter globally.
 
 **Symptom:** DDK's own spans still reach the collector, but
 `trace.get_tracer_provider()` is unchanged after `Donkey()`, so spans that
-other code creates through the global provider are no longer exported.
+other code creates through the global provider are no longer exported. A
+`trace.get_tracer_provider().force_flush()` call no longer flushes DDK's spans
+either; they are flushed when the interpreter exits.
 
 **Fix:** set `DONKEY_TELEMETRY_INSTALL_GLOBAL=true` (or
 `telemetry_install_global = true` in `.donkey-kit.toml`) to get the old

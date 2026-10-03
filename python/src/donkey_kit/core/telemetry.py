@@ -358,8 +358,9 @@ def _host_provider_set() -> bool:
 
 # --- Zero-config OTLP export bootstrap (BG §1.6, #194) -----------------------
 # The span helpers above get their tracer from ``_tracer()``, which rides
-# whatever global TracerProvider the host process installed. On their own they
-# export nothing: OpenTelemetry's default is a no-op provider. This section is
+# whatever global TracerProvider the host process installed, or the DDK-scoped
+# provider built below. Without either they export nothing: OpenTelemetry's
+# default is a no-op provider. This section is
 # what turns "we build spans" into "spans reach the customer's sink", with the
 # zero-config contract of BG §1.6:
 #

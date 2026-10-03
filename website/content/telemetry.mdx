@@ -108,6 +108,12 @@ With the flag on and an endpoint set, the first `Donkey()` installs its provider
 as the global one, unless your process already set one. The flag does nothing
 without an endpoint.
 
+DDK's own provider flushes its pending spans when the interpreter exits. If you
+need to flush earlier with `trace.get_tracer_provider().force_flush()`, for
+example in a serverless handler or a script that checks its collector before it
+exits, that call only reaches DDK's spans when they go through the global
+provider. Turn the flag on, or set your own provider.
+
 Opt out of telemetry entirely with a single flag:
 
 ```bash
