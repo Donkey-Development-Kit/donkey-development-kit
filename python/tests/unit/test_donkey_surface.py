@@ -32,8 +32,16 @@ def test_refused_control_plane_modules_are_gone(module: str) -> None:
     ADR 0008 in docs/adr/). Its old import paths must fail, not half-work."""
     import importlib
 
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(module)
+    try:
+        imported = importlib.import_module(module)
+    except ModuleNotFoundError:
+        pass
+    else:
+        # A checkout that switched branches can keep the deleted package's
+        # git-ignored __pycache__/, which Python imports as an empty namespace
+        # package. That ships nothing; any real module would have a __file__.
+        assert getattr(imported, "__file__", None) is None, imported
+        assert not [n for n in dir(imported) if not n.startswith("__")], imported
     assert not hasattr(donkey_kit, "Governance")
 
 

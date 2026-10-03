@@ -53,7 +53,11 @@ calls. `DonkeyError` still catches everything the SDK raises.
 `GovernanceCriteria`, `Publication`, `PublicationAssetType`,
 `PublicationDrift`, `RegistryError` or `ToolInvocationError` from `donkey_kit`.
 
-**Symptom:** `ImportError: cannot import name 'AssetRef' from 'donkey_kit'`.
+**Symptom:** `DeprecationWarning: donkey_kit.AssetRef is deprecated; import it
+from donkey_kit.experimental`. The old spelling still works for now, but the
+names are out of `donkey_kit.__all__` (so `from donkey_kit import *` no longer
+brings them) and type checkers flag the old import. A later release removes the
+alias.
 
 **Fix:**
 

@@ -3,7 +3,8 @@
 pydantic was a base dependency only for the deleted provisioning spec loader.
 These tests pin both halves: the declared base dependencies, and the import
 itself, run in a fresh interpreter where importing pydantic (or the ``[cli]``
-extra's typer, or pyyaml) fails.
+extra's typer, or pyyaml) fails. The import half walks every library module
+(everything but ``donkey_kit.cli``), not just the package root.
 """
 
 from __future__ import annotations
@@ -60,11 +61,28 @@ def test_import_donkey_kit_works_without_pydantic() -> None:
             if name.split(".")[0] in BLOCKED:
                 del sys.modules[name]
 
+        import importlib
+        import pkgutil
+
         import donkey_kit
         import donkey_kit.experimental
         from donkey_kit import Donkey, DonkeyConfig
 
         Donkey(DonkeyConfig(llm_proxy_url="https://proxy", telemetry=False))
+
+        # Every library module, not just the root: none may need a blocked
+        # package. donkey_kit.cli is the one that needs typer (the [cli] extra);
+        # a module whose own optional extra is missing is skipped.
+        for info in pkgutil.walk_packages(donkey_kit.__path__, "donkey_kit."):
+            if info.name.split(".")[:2] == ["donkey_kit", "cli"]:
+                continue
+            try:
+                importlib.import_module(info.name)
+            except ImportError as exc:
+                # A curated install-prompt ImportError chains the real one.
+                for err in (exc, exc.__cause__):
+                    missing = (getattr(err, "name", None) or "").split(".")[0]
+                    assert missing not in BLOCKED, (info.name, repr(exc))
         loaded = sorted(n for n in sys.modules if n.split(".")[0] in BLOCKED)
         assert not loaded, loaded
         print("ok")

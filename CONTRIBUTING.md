@@ -454,7 +454,8 @@ build plan has the rationale behind each rule:
   name means two different types across those `__all__` lists
   (`tests/unit/test_public_api_surface.py`). A type that exists only for a
   verification-blocked surface goes in `donkey_kit.experimental`, not
-  `donkey_kit.__all__` (#730). Submodule paths are not API. Don't
+  `donkey_kit.__all__` (#730); a name moved there keeps a deprecated
+  `donkey_kit.<name>` alias for a release. Submodule paths are not API. Don't
   reach into another object's private members (ruff `SLF001`): the dev-only
   simulator and conformance siblings go through `donkey_kit._testing`, and each
   remaining exception carries a `# noqa: SLF001` with its reason.
@@ -499,7 +500,8 @@ build plan has the rationale behind each rule:
   `except` that only re-raises is dropped (ruff `TRY203`).
 - **Error contract.** Every `DonkeyError` subclass ships its own non-empty
   default `remediation` (overridable, never blank) and is exported from
-  `donkey_kit`, as is `classify`. A domain failure raises a `DonkeyError`
+  `donkey_kit`, as is `classify`; an error only a verification-blocked surface
+  raises is exported from `donkey_kit.experimental` instead (#730). A domain failure raises a `DonkeyError`
   subclass, never a builtin exception.
 - **One source of truth, no dead code.** Gateway header names live only in
   `core/_wire.py`; import them, never retype the string. Each env var is named
