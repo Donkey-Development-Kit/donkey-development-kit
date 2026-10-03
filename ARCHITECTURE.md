@@ -327,7 +327,8 @@ correlation/request IDs and the raw response for inspection.
 A framework's client re-wraps what the transport raised: the OpenAI and
 Anthropic SDKs report a refusal as their own status error carrying the
 response, and an error the transport raised itself (`GatewayUnavailable`,
-`ModelSubstituted`) as a connection error with the typed error on `__cause__`;
+`ModelSubstituted`) as a connection error with the typed error on `__cause__`
+(openai 3 lets that one through as it is);
 LangChain, Strands and Agent Framework wrap once more. `core/refusals.py`
 recovers the typed error by duck type, without importing any framework.
 `translate()` walks the exception chain, and at each link it does three things:

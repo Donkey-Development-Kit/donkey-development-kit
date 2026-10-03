@@ -165,10 +165,17 @@ async def test_refusal_reaches_user_code_typed(
     finally:
         await donkey.aclose()
 
-    # The exact typed class, with the framework's own error kept for inspection.
+    # The exact typed class. When a framework wrapped it on the way out, the
+    # framework's own error is kept for inspection. openai>=3 (and the LangChain
+    # client on top of it) talks to our transport through the httpx2 bridge and
+    # lets a transport-raised typed error (GatewayUnavailable, ModelSubstituted)
+    # through as it is, so there is no wrapper to keep; under openai<3 the same
+    # case arrives as an APIConnectionError and the bridge unwraps it.
     assert type(excinfo.value) is error
-    assert excinfo.value.framework_error is not None
-    assert not isinstance(excinfo.value.framework_error, DonkeyError)
+    framework_error = excinfo.value.framework_error
+    if error is PIIDetected:
+        assert framework_error is not None
+    assert not isinstance(framework_error, DonkeyError)
 
 
 @pytest.mark.parametrize("surface", SURFACES)
