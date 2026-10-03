@@ -87,6 +87,19 @@ private `_ToolsFacade`), `CacheScope`, `DonkeyAsyncClientView`,
 `DonkeyClientView`, `LLMClient` and `ExchangeRegistry`. Import them from
 `donkey_kit` rather than from their submodules.
 
+### LlamaIndex, Agent Framework and ADK `model()` report `last_call` (not breaking)
+
+`donkey.last_call` on a `Donkey` used only through LlamaIndex, Microsoft Agent
+Framework or ADK's `model()` now reads `UNOBSERVED` before a call and
+`OBSERVED` after it, instead of `UNAVAILABLE`. Code that branched on
+`UNAVAILABLE` for these adapters no longer sees it. Only CrewAI still reports
+`UNAVAILABLE`.
+
+`donkey.llamaindex.typed_refusals()` is new. It turns the `openai`
+`APIStatusError` that LlamaIndex raises on a proxy refusal into the SDK's typed
+error, such as `PIIDetected`, and keeps the original on `.framework_error`
+([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
+
 ## 0.1.1: credential handling, endpoint trust and printed output
 
 Changes since `0.1.0` that can affect existing code, grouped by what you
@@ -450,8 +463,8 @@ dependencies are installed:
 Calls through LlamaIndex, MS Agent Framework and ADK's `model()` now carry the
 run's correlation ID, get the SDK's retries and spans, populate
 `donkey.last_call` in the context that made the call, and carry the JWT in
-`jwt` mode (async calls only). A cold read of `donkey.last_call` on a `Donkey`
-that resolved only these adapters still reports `UNAVAILABLE`
+`jwt` mode (async calls only). `donkey.last_call` on a `Donkey` that resolved
+only these adapters reads `UNOBSERVED` before a call and `OBSERVED` after it
 ([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
 
 **Fix:** none needed if you spread `connection_kwargs()` whole. If you pick

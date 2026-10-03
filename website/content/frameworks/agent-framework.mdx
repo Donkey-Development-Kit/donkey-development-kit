@@ -178,9 +178,8 @@ missing from your installed version, `policy_middleware()` raises a
   signature to check, rather than a raw `ImportError` or `TypeError`.
 - **`donkey.last_call` is set in the context that made the call.** A cold read
   (no call yet in this context) on a `Donkey` that resolved only adapters like
-  this one still reports `status == LastCallStatus.UNAVAILABLE` rather than
-  `UNOBSERVED`, because MS Agent Framework is still listed as not observing calls. Aligning
-  that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+  this one reports `status == LastCallStatus.UNOBSERVED`, and `OBSERVED` once
+  a call has returned.
 
 See the [error taxonomy](/errors) for the full `PolicyViolation` hierarchy
 that `policy_middleware()` raises.

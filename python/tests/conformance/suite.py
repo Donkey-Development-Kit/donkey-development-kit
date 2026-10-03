@@ -53,78 +53,46 @@ CONFORMANCE_SCENARIOS = [
 
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
 # that cannot satisfy a scenario records WHY here rather than skipping silently.
-_LITELLM_TRANSPORT_EXEMPTION = (
-    "adk.model() only: LiteLLM owns the transport; we cannot inject our httpx client, so the "
-    "correlation ID is per-client, not per-run (BG §1.8). A LiteLLM custom "
-    "logger callback may later recover trace correlation."
+# Every adapter but CrewAI sends through our shared httpx client (#740), so only
+# CrewAI is listed. Its structural reason: the native OpenAI provider builds both
+# its sync OpenAI and its AsyncOpenAI from ONE client_params dict, and with an
+# interceptor set it overwrites http_client with a fresh httpx client, so no
+# single value can carry our async client to both (crewai 1.15, #740).
+_CREWAI_TRANSPORT = (
+    "CrewAI's native OpenAI provider owns the transport: one client_params dict "
+    "feeds both its sync OpenAI and its AsyncOpenAI, and its interceptor path "
+    "replaces http_client with its own httpx client, so our async client cannot be "
+    "injected (#740)."
 )
 _CREWAI_TRANSPORT_EXEMPTION = (
-    "CrewAI's native OpenAI provider owns the transport: it builds its own sync and "
-    "async OpenAI clients from one set of client params, so our async httpx client "
-    "cannot be injected and the correlation ID is per-client, not per-run (BG §1.8)."
-)
-_DEFAULT_HEADERS_CORRELATION_EXEMPTION = (
-    "The adapter is handed only a static default_headers snapshot, which "
-    "deliberately excludes the per-run correlation ID; without our httpx "
-    "client, donkey.run(id=...) cannot update the request headers (BG §1.8)."
+    _CREWAI_TRANSPORT + " The correlation ID is per-client, not per-run (BG §1.8)."
 )
 
-# gateway_identity_observed has the SAME structural cause as the correlation-id
-# exemption, stated for last_call (#362): the record is populated by our
-# transport's _on_response, so an adapter that does not route through our httpx
-# client can never observe it. donkey.last_call reports UNAVAILABLE (naming the
-# surface) rather than a bare None — the honest-state contract (hazard #3) —
-# and mirrors Adapter.observes_last_call = False on each of these adapters.
-_LITELLM_LAST_CALL_EXEMPTION = (
-    "adk.model() only: LiteLLM owns the transport; no response reaches our _on_response, so "
-    "donkey.last_call cannot observe the gateway identity of the call and "
-    "reports UNAVAILABLE (#362, same cause as correlation_id_propagated BG §1.8)."
-)
+# gateway_identity_observed has the SAME structural cause, stated for last_call
+# (#362): the record is populated by our transport's _on_response, so an adapter
+# that does not route through our httpx client can never observe it.
+# donkey.last_call reports UNAVAILABLE (naming the surface) rather than a bare
+# None — the honest-state contract (hazard #3) — and mirrors
+# Adapter.observes_last_call = False.
 _CREWAI_LAST_CALL_EXEMPTION = (
-    "CrewAI's native OpenAI provider owns the transport; no response reaches our "
-    "_on_response, so donkey.last_call cannot observe the gateway identity of the "
-    "call and reports UNAVAILABLE (#362, same cause as correlation_id_propagated BG §1.8)."
-)
-_DEFAULT_HEADERS_LAST_CALL_EXEMPTION = (
-    "The adapter is handed only default_headers, never our httpx client, so no "
-    "response reaches our _on_response; donkey.last_call cannot observe the "
-    "gateway identity and reports UNAVAILABLE (#362)."
+    _CREWAI_TRANSPORT + " No response reaches our _on_response, so donkey.last_call "
+    "reports UNAVAILABLE (#362)."
 )
 
 # jwt_token_refreshed: a rotating model-wallet JWT is added per-send only by our
-# transport (#509). Every adapter that sends through it carries the JWT; CrewAI's
-# native OpenAI provider builds its own clients, so it would send the api-key
-# placeholder as the bearer. The adapter refuses jwt mode with a ConfigError
-# instead (#828) — asserted here rather than silently skipped.
+# transport (#509). Every adapter that sends through it carries the JWT; CrewAI
+# would send the api-key placeholder as the bearer, so the adapter refuses jwt
+# mode with a ConfigError instead (#828) — asserted here rather than skipped.
 _CREWAI_JWT_EXEMPTION = (
-    "CrewAI's native OpenAI provider owns the transport, so the rotating model-wallet "
-    "JWT, which only our httpx client adds per-send, never reaches its requests. "
-    "donkey.crewai raises ConfigError in jwt auth mode; use client-id auth with this "
-    "adapter, or a transport-injected adapter for jwt mode (#509, #828)."
+    _CREWAI_TRANSPORT + " The rotating model-wallet JWT, which only our httpx client "
+    "adds per-send, never reaches its requests; donkey.crewai raises ConfigError in "
+    "jwt auth mode (#509, #828)."
 )
 
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
-    # ADK's model() reaches models through LiteLLM and CrewAI through its native
-    # OpenAI provider; either way the framework owns the transport (BG §1.8).
-    # adk.gemini() is handed our httpx client and records none of these (#691).
-    "adk": {
-        "correlation_id_propagated": _LITELLM_TRANSPORT_EXEMPTION,
-        "gateway_identity_observed": _LITELLM_LAST_CALL_EXEMPTION,
-    },
     "crewai": {
         "correlation_id_propagated": _CREWAI_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _CREWAI_LAST_CALL_EXEMPTION,
         "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
-    },
-    # LlamaIndex and MS Agent Framework now send through our httpx client, so they
-    # carry the jwt-mode JWT per-send and record no jwt_token_refreshed exemption
-    # (#828). Their correlation-id and last-call rows are #740's to retire.
-    "llamaindex": {
-        "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
-        "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,
-    },
-    "agent_framework": {
-        "correlation_id_propagated": _DEFAULT_HEADERS_CORRELATION_EXEMPTION,
-        "gateway_identity_observed": _DEFAULT_HEADERS_LAST_CALL_EXEMPTION,
     },
 }
