@@ -26,6 +26,9 @@ cited section.
 All Python work happens in `python/`; commands below are run from there unless
 noted. There is no Makefile — every command runs directly.
 
+> **Found a vulnerability?** Don't open an issue or a PR for it. Report it
+> privately as described in [`SECURITY.md`](SECURITY.md).
+
 ---
 
 ## 1. Branch, PR & release workflow
