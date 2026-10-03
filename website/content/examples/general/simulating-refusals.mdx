@@ -91,7 +91,7 @@ Run context
   PASS  ValueError — a transport failure has no captured body to inject
   message                simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AgentKilled, AuthError, ContentSafetyBlocked, ModelNotRoutable, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
 
-  Tool invocation, registry, and provisioning errors are not gateway refusals, and they
+  Tool invocation, registry, and publication errors are not gateway refusals, and they
   have no captured wire shape. GatewayUnavailable is the same kind of gap for a
   different reason: there is no HTTP response at all, so there is nothing to replay.
   Injecting a plausible body would let you write a handler against a body that does not

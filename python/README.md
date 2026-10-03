@@ -117,8 +117,9 @@ is held to the conformance suite, the other seven are supported at the
 `connection_kwargs()` level (see [Framework support](#framework-support)).
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
 rather than guessing at an unverified endpoint, header, or class name — that
-currently includes Exchange→MCP tool discovery, the provisioning control-plane,
-and the exact framework adapter class names/kwargs.
+currently includes Exchange→MCP tool discovery, Exchange publication, and the
+exact framework adapter class names/kwargs. The types those blocked surfaces
+use live in `donkey_kit.experimental`, outside the stable namespace.
 
 The discipline behind this is documented in
 [`ARCHITECTURE.md` → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline);

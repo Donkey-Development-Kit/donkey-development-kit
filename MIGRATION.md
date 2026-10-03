@@ -1,5 +1,84 @@
 # Migration guide
 
+## Unreleased: the CLI's own package, and the refused control plane removed (#730)
+
+These changes are breaking for code that imported the legacy modules or the
+blocked-surface types from `donkey_kit`. The `donkey` commands you can see in
+`donkey --help` are unchanged. The reasoning is ADR 0008 in
+[`docs/adr/`](docs/adr/) (legacy quarantine and the CLI's home).
+
+### 1. `donkey_kit.provisioning` and `donkey_kit.governance` are gone
+
+**Who:** code that imported `donkey_kit.provisioning` (`spec`, `planner`,
+`applier`, `lint`, `publish`, `cli`, `doctor`) or `donkey_kit.governance`
+(`Governance`, `GatewayTarget`, `PolicyBinding`).
+
+**Symptom:** `ModuleNotFoundError: No module named 'donkey_kit.provisioning'`
+(or `'donkey_kit.governance'`).
+
+**Fix:** the declarative provisioning control plane is on the build plan's
+*Do not build* list, and every verb in it raised `blocked on verification`, so
+there is no replacement. Manage gateways and policies with API Manager or
+Terraform. Two pieces moved instead of going away:
+
+| Was | Now |
+| --- | --- |
+| `donkey_kit.provisioning.cli` (`app`, `main`) | `donkey_kit.cli` |
+| `donkey_kit.provisioning.doctor` | `donkey_kit.cli.doctor` |
+| `donkey_kit.provisioning.publish.content_digest` / `publish_if_changed` | `donkey_kit.registry.publication` |
+
+The `[targets.*]` tables in `.donkey-kit.toml` and the `DONKEY_TARGET`
+variable were read only by `GatewayTarget.from_env()`. They are now ignored.
+
+### 2. Hidden CLI commands `validate`, `plan`, `apply`, `drift`, `lint`, `generate` are removed
+
+**Who:** scripts that ran one of them. All of them except `validate` already
+exited 3 with `blocked on verification`.
+
+**Symptom:** `No such command 'plan'.` and exit status 2.
+
+**Fix:** remove the call. `donkey status`, `donkey publish` and `donkey verify`
+are still there, hidden, and still exit 3 until Exchange publication (BG §2.5)
+is verified.
+
+### 3. Three errors are removed
+
+`ProvisioningError`, `GovernanceDrift` and `PlatformTeamOnly` were raised only
+by the deleted modules. Drop them from `except` clauses and `simulate(...)`
+calls. `DonkeyError` still catches everything the SDK raises.
+
+### 4. Blocked-surface types moved to `donkey_kit.experimental`
+
+**Who:** code that imported `STRICT`, `AssetRef`, `AssetType`, `Contact`,
+`GovernanceCriteria`, `Publication`, `PublicationAssetType`,
+`PublicationDrift`, `RegistryError` or `ToolInvocationError` from `donkey_kit`.
+
+**Symptom:** `ImportError: cannot import name 'AssetRef' from 'donkey_kit'`.
+
+**Fix:**
+
+```diff
+- from donkey_kit import STRICT, AssetRef, RegistryError
++ from donkey_kit.experimental import STRICT, AssetRef, RegistryError
+```
+
+Every surface these types serve (registry discovery and governed-state checks,
+publication, MCP tool calls) still raises `blocked on verification`. They move
+back to `donkey_kit` when their surface is verified, and until then they may
+change in any release. The submodule paths (`donkey_kit.registry`,
+`donkey_kit.core.errors`) still work.
+
+### 5. pydantic and pyyaml are no longer installed for you
+
+**Who:** code that imports `pydantic` or `yaml` and relied on `donkey-kit` (or
+`donkey-kit[cli]`) to install it.
+
+**Symptom:** `ModuleNotFoundError: No module named 'pydantic'` (or `'yaml'`)
+in your own code after upgrading.
+
+**Fix:** depend on them directly. The SDK itself imports neither. Framework
+extras that need pydantic (LangChain, ADK, the OpenAI SDK) still bring it in.
+
 ## 0.1.1: credential handling, endpoint trust and printed output
 
 Changes since `0.1.0` that can affect existing code, grouped by what you
@@ -513,7 +592,8 @@ donkey test --agent=myagent:build   # run the conformance suite against your age
 The provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
 `generate`, `status`, `publish`, `verify`) are hidden from `--help`. All of
 them except `validate` exit with status 3 and a `blocked on verification`
-message.
+message. (A later release removed all but `status`, `publish` and `verify`; see
+the first section of this guide.)
 
 ### 4. Configuration file
 
