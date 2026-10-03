@@ -43,9 +43,8 @@ print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
 ```
 
 **You should see:** the reply, `total tokens` from Agent Framework's
-`usage_details`, and `last_call unavailable …`. `asyncio.run(...)` runs the
-call in its own context, so the script's read is a cold one, and a cold read
-on this adapter reports `unavailable` rather than `unobserved` ([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)). Read
+`usage_details`, and `last_call unobserved …`. `asyncio.run(...)` runs the
+call in its own context, so the script's read is a cold one. Read
 usage from the framework here, or read `last_call` inside the coroutine that
 made the call.
 
