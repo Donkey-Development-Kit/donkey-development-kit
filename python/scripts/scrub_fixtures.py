@@ -5,7 +5,7 @@ UUIDs, its gateway and identity-provider hostnames, and the upstream provider's
 account ids. Some fixtures ship in the wheel, and PyPI releases are immutable,
 so none of that may be committed. The capture procedure is: capture, run this
 script, then relock (``python -m donkey_kit.simulator.fixtures --relock``).
-See ``tests/fixtures/README.md``.
+See CONTRIBUTING.md, "Fixture-driven tests".
 
 Rewritten, deterministically (the same real value always maps to the same
 placeholder, and a placeholder is left alone, so a re-run is a no-op):
@@ -24,7 +24,7 @@ byte-exact captures stay byte-exact.
     python scripts/scrub_fixtures.py [PATH ...]           # rewrite in place
     python scripts/scrub_fixtures.py --check [PATH ...]   # CI: exit 1 on any finding
 
-``PATH`` is a file, a directory, or a built ``.whl``; it defaults to every file
+``PATH`` is a file, a directory, or a built wheel or sdist; it defaults to every file
 git tracks in this checkout. ``--check`` also rejects any ``.cloudhub.io`` or
 ``.herokuapp.com`` host, whatever its shape. A finding prints only the first
 eight characters of the value.
@@ -37,6 +37,7 @@ import hashlib
 import re
 import subprocess
 import sys
+import tarfile
 import zipfile
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -53,7 +54,9 @@ ALLOWED_UUIDS = frozenset(
 )
 
 _PLACEHOLDER_PREFIX = "00000000-0000-4000-8000-"
-_UUID = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
+_UUID = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
 # <name>-<random suffix>[.<label>...].cloudhub.io — the shape CloudHub and Heroku
 # give a deployed app; the suffix is what identifies the tenant's deployment.
 _TENANT_HOST = re.compile(
@@ -61,7 +64,9 @@ _TENANT_HOST = re.compile(
     re.IGNORECASE,
 )
 # --check only: any host on those platforms, whatever its shape.
-_PLATFORM_HOST = re.compile(r"\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:cloudhub\.io|herokuapp\.com)\b", re.I)
+_PLATFORM_HOST = re.compile(
+    r"\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:cloudhub\.io|herokuapp\.com)\b", re.I
+)
 _PLACEHOLDER_HOST = re.compile(r"\.example\.invalid\b", re.I)
 _PROVIDER_HEADER = re.compile(
     r"(?im)^(?P<name>openai-organization|openai-project|anthropic-workspace-id):[ \t]*"
@@ -148,14 +153,26 @@ def _expand(paths: Iterable[Path]) -> Iterator[Path]:
             yield path
 
 
+def _is_dist(path: Path) -> bool:
+    return path.suffix == ".whl" or path.name.endswith(".tar.gz")
+
+
 def _members(path: Path) -> Iterator[tuple[str, str]]:
-    """``(display name, text)`` for each text file at ``path`` (a ``.whl`` is opened)."""
+    """``(display name, text)`` for each text file at ``path`` (a wheel or sdist is opened)."""
     if path.suffix == ".whl":
         with zipfile.ZipFile(path) as wheel:
             for name in wheel.namelist():
                 text = _decode(wheel.read(name))
                 if text is not None:
                     yield f"{path}!{name}", text
+        return
+    if path.name.endswith(".tar.gz"):
+        with tarfile.open(path) as sdist:
+            for member in sdist.getmembers():
+                stream = sdist.extractfile(member) if member.isfile() else None
+                text = _decode(stream.read()) if stream else None
+                if text is not None:
+                    yield f"{path}!{member.name}", text
         return
     text = _decode(path.read_bytes())
     if text is not None:
@@ -176,8 +193,8 @@ def scrub(paths: Iterable[Path]) -> list[Path]:
     """Rewrite each file in place; returns the files that changed."""
     changed: list[Path] = []
     for path in _expand(paths):
-        if path.suffix == ".whl":
-            raise SystemExit(f"{path}: a wheel can only be checked, not scrubbed")
+        if _is_dist(path):
+            raise SystemExit(f"{path}: a built distribution can only be checked, not scrubbed")
         text = _decode(path.read_bytes())
         if text is None:
             continue
@@ -190,8 +207,15 @@ def scrub(paths: Iterable[Path]) -> list[Path]:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--check", action="store_true", help="report, don't rewrite; exit 1 on any finding")
-    parser.add_argument("paths", nargs="*", type=Path, help="files, directories or wheels (default: tracked files)")
+    parser.add_argument(
+        "--check", action="store_true", help="report, don't rewrite; exit 1 on any finding"
+    )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        help="files, directories, wheels or sdists (default: tracked files)",
+    )
     args = parser.parse_args(argv)
     paths = args.paths or tracked_files(_DEFAULT_ROOT)
 
