@@ -148,6 +148,23 @@ still a base dependency. Dropping it from the base install is part of #730.
   module-level factory raise the same error. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
+- **One adapter contract, one roster (#726, ADR 0004).** Every adapter meets
+  `AdapterProtocol` (`integrations/__init__.py`): `connection_kwargs()` plus
+  `capabilities(factory)`, which returns a frozen `AdapterCapabilities`
+  (`transport`, `sync`, `streaming`, `typed_refusals`, `observes_last_call`).
+  Capabilities are declared per factory in the adapter's `factories` mapping
+  and never change at runtime, so ADK's `model()` and `gemini()` report
+  separately. Every `connection_kwargs()` builds on `Adapter._connection()`,
+  which runs the guards once: a `transport="framework"` factory (CrewAI) is
+  refused in a token auth mode, and core's `checked_llm_config()` validates the
+  proxy config and refuses a token mode with no `AuthProvider`.
+  `donkey.llm.client()` uses the same core guard. `ADAPTERS` is the only
+  roster. The pip extra and the curated ImportError are derived from it, and
+  `tests/unit/test_adapter_roster.py` checks every list that cannot be
+  generated from it: the pyproject extras, the import-linter independence
+  contract, the mypy overrides, the static `Donkey` annotations, the
+  `KNOWN_LIMITATIONS` exemptions, the nightly matrix, `examples/` and
+  `scripts/verify_frameworks.py`.
 - **Configuration** resolves per key: values set in code → env vars →
   `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
   (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml`, or
@@ -390,7 +407,11 @@ native OpenAI provider builds its own HTTP client; the adapter only hands it an
 exemption. LlamaIndex, Microsoft Agent Framework and ADK's `model()` now send
 through the shared client too (`http_client` / `async_http_client`, an
 `async_client`, and a pre-built OpenAI `client` for LiteLLM), but still carry
-their exemptions and `observes_last_call = False`; removing them is #740.
+their exemptions and `observes_last_call=False` in their `AdapterCapabilities`;
+removing them is #740. `tests/unit/test_adapter_roster.py` keeps the table and
+the capabilities equal: `gateway_identity_observed` is exempt exactly when
+`observes_last_call` is false, `typed_refusal_bridged` when `typed_refusals` is
+false, and `jwt_token_refreshed` when `transport` is `"framework"`.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
