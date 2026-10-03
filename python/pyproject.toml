@@ -126,7 +126,9 @@ dev = [
     "respx>=0.21",
     "mypy>=1.10",
     "ruff>=0.5",
-    "import-linter>=2.0",
+    # 2.3+: the whole-package layers contract (#729) fails on 2.0-2.2 with
+    # "Modules have shared descendants".
+    "import-linter>=2.3",
     # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
     "vulture>=2.11",
     # stubs so mypy --strict typechecks the CLI/provisioning yaml handling.
@@ -312,6 +314,11 @@ min_confidence = 60
 # --- import-linter: enforce the layered architecture rule in CI, from day one ---
 [tool.importlinter]
 root_package = "donkey_kit"
+# Third-party packages are nodes in the graph too, so a contract can forbid one
+# (core's dependencies, below, #729). grimp records an external import by its
+# top-level name; the package does not need to be installed. Imports inside
+# functions and under TYPE_CHECKING count, which the base-only job can't see.
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "core is framework-free (nothing in integrations may be imported by lower layers)"
@@ -325,17 +332,148 @@ source_modules = [
 forbidden_modules = ["donkey_kit.integrations"]
 
 [[tool.importlinter.contracts]]
-name = "layered architecture"
+name = "layered architecture (§1.1)"
 type = "layers"
-# integrations (top) may use everything below; tools resolves registry handles;
-# registry/llm sit above the framework-free core (bottom). Lower never imports
-# higher.
+# The whole package, top to bottom; a lower layer never imports a higher one,
+# directly or indirectly (#729). The production stack is donkey → integrations →
+# tools → registry → llm → core. Above it:
+# - cli: the supported `donkey` CLI's future home (#730). Optional, so the
+#   contract tightens by itself once the package exists. Until then the console
+#   script lives in provisioning/cli.py.
+# - provisioning | governance: legacy scaffolding outside the stack (ADR 0008,
+#   docs/adr/0008-*.md, written in #731). Independent of each other; only the CLI
+#   may sit above them.
+# - conformance > simulator > _testing: the dev-only siblings (BG §1.4/§1.5). The
+#   harness reuses the simulator, both reach Donkey's private state only through
+#   the _testing seam (#719), and _testing names Donkey's types.
+# `exhaustive` makes a new top-level module fail until it is placed here.
+containers = ["donkey_kit"]
+exhaustive = true
 layers = [
-    "donkey_kit.integrations",
-    "donkey_kit.tools",
-    "donkey_kit.registry",
-    "donkey_kit.llm",
+    "(cli)",
+    "provisioning | governance",
+    "conformance",
+    "simulator",
+    "_testing",
+    "donkey",
+    "integrations",
+    "tools",
+    "registry",
+    "llm",
+    "core",
+]
+ignore_imports = [
+    # Donkey.simulate() (BG §1.4) is public API on the orchestrator, and its
+    # implementation is the simulator's base-path-safe inject module (httpx
+    # only). The import is lazy, inside the method, so `import donkey_kit` never
+    # loads the simulator.
+    "donkey_kit.donkey -> donkey_kit.simulator.inject",
+]
+
+[[tool.importlinter.contracts]]
+name = "production code never imports the legacy provisioning or governance packages"
+type = "forbidden"
+# provisioning (the refused control plane) and governance are legacy scaffolding
+# (ADR 0008): reachable from their own modules, never a dependency of the SDK
+# (#729). The one sanctioned importer is the CLI. Today the console script lives
+# inside provisioning itself, so there is no cross-package import to ignore; when
+# #730 moves it to donkey_kit.cli, that package is the exception and stays out
+# of source_modules (the layers contract already lets it import downward).
+source_modules = [
+    "donkey_kit._testing",
+    "donkey_kit.conformance",
     "donkey_kit.core",
+    "donkey_kit.donkey",
+    "donkey_kit.integrations",
+    "donkey_kit.llm",
+    "donkey_kit.registry",
+    "donkey_kit.simulator",
+    "donkey_kit.tools",
+]
+forbidden_modules = ["donkey_kit.governance", "donkey_kit.provisioning"]
+
+[[tool.importlinter.contracts]]
+name = "the top-level package exports only the production layers"
+type = "forbidden"
+# `import donkey_kit` (the root __init__ on its own, as_packages = false) must
+# never load the dev-only siblings or the legacy packages, directly or through
+# Donkey (#729). With as_packages off, each package is named twice: the package
+# module and its children.
+as_packages = false
+source_modules = ["donkey_kit"]
+forbidden_modules = [
+    "donkey_kit._testing",
+    "donkey_kit.conformance",
+    "donkey_kit.conformance.**",
+    "donkey_kit.governance",
+    "donkey_kit.provisioning",
+    "donkey_kit.provisioning.**",
+    "donkey_kit.simulator",
+    "donkey_kit.simulator.**",
+]
+ignore_imports = [
+    # The lazy Donkey.simulate() import, as in the layers contract above.
+    "donkey_kit.donkey -> donkey_kit.simulator.inject",
+]
+
+[[tool.importlinter.contracts]]
+name = "core depends on httpx only: no framework, LLM SDK or schema library (§1.1)"
+type = "forbidden"
+# core's third-party imports may be httpx, the stdlib backfills (tomli,
+# typing_extensions) and opentelemetry (the optional [otel] extra, imported
+# lazily). This contract forbids the packages that have drifted, or could drift,
+# into a lower layer: the LLM SDKs, the httpx2 bridge, pydantic (ADR 0001), every
+# agent framework the adapters wrap, and the dev-only and CLI dependencies (#729).
+# tests/unit/test_architecture.py checks the same rule as an allowlist.
+source_modules = ["donkey_kit.core"]
+forbidden_modules = [
+    "agent_framework",
+    "agents",
+    "anthropic",
+    "crewai",
+    "google",
+    "httpx2",
+    "langchain",
+    "langchain_core",
+    "langchain_openai",
+    "langgraph",
+    "litellm",
+    "llama_index",
+    "openai",
+    "pydantic",
+    "pytest",
+    "starlette",
+    "strands",
+    "typer",
+    "uvicorn",
+    "yaml",
+]
+
+[[tool.importlinter.contracts]]
+name = "layers inside core"
+type = "layers"
+# Top to bottom (#729). The order is the real import graph: runtime builds the
+# transports; transport attaches budget, telemetry and cache control; auth and
+# those features read config; config reads cost, endpoints and header names;
+# everything reports through errors. Two deviations from the order sketched in
+# #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
+# through lastcall.request_id; and _wire sits below _verify, because the
+# verification placeholders name wire headers. A sibling group with `|` is
+# independent: its members never import each other. `exhaustive` makes a new
+# core module fail until it is placed.
+containers = ["donkey_kit.core"]
+exhaustive = true
+layers = [
+    "runtime",
+    "transport",
+    "budget | cache | cachecontrol | telemetry | toolspec",
+    "auth",
+    "config",
+    "cost | endpoints | header_names",
+    "errors",
+    "lastcall | masking",
+    "_verify",
+    "_wire",
 ]
 
 [[tool.importlinter.contracts]]

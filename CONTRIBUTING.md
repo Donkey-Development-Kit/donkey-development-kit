@@ -417,8 +417,17 @@ build plan has the rationale behind each rule:
   framework's *types* only under `if TYPE_CHECKING:`. This is what lets
   `import donkey_kit` succeed with no framework installed, and the `base-only`
   job enforces it. The layering (`integrations → tools → registry → llm → core`,
-  lower never imports higher) is enforced by `lint-imports`. See
+  lower never imports higher) is enforced by `lint-imports`, which also orders
+  the rest of the package (the CLI, the legacy `provisioning`/`governance`, the
+  dev-only siblings, `donkey`) and the modules inside `core/`. Both layer
+  contracts are exhaustive: a new top-level module or core module is placed in
+  `pyproject.toml` in the same PR. No production code imports `provisioning` or
+  `governance`. See
   [`ARCHITECTURE.md`](ARCHITECTURE.md#layered-architecture).
+- **Small core modules.** A module in `core/` stays within 500 lines. The five
+  already past it are held at their current size and may only shrink: lower a
+  ratchet ceiling in the PR that shrinks the file, and drop the entry once it is
+  within budget (`_OVERSIZED_CORE_MODULES` in `tests/unit/test_architecture.py`).
 - **Verification guards.** Never invent an endpoint, header, or class
   name. Use `core/_verify.py`: `blocked("…")` where there's no defensible
   placeholder, `Unverified(...)` for an overridable best-guess that warns once.
@@ -454,7 +463,10 @@ build plan has the rationale behind each rule:
   (`tests/unit/test_public_api_surface.py`). Submodule paths are not API. Don't
   reach into another object's private members (ruff `SLF001`): the dev-only
   simulator and conformance siblings go through `donkey_kit._testing`, and each
-  remaining exception carries a `# noqa: SLF001` with its reason.
+  remaining exception carries a `# noqa: SLF001` with its reason. No top-level
+  package imports another's private names (`from ..core.config import _X`), or
+  a private module other than the named seams (`core._verify`, `core._wire`,
+  `_testing`, `integrations._base`).
 - **Three ergonomic forms per governed surface** — the `donkey.<framework>`
   factory, a `connection_kwargs()` accessor, and a module-level factory. Keep all
   three when adding an adapter (they must stay in lockstep). Hand the framework
@@ -519,7 +531,8 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | No unexplained `# type: ignore` | mypy `warn_unused_ignores` (part of `strict`) catches stale ones; the explanation is review-only | `mypy` |
 | `X \| None`, PEP 585/604 syntax | ruff `UP`, `FA` | `ruff check .` |
 | `from __future__ import annotations` in every module | ruff `I002` (`isort.required-imports`) | `ruff check .` |
-| Framework-free core, layering | import-linter contracts in `pyproject.toml` | `lint-imports` |
+| Framework-free core, layering | import-linter contracts in `pyproject.toml` (whole-package and in-core layers, both exhaustive; no production import of `provisioning`/`governance`; the root package loads only production layers; core's forbidden third-party packages, #729); `tests/unit/test_architecture.py` (core's third-party imports as an allowlist, imports inside functions included) | `lint-imports`, `pytest` |
+| Small core modules (#729) | `tests/unit/test_architecture.py` (500-line budget; a ratchet for the five modules already past it) | `pytest` |
 | Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
 | Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |
@@ -532,7 +545,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py` | `pytest` |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
-| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py` | `ruff check .`, `pytest` |
+| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py`; `tests/unit/test_architecture.py` (no cross-package private import, #729) | `ruff check .`, `pytest` |
 | Docstrings on public symbols (#722) | ruff `D101`-`D103` on `src/`; `tests/unit/test_public_docstrings.py` (summary + docs link on the headline entry points) | `ruff check .`, `pytest` |
 | Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
 | One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |
