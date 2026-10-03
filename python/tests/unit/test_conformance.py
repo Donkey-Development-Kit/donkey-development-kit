@@ -10,7 +10,7 @@ can assert both that the target scenario fails and that the other three still
 pass. A regression in any scenario's verdict is caught without a real gateway.
 
 The toy agents call ``donkey.openai()``, so this module needs ``openai`` (the
-plugin itself does not — see ``test_conformance_base_only``). Under ``[dev]``
+plugin itself does not — see ``test_conformance_base_only``). Under the ``dev`` group
 alone the whole module skips.
 """
 
