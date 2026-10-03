@@ -28,7 +28,7 @@ from typing import Any
 
 import pytest
 
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import DonkeyConfig
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.transport import DonkeyAsyncClient, build_http_client
@@ -183,7 +183,11 @@ async def test_token_mode_with_a_provider_refuses_only_framework_transport(
             with pytest.raises(ConfigError, match="does not support llm_proxy_auth"):
                 adapter.connection_kwargs()
         else:
-            assert adapter.connection_kwargs()
+            try:
+                assert adapter.connection_kwargs()
+            except ImportError:
+                # openai_agents' kwarg is a pre-built AsyncOpenAI.
+                pytest.skip(f"{attr}'s connection needs a dependency not installed here")
     finally:
         await http.aclose()
 
@@ -207,12 +211,13 @@ def test_unknown_factory_is_refused() -> None:
         _adapter_class("langgraph").capabilities("nope")
 
 
-def test_adk_model_and_gemini_report_separately() -> None:
-    donkey = Donkey(_client_id_cfg())
-    model = donkey.adk.capabilities("model")
-    gemini = donkey.adk.capabilities("gemini")
+def test_adk_model_and_gemini_report_separately(http: DonkeyAsyncClient) -> None:
+    # The instance, as donkey.adk is, without needing the adk extra installed.
+    adk = _adapter_class("adk")(_client_id_cfg(), http)
+    model = adk.capabilities("model")
+    gemini = adk.capabilities("gemini")
     assert model != gemini
-    assert donkey.adk.capabilities() is model
+    assert adk.capabilities() is model
     assert (model.observes_last_call, gemini.observes_last_call) == (False, True)
     assert (model.typed_refusals, gemini.typed_refusals) == (False, True)
 
