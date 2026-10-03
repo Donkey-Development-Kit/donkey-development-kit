@@ -5,9 +5,10 @@ A refusal must reach the caller as its typed class, never as the framework's
 generic connection or status error, so a host framework cannot mistake it for a
 transient fault. The transport already raises typed errors inside ``send()``
 (:class:`GatewayUnavailable`, :class:`ModelSubstituted`), and every HTTP SDK
-re-wraps them: ``openai`` and ``anthropic`` raise ``APIConnectionError`` with
-the typed error on ``__cause__``, and a gateway rejection arrives as the SDK's
-own status error carrying the response. :func:`translate` undoes both, without
+re-wraps them: ``openai`` before 3 and ``anthropic`` raise ``APIConnectionError``
+with the typed error on ``__cause__`` (``openai`` 3, through the httpx2 bridge,
+lets it through as it is), and a gateway rejection arrives as the SDK's own
+status error carrying the response. :func:`translate` undoes both, without
 importing any framework:
 
 1. It walks the exception's chain — ``__cause__``, else an unsuppressed
@@ -36,6 +37,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import logging
 from collections.abc import Awaitable, Callable, Iterable
 from types import TracebackType
 from typing import Any, ParamSpec, TypeVar, cast
@@ -43,6 +45,8 @@ from typing import Any, ParamSpec, TypeVar, cast
 from .errors import DonkeyError, classify
 
 __all__ = ["Translator", "TypedRefusals", "translate"]
+
+_log = logging.getLogger(__name__)
 
 #: A per-adapter translator: given one link of an exception chain, return the
 #: typed error it stands for, or ``None`` to let the walk carry on.
@@ -67,8 +71,8 @@ def translate(
 
     Returns ``exc`` itself when it already is a :class:`DonkeyError`. Otherwise
     walks the chain as the module docstring describes, trying each of
-    ``translators`` on every link before the built-in rules. Never raises, and
-    never imports a framework.
+    ``translators`` on every link before the built-in rules. A translator that
+    raises is skipped. Never raises, and never imports a framework.
 
     Args:
         exc: The exception a block raised.
@@ -82,7 +86,14 @@ def translate(
         if isinstance(link, DonkeyError):
             return link
         for hook in hooks:
-            typed = hook(link)
+            try:
+                typed = hook(link)
+            except Exception:  # noqa: BLE001 — a broken translator must not mask the error
+                # A broken translator (a framework half-imported, a renamed
+                # exception class) must not replace the error leaving the
+                # user's block with its own; skip it and keep walking.
+                _log.debug("refusal translator %r failed; skipped", hook, exc_info=True)
+                continue
             if typed is not None:
                 return typed
         response = _status_response(link)

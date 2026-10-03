@@ -220,6 +220,19 @@ def test_translators_are_tried_on_each_link_before_the_built_in_rules() -> None:
         assert seen[0] is wrapped
 
 
+def test_a_translator_that_raises_is_skipped() -> None:
+    # A broken translator must not replace the user's error with its own.
+    def broken(exc: BaseException) -> DonkeyError | None:
+        raise ImportError("half-installed framework")
+
+    typed = _unavailable()
+    assert translate(_connection_error_from(typed), (broken,)) is typed
+    boom = ValueError("not a refusal")
+    with pytest.raises(ValueError) as excinfo, TypedRefusals(lambda: (broken,)):
+        raise boom
+    assert excinfo.value is boom
+
+
 # --- TypedRefusals: context manager and decorator -----------------------------
 
 
