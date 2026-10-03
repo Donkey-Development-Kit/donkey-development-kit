@@ -153,8 +153,9 @@ async with Donkey.from_env() as donkey:
 ```
 
 Without it, a proxy refusal reaches you as Agent Framework's generic
-`ChatClientException`. With it, the refusal goes through
-`donkey_kit.core.errors.classify()` and the run ends with the typed error,
+`ChatClientException`. With it, the middleware runs the call inside the SDK's
+[typed-refusal bridge](/errors#typed-refusals-at-the-framework-boundary), and
+the run ends with the typed error,
 for example `PIIDetected` or `TokenBudgetExceeded`. The error carries the
 correlation and call ids that were sent, and keeps the original exception on
 `.framework_error`. This also works for streaming runs
@@ -162,8 +163,11 @@ correlation and call ids that were sent, and keeps the original exception on
 the stream. The chat client sends with retries off, so a refused request is
 sent once.
 
-Errors that have no proxy response behind them, such as a connection failure,
-pass through unchanged. The middleware is marked with Agent Framework's
+A gateway that cannot be reached surfaces as `GatewayUnavailable`, the error
+the transport raised under Agent Framework's wrapper. Errors that are not from
+the gateway pass through unchanged. A `donkey.run()` block or a
+`@donkey.governed` function applies the same bridge, so a run without the
+middleware still ends typed. The middleware is marked with Agent Framework's
 `@chat_middleware` decorator. That is confirmed offline against
 agent-framework 1.19.0, with no live round-trip yet. If the decorator is
 missing from your installed version, `policy_middleware()` raises a

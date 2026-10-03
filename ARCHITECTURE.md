@@ -191,7 +191,7 @@ still a base dependency. Dropping it from the base install is part of #730.
   | --- | --- | --- |
   | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
   | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
-  | `_on_refusal` | never — no caller today; `classify()` raises the typed error directly, and the LangGraph bridge maps it without the hook | typed-refusal reaction handlers (`BG §1.2`, #208); the framework-agnostic typed-refusal bridge is #724 |
+  | `_on_refusal` | never — no caller today; `classify()` raises the typed error directly, and the typed-refusal bridge (`core/refusals.py`, #724) maps it at the framework boundary without the hook | typed-refusal reaction handlers (`BG §1.2`, #208) |
   | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
 
   Correlation, attribution, cache-control and opt-in cost-tag headers
@@ -322,6 +322,33 @@ through to a generic `PolicyViolation` whose message *says so* rather than
 pretending to a precision the captures don't yet support — the same verification-discipline honesty
 as the verification ledger. All errors subclass `DonkeyError`, which carries the
 correlation/request IDs and the raw response for inspection.
+
+**Typed refusals cross the framework boundary in one place (#724, ADR 0002).**
+A framework's client re-wraps what the transport raised: the OpenAI and
+Anthropic SDKs report a refusal as their own status error carrying the
+response, and an error the transport raised itself (`GatewayUnavailable`,
+`ModelSubstituted`) as a connection error with the typed error on `__cause__`;
+LangChain, Strands and Agent Framework wrap once more. `core/refusals.py`
+recovers the typed error by duck type, without importing any framework.
+`translate()` walks the exception chain, and at each link it does three things:
+
+- returns a `DonkeyError` it finds as is;
+- classifies a status error's response with `classify()`, but only if our
+  transport sent the request (it reads the provenance marker the transport
+  stamps on `request.extensions`, so a stock client's 403 is never typed);
+- stops at a link that carries no HTTP request or response, such as the
+  user's own re-wrap or a bug in a handler, and leaves the error alone.
+
+A framework wrapper that carries no HTTP shape is seen through by an optional
+per-adapter translator, named by `AdapterSpec.refusal_translator` in
+`integrations/__init__.py`. It is loaded only once that framework has been
+imported, and it only unwraps: no adapter module calls `classify()`.
+`donkey_kit.typed_refusals()` is the bridge as a sync or async context manager
+or a decorator; `donkey.run()` and `@donkey.governed` apply it on exit unless
+`typed_refusals=False`, while the bare `core.telemetry.run_scope` stays opt-in.
+A classified refusal is raised `from None` with the framework error on
+`.framework_error`, because that error's message can repeat the blocked
+values. A transport-raised typed error keeps its own `__cause__`.
 
 ---
 

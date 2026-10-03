@@ -461,6 +461,15 @@ build plan has the rationale behind each rule:
   the SDK's shared client wherever its constructor takes one, and pass every
   URL override the factory accepts through `_allow_endpoints(...)` before the
   framework import, so it gets the https check and joins the checked endpoints.
+- **No classification in an adapter** (#724, ADR 0002). Typed refusals reach
+  the caller through the one bridge in `core/refusals.py`
+  (`donkey_kit.typed_refusals()`, applied by `donkey.run()` and
+  `@donkey.governed`). An adapter never calls `classify()` itself. If the
+  framework wraps the client's error in an exception with no request or
+  response on it, add a module-level translator that only unwraps it, by
+  handing its cause back to `core.refusals.translate()`, and name it in the
+  adapter's `AdapterSpec.refusal_translator`. Import the framework lazily
+  inside the translator.
 - **Citation habit.** When code encodes a spec decision, cite it in the
   docstring/comment so reviewers and future-you can find the rationale: `BG §N.N`
   for build-guide scope (e.g. `# budget parsed at the response hook (BG §1.3)`),
@@ -527,6 +536,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
 | Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it (the `pydantic.mypy` plugin types the one boundary, `provisioning/spec.py`) | review |
 | Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
+| No classification in an adapter (#724) | `tests/unit/test_refusal_bridge.py` (no adapter module calls `classify(`; every adapter exposes the shared bridge) | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py` | `pytest` |

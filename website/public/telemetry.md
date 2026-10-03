@@ -489,6 +489,12 @@ function, and concurrent runs never leak into each other. It works with or
 without OpenTelemetry installed. `donkey.run(...)` is a **dual sync/async**
 context manager (plain `with` works too); nested blocks rebind then restore.
 
+A refusal leaving the block is re-raised as its typed `DonkeyError`, whichever
+framework wrapped it on the way out, so `except PIIDetected` works the same
+around every framework. See
+[Typed refusals at the framework boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary);
+`donkey.run(typed_refusals=False)` turns it off.
+
 ### The decorator form
 
 When a whole function should be one run, `@donkey.governed` is the decorator
