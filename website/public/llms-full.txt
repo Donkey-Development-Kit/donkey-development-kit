@@ -9431,8 +9431,14 @@ If you touched an adapter, also run `python scripts/verify_frameworks.py`.
 ### Open a pull request into `develop`
 
 The PR body includes `Closes #<issue#>`, a `## Summary`, a `## Test plan` and
-a `## Post-deploy steps` section (write `None.` when nothing applies). PRs are
-squash-merged, so `develop` reads as one commit per issue.
+a `## Post-deploy steps` section (write `None.` when nothing applies). The
+repository's PR template lays these out. PRs are squash-merged, so `develop`
+reads as one commit per issue.
+
+A change to an architecture invariant, an import-linter contract, the API
+stability tiers or the dependency policy also needs an architecture decision
+record (ADR). The template asks whether one is needed, and the process is in
+[`docs/adr/`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/adr/README.md).
 
 ## Contributing from a fork
 
