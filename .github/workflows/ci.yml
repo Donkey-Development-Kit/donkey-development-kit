@@ -315,7 +315,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,local,$DONKEY_CONTRACT_EXTRA]"
+      # The framework extra in its own step: resolving it together with `dev`
+      # in one pip call drops `dev` on the runner (seen with llamaindex).
+      - run: pip install -e ".[dev,llm,local]"
+      - run: pip install -e ".[$DONKEY_CONTRACT_EXTRA]"
       - run: >-
           python -m pytest -q
           tests/conformance/test_adapter_contract.py
