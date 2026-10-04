@@ -90,6 +90,36 @@ async def test_traceback_with_frame_locals_omits_the_blocked_value() -> None:
     assert _BLOCKED_VALUE not in rendered
 
 
+@pytest.mark.parametrize("form", ["sync", "async"])
+async def test_a_refusal_typed_by_donkey_run_omits_the_blocked_value(form: str) -> None:
+    """``donkey.run()`` applies the same bridge on exit (#724): its traceback,
+    frame locals included, is as clean as ``typed_refusals()``'s."""
+    pytest.importorskip("openai")
+    donkey = Donkey(_cfg())
+    try:
+        with donkey.simulate(PIIDetected), pytest.raises(PIIDetected) as info:
+            if form == "async":
+                client = donkey.llm.client()
+                async with donkey.run():
+                    await client.chat.completions.create(
+                        model="m", messages=[{"role": "user", "content": "hi"}]
+                    )
+            else:
+                sync_client = donkey.llm.client(sync=True)
+                with donkey.run():
+                    sync_client.chat.completions.create(
+                        model="m", messages=[{"role": "user", "content": "hi"}]
+                    )
+    finally:
+        await donkey.aclose()
+
+    rendered = "".join(
+        traceback.TracebackException.from_exception(info.value, capture_locals=True).format()
+    )
+    assert _BLOCKED_VALUE not in rendered
+    assert info.value.__cause__ is None
+
+
 async def test_the_framework_error_stays_reachable_but_unchained() -> None:
     openai = pytest.importorskip("openai")
     exc = await _refusal_from_raw_client()

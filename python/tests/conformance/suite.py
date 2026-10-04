@@ -49,18 +49,25 @@ CONFORMANCE_SCENARIOS = [
     # builds its own transport, never sees the JWT, and refuses jwt mode with a
     # ConfigError; it records an asserted exemption below (BG §1.8, #828).
     "jwt_token_refreshed",
+    # Inside donkey.run() and @donkey.governed, a refusal or transport failure
+    # reaches user code as its typed DonkeyError, not the framework's generic
+    # connection or status error (BG §1.2, #724, ADR 0002). The bridge only types
+    # what the SDK's transport sent or raised, so the adapters whose framework
+    # owns the transport record an asserted exemption below.
+    "typed_refusal_bridged",
 ]
 
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
 # that cannot satisfy a scenario records WHY here rather than skipping silently.
-# Every adapter but CrewAI sends through our shared httpx client (#740), so only
-# CrewAI is listed. Its structural reason: the native OpenAI provider builds both
-# its sync OpenAI and its AsyncOpenAI from ONE client_params dict, and the
-# openai SDK type-checks http_client per client, so no single value can carry our
-# clients to both. With an interceptor set it overwrites http_client with a fresh
-# httpx client whose transport always sends itself, and the interceptor's hooks
-# only edit the request and response (crewai 1.15.3 to 1.15.23, #740, #958;
-# docs/verified-apis.md §8.2).
+# Every adapter but CrewAI sends through our shared httpx client (#740), so
+# CrewAI is the only one listed for the transport scenarios; ADK's model() is
+# listed for typed_refusal_bridged alone (#724). CrewAI's structural reason: the
+# native OpenAI provider builds both its sync OpenAI and its AsyncOpenAI from
+# ONE client_params dict, and the openai SDK type-checks http_client per client,
+# so no single value can carry our clients to both. With an interceptor set it
+# overwrites http_client with a fresh httpx client whose transport always sends
+# itself, and the interceptor's hooks only edit the request and response (crewai
+# 1.15.3 to 1.15.23, #740, #958; docs/verified-apis.md §8.2).
 _CREWAI_TRANSPORT = (
     "CrewAI's native OpenAI provider owns the transport: one client_params dict "
     "feeds both its sync OpenAI and its AsyncOpenAI, which type-check http_client "
@@ -93,10 +100,32 @@ _CREWAI_JWT_EXEMPTION = (
     "jwt auth mode (#509, #828)."
 )
 
+# typed_refusal_bridged: the bridge types an error only when the SDK's transport
+# raised it or sent the request behind it (#724, ADR 0002). A framework that owns
+# the transport raises its own errors for a call the SDK never saw, and one that
+# re-wraps a refusal around a response it rebuilt hides the one the SDK sent, so
+# the bridge leaves both as they are rather than guess at their shape.
+_LITELLM_REFUSAL_EXEMPTION = (
+    "adk.model() only: LiteLLM sends through our transport (#946) but re-raises a "
+    "refusal as its own exception around a response it rebuilt, which carries no "
+    "sign that our transport sent it; the typed-refusal bridge cannot tell a gateway "
+    "refusal from any other failure there, so it passes them through (#724). "
+    "adk.gemini() is handed our httpx client and is bridged."
+)
+_CREWAI_REFUSAL_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport, so its errors come from a "
+    "client the SDK never saw; the typed-refusal bridge passes them through rather "
+    "than classify a response our transport did not send (#724)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
+    # ADK's model() and CrewAI each raise a framework error the bridge cannot type;
+    # adk.gemini() is handed our httpx client and records no exemption (#691).
+    "adk": {"typed_refusal_bridged": _LITELLM_REFUSAL_EXEMPTION},
     "crewai": {
         "correlation_id_propagated": _CREWAI_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _CREWAI_LAST_CALL_EXEMPTION,
         "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
+        "typed_refusal_bridged": _CREWAI_REFUSAL_EXEMPTION,
     },
 }

@@ -53,10 +53,12 @@ if TYPE_CHECKING:
         classify,
     )
     from .core.lastcall import LastCall, LastCallStatus
+    from .core.refusals import TypedRefusals
     from .core.telemetry import RunScope
     from .core.toolspec import ToolSpec, registered_tools
     from .core.transport import DonkeyAsyncClientView, DonkeyClientView
     from .donkey import Donkey, ToolsFacade
+    from .integrations import typed_refusals
     from .llm.client import LLMClient
     from .registry import ExchangeRegistry
 
@@ -95,10 +97,12 @@ _LAZY = {
     "TokenBudgetExceeded": ".core.errors",
     "ToolSpec": ".core.toolspec",
     "ToolsFacade": ".donkey",
+    "TypedRefusals": ".core.refusals",
     "UpstreamModelError": ".core.errors",
     "UpstreamRequestError": ".core.errors",
     "classify": ".core.errors",
     "registered_tools": ".core.toolspec",
+    "typed_refusals": ".integrations",
 }
 
 
@@ -186,9 +190,11 @@ __all__ = [
     "TokenBudgetExceeded",
     "ToolSpec",
     "ToolsFacade",
+    "TypedRefusals",
     "UpstreamModelError",
     "UpstreamRequestError",
     "__version__",
     "classify",
     "registered_tools",
+    "typed_refusals",
 ]

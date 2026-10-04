@@ -223,13 +223,18 @@ async def test_example_build_passes_the_conformance_kit(attr: str) -> None:
         for module in spec.probe:
             pytest.importorskip(module)
     from donkey_kit.conformance import run_conformance
+    from donkey_kit.conformance.suite import SCENARIOS
 
     module = importlib.import_module(f"examples.{attr}.main")
     # The example's own asserted exemptions, the way the pytest plugin reads them.
-    # Only an adapter the internal matrix records as structurally limited may have
-    # any, so an example cannot excuse a scenario it merely fails.
+    # Only an adapter the internal matrix records as structurally limited on a
+    # public scenario may have any, so an example cannot excuse a scenario it
+    # merely fails. Internal-only scenarios (typed_refusal_bridged, #724) are not
+    # in the kit the example runs.
+    public = {scenario.name for scenario in SCENARIOS}
+    internal = public & set(KNOWN_LIMITATIONS.get(attr, {}))
     known = getattr(module, "KNOWN_LIMITATIONS", None)
-    assert bool(known) == (attr in KNOWN_LIMITATIONS), (
+    assert bool(known) == bool(internal), (
         f"examples/{attr} KNOWN_LIMITATIONS must match the internal matrix's entry for "
         f"{attr!r} in tests/conformance/suite.py"
     )

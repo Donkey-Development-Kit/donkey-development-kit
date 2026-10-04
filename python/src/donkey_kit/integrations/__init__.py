@@ -11,9 +11,19 @@ ImportError with the exact install command (BG §1.8).
 
 from __future__ import annotations
 
+import importlib
+import sys
 from dataclasses import dataclass
 
-__all__ = ["ADAPTERS", "AdapterSpec", "missing_framework_error"]
+from ..core.refusals import Translator, TypedRefusals
+
+__all__ = [
+    "ADAPTERS",
+    "AdapterSpec",
+    "missing_framework_error",
+    "refusal_translators",
+    "typed_refusals",
+]
 
 
 @dataclass(frozen=True)
@@ -43,6 +53,50 @@ class AdapterSpec:
     #: lists a required dependency the framework does not always install (Strands
     #: without ``openai``), so a half-installed framework fails here too (#741).
     probe: tuple[str, ...]
+    #: The name of a module-level function in ``module`` that sees through the
+    #: framework's own exception wrappers for the typed-refusal bridge (#724,
+    #: ADR 0002), or ``None`` when the framework raises the HTTP SDK's errors
+    #: as they are. The function has the :data:`~donkey_kit.core.refusals.Translator`
+    #: signature. It holds no classification logic of its own: it unwraps and
+    #: hands back to :func:`~donkey_kit.core.refusals.translate`.
+    refusal_translator: str | None = None
+
+
+def refusal_translators() -> tuple[Translator, ...]:
+    """The per-adapter refusal translators of every framework already imported.
+
+    A framework the process has not imported cannot have raised the exception
+    being translated, so its adapter module is never imported here: the bridge
+    adds no import cost (#724).
+    """
+    found: list[Translator] = []
+    for spec in ADAPTERS.values():
+        if spec.refusal_translator is None or spec.probe[0] not in sys.modules:
+            continue
+        module = importlib.import_module(spec.module, __name__)
+        found.append(getattr(module, spec.refusal_translator))
+    return tuple(found)
+
+
+def typed_refusals() -> TypedRefusals:
+    """Re-raise a governance refusal from the block as its typed ``DonkeyError``.
+
+    The typed-refusal bridge (BG §1.2, #724, ADR 0002) as a standalone sync or
+    async context manager, or a decorator. Any framework's or HTTP SDK's error
+    that stands for a gateway refusal or a transport failure is re-raised as
+    :class:`~donkey_kit.PIIDetected`, :class:`~donkey_kit.GatewayUnavailable`,
+    :class:`~donkey_kit.ModelSubstituted` and the rest; anything else propagates
+    unchanged. ``donkey.run()`` and ``@donkey.governed`` already apply it::
+
+        with typed_refusals():
+            graph.invoke({"messages": [...]})      # raises PIIDetected
+
+        @typed_refusals()
+        async def answer(question: str) -> str: ...
+
+    Docs: https://docs.donkey-kit.dev/errors#typed-refusals-at-the-framework-boundary
+    """
+    return TypedRefusals(refusal_translators)
 
 
 def missing_framework_error(extra: str, missing: str | None = None) -> ImportError:
@@ -74,10 +128,12 @@ ADAPTERS: dict[str, AdapterSpec] = {
     "strands": AdapterSpec(
         "strands", ".strands", "StrandsAdapter", "strands",
         conformance_tested=False, probe=("strands", "openai"),
+        refusal_translator="refusal_translator",
     ),
     "agent_framework": AdapterSpec(
         "agent_framework", ".agent_framework", "AgentFrameworkAdapter", "agent_framework",
         conformance_tested=False, probe=("agent_framework",),
+        refusal_translator="refusal_translator",
     ),
     "openai_agents": AdapterSpec(
         "openai_agents", ".openai_agents", "OpenAIAgentsAdapter", "openai-agents",

@@ -119,9 +119,12 @@ closed the client it was given), and a call whose pooled connections belong to
 an event loop that has closed. The SDK's own connection pools are per event
 loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
 transport you passed in and reused across `asyncio.run()` calls. Its
-`.remediation` names the fix for each. Through the OpenAI SDK it arrives
-wrapped, like `GatewayUnavailable`: catch `openai.APIConnectionError` and read
-the `ConfigError` from `e.__cause__`.
+`.remediation` names the fix for each. Outside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids)
+block, `typed_refusals()` or `@donkey.governed`, it reaches you the way
+`GatewayUnavailable` does: `openai` before 3 and `anthropic` wrap it in an
+`APIConnectionError` (read the `ConfigError` from `e.__cause__`), and `openai`
+3 and later raises it as it is. Inside those blocks it is the typed
+`ConfigError` either way.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
@@ -141,7 +144,14 @@ queue, shed load, or fall back to a non-AI path — instead of pattern-matching 
 raw `httpx` exception.
 
 `DonkeyAsyncClient` and its blocking twin both raise it, so the async and sync
-surfaces behave identically. It is terminal and **not retried**. It carries:
+surfaces behave identically. What reaches your code depends on the SDK on top.
+`openai` before 3 and `anthropic` re-wrap it as an `APIConnectionError` with the
+`GatewayUnavailable` on `__cause__`; `openai` 3 and later lets it through as
+`GatewayUnavailable`. Inside `donkey.run()` or `@donkey.governed` it reaches you
+as `GatewayUnavailable` in every case, unless you opt out with
+`typed_refusals=False` (see
+[Typed refusals at the framework boundary](#typed-refusals-at-the-framework-boundary)).
+It is terminal and **not retried**. It carries:
 
 - `.base_url` — the origin that failed, on the exception, not only in the message.
 - `.cause` — the underlying `httpx` exception (also chained via `raise … from`).
@@ -197,9 +207,9 @@ headers, category names and policy pattern names, never from the request.
 
 A traceback also prints every chained exception, and a framework's own error
 usually repeats the gateway's text. So when the SDK maps a framework error to
-a typed one, as LangGraph's
-[`typed_refusals()`](https://docs.donkey-kit.dev/frameworks/langgraph.md#typed-refusals-inside-a-node) does,
-it raises it without a chained cause: `exc.__cause__` is `None`, and the
+a typed one, as `donkey.run()` and
+[`typed_refusals()`](#typed-refusals-at-the-framework-boundary) do, it raises
+it without a chained cause: `exc.__cause__` is `None`, and the
 framework error is on `exc.framework_error` (`None` when there was none). No
 frame in the traceback holds the framework error as a local variable, so error
 reporters that print frame locals (Sentry, `pytest -l`) don't show it either.
@@ -223,19 +233,91 @@ logs and to the gateway's own record:
 | `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
 `classify(response)` fills `.correlation_id` and `.call_id` from the response's
-own request, so bridging an `openai` error (below) needs no extra wiring — the
+own request, so a refusal typed at the framework boundary (below) needs no extra wiring — the
 correlation id on the exception equals the header that was actually sent. (If you
 overrode the header names in config, pass the ids to `classify()` explicitly.)
 
-## Bridging from the raw client
+## Typed refusals at the framework boundary
 
-  `donkey.llm.client()` is the **OpenAI SDK**, so on an HTTP failure it raises
-  `openai.APIStatusError`, **not** a `DonkeyError`. Bridge into the taxonomy by
-  applying `classify()` to the error's `.response`.
+Every framework between your code and the gateway raises its own errors. The
+OpenAI and Anthropic SDKs turn a refusal into a `PermissionDeniedError`.
+A lost gateway becomes an `APIConnectionError` with the `GatewayUnavailable`
+hidden on its `__cause__` under `openai` before 3 and under `anthropic`, while
+`openai` 3 and later raises `GatewayUnavailable` as it is. LangChain re-wraps
+these again, and Strands and Agent Framework wrap them in their own types. Inside a
+[`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block or a
+[`@donkey.governed`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) function, none of that reaches
+you: a refusal or a lost gateway leaves the block as its typed `DonkeyError`,
+so one `except` covers every framework.
+
+```python
+from donkey_kit import GatewayUnavailable, PIIDetected, TokenBudgetExceeded
+
+client = donkey.openai()
+
+try:
+    async with donkey.run(id=ticket.id):
+        resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
+except PIIDetected as e:
+    print("blocked, entities:", e.entities)
+except TokenBudgetExceeded as e:
+    print("slow down; retry after", e.retry_after, "s")
+except GatewayUnavailable as e:
+    print("could not reach the proxy:", e.base_url)
+```
+
+The same block around a LangGraph `graph.ainvoke(...)`, an Anthropic
+`messages.create(...)` or a Strands agent raises the same classes. The
+blocking forms behave the same: `with donkey.run():` and a sync
+`@donkey.governed` function.
+
+Outside a run, `typed_refusals()` is the same bridge on its own. It works as a
+sync or async context manager and as a decorator for sync and async functions,
+and every adapter exposes it as `donkey.<framework>.typed_refusals()`:
+
+```python
+from donkey_kit import typed_refusals
+
+with typed_refusals():
+    reply = client.chat.completions.create(model="gpt-4o", messages=msgs)
+
+@typed_refusals()
+async def answer(question: str) -> str: ...
+```
+
+What the bridge types, and what it leaves alone:
+
+- **A typed error the SDK raised**, such as `GatewayUnavailable` or
+  `ModelSubstituted`, is found on the framework error's cause chain and
+  re-raised as it is.
+- **A gateway rejection** is classified from the response the framework
+  error carries, with the correlation and call ids that were sent, exactly as
+  `classify()` would. Only a response the SDK's own transport sent is
+  classified. A `403` from some other HTTP call in the block is not a governed
+  refusal and passes through.
+- **Anything else** propagates unchanged: your own bugs, your own
+  `raise HTTPException(...) from exc`, a `KeyboardInterrupt`, a task
+  cancellation.
+
+The bridge is on by default in both forms. The framework's own error stays on
+`exc.framework_error` (it is `None` when the SDK raised the typed error itself,
+as `openai` 3 and later does for `GatewayUnavailable`). To get the framework's
+errors instead, pass `typed_refusals=False` to `donkey.run()` or
+`@donkey.governed`.
+
+  The bridge only sees calls that went through the SDK's transport. ADK's
+  `model()` (LiteLLM) and CrewAI own their transport, so their errors pass
+  through untyped. These are the same
+  [conformance exemptions](https://docs.donkey-kit.dev/testing.md#exemptions) as their correlation ids.
+
+### Classifying a response yourself
+
+`classify()` is the building block underneath. Apply it to any
+`openai.APIStatusError` (or Anthropic status error) you caught yourself:
 
 ```python
 import openai
-from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError, classify
+from donkey_kit import PIIDetected, classify
 
 try:
     resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
@@ -243,18 +325,10 @@ except openai.APIStatusError as e:
     governed = classify(e.response)          # -> a DonkeyError subclass
     if isinstance(governed, PIIDetected):
         print("blocked, entities:", governed.entities)
-    elif isinstance(governed, TokenBudgetExceeded):
-        print("slow down; retry after", governed.retry_after, "s")
-    elif isinstance(governed, AuthError):
-        print("bad credentials:", governed)
-    else:
-        print(f"{type(governed).__name__}: {governed}")
-except openai.APIConnectionError as e:
-    print("could not reach the proxy:", e)
 ```
 
-The blocking client from `donkey.llm.client(sync=True)` behaves identically here
-— drop the `await`. It is the same OpenAI SDK raising the same
+The blocking client from `donkey.llm.client(sync=True)` behaves identically here.
+Drop the `await`: it is the same OpenAI SDK raising the same
 `openai.APIStatusError`, and `classify()` reads the response the same way.
 
 ## Retry behaviour

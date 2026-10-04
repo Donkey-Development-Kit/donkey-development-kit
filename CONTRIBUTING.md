@@ -373,8 +373,9 @@ Wire the adapter by these rules:
   retry layer, so a refusal is sent once.
 - **Wire both sync and async**, or let the driver's `no_sync` say why the
   framework is async-only.
-- **Use the shared typed-refusal helper** (`_TypedRefusals` in `_base`) rather
-  than a per-framework copy.
+- **Use the shared typed-refusal bridge** (`core/refusals.py`, ADR 0002) rather
+  than a per-framework copy. A framework that wraps the openai error in a type
+  carrying no request or response gets an `AdapterSpec.refusal_translator`.
 - **`observes_last_call` is the single source of truth** for whether
   `donkey.last_call` sees the adapter's calls. It holds for every factory and is
   never changed on an instance.
@@ -582,6 +583,15 @@ build plan has the rationale behind each rule:
   the SDK's shared client wherever its constructor takes one, and pass every
   URL override the factory accepts through `_allow_endpoints(...)` before the
   framework import, so it gets the https check and joins the checked endpoints.
+- **No classification in an adapter** (#724, ADR 0002). Typed refusals reach
+  the caller through the one bridge in `core/refusals.py`
+  (`donkey_kit.typed_refusals()`, applied by `donkey.run()` and
+  `@donkey.governed`). An adapter never calls `classify()` itself. If the
+  framework wraps the client's error in an exception with no request or
+  response on it, add a module-level translator that only unwraps it, by
+  handing its cause back to `core.refusals.translate()`, and name it in the
+  adapter's `AdapterSpec.refusal_translator`. Import the framework lazily
+  inside the translator.
 - **Citation habit.** When code encodes a spec decision, cite it in the
   docstring/comment so reviewers and future-you can find the rationale: `BG §N.N`
   for build-guide scope (e.g. `# budget parsed at the response hook (BG §1.3)`),
@@ -659,6 +669,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it. That no base module imports pydantic is checked by `tests/unit/test_base_install_deps.py` and the `base-only` job | review, `pytest`, `base-only` job |
 | An ADR for any change to an `ARCHITECTURE.md` invariant, an import-linter contract, the API stability tiers or the dependency policy (#731) | Review-only: the **ADR needed?** checkbox in `.github/pull_request_template.md`; process in `docs/adr/README.md` | review |
 | Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
+| No classification in an adapter (#724) | `tests/unit/test_refusal_bridge.py` (no adapter module calls `classify(`; every adapter exposes the shared bridge) | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |

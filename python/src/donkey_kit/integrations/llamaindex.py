@@ -19,14 +19,16 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 
 from ..core.masking import masked
-from ._base import Adapter, _TypedRefusals, default_adapter
+from . import typed_refusals as _bridge
+from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from llama_index.llms.openai_like import OpenAILike
+
+    from ..core.refusals import TypedRefusals
 
 __all__ = ["LlamaIndexAdapter", "llm", "typed_refusals"]
 
@@ -95,11 +97,6 @@ class LlamaIndexAdapter(Adapter):
         kw = _model_defaults(model, kw)
         return OpenAILike(model=model, **{**self.connection_kwargs(), **kw})
 
-    @staticmethod
-    def typed_refusals() -> AbstractContextManager[None]:
-        """Adapter-bound alias for the module-level :func:`typed_refusals`."""
-        return typed_refusals()
-
 
 def _model_defaults(model: str, kw: dict[str, Any]) -> dict[str, Any]:
     """``kw`` plus the defaults LlamaIndex would pick for the bare name after one
@@ -144,19 +141,21 @@ def _reasoning_model_kwargs(kw: dict[str, Any]) -> dict[str, Any]:
     return kw
 
 
-def typed_refusals() -> AbstractContextManager[None]:
+def typed_refusals() -> TypedRefusals:
     """Re-raise a proxy refusal from an ``OpenAILike`` call as the SDK's typed
-    exception (BG §1.2)::
+    exception (BG §1.2). This is the SDK-wide typed-refusal bridge,
+    :func:`donkey_kit.typed_refusals` (#724, ADR 0002)::
 
         with donkey.llamaindex.typed_refusals():
             reply = await llm.acomplete("hi")
 
-    ``OpenAILike`` raises the openai SDK's ``APIStatusError`` for a refusal; this
-    maps its response through :func:`~donkey_kit.core.errors.classify`, so a PII
-    block surfaces as :class:`~donkey_kit.core.errors.PIIDetected` with the
+    ``OpenAILike`` raises the openai SDK's ``APIStatusError`` for a refusal; the
+    bridge maps its response through :func:`~donkey_kit.core.errors.classify`, so
+    a PII block surfaces as :class:`~donkey_kit.core.errors.PIIDetected` with the
     correlation and call ids that were sent. The original stays on
-    ``.framework_error``; errors with no HTTP response pass through."""
-    return _TypedRefusals()
+    ``.framework_error``; anything else passes through. ``donkey.run()`` and
+    ``@donkey.governed`` already apply it."""
+    return _bridge()
 
 
 def llm(model: str, **kw: Any) -> OpenAILike:
