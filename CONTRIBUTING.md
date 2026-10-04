@@ -310,6 +310,57 @@ wire every scenario; if one genuinely can't pass for a structural reason, add a
 framework-specific scenario — a shared-suite invariant must apply to all
 frameworks or it doesn't belong there.
 
+### Adding a framework adapter: the integration checklist
+
+An adapter is one entry in `ADAPTERS` (`src/donkey_kit/integrations/__init__.py`)
+plus everything below. `tests/unit/test_integration_checklist.py` checks each
+item per registry entry, so a new entry that skips one fails CI.
+
+1. **A registry entry.** Its `probe` is a tuple of every module the factories
+   need (including a dependency the framework doesn't always install), and its
+   `extra` names the pip extra.
+2. **An extra with a floor.** Each requirement is `>=` the lowest verified
+   version, including any sub-extra the adapter needs (`strands-agents[openai]`).
+   It has a matching row in `docs/verified-apis.md` §8 and a §8.3 floor row.
+3. **A lazy import.** The adapter module never imports its framework at module
+   level (only under `TYPE_CHECKING`). Its factories import through
+   `Adapter._native_import`, which raises the curated `missing_framework_error`.
+4. **All three forms.** `donkey.<fw>.<factory>()`, `donkey.<fw>.connection_kwargs()`
+   and the module-level `donkey_kit.integrations.<fw>.<factory>()`.
+5. **The surrounding artifacts.** A `scripts/verify_frameworks.py` row per
+   factory, a `website/content/frameworks/` page (the adapter docstring's
+   `Docs:` link), an `examples/<fw>/main.py` that makes one call against the
+   simulator, and an entry in the import-linter independence contract in
+   `pyproject.toml`.
+6. **The adapter contract suite, run with the real framework in CI.** That
+   means a driver per factory in `tests/conformance/contract_drivers.py`, a
+   case in `test_framework_retries.py` and `test_missing_framework_error.py`,
+   and the extra in the `adapter-contract` matrix in `.github/workflows/ci.yml`.
+   The suite asserts these things:
+   - governed headers and the run's correlation id;
+   - exactly one send on a 429 or 403;
+   - a typed refusal;
+   - streamed and sync calls;
+   - a call after the framework closes its client;
+   - `last_call` matching `observes_last_call`;
+   - the curated missing-framework error.
+
+Wire the adapter by these rules:
+
+- **Use the shared transport.** Hand the framework a non-owning view
+  (`self.http_client()` / `self.sync_http_client()`), never a client it can
+  close for everyone. Header-only wiring needs a structural reason, recorded in
+  `KNOWN_LIMITATIONS`.
+- **Turn the framework's own retries off.** The shared transport is the one
+  retry layer, so a refusal is sent once.
+- **Wire both sync and async**, or let the driver's `no_sync` say why the
+  framework is async-only.
+- **Use the shared typed-refusal helper** (`_TypedRefusals` in `_base`) rather
+  than a per-framework copy.
+- **`observes_last_call` is the single source of truth** for whether
+  `donkey.last_call` sees the adapter's calls. It holds for every factory and is
+  never changed on an instance.
+
 ### Fixture-driven tests — captures, not conveniences
 
 `tests/fixtures/anypoint/` holds **real captures** from a sandbox, not
