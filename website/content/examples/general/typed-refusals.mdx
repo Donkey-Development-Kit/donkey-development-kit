@@ -264,7 +264,8 @@ written next to the `classify()` clause would never run. The bridge has two
 arms because the OpenAI client reports failures two ways: a gateway refusal is
 an `openai.APIStatusError` carrying the response, and an error the transport
 raises itself (`GatewayUnavailable`, `ModelSubstituted`) arrives as an
-`openai.APIConnectionError` with the typed error on `__cause__`.
+`openai.APIConnectionError` with the typed error on `__cause__` under `openai`
+before 3, and as the typed error itself under `openai` 3 and later.
 
 Inside a `donkey.run()` block, a `@donkey.governed` function or
 `typed_refusals()`, the SDK does that bridging for you, and the inner `try`

@@ -126,9 +126,12 @@ closed the client it was given), and a call whose pooled connections belong to
 an event loop that has closed. The SDK's own connection pools are per event
 loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
 transport you passed in and reused across `asyncio.run()` calls. Its
-`.remediation` names the fix for each. Through the OpenAI SDK it arrives
-wrapped, like `GatewayUnavailable`: catch `openai.APIConnectionError` and read
-the `ConfigError` from `e.__cause__`.
+`.remediation` names the fix for each. Outside a [`donkey.run()`](/telemetry#correlation-ids)
+block, `typed_refusals()` or `@donkey.governed`, it reaches you the way
+`GatewayUnavailable` does: `openai` before 3 and `anthropic` wrap it in an
+`APIConnectionError` (read the `ConfigError` from `e.__cause__`), and `openai`
+3 and later raises it as it is. Inside those blocks it is the typed
+`ConfigError` either way.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
@@ -148,9 +151,12 @@ queue, shed load, or fall back to a non-AI path — instead of pattern-matching 
 raw `httpx` exception.
 
 `DonkeyAsyncClient` and its blocking twin both raise it, so the async and sync
-surfaces behave identically. An HTTP SDK on top re-wraps it (the OpenAI SDK as
-an `APIConnectionError`); inside `donkey.run()` it reaches you as
-`GatewayUnavailable` again (see
+surfaces behave identically. What reaches your code depends on the SDK on top.
+`openai` before 3 and `anthropic` re-wrap it as an `APIConnectionError` with the
+`GatewayUnavailable` on `__cause__`; `openai` 3 and later lets it through as
+`GatewayUnavailable`. Inside `donkey.run()` or `@donkey.governed` it reaches you
+as `GatewayUnavailable` in every case, unless you opt out with
+`typed_refusals=False` (see
 [Typed refusals at the framework boundary](#typed-refusals-at-the-framework-boundary)).
 It is terminal and **not retried**. It carries:
 
@@ -241,10 +247,11 @@ overrode the header names in config, pass the ids to `classify()` explicitly.)
 ## Typed refusals at the framework boundary
 
 Every framework between your code and the gateway raises its own errors. The
-OpenAI and Anthropic SDKs turn a refusal into a `PermissionDeniedError` and a
-lost gateway into an `APIConnectionError` (the SDK's `GatewayUnavailable` hidden
-on its `__cause__`), LangChain re-wraps those again, and Strands and Agent
-Framework wrap them in their own types. Inside a
+OpenAI and Anthropic SDKs turn a refusal into a `PermissionDeniedError`.
+A lost gateway becomes an `APIConnectionError` with the `GatewayUnavailable`
+hidden on its `__cause__` under `openai` before 3 and under `anthropic`, while
+`openai` 3 and later raises `GatewayUnavailable` as it is. LangChain re-wraps
+these again, and Strands and Agent Framework wrap them in their own types. Inside a
 [`donkey.run()`](/telemetry#correlation-ids) block or a
 [`@donkey.governed`](/telemetry#correlation-ids) function, none of that reaches
 you: a refusal or a lost gateway leaves the block as its typed `DonkeyError`,
@@ -299,8 +306,10 @@ What the bridge types, and what it leaves alone:
   `raise HTTPException(...) from exc`, a `KeyboardInterrupt`, a task
   cancellation.
 
-The framework's own error stays on `exc.framework_error`. To get the
-framework's errors instead, pass `typed_refusals=False` to `donkey.run()` or
+The bridge is on by default in both forms. The framework's own error stays on
+`exc.framework_error` (it is `None` when the SDK raised the typed error itself,
+as `openai` 3 and later does for `GatewayUnavailable`). To get the framework's
+errors instead, pass `typed_refusals=False` to `donkey.run()` or
 `@donkey.governed`.
 
 <Callout type="info">
