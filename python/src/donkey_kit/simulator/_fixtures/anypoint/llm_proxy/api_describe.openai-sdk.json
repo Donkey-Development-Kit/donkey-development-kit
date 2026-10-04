@@ -7,12 +7,12 @@
       "date": "2026-08-28T13:30:46.586Z"
     }
   },
-  "masterOrganizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
-  "organizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+  "masterOrganizationId": "00000000-0000-4000-8000-40e9a964ded9",
+  "organizationId": "00000000-0000-4000-8000-40e9a964ded9",
   "id": 21133858,
   "instanceLabel": null,
   "environmentInstanceId": "instance_21133858",
-  "groupId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+  "groupId": "00000000-0000-4000-8000-40e9a964ded9",
   "assetId": "openai-sdk",
   "assetVersion": "1.0.0",
   "productVersion": "v1.0",
@@ -22,8 +22,8 @@
   "providerId": null,
   "deprecated": false,
   "lastActiveDate": null,
-  "endpointUri": "https://agent-network-ingress-gw-zovwbn.jeg62f.usa-e2.cloudhub.io",
-  "environmentId": "3e6ce455-e3e8-4402-b830-9fcf07d9207b",
+  "endpointUri": "https://agent-network-ingress-gw.example.invalid",
+  "environmentId": "00000000-0000-4000-8000-9be3001e93bf",
   "isPublic": false,
   "stage": "release",
   "technology": "flexGateway",
@@ -57,12 +57,12 @@
       }
     },
     "id": 28413008,
-    "applicationId": "ee8ef11d-3cfd-4208-8113-d7961fcebbbf",
+    "applicationId": "00000000-0000-4000-8000-59a69c6dc182",
     "applicationName": null,
     "gatewayVersion": "1.13.2",
     "environmentName": null,
-    "environmentId": "3e6ce455-e3e8-4402-b830-9fcf07d9207b",
-    "targetId": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+    "environmentId": "00000000-0000-4000-8000-9be3001e93bf",
+    "targetId": "00000000-0000-4000-8000-7efc2cdaa149",
     "targetName": "agent-network-ingress-gw",
     "deploymentId": null,
     "updatedDate": "2026-08-28T13:31:08.207Z",
@@ -77,14 +77,14 @@
           },
           "environment": {
             "target": {
-              "id": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+              "id": "00000000-0000-4000-8000-7efc2cdaa149",
               "provider": "RR"
             }
           }
         }
       },
       "target": {
-        "id": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+        "id": "00000000-0000-4000-8000-7efc2cdaa149",
         "provider": "RR"
       }
     },
@@ -100,7 +100,7 @@
       },
       "upstreams": [
         {
-          "id": "06391e13-0e2c-4730-ae68-be4032e80579",
+          "id": "00000000-0000-4000-8000-ed6428cc9c20",
           "weight": 100
         }
       ]

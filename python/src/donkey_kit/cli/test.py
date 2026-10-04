@@ -26,7 +26,8 @@ def test(
     """Run the conformance suite against your agent (BG §1.5).
 
     A thin front end to ``pytest --donkey-conformance`` — it does not
-    re-implement the runner. Your ``--agent MODULE:FACTORY`` and any trailing
+    re-implement the runner. Your ``--agent MODULE:FACTORY`` (forwarded as the
+    plugin's ``--donkey-agent``) and any trailing
     pytest arguments pass straight through, and pytest's exit code becomes
     ``donkey test``'s own, so it drops into CI unchanged. Needs the ``[test]``
     extra (a missing pytest is an install prompt, exit 1, not a ``blocked on
@@ -43,7 +44,7 @@ def test(
 
     argv = [sys.executable, "-m", "pytest", "--donkey-conformance"]
     if agent:
-        argv += ["--agent", agent]
+        argv += ["--donkey-agent", agent]
     argv += list(ctx.args)
 
     completed = subprocess.run(argv, check=False)

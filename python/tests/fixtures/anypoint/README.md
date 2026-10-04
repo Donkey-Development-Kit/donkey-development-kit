@@ -1,8 +1,8 @@
 # Captured fixtures — real Anypoint sandbox via `anypoint-cli-v4`
 
 Captured 2026-08-28 from the real sandbox org
-`82a0453b-22e6-430d-bbf4-35b989d043dc`, environment **Sandbox**
-(`3e6ce455-e3e8-4402-b830-9fcf07d9207b`), using `anypoint-cli-v4` 1.6.26. Unlike
+`00000000-0000-4000-8000-40e9a964ded9`, environment **Sandbox**
+(`00000000-0000-4000-8000-9be3001e93bf`), using `anypoint-cli-v4` 1.6.26. Unlike
 the `a2d/` fixtures, these are the **direct Anypoint control-plane** data
 contracts the SDK targets.
 

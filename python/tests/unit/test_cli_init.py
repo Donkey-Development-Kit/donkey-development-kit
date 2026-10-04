@@ -5,7 +5,7 @@ secret into the
 committed file, and is idempotent — a bare re-run does not clobber an existing
 file (``--force`` regenerates).
 
-Framework-free: needs only ``[dev]`` (typer). Runs in the base-only CI job.
+Framework-free: needs only the ``dev`` group (typer). Runs in the base-only CI job.
 """
 
 from __future__ import annotations

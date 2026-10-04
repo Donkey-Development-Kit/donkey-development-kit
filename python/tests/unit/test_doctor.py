@@ -3,7 +3,7 @@
 Exercises the three look-alike failures the taxonomy tells apart, the
 remediation-from-the-taxonomy contract (AC2), and the budget staleness line
 (AC3) — all through an injected probe, so no gateway (and no ``[llm]`` extra)
-is needed. Needs only ``[dev]``.
+is needed. Needs only the ``dev`` group.
 """
 
 from __future__ import annotations

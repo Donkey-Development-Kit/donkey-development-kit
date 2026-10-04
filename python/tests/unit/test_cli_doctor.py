@@ -3,7 +3,7 @@ non-zero (CI-preflight, AC4), ``--json`` is machine-readable, and a missing
 ``[llm]`` extra is an install prompt (exit 1), not a stack trace.
 
 The probe is monkeypatched (``_live_probe``) so no gateway and no ``[llm]``
-extra are needed; runs under ``[dev]`` alone.
+extra are needed; runs under the ``dev`` group alone.
 """
 
 from __future__ import annotations

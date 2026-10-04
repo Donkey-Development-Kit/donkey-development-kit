@@ -11,7 +11,8 @@ Three places render values a developer never meant to print:
 
 Each test names the value that must not appear and asserts on the rendered text.
 The PII cases are driven by the live capture
-``tests/fixtures/anypoint/llm_proxy/reject.pii-detected.*`` (docs/verified-apis.md §4).
+``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/reject.pii-detected.*``
+(docs/verified-apis.md §4).
 """
 
 from __future__ import annotations
@@ -42,7 +43,11 @@ from donkey_kit.integrations.langgraph import LangGraphAdapter
 from donkey_kit.llm.client import LLMClient
 from donkey_kit.simulator.fixtures import parse_headers
 
-LLM_PROXY = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "llm_proxy"
+LLM_PROXY = (
+    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    / "anypoint"
+    / "llm_proxy"
+)
 
 
 def _isolate_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str | None = None) -> None:

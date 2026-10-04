@@ -17,9 +17,10 @@ Two design points that matter:
 
 The concrete HTTP-response → exception mapping lives in :func:`classify`: an
 ordered series of discriminators, each keyed on a rejection shape captured from
-a real gateway (docs/verified-apis.md §4, ``tests/fixtures/anypoint/llm_proxy/``,
-BG §1.5) rather than a hand-written guess. A shape it does not recognise falls
-through to a generic :class:`PolicyViolation` or :class:`DonkeyError`.
+a real gateway (docs/verified-apis.md §4,
+``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/``, BG §1.5) rather
+than a hand-written guess. A shape it does not recognise falls through to
+a generic :class:`PolicyViolation` or :class:`DonkeyError`.
 """
 
 from __future__ import annotations
@@ -609,7 +610,7 @@ def classify(
 
     The precise policy discrimination (BG §1.2, working instruction #4) is driven by
     real rejection captures from a live governed LLM proxy (docs/verified-apis.md §4,
-    ``tests/fixtures/anypoint/llm_proxy/reject.*``), NOT hand-written guesses.
+    ``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/reject.*``), NOT hand-written guesses.
     What the captures established:
 
     * **PII detection** rejects with **403** and a *nested* error object whose

@@ -74,7 +74,7 @@ def test_test_forwards_agent_and_trailing_pytest_args(captured_run: dict[str, An
     argv = captured_run["argv"]
     assert "--donkey-conformance" in argv
     # The agent factory is forwarded to the plugin.
-    assert "--agent" in argv
+    assert "--donkey-agent" in argv
     assert "my.pkg:make_agent" in argv
     # Trailing pytest args pass straight through.
     assert "-k" in argv and "governance" in argv

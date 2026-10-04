@@ -143,6 +143,21 @@ changes (the floors-never-ceilings rule). For a pre-release, the notes also stat
 (e.g. "pre-MVP: docs and scaffolding only") so a `.devN` build never reads like a
 usable SDK.
 
+Every Release body has a `## Breaking changes` section, even when there are
+none: it lists each break with its migration, or says `None.`. It is the first
+thing users scan for during the alpha, so it never collapses into a sentence in
+the lead.
+
+`gh release create --generate-notes` groups the raw PR list by label, using
+`.github/release.yml` (Breaking changes, Features, Fixes, Docs, Maintenance,
+Other). GitHub groups by **PR** labels, and in this repo the labels live on
+issues, so `.github/workflows/pr-labels.yml` copies the type labels
+(`breaking-change`, `enhancement`, `bug`, `documentation`, `chore`,
+`dependencies`) from the issues a PR closes onto the PR. A PR with no
+`Closes #N`, or whose issue has no type label, lands under Other. Label the
+issue, not the PR, and add `breaking-change` to any issue whose fix breaks the
+contract above.
+
 ## One-time human setup: register the Trusted Publisher
 
 Trust is registered **per index, and keyed on the workflow filename** — each

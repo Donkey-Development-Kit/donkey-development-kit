@@ -2,7 +2,7 @@
 contract, status resolution per shape, and byte-identity of what it serves.
 
 Unguarded — the loader needs no web framework, so this runs in the base-only CI
-job under ``[dev]`` only (the same guarantee [[test_simulator_base_only]] pins).
+job under the ``dev`` group only (the same guarantee [[test_simulator_base_only]] pins).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pytest
 
 from donkey_kit.simulator import fixtures as fx
 
-_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+_FIXTURES = Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
 
 # shape -> the status classify() is contract-tested against for that shape. The
 # simulator MUST reproduce these exactly, or a stock client sees a different

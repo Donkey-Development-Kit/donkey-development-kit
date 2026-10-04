@@ -1,0 +1,154 @@
+# Every direct dependency of donkey-kit is a reviewed decision (#936).
+#
+# One [packages.<name>] table per distribution named in pyproject.toml's
+# `dependencies`, any extra, or any dependency group, keyed by its PEP 503 name
+# (lowercase, hyphens). `reason` says why the SDK needs it and where; `reviewed`
+# is the date a maintainer last confirmed that.
+#
+# tests/unit/test_house_style_config.py fails when a declared name is missing
+# here or an entry outlives its declaration. On a PR that adds a name,
+# scripts/check_new_dependencies.py also checks it exists on PyPI and warns on a
+# young, abandoned, or lookalike project. Add the entry in the same PR as the
+# dependency, so the review sees both.
+
+# --- Base install: core/ is framework-free (§1.1) ---
+
+[packages.httpx]
+reason = "The one transport: DonkeyAsyncClient is an httpx.AsyncClient subclass (BG §1.1)."
+reviewed = 2026-10-03
+
+[packages.pydantic]
+reason = "Schema validation at the external-schema boundary, provisioning/spec.py (ADR 0001)."
+reviewed = 2026-10-03
+
+[packages.typing-extensions]
+reason = "Backfills typing features below Python 3.12 (3.10 floor)."
+reviewed = 2026-10-03
+
+[packages.tomli]
+reason = "Backfills stdlib tomllib below Python 3.11 for config.py and governance.py (3.10 floor)."
+reviewed = 2026-10-03
+
+# --- [llm] and the framework extras (BG §1.8) ---
+
+[packages.openai]
+reason = "[llm] and [openai-agents]: the raw OpenAI-compatible proxy client, donkey.llm.client()."
+reviewed = 2026-10-03
+
+[packages.langgraph]
+reason = "[langgraph]: the graph runtime for the deep, conformance-gated adapter (#198)."
+reviewed = 2026-10-03
+
+[packages.langchain-openai]
+reason = "[langgraph]: ChatOpenAI, the native object the LangGraph adapter returns."
+reviewed = 2026-10-03
+
+[packages.langchain-core]
+reason = "[langgraph]: the callback base the adapter's last_call handler subclasses."
+reviewed = 2026-10-03
+
+[packages.google-adk]
+reason = "[adk]: the Google ADK model classes the adapter builds (LiteLlm, Gemini)."
+reviewed = 2026-10-03
+
+[packages.litellm]
+reason = "[adk]: ADK's LiteLlm wrapper runs on LiteLLM for a Format=OpenAI proxy."
+reviewed = 2026-10-03
+
+[packages.agent-framework]
+reason = "[agent_framework]: Microsoft Agent Framework's OpenAIChatClient and policy middleware."
+reviewed = 2026-10-03
+
+[packages.openai-agents]
+reason = "[openai-agents]: the OpenAI Agents SDK, supported at connection_kwargs()."
+reviewed = 2026-10-03
+
+[packages.anthropic]
+reason = "[anthropic]: the Anthropic client, supported at connection_kwargs() (#701)."
+reviewed = 2026-10-03
+
+[packages.crewai]
+reason = "[crewai]: CrewAI's native OpenAI provider, supported at connection_kwargs()."
+reviewed = 2026-10-03
+
+[packages.llama-index-llms-openai-like]
+reason = "[llamaindex]: LlamaIndex's OpenAILike LLM, supported at connection_kwargs()."
+reviewed = 2026-10-03
+
+[packages.strands-agents]
+reason = "[strands]: Strands' OpenAIModel, supported at connection_kwargs()."
+reviewed = 2026-10-03
+
+# --- [local]: the local gateway simulator (BG §1.4) ---
+
+[packages.starlette]
+reason = "[local]: the pure-Python ASGI app donkey mock serves."
+reviewed = 2026-10-03
+
+[packages.uvicorn]
+reason = "[local]: serves the simulator's ASGI app (plain uvicorn, no C extensions)."
+reviewed = 2026-10-03
+
+# --- [otel]: GenAI spans and zero-config export (BG §1.6) ---
+
+[packages.opentelemetry-api]
+reason = "[otel]: the tracer API the GenAI spans are emitted through."
+reviewed = 2026-10-03
+
+[packages.opentelemetry-sdk]
+reason = "[otel]: the TracerProvider zero-config export installs (#194)."
+reviewed = 2026-10-03
+
+[packages.opentelemetry-exporter-otlp-proto-http]
+reason = "[otel]: the http/protobuf OTLP exporter, chosen over the bundle to avoid grpcio."
+reviewed = 2026-10-03
+
+# --- [cli]: the donkey CLI (BG §1.9) ---
+
+[packages.typer]
+reason = "[cli] and dev: the donkey command's argument parsing."
+reviewed = 2026-10-03
+
+[packages.pyyaml]
+reason = "[cli] and dev: reads the provisioning YAML specs."
+reviewed = 2026-10-03
+
+[packages.rich]
+reason = "[cli]: typer renders help and errors with rich when installed; src/ does not import it."
+reviewed = 2026-10-03
+
+# --- [test]: the public conformance plugin (BG §1.5), and the dev group ---
+
+[packages.pytest]
+reason = "[test] and dev: the conformance plugin is a pytest plugin; also the repo's test runner."
+reviewed = 2026-10-03
+
+[packages.pytest-asyncio]
+reason = "[test] and dev: runs async agent tests under asyncio_mode = auto."
+reviewed = 2026-10-03
+
+# --- dev group only: contributor tooling (not published, #744) ---
+
+[packages.respx]
+reason = "dev: mocks httpx in the unit tests."
+reviewed = 2026-10-03
+
+[packages.mypy]
+reason = "dev: mypy --strict, blocking in CI."
+reviewed = 2026-10-03
+
+[packages.ruff]
+reason = "dev: lint and import order (CONTRIBUTING §3 map)."
+reviewed = 2026-10-03
+
+[packages.import-linter]
+reason = "dev: lint-imports enforces the layering (§1.1)."
+reviewed = 2026-10-03
+
+[packages.vulture]
+reason = "dev: the dead-code check over src/ (#720)."
+reviewed = 2026-10-03
+
+[packages.types-pyyaml]
+reason = "dev: stubs so mypy --strict typechecks the CLI's yaml handling."
+reviewed = 2026-10-03

@@ -18,8 +18,8 @@ x-llm-proxy-output-tokens-cost-per-1m: 2.5
 x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: gemini, Model: gemini-2.5-flash.
 x-model-wallet-selected: ddk-model-wallet
 x-llm-proxy-request-success: Request completed successfully. Provider: gemini, Model: gemini-2.5-flash.
-x-envoy-decorator-operation: api-instance-21189395.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
+x-envoy-decorator-operation: api-instance-21189395.00000000-0000-4000-8000-5c4fd1a49fc3.svc
 transfer-encoding: chunked
-x-correlation-id: 5bce6765-ca3c-4ff8-b923-81bff85ec8e6
+x-correlation-id: 00000000-0000-4000-8000-63ba015ba12f
 Strict-Transport-Security: max-age=31536000; includeSubdomains
 Connection: Keep-Alive

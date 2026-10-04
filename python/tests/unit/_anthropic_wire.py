@@ -66,7 +66,11 @@ def success_response() -> httpx.Response:
     )
 
 
-_LLM_PROXY = FIXTURES.parent / "llm_proxy"
+_LLM_PROXY = (
+    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    / "anypoint"
+    / "llm_proxy"
+)
 
 # The live gateway refusals the bridge must hand back classifiable (#738):
 # fixture stem → status.
@@ -74,7 +78,8 @@ REFUSALS = {"pii-detected": 403, "token-rate-limit": 429}
 
 
 def refusal_response(name: str) -> httpx.Response:
-    """A live LLM-proxy refusal (``tests/fixtures/anypoint/llm_proxy/reject.*``).
+    """A live LLM-proxy refusal
+    (``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/reject.*``).
     The gateway applies the same policies whatever the inbound format."""
     body = next(_LLM_PROXY.glob(f"reject.{name}.body.*"))
     return httpx.Response(

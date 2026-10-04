@@ -8,12 +8,12 @@
         "date": "2026-08-24T11:27:39.831Z"
       }
     },
-    "masterOrganizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
-    "organizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+    "masterOrganizationId": "00000000-0000-4000-8000-40e9a964ded9",
+    "organizationId": "00000000-0000-4000-8000-40e9a964ded9",
     "id": 21121335,
     "instanceLabel": "support-case-history-mcp",
     "environmentInstanceId": "instance_21121335",
-    "groupId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+    "groupId": "00000000-0000-4000-8000-40e9a964ded9",
     "assetId": "support-case-history-mcp",
     "assetVersion": "1.0.0",
     "productVersion": "v1.0",
@@ -23,8 +23,8 @@
     "providerId": null,
     "deprecated": false,
     "lastActiveDate": null,
-    "endpointUri": "https://agent-network-ingress-gw-zovwbn.jeg62f.usa-e2.cloudhub.io/mcp/support-case-history/",
-    "environmentId": "3e6ce455-e3e8-4402-b830-9fcf07d9207b",
+    "endpointUri": "https://agent-network-ingress-gw.example.invalid/mcp/support-case-history/",
+    "environmentId": "00000000-0000-4000-8000-9be3001e93bf",
     "isPublic": false,
     "stage": "release",
     "technology": "flexGateway",
@@ -35,15 +35,15 @@
         "created": {},
         "updated": {}
       },
-      "applicationId": "b6e0217a-c747-4912-8c7d-7c89c31722f1",
-      "targetId": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+      "applicationId": "00000000-0000-4000-8000-4c7cb9ae4d5f",
+      "targetId": "00000000-0000-4000-8000-7efc2cdaa149",
       "expectedStatus": "deployed"
     },
     "routing": [
       {
         "upstreams": [
           {
-            "id": "43ad650b-348e-400e-b05e-3eef6ad64891",
+            "id": "00000000-0000-4000-8000-e0cebf5ea7c9",
             "weight": 100
           }
         ]
@@ -66,12 +66,12 @@
         "date": "2026-08-24T11:26:53.061Z"
       }
     },
-    "masterOrganizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
-    "organizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+    "masterOrganizationId": "00000000-0000-4000-8000-40e9a964ded9",
+    "organizationId": "00000000-0000-4000-8000-40e9a964ded9",
     "id": 21121328,
     "instanceLabel": "order-transactions-mcp",
     "environmentInstanceId": "instance_21121328",
-    "groupId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+    "groupId": "00000000-0000-4000-8000-40e9a964ded9",
     "assetId": "order-transactions-mcp",
     "assetVersion": "1.0.0",
     "productVersion": "v1.0",
@@ -81,8 +81,8 @@
     "providerId": null,
     "deprecated": false,
     "lastActiveDate": null,
-    "endpointUri": "https://agent-network-ingress-gw-zovwbn.jeg62f.usa-e2.cloudhub.io/mcp/order-transactions/",
-    "environmentId": "3e6ce455-e3e8-4402-b830-9fcf07d9207b",
+    "endpointUri": "https://agent-network-ingress-gw.example.invalid/mcp/order-transactions/",
+    "environmentId": "00000000-0000-4000-8000-9be3001e93bf",
     "isPublic": false,
     "stage": "release",
     "technology": "flexGateway",
@@ -93,15 +93,15 @@
         "created": {},
         "updated": {}
       },
-      "applicationId": "9a9a2ca0-6e3a-4cef-b1d3-49e6a4317dc9",
-      "targetId": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+      "applicationId": "00000000-0000-4000-8000-274f96cd9ac9",
+      "targetId": "00000000-0000-4000-8000-7efc2cdaa149",
       "expectedStatus": "deployed"
     },
     "routing": [
       {
         "upstreams": [
           {
-            "id": "96f642d0-5827-4ea1-8af6-1a1a43a8ce49",
+            "id": "00000000-0000-4000-8000-e979b8737f96",
             "weight": 100
           }
         ]
@@ -124,12 +124,12 @@
         "date": "2026-08-24T11:26:13.607Z"
       }
     },
-    "masterOrganizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
-    "organizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+    "masterOrganizationId": "00000000-0000-4000-8000-40e9a964ded9",
+    "organizationId": "00000000-0000-4000-8000-40e9a964ded9",
     "id": 21121325,
     "instanceLabel": "marketing-engagement-mcp",
     "environmentInstanceId": "instance_21121325",
-    "groupId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+    "groupId": "00000000-0000-4000-8000-40e9a964ded9",
     "assetId": "marketing-engagement-mcp",
     "assetVersion": "1.0.0",
     "productVersion": "v1.0",
@@ -139,8 +139,8 @@
     "providerId": null,
     "deprecated": false,
     "lastActiveDate": null,
-    "endpointUri": "https://agent-network-ingress-gw-zovwbn.jeg62f.usa-e2.cloudhub.io/mcp/marketing-engagement/",
-    "environmentId": "3e6ce455-e3e8-4402-b830-9fcf07d9207b",
+    "endpointUri": "https://agent-network-ingress-gw.example.invalid/mcp/marketing-engagement/",
+    "environmentId": "00000000-0000-4000-8000-9be3001e93bf",
     "isPublic": false,
     "stage": "release",
     "technology": "flexGateway",
@@ -151,15 +151,15 @@
         "created": {},
         "updated": {}
       },
-      "applicationId": "9bcc01fa-b1ad-4baf-bf0d-89b313d8259d",
-      "targetId": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+      "applicationId": "00000000-0000-4000-8000-6100f0412a1a",
+      "targetId": "00000000-0000-4000-8000-7efc2cdaa149",
       "expectedStatus": "deployed"
     },
     "routing": [
       {
         "upstreams": [
           {
-            "id": "d704dd2a-1d7b-4fb0-a191-e22feedd6754",
+            "id": "00000000-0000-4000-8000-c54d73329538",
             "weight": 100
           }
         ]
