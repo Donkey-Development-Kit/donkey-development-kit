@@ -9900,8 +9900,7 @@ request is sent. One error lists every bad field and where each was set:
 |---|---|
 | `timeout_s` | A number greater than `0` |
 | `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
-| `telemetry`, `telemetry_capture_content`, `send_cost_headers`, `retry_model_calls_on_gateway_errors` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
-| `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
+| `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers`, `retry_model_calls_on_gateway_errors` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
 | `region` | `us`, `eu`, `ca` or `jp` |
 | `llm_proxy_auth` | `client-id`, `jwt` or `bearer` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |
