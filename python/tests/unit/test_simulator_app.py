@@ -2,7 +2,7 @@
 ``httpx.ASGITransport`` — no TCP port, no uvicorn.
 
 Guarded by ``importorskip("starlette")``: under the base-only / typecheck jobs
-(``[dev]`` only, no ``[local]`` extra) this whole module skips cleanly, which is
+(the ``dev`` group only, no ``[local]`` extra) this whole module skips cleanly, which is
 the flip side of [[test_simulator_base_only]] — importing the package there must
 still succeed, but exercising the app requires the extra.
 

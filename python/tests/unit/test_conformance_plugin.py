@@ -18,7 +18,7 @@ the tmp dir on ``sys.path`` so ``--agent=<module>:build`` imports the file we
 wrote there. The runs that actually build an agent need ``openai`` (the agent
 calls ``donkey.openai()``); those tests skip without it. The inert/help and the
 two UsageError paths need neither ``openai`` nor a live gateway, so they run
-everywhere the base ``[dev]`` install does.
+everywhere the base install plus the ``dev`` group does.
 """
 
 from __future__ import annotations

@@ -21,7 +21,7 @@ The fixture-integrity lock follows the same resolution order, so the public
 lock helpers work from both a source checkout and an installed wheel.
 
 Nothing here imports a web framework: this module is safe under the base-only
-CI job (``[dev]`` only, no ``[local]`` extra). It imports only the framework-free
+CI job (the ``dev`` group only, no ``[local]`` extra). It imports only the framework-free
 ``core`` layer for the verified header names (an allowed upward import).
 """
 
