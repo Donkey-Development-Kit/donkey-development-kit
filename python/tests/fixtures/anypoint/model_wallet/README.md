@@ -1,8 +1,8 @@
 # Model-wallet JWT ingress — LIVE capture (docs/verified-apis.md §2/§3, #372)
 
 Captured **2026-09-21** from a real deployed, **wallet-enabled** Agent Network
-LLM proxy in the DDK sandbox org `826ba985-9894-4f7b-ba71-6965832ef0d6`, env
-**Sandbox** (`14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a`). Proxy asset
+LLM proxy in the DDK sandbox org `00000000-0000-4000-8000-4256cc8e6f68`, env
+**Sandbox** (`00000000-0000-4000-8000-5c4fd1a49fc3`). Proxy asset
 `ddk-model-wallet` v1.0, API Manager instance **`21186246`**, deployed to the
 `shared-omni-gateway` Flex Gateway (v1.13.5), upstream `https://api.openai.com/v1/`,
 routing to `openai:gpt-5-mini`.

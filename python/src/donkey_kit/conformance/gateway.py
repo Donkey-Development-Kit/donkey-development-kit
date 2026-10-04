@@ -19,7 +19,7 @@ onto every pytest run.
 Framework isolation (the layered architecture): ``uvicorn`` is imported lazily
 inside :func:`start_gateway`, and ``starlette`` only inside the simulator's own
 ``build_app`` — so ``import donkey_kit.conformance.gateway`` stays green under the
-base-only CI job (``[dev]`` only, no ``[local]`` extra). Taking the fixture
+base-only CI job (the ``dev`` group only, no ``[local]`` extra). Taking the fixture
 without that extra raises an :class:`ImportError` naming the exact
 ``pip install`` — never a bare ``ModuleNotFoundError`` and never a silent skip.
 """

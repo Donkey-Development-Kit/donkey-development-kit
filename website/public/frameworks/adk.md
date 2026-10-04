@@ -246,15 +246,13 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   correlation ID bound by `donkey.run()` reaches every request.
 - **`donkey.last_call` is set in the context that made the call.** ADK's
   `Runner` calls the model in a task of its own, so read it in an
-  `after_model_callback` (see [Native Gemini](#native-gemini)). Until
-  `gemini()` has been called on a `Donkey`, a cold read on a `Donkey` that
-  resolved only ADK reports `UNAVAILABLE` rather than `UNOBSERVED`, because
-  `model()` is still listed as not observing calls. Aligning that, and the
-  matching conformance exemptions, is tracked in
-  [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
-- **Refusals on the `model()` path aren't typed.** LiteLLM raises its own
-  error without the response headers, so `classify()` has nothing to read; see
-  the [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
+  `after_model_callback` (see [Native Gemini](#native-gemini)). A cold read on
+  a `Donkey` that resolved only ADK reports `UNOBSERVED`, and `OBSERVED` after
+  a call, for `model()` as well as `gemini()`.
+- **Refusals on the `model()` path aren't converted to a typed error by the
+  SDK.** A refusal surfaces as a LiteLLM error whose `__cause__` chain
+  contains the `openai` `APIStatusError`; see the
+  [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
 - **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
   accepts `client_kwargs`; the `adk` extra declares that floor. On an older
   ADK, `Gemini` drops the governed client without an error and talks to Google

@@ -1,8 +1,8 @@
 # LLM proxy — LIVE captures from a real governed ingress proxy (docs/verified-apis.md §2/§3/§4)
 
 Captured 2026-08-28 from a real deployed Agent Network LLM proxy in the sandbox
-org `82a0453b-22e6-430d-bbf4-35b989d043dc`, env **Sandbox**
-(`3e6ce455-e3e8-4402-b830-9fcf07d9207b`). The proxy asset is `openai-sdk` 1.0.0,
+org `00000000-0000-4000-8000-40e9a964ded9`, env **Sandbox**
+(`00000000-0000-4000-8000-9be3001e93bf`). The proxy asset is `openai-sdk` 1.0.0,
 API Manager instance `21133858`, deployed to the `agent-network-ingress-gw` Flex
 Gateway (v1.13.2), upstream `https://api.openai.com/v1/`.
 

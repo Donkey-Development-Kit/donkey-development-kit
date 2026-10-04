@@ -150,7 +150,7 @@ REQUEST_ID_HEADERS: tuple[str, ...] = (
 # span. The names are defined in ``core/_wire``.
 
 # docs/verified-apis.md §3 semantic-routing row
-# (``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
+# (``python/src/donkey_kit/simulator/_fixtures/anypoint/semantic_routing/``, #589/#590). A
 # SEMANTIC-routing proxy (``routing_type == "Semantic"``) additionally states
 # WHICH topic the prompt matched and how confident the match was, in a single
 # prose header. The four routing headers above are emitted identically to
@@ -177,8 +177,8 @@ REQUEST_ID_HEADERS: tuple[str, ...] = (
 # open to ``None`` on an absent/garbage value (verification discipline).
 _CACHE_STATUSES = frozenset({"hit", "miss", "bypass", "no-store"})
 
-# ``api-instance-21133858.3e6ce455-e3e8-4402-b830-9fcf07d9207b.svc`` → instance
-# ``21133858`` + environment ``3e6ce455-…`` (a UUID; it carries dashes but no
+# ``api-instance-21133858.00000000-0000-4000-8000-9be3001e93bf.svc`` → instance
+# ``21133858`` + environment ``00000000-…`` (a UUID; it carries dashes but no
 # dots, so a plain three-way split on ``.`` is unambiguous). An unrecognised
 # shape matches nothing and yields ``(None, None)`` — never a guess (verification discipline).
 _DECORATOR_RE = re.compile(r"^api-instance-(?P<instance>[^.]+)\.(?P<env>[^.]+)\.svc$")

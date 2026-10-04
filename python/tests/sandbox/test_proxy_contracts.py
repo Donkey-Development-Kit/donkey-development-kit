@@ -92,7 +92,7 @@ def test_injection_guard_rejection_classifies_and_captures(
     assert an invented trigger. When it *does* reject, we assert the contract
     (a typed ``DonkeyError`` with non-empty remediation) and print the raw body
     + headers so a maintainer can capture them into
-    ``tests/fixtures/anypoint/llm_proxy/`` and flip the #253 rows in
+    ``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/`` and flip the #253 rows in
     ``docs/verified-apis.md`` + ``core/_verify.py``.
     """
     openai = pytest.importorskip("openai")
@@ -118,5 +118,6 @@ def test_injection_guard_rejection_classifies_and_captures(
         "injection prompt did not trip the Regex Prompt Guard — the trigger regex "
         "is unverified (verification discipline, #253). Refine the prompt against the deployed "
         "policy, "
-        "then capture the rejection body into tests/fixtures/anypoint/llm_proxy/."
+        "then capture the rejection body into "
+        "src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/."
     )
