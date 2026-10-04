@@ -47,7 +47,7 @@ git checkout -b docs/13-verified-apis-update
 Run the same checks CI runs, from `python/`:
 
 ```bash
-pip install -e ".[dev,llm,cli]"
+pip install -e ".[llm,cli]" --group dev   # pip 25.1+
 pytest -q          # tests
 mypy               # mypy --strict
 ruff check .       # lint

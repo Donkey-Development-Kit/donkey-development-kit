@@ -4,7 +4,7 @@ The in-process sibling of the donkey mock server (BG §1.4): instead of a TCP
 port, it swaps a fixture-returning transport onto the live Donkey client for the
 next N calls, so the refusal branch of an agent runs with no network and no
 server. Framework-free — driven straight through the shared ``httpx`` client,
-exactly as ``donkey.openai()`` would, so these run under ``[dev]`` alone (no
+exactly as ``donkey.openai()`` would, so these run under the ``dev`` group alone (no
 ``[local]`` extra, no ``importorskip``).
 
 Acceptance bar (issue #190):
