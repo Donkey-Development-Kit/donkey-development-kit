@@ -32,6 +32,7 @@ import importlib.util
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TypeGuard
 
 import httpx
 import pytest
@@ -115,6 +116,13 @@ def _adapter_class(attr: str) -> type[Adapter]:
     return cls
 
 
+def _is_http_response(obj: object) -> TypeGuard[httpx.Response]:
+    # httpx2 is a fork with its own classes (anthropic>=1 raises with one), and
+    # classify() reads either, so match the class by stack name.
+    cls = type(obj)
+    return cls.__name__ == "Response" and cls.__module__.split(".")[0] in {"httpx", "httpx2"}
+
+
 def _typed(exc: BaseException) -> DonkeyError | None:
     """The typed error a refusal carries: ``exc`` itself, or ``classify()`` of the
     gateway's response. That is the deepest response on the cause chain: a
@@ -127,7 +135,7 @@ def _typed(exc: BaseException) -> DonkeyError | None:
         if isinstance(current, DonkeyError):
             return current
         candidate = getattr(current, "response", None)
-        if isinstance(candidate, httpx.Response) and candidate.status_code >= 400:
+        if _is_http_response(candidate) and candidate.status_code >= 400:
             response = candidate
         current = current.__cause__ or current.__context__
     return classify(response) if response is not None else None
