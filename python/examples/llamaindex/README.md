@@ -1,6 +1,8 @@
 # LlamaIndex example
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+Supported at connection_kwargs(). The example's `build(donkey)` makes one governed
+call through `OpenAILike.acomplete` and runs through the public conformance kit
+(`tests/conformance/test_adapter_contract.py`).
 
 **What this shows.** A one-line factory call gets you a *native*
 `llama_index.llms.openai_like.OpenAILike` pointed at the governed Agent Fabric
@@ -10,10 +12,9 @@ bearer), attribution headers, and `is_chat_model=True` set for you.
 requests to the completions endpoint and fails against a chat-only proxy —
 the single most common LlamaIndex-with-a-gateway bug, and one this factory
 eliminates by construction. The returned object is LlamaIndex's own class,
-not a wrapper. This example only constructs the object; it deliberately
-does not attempt a live inference call, since guessing which one-line
-LlamaIndex call to use (`.chat`, `.achat`, `.complete`, ...) risks inventing
-an API.
+not a wrapper. `main()` only constructs the object; `build(donkey)` makes one
+`acomplete` call inside `typed_refusals()`, which is what the conformance
+kit runs.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:

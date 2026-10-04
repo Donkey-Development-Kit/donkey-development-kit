@@ -227,7 +227,8 @@ def test_adk_model_and_gemini_report_separately(http: DonkeyAsyncClient) -> None
     gemini = adk.capabilities("gemini")
     assert model != gemini
     assert adk.capabilities() is model
-    assert (model.observes_last_call, gemini.observes_last_call) == (False, True)
+    # Both observe since #946; only model() lacks typed refusals (#724).
+    assert model.observes_last_call and gemini.observes_last_call
     assert (model.typed_refusals, gemini.typed_refusals) == (False, True)
 
 

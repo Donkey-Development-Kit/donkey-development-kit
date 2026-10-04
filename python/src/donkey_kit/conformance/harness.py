@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import json
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
@@ -103,6 +104,51 @@ def offline_config() -> DonkeyConfig:
     )
 
 
+_CHAT_COMPLETIONS_ROUTE = "/chat/completions"
+
+
+def _as_chat_completion(body: bytes) -> bytes:
+    """Re-shape the captured ``/responses`` success body as a Chat Completions one.
+
+    The captured success is a Responses-API body. A framework that calls
+    ``/chat/completions`` (LiteLLM, Strands' ``OpenAIModel``, the Agents SDK's chat
+    model, LlamaIndex's ``OpenAILike``) cannot parse that shape, so the same
+    captured model, text and token counts are served in the shape that route
+    returns. Anything that is not the expected shape is served as captured."""
+    try:
+        captured = json.loads(body)
+        text = "".join(
+            part["text"]
+            for item in captured["output"]
+            if item.get("type") == "message"
+            for part in item["content"]
+            if part.get("type") == "output_text"
+        )
+        usage = captured["usage"]
+        return json.dumps(
+            {
+                "id": captured["id"],
+                "object": "chat.completion",
+                "created": captured["created_at"],
+                "model": captured["model"],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": text},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": usage["input_tokens"],
+                    "completion_tokens": usage["output_tokens"],
+                    "total_tokens": usage["total_tokens"],
+                },
+            }
+        ).encode()
+    except (KeyError, TypeError, ValueError):
+        return body
+
+
 def _fixture_responder(
     fixture: Fixture, *, strip_budget: bool = False
 ) -> Callable[[httpx.Request], httpx.Response]:
@@ -123,10 +169,13 @@ def _fixture_responder(
         if fixture.content_type is not None:
             headers["content-type"] = fixture.content_type
         headers[SIMULATOR_HEADER] = "true"
+        content = fixture.body
+        if fixture.status == 200 and request.url.path.endswith(_CHAT_COMPLETIONS_ROUTE):
+            content = _as_chat_completion(content)
         return httpx.Response(
             status_code=fixture.status,
             headers=headers,
-            content=fixture.body,
+            content=content,
             request=request,
         )
 

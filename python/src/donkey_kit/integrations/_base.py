@@ -106,21 +106,6 @@ class Adapter(ABC):
         # lifecycle; standalone use falls back to one owned here.
         self._sync_http = sync_http_client or self._own_sync_client
         self._owned_sync: DonkeyClient | None = None
-        # Which factories with a per-factory capability have built an object, so
-        # observing_last_call() answers for what was used, not what was called last.
-        self._built: set[str] = set()
-
-    def _record_factory(self, name: str) -> None:
-        self._built.add(name)
-
-    def observing_last_call(self) -> bool:
-        """Whether a model call through anything this adapter built can reach
-        ``donkey.last_call``: true if any factory it was used through observes.
-        Before any such factory is used, the default factory's
-        :attr:`observes_last_call`."""
-        if not self._built:
-            return self.observes_last_call
-        return any(self.capabilities(name).observes_last_call for name in self._built)
 
     @contextmanager
     def _native_import(self) -> Iterator[None]:

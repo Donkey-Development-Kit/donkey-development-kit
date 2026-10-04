@@ -2,7 +2,7 @@
 
 This module defines the ONE scenario set the pytest plugin
 (:mod:`donkey_kit.conformance.plugin`) runs against a *customer's own* agent
-via ``pytest --donkey-conformance --agent=my_app:build``. It is the public,
+via ``pytest --donkey-conformance --donkey-agent=my_app:build``. It is the public,
 run-it-against-your-agent sibling of the SDK's internal adapter matrix
 (``tests/conformance/suite.py``) — that one is ours, this one is theirs.
 
@@ -35,9 +35,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from ..core.errors import DonkeyError, PIIDetected, TokenBudgetExceeded
+# The pytest plugin imports this module on every pytest run, so the errors
+# module (and httpx behind it) loads only when a scenario actually runs (#746).
+if TYPE_CHECKING:
+    from ..core.errors import DonkeyError
 
 __all__ = [
     "NO_MODEL_CALL",
@@ -180,6 +183,8 @@ def _no_model_call(obs: Observation) -> Outcome | None:
 
 
 async def _retries_token_budget(ctx: ScenarioContext) -> Outcome:
+    from ..core.errors import TokenBudgetExceeded
+
     ctx.serve_refusal(TokenBudgetExceeded)
     obs = await ctx.run()
     if (no_call := _no_model_call(obs)) is not None:
@@ -194,6 +199,8 @@ async def _retries_token_budget(ctx: ScenarioContext) -> Outcome:
 
 
 async def _swallows_pii_as_generic(ctx: ScenarioContext) -> Outcome:
+    from ..core.errors import DonkeyError, PIIDetected
+
     ctx.serve_refusal(PIIDetected)
     obs = await ctx.run()
     if (no_call := _no_model_call(obs)) is not None:

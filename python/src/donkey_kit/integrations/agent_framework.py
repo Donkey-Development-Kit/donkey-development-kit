@@ -66,6 +66,9 @@ class AgentFrameworkAdapter(Adapter):
     Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
     supported surface, and the factories are conveniences over it.
 
+    The chat clients send through the SDK's shared client, so a call carries the
+    run's correlation id and populates ``donkey.last_call`` (#740).
+
     Raises:
         ImportError: ``donkey.agent_framework`` was read without the
             ``agent_framework`` extra installed; the message carries the install
@@ -75,8 +78,7 @@ class AgentFrameworkAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/agent-framework
     """
 
-    # The shared client, as async_client. observes_last_call is kept False while
-    # the conformance exemption table lists Agent Framework (#740).
+    # The shared client, as async_client (#740, #946).
     factories = MappingProxyType(
         {
             "chat_client": AdapterCapabilities(
@@ -84,7 +86,7 @@ class AgentFrameworkAdapter(Adapter):
                 sync=False,
                 streaming=True,
                 typed_refusals=True,
-                observes_last_call=False,
+                observes_last_call=True,
             ),
         }
     )

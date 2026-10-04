@@ -1,7 +1,7 @@
 """The base-only guarantee (the layered architecture, BG §1.4): importing the simulator package must
 NOT require the ``[local]`` extra.
 
-Unguarded on purpose — this runs in the base-only CI job under ``[dev]`` only,
+Unguarded on purpose — this runs in the base-only CI job under the ``dev`` group only,
 where ``starlette``/``uvicorn`` are absent, so a module-top framework import
 would make these imports fail *there*. The AST assertion below also catches such
 an import in environments where the extra IS installed.
@@ -24,7 +24,7 @@ def test_package_and_submodules_import_without_local_extra() -> None:
     assert callable(sim.build_app)
     assert callable(sim.serve)
     assert callable(fixtures_mod.load)
-    # In-process injection (#190) is framework-free too — importable with [dev]
+    # In-process injection (#190) is framework-free too — importable with the dev group
     # only, so simulate() carries no web-framework dependency onto the base path.
     assert callable(inject_mod.simulate)
 

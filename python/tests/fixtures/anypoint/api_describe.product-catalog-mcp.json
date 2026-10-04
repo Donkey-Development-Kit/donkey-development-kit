@@ -7,12 +7,12 @@
       "date": "2026-08-24T11:24:29.876Z"
     }
   },
-  "masterOrganizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
-  "organizationId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+  "masterOrganizationId": "00000000-0000-4000-8000-40e9a964ded9",
+  "organizationId": "00000000-0000-4000-8000-40e9a964ded9",
   "id": 21121315,
   "instanceLabel": "product-catalog-mcp",
   "environmentInstanceId": "instance_21121315",
-  "groupId": "82a0453b-22e6-430d-bbf4-35b989d043dc",
+  "groupId": "00000000-0000-4000-8000-40e9a964ded9",
   "assetId": "product-catalog-mcp",
   "assetVersion": "1.0.0",
   "productVersion": "v1.0",
@@ -22,8 +22,8 @@
   "providerId": null,
   "deprecated": false,
   "lastActiveDate": null,
-  "endpointUri": "https://agent-network-ingress-gw-zovwbn.jeg62f.usa-e2.cloudhub.io/mcp/product-catalog/",
-  "environmentId": "3e6ce455-e3e8-4402-b830-9fcf07d9207b",
+  "endpointUri": "https://agent-network-ingress-gw.example.invalid/mcp/product-catalog/",
+  "environmentId": "00000000-0000-4000-8000-9be3001e93bf",
   "isPublic": false,
   "stage": "release",
   "technology": "flexGateway",
@@ -35,7 +35,7 @@
     },
     "id": 5534643,
     "type": "mcp",
-    "uri": "https://data-product-api-zovwbn.jeg62f.usa-e2.cloudhub.io/mcp/product-catalog/",
+    "uri": "https://data-product-api.example.invalid/mcp/product-catalog/",
     "apiGatewayVersion": "1.13.2",
     "proxyUri": "http://0.0.0.0:8081/mcp/product-catalog",
     "proxyRegistrationUri": null,
@@ -57,12 +57,12 @@
       }
     },
     "id": 28406441,
-    "applicationId": "d87e0a49-9c7e-4c76-a511-2a9ef6dbb457",
+    "applicationId": "00000000-0000-4000-8000-f12e61c375a0",
     "applicationName": null,
     "gatewayVersion": "1.13.2",
     "environmentName": null,
-    "environmentId": "3e6ce455-e3e8-4402-b830-9fcf07d9207b",
-    "targetId": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+    "environmentId": "00000000-0000-4000-8000-9be3001e93bf",
+    "targetId": "00000000-0000-4000-8000-7efc2cdaa149",
     "targetName": "agent-network-ingress-gw",
     "deploymentId": null,
     "updatedDate": "2026-08-24T11:22:38.444Z",
@@ -77,14 +77,14 @@
           },
           "environment": {
             "target": {
-              "id": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+              "id": "00000000-0000-4000-8000-7efc2cdaa149",
               "provider": "RR"
             }
           }
         }
       },
       "target": {
-        "id": "35755bec-3177-4d32-a8c9-c9705f5b1c0b",
+        "id": "00000000-0000-4000-8000-7efc2cdaa149",
         "provider": "RR"
       }
     },
@@ -94,7 +94,7 @@
     {
       "upstreams": [
         {
-          "id": "52e81b94-584e-4503-9675-f3d58c39df24",
+          "id": "00000000-0000-4000-8000-234d78b1b489",
           "weight": 100
         }
       ]

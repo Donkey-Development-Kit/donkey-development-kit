@@ -3,7 +3,7 @@
 Captured **2026-09-24** from a real deployed Agent Network LLM proxy provisioned
 with the **Semantic Caching policy**
 (`semantic-caching-policy-openai-azure-ai-search` v1.0.1) in the DDK sandbox,
-env **Sandbox** (svc id `14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a`, from the
+env **Sandbox** (svc id `00000000-0000-4000-8000-5c4fd1a49fc3`, from the
 `x-envoy-decorator-operation` header). Proxy asset `ddk-semantic-cache`, API
 Manager instance **`21195392`**, deployed to the `private-space-omni-gateway`
 Flex Gateway. Single OpenAI route (`openai`/`gpt-5-mini`), OpenAI

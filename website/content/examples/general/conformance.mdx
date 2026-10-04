@@ -11,8 +11,9 @@ Four questions a team usually cannot answer about its own agent: does it retry
 a budget refusal (it must not)? Does a typed refusal survive its error
 handling? Does the run's correlation id reach its logs? Does it still work when
 the gateway sends no budget headers? The conformance suite answers them without
-reading your code — it swaps a fixture-serving transport underneath, calls
-`agent.run(...)`, and watches the wire and the logs. So it grades behaviour, in
+reading your code — it swaps a fixture-serving transport underneath (the
+success body is shaped for the route your agent calls, Responses or chat
+completions), calls `agent.run(...)`, and watches the wire and the logs. So it grades behaviour, in
 any framework, and it runs in your CI as a pytest plugin with no gateway.
 
 | Example | Shows | Needs |
@@ -50,14 +51,14 @@ Run context
   stack traces out of the caller's face, and it logs what it is doing. Run the suite
   against it.
 
-    pytest --donkey-conformance --agent=…:build_naive
+    pytest --donkey-conformance --donkey-agent=…:build_naive
 
 
     FFF.                                                                     [100%]
     Donkey conformance
     ==================
     FAIL  Retries a budget refusal        — retried a TokenBudgetExceeded 3× — a budget refusal is terminal; retrying only burns the same exhausted window
-    FAIL  Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (bridge it with classify())
+    FAIL  Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (run it inside donkey.run() or typed_refusals())
     FAIL  Propagates the correlation id   — did not emit the correlation id in any log record — read it from current_correlation_id() and include it when you log
     PASS  Works without budget headers    — completed a run when the gateway returned no budget headers
     Donkey conformance: 1 passed, 3 failed
@@ -116,7 +117,7 @@ What each failure actually means
         "correlation_id_propagated": "This agent's framework owns the HTTP …",
     }
     
-    pytest --donkey-conformance --agent=shipping_agent:build_naive \
+    pytest --donkey-conformance --donkey-agent=shipping_agent:build_naive \
            --donkey-known-limitations=exemptions:FRAMEWORK_LIMITS
 
 
@@ -124,7 +125,7 @@ What each failure actually means
     Donkey conformance
     ==================
     FAIL    Retries a budget refusal        — retried a TokenBudgetExceeded 3× — a budget refusal is terminal; retrying only burns the same exhausted window
-    FAIL    Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (bridge it with classify())
+    FAIL    Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (run it inside donkey.run() or typed_refusals())
     EXEMPT  Propagates the correlation id   — This agent's framework owns the HTTP transport and offers no per-request context hook, so a run-scoped correlation id cannot reach the agent's logs.
     PASS    Works without budget headers    — completed a run when the gateway returned no budget headers
     Donkey conformance: 1 passed, 2 failed, 1 exempt
@@ -165,7 +166,7 @@ Against your own agent, the suite is a plain pytest invocation:
 
 ```bash
 pip install "donkey-kit[test]"
-pytest --donkey-conformance --agent=my_app.agent:build
+pytest --donkey-conformance --donkey-agent=my_app.agent:build
 ```
 
 ## Key code
@@ -218,7 +219,7 @@ FRAMEWORK_LIMITS = {
 ```
 
 ```bash
-pytest --donkey-conformance --agent=shipping_agent:build_naive \
+pytest --donkey-conformance --donkey-agent=shipping_agent:build_naive \
        --donkey-known-limitations=exemptions:FRAMEWORK_LIMITS
 ```
 

@@ -24,12 +24,15 @@ from typing import TYPE_CHECKING, Any
 
 from ..core.masking import masked
 from . import AdapterCapabilities
+from . import typed_refusals as _bridge
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from llama_index.llms.openai_like import OpenAILike
 
-__all__ = ["LlamaIndexAdapter", "llm"]
+    from ..core.refusals import TypedRefusals
+
+__all__ = ["LlamaIndexAdapter", "llm", "typed_refusals"]
 
 
 class LlamaIndexAdapter(Adapter):
@@ -43,6 +46,11 @@ class LlamaIndexAdapter(Adapter):
     Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
     supported surface, and the factories are conveniences over it.
 
+    Sync and async calls send through the SDK's shared clients, so they carry the
+    run's correlation id and populate ``donkey.last_call`` (#740).
+    ``typed_refusals()`` re-raises a gateway refusal as the typed
+    :class:`~donkey_kit.core.errors.DonkeyError` subclass.
+
     Raises:
         ImportError: ``donkey.llamaindex`` was read without the ``llamaindex`` extra
             installed; the message carries the install command.
@@ -51,8 +59,7 @@ class LlamaIndexAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/llamaindex
     """
 
-    # Both shared clients (http_client/async_http_client). observes_last_call is
-    # kept False while the conformance exemption table lists LlamaIndex (#740).
+    # Both shared clients (http_client/async_http_client, #740, #946).
     factories = MappingProxyType(
         {
             "llm": AdapterCapabilities(
@@ -60,7 +67,7 @@ class LlamaIndexAdapter(Adapter):
                 sync=True,
                 streaming=True,
                 typed_refusals=True,
-                observes_last_call=False,
+                observes_last_call=True,
             ),
         }
     )
@@ -147,6 +154,23 @@ def _reasoning_model_kwargs(kw: dict[str, Any]) -> dict[str, Any]:
     if extra:
         kw["additional_kwargs"] = extra
     return kw
+
+
+def typed_refusals() -> TypedRefusals:
+    """Re-raise a proxy refusal from an ``OpenAILike`` call as the SDK's typed
+    exception (BG §1.2). This is the SDK-wide typed-refusal bridge,
+    :func:`donkey_kit.typed_refusals` (#724, ADR 0002)::
+
+        with donkey.llamaindex.typed_refusals():
+            reply = await llm.acomplete("hi")
+
+    ``OpenAILike`` raises the openai SDK's ``APIStatusError`` for a refusal; the
+    bridge maps its response through :func:`~donkey_kit.core.errors.classify`, so
+    a PII block surfaces as :class:`~donkey_kit.core.errors.PIIDetected` with the
+    correlation and call ids that were sent. The original stays on
+    ``.framework_error``; anything else passes through. ``donkey.run()`` and
+    ``@donkey.governed`` already apply it."""
+    return _bridge()
 
 
 def llm(model: str, **kw: Any) -> OpenAILike:

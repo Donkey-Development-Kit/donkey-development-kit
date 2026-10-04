@@ -10,7 +10,7 @@ can assert both that the target scenario fails and that the other three still
 pass. A regression in any scenario's verdict is caught without a real gateway.
 
 The toy agents call ``donkey.openai()``, so this module needs ``openai`` (the
-plugin itself does not — see ``test_conformance_base_only``). Under ``[dev]``
+plugin itself does not — see ``test_conformance_base_only``). Under the ``dev`` group
 alone the whole module skips.
 """
 
@@ -523,3 +523,39 @@ async def test_harness_never_sends_configured_credentials(
         sent = " ".join(f"{k}={v}" for k, v in request.headers.items())
         for value in real_credentials.values():
             assert value not in sent
+
+
+def _served(path: str, shape: str = "success") -> httpx.Response:
+    responder = harness_module._fixture_responder(harness_module.load(shape))
+    return responder(httpx.Request("POST", f"https://donkey-conformance.invalid{path}"))
+
+
+def test_success_is_served_as_captured_on_the_responses_route() -> None:
+    assert _served("/responses").json()["object"] == "response"
+
+
+def test_success_is_reshaped_for_a_chat_completions_route() -> None:
+    # A framework on /chat/completions cannot parse the captured Responses body, so
+    # the same model, text and token counts come back in the shape that route serves.
+    captured = _served("/responses").json()
+    served = _served("/v1/chat/completions")
+    chat = served.json()
+
+    assert served.status_code == 200
+    assert chat["object"] == "chat.completion"
+    assert chat["model"] == captured["model"]
+    assert chat["choices"][0]["message"] == {
+        "role": "assistant",
+        "content": captured["output"][0]["content"][0]["text"],
+    }
+    assert chat["usage"]["total_tokens"] == captured["usage"]["total_tokens"]
+    assert served.headers[harness_module.SIMULATOR_HEADER] == "true"
+
+
+def test_a_refusal_is_not_reshaped_on_a_chat_completions_route() -> None:
+    assert _served("/chat/completions", "pii-detected").status_code == 403
+
+
+def test_an_unexpected_success_body_is_served_as_captured() -> None:
+    assert harness_module._as_chat_completion(b"not json") == b"not json"
+    assert harness_module._as_chat_completion(b'{"output": 3}') == b'{"output": 3}'

@@ -1,6 +1,8 @@
 # Anthropic SDK example
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+Supported at connection_kwargs(). The example's `build(donkey)` makes one governed
+call through `client.messages.create` and runs through the public conformance kit
+(`tests/conformance/test_adapter_contract.py`).
 
 **What this shows.** A one-line factory call gets you a *native*
 `anthropic.AsyncAnthropic` client already pointed at the governed Agent Fabric LLM
@@ -20,7 +22,8 @@ Gemini / Anthropic) fixed at proxy creation. A `Format=Anthropic` proxy serves t
 there). Usage caveat: the SDK's own default DDK proxies are `Format=OpenAI`, so
 this client pointed at them reaches Claude only as an *upstream provider*, not
 natively. Override `base_url` via `**kw` to point at a `Format=Anthropic` proxy to
-use the native surface. This example does not make a live call.
+use the native surface. `main()` does not make a live call; `build(donkey)` makes one
+`client.messages.create` call, which is what the conformance kit runs.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:

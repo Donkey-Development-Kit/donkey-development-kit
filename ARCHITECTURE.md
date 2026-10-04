@@ -404,14 +404,18 @@ propagate a per-run correlation ID or populate `donkey.last_call`, because its
 native OpenAI provider builds its own HTTP client; the adapter only hands it an
 `interceptor` that keeps credentials to checked endpoints. ADK's `gemini()` (a
 `Format=Gemini` proxy, #691) injects the shared client, so it records no
-exemption. LlamaIndex, Microsoft Agent Framework and ADK's `model()` now send
-through the shared client too (`http_client` / `async_http_client`, an
-`async_client`, and a pre-built OpenAI `client` for LiteLLM), but still carry
-their exemptions and `observes_last_call=False` in their `AdapterCapabilities`;
-removing them is #740. `tests/unit/test_adapter_roster.py` keeps the table and
-the capabilities equal: `gateway_identity_observed` is exempt exactly when
-`observes_last_call` is false, `typed_refusal_bridged` when `typed_refusals` is
-false, and `jwt_token_refreshed` when `transport` is `"framework"`.
+exemption. LlamaIndex, Microsoft Agent Framework and ADK's `model()` also send
+through the shared client (`http_client` / `async_http_client`, an
+`async_client`, and a pre-built OpenAI `client` for LiteLLM), so their
+exemptions are gone (#740). Only CrewAI remains: its native OpenAI provider
+builds the sync `OpenAI` and the `AsyncOpenAI` from one `client_params` dict,
+and with an interceptor set it replaces `http_client` with its own `httpx`
+client, so the SDK's async client cannot be injected. ADK's `model()` keeps one
+exemption, `typed_refusal_bridged` (#724). `tests/unit/test_adapter_roster.py`
+keeps the table and each adapter's `AdapterCapabilities` equal:
+`gateway_identity_observed` is exempt exactly when `observes_last_call` is false,
+`typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
+when `transport` is `"framework"`.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
