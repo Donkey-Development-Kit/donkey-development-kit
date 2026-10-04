@@ -40,9 +40,10 @@ even on a cold read.
 
   `donkey.last_call` is populated only when the governed response passes through
   the SDK's shared httpx client. CrewAI, whose framework owns the transport,
-  routes outside it. A cold read on a `Donkey` that resolved only CrewAI,
-  LlamaIndex, MS Agent Framework or ADK's `model()` reports `UNAVAILABLE` with
-  the surface named. See
+  routes outside it. A cold read on a `Donkey` that resolved only CrewAI
+  reports `UNAVAILABLE` with the surface named. LlamaIndex, MS Agent Framework
+  and ADK's `model()` send through the shared client, so a cold read is
+  `UNOBSERVED` and a read after a call is `OBSERVED`. See
   [When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
 
 ## Gateway identity

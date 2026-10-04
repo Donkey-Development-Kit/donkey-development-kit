@@ -36,7 +36,7 @@ def _cfg() -> DonkeyConfig:
 
 def _pii_proxy(sent: list[httpx.Request]) -> httpx.MockTransport:
     """A proxy that refuses every request with the captured PII 403 shape
-    (``tests/fixtures/rejections``) and records each send."""
+    (``src/donkey_kit/simulator/_fixtures/rejections``) and records each send."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         sent.append(request)

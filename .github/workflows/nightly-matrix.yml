@@ -64,7 +64,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install (dev + llm, no framework)
-        run: pip install -e ".[dev,llm,cli]"
+        run: python -m pip install --upgrade pip && pip install -e ".[llm,cli]" --group dev
       - run: ruff check .
       - run: mypy
       - run: lint-imports
@@ -133,7 +133,7 @@ jobs:
       # `otel`). Without them the smoke step dies on ModuleNotFoundError and the
       # unit suites never run (#834).
       - name: Install SDK + framework extra
-        run: pip install -e ".[dev,llm,${FRAMEWORK},local,otel]"
+        run: python -m pip install --upgrade pip && pip install -e ".[llm,${FRAMEWORK},local,otel]" --group dev
 
       - name: Signature verification (§8)
         run: python scripts/verify_frameworks.py --only "${FRAMEWORK}"

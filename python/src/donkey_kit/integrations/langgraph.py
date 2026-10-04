@@ -27,12 +27,11 @@ docs/verified-apis.md §8.
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from types import TracebackType
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from ..core.masking import masked
-from ._base import Adapter, default_adapter
+from ._base import Adapter, _TypedRefusals, default_adapter
 
 if TYPE_CHECKING:
     from langchain_openai import ChatOpenAI
@@ -179,45 +178,6 @@ def chat_model(model: str, **kw: Any) -> ChatOpenAI:
     cached default :class:`~donkey_kit.Donkey` configured from the environment.
     Equivalent to ``Donkey.from_env().langgraph.chat_model(model, **kw)``."""
     return default_adapter(LangGraphAdapter).chat_model(model, **kw)
-
-
-class _TypedRefusals(AbstractContextManager[None]):
-    """The context manager behind :func:`typed_refusals`.
-
-    A class, not ``@contextmanager``: a generator-based manager leaves
-    ``contextlib``'s ``__exit__`` frame, whose locals hold the framework error,
-    in the typed error's traceback, and reporters that render frame locals
-    (Sentry, ``pytest -l``) would print its message. This ``__exit__`` drops its
-    own references before raising.
-    """
-
-    def __enter__(self) -> None:
-        import openai  # noqa: F401  # lazy: only the framework path needs it
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        import openai
-
-        from ..core.errors import classify
-
-        if not isinstance(exc, openai.APIStatusError):
-            return None
-        # ``APIStatusError`` always carries the originating response; classify()
-        # maps it (and reads back the sent correlation/call ids) into the typed
-        # taxonomy. openai>=3 vendors its own httpx, so ``exc.response`` is
-        # statically a distinct-but-duck-identical Response type; cast erases it
-        # to the one classify wants. `cast(Any, …)` (not `cast("httpx.Response", …)`)
-        # so this typechecks clean under BOTH majors: under openai<3
-        # ``exc.response`` is already ``httpx.Response`` and a cast to it is
-        # `redundant-cast` (#597).
-        typed = classify(cast(Any, exc.response))
-        typed.framework_error = exc
-        del exc, exc_type, tb
-        raise typed from None
 
 
 def typed_refusals() -> AbstractContextManager[None]:

@@ -1,6 +1,7 @@
 """Microsoft Agent Framework adapter example (BG §1.8).
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+Supported and conformance-tested (BG §1.8): ``build(donkey)`` makes one governed
+call through ``agent_framework.Agent.run`` and passes the public conformance kit.
 
 Demonstrates constructing a native Agent Framework OpenAI-compatible chat
 client pointed at the governed Agent Fabric LLM proxy with a single factory
@@ -16,19 +17,53 @@ and §8 records the chat-client class path
 ``base_url``, ``api_key`` and ``default_headers``. Agent Framework is young and
 has renamed classes before, so if that import or construction fails the
 factory raises ``NotImplementedError`` with a "blocked on verification"
-message rather than guessing further. This example only builds the client. It
-makes no inference call, because Agent Framework drives chat clients through
-its own ``Agent`` object, not a method on the client, and guessing that call
-risks inventing an API.
+message rather than guessing further. ``main()`` builds the client; ``build()``
+hands it to an ``Agent`` with the policy middleware and drives one turn, which is
+what the conformance kit runs.
 """
 
 from __future__ import annotations
 
+import logging
 import os
+from typing import TYPE_CHECKING
 
-from donkey_kit import DonkeyConfig
+from donkey_kit import Donkey, DonkeyConfig
 from donkey_kit.core.errors import ConfigError
+from donkey_kit.core.telemetry import current_correlation_id
 from donkey_kit.integrations.agent_framework import chat_client
+
+if TYPE_CHECKING:
+    from agent_framework import Agent
+
+logger = logging.getLogger("examples.agent_framework")
+
+
+class ChatAgent:
+    """Minimal agent surface the conformance harness drives: an awaitable
+    ``run(text)`` that sends one turn through ``agent_framework.Agent.run``."""
+
+    def __init__(self, agent: Agent) -> None:
+        self._agent = agent
+
+    async def run(self, text: str) -> object:
+        logger.info("agent: calling the model", extra={"correlation_id": current_correlation_id()})
+        return await self._agent.run(text)
+
+
+def build(donkey: Donkey) -> ChatAgent:
+    """Hand the governed chat client to an ``agent_framework.Agent`` and return an
+    agent that makes one call through ``Agent.run``. ``policy_middleware()`` ends
+    the run on a proxy refusal with the typed error, not the framework's generic
+    ``ChatClientException``."""
+    from agent_framework import Agent
+
+    agent = Agent(
+        client=donkey.agent_framework.chat_client(os.environ.get("DEMO_MODEL", "gpt-4o")),
+        name="triage",
+        middleware=[donkey.agent_framework.policy_middleware()],
+    )
+    return ChatAgent(agent)
 
 
 def main() -> None:
@@ -50,11 +85,7 @@ def main() -> None:
         return
 
     print(f"Constructed native object: {type(client).__module__}.{type(client).__name__}")
-    print(
-        "This example stops at construction; drive this object with "
-        "Agent Framework's own Agent API (see this example's README) — that "
-        "runtime call is UNVERIFIED here and deliberately not guessed (verification discipline)."
-    )
+    print("Run build(donkey) for the governed call through the framework's own entry point.")
 
 
 if __name__ == "__main__":

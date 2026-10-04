@@ -120,7 +120,7 @@ except TokenBudgetExceeded as e:
 ```
 
 **Acceptance.**
-- Every row above has a fixture in `tests/fixtures/rejections/` captured from a live gateway, with the docs URL and version recorded in the fixture header.
+- Every row above has a fixture in `src/donkey_kit/simulator/_fixtures/rejections/` captured from a live gateway, with the docs URL and version recorded in the fixture header.
 - A test proves `openai`'s built-in retry does **not** fire on 429 when going through `DonkeyAsyncClient` (mock transport counts requests; assert exactly one).
 - A test proves a 403 with `pii_detected` does **not** raise `AuthError`.
 - `PolicyViolation.__init__` fails if `remediation` is empty.
@@ -237,7 +237,7 @@ async def test_agent_masks_pii(donkey):
 The pytest plugin — `pip install donkey-kit[test]` exposes a `donkey` fixture (pre-wired to the simulator or to `simulate()`), and a **conformance suite** the customer runs against *their own agent*:
 
 ```bash
-pytest --donkey-conformance --agent=my_app.agent:build
+pytest --donkey-conformance --donkey-agent=my_app.agent:build
 ```
 
 which runs scenarios like: *does your agent retry a `TokenBudgetExceeded`? (it must not)* · *does it swallow `PIIDetected` as a generic exception?* · *does it propagate the correlation ID into its own logs?* · *does it still work when budget headers are absent?*

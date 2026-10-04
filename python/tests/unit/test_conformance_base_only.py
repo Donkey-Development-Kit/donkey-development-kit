@@ -2,10 +2,10 @@
 
 The pytest11 entry point auto-loads ``donkey_kit.conformance.plugin`` on EVERY
 pytest run once ``donkey-kit`` is installed — including this base-only job,
-which installs ``[dev]`` only (no ``openai``, no ``starlette``). So importing the
+which installs the ``dev`` group only (no ``openai``, no ``starlette``). So importing the
 package and the auto-loaded modules must NOT require any framework or ``openai``.
 
-Unguarded on purpose (no ``importorskip``): this module runs under ``[dev]`` in
+Unguarded on purpose (no ``importorskip``): this module runs under the ``dev`` group in
 the base-only job, so a module-top ``openai``/framework import in any of these
 modules would make these imports fail *there*. The AST assertion also catches
 such an import in environments where the extra IS installed.
@@ -25,7 +25,7 @@ import donkey_kit.conformance.suite as suite_mod
 
 
 def test_package_and_modules_import_without_openai_or_framework() -> None:
-    # The public surface is reachable with [dev] alone.
+    # The public surface is reachable with the dev group alone.
     assert callable(conf.validate_known_limitations)
     assert callable(conf.render_report)
     assert len(conf.SCENARIOS) == 4

@@ -1,6 +1,8 @@
 # Strands Agents example
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+Supported at connection_kwargs(). The example's `build(donkey)` makes one governed
+call through `strands.Agent.invoke_async` and runs through the public conformance kit
+(`tests/conformance/test_adapter_contract.py`).
 
 **What this shows.** A one-line factory call gets you a *native*
 `strands.models.openai.OpenAIModel` pointed at the governed Agent Fabric LLM
@@ -9,10 +11,9 @@ bearer), attribution headers, and the SDK's shared transport, all forwarded
 through Strands' `client_args`. Strands forwards `client_args` straight to
 the underlying OpenAI client, so both header AND transport injection are
 available (full injection, like LangGraph). The returned object is Strands'
-own class, not a wrapper. This example only constructs the object; it
-deliberately does not attempt a live inference call, since Strands models
-are normally driven through a `strands.Agent` session rather than a simple
-method call on the model.
+own class, not a wrapper. `main()` only constructs the object; `build(donkey)` wraps it in a
+`strands.Agent` and drives one turn with `invoke_async`, which is what the
+conformance kit runs.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:

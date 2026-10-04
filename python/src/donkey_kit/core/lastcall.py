@@ -150,7 +150,7 @@ REQUEST_ID_HEADERS: tuple[str, ...] = (
 # span. The names are defined in ``core/_wire``.
 
 # docs/verified-apis.md §3 semantic-routing row
-# (``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
+# (``python/src/donkey_kit/simulator/_fixtures/anypoint/semantic_routing/``, #589/#590). A
 # SEMANTIC-routing proxy (``routing_type == "Semantic"``) additionally states
 # WHICH topic the prompt matched and how confident the match was, in a single
 # prose header. The four routing headers above are emitted identically to

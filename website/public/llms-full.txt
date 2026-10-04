@@ -1098,7 +1098,7 @@ The suite that tests this adapter is also a pytest plugin you can point at
 your own agent:
 
 ```bash
-pytest --donkey-conformance --agent=my_app:build
+pytest --donkey-conformance --donkey-agent=my_app:build
 ```
 
 `build` returns an object with an awaitable `run(text)`. The suite checks that
@@ -1451,15 +1451,13 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   correlation ID bound by `donkey.run()` reaches every request.
 - **`donkey.last_call` is set in the context that made the call.** ADK's
   `Runner` calls the model in a task of its own, so read it in an
-  `after_model_callback` (see [Native Gemini](#native-gemini)). Until
-  `gemini()` has been called on a `Donkey`, a cold read on a `Donkey` that
-  resolved only ADK reports `UNAVAILABLE` rather than `UNOBSERVED`, because
-  `model()` is still listed as not observing calls. Aligning that, and the
-  matching conformance exemptions, is tracked in
-  [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
-- **Refusals on the `model()` path aren't typed.** LiteLLM raises its own
-  error without the response headers, so `classify()` has nothing to read; see
-  the [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
+  `after_model_callback` (see [Native Gemini](#native-gemini)). A cold read on
+  a `Donkey` that resolved only ADK reports `UNOBSERVED`, and `OBSERVED` after
+  a call, for `model()` as well as `gemini()`.
+- **Refusals on the `model()` path aren't converted to a typed error by the
+  SDK.** A refusal surfaces as a LiteLLM error whose `__cause__` chain
+  contains the `openai` `APIStatusError`; see the
+  [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
 - **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
   accepts `client_kwargs`; the `adk` extra declares that floor. On an older
   ADK, `Gemini` drops the governed client without an error and talks to Google
@@ -1793,9 +1791,8 @@ missing from your installed version, `policy_middleware()` raises a
   signature to check, rather than a raw `ImportError` or `TypeError`.
 - **`donkey.last_call` is set in the context that made the call.** A cold read
   (no call yet in this context) on a `Donkey` that resolved only adapters like
-  this one still reports `status == LastCallStatus.UNAVAILABLE` rather than
-  `UNOBSERVED`, because MS Agent Framework is still listed as not observing calls. Aligning
-  that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+  this one reports `status == LastCallStatus.UNOBSERVED`, and `OBSERVED` once
+  a call has returned.
 
 See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for the full `PolicyViolation` hierarchy
 that `policy_middleware()` raises.
@@ -2242,8 +2239,11 @@ A `base_url` / `api_base` passed to `llm()` must pass the
 - **No run correlation ID.** CrewAI sends requests through its native OpenAI
   provider's own HTTP client rather than the SDK's shared one, so the
   correlation ID bound by `donkey.run()` doesn't reach the request. The auth
-  and attribution headers are still sent on every request. The conformance
-  suite checks this as a documented behaviour.
+  and attribution headers are still sent on every request. CrewAI has no
+  supported way to hand its provider an HTTP client: one setting feeds both its
+  sync and async clients, and its `interceptor` hook can edit a request but not
+  send it somewhere else. The conformance suite checks this as a documented
+  behaviour.
 - **`jwt` mode isn't supported.** The JWT is added only by the SDK's shared
   client, which CrewAI's provider doesn't use, so `donkey.crewai.llm()` and
   `connection_kwargs()` raise `ConfigError` in `jwt` mode. Use client-id auth
@@ -2377,6 +2377,31 @@ LlamaIndex uses `api_base` rather than `base_url`; `connection_kwargs()`
 already translates for you. An `api_base` passed to `llm()` must pass the
 [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
+## Typed refusals
+
+When the proxy refuses a request, LlamaIndex raises the `openai`
+`APIStatusError`. `donkey.llamaindex.typed_refusals()` is a context manager that
+turns it into the SDK's typed error:
+
+```python
+from donkey_kit import Donkey, PIIDetected
+
+async with Donkey.from_env() as donkey:
+    llm = donkey.llamaindex.llm("gpt-4o")
+    try:
+        with donkey.llamaindex.typed_refusals():
+            reply = await llm.acomplete("hi")
+    except PIIDetected as err:
+        print(err.correlation_id, err.entities)
+```
+
+The refusal goes through `donkey_kit.core.errors.classify()`, so you get, for
+example, `PIIDetected` or `TokenBudgetExceeded`, and the original exception is
+kept on `.framework_error`. Without it, you get LlamaIndex's generic
+`APIStatusError`. The module-level
+`donkey_kit.integrations.llamaindex.typed_refusals()` does the same without a
+`Donkey` instance.
+
 ## Notes
 
 - **Always set `is_chat_model=True`.** `OpenAILike` defaults to
@@ -2404,9 +2429,8 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   `OpenAILike` yourself, set these yourself.
 - **`donkey.last_call` is set in the context that made the call.** A cold read
   (no call yet in this context) on a `Donkey` that resolved only adapters like
-  this one still reports `status == LastCallStatus.UNAVAILABLE` rather than
-  `UNOBSERVED`, because LlamaIndex is still listed as not observing calls. Aligning
-  that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+  this one reports `status == LastCallStatus.UNOBSERVED`, and `OBSERVED` once
+  a call has returned.
 - **`jwt` mode is async-only.** `acomplete()` / `achat()` carry the JWT; sync
   `complete()` / `chat()` go through the blocking client, which can't fetch
   one, so they raise `ConfigError` before sending anything.
@@ -3417,13 +3441,12 @@ so no response reaches the record and the run's correlation ID isn't sent.
 
 LlamaIndex, Microsoft Agent Framework and ADK's `model()` send through the
 shared client, so a call populates the record in its own context and carries
-the run's correlation ID. They are still listed as not observing calls, so a
-cold read on a `Donkey` that resolved only these adapters or CrewAI reports
-`UNAVAILABLE` rather than `UNOBSERVED`. Aligning that is tracked in
-[#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
-ADK's `gemini()` uses the shared client and observes calls once it has been
-called (see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini) for reading
-`last_call` inside an ADK run).
+the run's correlation ID. A cold read on a `Donkey` that resolved only these
+adapters reports `UNOBSERVED`, and `OBSERVED` after a call
+([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
+ADK's `gemini()` uses the shared client too (see
+[Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini) for reading `last_call` inside
+an ADK run).
 
 For a `Donkey` that resolved only CrewAI:
 
@@ -3914,7 +3937,7 @@ Installing `donkey-kit[test]` registers a pytest plugin with a conformance suite
 you point at your own agent factory:
 
 ```bash
-pytest --donkey-conformance --agent=my_app.agent:build
+pytest --donkey-conformance --donkey-agent=my_app.agent:build
 ```
 
 It answers questions you probably cannot currently answer about your own code:
@@ -3944,6 +3967,7 @@ placeholders, and it refuses any request that would leave the process.
 The factory is called once per scenario and receives the `donkey` fixture if it
 declares one. With `--donkey-conformance`, the plugin runs the suite
 exclusively in place of normal test collection; without the flag it is inert.
+`--agent` is a deprecated alias for `--donkey-agent`.
 You can also run it through the CLI with `donkey test --agent my_app.agent:build`
 (see [CLI](https://docs.donkey-kit.dev/cli.md#donkey-test)).
 
@@ -3953,7 +3977,7 @@ You can also run it through the CLI with `donkey test --agent my_app.agent:build
   legitimately cannot satisfy a scenario, record it in a `KNOWN_LIMITATIONS`
   mapping of `{scenario: reason}` as an explicit, reviewable claim.
 
-By default the plugin reads a `KNOWN_LIMITATIONS` attribute from the `--agent`
+By default the plugin reads a `KNOWN_LIMITATIONS` attribute from the `--donkey-agent`
 module; point elsewhere with `--donkey-known-limitations=module:NAME`. The
 mapping is validated at collection time, so an unknown scenario key or an empty
 reason fails the run before any scenario executes.
@@ -4696,12 +4720,9 @@ learning the A2A protocol. Under the hood, `as_tool()` uses the official
 
 ## Install
 
-A2A support ships behind its own extra, so installs that only need MCP tools
-carry no extra dependency:
-
-```bash
-pip install "donkey-kit[a2a]"
-```
+There is nothing to install yet. The `donkey-kit[a2a]` extra was removed in
+0.1.2 because no code used it (#744); it returns, carrying `a2a-sdk`, in the
+release that ships `as_tool()`.
 
 ## Where this fits
 
@@ -6498,8 +6519,9 @@ Four questions a team usually cannot answer about its own agent: does it retry
 a budget refusal (it must not)? Does a typed refusal survive its error
 handling? Does the run's correlation id reach its logs? Does it still work when
 the gateway sends no budget headers? The conformance suite answers them without
-reading your code — it swaps a fixture-serving transport underneath, calls
-`agent.run(...)`, and watches the wire and the logs. So it grades behaviour, in
+reading your code — it swaps a fixture-serving transport underneath (the
+success body is shaped for the route your agent calls, Responses or chat
+completions), calls `agent.run(...)`, and watches the wire and the logs. So it grades behaviour, in
 any framework, and it runs in your CI as a pytest plugin with no gateway.
 
 | Example | Shows | Needs |
@@ -6536,7 +6558,7 @@ Run context
   stack traces out of the caller's face, and it logs what it is doing. Run the suite
   against it.
 
-    pytest --donkey-conformance --agent=…:build_naive
+    pytest --donkey-conformance --donkey-agent=…:build_naive
 
     FFF.                                                                     [100%]
     Donkey conformance
@@ -6600,7 +6622,7 @@ What each failure actually means
         "correlation_id_propagated": "This agent's framework owns the HTTP …",
     }
     
-    pytest --donkey-conformance --agent=shipping_agent:build_naive \
+    pytest --donkey-conformance --donkey-agent=shipping_agent:build_naive \
            --donkey-known-limitations=exemptions:FRAMEWORK_LIMITS
 
     FF..                                                                     [100%]
@@ -6646,7 +6668,7 @@ Against your own agent, the suite is a plain pytest invocation:
 
 ```bash
 pip install "donkey-kit[test]"
-pytest --donkey-conformance --agent=my_app.agent:build
+pytest --donkey-conformance --donkey-agent=my_app.agent:build
 ```
 
 ## Key code
@@ -6698,7 +6720,7 @@ FRAMEWORK_LIMITS = {
 ```
 
 ```bash
-pytest --donkey-conformance --agent=shipping_agent:build_naive \
+pytest --donkey-conformance --donkey-agent=shipping_agent:build_naive \
        --donkey-known-limitations=exemptions:FRAMEWORK_LIMITS
 ```
 
@@ -7377,9 +7399,9 @@ Run context
   A bare None would be a lie of omission: you could not tell 'the gateway sent no id'
   from 'we never saw a response'. Budget uses the same honesty rule for an unobserved
   window (demo 03). UNAVAILABLE is the third state, for adapters that never route
-  through our transport — ADK via LiteLLM, CrewAI via its native OpenAI provider,
-  default_headers-only LlamaIndex, or Agent Framework (observes_last_call = False).
-  Those surfaces report UNAVAILABLE by name rather than looking like a cold read.
+  through our transport — today CrewAI via its native OpenAI provider
+  (observes_last_call = False). That surface reports UNAVAILABLE by name rather
+  than looking like a cold read.
 
 [2] One governed call, and the record is the success-path counterpart
 
@@ -8527,9 +8549,8 @@ print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
 ```
 
 **You should see:** the reply, `total tokens` from Agent Framework's
-`usage_details`, and `last_call unavailable …`. `asyncio.run(...)` runs the
-call in its own context, so the script's read is a cold one, and a cold read
-on this adapter reports `unavailable` rather than `unobserved` ([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)). Read
+`usage_details`, and `last_call unobserved …`. `asyncio.run(...)` runs the
+call in its own context, so the script's read is a cold one. Read
 usage from the framework here, or read `last_call` inside the coroutine that
 made the call.
 
@@ -8906,8 +8927,9 @@ Source: https://docs.donkey-kit.dev/examples/adk.md
 
 Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
 the proxy's `/chat/completions` route. It sends through the SDK's shared HTTP client, so the credentials and the run id
-go on the wire, but LiteLLM raises its own errors, so there are **no typed
-refusals**. Script 02 exists to show that gap.
+go on the wire, but LiteLLM raises its own errors, so the SDK does not convert
+a refusal to a **typed error** here; the `openai` error is in the `__cause__`
+chain. Script 02 exists to show that gap.
 
 Both scripts need a live gateway; there is no offline ADK script.
 
@@ -8943,9 +8965,9 @@ print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
 ```
 
 **You should see:** a one-sentence answer, `total tokens` from the last
-event's `usage_metadata`, and `last_call unavailable …`. The record is set in
-the `Runner`'s own task, not where the script reads it, and a cold read on
-this adapter reports `unavailable` rather than `unobserved` ([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)). Read it
+event's `usage_metadata`, and `last_call unobserved …`. The record is set in
+the `Runner`'s own task, not where the script reads it, so the script's read
+is a cold one. Read it
 in an `after_model_callback` instead, as shown under
 [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). LiteLLM also logs a
 provider-list banner, which is harmless.
@@ -9403,7 +9425,7 @@ git checkout -b docs/13-verified-apis-update
 Run the same checks CI runs, from `python/`:
 
 ```bash
-pip install -e ".[dev,llm,cli]"
+pip install -e ".[llm,cli]" --group dev   # pip 25.1+
 pytest -q          # tests
 mypy               # mypy --strict
 ruff check .       # lint
@@ -10270,9 +10292,10 @@ even on a cold read.
 
   `donkey.last_call` is populated only when the governed response passes through
   the SDK's shared httpx client. CrewAI, whose framework owns the transport,
-  routes outside it. A cold read on a `Donkey` that resolved only CrewAI,
-  LlamaIndex, MS Agent Framework or ADK's `model()` reports `UNAVAILABLE` with
-  the surface named. See
+  routes outside it. A cold read on a `Donkey` that resolved only CrewAI
+  reports `UNAVAILABLE` with the surface named. LlamaIndex, MS Agent Framework
+  and ADK's `model()` send through the shared client, so a cold read is
+  `UNOBSERVED` and a read after a call is `OBSERVED`. See
   [When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
 
 ## Gateway identity

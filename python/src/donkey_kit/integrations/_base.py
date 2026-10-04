@@ -10,9 +10,9 @@ from __future__ import annotations
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
-from types import MappingProxyType
-from typing import Any, ClassVar, TypeVar, cast
+from contextlib import AbstractContextManager, contextmanager
+from types import TracebackType
+from typing import Any, TypeVar, cast
 
 from ..core import runtime
 from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, missing_llm_auth_error
@@ -46,22 +46,16 @@ class Adapter(ABC):
 
     #: Whether a governed model call through this adapter reaches ``donkey.last_call``
     #: (#362). True when the adapter hands the framework our shared
-    #: :class:`DonkeyAsyncClient`, through its view or the core ``httpx2`` bridge
-    #: (its ``_on_response`` observes the response);
+    #: :class:`DonkeyAsyncClient`, through its view, a pre-built OpenAI client on
+    #: it, or the core ``httpx2`` bridge (its ``_on_response`` observes the response);
     #: False when the SDK does not own the transport — the framework builds its own
-    #: client (ADK ``model()`` via LiteLLM, CrewAI via its native OpenAI provider) or the
-    #: adapter is given only ``default_headers`` (LlamaIndex, MS Agent Framework).
-    #: A ``False`` here is why ``donkey.last_call`` reports "not available on this
-    #: surface" rather than a bare ``None`` (hazard #3),
+    #: clients (CrewAI's native OpenAI provider, #740). A ``False`` here is why
+    #: ``donkey.last_call`` reports "not available on this surface" rather than a
+    #: bare ``None`` (hazard #3),
     #: and it is the fact the conformance suite asserts as an exemption (the conformance kit).
-    #: It describes the adapter's default factory and its ``connection_kwargs()``;
-    #: a factory that routes differently is listed in
-    #: :attr:`factory_observes_last_call`. Neither is ever changed on an instance (#741).
+    #: It holds for every factory and ``connection_kwargs()`` accessor of the
+    #: adapter, and is never changed on an instance (#741).
     observes_last_call: bool = True
-
-    #: Per-factory overrides of :attr:`observes_last_call`, keyed by method name
-    #: (ADK ``gemini()`` observes where ``model()`` does not). Read-only.
-    factory_observes_last_call: ClassVar[Mapping[str, bool]] = MappingProxyType({})
 
     def __init__(
         self,
@@ -75,26 +69,9 @@ class Adapter(ABC):
         # lifecycle; standalone use falls back to one owned here.
         self._sync_http = sync_http_client or self._own_sync_client
         self._owned_sync: DonkeyClient | None = None
-        # Which factories with a per-factory capability have built an object, so
-        # observing_last_call() answers for what was used, not what was called last.
-        self._built: set[str] = set()
         # The http_client each openai kwarg slot was given, with the shared client
         # it sends through: one per adapter, as a view is one per shared client.
         self._kwarg_clients: dict[str, tuple[object, Any]] = {}
-
-    def _record_factory(self, name: str) -> None:
-        self._built.add(name)
-
-    def observing_last_call(self) -> bool:
-        """Whether a model call through anything this adapter built can reach
-        ``donkey.last_call``: true if any factory it was used through observes.
-        Before any such factory is used, the class's :attr:`observes_last_call`."""
-        if not self._built:
-            return self.observes_last_call
-        return any(
-            self.factory_observes_last_call.get(name, self.observes_last_call)
-            for name in self._built
-        )
 
     @contextmanager
     def _native_import(self) -> Iterator[None]:
@@ -246,6 +223,54 @@ class Adapter(ABC):
                 "default_headers": self._proxy_headers(),
             }
         )
+
+
+class _TypedRefusals(AbstractContextManager[None]):
+    """Re-raise an error caused by an ``openai.APIStatusError`` as the typed
+    refusal :func:`~donkey_kit.core.errors.classify` maps its response to (BG §1.2).
+
+    Shared by every adapter whose framework sends through an OpenAI SDK client
+    on the shared transport. It walks the ``__cause__`` chain, because frameworks
+    wrap the openai error in their own: LangChain subclasses it, Agent Framework
+    chains it under a ``ChatClientException``. Errors with no HTTP response
+    (``APIConnectionError``/``APITimeoutError``) pass through untouched.
+
+    A class, not ``@contextmanager``: a generator-based manager leaves
+    ``contextlib``'s ``__exit__`` frame, whose locals hold the framework error,
+    in the typed error's traceback, and reporters that render frame locals
+    (Sentry, ``pytest -l``) would print its message. This ``__exit__`` drops its
+    own references before raising. The typed error is raised without a chained
+    cause for the same reason; the original stays on ``.framework_error``.
+    """
+
+    def __enter__(self) -> None:
+        import openai  # noqa: F401  # lazy: only the framework path needs it
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        if exc is None:
+            return None
+        import openai
+
+        from ..core.errors import classify
+
+        cause: BaseException | None = exc
+        while cause is not None and not isinstance(cause, openai.APIStatusError):
+            cause = cause.__cause__
+        if cause is None:
+            return None
+        # openai>=3 vendors its own httpx, so ``cause.response`` is statically a
+        # distinct-but-duck-identical Response type. `cast(Any, …)` (not
+        # `cast("httpx.Response", …)`) typechecks clean under BOTH majors: under
+        # openai<3 a cast to httpx.Response is `redundant-cast` (#597).
+        typed = classify(cast(Any, cause.response))
+        typed.framework_error = exc
+        del exc, exc_type, tb, cause
+        raise typed from None
 
 
 A = TypeVar("A", bound=Adapter)

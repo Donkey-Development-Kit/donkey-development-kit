@@ -1,6 +1,8 @@
 # CrewAI example
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+Supported at connection_kwargs(). The example's `build(donkey)` makes one governed
+call through `crewai.Agent.kickoff_async` and runs through the public conformance kit (all four scenarios exempt, see below)
+(`tests/conformance/test_adapter_contract.py`).
 
 **What this shows.** A one-line factory call gets you a *native* CrewAI LLM
 (`crewai.BaseLLM`, concretely `OpenAICompletion`) already pointed at the
@@ -12,7 +14,10 @@ into a `crewai` `Agent`/`Crew`.
 `crewai.LLM` is a factory: the `openai/` model prefix plus `base_url` routes it
 to CrewAI's native OpenAI provider, and headers go via `extra_headers`. That
 provider owns the transport, so the SDK's per-run correlation ID degrades to
-per-client — a documented conformance exemption, the same one ADK has.
+per-client — a documented conformance exemption. `build(donkey)` hands the
+LLM to a `crewai.Agent` and drives one turn with `kickoff_async`; the
+example declares `KNOWN_LIMITATIONS` for all four public scenarios, each an
+asserted exemption (#740), never a skip.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:

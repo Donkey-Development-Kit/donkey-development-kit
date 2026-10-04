@@ -153,7 +153,7 @@ find yourself on `main` about to start work, `git checkout develop` first.
 **Use a worktree when there's any chance of a parallel session** (another editor
 window, a running dev server, a `pytest --looponfail` holding files): one issue =
 one branch = one worktree. A fresh worktree has no installed venv/extras — run
-`pip install -e ".[dev,llm,cli]"` in its `python/` before testing.
+`pip install -e ".[llm,cli]" --group dev` in its `python/` before testing.
 
 **No workarounds for prerequisites.** If work on issue #N turns out to need an
 out-of-scope change first (a missing `core/` primitive, a verification unblock),
@@ -190,8 +190,8 @@ If the diff touches an adapter or framework wiring, also run the signature check
 python scripts/verify_frameworks.py
 ```
 
-If you added or touched an adapter, sanity-check that a bare `pip install -e
-".[dev]"` + `python -c "import donkey_kit"` still succeeds — that's the
+If you added or touched an adapter, sanity-check that a bare `pip install -e .
+--group dev` + `python -c "import donkey_kit"` still succeeds — that's the
 `base-only` CI job catching a framework import that leaked into a lower layer.
 
 **(fork)** GitHub withholds repository secrets from pull requests opened from a
@@ -273,8 +273,8 @@ If a change fits none of these, stop and ask — don't invent a seventh surface.
 
 ### `tests/unit/` — the framework-free gate
 
-The `base-only` CI job installs **only** `.[dev]` (no `llm`, no framework
-extras), imports `donkey_kit`, then runs `pytest -q tests/unit`. Everything
+The `base-only` CI job installs **only** the base package and the `dev`
+dependency group (no `llm`, no framework extras), imports `donkey_kit`, then runs `pytest -q tests/unit`. Everything
 here must work with zero optional dependencies. **Never add a top-level framework
 import to a file under `tests/unit/`** — that's exactly the drift this job
 exists to catch. Error-classification changes must keep the taxonomy invariants
@@ -310,6 +310,60 @@ wire every scenario; if one genuinely can't pass for a structural reason, add a
 framework-specific scenario — a shared-suite invariant must apply to all
 frameworks or it doesn't belong there.
 
+### Adding a framework adapter: the integration checklist
+
+An adapter is one entry in `ADAPTERS` (`src/donkey_kit/integrations/__init__.py`)
+plus everything below. `tests/unit/test_integration_checklist.py` checks each
+item per registry entry, so a new entry that skips one fails CI.
+
+1. **A registry entry.** Its `probe` is a tuple of every module the factories
+   need (including a dependency the framework doesn't always install), and its
+   `extra` names the pip extra.
+2. **An extra with a floor.** Each requirement is `>=` the lowest verified
+   version, including any sub-extra the adapter needs (`strands-agents[openai]`).
+   It has a matching row in `docs/verified-apis.md` §8 and a §8.3 floor row.
+3. **A lazy import.** The adapter module never imports its framework at module
+   level (only under `TYPE_CHECKING`). Its factories import through
+   `Adapter._native_import`, which raises the curated `missing_framework_error`.
+4. **All three forms.** `donkey.<fw>.<factory>()`, `donkey.<fw>.connection_kwargs()`
+   and the module-level `donkey_kit.integrations.<fw>.<factory>()`.
+5. **The surrounding artifacts.** A `scripts/verify_frameworks.py` row per
+   factory, a `website/content/frameworks/` page (the adapter docstring's
+   `Docs:` link), an `examples/<fw>/main.py` that exposes `build(donkey)` (one
+   governed call through the framework's own entry point, modelled on
+   `examples/langgraph/main.py`; `test_example_build_passes_the_conformance_kit`
+   runs it through `run_conformance`, with a module-level `KNOWN_LIMITATIONS`
+   only where `suite.py` records a structural limit), and an entry in the import-linter independence contract in
+   `pyproject.toml`.
+6. **The adapter contract suite, run with the real framework in CI.** That
+   means a driver per factory in `tests/conformance/contract_drivers.py`, a
+   case in `test_framework_retries.py` and `test_missing_framework_error.py`,
+   and the extra in the `adapter-contract` matrix in `.github/workflows/ci.yml`.
+   The suite asserts these things:
+   - governed headers and the run's correlation id;
+   - exactly one send on a 429 or 403;
+   - a typed refusal;
+   - streamed and sync calls;
+   - a call after the framework closes its client;
+   - `last_call` matching `observes_last_call`;
+   - the curated missing-framework error.
+
+Wire the adapter by these rules:
+
+- **Use the shared transport.** Hand the framework a non-owning view
+  (`self.http_client()` / `self.sync_http_client()`), never a client it can
+  close for everyone. Header-only wiring needs a structural reason, recorded in
+  `KNOWN_LIMITATIONS`.
+- **Turn the framework's own retries off.** The shared transport is the one
+  retry layer, so a refusal is sent once.
+- **Wire both sync and async**, or let the driver's `no_sync` say why the
+  framework is async-only.
+- **Use the shared typed-refusal helper** (`_TypedRefusals` in `_base`) rather
+  than a per-framework copy.
+- **`observes_last_call` is the single source of truth** for whether
+  `donkey.last_call` sees the adapter's calls. It holds for every factory and is
+  never changed on an instance.
+
 ### Fixture-driven tests — captures, not conveniences
 
 `tests/fixtures/anypoint/` holds **real captures** from a sandbox, not
@@ -329,7 +383,7 @@ teardown, and inventory receipts go in the **PR description**, not a committed
 file.
 
 Record **how to reproduce the shape** in the fixture index
-(`python/tests/fixtures/rejections/README.md`): one line giving the trigger
+(`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`): one line giving the trigger
 input and the policy configuration that produced it. If what you observed
 differs from what the platform documents, record the discrepancy in the
 ledger row (e.g. "schema documents 403, gateway returned 400") — the ledger
@@ -422,7 +476,7 @@ failure — don't "fix" the script to make a genuinely-blocked adapter pass.
 
 ```bash
 # from python/
-pip install -e ".[dev,llm,cli]"      # what CI installs
+pip install -e ".[llm,cli]" --group dev   # what CI installs (pip 25.1+)
 pytest -q                            # full suite
 pytest -q tests/unit                 # unit only (the base-only CI job)
 pytest -q -m local_gateway           # opt-in local-gateway tests
@@ -475,7 +529,9 @@ build plan has the rationale behind each rule:
   the same PR, and removing a package means removing its entry. On a PR that
   adds a name, CI also checks that the project exists on PyPI and warns when it
   is young, abandoned, or one or two characters off another allowlisted name.
-- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12.
+- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12,
+  and the version classifiers match it. When the floor moves is set by
+  [`docs/python-support.md`](docs/python-support.md).
   `tomllib` is stdlib only on 3.11+, so `tomli` is backfilled below 3.11;
   `typing-extensions` is pulled in below 3.12. Don't use 3.11+ syntax/stdlib
   without a backfill.
@@ -657,7 +713,7 @@ shape, so one surface never says "live" while another still says "planned" or
 - `docs/unsupported-boundary.md`;
 - `website/content/**` **and** the generated `website/public/**` copies
   (regenerate with `npm run generate:llms`);
-- the fixture index (`python/tests/fixtures/rejections/README.md`);
+- the fixture index (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`);
 - the affected test module docstrings.
 
 Do **not** touch the top-level `README.md` status banner for an individual

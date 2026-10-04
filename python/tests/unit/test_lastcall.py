@@ -387,17 +387,16 @@ def test_donkey_last_call_is_unavailable_when_every_adapter_is_non_observing() -
     # transport reports UNAVAILABLE (naming the surface), never a bare None/cold
     # read. We seed the adapter cache directly to avoid installing frameworks —
     # the adapter classes import their framework lazily, so this is base-safe.
-    from donkey_kit.integrations.adk import ADKAdapter
+    # CrewAI is the one adapter that routes outside our transport (#740).
     from donkey_kit.integrations.crewai import CrewAIAdapter
 
     def body() -> None:
         donkey = _donkey()
-        donkey._adapter_cache["adk"] = ADKAdapter(_LLM_CFG, donkey._http)
         donkey._adapter_cache["crewai"] = CrewAIAdapter(_LLM_CFG, donkey._http)
         record = donkey.last_call
         assert record.status is LastCallStatus.UNAVAILABLE
         assert record.available is False
-        assert record.surface == "adk, crewai"  # sorted, comma-joined
+        assert record.surface == "crewai"
 
     contextvars.copy_context().run(body)
 
@@ -405,12 +404,12 @@ def test_donkey_last_call_is_unavailable_when_every_adapter_is_non_observing() -
 def test_donkey_last_call_stays_unobserved_when_an_observing_adapter_is_present() -> None:
     # A mix that includes an observing adapter is NOT structurally unavailable —
     # a call through it could still populate the record, so a cold read is honest.
-    from donkey_kit.integrations.adk import ADKAdapter
+    from donkey_kit.integrations.crewai import CrewAIAdapter
     from donkey_kit.integrations.langgraph import LangGraphAdapter
 
     def body() -> None:
         donkey = _donkey()
-        donkey._adapter_cache["adk"] = ADKAdapter(_LLM_CFG, donkey._http)
+        donkey._adapter_cache["crewai"] = CrewAIAdapter(_LLM_CFG, donkey._http)
         donkey._adapter_cache["langgraph"] = LangGraphAdapter(_LLM_CFG, donkey._http)
         assert donkey.last_call.status is LastCallStatus.UNOBSERVED
 
@@ -852,7 +851,8 @@ def test_no_unverified_warning_on_the_routing_read_path() -> None:
 
 
 # --- semantic routing: matched topic + similarity score (BG §1.1, #590) ----------
-# The LIVE-VERIFIED format (tests/fixtures/anypoint/semantic_routing/, 2026-09-24):
+# The LIVE-VERIFIED format (2026-09-24,
+# src/donkey_kit/simulator/_fixtures/anypoint/semantic_routing/):
 #   Request successfully matched '{topic}' topic (Provider: {p}, Model: {m}). Score: {s}.
 _SEMANTIC_SUCCESS = (
     "Request successfully matched 'Finance' topic "
