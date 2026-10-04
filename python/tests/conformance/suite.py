@@ -55,14 +55,18 @@ CONFORMANCE_SCENARIOS = [
 # that cannot satisfy a scenario records WHY here rather than skipping silently.
 # Every adapter but CrewAI sends through our shared httpx client (#740), so only
 # CrewAI is listed. Its structural reason: the native OpenAI provider builds both
-# its sync OpenAI and its AsyncOpenAI from ONE client_params dict, and with an
-# interceptor set it overwrites http_client with a fresh httpx client, so no
-# single value can carry our async client to both (crewai 1.15, #740).
+# its sync OpenAI and its AsyncOpenAI from ONE client_params dict, and the
+# openai SDK type-checks http_client per client, so no single value can carry our
+# clients to both. With an interceptor set it overwrites http_client with a fresh
+# httpx client whose transport always sends itself, and the interceptor's hooks
+# only edit the request and response (crewai 1.15.3 to 1.15.23, #740, #958;
+# docs/verified-apis.md §8.2).
 _CREWAI_TRANSPORT = (
     "CrewAI's native OpenAI provider owns the transport: one client_params dict "
-    "feeds both its sync OpenAI and its AsyncOpenAI, and its interceptor path "
-    "replaces http_client with its own httpx client, so our async client cannot be "
-    "injected (#740)."
+    "feeds both its sync OpenAI and its AsyncOpenAI, which type-check http_client "
+    "against different classes, and its interceptor path replaces http_client "
+    "with its own httpx client whose interceptor can edit the request but not "
+    "reroute the send, so our clients cannot be injected (#740, #958)."
 )
 _CREWAI_TRANSPORT_EXEMPTION = (
     _CREWAI_TRANSPORT + " The correlation ID is per-client, not per-run (BG §1.8)."
