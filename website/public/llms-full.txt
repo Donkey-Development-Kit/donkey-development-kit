@@ -3132,18 +3132,50 @@ python -m my_app                              # spans flow, refused calls includ
 ```
 
 `Donkey.from_env()` reads `OTEL_EXPORTER_OTLP_ENDPOINT` (or the traces-specific
-`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, installs an OTLP
-exporter behind a batch processor. The network flush runs on that background
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, sets up an OTLP
+exporter behind a batch processor for DDK's own spans. The network flush runs on that background
 thread, off your request path, keeping instrumentation overhead under
 1&nbsp;ms per call. The `[otel]` extra ships the **http/protobuf** exporter;
 `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` is honoured only if you also install
 `opentelemetry-exporter-otlp-proto-grpc`.
 
 **With no endpoint set, the export path is inert and silent** — no exporter is
-built, nothing connects, nothing is printed. If your process already configures
-its own OpenTelemetry provider (say via `opentelemetry-instrument`), DDK rides it
-rather than replacing it, so your spans flow through the pipeline you already
-set up.
+built, nothing connects, nothing is printed.
+
+### DDK leaves the global provider to you
+
+OpenTelemetry lets a process set its global `TracerProvider` only once. So
+constructing a `Donkey` **never changes `trace.get_tracer_provider()`** by
+default. The exporter above sits on a provider that only DDK's spans use, and
+your other instrumentation is unaffected.
+
+- **Your process sets its own provider**, before *or after* `Donkey()` (say via
+  `opentelemetry-instrument`, or a `trace.set_tracer_provider(...)` call during
+  startup). DDK's spans go to that provider from then on, through the pipeline
+  you already set up, and DDK's own exporter goes unused.
+- **You want DDK's provider to be the global one**, so other libraries' spans
+  use the same exporter. Opt in:
+
+```bash
+export DONKEY_TELEMETRY_INSTALL_GLOBAL=true   # or telemetry_install_global = true in .donkey-kit.toml
+```
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.core.config import DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_install_global=True))
+```
+
+With the flag on and an endpoint set, the first `Donkey()` installs its provider
+as the global one, unless your process already set one. The flag does nothing
+without an endpoint.
+
+DDK's own provider flushes its pending spans when the interpreter exits. If you
+need to flush earlier with `trace.get_tracer_provider().force_flush()`, for
+example in a serverless handler or a script that checks its collector before it
+exits, that call only reaches DDK's spans when they go through the global
+provider. Turn the flag on, or set your own provider.
 
 Opt out of telemetry entirely with a single flag:
 
@@ -6514,8 +6546,9 @@ Four questions a team usually cannot answer about its own agent: does it retry
 a budget refusal (it must not)? Does a typed refusal survive its error
 handling? Does the run's correlation id reach its logs? Does it still work when
 the gateway sends no budget headers? The conformance suite answers them without
-reading your code — it swaps a fixture-serving transport underneath, calls
-`agent.run(...)`, and watches the wire and the logs. So it grades behaviour, in
+reading your code — it swaps a fixture-serving transport underneath (the
+success body is shaped for the route your agent calls, Responses or chat
+completions), calls `agent.run(...)`, and watches the wire and the logs. So it grades behaviour, in
 any framework, and it runs in your CI as a pytest plugin with no gateway.
 
 | Example | Shows | Needs |
@@ -6895,15 +6928,19 @@ The same two ids, on the exception
 
     # no Donkey-specific variable
     export OTEL_EXPORTER_OTLP_ENDPOINT=https://…
-    donkey = Donkey.from_env()   # installs OTLP behind a BatchSpanProcessor
+    donkey = Donkey.from_env()   # OTLP behind a BatchSpanProcessor, for Donkey's spans
     # no endpoint → inert, silent, nothing connects
     # DONKEY_TELEMETRY=false    → opt out even if an endpoint is set
+    # Donkey leaves trace.get_tracer_provider() alone; to make its provider
+    # the global one (other libraries' spans too):
+    #   export DONKEY_TELEMETRY_INSTALL_GLOBAL=true
 
   PASS  no OTEL_EXPORTER_OTLP_ENDPOINT — export stayed inert and silent
-  Donkey.from_env() installs OTLP only when that standard env var is set. It will not
-  clobber a TracerProvider the host already installed — which is why this demo's in-
-  memory table still works. Opt out with DONKEY_TELEMETRY=false (or telemetry = false in
-  .donkey-kit.toml). Cost tags on donkey.run(team=..., project=...) are what let a
+  Donkey.from_env() sets up OTLP only when that standard env var is set, and only for
+  its own spans: it does not take the global TracerProvider unless
+  DONKEY_TELEMETRY_INSTALL_GLOBAL=true, and a provider the host sets, even after
+  Donkey(), wins — which is why this demo's in-memory table works. Opt out with
+  DONKEY_TELEMETRY=false (or telemetry = false in .donkey-kit.toml). Cost tags on donkey.run(team=..., project=...) are what let a
   backend slice refusals, budget and latency by agent without another attribute
   convention.
 
@@ -6994,8 +7031,10 @@ with donkey.run(id="otel-zero-config", team="cx", project="welcome"):
 - **Cost tags are a fixed four** — `team`, `project`, `env`, `enduser.id` —
   set on `from_env()` and overridable per `run()`, landing on `donkey.cost.*`.
 - **Export is opt-in.** No endpoint means inert and silent;
-  `DONKEY_TELEMETRY=false` opts out even when one is set, and a host
-  `TracerProvider` is never replaced.
+  `DONKEY_TELEMETRY=false` opts out even when one is set. Donkey exports its
+  own spans through a provider of its own and never takes the global
+  `TracerProvider` unless `DONKEY_TELEMETRY_INSTALL_GLOBAL=true`; a host
+  provider, set before or after `Donkey()`, always wins.
 
 **Learn more:** [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md)
 
@@ -7963,9 +8002,9 @@ python "demos/human-made/openai/10 - zero-config-otlp.py"                       
 OTEL_EXPORTER_OTLP_ENDPOINT=https://<collector> python "demos/human-made/openai/10 - zero-config-otlp.py"
 ```
 
-With no `TracerProvider` in the process, `Donkey.from_env()` installs an OTLP
-exporter itself when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, and stays silent
-when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
+With no `TracerProvider` in the process, `Donkey.from_env()` sets up an OTLP
+exporter for its own spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, without
+taking the global provider, and stays silent when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
 
 **You should see:** the endpoint (or `(unset — Donkey.from_env() will not
 install an exporter)`), the reply, and `last_call observed <model>`.
@@ -9431,8 +9470,14 @@ If you touched an adapter, also run `python scripts/verify_frameworks.py`.
 ### Open a pull request into `develop`
 
 The PR body includes `Closes #<issue#>`, a `## Summary`, a `## Test plan` and
-a `## Post-deploy steps` section (write `None.` when nothing applies). PRs are
-squash-merged, so `develop` reads as one commit per issue.
+a `## Post-deploy steps` section (write `None.` when nothing applies). The
+repository's PR template lays these out. PRs are squash-merged, so `develop`
+reads as one commit per issue.
+
+A change to an architecture invariant, an import-linter contract, the API
+stability tiers or the dependency policy also needs an architecture decision
+record (ADR). The template asks whether one is needed, and the process is in
+[`docs/adr/`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/adr/README.md).
 
 ## Contributing from a fork
 
@@ -9804,6 +9849,7 @@ In code, `Donkey.from_env(send_cost_headers=True)`.
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
 | `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
+| `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | Install DDK's OTLP provider as the process-global OpenTelemetry provider (default **`false`**). See [DDK leaves the global provider to you](https://docs.donkey-kit.dev/telemetry.md#ddk-leaves-the-global-provider-to-you). |
 
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
@@ -9832,7 +9878,7 @@ request is sent. One error lists every bad field and where each was set:
 |---|---|
 | `timeout_s` | A number greater than `0` |
 | `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
-| `telemetry`, `telemetry_capture_content`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
+| `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
 | `region` | `us`, `eu`, `ca` or `jp` |
 | `llm_proxy_auth` | `client-id`, `jwt` or `bearer` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |

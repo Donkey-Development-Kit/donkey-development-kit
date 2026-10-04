@@ -247,8 +247,12 @@ def main() -> int:
 
     with _collector_cls()() as collector:
         # Zero-config export (#194): setting the standard endpoint is all it
-        # takes — Donkey.from_env() installs the OTLP exporter for us.
+        # takes — Donkey.from_env() builds the OTLP exporter for us. By default
+        # that exporter stays DDK-scoped and the global provider is left alone
+        # (#732); this demo opts in to the global install only because it
+        # flushes through trace.get_tracer_provider() before reading the tally.
         os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = collector.endpoint
+        os.environ["DONKEY_TELEMETRY_INSTALL_GLOBAL"] = "true"
 
         base_url, shutdown = _boot_simulator(["pii_block:every=5"])
         # The simulator ignores auth; these are throwaway placeholders, never

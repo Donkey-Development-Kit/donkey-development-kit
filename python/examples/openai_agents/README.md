@@ -1,6 +1,8 @@
 # OpenAI Agents SDK example
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+Supported at connection_kwargs(). The example's `build(donkey)` makes one governed
+call through `agents.Runner.run` and runs through the public conformance kit
+(`tests/conformance/test_adapter_contract.py`).
 
 **What this shows.** A one-line factory call gets you a *native*
 `agents.OpenAIChatCompletionsModel` already pointed at the governed Agent Fabric LLM

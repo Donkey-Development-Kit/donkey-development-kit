@@ -28,6 +28,29 @@ from it `user file`.
 config file in place of `./.donkey-kit.toml`. An unknown name raises
 `TypeError`. `on_model_substitution=None` is no longer accepted; leave the
 argument out instead.
+## 0.1.2 (unreleased)
+
+Changes since `0.1.1` that can affect existing code.
+
+### 1. `Donkey()` no longer installs the global OpenTelemetry provider
+
+Reference: [DDK leaves the global provider to you](website/content/telemetry.mdx#ddk-leaves-the-global-provider-to-you).
+
+**Who:** anyone who sets `OTEL_EXPORTER_OTLP_ENDPOINT`, doesn't configure an
+OpenTelemetry `TracerProvider` of their own, and relied on `Donkey()` making
+its provider the global one. For example, spans from other libraries reached
+the collector only because DDK had installed its exporter globally.
+
+**Symptom:** DDK's own spans still reach the collector, but
+`trace.get_tracer_provider()` is unchanged after `Donkey()`, so spans that
+other code creates through the global provider are no longer exported. A
+`trace.get_tracer_provider().force_flush()` call no longer flushes DDK's spans
+either; they are flushed when the interpreter exits.
+
+**Fix:** set `DONKEY_TELEMETRY_INSTALL_GLOBAL=true` (or
+`telemetry_install_global = true` in `.donkey-kit.toml`) to get the old
+behaviour, or configure your own `TracerProvider`. DDK's spans go to a provider
+you set even if you set it after `Donkey()`.
 ## 0.1.2: the public API surface, renames and removals
 
 Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public

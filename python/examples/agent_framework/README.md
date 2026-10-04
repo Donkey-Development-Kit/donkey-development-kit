@@ -1,6 +1,8 @@
 # Microsoft Agent Framework example
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+Supported at connection_kwargs(). The example's `build(donkey)` makes one governed
+call through `Agent.run` and runs through the public conformance kit
+(`tests/conformance/test_adapter_contract.py`).
 
 **What this shows.** A one-line factory call builds a native Agent Framework
 chat client, `agent_framework.openai.OpenAIChatClient`, pointed at the
@@ -11,10 +13,9 @@ path and its kwargs (`model`, not `model_id`). Agent Framework is a young
 package that has renamed classes before. If the import or the construction
 fails, the factory raises a `NotImplementedError` ("blocked on verification")
 rather than guessing further; this example catches that and prints it
-plainly. This example only constructs the object; it deliberately
-does not attempt a live inference call, since Agent Framework drives chat
-clients through its own `Agent` object rather than a method on the client
-itself.
+plainly. `main()` only constructs the object; `build(donkey)` hands the client to an
+`Agent` with the policy middleware and drives one turn with `Agent.run`,
+which is what the conformance kit runs.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:
