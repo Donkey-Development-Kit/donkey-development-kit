@@ -33,11 +33,14 @@ does not list which other models are permitted.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING
+
+import typer
 
 from ..core.config import ConfigSource, DonkeyConfig
 from ..core.endpoints import allow_http_enabled, allow_http_setting, host_of
@@ -48,6 +51,7 @@ from ..core.errors import (
     GatewayUnavailable,
     UpstreamRequestError,
 )
+from ._app import app
 
 if TYPE_CHECKING:
     from ..core.budget import Budget
@@ -57,6 +61,7 @@ __all__ = [
     "Level",
     "Probe",
     "ProbeResult",
+    "doctor",
     "format_report",
     "has_failure",
     "run_diagnostics",
@@ -337,3 +342,64 @@ def format_report(checks: list[DoctorCheck]) -> str:
 def has_failure(checks: list[DoctorCheck]) -> bool:
     """True if any check is a hard failure — the CI-preflight exit signal (AC4)."""
     return any(c.level is Level.FAIL for c in checks)
+
+
+@app.command()
+def doctor(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        "gpt-4o", "--model", help="model id to test against the proxy allow-list"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="emit machine-readable JSON"),
+) -> None:
+    """Diagnose governed access: config, credentials, gateway, model, budget (#202).
+
+    Makes ONE real governed call and reads the result through the BG §1.2 error
+    taxonomy to tell the three look-alike failures apart — wrong URL
+    (``GatewayUnavailable``), wrong credentials (``AuthError``), and
+    credentials-fine-but-model-rejected (the verified ``model_not_found``
+    passthrough → ``UpstreamRequestError``). Each failure prints the remediation
+    the exception itself carries (one source of wording), and the budget line
+    always states how stale the reading is — the proxy has no budget endpoint, so
+    doctor never implies live data.
+
+    Exits non-zero if any check fails, so it works as a CI preflight. Needs the
+    ``[llm]`` extra for the probe client (a missing extra is an install prompt,
+    exit 1, not a ``blocked on verification`` message).
+    """
+    # The global --json (before the subcommand) and the local --json (after it)
+    # are equivalent — either turns on machine-readable output.
+    as_json = as_json or bool((ctx.obj or {}).get("json"))
+
+    try:
+        checks = run_diagnostics(model)
+    except ImportError as exc:  # openai (the [llm] extra) not installed
+        typer.secho(
+            'donkey doctor needs the [llm] extra for the probe client. Install it with:\n'
+            '    pip install "donkey-kit[llm]"',
+            fg="yellow",
+            err=True,
+        )
+        raise typer.Exit(1) from exc
+    except DonkeyError as exc:
+        # A config/probe failure that escaped the taxonomy mapping: surface it
+        # rather than crash with a traceback.
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1) from exc
+
+    if as_json:
+        typer.echo(
+            json.dumps(
+                [
+                    {"name": c.name, "level": c.level.value, "detail": c.detail,
+                     "remediation": c.remediation}
+                    for c in checks
+                ],
+                indent=2,
+            )
+        )
+    else:
+        typer.echo(format_report(checks))
+
+    if has_failure(checks):
+        raise typer.Exit(1)

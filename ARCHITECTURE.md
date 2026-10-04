@@ -52,22 +52,33 @@ registry/       Exchange discovery, typed governed-state assets
       ↓
 llm/            framework-free OpenAI-compatible client factory + model catalog
       ↓
-core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but core imports none — value objects are frozen dataclasses, ADR 0001)
+core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but nothing imports it — value objects are frozen dataclasses, ADR 0001)
 ```
 
-**Not in the stack — `provisioning/`.** The package holds two different things:
+**Not in the stack — `cli/` and `experimental`.** Two siblings sit outside the
+linear stack:
 
-- **The refused declarative control plane** (specs · plan/diff/apply · drift ·
-  governance lint · publish). It is on the build plan's *Do not build* list —
-  it must not compete with API Manager/Terraform — and its CLI commands
-  (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`, `status`,
-  `publish`, `verify`) are hidden and `_verify.blocked`. Treat this half as
-  legacy scaffolding: reachable, but do not deepen it (see "Still blocked",
-  below).
-- **The supported `donkey` CLI.** The console script points at
-  `donkey_kit.provisioning.cli:app`, and its visible commands — `init`, `test`,
-  `mock`, `doctor` — are live. Moving them to their own `donkey_kit/cli`
-  package and quarantining the legacy half is #730.
+- **The `donkey` CLI** lives in `donkey_kit/cli/` (console script
+  `donkey = "donkey_kit.cli:main"`), one module per command: `init`, `doctor`,
+  `mock`, `test`. It is a front end over the library: it may import any layer,
+  and an import-linter contract forbids every library module from importing it
+  back, so typer (the `[cli]` extra) never reaches the base `import donkey_kit`
+  path. Three hidden commands, `status`, `publish` and `verify` (BG §2.5), are
+  `_verify.blocked` and exit 3.
+- **`donkey_kit.experimental`** re-exports the types that exist only for a
+  verification-blocked surface (`AssetRef`, `Publication`, `GovernanceCriteria`,
+  `STRICT`, `RegistryError`, …). They are importable, but they are not in
+  `donkey_kit.__all__` and carry no stability promise until their surface is
+  verified.
+
+The refused declarative control plane (the old `provisioning/` package:
+specs, plan/diff/apply, drift, governance lint, and `governance.py`) is on the
+build plan's *Do not build* list, because it must not compete with API
+Manager/Terraform. It was deleted, not parked, along with its hidden CLI
+commands (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`) and its
+errors (`ProvisioningError`, `GovernanceDrift`, `PlatformTeamOnly`). The
+reasoning is ADR 0008 in [`docs/adr/`](docs/adr/) (legacy quarantine and the
+CLI's home, #730).
 
 **The hard rule (the layered architecture):** `core/` has no dependency on any agent framework.
 Each `integrations/*` adapter may depend on exactly one framework, and nothing
@@ -139,9 +150,9 @@ framework that may not be installed.
 Config, catalog entries, registry assets and results are `@dataclass(frozen=True)`
 and change by building a new instance (`dataclasses.replace(...)`,
 `DonkeyConfig.with_overrides(...)`). pydantic is used only at an external-schema
-boundary. The one such module today is the legacy `provisioning/spec.py`, which
-validates a user-authored YAML spec, and it is the only reason `pydantic` is
-still a base dependency. Dropping it from the base install is part of #730.
+boundary, and no module has one today: its only user was the deleted
+`provisioning/spec.py`, so `pydantic` is not a base dependency (#730). The
+`base-only` CI job checks that a plain install neither installs nor imports it.
 
 ### How the pieces connect
 
@@ -218,7 +229,7 @@ still a base dependency. Dropping it from the base install is part of #730.
   is set in the environment. The check runs before a credential leaves on
   either plane: in `validated()` for model calls and the registry, before each
   control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
-  requested. Governance `[targets.*].base_url` is not covered yet (#832).
+  requested.
   Provenance stores a keyed digest of each loaded value (the key is random per
   process), so `asdict()` copies no secret and a config rebuilt in another
   process keeps its URL sources but treats its credentials as set in code. A
@@ -270,19 +281,11 @@ still a base dependency. Dropping it from the base install is part of #730.
   `tests/unit/test_transport.py` (`test_default_hooks_are_noop_seams`,
   `test_on_request_called_once_across_retries`,
   `test_hooks_fire_once_across_the_401_refresh_path`).
-- **`Governance`** (`governance.py`) is legacy scaffolding outside the linear
-  import stack — it depends only on `core` and remains reachable from its module,
-  but it is not exported as first-class `donkey_kit` API. It is ONE object behind
-  three verbs: `simulate()` (an ephemeral local
-  gateway harness), `export()` (emit the governed-state manifest), and `resolve()`
-  (reconcile a running `Donkey` against it, raising `GovernanceDrift` on
-  mismatch); a separate platform-team-only `apply()` is the deliberate escape
-  hatch. **All of these are currently `_verify.blocked`** — the `simulate()`
-  harness included — pending the Verification milestone, so today the object is the
-  shape, not yet the behaviour. The governed-state *asset* criteria one layer
-  down (`GovernanceCriteria`, `STRICT`, `evaluate`) live in `registry/criteria.py`
-  (renamed from `registry/governance.py` in #719 so the two modules no longer
-  share a name; the old path is a deprecated alias).
+- **Governed-state criteria** (`GovernanceCriteria`, `STRICT`, `evaluate`) live
+  in `registry/criteria.py` (renamed from `registry/governance.py` in #719; the
+  old path is a deprecated alias). The top-level `Governance` object
+  (`simulate()`/`export()`/`resolve()`/`apply()`) was deleted with the
+  provisioning control plane in #730.
 
 Every governed surface ships in three ergonomic forms that must stay in lockstep:
 the `donkey.<framework>` factory, a `connection_kwargs()` accessor, and a
@@ -307,7 +310,7 @@ Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
   It is used where there is no defensible placeholder at all — e.g. the MCP-bridge
-  tool-discovery and the provisioning control-plane endpoints. The SDK raises
+  tool-discovery and the Exchange publication endpoints. The SDK raises
   rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
 - **`Unverified(...)`** placeholder constants hold a documented best-guess that is
   fully overridable via config/env, and emit a one-time `UnverifiedValueWarning`
@@ -328,7 +331,7 @@ What is verified today: the LLM-proxy data plane (its base-URL shape — note th
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
-discovery and the provisioning control plane. The framework adapters are not
+discovery and Exchange publication (BG §2.5). The framework adapters are not
 blocked. They build their native object directly, and their constructor rows in
 §8 of the ledger read **signature-confirmed offline**, except ADK's `gemini()`,
 which is **live-verified**. An adapter refuses with `blocked(...)` only when the

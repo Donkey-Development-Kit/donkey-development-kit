@@ -2493,7 +2493,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`, along with `classify`:
+All importable from `donkey_kit`, along with `classify`, except the three Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -2511,9 +2511,9 @@ DonkeyError                     # base of the whole tree
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
-├─ PlatformTeamOnly             # Governance.apply() without the platform-team opt-in; also a PermissionError
-└─ ToolInvocationError, RegistryError, PublicationDrift, ProvisioningError, GovernanceDrift
-                                # tool access, registry, publishing and provisioning (Roadmap surfaces)
+└─ ToolInvocationError, RegistryError, PublicationDrift
+                                # tool access, registry and publishing (Roadmap surfaces;
+                                # import them from donkey_kit.experimental)
 ```
 
 `GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one
@@ -4111,7 +4111,14 @@ you didn't ask for. To point `doctor` at another environment, set
 Every command exits non-zero on failure, so any of them drops into CI as a
 preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
 `donkey test` → `[test]`, `donkey doctor` → `[llm]`) prints the exact
-`pip install` line and exits `1` — never a stack trace.
+`pip install` line and exits `1` — never a stack trace. A command whose platform
+API is not verified yet exits `3` with `blocked on verification`, so a script can
+tell "blocked" from "failed".
+
+The CLI lives in the `donkey_kit.cli` package. Earlier releases also shipped
+hidden provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
+`generate`); they were removed with the refused provisioning control plane, and
+typer now rejects them as unknown commands (exit `2`).
 
 ### `donkey init`
 
@@ -4445,10 +4452,11 @@ Publication to Exchange says nothing about whether an asset is fronted by a
 gateway, has policies applied, or passes the org's rulesets — there is no single
 boolean to query. "Governed" is **computed** by joining state across systems,
 and it is **environment-scoped**: an asset governed in Production may be
-ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit:
+ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit. It
+and `STRICT` are in `donkey_kit.experimental` until discovery is verified:
 
 ```python
-from donkey_kit import STRICT, GovernanceCriteria
+from donkey_kit.experimental import STRICT, GovernanceCriteria
 
 @dataclass(frozen=True)
 class GovernanceCriteria:
@@ -4856,8 +4864,12 @@ explicit `--allow-duplicate`, which logs at `WARNING`.
 
 ## The `Publication` object
 
+The publication types are in `donkey_kit.experimental`, not `donkey_kit`, until
+the Exchange publication API is verified. They may change in any release until
+then.
+
 ```python
-from donkey_kit import Contact, Publication, PublicationAssetType
+from donkey_kit.experimental import Contact, Publication, PublicationAssetType
 
 pub = Publication(
     asset_type=PublicationAssetType.MCP_SERVER,  # MCP_SERVER | A2A_AGENT | AGENT | API
@@ -6378,6 +6390,8 @@ Run context
   ContentSafetyBlocked   revised ['severity_hate', 'severity_violence'] and did not retry
   PASS  The documented content-safety fixture classifies and injects.
 
+    from donkey_kit.experimental import ToolInvocationError
+
     with donkey.simulate(ToolInvocationError):
         ...
 
@@ -6390,7 +6404,7 @@ Run context
   PASS  ValueError — a transport failure has no captured body to inject
   message                simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AgentKilled, AuthError, ContentSafetyBlocked, ModelNotRoutable, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
 
-  Tool invocation, registry, and provisioning errors are not gateway refusals, and they
+  Tool invocation and registry errors are not gateway refusals, and they
   have no captured wire shape. GatewayUnavailable is the same kind of gap for a
   different reason: there is no HTTP response at all, so there is nothing to replay.
   Injecting a plausible body would let you write a handler against a body that does not
@@ -6489,8 +6503,8 @@ donkey mock --scenario pii_block:every=2 \
 exhaustion until the window rolls over.
 
   `simulate()` only injects shapes that have a captured wire body.
-  `simulate(ToolInvocationError)` and `simulate(GatewayUnavailable)` raise
-  `ValueError` instead of inventing one — a transport failure has no HTTP
+  `simulate(ToolInvocationError)` (imported from `donkey_kit.experimental`) and
+  `simulate(GatewayUnavailable)` raise `ValueError` instead of inventing one — a transport failure has no HTTP
   response to replay. To provoke `GatewayUnavailable`, point at a dead origin
   (see [Typed refusals](https://docs.donkey-kit.dev/examples/general/typed-refusals.md)).
 
@@ -9845,7 +9859,7 @@ other than the ones listed leaves them off.
 ## Anypoint control plane
 
 A separate credential from the LLM proxy, for features that call the Anypoint
-platform: registry and tool discovery, publication and provisioning. The SDK
+platform: registry and tool discovery, and publication. The SDK
 exchanges `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` for a connected-app
 token at the Anypoint token endpoint and sends only that token to the platform.
 You don't need these values for governed model access. Model calls never use
@@ -9932,8 +9946,8 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | `donkey init`, `donkey mock`, `donkey test`, `donkey.simulate()` | None | Available |
 | Registry: `donkey.registry.search()`, `resolve_mcp()`, `resolve_agent()`, `explain()`, `warm()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()`, `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
-| Publication and governance: `Publication.preview()` / `verify()`, `Governance.resolve()` / `apply()` / `simulate()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
-| Hidden provisioning commands (`donkey plan`, `apply`, `drift`, `lint`, `generate`, `status`, `publish`, `verify`) | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
+| Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
+| Hidden commands `donkey status`, `publish`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
 So in this release the SDK sends the `ANYPOINT_*` credentials only if your own
@@ -10051,10 +10065,7 @@ anything.
 token endpoint. A URL you pass to a factory in code gets the `https://` check
 when the factory is called; see
 [Credentials go only to checked endpoints](#credentials-go-only-to-checked-endpoints). They don't cover OTLP exporter endpoints (configured by
-OpenTelemetry) or governance `[targets.*].base_url` profiles. No request goes
-to a target profile today, because `resolve()`, `apply()` and `simulate()` are
-not available yet
-([#832](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/832)).
+OpenTelemetry).
 
 #### Endpoints must use `https://`
 
@@ -10428,7 +10439,7 @@ before making a network request.
   `streamGenerateContent` route streams correctly.
 
   Exchange search and resolution, API Manager governed-state reads, MCP
-  discovery and binding, and provisioning/publication are
+  discovery and binding, and Exchange publication are
   Roadmap — not hidden dependencies. Today they
   raise `NotImplementedError` before making any network request. The SDK also
   never calls a Model Proxy `/models` endpoint, because the proxy has no model

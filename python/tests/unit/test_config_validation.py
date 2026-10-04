@@ -12,10 +12,10 @@ import httpx
 import pytest
 from typer.testing import CliRunner
 
+from donkey_kit.cli import app
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient
-from donkey_kit.provisioning.cli import app
 
 _CHECKED_ENV = (
     "ANYPOINT_REGION",

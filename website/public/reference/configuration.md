@@ -369,7 +369,7 @@ other than the ones listed leaves them off.
 ## Anypoint control plane
 
 A separate credential from the LLM proxy, for features that call the Anypoint
-platform: registry and tool discovery, publication and provisioning. The SDK
+platform: registry and tool discovery, and publication. The SDK
 exchanges `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` for a connected-app
 token at the Anypoint token endpoint and sends only that token to the platform.
 You don't need these values for governed model access. Model calls never use
@@ -456,8 +456,8 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | `donkey init`, `donkey mock`, `donkey test`, `donkey.simulate()` | None | Available |
 | Registry: `donkey.registry.search()`, `resolve_mcp()`, `resolve_agent()`, `explain()`, `warm()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()`, `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
-| Publication and governance: `Publication.preview()` / `verify()`, `Governance.resolve()` / `apply()` / `simulate()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
-| Hidden provisioning commands (`donkey plan`, `apply`, `drift`, `lint`, `generate`, `status`, `publish`, `verify`) | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
+| Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
+| Hidden commands `donkey status`, `publish`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
 So in this release the SDK sends the `ANYPOINT_*` credentials only if your own
@@ -575,10 +575,7 @@ anything.
 token endpoint. A URL you pass to a factory in code gets the `https://` check
 when the factory is called; see
 [Credentials go only to checked endpoints](#credentials-go-only-to-checked-endpoints). They don't cover OTLP exporter endpoints (configured by
-OpenTelemetry) or governance `[targets.*].base_url` profiles. No request goes
-to a target profile today, because `resolve()`, `apply()` and `simulate()` are
-not available yet
-([#832](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/832)).
+OpenTelemetry).
 
 #### Endpoints must use `https://`
 
