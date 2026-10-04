@@ -2,7 +2,7 @@
 contract, status resolution per shape, and byte-identity of what it serves.
 
 Unguarded — the loader needs no web framework, so this runs in the base-only CI
-job under ``[dev]`` only (the same guarantee [[test_simulator_base_only]] pins).
+job under the ``dev`` group only (the same guarantee [[test_simulator_base_only]] pins).
 """
 
 from __future__ import annotations
