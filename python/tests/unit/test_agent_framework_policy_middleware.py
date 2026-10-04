@@ -20,7 +20,8 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
-from donkey_kit.core.errors import PIIDetected
+from donkey_kit._testing import swap_transport
+from donkey_kit.core.errors import DonkeyError, GatewayUnavailable, PIIDetected
 
 af = pytest.importorskip("agent_framework")
 from agent_framework.exceptions import ChatClientException  # noqa: E402
@@ -129,7 +130,7 @@ def test_policy_middleware_registers_on_a_real_agent(api: str) -> None:
 async def test_pii_refusal_ends_the_run_typed_after_one_send(api: str) -> None:
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_pii_proxy(sent))
+    fab._http.governed_transport.replace_inner(_pii_proxy(sent))
     agent = _agent(fab, api)
 
     try:
@@ -155,7 +156,7 @@ async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send(api: str) 
     middleware has returned; the hook on the response stream still types it."""
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_pii_proxy(sent))
+    fab._http.governed_transport.replace_inner(_pii_proxy(sent))
     agent = _agent(fab, api)
 
     try:
@@ -172,7 +173,7 @@ async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send(api: str) 
 
 async def test_allowed_call_passes_through_unchanged(api: str) -> None:
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_ok_proxy())
+    fab._http.governed_transport.replace_inner(_ok_proxy())
     agent = _agent(fab, api)
 
     try:
@@ -183,22 +184,43 @@ async def test_allowed_call_passes_through_unchanged(api: str) -> None:
     assert response.text == "hello"
 
 
-async def test_error_without_a_proxy_response_propagates_untouched(api: str) -> None:
+async def test_unreachable_gateway_surfaces_as_gateway_unavailable(api: str) -> None:
     """A failure with no HTTP response behind it (here, the transport cannot
-    connect) is not a gateway refusal and must not be masked as one."""
+    connect) is not a gateway refusal, but it is the transport's own typed
+    ``GatewayUnavailable``: the bridge sees through ``ChatClientException`` and
+    openai's ``APIConnectionError`` to it (#724), never masking it as a refusal."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route", request=request)
 
     fab = Donkey(_cfg())
-    fab._http._swap_transport(httpx.MockTransport(handler))
+    fab._http.governed_transport.replace_inner(httpx.MockTransport(handler))
     agent = _agent(fab, api)
 
     try:
-        with pytest.raises(ChatClientException):
+        with pytest.raises(GatewayUnavailable) as excinfo:
             await agent.run("hi")  # type: ignore[attr-defined]
     finally:
         await fab.aclose()
+    assert isinstance(excinfo.value.framework_error, ChatClientException)
+
+
+async def test_a_non_refusal_error_propagates_untouched(api: str) -> None:
+    """An error with no transport behind it is not masked as a DonkeyError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise ValueError("a bug in the handler")
+
+    fab = Donkey(_cfg())
+    swap_transport(fab._http, httpx.MockTransport(handler))
+    agent = _agent(fab, api)
+
+    try:
+        with pytest.raises(Exception) as excinfo:
+            await agent.run("hi")  # type: ignore[attr-defined]
+    finally:
+        await fab.aclose()
+    assert not isinstance(excinfo.value, DonkeyError)
 
 
 @pytest.mark.parametrize(
@@ -211,7 +233,7 @@ async def test_chat_client_sends_to_the_chosen_api(kwargs: dict[str, str], path:
     route, such as Azure OpenAI, that 404s ``/responses`` (#826)."""
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_ok_proxy(sent))
+    fab._http.governed_transport.replace_inner(_ok_proxy(sent))
     agent = af.Agent(client=fab.agent_framework.chat_client("gpt-4o", **kwargs))
 
     try:

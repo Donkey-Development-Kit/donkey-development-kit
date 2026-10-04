@@ -10,14 +10,15 @@ these things so the exemption stays honest:
    exempting nothing) — the internal-matrix analogue of the customer plugin's
    collection-time validation.
 2. The set of adapters exempted from ``gateway_identity_observed`` is EXACTLY the
-   set whose :attr:`Adapter.observes_last_call` is ``False``. The exemption table
+   set whose default factory's ``capabilities().observes_last_call`` is ``False``
+   (#726). The exemption table
    and the code fact it documents cannot drift apart: add a non-observing adapter
    without recording the exemption (or vice-versa) and this fails.
 3. The adapters that record no exemption really are handed the shared client:
    MS Agent Framework and ADK ``model()`` get an OpenAI client that sends
    through it; LlamaIndex and ADK ``gemini()`` get its view (#740).
 
-Reading ``observes_last_call`` off each adapter class imports only the adapter
+Reading ``capabilities()`` off each adapter class imports only the adapter
 modules, which import their framework lazily inside methods — so this needs no
 framework extra installed (it lives in ``tests/conformance``, not the base-only
 ``tests/unit`` job, but stays import-light regardless).
@@ -37,6 +38,7 @@ from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import build_http_client
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.integrations._base import Adapter
+from donkey_kit.llm import client as llm_client
 
 _GATEWAY_SCENARIO = "gateway_identity_observed"
 _CORRELATION_SCENARIO = "correlation_id_propagated"
@@ -88,7 +90,7 @@ def test_exemption_matches_observes_last_call_flag() -> None:
     # The adapters that record the last_call exemption must be EXACTLY the ones
     # whose class says it cannot observe — the table documents the code fact.
     non_observing = {
-        attr for attr in ADAPTERS if not _adapter_class(attr).observes_last_call
+        attr for attr in ADAPTERS if not _adapter_class(attr).capabilities().observes_last_call
     }
     assert _exempted(_GATEWAY_SCENARIO) == non_observing, (
         "gateway_identity_observed exemptions and observes_last_call=False adapters "
@@ -97,10 +99,15 @@ def test_exemption_matches_observes_last_call_flag() -> None:
     )
 
 
-async def test_formerly_exempt_adapters_are_handed_the_shared_client() -> None:
+async def test_formerly_exempt_adapters_are_handed_the_shared_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # The fact that retires their exemptions (#740): each connection_kwargs()
     # carries our shared client's view, or an OpenAI client sending through it
-    # (adk.gemini() since #691).
+    # (adk.gemini() since #691). Pinned to openai<3, where that client is the
+    # view itself; on openai>=3 it is the httpx2 bridge over the same client,
+    # covered by test_adapter_openai3_bridge.py (#728).
+    monkeypatch.setattr(llm_client, "_openai_on_httpx2", lambda: False)
     cfg = DonkeyConfig(
         llm_proxy_url="https://proxy",
         llm_proxy_client_id="cid",

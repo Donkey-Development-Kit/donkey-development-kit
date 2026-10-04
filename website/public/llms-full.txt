@@ -803,7 +803,8 @@ carries the SDK's HTTP client in the form that framework takes: `http_client`
 and `http_async_client` (LangGraph), `http_client` and `async_http_client`
 (LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
 or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
-Each HTTP client is a non-owning view of the SDK's shared client: it sends
+Each HTTP client is a non-owning view of the SDK's shared client (on `openai`
+3.x, the OpenAI kwargs carry an `httpx2` bridge onto it instead): it sends
 through the shared client, and closing it (as Strands does after every call, or
 `async with` on an OpenAI client) leaves the shared client open. Only
 `donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
@@ -814,6 +815,35 @@ kwargs = donkey.llamaindex.connection_kwargs()
 print(kwargs["default_headers"])      # {'client_id': 'my-client-id', 'client_secret': '***'}
 OpenAILike(model="gpt-4o", **kwargs)  # receives the real secret
 ```
+
+### What each factory gets: `capabilities()`
+
+Every adapter reports what its factories get from the SDK.
+`donkey.<framework>.capabilities("<factory>")` returns a frozen
+`AdapterCapabilities`. With no argument, it returns the default factory's, the
+one `connection_kwargs()` configures. Each factory reports its own, so ADK's
+`model()` and `gemini()` answer separately.
+
+| Field | Means |
+|---|---|
+| `transport` | `"shared"`: requests go through the SDK's shared client. `"framework"`: the framework builds its own clients (CrewAI), so `jwt` and `bearer` auth are refused with `ConfigError`. |
+| `sync` | The native object's blocking calls (`invoke()`, `complete()`) also go through the SDK. In `jwt` and `bearer` mode, each blocking call raises `ConfigError`, because the token is async-only. |
+| `streaming` | `False` where the governed connection turns streaming off (Strands, `stream=False`). |
+| `typed_refusals` | A gateway refusal reaches you as a typed exception through `donkey.run()` or `typed_refusals()`. |
+| `observes_last_call` | A call through this object populates `donkey.last_call`. |
+
+```python
+caps = donkey.adk.capabilities("gemini")
+print(caps.transport, caps.observes_last_call)   # shared True
+```
+
+The conformance exemptions are checked against these values, so the
+`capabilities()` an adapter reports and the exemptions it records always
+agree.
+
+In `jwt` or `bearer` mode, every adapter's `connection_kwargs()` raises
+`ConfigError` when the `Donkey` has no `llm_auth` provider. The token is added
+only through that provider, so without one every call would fail with a 401.
 
 ## Match the adapter to your proxy's wire format
 
@@ -875,7 +905,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 ## Retries happen once, in the SDK
 
 The SDK's transport retries `502`, `503` and `504` with backoff, up to
-`max_retries` times, and never retries a `4xx`. On the proxy a `429` is a
+`max_retries` times, and never retries a `4xx`. A `502` or `504` on a model
+call is retried only with `retry_model_calls_on_gateway_errors`, since the
+provider may already have billed it. On the proxy a `429` is a
 token-budget refusal (`TokenBudgetExceeded`), so sending it again would only
 spend more of a budget that is already gone. Every adapter therefore turns off
 the provider SDK's own retries (`max_retries=0`). The transport also marks every
@@ -1052,9 +1084,13 @@ async with donkey.run(id=ticket.id):
 ### Typed refusals inside a node
 
 On a proxy refusal, LangChain raises its own wrapped
-`OpenAIPermissionDeniedError`, not the SDK's typed exception. Wrap the model
-call in `typed_refusals()` and a gateway refusal comes back through the
-[error taxonomy](https://docs.donkey-kit.dev/errors.md) instead:
+`OpenAIPermissionDeniedError`, not the SDK's typed exception. A
+`donkey.run()` block or a `@donkey.governed` function around
+`graph.ainvoke(...)` types it on the way out
+([Typed refusals at the framework boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary)).
+To type it inside the node, so the graph itself sees the typed error, wrap the
+model call in `typed_refusals()`. A gateway refusal then comes back through
+the [error taxonomy](https://docs.donkey-kit.dev/errors.md):
 
 ```python
 from donkey_kit.integrations.langgraph import typed_refusals
@@ -1067,8 +1103,10 @@ async def call_model(state):
 
 A PII block now propagates out of `graph.ainvoke(...)` as `PIIDetected`, a
 budget block as `TokenBudgetExceeded`, and so on — each carrying the
-correlation and call IDs the client sent. Transport-level errors with no HTTP
-response (connection failures, timeouts) pass through unchanged.
+correlation and call IDs the client sent. A gateway that cannot be reached
+(connection refused, DNS, timeout) surfaces as `GatewayUnavailable`, which the
+transport raised and LangChain wrapped. Errors that did not come from the
+gateway pass through unchanged.
 
 The typed error is raised without a chained cause, because LangChain's error
 message repeats the gateway's rejection text, which for a PII block includes
@@ -1564,7 +1602,7 @@ llm = OpenAIModel(
         "base_url": ...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
-        "http_client": ...,       # a non-owning view of the SDK's shared client
+        "http_client": ...,       # sends through the SDK's shared client; closing it is a no-op
         "max_retries": 0,         # the SDK retries in its own transport layer
     },
     stream=False,                 # see Notes
@@ -1593,9 +1631,10 @@ Strands forwards to its internal OpenAI client.
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
 - **The client stays open.** Strands opens and closes an OpenAI client for
-  every request (`async with AsyncOpenAI(**client_args)`). The `http_client` it
-  gets is a view whose close is a no-op, so the SDK's shared client survives
-  every call. Only `donkey.aclose()` ends the connection pool.
+  every request (`async with AsyncOpenAI(**client_args)`). Closing the
+  `http_client` it gets is a no-op, so the SDK's shared client survives every
+  call. On `openai` 3.x that client is an `httpx2` bridge onto the shared
+  client, and on earlier releases a view of it. Only `donkey.aclose()` ends the connection pool.
 - **Streaming is off by default.** The governed model sets `stream=False`. A
   proxy routing to a Gemini upstream answers a streamed request with one whole
   `chat.completion` and no chunk deltas, and Strands fails on it. Pass
@@ -1764,8 +1803,9 @@ async with Donkey.from_env() as donkey:
 ```
 
 Without it, a proxy refusal reaches you as Agent Framework's generic
-`ChatClientException`. With it, the refusal goes through
-`donkey_kit.core.errors.classify()` and the run ends with the typed error,
+`ChatClientException`. With it, the middleware runs the call inside the SDK's
+[typed-refusal bridge](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary), and
+the run ends with the typed error,
 for example `PIIDetected` or `TokenBudgetExceeded`. The error carries the
 correlation and call ids that were sent, and keeps the original exception on
 `.framework_error`. This also works for streaming runs
@@ -1773,8 +1813,11 @@ correlation and call ids that were sent, and keeps the original exception on
 the stream. The chat client sends with retries off, so a refused request is
 sent once.
 
-Errors that have no proxy response behind them, such as a connection failure,
-pass through unchanged. The middleware is marked with Agent Framework's
+A gateway that cannot be reached surfaces as `GatewayUnavailable`, the error
+the transport raised under Agent Framework's wrapper. Errors that are not from
+the gateway pass through unchanged. A `donkey.run()` block or a
+`@donkey.governed` function applies the same bridge, so a run without the
+middleware still ends typed. The middleware is marked with Agent Framework's
 `@chat_middleware` decorator. That is confirmed offline against
 agent-framework 1.19.0, with no live round-trip yet. If the decorator is
 missing from your installed version, `policy_middleware()` raises a
@@ -1895,7 +1938,7 @@ async_client = AsyncOpenAI(
     base_url=...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
     api_key=...,
     default_headers=...,   # client_id / client_secret header pair
-    http_client=...,       # the SDK's shared httpx client
+    http_client=...,       # the shared client (an httpx2 bridge on openai 3.x)
 )
 
 llm = OpenAIChatCompletionsModel(
@@ -2541,7 +2584,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
-| `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
+| `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli.md). |
 
 Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
@@ -2565,9 +2608,12 @@ closed the client it was given), and a call whose pooled connections belong to
 an event loop that has closed. The SDK's own connection pools are per event
 loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
 transport you passed in and reused across `asyncio.run()` calls. Its
-`.remediation` names the fix for each. Through the OpenAI SDK it arrives
-wrapped, like `GatewayUnavailable`: catch `openai.APIConnectionError` and read
-the `ConfigError` from `e.__cause__`.
+`.remediation` names the fix for each. Outside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids)
+block, `typed_refusals()` or `@donkey.governed`, it reaches you the way
+`GatewayUnavailable` does: `openai` before 3 and `anthropic` wrap it in an
+`APIConnectionError` (read the `ConfigError` from `e.__cause__`), and `openai`
+3 and later raises it as it is. Inside those blocks it is the typed
+`ConfigError` either way.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
@@ -2587,7 +2633,14 @@ queue, shed load, or fall back to a non-AI path — instead of pattern-matching 
 raw `httpx` exception.
 
 `DonkeyAsyncClient` and its blocking twin both raise it, so the async and sync
-surfaces behave identically. It is terminal and **not retried**. It carries:
+surfaces behave identically. What reaches your code depends on the SDK on top.
+`openai` before 3 and `anthropic` re-wrap it as an `APIConnectionError` with the
+`GatewayUnavailable` on `__cause__`; `openai` 3 and later lets it through as
+`GatewayUnavailable`. Inside `donkey.run()` or `@donkey.governed` it reaches you
+as `GatewayUnavailable` in every case, unless you opt out with
+`typed_refusals=False` (see
+[Typed refusals at the framework boundary](#typed-refusals-at-the-framework-boundary)).
+It is terminal and **not retried**. It carries:
 
 - `.base_url` — the origin that failed, on the exception, not only in the message.
 - `.cause` — the underlying `httpx` exception (also chained via `raise … from`).
@@ -2643,9 +2696,9 @@ headers, category names and policy pattern names, never from the request.
 
 A traceback also prints every chained exception, and a framework's own error
 usually repeats the gateway's text. So when the SDK maps a framework error to
-a typed one, as LangGraph's
-[`typed_refusals()`](https://docs.donkey-kit.dev/frameworks/langgraph.md#typed-refusals-inside-a-node) does,
-it raises it without a chained cause: `exc.__cause__` is `None`, and the
+a typed one, as `donkey.run()` and
+[`typed_refusals()`](#typed-refusals-at-the-framework-boundary) do, it raises
+it without a chained cause: `exc.__cause__` is `None`, and the
 framework error is on `exc.framework_error` (`None` when there was none). No
 frame in the traceback holds the framework error as a local variable, so error
 reporters that print frame locals (Sentry, `pytest -l`) don't show it either.
@@ -2669,19 +2722,91 @@ logs and to the gateway's own record:
 | `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
 `classify(response)` fills `.correlation_id` and `.call_id` from the response's
-own request, so bridging an `openai` error (below) needs no extra wiring — the
+own request, so a refusal typed at the framework boundary (below) needs no extra wiring — the
 correlation id on the exception equals the header that was actually sent. (If you
 overrode the header names in config, pass the ids to `classify()` explicitly.)
 
-## Bridging from the raw client
+## Typed refusals at the framework boundary
 
-  `donkey.llm.client()` is the **OpenAI SDK**, so on an HTTP failure it raises
-  `openai.APIStatusError`, **not** a `DonkeyError`. Bridge into the taxonomy by
-  applying `classify()` to the error's `.response`.
+Every framework between your code and the gateway raises its own errors. The
+OpenAI and Anthropic SDKs turn a refusal into a `PermissionDeniedError`.
+A lost gateway becomes an `APIConnectionError` with the `GatewayUnavailable`
+hidden on its `__cause__` under `openai` before 3 and under `anthropic`, while
+`openai` 3 and later raises `GatewayUnavailable` as it is. LangChain re-wraps
+these again, and Strands and Agent Framework wrap them in their own types. Inside a
+[`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block or a
+[`@donkey.governed`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) function, none of that reaches
+you: a refusal or a lost gateway leaves the block as its typed `DonkeyError`,
+so one `except` covers every framework.
+
+```python
+from donkey_kit import GatewayUnavailable, PIIDetected, TokenBudgetExceeded
+
+client = donkey.openai()
+
+try:
+    async with donkey.run(id=ticket.id):
+        resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
+except PIIDetected as e:
+    print("blocked, entities:", e.entities)
+except TokenBudgetExceeded as e:
+    print("slow down; retry after", e.retry_after, "s")
+except GatewayUnavailable as e:
+    print("could not reach the proxy:", e.base_url)
+```
+
+The same block around a LangGraph `graph.ainvoke(...)`, an Anthropic
+`messages.create(...)` or a Strands agent raises the same classes. The
+blocking forms behave the same: `with donkey.run():` and a sync
+`@donkey.governed` function.
+
+Outside a run, `typed_refusals()` is the same bridge on its own. It works as a
+sync or async context manager and as a decorator for sync and async functions,
+and every adapter exposes it as `donkey.<framework>.typed_refusals()`:
+
+```python
+from donkey_kit import typed_refusals
+
+with typed_refusals():
+    reply = client.chat.completions.create(model="gpt-4o", messages=msgs)
+
+@typed_refusals()
+async def answer(question: str) -> str: ...
+```
+
+What the bridge types, and what it leaves alone:
+
+- **A typed error the SDK raised**, such as `GatewayUnavailable` or
+  `ModelSubstituted`, is found on the framework error's cause chain and
+  re-raised as it is.
+- **A gateway rejection** is classified from the response the framework
+  error carries, with the correlation and call ids that were sent, exactly as
+  `classify()` would. Only a response the SDK's own transport sent is
+  classified. A `403` from some other HTTP call in the block is not a governed
+  refusal and passes through.
+- **Anything else** propagates unchanged: your own bugs, your own
+  `raise HTTPException(...) from exc`, a `KeyboardInterrupt`, a task
+  cancellation.
+
+The bridge is on by default in both forms. The framework's own error stays on
+`exc.framework_error` (it is `None` when the SDK raised the typed error itself,
+as `openai` 3 and later does for `GatewayUnavailable`). To get the framework's
+errors instead, pass `typed_refusals=False` to `donkey.run()` or
+`@donkey.governed`.
+
+  The bridge only sees calls that went through the SDK's transport. ADK's
+  `model()` (LiteLLM) and CrewAI own their transport, so their errors pass
+  through untyped. These are the same
+  [conformance exemptions](https://docs.donkey-kit.dev/testing.md#exemptions) as their correlation ids.
+
+### Classifying a response yourself
+
+`classify()` is the building block underneath. Apply it to any
+`openai.APIStatusError` (or Anthropic status error) you caught yourself:
 
 ```python
 import openai
-from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError, classify
+from donkey_kit import PIIDetected, classify
 
 try:
     resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
@@ -2689,24 +2814,18 @@ except openai.APIStatusError as e:
     governed = classify(e.response)          # -> a DonkeyError subclass
     if isinstance(governed, PIIDetected):
         print("blocked, entities:", governed.entities)
-    elif isinstance(governed, TokenBudgetExceeded):
-        print("slow down; retry after", governed.retry_after, "s")
-    elif isinstance(governed, AuthError):
-        print("bad credentials:", governed)
-    else:
-        print(f"{type(governed).__name__}: {governed}")
-except openai.APIConnectionError as e:
-    print("could not reach the proxy:", e)
 ```
 
-The blocking client from `donkey.llm.client(sync=True)` behaves identically here
-— drop the `await`. It is the same OpenAI SDK raising the same
+The blocking client from `donkey.llm.client(sync=True)` behaves identically here.
+Drop the `await`: it is the same OpenAI SDK raising the same
 `openai.APIStatusError`, and `classify()` reads the response the same way.
 
 ## Retry behaviour
 
-Both clients retry only transient upstream/gateway failures (502/503/504) and
-treat every 4xx as terminal — **including a 429**: on this proxy a 429 is a
+Both clients retry only transient upstream/gateway failures (502/503/504).
+A 502 or 504 on a model call is not re-sent unless you set
+`retry_model_calls_on_gateway_errors`, because the provider may already have
+billed it. Every 4xx is terminal — **including a 429**: on this proxy a 429 is a
 token-budget refusal (`TokenBudgetExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
 against, but the transport never silently retries it.
@@ -3132,18 +3251,50 @@ python -m my_app                              # spans flow, refused calls includ
 ```
 
 `Donkey.from_env()` reads `OTEL_EXPORTER_OTLP_ENDPOINT` (or the traces-specific
-`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, installs an OTLP
-exporter behind a batch processor. The network flush runs on that background
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, sets up an OTLP
+exporter behind a batch processor for DDK's own spans. The network flush runs on that background
 thread, off your request path, keeping instrumentation overhead under
 1&nbsp;ms per call. The `[otel]` extra ships the **http/protobuf** exporter;
 `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` is honoured only if you also install
 `opentelemetry-exporter-otlp-proto-grpc`.
 
 **With no endpoint set, the export path is inert and silent** — no exporter is
-built, nothing connects, nothing is printed. If your process already configures
-its own OpenTelemetry provider (say via `opentelemetry-instrument`), DDK rides it
-rather than replacing it, so your spans flow through the pipeline you already
-set up.
+built, nothing connects, nothing is printed.
+
+### DDK leaves the global provider to you
+
+OpenTelemetry lets a process set its global `TracerProvider` only once. So
+constructing a `Donkey` **never changes `trace.get_tracer_provider()`** by
+default. The exporter above sits on a provider that only DDK's spans use, and
+your other instrumentation is unaffected.
+
+- **Your process sets its own provider**, before *or after* `Donkey()` (say via
+  `opentelemetry-instrument`, or a `trace.set_tracer_provider(...)` call during
+  startup). DDK's spans go to that provider from then on, through the pipeline
+  you already set up, and DDK's own exporter goes unused.
+- **You want DDK's provider to be the global one**, so other libraries' spans
+  use the same exporter. Opt in:
+
+```bash
+export DONKEY_TELEMETRY_INSTALL_GLOBAL=true   # or telemetry_install_global = true in .donkey-kit.toml
+```
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.core.config import DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_install_global=True))
+```
+
+With the flag on and an endpoint set, the first `Donkey()` installs its provider
+as the global one, unless your process already set one. The flag does nothing
+without an endpoint.
+
+DDK's own provider flushes its pending spans when the interpreter exits. If you
+need to flush earlier with `trace.get_tracer_provider().force_flush()`, for
+example in a serverless handler or a script that checks its collector before it
+exits, that call only reaches DDK's spans when they go through the global
+provider. Turn the flag on, or set your own provider.
 
 Opt out of telemetry entirely with a single flag:
 
@@ -3360,13 +3511,13 @@ export DONKEY_TELEMETRY_CAPTURE_CONTENT=true
 # or: telemetry_capture_content = true under [donkey] in .donkey-kit.toml
 ```
 
-In code, layer it over the resolved config. It isn't a `Donkey.from_env()`
-kwarg:
+In code, pass it to `Donkey.from_env()`, which takes any `DonkeyConfig` field as
+a keyword argument:
 
 ```python
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import Donkey
 
-donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_capture_content=True))
+donkey = Donkey.from_env(telemetry_capture_content=True)
 ```
 
 `telemetry_capture_content` resolves along the standard
@@ -3473,7 +3624,8 @@ method) records in the caller's context.
 ### Two behaviours worth knowing
 
 **The SDK never double-retries a fallback.** DDK retries `502/503/504` with
-backoff, but if the gateway already failed over internally, a `503` it marked as
+backoff (a `502`/`504` on a model call only with
+`retry_model_calls_on_gateway_errors`), but if the gateway already failed over internally, a `503` it marked as
 a fallback is **not** retried again — a second recovery layer stacked on a
 working first one just multiplies latency against an outage the gateway already
 handled.
@@ -3557,6 +3709,12 @@ LangGraph node, for instance) without threading an argument through every
 function, and concurrent runs never leak into each other. It works with or
 without OpenTelemetry installed. `donkey.run(...)` is a **dual sync/async**
 context manager (plain `with` works too); nested blocks rebind then restore.
+
+A refusal leaving the block is re-raised as its typed `DonkeyError`, whichever
+framework wrapped it on the way out, so `except PIIDetected` works the same
+around every framework. See
+[Typed refusals at the framework boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary);
+`donkey.run(typed_refusals=False)` turns it off.
 
 ### The decorator form
 
@@ -4680,9 +4838,9 @@ Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`,
 are cached with a configurable TTL (default 300 seconds):
 
 ```python
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import Donkey
 
-donkey = Donkey(DonkeyConfig.from_env().with_overrides(registry_cache_ttl_s=60))
+donkey = Donkey.from_env(registry_cache_ttl_s=60)
 ```
 
 - `donkey.registry.refresh()` invalidates the cache and re-fetches on next use —
@@ -5315,12 +5473,12 @@ async def ask(donkey, question, *, run_id):
 asyncio.run(...)   # DONKEY_LLM_PROXY_URL=http://localhost:8080, throwaway creds
 ```
 
-  **The raw client raises `openai.APIStatusError`, not a `DonkeyError`.**
-  `donkey.llm.client()` is the real OpenAI SDK, so you bridge into the taxonomy
-  with `classify(e.response)` — see [Bridging from the raw
-  client](https://docs.donkey-kit.dev/errors.md#bridging-from-the-raw-client). An adapter that wraps calls in
-  `typed_refusals()` (as the [support-triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) demo
-  does) surfaces the typed refusal directly instead.
+  **Outside a run, the raw client raises `openai.APIStatusError`, not a `DonkeyError`.**
+  `donkey.llm.client()` is the real OpenAI SDK, so the code above bridges into
+  the taxonomy with `classify(e.response)`. Inside `donkey.run()`, or wrapped in
+  `typed_refusals()`, the typed refusal surfaces directly instead — see [Typed
+  refusals at the framework
+  boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary).
 
 ## What a full internal copilot also needs — and what's blocked
 
@@ -5714,7 +5872,9 @@ Run context
 
   PASS  A 403 that is a policy refusal, not an auth failure — and it says so.
   classify() is the bridge, because the raw client raises openai.* errors and the SDK
-  does not silently re-map them. Demo 02 walks the full taxonomy.
+  does not silently re-map them. Inside donkey.run() or @donkey.governed, newer SDKs do
+  the bridging for you and the typed class reaches your except branch directly. Demo 02
+  walks the full taxonomy.
 
 [4] @donkey.governed and @donkey.tool — the one-line on-ramps
 
@@ -6096,7 +6256,26 @@ written next to the `classify()` clause would never run. The bridge has two
 arms because the OpenAI client reports failures two ways: a gateway refusal is
 an `openai.APIStatusError` carrying the response, and an error the transport
 raises itself (`GatewayUnavailable`, `ModelSubstituted`) arrives as an
-`openai.APIConnectionError` with the typed error on `__cause__`.
+`openai.APIConnectionError` with the typed error on `__cause__` under `openai`
+before 3, and as the typed error itself under `openai` 3 and later.
+
+Inside a `donkey.run()` block, a `@donkey.governed` function or
+`typed_refusals()`, the SDK does that bridging for you, and the inner `try`
+goes away. The typed handlers catch the refusal directly, whichever client or
+framework raised it
+([Typed refusals at the framework boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary)):
+
+```python
+from donkey_kit import typed_refusals
+
+try:
+    with typed_refusals():   # or: with donkey.run(id=...):
+        response = client.responses.create(model="gpt-4o", input=prompt)
+except PIIDetected as e:
+    ...
+except GatewayUnavailable as e:
+    ...
+```
 
 A live refusal on a blocking client (OpenAI script 04):
 
@@ -6573,7 +6752,7 @@ Run context
     Donkey conformance
     ==================
     FAIL  Retries a budget refusal        — retried a TokenBudgetExceeded 3× — a budget refusal is terminal; retrying only burns the same exhausted window
-    FAIL  Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (bridge it with classify())
+    FAIL  Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (run it inside donkey.run() or typed_refusals())
     FAIL  Propagates the correlation id   — did not emit the correlation id in any log record — read it from current_correlation_id() and include it when you log
     PASS  Works without budget headers    — completed a run when the gateway returned no budget headers
     Donkey conformance: 1 passed, 3 failed
@@ -6638,7 +6817,7 @@ What each failure actually means
     Donkey conformance
     ==================
     FAIL    Retries a budget refusal        — retried a TokenBudgetExceeded 3× — a budget refusal is terminal; retrying only burns the same exhausted window
-    FAIL    Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (bridge it with classify())
+    FAIL    Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (run it inside donkey.run() or typed_refusals())
     EXEMPT  Propagates the correlation id   — This agent's framework owns the HTTP transport and offers no per-request context hook, so a run-scoped correlation id cannot reach the agent's logs.
     PASS    Works without budget headers    — completed a run when the gateway returned no budget headers
     Donkey conformance: 1 passed, 2 failed, 1 exempt
@@ -6910,15 +7089,19 @@ The same two ids, on the exception
 
     # no Donkey-specific variable
     export OTEL_EXPORTER_OTLP_ENDPOINT=https://…
-    donkey = Donkey.from_env()   # installs OTLP behind a BatchSpanProcessor
+    donkey = Donkey.from_env()   # OTLP behind a BatchSpanProcessor, for Donkey's spans
     # no endpoint → inert, silent, nothing connects
     # DONKEY_TELEMETRY=false    → opt out even if an endpoint is set
+    # Donkey leaves trace.get_tracer_provider() alone; to make its provider
+    # the global one (other libraries' spans too):
+    #   export DONKEY_TELEMETRY_INSTALL_GLOBAL=true
 
   PASS  no OTEL_EXPORTER_OTLP_ENDPOINT — export stayed inert and silent
-  Donkey.from_env() installs OTLP only when that standard env var is set. It will not
-  clobber a TracerProvider the host already installed — which is why this demo's in-
-  memory table still works. Opt out with DONKEY_TELEMETRY=false (or telemetry = false in
-  .donkey-kit.toml). Cost tags on donkey.run(team=..., project=...) are what let a
+  Donkey.from_env() sets up OTLP only when that standard env var is set, and only for
+  its own spans: it does not take the global TracerProvider unless
+  DONKEY_TELEMETRY_INSTALL_GLOBAL=true, and a provider the host sets, even after
+  Donkey(), wins — which is why this demo's in-memory table works. Opt out with
+  DONKEY_TELEMETRY=false (or telemetry = false in .donkey-kit.toml). Cost tags on donkey.run(team=..., project=...) are what let a
   backend slice refusals, budget and latency by agent without another attribute
   convention.
 
@@ -7009,8 +7192,10 @@ with donkey.run(id="otel-zero-config", team="cx", project="welcome"):
 - **Cost tags are a fixed four** — `team`, `project`, `env`, `enduser.id` —
   set on `from_env()` and overridable per `run()`, landing on `donkey.cost.*`.
 - **Export is opt-in.** No endpoint means inert and silent;
-  `DONKEY_TELEMETRY=false` opts out even when one is set, and a host
-  `TracerProvider` is never replaced.
+  `DONKEY_TELEMETRY=false` opts out even when one is set. Donkey exports its
+  own spans through a provider of its own and never takes the global
+  `TracerProvider` unless `DONKEY_TELEMETRY_INSTALL_GLOBAL=true`; a host
+  provider, set before or after `Donkey()`, always wins.
 
 **Learn more:** [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md)
 
@@ -7978,9 +8163,9 @@ python "demos/human-made/openai/10 - zero-config-otlp.py"                       
 OTEL_EXPORTER_OTLP_ENDPOINT=https://<collector> python "demos/human-made/openai/10 - zero-config-otlp.py"
 ```
 
-With no `TracerProvider` in the process, `Donkey.from_env()` installs an OTLP
-exporter itself when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, and stays silent
-when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
+With no `TracerProvider` in the process, `Donkey.from_env()` sets up an OTLP
+exporter for its own spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, without
+taking the global provider, and stays silent when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
 
 **You should see:** the endpoint (or `(unset — Donkey.from_env() will not
 install an exporter)`), the reply, and `last_call observed <model>`.
@@ -9446,8 +9631,14 @@ If you touched an adapter, also run `python scripts/verify_frameworks.py`.
 ### Open a pull request into `develop`
 
 The PR body includes `Closes #<issue#>`, a `## Summary`, a `## Test plan` and
-a `## Post-deploy steps` section (write `None.` when nothing applies). PRs are
-squash-merged, so `develop` reads as one commit per issue.
+a `## Post-deploy steps` section (write `None.` when nothing applies). The
+repository's PR template lays these out. PRs are squash-merged, so `develop`
+reads as one commit per issue.
+
+A change to an architecture invariant, an import-linter contract, the API
+stability tiers or the dependency policy also needs an architecture decision
+record (ADR). The template asks whether one is needed, and the process is in
+[`docs/adr/`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/adr/README.md).
 
 ## Contributing from a fork
 
@@ -9490,9 +9681,9 @@ Source: https://docs.donkey-kit.dev/reference/configuration.md
 
 # Configuration
 
-`Donkey.from_env()` builds its configuration from environment variables, then
-the config files, then defaults. `Donkey(DonkeyConfig(...))` uses only what you
-pass. See [Building a config](#building-a-config) for both paths,
+`Donkey.from_env(...)` builds its configuration from the values you pass,
+then environment variables, then the config files, then defaults.
+`Donkey(DonkeyConfig(...))` uses only what you pass. See [Building a config](#building-a-config) for both paths,
 [Precedence](#precedence) for the exact order,
 [What the SDK sends where](#what-the-sdk-sends-where) for which credential goes
 to which host, and [Which credentials a URL receives](#which-credentials-a-url-receives)
@@ -9504,39 +9695,40 @@ There are two ways to build a `Donkey`, and they resolve values differently:
 
 | You write | What it reads |
 |---|---|
-| `Donkey.from_env(...)` or `Donkey()` | Environment variables, then the [config files](#config-files-secrets-and-trust), then defaults. `Donkey.from_env()` takes only the cost tags (`team`, `project`, `env`, `enduser_id`) and `on_model_substitution` as kwargs, and applies them on top. |
+| `Donkey.from_env(...)`, `Donkey()` or `DonkeyConfig.resolve(...)` | The keyword arguments you pass, then environment variables, then the [config files](#config-files-secrets-and-trust), then defaults. Any `DonkeyConfig` field is a keyword argument, and so is `path` (a config file to read in place of `./.donkey-kit.toml`). `Donkey.from_env()` also takes the cost-tag shorthands `team`, `project`, `env` and `enduser_id`. |
 | `Donkey(DonkeyConfig(...))` | Only the values you pass. Every other field is its default. No environment variable and no config file is read. |
 
 Building `DonkeyConfig(...)` yourself does not fill the gaps from the
 environment. With `DONKEY_TIMEOUT_S=5` set,
 `Donkey(DonkeyConfig(llm_proxy_url=…))` still uses the default `timeout_s` of
 `60.0`. To change a few fields and keep everything else from the environment
-and the files, resolve first and then override:
+and the files, pass them to `from_env` or `resolve`:
 
 ```python
 from donkey_kit import Donkey, DonkeyConfig
 
-donkey = Donkey(
-    DonkeyConfig.from_env().with_overrides(
-        telemetry_capture_content=True,
-        registry_cache_ttl_s=60,
-    )
-)
+donkey = Donkey.from_env(telemetry_capture_content=True, registry_cache_ttl_s=60)
+
+# The same config, without building a Donkey:
+cfg = DonkeyConfig.resolve(telemetry_capture_content=True, registry_cache_ttl_s=60)
 ```
 
-`DonkeyConfig.from_env()` takes no arguments. `with_overrides(...)` accepts any
-`DonkeyConfig` field name, the names in the "`DonkeyConfig` field" columns
-below, and returns a new config.
+The keyword arguments are the `DonkeyConfig` field names, the names in the
+"`DonkeyConfig` field" columns below. An unknown name raises `TypeError`, and
+the values are checked like any other (see [Invalid values](#invalid-values)).
+`DonkeyConfig.from_env()` takes no arguments; it is `DonkeyConfig.resolve()`.
+`with_overrides(...)` accepts the same names on a config you already have, and
+returns a new config.
 
 ## Governed model access
 
 The three required values for the LLM proxy:
 
-| Env var | Meaning |
-|---|---|
-| `DONKEY_LLM_PROXY_URL` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](https://docs.donkey-kit.dev/simulator.md), and for other hosts only with [`DONKEY_ALLOW_HTTP`](#endpoints-must-use-https). |
-| `DONKEY_LLM_PROXY_CLIENT_ID` | Consumer client ID (the per-agent identity). |
-| `DONKEY_LLM_PROXY_CLIENT_SECRET` | Consumer client secret. |
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `DONKEY_LLM_PROXY_URL` | `llm_proxy_url` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](https://docs.donkey-kit.dev/simulator.md), and for other hosts only with [`DONKEY_ALLOW_HTTP`](#endpoints-must-use-https). |
+| `DONKEY_LLM_PROXY_CLIENT_ID` | `llm_proxy_client_id` | Consumer client ID (the per-agent identity). |
+| `DONKEY_LLM_PROXY_CLIENT_SECRET` | `llm_proxy_client_secret` | Consumer client secret. |
 
   Auth is a `client_id` / `client_secret` **header pair** (consumer auth), **not**
   a bearer token, and separate from any Anypoint control-plane credential. The
@@ -9756,6 +9948,10 @@ span attributes (and, only if you opt in, as request headers). Override them per
 unknown dimension is a configuration error, not a silently dropped tag. See
 [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
 
+These are the `cost` field (a `CostTags`). `Donkey.from_env` takes each
+dimension as a shorthand kwarg; `DonkeyConfig.resolve(cost=CostTags(...))` sets
+them together. Either way, a dimension you pass replaces only that dimension.
+
 | Env var | `Donkey.from_env` kwarg | Meaning |
 |---|---|---|
 | `DONKEY_COST_TEAM` | `team` | Owning team. |
@@ -9774,9 +9970,9 @@ env = "prod"
 "enduser.id" = "user-42"
 ```
 
-A `[donkey.cost]` table in `.donkey-kit.local.toml` merges into the one in
-`.donkey-kit.toml` key by key: a local `"enduser.id"` adds to the project
-file's `team` and `project` instead of replacing them. `DONKEY_COST_*`
+A `[donkey.cost]` table merges across the config files key by key: a local
+`"enduser.id"` adds to the project file's `team` and `project` instead of
+replacing them, and the user file fills any dimension neither sets. `DONKEY_COST_*`
 variables then override single dimensions.
 
 The LLM Gateway doesn't read cost tags from request headers, so by default DDK
@@ -9791,12 +9987,17 @@ proxy of your own that reads them, opt in:
 With it enabled, the headers use the SDK's own names (`X-Anypoint-Cost-Team`,
 …). Because no gateway reads them, they're a convention rather than a
 placeholder for some real name, and they emit no warning. Rename them to match
-whatever receiver you send them to: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
-`DONKEY_COST_ENV_HEADER`, `DONKEY_COST_ENDUSER_HEADER` (or the matching
-`cost_*_header` config keys), within the
-[names you can't use](#header-names-you-cant-use). `send_cost_headers` is not a `Donkey.from_env`
-kwarg; in code, use
-`DonkeyConfig.from_env().with_overrides(send_cost_headers=True)`.
+whatever receiver you send them to, within the
+[names you can't use](#header-names-you-cant-use):
+
+| Env var | `DonkeyConfig` field | Default |
+|---|---|---|
+| `DONKEY_COST_TEAM_HEADER` | `cost_team_header` | `X-Anypoint-Cost-Team` |
+| `DONKEY_COST_PROJECT_HEADER` | `cost_project_header` | `X-Anypoint-Cost-Project` |
+| `DONKEY_COST_ENV_HEADER` | `cost_env_header` | `X-Anypoint-Cost-Env` |
+| `DONKEY_COST_ENDUSER_HEADER` | `cost_enduser_header` | `X-Anypoint-Cost-Enduser-Id` |
+
+In code, `Donkey.from_env(send_cost_headers=True)`.
 
   With `send_cost_headers` on, the headers, including the end-user ID, go only
   on model requests to the LLM proxy, never to the Anypoint platform. Where the
@@ -9809,6 +10010,7 @@ kwarg; in code, use
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
 | `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
+| `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | Install DDK's OTLP provider as the process-global OpenTelemetry provider (default **`false`**). See [DDK leaves the global provider to you](https://docs.donkey-kit.dev/telemetry.md#ddk-leaves-the-global-provider-to-you). |
 
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
@@ -9820,7 +10022,8 @@ trusted collector. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.
 | Env var | `DonkeyConfig` field | Default | Meaning |
 |---|---|---|---|
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `60.0` | HTTP timeout for governed calls, in seconds. |
-| `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. Policy refusals are never retried, and a gateway fallback is never retried twice. |
+| `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. A `502` or `504` on a model call is retried only with `retry_model_calls_on_gateway_errors` (below). Policy refusals are never retried, and a gateway fallback is never retried twice. |
+| `DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS` | `retry_model_calls_on_gateway_errors` | `false` | Also retry a `502` or `504` on a model call (a `POST` whose body, or native Gemini path, names a model). Off by default, because the provider may already have completed and billed the call, and the gateway offers no verified idempotency key. A `503`, and any other request, is retried either way. |
 | `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing). |
 | `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://docs.donkey-kit.dev/tool-access.md)) are cached in memory, in seconds. |
 | `DONKEY_NO_CACHE` | — | unset | Set to `1`, `true` or `yes` to bypass that in-memory registry cache. |
@@ -9837,9 +10040,9 @@ request is sent. One error lists every bad field and where each was set:
 |---|---|
 | `timeout_s` | A number greater than `0` |
 | `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
-| `telemetry`, `telemetry_capture_content`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
+| `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers`, `retry_model_calls_on_gateway_errors` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
 | `region` | `us`, `eu`, `ca` or `jp` |
-| `llm_proxy_auth` | `client-id` or `jwt` (any case in the environment or a config file) |
+| `llm_proxy_auth` | `client-id`, `jwt` or `bearer` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |
 
 A misspelt switch such as `DONKEY_TELEMETRY=flase` is an error, not `false`:
@@ -9870,14 +10073,14 @@ them.
   anything. [Which features use the control plane](#which-features-use-the-control-plane)
   lists them.
 
-| Env var | Meaning |
-|---|---|
-| `ANYPOINT_CLIENT_ID` | Connected-app client ID. |
-| `ANYPOINT_CLIENT_SECRET` | Connected-app client secret. |
-| `ANYPOINT_ORG_ID` | Anypoint organization ID. |
-| `ANYPOINT_ENV` | Anypoint environment (default `Sandbox`). |
-| `ANYPOINT_REGION` | Control-plane region: `us` (default), `eu`, `ca`, or `jp`. |
-| `ANYPOINT_BASE_URL` | Explicit control-plane base URL; overrides the region. Must be `https://` (loopback hosts excepted, or any host with `DONKEY_ALLOW_HTTP`). |
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `ANYPOINT_CLIENT_ID` | `client_id` | Connected-app client ID. |
+| `ANYPOINT_CLIENT_SECRET` | `client_secret` | Connected-app client secret. |
+| `ANYPOINT_ORG_ID` | `org_id` | Anypoint organization ID. |
+| `ANYPOINT_ENV` | `environment` | Anypoint environment (default `Sandbox`). |
+| `ANYPOINT_REGION` | `region` | Control-plane region: `us` (default), `eu`, `ca`, or `jp`. |
+| `ANYPOINT_BASE_URL` | `base_url` | Explicit control-plane base URL; overrides the region. Must be `https://` (loopback hosts excepted, or any host with `DONKEY_ALLOW_HTTP`). |
 
 ## What the SDK sends where
 
@@ -9980,14 +10183,22 @@ Instead of env vars you can put values in a `[donkey]` table. Keys are the
 
 | File | Where | Meant for |
 |---|---|---|
-| `.donkey-kit.toml` | The current working directory (not searched upward) | Non-secret project config you commit: URLs, client IDs, attribution. |
-| `.donkey-kit.local.toml` | The current working directory | Secrets and personal overrides. Keep it gitignored. Same keys. Read with or without `.donkey-kit.toml`. |
-| `$XDG_CONFIG_HOME/.donkey-kit.toml`, or `~/.config/.donkey-kit.toml` when `XDG_CONFIG_HOME` is unset or empty | Your user config directory | Personal defaults for every project. Read only when the working directory has neither file above. When `XDG_CONFIG_HOME` is set, `~/.config` isn't read. |
+| `.donkey-kit.toml` | The current working directory (not searched upward), or the file you name with `path=` | Non-secret project config you commit: URLs, client IDs, attribution. |
+| `.donkey-kit.local.toml` | The same directory as `.donkey-kit.toml` | Secrets and personal overrides. Keep it gitignored. Same keys. Read with or without `.donkey-kit.toml`. |
+| `$XDG_CONFIG_HOME/.donkey-kit.toml`, or `~/.config/.donkey-kit.toml` when `XDG_CONFIG_HOME` is unset or empty | Your user config directory | Personal defaults for every project. Always read, beneath the two files above. When `XDG_CONFIG_HOME` is set, `~/.config` isn't read. |
 
-`.donkey-kit.local.toml` merges into `.donkey-kit.toml` key by key, and nested
-tables such as `[donkey.cost]` merge the same way. A scalar or an array in the
-local file replaces the project file's value; it isn't appended to. Each key
-remembers which file it came from.
+The three files merge key by key: `.donkey-kit.local.toml` over
+`.donkey-kit.toml` over the user file, so a lower file fills whatever a higher
+one leaves unset. Nested tables such as `[donkey.cost]` merge the same way. A
+scalar or an array in a higher file replaces the lower file's value; it isn't
+appended to. Each key remembers which file it came from.
+
+`Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
+file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that
+file, if there is one, still overlays it, and the user file still sits beneath.
+A `path` that names no file raises `ConfigError`. The named file and its
+overlay count as project files for the
+[endpoint rule](#a-url-from-the-project-files-gets-credentials-from-the-project-files-only).
 
 Both working-directory files must be regular files, or links whose target is
 inside the working directory. A link that points elsewhere is refused, because
@@ -9997,24 +10208,24 @@ its keys would be treated as the working directory's:
 ConfigError: /home/me/my-agent/.donkey-kit.toml links to /home/me/shared/donkey.toml, outside the working directory. Replace the link with a regular file in the working directory, or set those values in the environment.
 ```
 
-  The user file isn't merged with the working-directory files. If either
-  `.donkey-kit.toml` or `.donkey-kit.local.toml` exists, the user file is not
-  read at all, even when only `.donkey-kit.local.toml` exists
-  ([#727](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/727)).
-
 ### Precedence
 
 Highest first, per key:
 
-1. Values set in code: anything you change on a resolved config, with
-   `with_overrides(...)`, `dataclasses.replace(...)` or any other copy, and the
-   cost-tag and `on_model_substitution` kwargs of `Donkey.from_env(...)`.
+1. Values set in code: the keyword arguments of `Donkey.from_env(...)` and
+   `DonkeyConfig.resolve(...)`, and anything you change on a resolved config,
+   with `with_overrides(...)`, `dataclasses.replace(...)` or any other copy.
 2. Environment variables.
-3. `./.donkey-kit.local.toml`
-4. `./.donkey-kit.toml`
+3. `./.donkey-kit.local.toml` (beside the `path=` file, when you pass one)
+4. `./.donkey-kit.toml` (or the `path=` file)
 5. The user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`, or
-   `~/.config/.donkey-kit.toml`), only when 3 and 4 don't exist.
+   `~/.config/.donkey-kit.toml`).
 6. Defaults.
+
+A keyword argument replaces the field outright: the environment and the files
+are not read for it, so an invalid `DONKEY_TIMEOUT_S` is ignored when you pass
+`timeout_s`. A `cost=CostTags(...)` argument replaces only the dimensions it
+sets. Every invalid value, from any layer, is reported in one `ConfigError`.
 
 A value counts as set in code once it differs from the value that was loaded,
 whichever way you changed it; a copy that keeps the value keeps its source.
@@ -10144,10 +10355,10 @@ The error names every credential that came from elsewhere, where each came
 from, the host, the key and the file:
 
 ```text
-ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the working directory's config files are only sent to hosts those files name when you opt in. To continue, do one of:
+ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the project config files are only sent to hosts those files name when you opt in. To continue, do one of:
   - set the URL in the environment instead (DONKEY_LLM_PROXY_URL=https://...)
   - keep the credentials in /home/me/my-agent/.donkey-kit.local.toml, next to the project file
-  - trust this directory's config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
+  - trust the project config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
 ```
 
 The source labels are `env`, `user file` and `code`.
@@ -10161,7 +10372,7 @@ The source labels are `env`, `user file` and `code`.
    Not available for the `llm_auth` token in `jwt` or `bearer` mode or for a
    `Donkey(auth=…)` token, because none of them comes from a file.
 3. **Opt in:** set `DONKEY_TRUST_PROJECT_CONFIG` to `1` (or `true`, `yes`,
-   `on`) in the environment if you trust this directory's config files. The
+   `on`) in the environment if you trust the project config files. The
    setting decides whether those files are trusted, so it is read from the
    environment only; a `[donkey]` key with that name is ignored.
 
@@ -10188,10 +10399,14 @@ donkey = Donkey(DonkeyConfig(
     llm_proxy_client_secret="<secret>",
 ))
 
-# Resolved from env and files, with code values on top. Either form records
-# the changed value as set in code:
+# Resolved from env and files, with code values on top. Each form records
+# the value as set in code:
+cfg = DonkeyConfig.resolve(send_cost_headers=True)
 cfg = DonkeyConfig.from_env().with_overrides(send_cost_headers=True)
 cfg = dataclasses.replace(DonkeyConfig.from_env(), send_cost_headers=True)
+
+# From a named config file instead of ./.donkey-kit.toml:
+cfg = DonkeyConfig.resolve(path="deploy/staging.toml")
 
 # Or from the environment, with lifecycle:
 async with Donkey.from_env() as donkey:

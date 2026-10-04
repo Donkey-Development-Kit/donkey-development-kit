@@ -19,14 +19,18 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core.masking import masked
-from ._base import Adapter, _TypedRefusals, default_adapter
+from . import AdapterCapabilities
+from . import typed_refusals as _bridge
+from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from llama_index.llms.openai_like import OpenAILike
+
+    from ..core.refusals import TypedRefusals
 
 __all__ = ["LlamaIndexAdapter", "llm", "typed_refusals"]
 
@@ -55,6 +59,19 @@ class LlamaIndexAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/llamaindex
     """
 
+    # Both shared clients (http_client/async_http_client, #740, #946).
+    factories = MappingProxyType(
+        {
+            "llm": AdapterCapabilities(
+                transport="shared",
+                sync=True,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
+
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAILike(model=…, **kwargs)`` you build
         yourself. Includes ``is_chat_model=True`` — never omit it (see the module
@@ -62,14 +79,14 @@ class LlamaIndexAdapter(Adapter):
         ``api_base`` rather than ``base_url``. Sync and async calls send through
         the SDK's clients, which do not follow redirects and send credentials
         only to checked endpoints."""
-        conn = self._openai_connection()
+        conn = self._connection()
         return masked(
             {
                 "api_base": conn["base_url"],
                 "api_key": conn["api_key"],
                 "default_headers": conn["default_headers"],
-                "http_client": self.sync_http_client(),
-                "async_http_client": self.http_client(),
+                "http_client": self._openai_kwarg_sync_http_client(),
+                "async_http_client": self._openai_kwarg_http_client(),
                 "max_retries": 0,  # we retry in transport (BG §1.1)
                 "is_chat_model": True,  # never omit — see module docstring
                 "is_function_calling_model": True,
@@ -94,11 +111,6 @@ class LlamaIndexAdapter(Adapter):
 
         kw = _model_defaults(model, kw)
         return OpenAILike(model=model, **{**self.connection_kwargs(), **kw})
-
-    @staticmethod
-    def typed_refusals() -> AbstractContextManager[None]:
-        """Adapter-bound alias for the module-level :func:`typed_refusals`."""
-        return typed_refusals()
 
 
 def _model_defaults(model: str, kw: dict[str, Any]) -> dict[str, Any]:
@@ -144,19 +156,21 @@ def _reasoning_model_kwargs(kw: dict[str, Any]) -> dict[str, Any]:
     return kw
 
 
-def typed_refusals() -> AbstractContextManager[None]:
+def typed_refusals() -> TypedRefusals:
     """Re-raise a proxy refusal from an ``OpenAILike`` call as the SDK's typed
-    exception (BG §1.2)::
+    exception (BG §1.2). This is the SDK-wide typed-refusal bridge,
+    :func:`donkey_kit.typed_refusals` (#724, ADR 0002)::
 
         with donkey.llamaindex.typed_refusals():
             reply = await llm.acomplete("hi")
 
-    ``OpenAILike`` raises the openai SDK's ``APIStatusError`` for a refusal; this
-    maps its response through :func:`~donkey_kit.core.errors.classify`, so a PII
-    block surfaces as :class:`~donkey_kit.core.errors.PIIDetected` with the
+    ``OpenAILike`` raises the openai SDK's ``APIStatusError`` for a refusal; the
+    bridge maps its response through :func:`~donkey_kit.core.errors.classify`, so
+    a PII block surfaces as :class:`~donkey_kit.core.errors.PIIDetected` with the
     correlation and call ids that were sent. The original stays on
-    ``.framework_error``; errors with no HTTP response pass through."""
-    return _TypedRefusals()
+    ``.framework_error``; anything else passes through. ``donkey.run()`` and
+    ``@donkey.governed`` already apply it."""
+    return _bridge()
 
 
 def llm(model: str, **kw: Any) -> OpenAILike:

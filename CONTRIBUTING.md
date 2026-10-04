@@ -223,11 +223,26 @@ The PR targets `develop` and its body includes `Closes #<issue#>`, a `## Summary
 (new/changed extras → the `pip install` users need; a value flipped to `VERIFIED`
 → note that `docs/verified-apis.md` moved with it; a new adapter/exemption → note
 the README table follow-up) — write `None.` explicitly when nothing applies,
-never omit the heading.
+never omit the heading. The repo's PR template
+([`.github/pull_request_template.md`](.github/pull_request_template.md)) lays
+these sections out, plus the **ADR needed?** checkbox below.
 
 Open the PR only once the gate is green — a red PR wastes reviewer attention. If
 `develop` advances while the PR is open, rebase (`git rebase origin/develop`) by
 default; merge only if a rebase would invalidate in-flight review comments.
+
+### Architecture decision records
+
+Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/README.md),
+one file each: the context, the decision, the alternatives rejected, the
+consequences, and a status (proposed, accepted, superseded or rejected). **A PR
+needs an ADR when it changes an `ARCHITECTURE.md` invariant, an import-linter
+contract, the API stability tiers or the dependency policy.** It adds a new
+ADR, or one that supersedes an accepted ADR, since an accepted decision isn't
+edited. Correcting a description so it matches what the code already does
+needs none. The PR template's **ADR needed?** checkbox asks on every PR, and
+a reviewer can ask for one when the answer is wrong. The process, the template
+and the index are in [`docs/adr/README.md`](docs/adr/README.md).
 
 ### Merging
 
@@ -358,8 +373,9 @@ Wire the adapter by these rules:
   retry layer, so a refusal is sent once.
 - **Wire both sync and async**, or let the driver's `no_sync` say why the
   framework is async-only.
-- **Use the shared typed-refusal helper** (`_TypedRefusals` in `_base`) rather
-  than a per-framework copy.
+- **Use the shared typed-refusal bridge** (`core/refusals.py`, ADR 0002) rather
+  than a per-framework copy. A framework that wraps the openai error in a type
+  carrying no request or response gets an `AdapterSpec.refusal_translator`.
 - **`observes_last_call` is the single source of truth** for whether
   `donkey.last_call` sees the adapter's calls. It holds for every factory and is
   never changed on an instance.
@@ -531,6 +547,9 @@ build plan has the rationale behind each rule:
   `pyproject.toml` — add `foo>=X`, never `foo<Y`. Known incompatibilities are
   documented in `docs/verified-apis.md §8.1` as dev constraints, not encoded as
   pins; the nightly matrix exists to surface breakage from newest releases early.
+  Each floor is the lowest verified release (`docs/verified-apis.md §8.3`).
+  [ADR 0007](docs/adr/0007-dependency-policy.md) (proposed) records the
+  dependency policy, including the plan to run PR CI from a lock.
 - **Every direct dependency is a reviewed decision.** Adding a package to
   `dependencies`, an extra, or a dependency group means adding its entry to
   `python/dependency_allowlist.toml` (why it is needed, and the review date) in
@@ -575,6 +594,27 @@ build plan has the rationale behind each rule:
   the SDK's shared client wherever its constructor takes one, and pass every
   URL override the factory accepts through `_allow_endpoints(...)` before the
   framework import, so it gets the https check and joins the checked endpoints.
+- **One adapter contract, one roster** (#726, ADR 0004). An adapter declares
+  `factories`, a read-only mapping from each factory method's name to its
+  frozen `AdapterCapabilities`, with the default factory first. Every
+  `connection_kwargs()` builds on `self._connection()` (pass the factory name
+  for a non-default factory), never on `cfg.validated(...)` directly, so the
+  token-mode guards run for it. The adapter set is declared once, in
+  `ADAPTERS`. Adding an adapter means a roster entry plus the places
+  `tests/unit/test_adapter_roster.py` checks against it: a pyproject extra, the
+  import-linter independence contract, a mypy override for the framework, a
+  `Donkey` annotation, a `scripts/verify_frameworks.py` row per factory, an
+  `examples/<name>/main.py`, and `KNOWN_LIMITATIONS` rows that match its
+  capabilities.
+- **No classification in an adapter** (#724, ADR 0002). Typed refusals reach
+  the caller through the one bridge in `core/refusals.py`
+  (`donkey_kit.typed_refusals()`, applied by `donkey.run()` and
+  `@donkey.governed`). An adapter never calls `classify()` itself. If the
+  framework wraps the client's error in an exception with no request or
+  response on it, add a module-level translator that only unwraps it, by
+  handing its cause back to `core.refusals.translate()`, and name it in the
+  adapter's `AdapterSpec.refusal_translator`. Import the framework lazily
+  inside the translator.
 - **Citation habit.** When code encodes a spec decision, cite it in the
   docstring/comment so reviewers and future-you can find the rationale: `BG §N.N`
   for build-guide scope (e.g. `# budget parsed at the response hook (BG §1.3)`),
@@ -651,7 +691,10 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
 | `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
 | Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it. That no base module imports pydantic is checked by `tests/unit/test_base_install_deps.py` and the `base-only` job | review, `pytest`, `base-only` job |
-| Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
+| An ADR for any change to an `ARCHITECTURE.md` invariant, an import-linter contract, the API stability tiers or the dependency policy (#731) | Review-only: the **ADR needed?** checkbox in `.github/pull_request_template.md`; process in `docs/adr/README.md` | review |
+| Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py`, `tests/unit/test_adapter_capabilities.py` (every declared factory over the whole roster) | `pytest` |
+| One adapter contract, one roster (#726) | `tests/unit/test_adapter_capabilities.py` (`AdapterProtocol`, frozen per-factory capabilities that match the governed kwargs, every `connection_kwargs()` through `_connection()`, token-mode refusals); `tests/unit/test_adapter_roster.py` (`ADAPTERS` against the extras, import-linter, mypy overrides, `Donkey` annotations, exemptions, nightly matrix, examples, `verify_frameworks.py`) | `pytest` |
+| No classification in an adapter (#724) | `tests/unit/test_refusal_bridge.py` (no adapter module calls `classify(`; every adapter exposes the shared bridge) | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |

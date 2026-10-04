@@ -124,7 +124,7 @@ async def test_an_https_override_is_used_and_receives_the_credentials() -> None:
         return httpx.Response(200, json={"object": "list", "data": []})
 
     donkey = Donkey(_cfg())
-    donkey._http._swap_transport(httpx.MockTransport(handler))
+    donkey._http.governed_transport.replace_inner(httpx.MockTransport(handler))
     try:
         await donkey.llm.client(base_url=_HTTPS_OVERRIDE).models.list()
     finally:
@@ -144,7 +144,7 @@ async def test_an_https_override_in_jwt_mode_receives_the_jwt() -> None:
         return httpx.Response(200, json={"object": "list", "data": []})
 
     donkey = Donkey(_jwt_cfg(), llm_auth=StaticToken("wallet-jwt-value"))
-    donkey._http._swap_transport(httpx.MockTransport(handler))
+    donkey._http.governed_transport.replace_inner(httpx.MockTransport(handler))
     try:
         await donkey.llm.client(base_url=_HTTPS_OVERRIDE).models.list()
     finally:

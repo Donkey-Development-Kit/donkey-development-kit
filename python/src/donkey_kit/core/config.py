@@ -1,15 +1,18 @@
 """Configuration.
 
-Resolution order (:meth:`DonkeyConfig.from_env`): value set in code → env var →
-config file → default. ``from_env()`` takes no arguments; a value set in code is
-one changed afterwards (``with_overrides``, ``dataclasses.replace``). A
-``DonkeyConfig(...)`` built directly reads neither env nor files. The config
-file is the working directory's ``.donkey-kit.toml`` with its gitignored
-``.donkey-kit.local.toml`` merged over it key by key (nested tables such as
-``[donkey.cost]`` recursively; scalars and arrays replace); if neither exists,
+Resolution order (:meth:`DonkeyConfig.resolve`, §2.1, #727), highest first and
+per key: a value set in code (a ``resolve()`` keyword argument, or one changed
+afterwards with ``with_overrides`` or ``dataclasses.replace``) → env var →
+``.donkey-kit.local.toml`` → ``.donkey-kit.toml`` → the user file
 ``$XDG_CONFIG_HOME/.donkey-kit.toml`` (``~/.config/.donkey-kit.toml`` when
-``XDG_CONFIG_HOME`` is unset or empty). We never read ``.env`` implicitly — the
-user calls ``load_dotenv()`` themselves.
+``XDG_CONFIG_HOME`` is unset or empty) → default. The three files merge key by
+key (nested tables such as ``[donkey.cost]`` recursively; scalars and arrays
+replace), so a lower file fills what a higher one leaves unset. ``resolve(path=...)``
+reads the named file in place of the working directory's ``.donkey-kit.toml``.
+``from_env()`` is ``resolve()`` with no arguments. A ``DonkeyConfig(...)``
+built directly reads neither env nor files. We never read ``.env`` implicitly —
+the user calls ``load_dotenv()`` themselves. One declarative table,
+``_FIELDS``, names each field's env var, TOML key, parser and value check.
 
 Every resolved field records its source (a value changed in code afterwards
 counts as set in code), and :meth:`DonkeyConfig.check_endpoints`
@@ -27,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import inspect
 import os
 import secrets
 import sys
@@ -34,7 +38,7 @@ import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
+from typing import Literal, TypedDict, cast
 
 __all__ = [
     "LOCAL_TOML_NAME",
@@ -64,7 +68,11 @@ from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
 from .header_names import header_name_problem
 
-if TYPE_CHECKING:
+# Imported at runtime, not only for type checking, so ``typing.get_type_hints``
+# resolves the ``**overrides`` of resolve() and with_overrides() (#727).
+if sys.version_info >= (3, 11):
+    from typing import Unpack
+else:
     from typing_extensions import Unpack
 
 Region = Literal["us", "eu", "ca", "jp"]
@@ -105,9 +113,10 @@ Capability = Literal["control_plane", "llm"]
 
 class ConfigOverrides(TypedDict, total=False):
     """The public :class:`DonkeyConfig` fields, each optional, as keyword
-    arguments: what :meth:`DonkeyConfig.with_overrides` accepts, so a misspelt
-    field fails type checking (#716). Must list exactly the dataclass's public
-    fields; a unit test pins that."""
+    arguments: what :meth:`DonkeyConfig.resolve`, :meth:`DonkeyConfig.with_overrides`
+    and ``Donkey.from_env`` accept, so a misspelt field fails type checking
+    (#716, #727). Must list exactly the dataclass's public fields; a unit test
+    pins that."""
 
     client_id: str | None
     client_secret: str | None
@@ -135,8 +144,10 @@ class ConfigOverrides(TypedDict, total=False):
     registry_cache_ttl_s: int
     telemetry: bool
     telemetry_capture_content: bool
+    telemetry_install_global: bool
     on_model_substitution: OnModelSubstitution
     send_cost_headers: bool
+    retry_model_calls_on_gateway_errors: bool
 
 
 TOML_NAME = ".donkey-kit.toml"
@@ -154,43 +165,17 @@ _SOURCE_LABELS: dict[SourceKind, str] = {
     "default": "default",
 }
 
+# The layers DonkeyConfig.resolve() reads, highest first (§2.1, #727): code
+# (resolve() keyword arguments, or a value changed afterwards), environment
+# variables, the working directory's .local overlay, its project file, the user
+# file, then the field default. The three files merge key by key. The docs'
+# Precedence section is tested against this order.
+_PRECEDENCE: tuple[SourceKind, ...] = ("explicit", "env", "local", "project", "user", "default")
+
 # The working-directory files. An endpoint read from one of these only receives
 # credentials read from one of these (see DonkeyConfig.check_endpoints).
 _WORKDIR_KINDS: frozenset[SourceKind] = frozenset({"project", "local"})
 _FILE_KINDS: frozenset[SourceKind] = _WORKDIR_KINDS | {"user"}
-
-# The environment variable that sets each field: the one table from_env(),
-# missing_fields() and the error messages read. ``cost`` is set per dimension
-# instead (``_COST_KEYS``). A unit test pins that it covers every other field.
-_ENV_VARS: dict[str, str] = {
-    "client_id": "ANYPOINT_CLIENT_ID",
-    "client_secret": "ANYPOINT_CLIENT_SECRET",
-    "org_id": "ANYPOINT_ORG_ID",
-    "environment": "ANYPOINT_ENV",
-    "region": "ANYPOINT_REGION",
-    "base_url": "ANYPOINT_BASE_URL",
-    "llm_proxy_url": "DONKEY_LLM_PROXY_URL",
-    "llm_proxy_client_id": "DONKEY_LLM_PROXY_CLIENT_ID",
-    "llm_proxy_client_secret": "DONKEY_LLM_PROXY_CLIENT_SECRET",
-    "llm_proxy_key": "DONKEY_LLM_PROXY_KEY",
-    "llm_proxy_auth": "DONKEY_LLM_PROXY_AUTH",
-    "llm_proxy_wallet_client_id": "DONKEY_LLM_PROXY_WALLET_CLIENT_ID",
-    "application_name": "DONKEY_APP_NAME",
-    "business_group": "DONKEY_BUSINESS_GROUP",
-    "correlation_header": "DONKEY_CORRELATION_HEADER",
-    "call_id_header": "DONKEY_CALL_ID_HEADER",
-    "cost_team_header": "DONKEY_COST_TEAM_HEADER",
-    "cost_project_header": "DONKEY_COST_PROJECT_HEADER",
-    "cost_env_header": "DONKEY_COST_ENV_HEADER",
-    "cost_enduser_header": "DONKEY_COST_ENDUSER_HEADER",
-    "timeout_s": "DONKEY_TIMEOUT_S",
-    "max_retries": "DONKEY_MAX_RETRIES",
-    "registry_cache_ttl_s": "DONKEY_REGISTRY_CACHE_TTL_S",
-    "telemetry": "DONKEY_TELEMETRY",
-    "telemetry_capture_content": "DONKEY_TELEMETRY_CAPTURE_CONTENT",
-    "on_model_substitution": "DONKEY_ON_MODEL_SUBSTITUTION",
-    "send_cost_headers": "DONKEY_SEND_COST_HEADERS",
-}
 
 # The keys that name a request header, each with its default name.
 _HEADER_KEYS: tuple[tuple[str, str], ...] = (
@@ -205,31 +190,8 @@ _HEADER_KEYS: tuple[tuple[str, str], ...] = (
 # Keys that should never sit in the committed project file.
 _SECRET_KEYS = ("client_secret", "llm_proxy_client_secret", "llm_proxy_key")
 
-# The fields whose values are checked on construction (#809).
-_CHECKED_KEYS: tuple[str, ...] = (
-    "region",
-    "llm_proxy_auth",
-    "on_model_substitution",
-    "timeout_s",
-    "max_retries",
-    "registry_cache_ttl_s",
-    "telemetry",
-    "telemetry_capture_content",
-    "send_cost_headers",
-)
-
-# The allowed values of each choice field.
-_CHOICES: dict[str, tuple[str, ...]] = {
-    "region": tuple(sorted(REGION_HOSTS)),
-    "llm_proxy_auth": ("client-id", "jwt", "bearer"),
-    "on_model_substitution": ("off", "raise"),
-}
-
-_BOOL_KEYS = ("telemetry", "telemetry_capture_content", "send_cost_headers")
 _TRUE_TOKENS = ("1", "true", "yes", "on")
 _FALSE_TOKENS = ("0", "false", "no", "off")
-
-_T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
@@ -301,10 +263,11 @@ def _as_loaded(name: str, entry: object) -> _Loaded:
 class DonkeyConfig:
     """Everything the SDK needs to reach Agent Fabric, resolved once and immutable.
 
-    Build it with :meth:`from_env`, which resolves each field from code, then
-    environment variables, then ``.donkey-kit.toml``, then the default (see the
-    module docstring). A ``DonkeyConfig(...)`` built directly reads neither env
-    nor files. Change fields afterwards with :meth:`with_overrides`.
+    Build it with :meth:`resolve` (or :meth:`from_env`, its no-argument form),
+    which resolves each field from code, then environment variables, then the
+    merged config files, then the default (see the module docstring). A
+    ``DonkeyConfig(...)`` built directly reads neither env nor files. Change
+    fields afterwards with :meth:`with_overrides`.
 
     The control-plane credential (``client_id`` / ``client_secret``, for the
     Exchange registry) and the LLM-proxy credential (``llm_proxy_*``,
@@ -388,6 +351,13 @@ class DonkeyConfig:
     # very content the platform just masked to whatever OTLP collector is wired
     # up (#306, BG §1.6). Opting in is the developer assuming that obligation.
     telemetry_capture_content: bool = False
+    # Install DDK's OTLP TracerProvider as the process-global OpenTelemetry
+    # provider. Default FALSE: OTel lets the global provider be set once, so a
+    # library that took it implicitly would lock out a host that configures its
+    # own afterwards. Off, DDK exports its own spans through a DDK-scoped
+    # provider and defers to any global provider the host sets (#732,
+    # docs/adr/0010-no-hidden-global-side-effects.md).
+    telemetry_install_global: bool = False
     # What to do when the gateway serves a different model than requested (docs/verified-apis.md §3,
     # #309). Default "off" — the substitution is surfaced passively on
     # ``donkey.last_call``; "raise" opts into a hard ``ModelSubstituted`` error.
@@ -399,10 +369,16 @@ class DonkeyConfig:
     # When enabled, the headers go on data-plane (model) requests only, never on
     # a control-plane client's (#833).
     send_cost_headers: bool = False
+    # Re-send a model POST after a 502 or 504. Default FALSE: either status can
+    # follow an upstream call that completed and billed, so a re-send can bill
+    # twice, and docs/verified-apis.md records no gateway idempotency key that
+    # would make it safe (docs/adr/0009-*.md, #728). A 503 still retries, and
+    # so does every non-model request.
+    retry_model_calls_on_gateway_errors: bool = False
 
     # --- Provenance (config resolution) ---
     # Where each field was resolved from and a keyed digest of the value it had
-    # there, filled in by from_env(). A field with no entry, or whose value no
+    # there, filled in by resolve(). A field with no entry, or whose value no
     # longer matches, was set in code and counts as explicit.
     _sources: Mapping[str, _Loaded] = field(
         default_factory=dict, repr=False, compare=False
@@ -445,38 +421,75 @@ class DonkeyConfig:
 
     # ----------------------------------------------------------------- factory
     @classmethod
-    def from_env(cls) -> DonkeyConfig:
-        """Build from env + the optional config files (see the module docstring).
-        Does not validate; call :meth:`validated` when you know which capability
-        you need. Each field, and each cost dimension as ``cost.<name>``, records
-        its source for :meth:`source_of`."""
+    def resolve(
+        cls,
+        *,
+        path: str | os.PathLike[str] | None = None,
+        **overrides: Unpack[ConfigOverrides],
+    ) -> DonkeyConfig:
+        """Resolve every field along the configured precedence (§2.1, #727).
 
-        table, file_sources = _load_config_files()
+        Highest first, per field: ``overrides`` (set in code), environment
+        variables, ``.donkey-kit.local.toml``, ``.donkey-kit.toml``, the user
+        file (``$XDG_CONFIG_HOME/.donkey-kit.toml``), then the field default.
+        The three files are merged key by key, so a lower file fills whatever a
+        higher one leaves unset. ``cost`` merges per dimension: a dimension
+        set in ``overrides["cost"]`` wins, the others keep their resolved value.
+
+        Does not check that a capability's required fields are set; call
+        :meth:`validated` for that. Every field, and each cost dimension as
+        ``cost.<name>``, records its source for :meth:`source_of`; an override
+        counts as set in code.
+
+        Args:
+            path: A config file to read in place of the working directory's
+                ``.donkey-kit.toml``. A ``.donkey-kit.local.toml`` beside it
+                overlays it, and the endpoint rule of :meth:`check_endpoints`
+                treats both as project files. The user file is still read
+                beneath them.
+            **overrides: Any :class:`DonkeyConfig` field, by name.
+
+        Raises:
+            ConfigError: A value can't be parsed or is out of range (every bad
+                value is listed in one error, wherever it was set), ``path``
+                names no file, or a config file is malformed.
+            TypeError: An override names no :class:`DonkeyConfig` field.
+
+        Docs: https://docs.donkey-kit.dev/reference/configuration#precedence
+        """
+        given = cast("Mapping[str, object]", overrides)
+        unknown = sorted(set(given) - _OVERRIDE_NAMES)
+        if unknown:
+            raise TypeError(
+                "DonkeyConfig.resolve() got unknown field names: "
+                f"{', '.join(repr(name) for name in unknown)}. Use DonkeyConfig field names."
+            )
+
+        table, file_sources = _load_config_files(path=path)
+        defaults = {f.name: f.default for f in fields(cls)}
+        values: dict[str, object] = {}
         sources: dict[str, ConfigSource] = {}
-
-        def pick(key: str, default: object) -> object:
-            env = _ENV_VARS[key]
-            if env in os.environ:
-                sources[key] = ConfigSource("env")
-                return os.environ[env]
-            if key in table:
-                sources[key] = file_sources[key]
-                return table[key]
-            sources[key] = ConfigSource("default")
-            return default
-
         # Values that can't be parsed, by field: reported with the out-of-range
         # ones below, in one error (#809).
         problems: dict[str, str] = {}
 
-        def parse(key: str, default: _T, convert: Callable[[object], _T]) -> _T:
-            raw = pick(key, default)
+        for spec in _FIELDS:
+            if spec.name in given:
+                # Set in code: no source entry, and the lower layers' value is
+                # never read, so an invalid one there can't fail this call.
+                values[spec.name] = given[spec.name]
+                continue
+            raw, source = _pick(spec, table, file_sources)
+            sources[spec.name] = source
+            if source.kind == "default":
+                values[spec.name] = defaults[spec.name]
+                continue
             try:
-                return convert(raw)
+                values[spec.name] = spec.parse(raw)
             except ValueError as exc:
-                where = _where(sources[key], _ENV_VARS[key])
-                problems[key] = f"{key} is {raw!r}, set in {where}; {exc}"
-                return default
+                where = _where(source, spec.env)
+                problems[spec.name] = f"{spec.name} is {raw!r}, set in {where}; {exc}"
+                values[spec.name] = defaults[spec.name]
 
         toml_cost = table.get("cost")
         for name, key, env in _COST_KEYS:
@@ -486,41 +499,23 @@ class DonkeyConfig:
                 sources[f"cost.{name}"] = file_sources[f"cost.{key}"]
             else:
                 sources[f"cost.{name}"] = ConfigSource("default")
+        cost = _resolve_cost_tags(toml_cost)
+        if "cost" in given:
+            override = given["cost"]
+            if not isinstance(override, CostTags):
+                raise ConfigError(
+                    f"cost must be a CostTags, got {type(override).__name__}. "
+                    "Pass cost=CostTags(team=..., project=...)."
+                )
+            cost = cost.merge(override)
+            for name, _ in override.items():
+                del sources[f"cost.{name}"]
+        values["cost"] = cost
 
-        values = ConfigOverrides(
-            cost=_resolve_cost_tags(toml_cost),
-            client_id=_opt(pick("client_id", None)),
-            client_secret=_opt(pick("client_secret", None)),
-            org_id=_opt(pick("org_id", None)),
-            environment=str(pick("environment", "Sandbox")),
-            region=cast(Region, parse("region", "us", str)),
-            base_url=_opt(pick("base_url", None)),
-            llm_proxy_url=_opt(pick("llm_proxy_url", None)),
-            llm_proxy_client_id=_opt(pick("llm_proxy_client_id", None)),
-            llm_proxy_client_secret=_opt(pick("llm_proxy_client_secret", None)),
-            llm_proxy_key=_opt(pick("llm_proxy_key", None)),
-            llm_proxy_auth=cast(LlmProxyAuth, parse("llm_proxy_auth", "client-id", _as_token)),
-            llm_proxy_wallet_client_id=_opt(pick("llm_proxy_wallet_client_id", None)),
-            application_name=_opt(pick("application_name", None)),
-            business_group=_opt(pick("business_group", None)),
-            correlation_header=_opt(pick("correlation_header", None)),
-            call_id_header=_opt(pick("call_id_header", None)),
-            cost_team_header=_opt(pick("cost_team_header", None)),
-            cost_project_header=_opt(pick("cost_project_header", None)),
-            cost_env_header=_opt(pick("cost_env_header", None)),
-            cost_enduser_header=_opt(pick("cost_enduser_header", None)),
-            timeout_s=parse("timeout_s", 60.0, _as_float),
-            max_retries=parse("max_retries", 3, _as_int),
-            registry_cache_ttl_s=parse("registry_cache_ttl_s", 300, _as_int),
-            telemetry=parse("telemetry", True, _as_bool),
-            telemetry_capture_content=parse("telemetry_capture_content", False, _as_bool),
-            on_model_substitution=cast(
-                OnModelSubstitution, parse("on_model_substitution", "off", _as_token)
-            ),
-            send_cost_headers=parse("send_cost_headers", False, _as_bool),
+        parsed = {k: v for k, v in values.items() if k not in problems}
+        out_of_range = _value_problems(
+            parsed, lambda key: _where(sources.get(key, _EXPLICIT), _ENV_VARS[key])
         )
-        parsed = {k: v for k, v in values.items() if k in _CHECKED_KEYS and k not in problems}
-        out_of_range = _value_problems(parsed, lambda key: _where(sources[key], _ENV_VARS[key]))
         if problems or out_of_range:
             raise _invalid_config([*problems.values(), *out_of_range])
         key_id = _key_id()
@@ -528,7 +523,14 @@ class DonkeyConfig:
             name: _Loaded(src, _digest(_value_at(values, name)), key_id)
             for name, src in sources.items()
         }
-        return cls(**values, _sources=loaded)
+        return cls(**cast("ConfigOverrides", values), _sources=loaded)
+
+    @classmethod
+    def from_env(cls) -> DonkeyConfig:
+        """Build from env + the optional config files: :meth:`resolve` with no
+        arguments (see the module docstring). Does not validate; call
+        :meth:`validated` when you know which capability you need."""
+        return cls.resolve()
 
     # --------------------------------------------------------------- derived
     @property
@@ -544,7 +546,7 @@ class DonkeyConfig:
 
     def source_of(self, name: str) -> ConfigSource:
         """Where field ``name`` was resolved from. ``explicit`` (set in code) when
-        :meth:`from_env` did not resolve it or its value has changed since, e.g.
+        :meth:`resolve` did not resolve it or its value has changed since, e.g.
         through ``dataclasses.replace``, :meth:`with_overrides` or direct
         construction; copies that keep the value keep the label, and so does
         ``DonkeyConfig(**dataclasses.asdict(cfg))`` in the same process. A label
@@ -563,7 +565,8 @@ class DonkeyConfig:
         """Return a copy with the given fields replaced.
 
         Each overridden field counts as set in code, which matters to
-        :meth:`check_endpoints`.
+        :meth:`check_endpoints`. The copy is checked like any construction, so
+        an invalid value raises :class:`ConfigError` (#809).
         """
         sources = {k: v for k, v in self._sources.items() if k not in kw}
         return replace(self, _sources=sources, **kw)
@@ -709,12 +712,12 @@ def _binding_error(
         local = origin.path.parent / LOCAL_TOML_NAME
         options.append(f"keep the credentials in {local}, next to the project file")
     options.append(
-        f"trust this directory's config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
+        f"trust the project config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
     )
     return ConfigError(
         f"Not sending {', '.join(credentials)} to {host_of(url)}: {key} is set in "
-        f"{origin.path}, and credentials from outside the working directory's config "
-        "files are only sent to hosts those files name when you opt in. To continue, "
+        f"{origin.path}, and credentials from outside the project config files "
+        "are only sent to hosts those files name when you opt in. To continue, "
         "do one of:\n  - " + "\n  - ".join(options)
     )
 
@@ -822,35 +825,136 @@ def _as_token(v: object) -> str:
     return str(v).strip().lower()
 
 
-def _value_problems(values: Mapping[str, object], where: Callable[[str], str]) -> list[str]:
-    """One line for each checked field in ``values`` that is out of range, not a
-    boolean, or not an allowed choice; ``where(key)`` says where it was set.
+def _one_of(*choices: str) -> Callable[[object], str | None]:
+    """A check that accepts exactly ``choices``.
 
     An unknown choice is reported, never replaced by the default: a silent
     fall-back would leave a caller who typed ``llm_proxy_auth="oauth"`` believing
     they had selected the wallet ingress (BG §1.1, #509), or
     ``on_model_substitution="error"`` believing they had opted into strictness
     (#309)."""
+    expected = "one of " + ", ".join(repr(c) for c in choices)
+
+    def check(value: object) -> str | None:
+        return None if value in choices else expected
+
+    return check
+
+
+def _positive_number(value: object) -> str | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not value > 0:
+        return "a number of seconds greater than 0"
+    return None
+
+
+def _non_negative_int(value: object) -> str | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return "a whole number, 0 or more"
+    return None
+
+
+def _is_bool(value: object) -> str | None:
+    return None if isinstance(value, bool) else "True or False"
+
+
+@dataclass(frozen=True)
+class _Field:
+    """One row of the field table: how a :class:`DonkeyConfig` field is read.
+
+    ``parse`` turns the raw environment or TOML value into the field's type,
+    raising ``ValueError`` when it can't; ``check``, when set, returns what the
+    field expects if a value (from any layer, code included) is out of range.
+    The default is the dataclass field's own."""
+
+    name: str
+    env: str
+    parse: Callable[[object], object]
+    check: Callable[[object], str | None] | None = None
+
+    @property
+    def toml_key(self) -> str:
+        """The key in a ``[donkey]`` table: always the field name."""
+        return self.name
+
+
+# The field table (#720, #727): every DonkeyConfig field except ``cost``, which
+# is set per dimension instead (``_COST_KEYS``). resolve(), missing_fields(),
+# the value checks and the error messages all read it, and unit tests pin it
+# against the dataclass and the configuration docs.
+_FIELDS: tuple[_Field, ...] = (
+    _Field("client_id", "ANYPOINT_CLIENT_ID", _opt),
+    _Field("client_secret", "ANYPOINT_CLIENT_SECRET", _opt),
+    _Field("org_id", "ANYPOINT_ORG_ID", _opt),
+    _Field("environment", "ANYPOINT_ENV", str),
+    _Field("region", "ANYPOINT_REGION", str, _one_of(*sorted(REGION_HOSTS))),
+    _Field("base_url", "ANYPOINT_BASE_URL", _opt),
+    _Field("llm_proxy_url", "DONKEY_LLM_PROXY_URL", _opt),
+    _Field("llm_proxy_client_id", "DONKEY_LLM_PROXY_CLIENT_ID", _opt),
+    _Field("llm_proxy_client_secret", "DONKEY_LLM_PROXY_CLIENT_SECRET", _opt),
+    _Field("llm_proxy_key", "DONKEY_LLM_PROXY_KEY", _opt),
+    _Field(
+        "llm_proxy_auth", "DONKEY_LLM_PROXY_AUTH", _as_token, _one_of("client-id", "jwt", "bearer")
+    ),
+    _Field("llm_proxy_wallet_client_id", "DONKEY_LLM_PROXY_WALLET_CLIENT_ID", _opt),
+    _Field("application_name", "DONKEY_APP_NAME", _opt),
+    _Field("business_group", "DONKEY_BUSINESS_GROUP", _opt),
+    _Field("correlation_header", "DONKEY_CORRELATION_HEADER", _opt),
+    _Field("call_id_header", "DONKEY_CALL_ID_HEADER", _opt),
+    _Field("cost_team_header", "DONKEY_COST_TEAM_HEADER", _opt),
+    _Field("cost_project_header", "DONKEY_COST_PROJECT_HEADER", _opt),
+    _Field("cost_env_header", "DONKEY_COST_ENV_HEADER", _opt),
+    _Field("cost_enduser_header", "DONKEY_COST_ENDUSER_HEADER", _opt),
+    _Field("timeout_s", "DONKEY_TIMEOUT_S", _as_float, _positive_number),
+    _Field("max_retries", "DONKEY_MAX_RETRIES", _as_int, _non_negative_int),
+    _Field("registry_cache_ttl_s", "DONKEY_REGISTRY_CACHE_TTL_S", _as_int, _non_negative_int),
+    _Field("telemetry", "DONKEY_TELEMETRY", _as_bool, _is_bool),
+    _Field("telemetry_capture_content", "DONKEY_TELEMETRY_CAPTURE_CONTENT", _as_bool, _is_bool),
+    _Field("telemetry_install_global", "DONKEY_TELEMETRY_INSTALL_GLOBAL", _as_bool, _is_bool),
+    _Field(
+        "on_model_substitution", "DONKEY_ON_MODEL_SUBSTITUTION", _as_token, _one_of("off", "raise")
+    ),
+    _Field("send_cost_headers", "DONKEY_SEND_COST_HEADERS", _as_bool, _is_bool),
+    _Field(
+        "retry_model_calls_on_gateway_errors",
+        "DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS",
+        _as_bool,
+        _is_bool,
+    ),
+)
+
+# Views of the table.
+_ENV_VARS: dict[str, str] = {spec.name: spec.env for spec in _FIELDS}
+_CHECKED_KEYS: tuple[str, ...] = tuple(spec.name for spec in _FIELDS if spec.check is not None)
+_OVERRIDE_NAMES: frozenset[str] = frozenset(_ENV_VARS) | {"cost"}
+
+
+def _pick(
+    spec: _Field, table: Mapping[str, object], file_sources: Mapping[str, ConfigSource]
+) -> tuple[object, ConfigSource]:
+    """The raw value of ``spec`` from the highest layer below code that sets
+    it, with its source: the environment, then the merged files. ``None`` with
+    a ``default`` source when neither sets it."""
+    if spec.env in os.environ:
+        return os.environ[spec.env], ConfigSource("env")
+    if spec.toml_key in table:
+        return table[spec.toml_key], file_sources[spec.toml_key]
+    return None, ConfigSource("default")
+
+
+def _value_problems(values: Mapping[str, object], where: Callable[[str], str]) -> list[str]:
+    """One line for each checked field in ``values`` that is out of range, not a
+    boolean, or not an allowed choice, in field-table order; ``where(key)`` says
+    where it was set."""
     problems: list[str] = []
-
-    def bad(key: str, expected: str) -> None:
-        problems.append(f"{key} is {values[key]!r}, set in {where(key)}; expected {expected}")
-
-    for key, choices in _CHOICES.items():
-        if key in values and values[key] not in choices:
-            bad(key, "one of " + ", ".join(repr(c) for c in choices))
-    if "timeout_s" in values:
-        timeout = values["timeout_s"]
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not timeout > 0:
-            bad("timeout_s", "a number of seconds greater than 0")
-    for key in ("max_retries", "registry_cache_ttl_s"):
-        if key in values:
-            value = values[key]
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                bad(key, "a whole number, 0 or more")
-    for key in _BOOL_KEYS:
-        if key in values and not isinstance(values[key], bool):
-            bad(key, "True or False")
+    for spec in _FIELDS:
+        if spec.check is None or spec.name not in values:
+            continue
+        expected = spec.check(values[spec.name])
+        if expected is not None:
+            problems.append(
+                f"{spec.name} is {values[spec.name]!r}, set in {where(spec.name)}; "
+                f"expected {expected}"
+            )
     return problems
 
 
@@ -863,35 +967,50 @@ def _invalid_config(problems: list[str]) -> ConfigError:
 
 
 def _load_config_files(
-    name: str = "donkey",
+    name: str = "donkey", *, path: str | os.PathLike[str] | None = None
 ) -> tuple[dict[str, object], dict[str, ConfigSource]]:
     """The merged ``[<name>]`` table (``[donkey]`` by default) and the source of
     every key in it, by dotted path (``cost.team``).
 
-    The working directory's ``.donkey-kit.local.toml`` is merged key by key over
-    its ``.donkey-kit.toml``; if neither exists, the user file
-    (:func:`_user_config_file`) is used alone. Missing files are fine; a
-    malformed file raises, and so does a working-directory file that resolves
-    (through a link) outside it."""
+    The files merge key by key in :data:`_PRECEDENCE` order (#727): the user
+    file (:func:`_user_config_file`) at the bottom, then the working
+    directory's ``.donkey-kit.toml``, then its ``.donkey-kit.local.toml``.
+    ``path`` names a file to read in place of the working directory's
+    ``.donkey-kit.toml``; the ``.donkey-kit.local.toml`` beside it is then the
+    overlay. Missing files are fine, except ``path``; a malformed file raises,
+    and so does a working-directory file that resolves (through a link)
+    outside it."""
 
-    cwd = Path.cwd()
     layers: list[tuple[ConfigSource, dict[str, object]]] = []
-    project = cwd / TOML_NAME
+    user = _user_config_file()
+    if user is not None and user.is_file():
+        layers.append((ConfigSource("user", user), _read_table(user, name)))
+
+    if path is None:
+        directory = Path.cwd()
+        project = directory / TOML_NAME
+        if project.is_file():
+            _require_inside(project, directory)
+    else:
+        project = Path(path).absolute()
+        if not project.is_file():
+            raise ConfigError(
+                f"There is no config file at {project}. Check the path, or leave it "
+                f"out to read {TOML_NAME} in the working directory."
+            )
+        directory = project.parent
     if project.is_file():
-        _require_inside(project, cwd)
         table = _read_table(project, name)
         if name == "donkey":
             _warn_on_secrets(project, table)
         layers.append((ConfigSource("project", project), table))
-    local = cwd / LOCAL_TOML_NAME
-    if local.is_file():
-        _require_inside(local, cwd)
+    local = directory / LOCAL_TOML_NAME
+    if local.is_file() and local.resolve() != project.resolve():
+        _require_inside(local, directory)
         layers.append((ConfigSource("local", local), _read_table(local, name)))
-    if not layers:
-        user = _user_config_file()
-        if user is not None and user.is_file():
-            layers.append((ConfigSource("user", user), _read_table(user, name)))
 
+    # Lowest layer first, so each higher one is merged over it.
+    layers.sort(key=lambda layer: _PRECEDENCE.index(layer[0].kind), reverse=True)
     merged: dict[str, object] = {}
     sources: dict[str, ConfigSource] = {}
     for source, table in layers:
@@ -972,5 +1091,18 @@ def _warn_on_secrets(path: Path, table: dict[str, object]) -> None:
             f"project file: move them to {LOCAL_TOML_NAME} next to it (and gitignore "
             "it) or to environment variables.",
             ConfigWarning,
-            stacklevel=4,
+            stacklevel=_caller_stacklevel(),
         )
+
+
+def _caller_stacklevel() -> int:
+    """The ``warnings.warn`` stacklevel, called from the function that warns, of
+    the first frame outside ``donkey_kit``: the user's call to ``resolve()``,
+    ``from_env()`` or ``Donkey.from_env()``, however many SDK frames sit between."""
+    frame = inspect.currentframe()
+    frame = frame.f_back if frame is not None else None  # the function that warns
+    level = 1
+    while frame is not None and frame.f_globals.get("__name__", "").split(".")[0] == "donkey_kit":
+        frame = frame.f_back
+        level += 1
+    return level

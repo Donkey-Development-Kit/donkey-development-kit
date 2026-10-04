@@ -50,7 +50,7 @@ _PYPROJECT = tomllib.loads((_PYTHON / "pyproject.toml").read_text())
 _CI = yaml.safe_load((_REPO / ".github" / "workflows" / "ci.yml").read_text())
 
 #: Module-level names in an adapter's ``__all__`` that are helpers, not factories.
-_HELPERS = {"typed_refusals"}
+_HELPERS = {"refusal_translator", "typed_refusals"}
 
 #: The suite files the ``adapter-contract`` CI leg must run for each framework.
 _CONTRACT_SUITE = (

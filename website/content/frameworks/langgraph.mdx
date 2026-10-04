@@ -138,9 +138,13 @@ async with donkey.run(id=ticket.id):
 ### Typed refusals inside a node
 
 On a proxy refusal, LangChain raises its own wrapped
-`OpenAIPermissionDeniedError`, not the SDK's typed exception. Wrap the model
-call in `typed_refusals()` and a gateway refusal comes back through the
-[error taxonomy](/errors) instead:
+`OpenAIPermissionDeniedError`, not the SDK's typed exception. A
+`donkey.run()` block or a `@donkey.governed` function around
+`graph.ainvoke(...)` types it on the way out
+([Typed refusals at the framework boundary](/errors#typed-refusals-at-the-framework-boundary)).
+To type it inside the node, so the graph itself sees the typed error, wrap the
+model call in `typed_refusals()`. A gateway refusal then comes back through
+the [error taxonomy](/errors):
 
 ```python
 from donkey_kit.integrations.langgraph import typed_refusals
@@ -153,8 +157,10 @@ async def call_model(state):
 
 A PII block now propagates out of `graph.ainvoke(...)` as `PIIDetected`, a
 budget block as `TokenBudgetExceeded`, and so on — each carrying the
-correlation and call IDs the client sent. Transport-level errors with no HTTP
-response (connection failures, timeouts) pass through unchanged.
+correlation and call IDs the client sent. A gateway that cannot be reached
+(connection refused, DNS, timeout) surfaces as `GatewayUnavailable`, which the
+transport raised and LangChain wrapped. Errors that did not come from the
+gateway pass through unchanged.
 
 The typed error is raised without a chained cause, because LangChain's error
 message repeats the gateway's rejection text, which for a PII block includes

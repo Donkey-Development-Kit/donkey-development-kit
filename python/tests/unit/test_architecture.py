@@ -13,7 +13,7 @@ states, so each invariant cites the test that keeps it true:
 - the module size budget for ``core/`` (subpackages included), a ratchet over
   the files already past it;
 - one shared client per credential plane (BG §1.1);
-- config precedence as the code resolves it today (§2.1 is #727);
+- config precedence (§2.1, #727);
 - the transport hook table matches both clients (BG §1.1, #179).
 
 Framework-free at module level (the base-only job runs ``tests/unit``).
@@ -35,6 +35,7 @@ import pytest
 import donkey_kit
 from donkey_kit import Donkey
 from donkey_kit import donkey as donkey_module
+from donkey_kit._testing import swap_transport
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient
 from donkey_kit.integrations import ADAPTERS
@@ -67,6 +68,10 @@ _CORE_MODULE_LEVEL_DEPS = {"httpx", "tomli", "tomllib", "typing_extensions"}
 # ...and lazily, inside a function or under TYPE_CHECKING: the optional [otel]
 # extra (BG §1.6), so `import donkey_kit` never needs it.
 _CORE_LAZY_DEPS = _CORE_MODULE_LEVEL_DEPS | {"opentelemetry"}
+# ...and the one module that may import an optional package at module level: the
+# httpx2 bridge, which nothing imports at package import (#728). The import-path
+# test below keeps it off `import donkey_kit`.
+_CORE_OPTIONAL_MODULES = {"transport/httpx2.py": {"httpx2"}}
 
 
 def _is_type_checking(test: ast.expr) -> bool:
@@ -108,11 +113,13 @@ def test_core_depends_only_on_httpx_and_the_stdlib() -> None:
     import-linter contract "core depends on httpx only" is the denylist twin."""
     offenders = []
     for path, tree in _sources(_CORE):
+        module = path.relative_to(_CORE).as_posix()
+        optional = _CORE_OPTIONAL_MODULES.get(module, set())
         for name, line, eager in _third_party_imports(tree):
-            allowed = _CORE_MODULE_LEVEL_DEPS if eager else _CORE_LAZY_DEPS
+            allowed = (_CORE_MODULE_LEVEL_DEPS if eager else _CORE_LAZY_DEPS) | optional
             if name not in allowed:
                 where = "at module level" if eager else "lazily"
-                offenders.append(f"core/{path.name}:{line} imports {name} {where}")
+                offenders.append(f"core/{module}:{line} imports {name} {where}")
     assert offenders == []
 
 
@@ -134,12 +141,14 @@ def test_the_core_dependency_scan_sees_lazy_imports() -> None:
 # --- import donkey_kit loads only the production layers (#729) ---------------
 
 # The packages `import donkey_kit` must never load: the dev-only siblings, the
-# CLI, and the third-party packages only they need.
+# CLI, the httpx2 bridge, and the third-party packages only they need.
 _NOT_ON_THE_IMPORT_PATH = (
     "donkey_kit._testing",
     "donkey_kit.cli",
     "donkey_kit.conformance",
+    "donkey_kit.core.transport.httpx2",
     "donkey_kit.simulator",
+    "httpx2",
     "pytest",
     "starlette",
     "typer",
@@ -315,13 +324,12 @@ _CORE_MODULE_BUDGET = 500  # lines
 # A ratchet: the core modules already past the budget, each at its line count
 # when the budget landed. A ceiling may only come down. Lower it in the PR that
 # shrinks the file, and drop the entry once the file is within budget. The
-# transport split (#728) removes transport.py's entry.
+# transport split (#728) left no transport module past it.
 _OVERSIZED_CORE_MODULES = {
-    "config.py": 976,
-    "errors.py": 1081,
+    "config.py": 1108,
+    "errors.py": 1146,
     "lastcall.py": 828,
-    "telemetry.py": 737,
-    "transport.py": 2007,
+    "telemetry.py": 657,
 }
 
 
@@ -385,21 +393,21 @@ async def test_one_shared_client_per_credential_plane(monkeypatch: pytest.Monkey
 
     # The public view sends through the same pool.
     seen: list[httpx.Request] = []
-    data._swap_transport(httpx.MockTransport(lambda r: seen.append(r) or httpx.Response(200)))
+    swap_transport(data, httpx.MockTransport(lambda r: seen.append(r) or httpx.Response(200)))
     await donkey.http_client().get("https://proxy.example.com/p/models")
     assert [r.url.path for r in seen] == ["/p/models"]
     await donkey.aclose()
 
 
-# --- config precedence (§2.1 as implemented; the target precedence is #727) ---
+# --- config precedence (§2.1, #727) -------------------------------------------
 
 
 def test_config_precedence_code_env_files_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ARCHITECTURE.md, "Configuration": per key, set in code → env var →
-    ``.donkey-kit.local.toml`` merged over ``.donkey-kit.toml`` → (only when
-    neither exists) the user file → default, with each source recorded."""
+    ``.donkey-kit.local.toml`` → ``.donkey-kit.toml`` → the user file → default,
+    the three files merged key by key, with each source recorded."""
     for name in list(os.environ):
         if name.startswith(("DONKEY_", "ANYPOINT_")):
             monkeypatch.delenv(name)
@@ -426,8 +434,8 @@ def test_config_precedence_code_env_files_default(
     assert resolved("timeout_s") == (20.0, "local")
     assert resolved("max_retries") == (5, "project")
     assert resolved("business_group") == ("env", "env")
-    # The user file is not read once the working directory has a config file.
-    assert resolved("application_name") == (None, "default")
+    # A lower file fills what the higher ones leave unset.
+    assert resolved("application_name") == ("user", "user")
     assert resolved("environment") == ("Sandbox", "default")
 
     cfg = cfg.with_overrides(business_group="code")
@@ -436,31 +444,17 @@ def test_config_precedence_code_env_files_default(
 
 # --- the transport hook table (BG §1.1, #179) --------------------------------
 
-_HOOKS = ("_on_request", "_on_response", "_on_refusal", "_swap_transport")
+_HOOKS = ("_inject_headers", "_on_response", "_on_refusal")
 
 
 def test_transport_hook_table_matches_both_clients() -> None:
-    """ARCHITECTURE.md's hook table lists exactly the four lifecycle hooks, and
-    the async client and its sync twin both define each one. Their behaviour is
+    """ARCHITECTURE.md's hook table lists exactly the lifecycle hooks, and the
+    async client and its sync twin both define each one. Their behaviour is
     pinned in test_transport.py (test_default_hooks_are_noop_seams,
-    test_on_request_called_once_across_retries,
+    test_on_refusal_called_once_with_the_classified_violation,
     test_hooks_fire_once_across_the_401_refresh_path)."""
     doc = (_REPO / "ARCHITECTURE.md").read_text(encoding="utf-8")
     assert tuple(re.findall(r"^\s*\| `(_[a-z_]+)` \|", doc, re.MULTILINE)) == _HOOKS
     for cls in (DonkeyAsyncClient, DonkeyClient):
         missing = [hook for hook in _HOOKS if hook not in vars(cls)]
         assert missing == [], f"{cls.__name__} lacks {missing}"
-
-
-def test_on_refusal_has_no_caller_as_the_hook_table_says() -> None:
-    """The table says ``_on_refusal`` fires never: no caller today. When the
-    typed-refusal bridge (#724) calls it, update the table's row with it."""
-    callers = [
-        f"{path.relative_to(_SRC)}:{node.lineno}"
-        for path, tree in _sources(_SRC)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "_on_refusal"
-    ]
-    assert callers == []

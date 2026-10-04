@@ -91,7 +91,7 @@ llm = OpenAIModel(
         "base_url": ...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
-        "http_client": ...,       # a non-owning view of the SDK's shared client
+        "http_client": ...,       # sends through the SDK's shared client; closing it is a no-op
         "max_retries": 0,         # the SDK retries in its own transport layer
     },
     stream=False,                 # see Notes
@@ -120,9 +120,10 @@ Strands forwards to its internal OpenAI client.
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
 - **The client stays open.** Strands opens and closes an OpenAI client for
-  every request (`async with AsyncOpenAI(**client_args)`). The `http_client` it
-  gets is a view whose close is a no-op, so the SDK's shared client survives
-  every call. Only `donkey.aclose()` ends the connection pool.
+  every request (`async with AsyncOpenAI(**client_args)`). Closing the
+  `http_client` it gets is a no-op, so the SDK's shared client survives every
+  call. On `openai` 3.x that client is an `httpx2` bridge onto the shared
+  client, and on earlier releases a view of it. Only `donkey.aclose()` ends the connection pool.
 - **Streaming is off by default.** The governed model sets `stream=False`. A
   proxy routing to a Gemini upstream answers a streamed request with one whole
   `chat.completion` and no chunk deltas, and Strands fails on it. Pass

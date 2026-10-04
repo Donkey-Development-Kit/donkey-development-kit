@@ -84,9 +84,9 @@ async def _send_all() -> tuple[httpx.Request, httpx.Request, httpx.Request]:
     token_endpoint, platform, proxy = _Recorder(), _Recorder(), _Recorder()
     async with Donkey(_cfg()) as donkey:
         assert donkey._owned_auth_http is not None
-        donkey._owned_auth_http._swap_transport(httpx.MockTransport(token_endpoint))
-        donkey.registry._http._swap_transport(httpx.MockTransport(platform))
-        donkey._http._swap_transport(httpx.MockTransport(proxy))
+        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
+        donkey._http.governed_transport.replace_inner(httpx.MockTransport(proxy))
         async with donkey.run(team=_RUN_TEAM, enduser_id=_ENDUSER):
             with donkey.cache(skip=True, principal_id=_PRINCIPAL):
                 await donkey._http.post(f"{_PROXY}chat/completions", json={"model": "gpt-4o"})
@@ -127,7 +127,7 @@ async def test_sync_data_plane_client_carries_every_proxy_only_header() -> None:
     proxy = _Recorder()
     async with Donkey(_cfg()) as donkey:
         client = donkey._sync_http_client()
-        client._swap_transport(httpx.MockTransport(proxy))
+        client.governed_transport.replace_inner(httpx.MockTransport(proxy))
         async with donkey.run(team=_RUN_TEAM, enduser_id=_ENDUSER):
             with donkey.cache(principal_id=_PRINCIPAL):
                 client.post(f"{_PROXY}chat/completions", json={"model": "gpt-4o"})

@@ -122,7 +122,9 @@ Run context
 
   PASS  A 403 that is a policy refusal, not an auth failure — and it says so.
   classify() is the bridge, because the raw client raises openai.* errors and the SDK
-  does not silently re-map them. Demo 02 walks the full taxonomy.
+  does not silently re-map them. Inside donkey.run() or @donkey.governed, newer SDKs do
+  the bridging for you and the typed class reaches your except branch directly. Demo 02
+  walks the full taxonomy.
 
 [4] @donkey.governed and @donkey.tool — the one-line on-ramps
 

@@ -17,6 +17,8 @@ import functools
 import importlib
 import importlib.util
 import inspect
+import os
+import sys
 import warnings
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
@@ -26,7 +28,7 @@ from .core import _verify
 from .core.auth import AuthProvider
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope, cache_scope
-from .core.config import DonkeyConfig, OnModelSubstitution
+from .core.config import ConfigOverrides, DonkeyConfig
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.runtime import Runtime
@@ -39,10 +41,18 @@ from .core.transport import (
     DonkeyClientView,
 )
 from .integrations import ADAPTERS, missing_framework_error
+from .integrations import typed_refusals as _typed_refusals
 from .llm.client import LLMClient
 from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
 from .tools.session import ToolSet
+
+# Imported at runtime: the public API surface check resolves ``Donkey.from_env``'s
+# ``**overrides`` annotation (#719, #727).
+if sys.version_info >= (3, 11):
+    from typing import Unpack
+else:
+    from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
@@ -192,35 +202,54 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
-        on_model_substitution: OnModelSubstitution | None = None,
+        path: str | os.PathLike[str] | None = None,
+        **overrides: Unpack[ConfigOverrides],
     ) -> Donkey:
-        """Build from the environment (`BG §1.1`), optionally setting the fixed
-        cost-attribution tags once for every call (BG §1.7, #196)::
+        """Build from the environment and the config files (`BG §1.1`), with
+        any :class:`~donkey_kit.core.config.DonkeyConfig` field set in code on
+        top (§2.1, #727)::
 
             donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
+            donkey = Donkey.from_env(timeout_s=10, telemetry_capture_content=True)
 
-        The four dimensions — ``team`` / ``project`` / ``env`` / ``enduser_id``
-        (the ``enduser.id`` tag) — are the fixed set; each override merges over
-        anything already resolved from ``DONKEY_COST_*`` env vars or the
-        ``[donkey.cost]`` toml table. Values are validated by
-        :class:`~donkey_kit.core.cost.CostTags`. Per-call overrides layer on via
-        ``donkey.run(...)``.
+        Forwards to :meth:`DonkeyConfig.resolve
+        <donkey_kit.core.config.DonkeyConfig.resolve>`: each keyword argument
+        beats the environment, which beats ``.donkey-kit.local.toml``,
+        ``.donkey-kit.toml`` and the user file, which beat the default.
 
-        ``on_model_substitution`` opts into model determinism (BG §1.7, #309): pass
-        ``"raise"`` to have a call raise
-        :class:`~donkey_kit.core.errors.ModelSubstituted` when the gateway serves
-        a different model than requested (a routing fallback). Defaults to the
-        resolved config value (``DONKEY_ON_MODEL_SUBSTITUTION`` / toml / ``"off"``)
-        when left ``None``; the substitution is always visible passively on
-        ``donkey.last_call`` regardless.
+        ``team`` / ``project`` / ``env`` / ``enduser_id`` (the ``enduser.id``
+        tag) are shorthands for the fixed cost-attribution dimensions (BG §1.7,
+        #196): each merges over a ``cost=CostTags(...)`` argument and over
+        anything resolved from ``DONKEY_COST_*`` env vars or the
+        ``[donkey.cost]`` table. Per-call overrides layer on via
+        ``donkey.run(...)``. ``on_model_substitution="raise"`` opts into model
+        determinism (BG §1.7, #309): a call raises
+        :class:`~donkey_kit.core.errors.ModelSubstituted` when the gateway
+        serves a different model than requested.
+
+        Args:
+            team: The cost-attribution team.
+            project: The cost-attribution project.
+            env: The cost-attribution environment (not the Anypoint
+                ``environment`` field).
+            enduser_id: The cost-attribution ``enduser.id``.
+            path: A config file to read in place of the working directory's
+                ``.donkey-kit.toml``.
+            **overrides: Any ``DonkeyConfig`` field, by name.
+
+        Raises:
+            ConfigError: A value is invalid (all of them are listed in one
+                error) or ``path`` names no file.
+            TypeError: An override names no ``DonkeyConfig`` field.
+
+        Docs: https://docs.donkey-kit.dev/reference/configuration#precedence
         """
-        cfg = DonkeyConfig.from_env()
-        override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
-        if not override.is_empty:
-            cfg = cfg.with_overrides(cost=cfg.cost.merge(override))
-        if on_model_substitution is not None:
-            cfg = cfg.with_overrides(on_model_substitution=on_model_substitution)
-        return cls(cfg)
+        shorthand = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
+        base = overrides.get("cost", CostTags())
+        # A cost that isn't a CostTags is left for resolve() to report.
+        if not shorthand.is_empty and isinstance(base, CostTags):
+            overrides["cost"] = base.merge(shorthand)
+        return cls(DonkeyConfig.resolve(path=path, **overrides))
 
     # --- framework-free surfaces -------------------------------------------
     @property
@@ -365,6 +394,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        typed_refusals: bool = True,
     ) -> RunScope:
         """Group one logical agent run under a shared correlation id (BG §1.7, #195).
 
@@ -397,9 +427,22 @@ class Donkey:
         env=..., enduser_id=...)`` wins per field for every call inside, and the
         rest fall back to the configured tags. Like the run id, the binding rides
         the contextvar, so it reaches framework-spawned tasks and restores on exit.
+
+        **Typed refusals** (BG §1.2, #724): a governance refusal or a transport
+        failure leaving the block is re-raised as its typed
+        :class:`~donkey_kit.core.errors.DonkeyError` (``PIIDetected``,
+        ``GatewayUnavailable``, ``ModelSubstituted``, ...), whichever framework or
+        HTTP SDK wrapped it on the way out, so the caller writes one ``except``
+        for every framework. Anything that is not a refusal propagates unchanged.
+        It is the bridge :func:`donkey_kit.typed_refusals` applies on its own;
+        pass ``typed_refusals=False`` to get the framework's own errors instead.
         """
         override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
-        return run_scope(id, override if not override.is_empty else None)
+        return run_scope(
+            id,
+            override if not override.is_empty else None,
+            _typed_refusals() if typed_refusals else None,
+        )
 
     def run_context(self, run_id: str | None = None) -> RunScope:
         """Deprecated alias for :meth:`run` (BG §1.7): use ``donkey.run(id=…)``.
@@ -478,6 +521,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        typed_refusals: bool = True,
     ) -> Callable[_P, _R]: ...
 
     @overload
@@ -489,6 +533,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        typed_refusals: bool = True,
     ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
 
     def governed(
@@ -499,14 +544,17 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        typed_refusals: bool = True,
     ) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]:
         """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
 
         The one-line on-ramp to governed execution: every governed model call
         made inside the decorated function carries a fresh run/correlation id (a
-        "run of one"), the optional per-run cost tags, the OTel span and typed
-        refusals — exactly the scope :meth:`run` establishes (BG §1.7, #195), with
-        nothing to thread through framework state::
+        "run of one"), the optional per-run cost tags and the OTel span, and a
+        refusal leaves it as its typed :class:`~donkey_kit.core.errors.DonkeyError`
+        (#724) — exactly the scope :meth:`run` establishes (BG §1.7, #195), with
+        nothing to thread through framework state. ``typed_refusals=False`` opts
+        out of the typed re-raise, as it does on :meth:`run`::
 
             @donkey.governed(team="support")
             async def handle_ticket(ticket): ...
@@ -533,7 +581,11 @@ class Donkey:
                 @functools.wraps(fn)
                 async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> object:
                     async with self.run(
-                        team=team, project=project, env=env, enduser_id=enduser_id
+                        team=team,
+                        project=project,
+                        env=env,
+                        enduser_id=enduser_id,
+                        typed_refusals=typed_refusals,
                     ):
                         return await coro_fn(*args, **kwargs)
 
@@ -542,7 +594,11 @@ class Donkey:
             @functools.wraps(fn)
             def sync_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
                 with self.run(
-                    team=team, project=project, env=env, enduser_id=enduser_id
+                    team=team,
+                    project=project,
+                    env=env,
+                    enduser_id=enduser_id,
+                    typed_refusals=typed_refusals,
                 ):
                     return fn(*args, **kwargs)
 

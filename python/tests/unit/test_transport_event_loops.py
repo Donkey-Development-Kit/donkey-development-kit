@@ -17,6 +17,7 @@ import json
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import MappingProxyType
 from typing import Any
 
 import httpx
@@ -25,11 +26,9 @@ import pytest
 from donkey_kit import Donkey
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import PIIDetected
-from donkey_kit.core.transport import (
-    DonkeyAsyncClient,
-    _AsyncMountRouter,
-    _LoopLocalTransport,
-)
+from donkey_kit.core.transport import DonkeyAsyncClient
+from donkey_kit.core.transport.governed import _AsyncMountRouter, _LoopLocalTransport
+from donkey_kit.integrations import AdapterCapabilities
 from donkey_kit.integrations._base import Adapter, default_adapter
 
 pytestmark = pytest.mark.filterwarnings("ignore::donkey_kit.core._verify.UnverifiedValueWarning")
@@ -87,11 +86,23 @@ def test_one_asyncio_run_per_request_does_not_pile_up_pools(url: str) -> None:
     client = DonkeyAsyncClient(_cfg(url), None)
     for _ in range(5):
         assert asyncio.run(_post(client, url)) == 200
-    assert isinstance(client._transport, _LoopLocalTransport)
-    assert len(client._transport._pools) == 1
+    assert isinstance(client.governed_transport.inner, _LoopLocalTransport)
+    assert len(client.governed_transport.inner._pools) == 1
 
 
 class _Plain(Adapter):
+    factories = MappingProxyType(
+        {
+            "plain": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            )
+        }
+    )
+
     def connection_kwargs(self) -> dict[str, Any]:
         return {}
 
@@ -166,7 +177,7 @@ def test_env_proxy_mounts_also_get_a_pool_per_loop(monkeypatch: pytest.MonkeyPat
     client = DonkeyAsyncClient(DonkeyConfig(), None)
     # The proxy mounts are folded into one router (#801); each route it
     # dispatches to is a per-loop pool.
-    router = client._transport
+    router = client.governed_transport.inner
     assert isinstance(router, _AsyncMountRouter)
     assert router._routes
     assert all(isinstance(t, _LoopLocalTransport) for t in router._children())
@@ -175,4 +186,4 @@ def test_env_proxy_mounts_also_get_a_pool_per_loop(monkeypatch: pytest.MonkeyPat
 def test_a_caller_supplied_transport_is_left_as_given() -> None:
     mock = httpx.MockTransport(lambda request: httpx.Response(200))
     client = DonkeyAsyncClient(DonkeyConfig(), None, transport=mock)
-    assert client._transport is mock
+    assert client.governed_transport.inner is mock

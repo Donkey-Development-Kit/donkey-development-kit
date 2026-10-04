@@ -1,6 +1,6 @@
 # ADR 0001: Value objects are frozen dataclasses; pydantic only at external-schema boundaries
 
-- **Status:** Accepted
+- **Status:** Accepted (consequences amended by ADR 0008 / #730; see Amendment)
 - **Date:** 2026-10-02
 - **Issue:** #723 (part of #706). The ADR process itself (template, index,
   numbering) is #731; this record follows the shape #731 proposes (context,
@@ -81,3 +81,20 @@ them, and that is not a use of pydantic by the SDK under this decision.
   an upper bound, and the decision here sits inside it.
 - Reviewers can reject a new pydantic model outside an external-schema boundary,
   and a mutable dataclass used as a value object, by citing this ADR.
+
+## Amendment (ADR 0008, #730)
+
+The decision above stands. Three of the consequences were written for the
+tree as it was before #730 and stop being true when #730 lands, because #730
+deletes `provisioning/spec.py`, the only pydantic importer (ADR 0008):
+
+- `pydantic` is no longer a base dependency. `[project] dependencies` is
+  `httpx` plus the `typing-extensions` and `tomli` backfills
+  (`python/pyproject.toml`), and `tests/unit/test_base_install_deps.py` holds
+  that. The "stays a base dependency for now" bullet is superseded in part.
+- The `pydantic.mypy` plugin is off: `[tool.mypy]` no longer lists it. The
+  "stays on while `provisioning/spec.py` exists" bullet is superseded in part.
+- Decision point 4 ("today the only such boundary is `provisioning/spec.py`")
+  now describes no boundary at all: the SDK has no pydantic model. The rule
+  stays for the next one, which imports pydantic lazily and declares it in an
+  extra (ADR 0008, decision 4).

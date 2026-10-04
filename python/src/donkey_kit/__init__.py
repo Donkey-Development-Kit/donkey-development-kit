@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .core.budget import Budget
     from .core.cachecontrol import CacheControls, CacheScope
-    from .core.config import DonkeyConfig, Region
+    from .core.config import ConfigOverrides, DonkeyConfig, Region
     from .core.cost import CostTags
     from .core.errors import (
         AgentKilled,
@@ -53,10 +53,12 @@ if TYPE_CHECKING:
         classify,
     )
     from .core.lastcall import LastCall, LastCallStatus
+    from .core.refusals import TypedRefusals
     from .core.telemetry import RunScope
     from .core.toolspec import ToolSpec, registered_tools
     from .core.transport import DonkeyAsyncClientView, DonkeyClientView
     from .donkey import Donkey, ToolsFacade
+    from .integrations import typed_refusals
     from .llm.client import LLMClient
     from .registry import ExchangeRegistry
 
@@ -72,6 +74,7 @@ _LAZY = {
     "CacheControls": ".core.cachecontrol",
     "CacheScope": ".core.cachecontrol",
     "ConfigError": ".core.errors",
+    "ConfigOverrides": ".core.config",
     "ContentSafetyBlocked": ".core.errors",
     "CostTags": ".core.cost",
     "Donkey": ".donkey",
@@ -94,10 +97,12 @@ _LAZY = {
     "TokenBudgetExceeded": ".core.errors",
     "ToolSpec": ".core.toolspec",
     "ToolsFacade": ".donkey",
+    "TypedRefusals": ".core.refusals",
     "UpstreamModelError": ".core.errors",
     "UpstreamRequestError": ".core.errors",
     "classify": ".core.errors",
     "registered_tools": ".core.toolspec",
+    "typed_refusals": ".integrations",
 }
 
 
@@ -162,6 +167,7 @@ __all__ = [
     "CacheControls",
     "CacheScope",
     "ConfigError",
+    "ConfigOverrides",
     "ContentSafetyBlocked",
     "CostTags",
     "Donkey",
@@ -184,9 +190,11 @@ __all__ = [
     "TokenBudgetExceeded",
     "ToolSpec",
     "ToolsFacade",
+    "TypedRefusals",
     "UpstreamModelError",
     "UpstreamRequestError",
     "__version__",
     "classify",
     "registered_tools",
+    "typed_refusals",
 ]

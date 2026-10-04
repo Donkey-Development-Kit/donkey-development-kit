@@ -29,18 +29,23 @@ refusal instead of a generic ``ChatClientException`` (BG §1.2).
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from ..core import _verify
 from ..core.masking import masked
-from ._base import Adapter, _TypedRefusals, default_adapter
+from ..core.refusals import translate
+from . import AdapterCapabilities, typed_refusals
+from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
-__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client"]
+    from ..core.errors import DonkeyError
+
+__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client", "refusal_translator"]
 
 ChatAPI = Literal["responses", "chat_completions"]
 # The agent-framework.openai class each ``api=`` value builds (docs/verified-apis.md §8).
@@ -73,6 +78,19 @@ class AgentFrameworkAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/agent-framework
     """
 
+    # The shared client, as async_client (#740, #946).
+    factories = MappingProxyType(
+        {
+            "chat_client": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
+
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` (or
         ``OpenAIChatCompletionClient``) you build yourself. Confirmed offline against
@@ -83,7 +101,7 @@ class AgentFrameworkAdapter(Adapter):
         the constructor uses it as given."""
         return masked(
             {
-                **self._openai_connection(),  # base_url, api_key, default_headers
+                **self._connection(),  # base_url, api_key, default_headers
                 **self._proxy_openai_client_kwarg("async_client"),
             }
         )
@@ -113,7 +131,7 @@ class AgentFrameworkAdapter(Adapter):
             raise ValueError(f"api must be 'responses' or 'chat_completions', not {api!r}")
         cls_name = _CHAT_CLIENT_CLASSES[api]
         self._allow_endpoints(kw, "base_url")
-        self._require_proxy()
+        self._connection()
         # A missing module (the package or a dependency of it) is the curated
         # install hint; a missing name in a module that imports is a rename.
         with self._native_import():
@@ -168,8 +186,9 @@ class AgentFrameworkAdapter(Adapter):
 
         Both chat clients wrap every openai error in a ``ChatClientException``
         (``OpenAIContentFilterException`` for a content-filter 400).
-        This middleware finds the ``openai.APIStatusError`` behind it and raises
-        :func:`~donkey_kit.core.errors.classify` of its response instead, so a
+        This middleware applies the SDK's typed-refusal bridge
+        (:func:`donkey_kit.typed_refusals`, #724), which sees through the wrapper
+        to the openai error and raises the typed refusal instead, so a
         PII block ends ``agent.run()`` as
         :class:`~donkey_kit.core.errors.PIIDetected` with the correlation and
         call ids that were sent. The original is kept on ``.framework_error``.
@@ -195,15 +214,34 @@ class AgentFrameworkAdapter(Adapter):
         async def donkey_policy_middleware(
             context: Any, call_next: Callable[[], Awaitable[None]]
         ) -> None:
-            with _TypedRefusals():
+            with typed_refusals():
                 await call_next()
             if context.stream and context.result is not None:
                 # A streamed refusal surfaces when the caller pulls the stream,
                 # after this middleware has returned.
-                context.result.with_pull_context_manager(_TypedRefusals)
+                context.result.with_pull_context_manager(typed_refusals)
 
         # Called, not applied with @: the decorator is untyped without the package.
         return cast("Callable[..., Any]", chat_middleware(donkey_policy_middleware))
+
+
+def refusal_translator(exc: BaseException) -> DonkeyError | None:
+    """See through Agent Framework's exception wrappers for the typed-refusal
+    bridge (#724).
+
+    Both chat clients raise the openai error ``from`` inside an
+    ``AgentFrameworkException`` subclass (``ChatClientException``, or
+    ``ChatClientContentFilterException`` for a content-filter 400), which carries
+    no ``request`` or ``response``. This hands the wrapped error back to
+    :func:`~donkey_kit.core.refusals.translate`; the classification itself stays
+    in core. Registered as the adapter's ``AdapterSpec.refusal_translator`` and
+    only consulted once ``agent_framework`` is imported.
+    """
+    from agent_framework.exceptions import AgentFrameworkException
+
+    if isinstance(exc, AgentFrameworkException) and exc.__cause__ is not None:
+        return translate(exc.__cause__, (refusal_translator,))
+    return None
 
 
 @overload
