@@ -55,7 +55,7 @@ here. Every name below keeps its ``donkey_kit.core.transport`` import path.
 from __future__ import annotations
 
 from .async_client import DonkeyAsyncClient, build_http_client
-from .failures import sync_token_auth_error
+from .failures import checked_llm_config, sync_token_auth_error
 from .governed import GovernedSyncTransport, GovernedTransport
 from .headers import (
     CALL_ID_HEADER,
@@ -89,6 +89,7 @@ __all__ = [
     "attribution_headers",
     "build_http_client",
     "build_sync_http_client",
+    "checked_llm_config",
     "cost_headers",
     "effective_cost_tags",
     "origin_of",

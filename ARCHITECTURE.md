@@ -184,6 +184,23 @@ boundary, and no module has one today: its only user was the deleted
   module-level factory raise the same error. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
+- **One adapter contract, one roster (#726, ADR 0004).** Every adapter meets
+  `AdapterProtocol` (`integrations/__init__.py`): `connection_kwargs()` plus
+  `capabilities(factory)`, which returns a frozen `AdapterCapabilities`
+  (`transport`, `sync`, `streaming`, `typed_refusals`, `observes_last_call`).
+  Capabilities are declared per factory in the adapter's `factories` mapping
+  and never change at runtime, so ADK's `model()` and `gemini()` report
+  separately. Every `connection_kwargs()` builds on `Adapter._connection()`,
+  which runs the guards once: a `transport="framework"` factory (CrewAI) is
+  refused in a token auth mode, and core's `checked_llm_config()` validates the
+  proxy config and refuses a token mode with no `AuthProvider`.
+  `donkey.llm.client()` uses the same core guard. `ADAPTERS` is the only
+  roster. The pip extra and the curated ImportError are derived from it, and
+  `tests/unit/test_adapter_roster.py` checks every list that cannot be
+  generated from it: the pyproject extras, the import-linter independence
+  contract, the mypy overrides, the static `Donkey` annotations, the
+  `KNOWN_LIMITATIONS` exemptions, the nightly matrix, `examples/` and
+  `scripts/verify_frameworks.py`.
 - **Configuration** resolves per key (§2.1, `DonkeyConfig.resolve`): values
   set in code (`resolve()` / `Donkey.from_env()` keyword arguments,
   `with_overrides`) → env vars → `./.donkey-kit.local.toml` →
@@ -449,7 +466,12 @@ through the shared client (`http_client` / `async_http_client`, an
 exemptions are gone (#740). Only CrewAI remains: its native OpenAI provider
 builds the sync `OpenAI` and the `AsyncOpenAI` from one `client_params` dict,
 and with an interceptor set it replaces `http_client` with its own `httpx`
-client, so the SDK's async client cannot be injected.
+client, so the SDK's async client cannot be injected. ADK's `model()` keeps one
+exemption, `typed_refusal_bridged` (#724). `tests/unit/test_adapter_roster.py`
+keeps the table and each adapter's `AdapterCapabilities` equal:
+`gateway_identity_observed` is exempt exactly when `observes_last_call` is false,
+`typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
+when `transport` is `"framework"`.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing

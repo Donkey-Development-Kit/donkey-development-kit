@@ -117,6 +117,35 @@ print(kwargs["default_headers"])      # {'client_id': 'my-client-id', 'client_se
 OpenAILike(model="gpt-4o", **kwargs)  # receives the real secret
 ```
 
+### What each factory gets: `capabilities()`
+
+Every adapter reports what its factories get from the SDK.
+`donkey.<framework>.capabilities("<factory>")` returns a frozen
+`AdapterCapabilities`. With no argument, it returns the default factory's, the
+one `connection_kwargs()` configures. Each factory reports its own, so ADK's
+`model()` and `gemini()` answer separately.
+
+| Field | Means |
+|---|---|
+| `transport` | `"shared"`: requests go through the SDK's shared client. `"framework"`: the framework builds its own clients (CrewAI), so `jwt` and `bearer` auth are refused with `ConfigError`. |
+| `sync` | The native object's blocking calls (`invoke()`, `complete()`) also go through the SDK. In `jwt` and `bearer` mode, each blocking call raises `ConfigError`, because the token is async-only. |
+| `streaming` | `False` where the governed connection turns streaming off (Strands, `stream=False`). |
+| `typed_refusals` | A gateway refusal reaches you as a typed exception through `donkey.run()` or `typed_refusals()`. |
+| `observes_last_call` | A call through this object populates `donkey.last_call`. |
+
+```python
+caps = donkey.adk.capabilities("gemini")
+print(caps.transport, caps.observes_last_call)   # shared True
+```
+
+The conformance exemptions are checked against these values, so the
+`capabilities()` an adapter reports and the exemptions it records always
+agree.
+
+In `jwt` or `bearer` mode, every adapter's `connection_kwargs()` raises
+`ConfigError` when the `Donkey` has no `llm_auth` provider. The token is added
+only through that provider, so without one every call would fail with a 401.
+
 ## Match the adapter to your proxy's wire format
 
 Every adapter on this page except Anthropic and ADK's `gemini()` — and the raw

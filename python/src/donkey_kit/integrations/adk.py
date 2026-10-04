@@ -29,10 +29,12 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
 from ..core.masking import masked
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -61,6 +63,29 @@ class ADKAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/adk
     """
 
+    # Both send through the shared client and observe donkey.last_call (#691,
+    # #946). model() has no typed refusals: LiteLLM re-raises a refusal around a
+    # response it rebuilt, which the bridge leaves alone (#724). Each factory has
+    # its own capabilities (#741, #726).
+    factories = MappingProxyType(
+        {
+            "model": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=False,
+                observes_last_call=True,
+            ),
+            "gemini": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
+
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``LiteLlm(model="openai/<id>", **kwargs)`` you
         build yourself. LiteLLM uses ``api_base``/``extra_headers`` (not
@@ -68,7 +93,7 @@ class ADKAdapter(Adapter):
         sends through the SDK's shared client, which does not follow redirects
         and sends credentials only to checked endpoints; LiteLLM's OpenAI route
         uses it in place of the client it would build."""
-        conn = self._openai_connection()
+        conn = self._connection()
         return masked(
             {
                 "api_base": conn["base_url"],
@@ -93,7 +118,7 @@ class ADKAdapter(Adapter):
         client's. ``api_version=""`` because the proxy route has no
         ``/v1beta`` segment. A ``base_url`` passed here must pass the https check."""
         self._allow_endpoints({"base_url": base_url}, "base_url")
-        conn = self._openai_connection()
+        conn = self._connection("gemini")
         url = base_url or conn["base_url"]
         return masked(
             {

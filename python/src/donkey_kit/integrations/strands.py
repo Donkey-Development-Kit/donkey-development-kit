@@ -27,10 +27,12 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core.masking import masked
 from ..core.refusals import translate
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -60,12 +62,25 @@ class StrandsAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/strands
     """
 
+    # Async-only; the governed connection sets stream=False (#830, #726).
+    factories = MappingProxyType(
+        {
+            "model": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=False,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
+
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIModel(model_id=…, **kwargs)`` you build
         yourself. Strands forwards ``client_args`` to the underlying OpenAI
         client, so header AND transport injection are both available. ``stream``
         is ``False`` (see the module docstring, #830)."""
-        conn = self._openai_connection()
+        conn = self._connection()
         return masked(
             {
                 "client_args": {

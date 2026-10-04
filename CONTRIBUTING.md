@@ -583,6 +583,18 @@ build plan has the rationale behind each rule:
   the SDK's shared client wherever its constructor takes one, and pass every
   URL override the factory accepts through `_allow_endpoints(...)` before the
   framework import, so it gets the https check and joins the checked endpoints.
+- **One adapter contract, one roster** (#726, ADR 0004). An adapter declares
+  `factories`, a read-only mapping from each factory method's name to its
+  frozen `AdapterCapabilities`, with the default factory first. Every
+  `connection_kwargs()` builds on `self._connection()` (pass the factory name
+  for a non-default factory), never on `cfg.validated(...)` directly, so the
+  token-mode guards run for it. The adapter set is declared once, in
+  `ADAPTERS`. Adding an adapter means a roster entry plus the places
+  `tests/unit/test_adapter_roster.py` checks against it: a pyproject extra, the
+  import-linter independence contract, a mypy override for the framework, a
+  `Donkey` annotation, a `scripts/verify_frameworks.py` row per factory, an
+  `examples/<name>/main.py`, and `KNOWN_LIMITATIONS` rows that match its
+  capabilities.
 - **No classification in an adapter** (#724, ADR 0002). Typed refusals reach
   the caller through the one bridge in `core/refusals.py`
   (`donkey_kit.typed_refusals()`, applied by `donkey.run()` and
@@ -668,7 +680,8 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
 | Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it. That no base module imports pydantic is checked by `tests/unit/test_base_install_deps.py` and the `base-only` job | review, `pytest`, `base-only` job |
 | An ADR for any change to an `ARCHITECTURE.md` invariant, an import-linter contract, the API stability tiers or the dependency policy (#731) | Review-only: the **ADR needed?** checkbox in `.github/pull_request_template.md`; process in `docs/adr/README.md` | review |
-| Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
+| Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py`, `tests/unit/test_adapter_capabilities.py` (every declared factory over the whole roster) | `pytest` |
+| One adapter contract, one roster (#726) | `tests/unit/test_adapter_capabilities.py` (`AdapterProtocol`, frozen per-factory capabilities that match the governed kwargs, every `connection_kwargs()` through `_connection()`, token-mode refusals); `tests/unit/test_adapter_roster.py` (`ADAPTERS` against the extras, import-linter, mypy overrides, `Donkey` annotations, exemptions, nightly matrix, examples, `verify_frameworks.py`) | `pytest` |
 | No classification in an adapter (#724) | `tests/unit/test_refusal_bridge.py` (no adapter module calls `classify(`; every adapter exposes the shared bridge) | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
