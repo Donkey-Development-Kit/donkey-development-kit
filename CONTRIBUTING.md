@@ -329,8 +329,11 @@ item per registry entry, so a new entry that skips one fails CI.
    and the module-level `donkey_kit.integrations.<fw>.<factory>()`.
 5. **The surrounding artifacts.** A `scripts/verify_frameworks.py` row per
    factory, a `website/content/frameworks/` page (the adapter docstring's
-   `Docs:` link), an `examples/<fw>/main.py` that makes one call against the
-   simulator, and an entry in the import-linter independence contract in
+   `Docs:` link), an `examples/<fw>/main.py` that exposes `build(donkey)` (one
+   governed call through the framework's own entry point, modelled on
+   `examples/langgraph/main.py`; `test_example_build_passes_the_conformance_kit`
+   runs it through `run_conformance`, with a module-level `KNOWN_LIMITATIONS`
+   only where `suite.py` records a structural limit), and an entry in the import-linter independence contract in
    `pyproject.toml`.
 6. **The adapter contract suite, run with the real framework in CI.** That
    means a driver per factory in `tests/conformance/contract_drivers.py`, a

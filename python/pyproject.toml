@@ -210,6 +210,7 @@ module = [
     "langchain_core.*",
     "opentelemetry.*",
     "google.adk.*",
+    "google.genai.*",
     "agent_framework.*",
     "agents.*",
     "anthropic.*",
