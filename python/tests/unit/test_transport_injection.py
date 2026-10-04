@@ -248,6 +248,7 @@ async def test_llamaindex_typed_refusals_raises_the_typed_error(sync: bool) -> N
 
 
 def test_llamaindex_module_typed_refusals_passes_other_errors_through() -> None:
+    pytest.importorskip("llama_index.llms.openai_like")  # the helper imports openai
     from donkey_kit.integrations.llamaindex import typed_refusals
 
     with pytest.raises(ValueError, match="not a refusal"), typed_refusals():
