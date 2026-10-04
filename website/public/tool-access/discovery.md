@@ -67,10 +67,11 @@ Publication to Exchange says nothing about whether an asset is fronted by a
 gateway, has policies applied, or passes the org's rulesets — there is no single
 boolean to query. "Governed" is **computed** by joining state across systems,
 and it is **environment-scoped**: an asset governed in Production may be
-ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit:
+ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit. It
+and `STRICT` are in `donkey_kit.experimental` until discovery is verified:
 
 ```python
-from donkey_kit import STRICT, GovernanceCriteria
+from donkey_kit.experimental import STRICT, GovernanceCriteria
 
 @dataclass(frozen=True)
 class GovernanceCriteria:

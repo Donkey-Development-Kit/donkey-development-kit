@@ -2,7 +2,8 @@
 
 Every subclass — walked recursively, so a new class cannot opt out by being
 added somewhere this file forgot to list — carries a non-empty
-``remediation`` and is importable from ``donkey_kit``. A handler written from
+``remediation`` and is importable from ``donkey_kit``, or from
+``donkey_kit.experimental`` when only a blocked surface raises it (#730). A handler written from
 the docs, ``except DonkeyError as e: log(e.remediation)``, must never fail
 inside its own ``except``.
 """
@@ -14,8 +15,8 @@ from typing import Any
 import pytest
 
 import donkey_kit
-from donkey_kit import DonkeyError, PlatformTeamOnly
-from donkey_kit.governance import GatewayTarget, Governance
+import donkey_kit.experimental
+from donkey_kit import DonkeyError
 
 # Keyword arguments a subclass cannot be built without. Every other subclass
 # takes only the message.
@@ -45,13 +46,34 @@ def test_the_walk_finds_the_documented_tree() -> None:
     # Guards the walk itself: if it silently returned nothing, every test below
     # would pass vacuously.
     names = {cls.__name__ for cls in _TREE}
-    assert {"PolicyViolation", "PIIDetected", "UpstreamRequestError", "PlatformTeamOnly"} <= names
+    assert {"PolicyViolation", "PIIDetected", "UpstreamRequestError", "RegistryError"} <= names
 
 
 @pytest.mark.parametrize("cls", _TREE, ids=lambda c: c.__name__)
 def test_every_error_is_exported_from_donkey_kit(cls: type[DonkeyError]) -> None:
-    assert cls.__name__ in donkey_kit.__all__
-    assert getattr(donkey_kit, cls.__name__) is cls
+    # Exactly one home: the stable namespace, or experimental for errors only a
+    # verification-blocked surface raises (#730).
+    homes = [
+        mod for mod in (donkey_kit, donkey_kit.experimental) if cls.__name__ in mod.__all__
+    ]
+    assert len(homes) == 1, f"{cls.__name__} exported from {homes}"
+    assert getattr(homes[0], cls.__name__) is cls
+
+
+_EXPERIMENTAL_ERRORS = {"PublicationDrift", "RegistryError", "ToolInvocationError"}
+
+
+def test_only_blocked_surface_errors_are_experimental() -> None:
+    names = {cls.__name__ for cls in _TREE}
+    assert names & set(donkey_kit.experimental.__all__) == _EXPERIMENTAL_ERRORS
+
+
+def test_refused_control_plane_errors_are_gone() -> None:
+    from donkey_kit.core import errors
+
+    for name in ("GovernanceDrift", "PlatformTeamOnly", "ProvisioningError"):
+        assert not hasattr(errors, name)
+        assert not hasattr(donkey_kit, name)
 
 
 @pytest.mark.parametrize("cls", _TREE, ids=lambda c: c.__name__)
@@ -79,12 +101,3 @@ def test_classify_is_exported_from_donkey_kit() -> None:
 
     assert "classify" in donkey_kit.__all__
     assert donkey_kit.classify is classify
-
-
-async def test_governance_apply_raises_a_typed_refusal() -> None:
-    target = GatewayTarget(mode="local", base_url="http://localhost", connected=False)
-    with pytest.raises(PlatformTeamOnly) as caught:
-        await Governance(name="t", gateway=target).apply(target)
-    # Still a PermissionError, so handlers written before #715 keep working.
-    assert isinstance(caught.value, PermissionError)
-    assert "resolve()" in caught.value.remediation

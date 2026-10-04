@@ -12,9 +12,9 @@ HTTP STACK (#701, docs/verified-apis.md §8.1): ``anthropic<1`` is built on
 the ``AsyncAnthropic`` leaves the shared client open. ``anthropic>=1.0``
 is built on ``httpx2`` and rejects any ``httpx`` client, so it is handed an
 ``httpx2.AsyncClient`` whose transport forwards every request through the same
-shared client (``_httpx2_bridge``). Both stacks get the same governed headers,
-retries, span, budget and ``donkey.last_call``; the installed release decides
-which one ``connection_kwargs()`` returns.
+shared client (the core bridge, ``core/transport/httpx2``, #728). Both stacks
+get the same governed headers, retries, span, budget and ``donkey.last_call``;
+the installed release decides which one ``connection_kwargs()`` returns.
 
 ASYNC ONLY (#736): there is no governed sync ``anthropic.Anthropic``. The
 ``http_client`` in ``connection_kwargs()`` is the async client (or its async
@@ -48,11 +48,10 @@ from collections.abc import Callable
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-import httpx
-
 from ..core.config import DonkeyConfig
 from ..core.masking import masked
 from ..core.transport import DonkeyAsyncClient, DonkeyAsyncClientView, DonkeyClient
+from ..core.transport.views import built_on_httpx2
 from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
@@ -73,8 +72,7 @@ def _anthropic_uses_httpx2() -> bool:
         import anthropic
     except ImportError:
         return False
-    default = getattr(anthropic, "DefaultAsyncHttpxClient", None)
-    return isinstance(default, type) and not issubclass(default, httpx.AsyncClient)
+    return built_on_httpx2(getattr(anthropic, "DefaultAsyncHttpxClient", None))
 
 
 class AnthropicAdapter(Adapter):
@@ -128,7 +126,7 @@ class AnthropicAdapter(Adapter):
             return self.http_client()
         if self._bridged is None or self._bridged.is_closed:
             with self._native_import():  # the bridge imports httpx2
-                from ._httpx2_bridge import bridged_client
+                from ..core.transport.httpx2 import bridged_client
 
             self._bridged = bridged_client(self._http)
         return self._bridged

@@ -22,6 +22,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit._testing import http_clients, swap_transport
 from donkey_kit.core import lastcall
 from donkey_kit.core.errors import PIIDetected
 from donkey_kit.core.lastcall import LastCallStatus
@@ -130,8 +131,8 @@ def _donkey(seen: list[httpx.Request]) -> Donkey:
         return _responses() if request.url.path.endswith("/responses") else _chat(request)
 
     donkey = Donkey(_cfg())
-    donkey._http._swap_transport(httpx.MockTransport(handler))
-    donkey._sync_http_client()._swap_transport(httpx.MockTransport(handler))
+    for client in http_clients(donkey):
+        swap_transport(client, httpx.MockTransport(handler))
     return donkey
 
 

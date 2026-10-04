@@ -54,7 +54,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`, along with `classify`:
+All importable from `donkey_kit`, along with `classify`, except the three Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -72,9 +72,9 @@ DonkeyError                     # base of the whole tree
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
-├─ PlatformTeamOnly             # Governance.apply() without the platform-team opt-in; also a PermissionError
-└─ ToolInvocationError, RegistryError, PublicationDrift, ProvisioningError, GovernanceDrift
-                                # tool access, registry, publishing and provisioning (Roadmap surfaces)
+└─ ToolInvocationError, RegistryError, PublicationDrift
+                                # tool access, registry and publishing (Roadmap surfaces;
+                                # import them from donkey_kit.experimental)
 ```
 
 `GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one
@@ -102,7 +102,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
-| `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
+| `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](/cli). |
 
 Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
@@ -342,8 +342,10 @@ Drop the `await`: it is the same OpenAI SDK raising the same
 
 ## Retry behaviour
 
-Both clients retry only transient upstream/gateway failures (502/503/504) and
-treat every 4xx as terminal — **including a 429**: on this proxy a 429 is a
+Both clients retry only transient upstream/gateway failures (502/503/504).
+A 502 or 504 on a model call is not re-sent unless you set
+`retry_model_calls_on_gateway_errors`, because the provider may already have
+billed it. Every 4xx is terminal — **including a 429**: on this proxy a 429 is a
 token-budget refusal (`TokenBudgetExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
 against, but the transport never silently retries it.

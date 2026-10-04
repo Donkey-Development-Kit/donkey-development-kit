@@ -33,12 +33,51 @@ from ..core.transport import (
     proxy_api_key,
     proxy_auth_headers,
 )
+from ..core.transport.views import built_on_httpx2
 from .catalog import ModelHandle, heuristic_capabilities
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
 
 __all__ = ["LLMClient"]
+
+
+def _openai_on_httpx2() -> bool:
+    """True when the installed ``openai`` is built on ``httpx2`` (3.0 and later):
+    its ``DefaultAsyncHttpxClient`` is then an ``httpx2.AsyncClient`` (#728).
+    False without ``openai``, so an adapter's ``connection_kwargs()`` still
+    builds on an install without it (with the view, as before)."""
+    try:
+        import openai
+    except ImportError:
+        return False
+    return built_on_httpx2(getattr(openai, "DefaultAsyncHttpxClient", None))
+
+
+def _openai_http_client(http: DonkeyAsyncClient, *, reusable: bool = False) -> object:
+    """The ``http_client`` for an ``AsyncOpenAI``: the core ``httpx2`` bridge on
+    ``openai>=3``, the shared client's non-owning view before (#728, #733).
+
+    The one place that picks between them, for ``donkey.llm``, the adapters that
+    pass a pre-built ``AsyncOpenAI`` and those whose framework builds its own
+    from an ``http_client`` kwarg. ``reusable`` keeps the bridge usable after
+    the framework closes it (see :func:`~donkey_kit.core.transport.httpx2.bridged_client`);
+    a view always is."""
+    if _openai_on_httpx2():
+        from ..core.transport.httpx2 import bridged_client
+
+        return bridged_client(http, reusable=reusable)
+    return http.view()
+
+
+def _openai_sync_http_client(http: DonkeyClient, *, reusable: bool = False) -> object:
+    """Blocking twin of :func:`_openai_http_client`, for ``OpenAI``. Either
+    client refuses to send in a token auth mode, as ``http`` does."""
+    if _openai_on_httpx2():
+        from ..core.transport.httpx2 import bridged_sync_client
+
+        return bridged_sync_client(http, reusable=reusable)
+    return http.view()
 
 
 class LLMClient:
@@ -90,10 +129,8 @@ class LLMClient:
         # Validation plus the token-mode guards: a blocking client is refused,
         # and so is a shared client with no AuthProvider (#509, #836).
         checked_llm_config(self._cfg, self._http, sync=sync)
-        http = self._sync_http() if sync else self._http
-        # The client gets a non-owning view, so closing it (``async with
-        # donkey.openai()``) leaves the shared client open (#733).
-        view = http.view()
+        sync_http = self._sync_http() if sync else None
+        http = self._http if sync_http is None else sync_http
         if kw.get("base_url") is not None:
             http.allow_endpoint(str(kw["base_url"]), name="base_url")
         try:
@@ -114,19 +151,15 @@ class LLMClient:
             "max_retries": 0,  # we retry in transport (BG §1.1)
             **kw,
         }
-        # openai 3.x retyped http_client to httpx2.AsyncClient (a distinct class from
-        # a separate distribution); our DonkeyClient/DonkeyAsyncClient are httpx
-        # subclasses. Typecheck-only mismatch: when an http_client is injected,
-        # openai sends every request THROUGH it, so httpx2 never touches this path.
-        # Runtime-verified end to end (async + sync) against openai 3.x by
-        # tests/unit/test_llm_client_openai3_injection.py (#18); see
-        # docs/verified-apis.md (openai >=3.0 row). No upper pin, by design (the
-        # floors-never-ceilings rule). `cast(Any, …)` erases the argument type so
-        # this typechecks clean under BOTH majors: a bare `# type: ignore` is
-        # `unused-ignore` under openai<3 where the types already match (#597).
-        if sync:
-            return OpenAI(http_client=cast(Any, view), **shared)
-        return AsyncOpenAI(http_client=cast(Any, view), **shared)
+        # openai>=3 is built on httpx2 and types http_client as an httpx2 client, so
+        # it gets the core httpx2 bridge, which forwards every request through the
+        # shared client (#728); openai<3 gets the shared client's non-owning view.
+        # Either way closing the OpenAI client (``async with donkey.llm.client()``)
+        # leaves the shared client open (#733). ``cast(Any, …)`` because the
+        # argument type differs by installed major (#597).
+        if sync_http is not None:
+            return OpenAI(http_client=cast(Any, _openai_sync_http_client(sync_http)), **shared)
+        return AsyncOpenAI(http_client=cast(Any, _openai_http_client(self._http)), **shared)
 
     async def list_models(self, *, live: bool = False) -> list[ModelHandle]:
         """List logical models the proxy exposes.

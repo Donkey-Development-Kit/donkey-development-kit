@@ -20,6 +20,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit._testing import swap_transport
 from donkey_kit.core.errors import DonkeyError, GatewayUnavailable, PIIDetected
 
 af = pytest.importorskip("agent_framework")
@@ -129,7 +130,7 @@ def test_policy_middleware_registers_on_a_real_agent(api: str) -> None:
 async def test_pii_refusal_ends_the_run_typed_after_one_send(api: str) -> None:
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_pii_proxy(sent))
+    fab._http.governed_transport.replace_inner(_pii_proxy(sent))
     agent = _agent(fab, api)
 
     try:
@@ -155,7 +156,7 @@ async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send(api: str) 
     middleware has returned; the hook on the response stream still types it."""
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_pii_proxy(sent))
+    fab._http.governed_transport.replace_inner(_pii_proxy(sent))
     agent = _agent(fab, api)
 
     try:
@@ -172,7 +173,7 @@ async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send(api: str) 
 
 async def test_allowed_call_passes_through_unchanged(api: str) -> None:
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_ok_proxy())
+    fab._http.governed_transport.replace_inner(_ok_proxy())
     agent = _agent(fab, api)
 
     try:
@@ -193,7 +194,7 @@ async def test_unreachable_gateway_surfaces_as_gateway_unavailable(api: str) -> 
         raise httpx.ConnectError("no route", request=request)
 
     fab = Donkey(_cfg())
-    fab._http._swap_transport(httpx.MockTransport(handler))
+    fab._http.governed_transport.replace_inner(httpx.MockTransport(handler))
     agent = _agent(fab, api)
 
     try:
@@ -211,7 +212,7 @@ async def test_a_non_refusal_error_propagates_untouched(api: str) -> None:
         raise ValueError("a bug in the handler")
 
     fab = Donkey(_cfg())
-    fab._http._swap_transport(httpx.MockTransport(handler))
+    swap_transport(fab._http, httpx.MockTransport(handler))
     agent = _agent(fab, api)
 
     try:
@@ -232,7 +233,7 @@ async def test_chat_client_sends_to_the_chosen_api(kwargs: dict[str, str], path:
     route, such as Azure OpenAI, that 404s ``/responses`` (#826)."""
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_ok_proxy(sent))
+    fab._http.governed_transport.replace_inner(_ok_proxy(sent))
     agent = af.Agent(client=fab.agent_framework.chat_client("gpt-4o", **kwargs))
 
     try:

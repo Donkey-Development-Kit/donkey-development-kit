@@ -27,7 +27,8 @@ from httpx._utils import URLPattern
 from donkey_kit import Donkey
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import PIIDetected, classify
-from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient, _SyncMountRouter
+from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient
+from donkey_kit.core.transport.governed import _SyncMountRouter
 
 _URL = "http://sim.local/responses"
 _DEAD_PROXY = "http://127.0.0.1:9"
@@ -208,4 +209,4 @@ def test_swap_refuses_when_a_mount_could_bypass_it(make: object) -> None:
     client = make()  # type: ignore[operator]
     client._mounts = {URLPattern("all://"): httpx.MockTransport(lambda r: httpx.Response(200))}
     with pytest.raises(RuntimeError, match="mounts that would bypass it"):
-        client._swap_transport(httpx.MockTransport(lambda r: httpx.Response(200)))
+        client.governed_transport.replace_inner(httpx.MockTransport(lambda r: httpx.Response(200)))

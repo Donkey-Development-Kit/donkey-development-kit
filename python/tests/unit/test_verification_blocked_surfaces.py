@@ -1,7 +1,8 @@
 """Regression coverage for verification-blocked SDK surfaces (§0.3).
 
-CLI ``_blocked(...)`` paths are intentionally not duplicated here: all eight
-are covered by ``test_cli_provisioning.py`` from PR #476. When a surface is
+CLI blocked commands are intentionally not duplicated here: ``status``,
+``publish`` and ``verify`` are covered by ``test_cli_blocked_commands.py``.
+The refused governance/provisioning stubs were deleted, not kept blocked (#730). When a surface is
 verified, remove its row here in the same change that records the VERIFIED date
 and source in ``docs/verified-apis.md``.
 """
@@ -12,20 +13,11 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
-from donkey_kit import Donkey, DonkeyConfig, Publication, PublicationAssetType
+from donkey_kit import Donkey, DonkeyConfig
 from donkey_kit.core.auth import StaticToken
-from donkey_kit.governance import GatewayTarget, Governance
-from donkey_kit.provisioning.applier import apply as apply_plan
-from donkey_kit.provisioning.planner import Plan, build_plan
-from donkey_kit.provisioning.publish import publish_if_changed
-from donkey_kit.provisioning.spec import DonkeySpec, SpecMetadata
+from donkey_kit.experimental import Publication, PublicationAssetType
+from donkey_kit.registry.publication import publish_if_changed
 
-_TARGET = GatewayTarget(mode="local", base_url="http://localhost", connected=False)
-_GOVERNANCE = Governance(name="blocked-governance", gateway=_TARGET)
-_SPEC = DonkeySpec(
-    metadata=SpecMetadata(name="blocked-spec", environment="Sandbox"),
-)
-_PLAN = Plan()
 _PUBLICATION = Publication(
     asset_type=PublicationAssetType.MCP_SERVER,
     group_id="com.example",
@@ -41,34 +33,20 @@ _CONFIG = DonkeyConfig(
 )
 
 
-async def _enter_simulation(_donkey: Donkey) -> None:
-    async with _GOVERNANCE.simulate():
-        pass
-
-
 _SYNC_BLOCKED_SURFACES: tuple[
     tuple[str, Callable[[Donkey], object]], ...
 ] = (
     ("Donkey.tools.lock", lambda donkey: donkey.tools.lock()),
-    ("Governance.export", lambda _donkey: _GOVERNANCE.export()),
 )
 
 _ASYNC_BLOCKED_SURFACES: tuple[
     tuple[str, Callable[[Donkey], Awaitable[object]]], ...
 ] = (
     ("Donkey.tools.discover", lambda donkey: donkey.tools.discover()),
-    ("Governance.resolve", lambda donkey: _GOVERNANCE.resolve(donkey)),
-    (
-        "Governance.apply",
-        lambda _donkey: _GOVERNANCE.apply(_TARGET, i_am_the_platform_team=True),
-    ),
-    ("SimulationContext.__aenter__", _enter_simulation),
     (
         "publish_if_changed",
         lambda donkey: publish_if_changed(_PUBLICATION, donkey),
     ),
-    ("build_plan", lambda donkey: build_plan(_SPEC, donkey)),
-    ("provisioning.apply", lambda donkey: apply_plan(_PLAN, donkey)),
 )
 
 
@@ -98,8 +76,3 @@ async def test_async_verification_blocked_surfaces_remain_blocked(
     async with Donkey(_CONFIG, auth=StaticToken("unused")) as donkey:
         with pytest.raises(NotImplementedError, match=r"^blocked on verification:"):
             await invoke(donkey)
-
-
-async def test_governance_apply_requires_platform_team_authorization() -> None:
-    with pytest.raises(PermissionError):
-        await _GOVERNANCE.apply(_TARGET)

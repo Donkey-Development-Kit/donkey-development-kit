@@ -12,6 +12,12 @@ their stable historical name; every other citation is a `BG §N.N`, a named
 invariant, or a `Phase N`. When a rule here feels arbitrary, read the cited
 section — the constraints are deliberate.
 
+Why each design decision was taken, and what was rejected, is recorded in the
+architecture decision records in [`docs/adr/`](docs/adr/README.md). Changing
+an invariant this document states, an import-linter contract, the API
+stability tiers or the dependency policy needs an ADR in the same PR
+([`CONTRIBUTING.md`](CONTRIBUTING.md#architecture-decision-records)).
+
 For *using* the SDK, see the consumer docs site (`website/`). For *working in*
 the repo — branch/PR flow, testing surfaces, coding conventions — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
@@ -52,22 +58,33 @@ registry/       Exchange discovery, typed governed-state assets
       ↓
 llm/            framework-free OpenAI-compatible client factory + model catalog
       ↓
-core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but core imports none — value objects are frozen dataclasses, ADR 0001)
+core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but nothing imports it — value objects are frozen dataclasses, ADR 0001)
 ```
 
-**Not in the stack — `provisioning/`.** The package holds two different things:
+**Not in the stack — `cli/` and `experimental`.** Two siblings sit outside the
+linear stack:
 
-- **The refused declarative control plane** (specs · plan/diff/apply · drift ·
-  governance lint · publish). It is on the build plan's *Do not build* list —
-  it must not compete with API Manager/Terraform — and its CLI commands
-  (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`, `status`,
-  `publish`, `verify`) are hidden and `_verify.blocked`. Treat this half as
-  legacy scaffolding: reachable, but do not deepen it (see "Still blocked",
-  below).
-- **The supported `donkey` CLI.** The console script points at
-  `donkey_kit.provisioning.cli:app`, and its visible commands — `init`, `test`,
-  `mock`, `doctor` — are live. Moving them to their own `donkey_kit/cli`
-  package and quarantining the legacy half is #730.
+- **The `donkey` CLI** lives in `donkey_kit/cli/` (console script
+  `donkey = "donkey_kit.cli:main"`), one module per command: `init`, `doctor`,
+  `mock`, `test`. It is a front end over the library: it may import any layer,
+  and an import-linter contract forbids every library module from importing it
+  back, so typer (the `[cli]` extra) never reaches the base `import donkey_kit`
+  path. Three hidden commands, `status`, `publish` and `verify` (BG §2.5), are
+  `_verify.blocked` and exit 3.
+- **`donkey_kit.experimental`** re-exports the types that exist only for a
+  verification-blocked surface (`AssetRef`, `Publication`, `GovernanceCriteria`,
+  `STRICT`, `RegistryError`, …). They are importable, but they are not in
+  `donkey_kit.__all__` and carry no stability promise until their surface is
+  verified.
+
+The refused declarative control plane (the old `provisioning/` package:
+specs, plan/diff/apply, drift, governance lint, and `governance.py`) is on the
+build plan's *Do not build* list, because it must not compete with API
+Manager/Terraform. It was deleted, not parked, along with its hidden CLI
+commands (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`) and its
+errors (`ProvisioningError`, `GovernanceDrift`, `PlatformTeamOnly`). The
+reasoning is ADR 0008 in [`docs/adr/`](docs/adr/) (legacy quarantine and the
+CLI's home, #730).
 
 **The hard rule (the layered architecture):** `core/` has no dependency on any agent framework.
 Each `integrations/*` adapter may depend on exactly one framework, and nothing
@@ -89,9 +106,9 @@ framework that may not be installed.
 Config, catalog entries, registry assets and results are `@dataclass(frozen=True)`
 and change by building a new instance (`dataclasses.replace(...)`,
 `DonkeyConfig.with_overrides(...)`). pydantic is used only at an external-schema
-boundary. The one such module today is the legacy `provisioning/spec.py`, which
-validates a user-authored YAML spec, and it is the only reason `pydantic` is
-still a base dependency. Dropping it from the base install is part of #730.
+boundary, and no module has one today: its only user was the deleted
+`provisioning/spec.py`, so `pydantic` is not a base dependency (#730). The
+`base-only` CI job checks that a plain install neither installs nor imports it.
 
 ### How the pieces connect
 
@@ -116,9 +133,20 @@ still a base dependency. Dropping it from the base install is part of #730.
     (opt-in) cost-tag headers; only the credentials differ.
 
   A framework built on `httpx2` that rejects `httpx` clients (`anthropic>=1.0`,
-  #701) gets an `httpx2.AsyncClient` from `integrations/_httpx2_bridge.py`
-  instead, whose transport forwards every request through the same data-plane
-  client, so it is still one transport.
+  #701), and every `OpenAI`/`AsyncOpenAI` the SDK builds itself on `openai>=3`
+  (`donkey.llm.client()` and `_proxy_openai_client`, #728), gets an `httpx2`
+  client from the core bridge `core/transport/httpx2.py` instead, whose
+  transport forwards every request through the same data-plane client, so it
+  is still one transport. A framework that builds its OpenAI client from an
+  `http_client` kwarg (LangGraph, Strands, LlamaIndex) gets the same bridge on
+  `openai>=3` (#728), in a *reusable* variant whose close is a no-op like the
+  view's, because Strands closes its client after every request; on `openai<3`
+  it still gets the view. One helper, `llm.client._openai_http_client` /
+  `_openai_sync_http_client`, makes that choice for every OpenAI client the SDK
+  wires. The bridge has an async and a blocking twin. The blocking twin sends
+  through the blocking shared client, so it refuses in a token mode just as
+  that client does. Both are imported lazily, because `httpx2` is not a base
+  dependency.
 
   `Donkey` builds these through a **`Runtime`** (`core/runtime.py`), which owns
   the config, the OTLP bootstrap, the auth providers, the `Budget`, both clients
@@ -127,10 +155,18 @@ still a base dependency. Dropping it from the base install is part of #730.
   on the process-default runtime from `runtime.default()`: built lazily under a
   lock from the environment, exactly as `Donkey.from_env()` would be, shared by
   every factory, and closed at interpreter exit. It lives in `core` because
-  `integrations` may not import the top package (#725).
+  `integrations` may not import the top package (#725,
+  [ADR 0003](docs/adr/0003-core-runtime.md)).
+
+  The OTLP bootstrap has no hidden global side effect: it builds a
+  **DDK-scoped** `TracerProvider` for DDK's own spans and never sets the
+  process-global OpenTelemetry provider unless `telemetry_install_global`
+  opts in. `_tracer()` in `core/telemetry.py` prefers any global provider the
+  host sets, even after `Donkey()`, so OTel's set-once rule never locks the
+  host out (#732, `docs/adr/0010-no-hidden-global-side-effects.md`).
 
   Each client attaches credentials only to its **checked endpoints**
-  (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
+  (`_CheckedEndpoints` in `core/transport/headers.py`), compared by scheme, host and
   port: the plane's configured URL, plus any URL override a factory accepted
   after the same https check (`allow_endpoint`). A request to any other origin,
   every redirect hop included (httpx runs request hooks per hop), goes out with
@@ -165,14 +201,20 @@ still a base dependency. Dropping it from the base install is part of #730.
   contract, the mypy overrides, the static `Donkey` annotations, the
   `KNOWN_LIMITATIONS` exemptions, the nightly matrix, `examples/` and
   `scripts/verify_frameworks.py`.
-- **Configuration** resolves per key: values set in code → env vars →
-  `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
-  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml`, or
-  `~/.config/.donkey-kit.toml` when that variable is unset or empty → default.
-  `DonkeyConfig(...)` built directly reads neither env nor files. It reports
-  every missing field at once rather than one failure per run.
-  `Donkey.from_env()` is the entry point. This is what the code does today;
-  the precedence the build plan specifies (§2.1) is #727. Each field records its source
+- **Configuration** resolves per key (§2.1, `DonkeyConfig.resolve`): values
+  set in code (`resolve()` / `Donkey.from_env()` keyword arguments,
+  `with_overrides`) → env vars → `./.donkey-kit.local.toml` →
+  `./.donkey-kit.toml` → `$XDG_CONFIG_HOME/.donkey-kit.toml` (or
+  `~/.config/.donkey-kit.toml` when that variable is unset or empty) → default.
+  The three files merge key by key, nested tables recursively, so a lower file
+  fills what a higher one leaves unset; `resolve(path=...)` reads a named file
+  in place of `./.donkey-kit.toml`. One declarative field table (`_FIELDS` in
+  `core/config.py`) names each field's env var, TOML key, parser and value
+  check; the loader, the error messages and the configuration docs (pinned by a
+  unit test) all follow it. `DonkeyConfig(...)` built directly reads neither env
+  nor files. It reports every missing field, and every invalid value, at once
+  rather than one failure per run. `Donkey.from_env()` is the entry point.
+  Each field records its source
   (`DonkeyConfig.source_of`); a value that differs from the loaded one counts as
   set in code, however it was changed. So `llm_proxy_url` or `base_url` read
   from the working directory's files only receives credentials from those files
@@ -181,7 +223,7 @@ still a base dependency. Dropping it from the base install is part of #730.
   is set in the environment. The check runs before a credential leaves on
   either plane: in `validated()` for model calls and the registry, before each
   control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
-  requested. Governance `[targets.*].base_url` is not covered yet (#832).
+  requested.
   Provenance stores a keyed digest of each loaded value (the key is random per
   process), so `asdict()` copies no secret and a config rebuilt in another
   process keeps its URL sources but treats its credentials as set in code. A
@@ -198,7 +240,7 @@ still a base dependency. Dropping it from the base install is part of #730.
   error is raised `from None`, with the original on `framework_error`. Framework
   objects built from the kwargs keep their own `repr`, and some of them print
   credentials.
-- **The transport is the attachment point.** `DonkeyAsyncClient` exposes four
+- **The transport is the attachment point.** `DonkeyAsyncClient` exposes
   internal lifecycle hooks — no-op by default, **not** public API, mirrored on the
   sync twin `DonkeyClient` — so the six-piece minimum *attaches* rather than
   re-wiring `send()` (`BG §1.1`, #179/#287). This is what makes the skeleton one
@@ -206,17 +248,39 @@ still a base dependency. Dropping it from the base install is part of #730.
 
   | Hook | When it fires | What attaches |
   | --- | --- | --- |
-  | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
-  | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
-  | `_on_refusal` | never — no caller today; `classify()` raises the typed error directly, and the typed-refusal bridge (`core/refusals.py`, #724) maps it at the framework boundary without the hook | typed-refusal reaction handlers (`BG §1.2`, #208) |
-  | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
+  | `_inject_headers` | every attempt (an httpx request event hook, so every retry and redirect hop) | correlation, call-id, attribution, cache-control and opt-in cost-tag headers (`BG §1.7`); the plane's credentials, on checked endpoints only |
+  | `_on_response` | once, on the final response (in `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
+  | `_on_refusal` | once, when the final response is a policy refusal, with the `PolicyViolation` `classify()` made of it, after the span is recorded | typed-refusal reaction handlers (`BG §1.2`, #208); the default does nothing and the refusal is still returned. The typed-refusal bridge (`core/refusals.py`, #724) maps refusals at the framework boundary without it |
+  | `governed_transport.replace_inner()` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`). Each client's transport is a `GovernedTransport` (`GovernedSyncTransport` on the sync twin) that owns the inner transport; the constructors fold httpx's proxy mounts into it, so a swap covers every route and fails closed if a mount appears later (#801, #728) |
 
-  Correlation, attribution, cache-control and opt-in cost-tag headers
-  (`BG §1.7`) are set on every attempt by the `_inject_headers` request event
-  hook, not by `_on_request`. The OTel span (`BG §1.6`) opens in `send()` and
-  closes there, or in the stream wrapper for a streamed response. Its response
-  attributes, including the `classify()`-derived policy decision, are recorded
-  by `_record_response`, which `_finish()` calls right after `_on_response`.
+  There is no per-`send()` request hook: the old no-op `_on_request` was
+  removed (#728), since the header hook covers every attempt. The OTel span
+  (`BG §1.6`) opens in `send()` and closes there, or in the stream wrapper for
+  a streamed response. Its response attributes, including the
+  `classify()`-derived policy decision, are recorded by `_record_response`,
+  which `_finish()` calls right after `_on_response`.
+
+  The two clients share one pipeline and differ only in IO. The package
+  `core/transport/` splits it by concern (#728):
+
+  | Module | Holds |
+  | --- | --- |
+  | `headers.py` | header policy: correlation/call ids, attribution, cost tags, credentials, checked endpoints |
+  | `policy.py` | the sans-IO decisions: `decide_retry()` (`Refresh` / `Retry` / `Finish`), the refusal (`classify()` of a final 4xx) and the substitution check |
+  | `pipeline.py` | `_GovernedPipeline`, the IO-free halves of a send both clients run |
+  | `observe.py` | budget and `last_call` observation, span recording, retry/finish logs |
+  | `streaming.py` | the bounded error-body read, the SSE usage scanner, the span-closing streams |
+  | `governed.py` | `GovernedTransport` / `GovernedSyncTransport`, the mount routers, the per-event-loop pool |
+  | `async_client.py`, `sync_client.py` | `DonkeyAsyncClient` / `DonkeyClient`: only the send loop's IO |
+  | `failures.py` | the typed errors a send raises instead of an httpx failure (`GatewayUnavailable`, the lifecycle `ConfigError`s, `sync_token_auth_error`) |
+  | `views.py` | the non-owning views (#733) and `built_on_httpx2()` |
+  | `httpx2.py` | the `httpx2` bridge (lazy, never imported at package import) |
+
+  A `502` or `504` on a model `POST` (a `POST` whose body, or native Gemini path, names a model) is
+  not re-sent by default: the upstream call may have completed and billed, and
+  no gateway idempotency key is verified (docs/verified-apis.md). Set
+  `retry_model_calls_on_gateway_errors` to retry it; a `503`, and every other
+  request, still retries (docs/adr/0009-*.md, #728).
 
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
@@ -226,20 +290,12 @@ still a base dependency. Dropping it from the base install is part of #730.
   never relying on the response hook (the OTel span avoids this by living in
   `send()`).
   A hookless client behaves exactly as it did before the hooks were added. The
-  full contracts live in the `core/transport.py` docstrings.
-- **`Governance`** (`governance.py`) is legacy scaffolding outside the linear
-  import stack — it depends only on `core` and remains reachable from its module,
-  but it is not exported as first-class `donkey_kit` API. It is ONE object behind
-  three verbs: `simulate()` (an ephemeral local
-  gateway harness), `export()` (emit the governed-state manifest), and `resolve()`
-  (reconcile a running `Donkey` against it, raising `GovernanceDrift` on
-  mismatch); a separate platform-team-only `apply()` is the deliberate escape
-  hatch. **All of these are currently `_verify.blocked`** — the `simulate()`
-  harness included — pending the Verification milestone, so today the object is the
-  shape, not yet the behaviour. The governed-state *asset* criteria one layer
-  down (`GovernanceCriteria`, `STRICT`, `evaluate`) live in `registry/criteria.py`
-  (renamed from `registry/governance.py` in #719 so the two modules no longer
-  share a name; the old path is a deprecated alias).
+  full contracts live in the `core/transport/` docstrings.
+- **Governed-state criteria** (`GovernanceCriteria`, `STRICT`, `evaluate`) live
+  in `registry/criteria.py` (renamed from `registry/governance.py` in #719; the
+  old path is a deprecated alias). The top-level `Governance` object
+  (`simulate()`/`export()`/`resolve()`/`apply()`) was deleted with the
+  provisioning control plane in #730.
 
 Every governed surface ships in three ergonomic forms that must stay in lockstep:
 the `donkey.<framework>` factory, a `connection_kwargs()` accessor, and a
@@ -264,7 +320,7 @@ Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
   It is used where there is no defensible placeholder at all — e.g. the MCP-bridge
-  tool-discovery and the provisioning control-plane endpoints. The SDK raises
+  tool-discovery and the Exchange publication endpoints. The SDK raises
   rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
 - **`Unverified(...)`** placeholder constants hold a documented best-guess that is
   fully overridable via config/env, and emit a one-time `UnverifiedValueWarning`
@@ -285,7 +341,7 @@ What is verified today: the LLM-proxy data plane (its base-URL shape — note th
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
-discovery and the provisioning control plane. The framework adapters are not
+discovery and Exchange publication (BG §2.5). The framework adapters are not
 blocked. They build their native object directly, and their constructor rows in
 §8 of the ledger read **signature-confirmed offline**, except ADK's `gemini()`,
 which is **live-verified**. An adapter refuses with `blocked(...)` only when the
@@ -431,6 +487,9 @@ pytest plugin** users run against their own agent (#191).
   feature-by-feature scope and acceptance bars; cited as `BG §N.N`.
 - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
+- [`docs/adr/`](docs/adr/README.md) — the architecture decision records: why
+  each decision here was taken, the alternatives rejected, and the process for
+  changing one.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch/PR/release flow, testing surfaces,
   coding conventions, and the docs-sync map. It is the canonical contributor
   guide; maintainers' optional AI-agent tooling is not part of this repository

@@ -31,26 +31,25 @@ __all__ = [
 
 
 class SwappableClient(Protocol):
-    """The transport-swap seam both Donkey HTTP clients expose (BG §1.1). Typed
-    loosely on purpose: the sync and async clients carry different ``httpx``
-    transport types."""
+    """The transport-swap seam both Donkey HTTP clients expose (BG §1.1, #728).
+    Typed loosely on purpose: the sync and async clients carry different
+    governed-transport types (``GovernedTransport`` / ``GovernedSyncTransport``)."""
 
-    _transport: Any
-
-    def _swap_transport(self, transport: Any) -> None: ...
+    @property
+    def governed_transport(self) -> Any: ...
 
 
 def transport_of(client: SwappableClient) -> Any:
-    """The transport ``client`` sends through right now (httpx keeps it on the
-    private ``_transport``; there is no public accessor)."""
-    return client._transport
+    """The transport ``client`` sends through right now: the inner transport its
+    ``governed_transport`` delegates to."""
+    return client.governed_transport.inner
 
 
 def swap_transport(client: SwappableClient, transport: Any) -> None:
-    """Make ``transport`` the one ``client`` sends through. The swap is the
-    client's own ``_swap_transport``, which refuses while an env-proxy mount
-    could bypass it (#801)."""
-    client._swap_transport(transport)
+    """Make ``transport`` the one ``client`` sends through, via the public
+    ``GovernedTransport.replace_inner()`` seam, which refuses while an env-proxy
+    mount could bypass it (#801, #728)."""
+    client.governed_transport.replace_inner(transport)
 
 
 def http_clients(donkey: Donkey) -> tuple[DonkeyAsyncClient, DonkeyClient]:

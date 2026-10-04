@@ -89,8 +89,8 @@ class LangGraphAdapter(Adapter):
         return masked(
             {
                 **conn,  # base_url, api_key, default_headers
-                "http_async_client": self.http_client(),  # our client, our hooks
-                "http_client": self.sync_http_client(),  # the same, for invoke()
+                "http_async_client": self._openai_kwarg_http_client(),  # our client, our hooks
+                "http_client": self._openai_kwarg_sync_http_client(),  # the same, for invoke()
                 "max_retries": 0,  # we retry in transport (BG §1.1)
                 # Use the OpenAI Responses API (``/responses``) rather than
                 # ChatOpenAI's chat-completions default. An OpenAI-format proxy

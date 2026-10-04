@@ -17,10 +17,6 @@
 reason = "The one transport: DonkeyAsyncClient is an httpx.AsyncClient subclass (BG §1.1)."
 reviewed = 2026-10-03
 
-[packages.pydantic]
-reason = "Schema validation at the external-schema boundary, provisioning/spec.py (ADR 0001)."
-reviewed = 2026-10-03
-
 [packages.typing-extensions]
 reason = "Backfills typing features below Python 3.12 (3.10 floor)."
 reviewed = 2026-10-03
@@ -109,10 +105,6 @@ reviewed = 2026-10-03
 reason = "[cli] and dev: the donkey command's argument parsing."
 reviewed = 2026-10-03
 
-[packages.pyyaml]
-reason = "[cli] and dev: reads the provisioning YAML specs."
-reviewed = 2026-10-03
-
 [packages.rich]
 reason = "[cli]: typer renders help and errors with rich when installed; src/ does not import it."
 reviewed = 2026-10-03
@@ -149,6 +141,7 @@ reviewed = 2026-10-03
 reason = "dev: the dead-code check over src/ (#720)."
 reviewed = 2026-10-03
 
-[packages.types-pyyaml]
-reason = "dev: stubs so mypy --strict typechecks the CLI's yaml handling."
-reviewed = 2026-10-03
+[packages.pyyaml]
+reason = "dev: tests/unit/test_integration_checklist.py parses .github/workflows/ci.yml. No SDK module imports it (#730)."
+reviewed = 2026-10-04
+
