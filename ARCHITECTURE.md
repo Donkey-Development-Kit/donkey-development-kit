@@ -162,14 +162,20 @@ still a base dependency. Dropping it from the base install is part of #730.
   module-level factory raise the same error. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
-- **Configuration** resolves per key: values set in code → env vars →
-  `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
-  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml`, or
-  `~/.config/.donkey-kit.toml` when that variable is unset or empty → default.
-  `DonkeyConfig(...)` built directly reads neither env nor files. It reports
-  every missing field at once rather than one failure per run.
-  `Donkey.from_env()` is the entry point. This is what the code does today;
-  the precedence the build plan specifies (§2.1) is #727. Each field records its source
+- **Configuration** resolves per key (§2.1, `DonkeyConfig.resolve`): values
+  set in code (`resolve()` / `Donkey.from_env()` keyword arguments,
+  `with_overrides`) → env vars → `./.donkey-kit.local.toml` →
+  `./.donkey-kit.toml` → `$XDG_CONFIG_HOME/.donkey-kit.toml` (or
+  `~/.config/.donkey-kit.toml` when that variable is unset or empty) → default.
+  The three files merge key by key, nested tables recursively, so a lower file
+  fills what a higher one leaves unset; `resolve(path=...)` reads a named file
+  in place of `./.donkey-kit.toml`. One declarative field table (`_FIELDS` in
+  `core/config.py`) names each field's env var, TOML key, parser and value
+  check; the loader, the error messages and the configuration docs (pinned by a
+  unit test) all follow it. `DonkeyConfig(...)` built directly reads neither env
+  nor files. It reports every missing field, and every invalid value, at once
+  rather than one failure per run. `Donkey.from_env()` is the entry point.
+  Each field records its source
   (`DonkeyConfig.source_of`); a value that differs from the loaded one counts as
   set in code, however it was changed. So `llm_proxy_url` or `base_url` read
   from the working directory's files only receives credentials from those files

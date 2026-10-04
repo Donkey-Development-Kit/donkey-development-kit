@@ -7,9 +7,9 @@ import { Badge } from '../../components'
 
 # Configuration
 
-`Donkey.from_env()` builds its configuration from environment variables, then
-the config files, then defaults. `Donkey(DonkeyConfig(...))` uses only what you
-pass. See [Building a config](#building-a-config) for both paths,
+`Donkey.from_env(...)` builds its configuration from the values you pass,
+then environment variables, then the config files, then defaults.
+`Donkey(DonkeyConfig(...))` uses only what you pass. See [Building a config](#building-a-config) for both paths,
 [Precedence](#precedence) for the exact order,
 [What the SDK sends where](#what-the-sdk-sends-where) for which credential goes
 to which host, and [Which credentials a URL receives](#which-credentials-a-url-receives)
@@ -21,39 +21,40 @@ There are two ways to build a `Donkey`, and they resolve values differently:
 
 | You write | What it reads |
 |---|---|
-| `Donkey.from_env(...)` or `Donkey()` | Environment variables, then the [config files](#config-files-secrets-and-trust), then defaults. `Donkey.from_env()` takes only the cost tags (`team`, `project`, `env`, `enduser_id`) and `on_model_substitution` as kwargs, and applies them on top. |
+| `Donkey.from_env(...)`, `Donkey()` or `DonkeyConfig.resolve(...)` | The keyword arguments you pass, then environment variables, then the [config files](#config-files-secrets-and-trust), then defaults. Any `DonkeyConfig` field is a keyword argument, and so is `path` (a config file to read in place of `./.donkey-kit.toml`). `Donkey.from_env()` also takes the cost-tag shorthands `team`, `project`, `env` and `enduser_id`. |
 | `Donkey(DonkeyConfig(...))` | Only the values you pass. Every other field is its default. No environment variable and no config file is read. |
 
 Building `DonkeyConfig(...)` yourself does not fill the gaps from the
 environment. With `DONKEY_TIMEOUT_S=5` set,
 `Donkey(DonkeyConfig(llm_proxy_url=…))` still uses the default `timeout_s` of
 `60.0`. To change a few fields and keep everything else from the environment
-and the files, resolve first and then override:
+and the files, pass them to `from_env` or `resolve`:
 
 ```python
 from donkey_kit import Donkey, DonkeyConfig
 
-donkey = Donkey(
-    DonkeyConfig.from_env().with_overrides(
-        telemetry_capture_content=True,
-        registry_cache_ttl_s=60,
-    )
-)
+donkey = Donkey.from_env(telemetry_capture_content=True, registry_cache_ttl_s=60)
+
+# The same config, without building a Donkey:
+cfg = DonkeyConfig.resolve(telemetry_capture_content=True, registry_cache_ttl_s=60)
 ```
 
-`DonkeyConfig.from_env()` takes no arguments. `with_overrides(...)` accepts any
-`DonkeyConfig` field name, the names in the "`DonkeyConfig` field" columns
-below, and returns a new config.
+The keyword arguments are the `DonkeyConfig` field names, the names in the
+"`DonkeyConfig` field" columns below. An unknown name raises `TypeError`, and
+the values are checked like any other (see [Invalid values](#invalid-values)).
+`DonkeyConfig.from_env()` takes no arguments; it is `DonkeyConfig.resolve()`.
+`with_overrides(...)` accepts the same names on a config you already have, and
+returns a new config.
 
 ## Governed model access
 
 The three required values for the LLM proxy:
 
-| Env var | Meaning |
-|---|---|
-| `DONKEY_LLM_PROXY_URL` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](/simulator), and for other hosts only with [`DONKEY_ALLOW_HTTP`](#endpoints-must-use-https). |
-| `DONKEY_LLM_PROXY_CLIENT_ID` | Consumer client ID (the per-agent identity). |
-| `DONKEY_LLM_PROXY_CLIENT_SECRET` | Consumer client secret. |
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `DONKEY_LLM_PROXY_URL` | `llm_proxy_url` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](/simulator), and for other hosts only with [`DONKEY_ALLOW_HTTP`](#endpoints-must-use-https). |
+| `DONKEY_LLM_PROXY_CLIENT_ID` | `llm_proxy_client_id` | Consumer client ID (the per-agent identity). |
+| `DONKEY_LLM_PROXY_CLIENT_SECRET` | `llm_proxy_client_secret` | Consumer client secret. |
 
 <Callout type="info">
   Auth is a `client_id` / `client_secret` **header pair** (consumer auth), **not**
@@ -281,6 +282,10 @@ span attributes (and, only if you opt in, as request headers). Override them per
 unknown dimension is a configuration error, not a silently dropped tag. See
 [Telemetry & cost](/telemetry).
 
+These are the `cost` field (a `CostTags`). `Donkey.from_env` takes each
+dimension as a shorthand kwarg; `DonkeyConfig.resolve(cost=CostTags(...))` sets
+them together. Either way, a dimension you pass replaces only that dimension.
+
 | Env var | `Donkey.from_env` kwarg | Meaning |
 |---|---|---|
 | `DONKEY_COST_TEAM` | `team` | Owning team. |
@@ -299,9 +304,9 @@ env = "prod"
 "enduser.id" = "user-42"
 ```
 
-A `[donkey.cost]` table in `.donkey-kit.local.toml` merges into the one in
-`.donkey-kit.toml` key by key: a local `"enduser.id"` adds to the project
-file's `team` and `project` instead of replacing them. `DONKEY_COST_*`
+A `[donkey.cost]` table merges across the config files key by key: a local
+`"enduser.id"` adds to the project file's `team` and `project` instead of
+replacing them, and the user file fills any dimension neither sets. `DONKEY_COST_*`
 variables then override single dimensions.
 
 The LLM Gateway doesn't read cost tags from request headers, so by default DDK
@@ -316,12 +321,17 @@ proxy of your own that reads them, opt in:
 With it enabled, the headers use the SDK's own names (`X-Anypoint-Cost-Team`,
 …). Because no gateway reads them, they're a convention rather than a
 placeholder for some real name, and they emit no warning. Rename them to match
-whatever receiver you send them to: `DONKEY_COST_TEAM_HEADER`, `DONKEY_COST_PROJECT_HEADER`,
-`DONKEY_COST_ENV_HEADER`, `DONKEY_COST_ENDUSER_HEADER` (or the matching
-`cost_*_header` config keys), within the
-[names you can't use](#header-names-you-cant-use). `send_cost_headers` is not a `Donkey.from_env`
-kwarg; in code, use
-`DonkeyConfig.from_env().with_overrides(send_cost_headers=True)`.
+whatever receiver you send them to, within the
+[names you can't use](#header-names-you-cant-use):
+
+| Env var | `DonkeyConfig` field | Default |
+|---|---|---|
+| `DONKEY_COST_TEAM_HEADER` | `cost_team_header` | `X-Anypoint-Cost-Team` |
+| `DONKEY_COST_PROJECT_HEADER` | `cost_project_header` | `X-Anypoint-Cost-Project` |
+| `DONKEY_COST_ENV_HEADER` | `cost_env_header` | `X-Anypoint-Cost-Env` |
+| `DONKEY_COST_ENDUSER_HEADER` | `cost_enduser_header` | `X-Anypoint-Cost-Enduser-Id` |
+
+In code, `Donkey.from_env(send_cost_headers=True)`.
 
 <Callout type="info">
   With `send_cost_headers` on, the headers, including the end-user ID, go only
@@ -367,7 +377,7 @@ request is sent. One error lists every bad field and where each was set:
 | `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
 | `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
 | `region` | `us`, `eu`, `ca` or `jp` |
-| `llm_proxy_auth` | `client-id` or `jwt` (any case in the environment or a config file) |
+| `llm_proxy_auth` | `client-id`, `jwt` or `bearer` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |
 
 A misspelt switch such as `DONKEY_TELEMETRY=flase` is an error, not `false`:
@@ -400,14 +410,14 @@ them.
   lists them.
 </Callout>
 
-| Env var | Meaning |
-|---|---|
-| `ANYPOINT_CLIENT_ID` | Connected-app client ID. |
-| `ANYPOINT_CLIENT_SECRET` | Connected-app client secret. |
-| `ANYPOINT_ORG_ID` | Anypoint organization ID. |
-| `ANYPOINT_ENV` | Anypoint environment (default `Sandbox`). |
-| `ANYPOINT_REGION` | Control-plane region: `us` (default), `eu`, `ca`, or `jp`. |
-| `ANYPOINT_BASE_URL` | Explicit control-plane base URL; overrides the region. Must be `https://` (loopback hosts excepted, or any host with `DONKEY_ALLOW_HTTP`). |
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `ANYPOINT_CLIENT_ID` | `client_id` | Connected-app client ID. |
+| `ANYPOINT_CLIENT_SECRET` | `client_secret` | Connected-app client secret. |
+| `ANYPOINT_ORG_ID` | `org_id` | Anypoint organization ID. |
+| `ANYPOINT_ENV` | `environment` | Anypoint environment (default `Sandbox`). |
+| `ANYPOINT_REGION` | `region` | Control-plane region: `us` (default), `eu`, `ca`, or `jp`. |
+| `ANYPOINT_BASE_URL` | `base_url` | Explicit control-plane base URL; overrides the region. Must be `https://` (loopback hosts excepted, or any host with `DONKEY_ALLOW_HTTP`). |
 
 ## What the SDK sends where
 
@@ -510,14 +520,22 @@ Instead of env vars you can put values in a `[donkey]` table. Keys are the
 
 | File | Where | Meant for |
 |---|---|---|
-| `.donkey-kit.toml` | The current working directory (not searched upward) | Non-secret project config you commit: URLs, client IDs, attribution. |
-| `.donkey-kit.local.toml` | The current working directory | Secrets and personal overrides. Keep it gitignored. Same keys. Read with or without `.donkey-kit.toml`. |
-| `$XDG_CONFIG_HOME/.donkey-kit.toml`, or `~/.config/.donkey-kit.toml` when `XDG_CONFIG_HOME` is unset or empty | Your user config directory | Personal defaults for every project. Read only when the working directory has neither file above. When `XDG_CONFIG_HOME` is set, `~/.config` isn't read. |
+| `.donkey-kit.toml` | The current working directory (not searched upward), or the file you name with `path=` | Non-secret project config you commit: URLs, client IDs, attribution. |
+| `.donkey-kit.local.toml` | The same directory as `.donkey-kit.toml` | Secrets and personal overrides. Keep it gitignored. Same keys. Read with or without `.donkey-kit.toml`. |
+| `$XDG_CONFIG_HOME/.donkey-kit.toml`, or `~/.config/.donkey-kit.toml` when `XDG_CONFIG_HOME` is unset or empty | Your user config directory | Personal defaults for every project. Always read, beneath the two files above. When `XDG_CONFIG_HOME` is set, `~/.config` isn't read. |
 
-`.donkey-kit.local.toml` merges into `.donkey-kit.toml` key by key, and nested
-tables such as `[donkey.cost]` merge the same way. A scalar or an array in the
-local file replaces the project file's value; it isn't appended to. Each key
-remembers which file it came from.
+The three files merge key by key: `.donkey-kit.local.toml` over
+`.donkey-kit.toml` over the user file, so a lower file fills whatever a higher
+one leaves unset. Nested tables such as `[donkey.cost]` merge the same way. A
+scalar or an array in a higher file replaces the lower file's value; it isn't
+appended to. Each key remembers which file it came from.
+
+`Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
+file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that
+file, if there is one, still overlays it, and the user file still sits beneath.
+A `path` that names no file raises `ConfigError`. The named file and its
+overlay count as project files for the
+[endpoint rule](#a-url-from-the-project-files-gets-credentials-from-the-project-files-only).
 
 Both working-directory files must be regular files, or links whose target is
 inside the working directory. A link that points elsewhere is refused, because
@@ -527,26 +545,24 @@ its keys would be treated as the working directory's:
 ConfigError: /home/me/my-agent/.donkey-kit.toml links to /home/me/shared/donkey.toml, outside the working directory. Replace the link with a regular file in the working directory, or set those values in the environment.
 ```
 
-<Callout type="info">
-  The user file isn't merged with the working-directory files. If either
-  `.donkey-kit.toml` or `.donkey-kit.local.toml` exists, the user file is not
-  read at all, even when only `.donkey-kit.local.toml` exists
-  ([#727](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/727)).
-</Callout>
-
 ### Precedence
 
 Highest first, per key:
 
-1. Values set in code: anything you change on a resolved config, with
-   `with_overrides(...)`, `dataclasses.replace(...)` or any other copy, and the
-   cost-tag and `on_model_substitution` kwargs of `Donkey.from_env(...)`.
+1. Values set in code: the keyword arguments of `Donkey.from_env(...)` and
+   `DonkeyConfig.resolve(...)`, and anything you change on a resolved config,
+   with `with_overrides(...)`, `dataclasses.replace(...)` or any other copy.
 2. Environment variables.
-3. `./.donkey-kit.local.toml`
-4. `./.donkey-kit.toml`
+3. `./.donkey-kit.local.toml` (beside the `path=` file, when you pass one)
+4. `./.donkey-kit.toml` (or the `path=` file)
 5. The user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`, or
-   `~/.config/.donkey-kit.toml`), only when 3 and 4 don't exist.
+   `~/.config/.donkey-kit.toml`).
 6. Defaults.
+
+A keyword argument replaces the field outright: the environment and the files
+are not read for it, so an invalid `DONKEY_TIMEOUT_S` is ignored when you pass
+`timeout_s`. A `cost=CostTags(...)` argument replaces only the dimensions it
+sets. Every invalid value, from any layer, is reported in one `ConfigError`.
 
 A value counts as set in code once it differs from the value that was loaded,
 whichever way you changed it; a copy that keeps the value keeps its source.
@@ -679,10 +695,10 @@ The error names every credential that came from elsewhere, where each came
 from, the host, the key and the file:
 
 ```text
-ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the working directory's config files are only sent to hosts those files name when you opt in. To continue, do one of:
+ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the project config files are only sent to hosts those files name when you opt in. To continue, do one of:
   - set the URL in the environment instead (DONKEY_LLM_PROXY_URL=https://...)
   - keep the credentials in /home/me/my-agent/.donkey-kit.local.toml, next to the project file
-  - trust this directory's config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
+  - trust the project config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
 ```
 
 The source labels are `env`, `user file` and `code`.
@@ -696,7 +712,7 @@ The source labels are `env`, `user file` and `code`.
    Not available for the `llm_auth` token in `jwt` or `bearer` mode or for a
    `Donkey(auth=…)` token, because none of them comes from a file.
 3. **Opt in:** set `DONKEY_TRUST_PROJECT_CONFIG` to `1` (or `true`, `yes`,
-   `on`) in the environment if you trust this directory's config files. The
+   `on`) in the environment if you trust the project config files. The
    setting decides whether those files are trusted, so it is read from the
    environment only; a `[donkey]` key with that name is ignored.
 
@@ -723,10 +739,14 @@ donkey = Donkey(DonkeyConfig(
     llm_proxy_client_secret="<secret>",
 ))
 
-# Resolved from env and files, with code values on top. Either form records
-# the changed value as set in code:
+# Resolved from env and files, with code values on top. Each form records
+# the value as set in code:
+cfg = DonkeyConfig.resolve(send_cost_headers=True)
 cfg = DonkeyConfig.from_env().with_overrides(send_cost_headers=True)
 cfg = dataclasses.replace(DonkeyConfig.from_env(), send_cost_headers=True)
+
+# From a named config file instead of ./.donkey-kit.toml:
+cfg = DonkeyConfig.resolve(path="deploy/staging.toml")
 
 # Or from the environment, with lifecycle:
 async with Donkey.from_env() as donkey:

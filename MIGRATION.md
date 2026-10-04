@@ -1,5 +1,33 @@
 # Migration guide
 
+## 0.1.2: configuration precedence
+
+### The user config file is merged beneath the project files
+
+**Who:** anyone with a user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`, or
+`~/.config/.donkey-kit.toml`) who also has a `.donkey-kit.toml` or
+`.donkey-kit.local.toml` in the working directory.
+
+**Symptom:** keys from the user file now apply wherever the working-directory
+files leave them unset. Before, the user file was read only when neither
+working-directory file existed
+([#727](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/727)).
+A credential from the user file is still never sent to an `llm_proxy_url` or
+`base_url` read from the working-directory files, so a project file that names
+a URL but no credentials now raises the endpoint `ConfigError` instead of a
+missing-field one.
+
+**Fix:** remove from the user file any key you don't want applied to every
+project, or set it in the project's own files. `donkey doctor` labels values
+from it `user file`.
+
+### `Donkey.from_env()` accepts every field
+
+`Donkey.from_env(...)` and the new `DonkeyConfig.resolve(...)` accept any
+`DonkeyConfig` field as a keyword argument, plus `path=` to read a named
+config file in place of `./.donkey-kit.toml`. An unknown name raises
+`TypeError`. `on_model_substitution=None` is no longer accepted; leave the
+argument out instead.
 ## 0.1.2 (unreleased)
 
 Changes since `0.1.1` that can affect existing code.
@@ -242,10 +270,10 @@ config file; a `base_url` on `anypoint.mulesoft.com`, `eu1.`, `ca1.` or `jp1.`.
 `connection_kwargs()`) raises, before anything is sent:
 
 ```text
-ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the working directory's config files are only sent to hosts those files name when you opt in. To continue, do one of:
+ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the project config files are only sent to hosts those files name when you opt in. To continue, do one of:
   - set the URL in the environment instead (DONKEY_LLM_PROXY_URL=https://...)
   - keep the credentials in /home/me/my-agent/.donkey-kit.local.toml, next to the project file
-  - trust this directory's config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
+  - trust the project config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
 ```
 
 `donkey doctor` shows the same message on its `config` line (for `llm_proxy_url`) or its `control plane` line (for `base_url`).
