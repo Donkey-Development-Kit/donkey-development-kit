@@ -1,6 +1,6 @@
 # ADR 0009: A sans-IO transport policy shared by both clients, and no default retry of model POSTs on 502/504
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-03
 - **Issue:** #728 (part of #707). Recorded under the ADR process from #731.
 

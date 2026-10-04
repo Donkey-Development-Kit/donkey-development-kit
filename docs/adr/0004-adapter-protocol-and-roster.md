@@ -1,6 +1,6 @@
 # ADR 0004: The adapter contract is checked, capabilities are frozen per factory, and `ADAPTERS` is the only roster
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-03
 - **Issue:** #726 (part of #707). Recorded under the ADR process from #731.
 

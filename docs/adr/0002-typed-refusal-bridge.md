@@ -1,6 +1,6 @@
 # ADR 0002: One framework-agnostic typed-refusal bridge, in core
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-03
 - **Issue:** #724 (part of #707). Recorded under the ADR process from #731.
 
@@ -65,7 +65,7 @@ by hand, and only one wrapper exists:
    error from some other HTTP call in the same block is not a governed refusal
    and passes through. The correlation stamp is set on every client the
    transport builds, control-plane clients included
-   (`core/transport.py`: only the attribution and cost headers are skipped on
+   (`core/transport/headers.py`: only the attribution and cost headers are skipped on
    a `control_plane` client). So an `httpx.HTTPStatusError` from a
    donkey-transport control-plane or MCP call inside `donkey.run()` is
    classified too. That is intended for gateway-fronted MCP, where the

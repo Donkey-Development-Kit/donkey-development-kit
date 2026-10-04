@@ -523,7 +523,7 @@ Instead of env vars you can put values in a `[donkey]` table. Keys are the
 |---|---|---|
 | `.donkey-kit.toml` | The current working directory (not searched upward), or the file you name with `path=` | Non-secret project config you commit: URLs, client IDs, attribution. |
 | `.donkey-kit.local.toml` | The same directory as `.donkey-kit.toml` | Secrets and personal overrides. Keep it gitignored. Same keys. Read with or without `.donkey-kit.toml`. |
-| `$XDG_CONFIG_HOME/.donkey-kit.toml`, or `~/.config/.donkey-kit.toml` when `XDG_CONFIG_HOME` is unset or empty | Your user config directory | Personal defaults for every project. Always read, beneath the two files above. When `XDG_CONFIG_HOME` is set, `~/.config` isn't read. |
+| `$XDG_CONFIG_HOME/.donkey-kit.toml`, or `~/.config/.donkey-kit.toml` when `XDG_CONFIG_HOME` is unset, empty or a relative path | Your user config directory | Personal defaults for every project. Always read, beneath the two files above. When `XDG_CONFIG_HOME` is set to an absolute path, `~/.config` isn't read. |
 
 The three files merge key by key: `.donkey-kit.local.toml` over
 `.donkey-kit.toml` over the user file, so a lower file fills whatever a higher
