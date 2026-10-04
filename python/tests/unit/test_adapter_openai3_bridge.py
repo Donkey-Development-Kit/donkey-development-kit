@@ -6,7 +6,7 @@ LlamaIndex, ``OpenAI``) from an ``http_client`` kwarg: ``ChatOpenAI``'s
 ``http_client``, and Strands' ``client_args["http_client"]``. On ``openai>=3``,
 which types that kwarg as an ``httpx2`` client, the adapters hand over the same
 core bridge ``donkey.llm`` uses, chosen in one place
-(``llm.client._openai_http_client``). On ``openai<3`` they hand over the shared
+(``llm.client.openai_http_client``). On ``openai<3`` they hand over the shared
 client's non-owning view, unchanged.
 
 The bridge they get is reusable: Strands closes the ``AsyncOpenAI`` it builds

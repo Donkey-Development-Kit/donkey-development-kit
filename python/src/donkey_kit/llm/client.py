@@ -39,7 +39,7 @@ from .catalog import ModelHandle, heuristic_capabilities
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
 
-__all__ = ["LLMClient"]
+__all__ = ["LLMClient", "openai_http_client", "openai_sync_http_client"]
 
 
 def _openai_on_httpx2() -> bool:
@@ -54,7 +54,7 @@ def _openai_on_httpx2() -> bool:
     return built_on_httpx2(getattr(openai, "DefaultAsyncHttpxClient", None))
 
 
-def _openai_http_client(http: DonkeyAsyncClient, *, reusable: bool = False) -> object:
+def openai_http_client(http: DonkeyAsyncClient, *, reusable: bool = False) -> object:
     """The ``http_client`` for an ``AsyncOpenAI``: the core ``httpx2`` bridge on
     ``openai>=3``, the shared client's non-owning view before (#728, #733).
 
@@ -70,8 +70,8 @@ def _openai_http_client(http: DonkeyAsyncClient, *, reusable: bool = False) -> o
     return http.view()
 
 
-def _openai_sync_http_client(http: DonkeyClient, *, reusable: bool = False) -> object:
-    """Blocking twin of :func:`_openai_http_client`, for ``OpenAI``. Either
+def openai_sync_http_client(http: DonkeyClient, *, reusable: bool = False) -> object:
+    """Blocking twin of :func:`openai_http_client`, for ``OpenAI``. Either
     client refuses to send in a token auth mode, as ``http`` does."""
     if _openai_on_httpx2():
         from ..core.transport.httpx2 import bridged_sync_client
@@ -158,8 +158,8 @@ class LLMClient:
         # leaves the shared client open (#733). ``cast(Any, …)`` because the
         # argument type differs by installed major (#597).
         if sync_http is not None:
-            return OpenAI(http_client=cast(Any, _openai_sync_http_client(sync_http)), **shared)
-        return AsyncOpenAI(http_client=cast(Any, _openai_http_client(self._http)), **shared)
+            return OpenAI(http_client=cast(Any, openai_sync_http_client(sync_http)), **shared)
+        return AsyncOpenAI(http_client=cast(Any, openai_http_client(self._http)), **shared)
 
     async def list_models(self, *, live: bool = False) -> list[ModelHandle]:
         """List logical models the proxy exposes.
