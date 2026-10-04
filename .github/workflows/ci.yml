@@ -234,10 +234,12 @@ jobs:
           tests/unit/test_adapter_ergonomics.py
           tests/unit/test_framework_redirects.py
           tests/unit/test_adapter_async_last_call.py
+          tests/unit/test_transport_injection.py
 
   agent-framework-middleware:
     # #739: policy_middleware() is only meaningful on a real Agent Framework
-    # Agent, which no other job installs. Run its tests with the extra present.
+    # Agent, which no other job installs. Run its tests with the extra present,
+    # with the shared-client correlation and last_call tests (#740).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -248,6 +250,23 @@ jobs:
       - run: >-
           pytest -q
           tests/unit/test_agent_framework_policy_middleware.py
+          tests/unit/test_adapter_ergonomics.py
+          tests/unit/test_transport_injection.py
+
+  llamaindex-transport:
+    # #740: LlamaIndex sends through the shared client, so its calls carry the
+    # run's correlation id, populate donkey.last_call and refuse as typed errors
+    # through typed_refusals(). No other job installs it, so run those tests here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,llamaindex]" --group dev
+      - run: >-
+          pytest -q
+          tests/unit/test_transport_injection.py
           tests/unit/test_adapter_ergonomics.py
 
   agents-strands-last-call:
