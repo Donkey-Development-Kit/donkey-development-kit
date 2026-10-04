@@ -10,6 +10,7 @@ venv/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.import_linter_cache/
 .coverage
 htmlcov/
 .env/
@@ -41,6 +42,15 @@ node_modules/
 /.claude/settings.json
 /.claude/workflows
 /.claude/commands
+
+# Local tooling config that commonly carries credentials (#819). MCP client
+# configs and local agent settings hold tokens inline; a shared MCP config uses
+# ${ENV_VAR} interpolation and is committed under another name (see CONTRIBUTING).
+.mcp.json
+.claude/settings.local.json
+
+# Local run output (captures, reports, transcripts) — may hold live responses
+artifacts/
 
 # Playwright MCP scratch output (local agent tooling)
 .playwright-mcp/

@@ -8,8 +8,9 @@ import { Callout } from 'nextra/components'
 
 Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
 the proxy's `/chat/completions` route. It sends through the SDK's shared HTTP client, so the credentials and the run id
-go on the wire, but LiteLLM raises its own errors, so there are **no typed
-refusals**. Script 02 exists to show that gap.
+go on the wire, but LiteLLM raises its own errors, so the SDK does not convert
+a refusal to a **typed error** here; the `openai` error is in the `__cause__`
+chain. Script 02 exists to show that gap.
 
 Both scripts need a live gateway; there is no offline ADK script.
 
@@ -45,9 +46,9 @@ print("last_call   ", donkey.last_call.status.value, donkey.last_call.surface)
 ```
 
 **You should see:** a one-sentence answer, `total tokens` from the last
-event's `usage_metadata`, and `last_call unavailable …`. The record is set in
-the `Runner`'s own task, not where the script reads it, and a cold read on
-this adapter reports `unavailable` rather than `unobserved` ([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)). Read it
+event's `usage_metadata`, and `last_call unobserved …`. The record is set in
+the `Runner`'s own task, not where the script reads it, so the script's read
+is a cold one. Read it
 in an `after_model_callback` instead, as shown under
 [Native Gemini](/frameworks/adk#native-gemini). LiteLLM also logs a
 provider-list banner, which is harmless.

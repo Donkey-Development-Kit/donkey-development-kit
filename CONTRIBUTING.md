@@ -26,6 +26,9 @@ cited section.
 All Python work happens in `python/`; commands below are run from there unless
 noted. There is no Makefile — every command runs directly.
 
+> **Found a vulnerability?** Don't open an issue or a PR for it. Report it
+> privately as described in [`SECURITY.md`](SECURITY.md).
+
 ---
 
 ## 1. Branch, PR & release workflow
@@ -115,9 +118,12 @@ find yourself on `main` about to start work, `git checkout develop` first.
    Donkey-Development-Kit/donkey-development-kit --search "<keywords>"`); file one if none
    matches. Every issue carries exactly one **milestone** — that milestone is the
    release the branch targets. Triage is by milestone + labels; there is no
-   Projects board. **(fork)** File the issue, but leave milestone/labels/assignee
-   to a maintainer — setting them needs write access; note in the issue that you
-   plan to work it.
+   Projects board. The issue's type label (`enhancement`, `bug`,
+   `documentation`, `chore`, `breaking-change`) is copied onto the PR that
+   closes it and decides its section in the release notes, so keep `Closes #N`
+   in the PR body ([`docs/releasing.md`](docs/releasing.md)). **(fork)** File
+   the issue, but leave milestone/labels/assignee to a maintainer — setting
+   them needs write access; note in the issue that you plan to work it.
 2. **Cut the branch from `develop`:**
    ```bash
    git fetch origin
@@ -147,7 +153,7 @@ find yourself on `main` about to start work, `git checkout develop` first.
 **Use a worktree when there's any chance of a parallel session** (another editor
 window, a running dev server, a `pytest --looponfail` holding files): one issue =
 one branch = one worktree. A fresh worktree has no installed venv/extras — run
-`pip install -e ".[dev,llm,cli]"` in its `python/` before testing.
+`pip install -e ".[llm,cli]" --group dev` in its `python/` before testing.
 
 **No workarounds for prerequisites.** If work on issue #N turns out to need an
 out-of-scope change first (a missing `core/` primitive, a verification unblock),
@@ -168,6 +174,15 @@ lint-imports       # the layered, framework-free-core contract
 vulture            # dead code in src/; allowed names in vulture_whitelist.py
 ```
 
+The secret scan runs outside `python/`, in its own `secret-scan` CI job (gitleaks
+over the full history, configured in `.gitleaks.toml`). Install the matching
+commit hook once per clone so a secret is caught before it is committed:
+
+```bash
+pipx install pre-commit   # or: pip install pre-commit
+pre-commit install        # from the repository root; runs gitleaks on staged changes
+```
+
 If the diff touches an adapter or framework wiring, also run the signature check
 (the executable form of the `docs/verified-apis.md §8` verification step, and the nightly-matrix gate):
 
@@ -175,8 +190,8 @@ If the diff touches an adapter or framework wiring, also run the signature check
 python scripts/verify_frameworks.py
 ```
 
-If you added or touched an adapter, sanity-check that a bare `pip install -e
-".[dev]"` + `python -c "import donkey_kit"` still succeeds — that's the
+If you added or touched an adapter, sanity-check that a bare `pip install -e .
+--group dev` + `python -c "import donkey_kit"` still succeeds — that's the
 `base-only` CI job catching a framework import that leaked into a lower layer.
 
 **(fork)** GitHub withholds repository secrets from pull requests opened from a
@@ -258,8 +273,8 @@ If a change fits none of these, stop and ask — don't invent a seventh surface.
 
 ### `tests/unit/` — the framework-free gate
 
-The `base-only` CI job installs **only** `.[dev]` (no `llm`, no framework
-extras), imports `donkey_kit`, then runs `pytest -q tests/unit`. Everything
+The `base-only` CI job installs **only** the base package and the `dev`
+dependency group (no `llm`, no framework extras), imports `donkey_kit`, then runs `pytest -q tests/unit`. Everything
 here must work with zero optional dependencies. **Never add a top-level framework
 import to a file under `tests/unit/`** — that's exactly the drift this job
 exists to catch. Error-classification changes must keep the taxonomy invariants
@@ -295,6 +310,57 @@ wire every scenario; if one genuinely can't pass for a structural reason, add a
 framework-specific scenario — a shared-suite invariant must apply to all
 frameworks or it doesn't belong there.
 
+### Adding a framework adapter: the integration checklist
+
+An adapter is one entry in `ADAPTERS` (`src/donkey_kit/integrations/__init__.py`)
+plus everything below. `tests/unit/test_integration_checklist.py` checks each
+item per registry entry, so a new entry that skips one fails CI.
+
+1. **A registry entry.** Its `probe` is a tuple of every module the factories
+   need (including a dependency the framework doesn't always install), and its
+   `extra` names the pip extra.
+2. **An extra with a floor.** Each requirement is `>=` the lowest verified
+   version, including any sub-extra the adapter needs (`strands-agents[openai]`).
+   It has a matching row in `docs/verified-apis.md` §8 and a §8.3 floor row.
+3. **A lazy import.** The adapter module never imports its framework at module
+   level (only under `TYPE_CHECKING`). Its factories import through
+   `Adapter._native_import`, which raises the curated `missing_framework_error`.
+4. **All three forms.** `donkey.<fw>.<factory>()`, `donkey.<fw>.connection_kwargs()`
+   and the module-level `donkey_kit.integrations.<fw>.<factory>()`.
+5. **The surrounding artifacts.** A `scripts/verify_frameworks.py` row per
+   factory, a `website/content/frameworks/` page (the adapter docstring's
+   `Docs:` link), an `examples/<fw>/main.py` that makes one call against the
+   simulator, and an entry in the import-linter independence contract in
+   `pyproject.toml`.
+6. **The adapter contract suite, run with the real framework in CI.** That
+   means a driver per factory in `tests/conformance/contract_drivers.py`, a
+   case in `test_framework_retries.py` and `test_missing_framework_error.py`,
+   and the extra in the `adapter-contract` matrix in `.github/workflows/ci.yml`.
+   The suite asserts these things:
+   - governed headers and the run's correlation id;
+   - exactly one send on a 429 or 403;
+   - a typed refusal;
+   - streamed and sync calls;
+   - a call after the framework closes its client;
+   - `last_call` matching `observes_last_call`;
+   - the curated missing-framework error.
+
+Wire the adapter by these rules:
+
+- **Use the shared transport.** Hand the framework a non-owning view
+  (`self.http_client()` / `self.sync_http_client()`), never a client it can
+  close for everyone. Header-only wiring needs a structural reason, recorded in
+  `KNOWN_LIMITATIONS`.
+- **Turn the framework's own retries off.** The shared transport is the one
+  retry layer, so a refusal is sent once.
+- **Wire both sync and async**, or let the driver's `no_sync` say why the
+  framework is async-only.
+- **Use the shared typed-refusal helper** (`_TypedRefusals` in `_base`) rather
+  than a per-framework copy.
+- **`observes_last_call` is the single source of truth** for whether
+  `donkey.last_call` sees the adapter's calls. It holds for every factory and is
+  never changed on an instance.
+
 ### Fixture-driven tests — captures, not conveniences
 
 `tests/fixtures/anypoint/` holds **real captures** from a sandbox, not
@@ -314,7 +380,7 @@ teardown, and inventory receipts go in the **PR description**, not a committed
 file.
 
 Record **how to reproduce the shape** in the fixture index
-(`python/tests/fixtures/rejections/README.md`): one line giving the trigger
+(`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`): one line giving the trigger
 input and the policy configuration that produced it. If what you observed
 differs from what the platform documents, record the discrepancy in the
 ledger row (e.g. "schema documents 403, gateway returned 400") — the ledger
@@ -327,6 +393,28 @@ Anypoint sandbox, not the DDK team sandbox, instance `NNN`") and **omit
 organization/environment UUIDs and gateway hostnames**. This is why fixture
 provenance records a neutral environment description plus the instance ID —
 not an org id.
+
+**Scrub every capture before you commit it.** A raw capture carries the
+capturing tenant's identifiers: organization, environment and asset UUIDs,
+correlation ids, gateway and identity-provider hostnames, and the upstream
+provider's account headers (`openai-organization`, `openai-project`,
+`anthropic-workspace-id`). Some fixtures ship in the wheel, and a PyPI release
+can't be changed afterwards. So the procedure is **capture → scrub → relock**:
+
+```bash
+python scripts/scrub_fixtures.py tests/fixtures   # rewrite in place
+python -m donkey_kit.simulator.fixtures --relock
+```
+
+The scrub is deterministic: the same real value always maps to the same
+placeholder (`00000000-0000-4000-8000-…`, `<name>.example.invalid`), so
+cross-file references stay consistent. It also leaves every other byte alone,
+so byte-exact captures stay byte-exact. The numeric API instance ID is kept: it
+is the provenance the ledger row cites. CI runs `scrub_fixtures.py --check`
+over every tracked file and over the built wheel and sdist, and fails on any
+UUID outside the script's `ALLOWED_UUIDS`, any `*.cloudhub.io` or
+`*.herokuapp.com` host, or any unscrubbed provider account header. A UUID that
+is genuinely public goes in `ALLOWED_UUIDS`, with a reason.
 
 **Byte-exact captures.** When a capture must keep its exact bytes — CRLF in a
 `.headers.txt`, no trailing newline — add a **narrow** `.gitattributes` entry
@@ -385,7 +473,7 @@ failure — don't "fix" the script to make a genuinely-blocked adapter pass.
 
 ```bash
 # from python/
-pip install -e ".[dev,llm,cli]"      # what CI installs
+pip install -e ".[llm,cli]" --group dev   # what CI installs (pip 25.1+)
 pytest -q                            # full suite
 pytest -q tests/unit                 # unit only (the base-only CI job)
 pytest -q -m local_gateway           # opt-in local-gateway tests
@@ -432,7 +520,15 @@ build plan has the rationale behind each rule:
   `pyproject.toml` — add `foo>=X`, never `foo<Y`. Known incompatibilities are
   documented in `docs/verified-apis.md §8.1` as dev constraints, not encoded as
   pins; the nightly matrix exists to surface breakage from newest releases early.
-- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12.
+- **Every direct dependency is a reviewed decision.** Adding a package to
+  `dependencies`, an extra, or a dependency group means adding its entry to
+  `python/dependency_allowlist.toml` (why it is needed, and the review date) in
+  the same PR, and removing a package means removing its entry. On a PR that
+  adds a name, CI also checks that the project exists on PyPI and warns when it
+  is young, abandoned, or one or two characters off another allowlisted name.
+- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12,
+  and the version classifiers match it. When the floor moves is set by
+  [`docs/python-support.md`](docs/python-support.md).
   `tomllib` is stdlib only on 3.11+, so `tomli` is backfilled below 3.11;
   `typing-extensions` is pulled in below 3.12. Don't use 3.11+ syntax/stdlib
   without a backfill.
@@ -489,6 +585,14 @@ build plan has the rationale behind each rule:
   regular files or links that stay inside the working directory. The LLM proxy authenticates on
   a `client_id`/`client_secret` header pair (consumer auth), separate from any
   Anypoint control-plane credential.
+  Local tooling config is gitignored too: `.mcp.json`,
+  `.claude/settings.local.json` and the `artifacts/` run-output directory. To
+  share an MCP client config, commit it under another name (for example
+  `.mcp.json.example`) and reference credentials through `${ENV_VAR}`
+  interpolation, never inline values. gitleaks scans every commit (pre-commit
+  hook and the `secret-scan` CI job), and GitHub push protection is on. To
+  silence a false positive, allowlist the exact synthetic value in
+  `.gitleaks.toml`, never a path.
 - **No dead parameters or stale suppressions.** An argument a function never
   reads is removed (ruff `ARG`); when an override, protocol or blocked stub fixes
   the signature, it stays with a `# noqa: ARG00x` naming that API, or with a
@@ -523,13 +627,15 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
 | Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |
+| Every direct dependency is a reviewed decision (#936) | `tests/unit/test_house_style_config.py` (every declared name has a `dependency_allowlist.toml` entry with a reason and date, and no stale entry); `scripts/check_new_dependencies.py` (a new name exists on PyPI; age, staleness and lookalike warnings) | `pytest`; `new-dependencies` (PRs) |
 | 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
 | `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
 | Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it (the `pydantic.mypy` plugin types the one boundary, `provisioning/spec.py`) | review |
 | Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
-| Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py` | `pytest` |
+| Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |
+| No tenant identifiers in tracked files or built dists (#821) | `scripts/scrub_fixtures.py --check` (UUIDs outside `ALLOWED_UUIDS`, platform hosts, provider account headers) | `typecheck-and-lint`, `base-only` (wheel), publish workflows (wheel + sdist) |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
 | Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py` | `ruff check .`, `pytest` |
@@ -604,7 +710,7 @@ shape, so one surface never says "live" while another still says "planned" or
 - `docs/unsupported-boundary.md`;
 - `website/content/**` **and** the generated `website/public/**` copies
   (regenerate with `npm run generate:llms`);
-- the fixture index (`python/tests/fixtures/rejections/README.md`);
+- the fixture index (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`);
 - the affected test module docstrings.
 
 Do **not** touch the top-level `README.md` status banner for an individual

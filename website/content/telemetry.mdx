@@ -440,13 +440,12 @@ so no response reaches the record and the run's correlation ID isn't sent.
 
 LlamaIndex, Microsoft Agent Framework and ADK's `model()` send through the
 shared client, so a call populates the record in its own context and carries
-the run's correlation ID. They are still listed as not observing calls, so a
-cold read on a `Donkey` that resolved only these adapters or CrewAI reports
-`UNAVAILABLE` rather than `UNOBSERVED`. Aligning that is tracked in
-[#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
-ADK's `gemini()` uses the shared client and observes calls once it has been
-called (see [Native Gemini](/frameworks/adk#native-gemini) for reading
-`last_call` inside an ADK run).
+the run's correlation ID. A cold read on a `Donkey` that resolved only these
+adapters reports `UNOBSERVED`, and `OBSERVED` after a call
+([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
+ADK's `gemini()` uses the shared client too (see
+[Native Gemini](/frameworks/adk#native-gemini) for reading `last_call` inside
+an ADK run).
 
 For a `Donkey` that resolved only CrewAI:
 

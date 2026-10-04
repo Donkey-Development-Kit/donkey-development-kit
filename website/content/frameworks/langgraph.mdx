@@ -182,7 +182,7 @@ The suite that tests this adapter is also a pytest plugin you can point at
 your own agent:
 
 ```bash
-pytest --donkey-conformance --agent=my_app:build
+pytest --donkey-conformance --donkey-agent=my_app:build
 ```
 
 `build` returns an object with an awaitable `run(text)`. The suite checks that

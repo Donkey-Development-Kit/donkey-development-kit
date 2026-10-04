@@ -1,0 +1,10 @@
+# Local commit hooks (#819). Install once per clone:
+#   pipx install pre-commit   # or: pip install pre-commit
+#   pre-commit install
+# CI runs the same scanner over the full history (.github/workflows/secret-scan.yml),
+# so the hook is an early warning, not the gate.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

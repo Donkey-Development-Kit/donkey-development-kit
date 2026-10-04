@@ -3,7 +3,7 @@
 Captured **2026-09-24** from a real deployed Agent Network LLM proxy provisioned
 with **semantic-based routing** (advanced Semantic Service Configuration, an
 external Azure AI Search vector store) in the DDK sandbox, env **Sandbox**
-(svc id `14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a`, from the
+(svc id `00000000-0000-4000-8000-5c4fd1a49fc3`, from the
 `x-envoy-decorator-operation` header). Proxy asset `ddk-semantic-advanced-routing`,
 API Manager instance **`21194930`**, deployed to the `private-space-omni-gateway`
 Flex Gateway. Two topics — **Finance** → `openai`/`gpt-5-mini`, **Code** →

@@ -82,7 +82,7 @@ plugin drives — run the four scenarios against it exactly as a customer would
 against their own agent:
 
 ```bash
-pytest --donkey-conformance --agent=examples.langgraph.main:build
+pytest --donkey-conformance --donkey-agent=examples.langgraph.main:build
 ```
 
 ## The manual equivalent

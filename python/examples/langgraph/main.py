@@ -9,7 +9,7 @@ you. Two things live here:
   wires a small two-node graph (``prepare`` → ``call_model``) and returns an
   object with an awaitable ``run(text)``. This is exactly the shape the
   customer-facing conformance plugin drives
-  (``pytest --donkey-conformance --agent=examples.langgraph.main:build``), and
+  (``pytest --donkey-conformance --donkey-agent=examples.langgraph.main:build``), and
   the SDK's own ``tests/conformance/test_langgraph_conformance.py`` runs the
   four scenarios against it.
 * :func:`main` — the runnable Scenario-A demo (see below). Timed in CI (the

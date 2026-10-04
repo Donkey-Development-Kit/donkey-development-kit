@@ -8,10 +8,10 @@ JSON, an added field, a whitespace tweak) leaves every assertion green while
 silently drifting the bytes the simulator replays away from the captured shape.
 
 This lock closes that gap. :data:`donkey_kit.simulator.fixtures.LOCK_PATH` pins
-the sha256 of every fixture file the simulator serves; in a source checkout it
-is ``tests/fixtures/fixtures.lock``, while a wheel resolves its packaged copy.
+the sha256 of every fixture file the simulator serves; it is package data,
+``src/donkey_kit/simulator/_fixtures/fixtures.lock`` in a source checkout (#746).
 This test fails loudly the moment any of those bytes change. A legitimate
-re-capture is accepted by regenerating the source lock
+re-capture is accepted by regenerating the lock
 (``python -m donkey_kit.simulator.fixtures --relock``) and committing it — the
 deliberate, reviewable "I meant this" step. It is an integrity assertion, not
 fixture-capture tooling (which #189 puts out of scope).
@@ -21,7 +21,15 @@ Base-only safe: imports only the framework-free ``simulator.fixtures`` module.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover - 3.10 backfill
+    import tomli as tomllib
 
 from donkey_kit.simulator import fixtures
 
@@ -46,9 +54,12 @@ def test_served_fixtures_match_the_committed_lock() -> None:
     )
 
 
-def test_source_checkout_uses_the_committed_lock() -> None:
-    """Repository tests must compare the source fixtures with the source lock."""
-    assert fixtures.LOCK_PATH == fixtures._SOURCE_ROOT / "fixtures.lock"
+def test_lock_is_package_data_beside_the_fixtures() -> None:
+    """The lock and the fixtures it pins are one package-data tree (#746), never
+    a path into the repo's ``tests/`` directory."""
+    package_dir = Path(fixtures.__file__).resolve().parent
+    assert fixtures.LOCK_PATH == package_dir / "_fixtures" / "fixtures.lock"
+    assert "tests" not in fixtures.LOCK_PATH.relative_to(package_dir).parts
 
 
 def test_relock_cli_requires_a_source_checkout(
@@ -56,7 +67,7 @@ def test_relock_cli_requires_a_source_checkout(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The dev-only command cannot silently rewrite an installed wheel."""
-    monkeypatch.setattr(fixtures, "_SOURCE_LOCK_PATH", fixtures._SOURCE_ROOT / "missing.lock")
+    monkeypatch.setattr(fixtures, "_CHECKOUT_PYPROJECT", Path("/nonexistent/pyproject.toml"))
     monkeypatch.setattr("sys.argv", ["fixtures", "--relock"])
 
     with pytest.raises(SystemExit, match="2"):
@@ -70,3 +81,12 @@ def test_lock_covers_exactly_the_served_files() -> None:
     the shape table resolves to, so a newly added shape cannot ship unlocked."""
     expected_keys = {f"{directory}/{name}" for directory, name in fixtures._served_files()}
     assert set(fixtures.read_lock()) == expected_keys
+
+
+def test_wheel_build_takes_nothing_from_the_test_tree() -> None:
+    """Shipped runtime data is package data, never a ``force-include`` from
+    ``tests/`` (#746)."""
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text())
+    wheel = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]
+    assert "force-include" not in wheel
+    assert "hooks" not in wheel

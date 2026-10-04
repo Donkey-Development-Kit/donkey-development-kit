@@ -104,6 +104,31 @@ LlamaIndex uses `api_base` rather than `base_url`; `connection_kwargs()`
 already translates for you. An `api_base` passed to `llm()` must pass the
 [`https://` rule](/reference/configuration#endpoints-must-use-https).
 
+## Typed refusals
+
+When the proxy refuses a request, LlamaIndex raises the `openai`
+`APIStatusError`. `donkey.llamaindex.typed_refusals()` is a context manager that
+turns it into the SDK's typed error:
+
+```python
+from donkey_kit import Donkey, PIIDetected
+
+async with Donkey.from_env() as donkey:
+    llm = donkey.llamaindex.llm("gpt-4o")
+    try:
+        with donkey.llamaindex.typed_refusals():
+            reply = await llm.acomplete("hi")
+    except PIIDetected as err:
+        print(err.correlation_id, err.entities)
+```
+
+The refusal goes through `donkey_kit.core.errors.classify()`, so you get, for
+example, `PIIDetected` or `TokenBudgetExceeded`, and the original exception is
+kept on `.framework_error`. Without it, you get LlamaIndex's generic
+`APIStatusError`. The module-level
+`donkey_kit.integrations.llamaindex.typed_refusals()` does the same without a
+`Donkey` instance.
+
 ## Notes
 
 - **Always set `is_chat_model=True`.** `OpenAILike` defaults to
@@ -131,9 +156,8 @@ already translates for you. An `api_base` passed to `llm()` must pass the
   `OpenAILike` yourself, set these yourself.
 - **`donkey.last_call` is set in the context that made the call.** A cold read
   (no call yet in this context) on a `Donkey` that resolved only adapters like
-  this one still reports `status == LastCallStatus.UNAVAILABLE` rather than
-  `UNOBSERVED`, because LlamaIndex is still listed as not observing calls. Aligning
-  that, and the matching conformance exemptions, is tracked in [#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
+  this one reports `status == LastCallStatus.UNOBSERVED`, and `OBSERVED` once
+  a call has returned.
 - **`jwt` mode is async-only.** `acomplete()` / `achat()` carry the JWT; sync
   `complete()` / `chat()` go through the blocking client, which can't fetch
   one, so they raise `ConfigError` before sending anything.

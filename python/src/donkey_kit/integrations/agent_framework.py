@@ -29,13 +29,11 @@ refusal instead of a generic ``ChatClientException`` (BG §1.2).
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
-from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from ..core import _verify
 from ..core.masking import masked
-from ._base import Adapter, default_adapter
+from ._base import Adapter, _TypedRefusals, default_adapter
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -63,6 +61,9 @@ class AgentFrameworkAdapter(Adapter):
     Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
     supported surface, and the factories are conveniences over it.
 
+    The chat clients send through the SDK's shared client, so a call carries the
+    run's correlation id and populates ``donkey.last_call`` (#740).
+
     Raises:
         ImportError: ``donkey.agent_framework`` was read without the
             ``agent_framework`` extra installed; the message carries the install
@@ -71,10 +72,6 @@ class AgentFrameworkAdapter(Adapter):
 
     Docs: https://docs.donkey-kit.dev/frameworks/agent-framework
     """
-
-    # Kept False while the conformance exemption table lists Agent Framework; its
-    # calls now go through the shared client (async_client).
-    observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` (or
@@ -207,41 +204,6 @@ class AgentFrameworkAdapter(Adapter):
 
         # Called, not applied with @: the decorator is untyped without the package.
         return cast("Callable[..., Any]", chat_middleware(donkey_policy_middleware))
-
-
-class _TypedRefusals(AbstractContextManager[None]):
-    """Re-raise an error caused by an ``openai.APIStatusError`` as the typed
-    refusal :func:`~donkey_kit.core.errors.classify` maps its response to.
-
-    A class, not ``@contextmanager``, for the reason given on LangGraph's
-    ``_TypedRefusals``: a generator frame would keep the framework error, whose
-    message repeats the gateway text, in the typed error's traceback.
-    """
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        if exc is None:
-            return None
-        import openai  # lazy: only reached once the framework has raised
-
-        from ..core.errors import classify
-
-        # Agent Framework chains the openai error as __cause__ of its own
-        # ChatClientException; walk the chain rather than one level.
-        cause: BaseException | None = exc
-        while cause is not None and not isinstance(cause, openai.APIStatusError):
-            cause = cause.__cause__
-        if cause is None:
-            return None
-        # openai>=3 vendors its own httpx; cast for the reason in langgraph.py.
-        typed = classify(cast(Any, cause.response))
-        typed.framework_error = exc
-        del exc, exc_type, tb, cause
-        raise typed from None
 
 
 @overload
