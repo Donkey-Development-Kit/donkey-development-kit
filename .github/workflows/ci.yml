@@ -263,7 +263,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,llamaindex]"
+      # Two steps: on the runner, resolving `.[dev,llm,llamaindex]` in one go
+      # drops the `dev` extra ("does not provide the extra 'dev'"), so pytest
+      # is never installed.
+      - run: pip install -e ".[dev,llm]"
+      - run: pip install -e ".[llamaindex]"
       - run: >-
           pytest -q
           tests/unit/test_transport_injection.py
