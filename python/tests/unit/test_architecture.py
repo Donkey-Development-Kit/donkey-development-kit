@@ -134,12 +134,11 @@ def test_the_core_dependency_scan_sees_lazy_imports() -> None:
 # --- import donkey_kit loads only the production layers (#729) ---------------
 
 # The packages `import donkey_kit` must never load: the dev-only siblings, the
-# legacy quarantine, and the third-party packages only they need.
+# CLI, and the third-party packages only they need.
 _NOT_ON_THE_IMPORT_PATH = (
     "donkey_kit._testing",
+    "donkey_kit.cli",
     "donkey_kit.conformance",
-    "donkey_kit.governance",
-    "donkey_kit.provisioning",
     "donkey_kit.simulator",
     "pytest",
     "starlette",
@@ -151,7 +150,7 @@ _NOT_ON_THE_IMPORT_PATH = (
 
 def test_import_donkey_kit_loads_only_the_production_layers() -> None:
     """ARCHITECTURE.md, "Layered architecture": the root package reaches neither
-    the dev-only siblings nor the legacy packages. The import-linter contract has
+    the dev-only siblings nor the CLI. The import-linter contract has
     to ignore Donkey.simulate()'s lazy import of simulator.inject, which would
     also hide that import turning eager, so this checks a fresh interpreter."""
     probe = (
@@ -254,7 +253,7 @@ def _parsed_modules() -> Iterator[tuple[str, bool, ast.Module]]:
 
 def test_no_private_import_across_top_level_packages() -> None:
     """A top-level package (core, llm, registry, tools, integrations, donkey,
-    governance, provisioning, simulator, conformance, _testing, the root) never
+    experimental, cli, simulator, conformance, _testing, the root) never
     imports another's private names, nor its private modules other than the
     named seams."""
     found = {

@@ -336,13 +336,12 @@ name = "layered architecture (§1.1)"
 type = "layers"
 # The whole package, top to bottom; a lower layer never imports a higher one,
 # directly or indirectly (#729). The production stack is donkey → integrations →
-# tools → registry → llm → core. Above it:
-# - cli: the supported `donkey` CLI's future home (#730). Optional, so the
-#   contract tightens by itself once the package exists. Until then the console
-#   script lives in provisioning/cli.py.
-# - provisioning | governance: legacy scaffolding outside the stack (ADR 0008,
-#   docs/adr/0008-*.md, written in #731). Independent of each other; only the CLI
-#   may sit above them.
+# tools → registry → llm → core, with experimental (#730) beside donkey: it
+# re-exports registry and core names that are not first-class API (ADR 0008,
+# docs/adr/0008-*.md), and neither of the two imports the other. Above it:
+# - cli: the `donkey` console script (#730). It may import any layer, and being
+#   on top means no library module imports it back (typer stays off the base
+#   install).
 # - conformance > simulator > _testing: the dev-only siblings (BG §1.4/§1.5). The
 #   harness reuses the simulator, both reach Donkey's private state only through
 #   the _testing seam (#719), and _testing names Donkey's types.
@@ -350,12 +349,11 @@ type = "layers"
 containers = ["donkey_kit"]
 exhaustive = true
 layers = [
-    "(cli)",
-    "provisioning | governance",
+    "cli",
     "conformance",
     "simulator",
     "_testing",
-    "donkey",
+    "donkey | experimental",
     "integrations",
     "tools",
     "registry",
@@ -371,43 +369,20 @@ ignore_imports = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "production code never imports the legacy provisioning or governance packages"
-type = "forbidden"
-# provisioning (the refused control plane) and governance are legacy scaffolding
-# (ADR 0008): reachable from their own modules, never a dependency of the SDK
-# (#729). The one sanctioned importer is the CLI. Today the console script lives
-# inside provisioning itself, so there is no cross-package import to ignore; when
-# #730 moves it to donkey_kit.cli, that package is the exception and stays out
-# of source_modules (the layers contract already lets it import downward).
-source_modules = [
-    "donkey_kit._testing",
-    "donkey_kit.conformance",
-    "donkey_kit.core",
-    "donkey_kit.donkey",
-    "donkey_kit.integrations",
-    "donkey_kit.llm",
-    "donkey_kit.registry",
-    "donkey_kit.simulator",
-    "donkey_kit.tools",
-]
-forbidden_modules = ["donkey_kit.governance", "donkey_kit.provisioning"]
-
-[[tool.importlinter.contracts]]
 name = "the top-level package exports only the production layers"
 type = "forbidden"
 # `import donkey_kit` (the root __init__ on its own, as_packages = false) must
-# never load the dev-only siblings or the legacy packages, directly or through
-# Donkey (#729). With as_packages off, each package is named twice: the package
+# never load the dev-only siblings or the CLI, directly or through Donkey
+# (#729). The deprecated aliases load experimental lazily, which is allowed. With as_packages off, each package is named twice: the package
 # module and its children.
 as_packages = false
 source_modules = ["donkey_kit"]
 forbidden_modules = [
     "donkey_kit._testing",
+    "donkey_kit.cli",
+    "donkey_kit.cli.**",
     "donkey_kit.conformance",
     "donkey_kit.conformance.**",
-    "donkey_kit.governance",
-    "donkey_kit.provisioning",
-    "donkey_kit.provisioning.**",
     "donkey_kit.simulator",
     "donkey_kit.simulator.**",
 ]

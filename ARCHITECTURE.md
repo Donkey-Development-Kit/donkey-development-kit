@@ -86,10 +86,10 @@ an accidental top-level framework import leaking into a lower layer.
 bottom:
 
 ```
-cli                                 the CLI's own package (#730); optional until it exists
-provisioning | governance           legacy, independent of each other
+cli                                 the `donkey` console script (#730)
 conformance → simulator → _testing  dev-only siblings
-donkey → integrations → tools → registry → llm → core
+donkey | experimental               experimental: non-first-class names (ADR 0008)
+integrations → tools → registry → llm → core
 ```
 
 It is `exhaustive`, so a new top-level module fails `lint-imports` until it is
@@ -97,10 +97,10 @@ placed. Its one ignored import is `Donkey.simulate()`'s lazy import of
 `simulator.inject`: public API whose implementation lives in the simulator.
 Beside it:
 
-- **No production code imports `provisioning` or `governance`.** Only the CLI
-  may; today the console script lives inside `provisioning` itself.
+- **Nothing imports the CLI.** `cli` sits on top, so no library module imports
+  it back and typer (the `[cli]` extra) stays off the base install.
 - **`import donkey_kit` loads only the production layers.** The root `__init__`
-  never reaches the dev-only siblings or the legacy packages. The contract has
+  never reaches the dev-only siblings or the CLI. The contract has
   to ignore `Donkey.simulate()`'s import, so it can't tell a lazy import from an
   eager one; `test_import_donkey_kit_loads_only_the_production_layers` imports
   the package in a fresh interpreter and checks `sys.modules`.

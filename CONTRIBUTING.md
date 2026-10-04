@@ -418,11 +418,10 @@ build plan has the rationale behind each rule:
   `import donkey_kit` succeed with no framework installed, and the `base-only`
   job enforces it. The layering (`integrations → tools → registry → llm → core`,
   lower never imports higher) is enforced by `lint-imports`, which also orders
-  the rest of the package (the CLI, the legacy `provisioning`/`governance`, the
-  dev-only siblings, `donkey`) and the modules inside `core/`. Both layer
+  the rest of the package (the CLI, the dev-only siblings, `donkey` and
+  `experimental`) and the modules inside `core/`. Both layer
   contracts are exhaustive: a new top-level module or core module is placed in
-  `pyproject.toml` in the same PR. No production code imports `provisioning` or
-  `governance`. See
+  `pyproject.toml` in the same PR. No library module imports the CLI. See
   [`ARCHITECTURE.md`](ARCHITECTURE.md#layered-architecture).
 - **Small core modules.** A module in `core/` stays within 500 lines. The five
   already past it are held at their current size and may only shrink: lower a
@@ -531,7 +530,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | No unexplained `# type: ignore` | mypy `warn_unused_ignores` (part of `strict`) catches stale ones; the explanation is review-only | `mypy` |
 | `X \| None`, PEP 585/604 syntax | ruff `UP`, `FA` | `ruff check .` |
 | `from __future__ import annotations` in every module | ruff `I002` (`isort.required-imports`) | `ruff check .` |
-| Framework-free core, layering | import-linter contracts in `pyproject.toml` (whole-package and in-core layers, both exhaustive; no production import of `provisioning`/`governance`; the root package loads only production layers; core's forbidden third-party packages, #729); `tests/unit/test_architecture.py` (core's third-party imports as an allowlist, imports inside functions included; `import donkey_kit` in a fresh interpreter loads no dev-only or legacy module) | `lint-imports`, `pytest` |
+| Framework-free core, layering | import-linter contracts in `pyproject.toml` (whole-package and in-core layers, both exhaustive; the CLI on top, so nothing imports it; the root package loads only production layers; core's forbidden third-party packages, #729); `tests/unit/test_architecture.py` (core's third-party imports as an allowlist, imports inside functions included; `import donkey_kit` in a fresh interpreter loads no dev-only module or the CLI) | `lint-imports`, `pytest` |
 | Small core modules (#729) | `tests/unit/test_architecture.py` (500-line budget; a ratchet for the five modules already past it) | `pytest` |
 | Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
