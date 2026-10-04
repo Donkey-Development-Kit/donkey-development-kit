@@ -4,7 +4,7 @@ It speaks every route an adapter sends to: ``/chat/completions`` and
 ``/responses`` (OpenAI), ``/v1/messages`` (Anthropic) and
 ``/models/<m>:generateContent`` / ``:streamGenerateContent`` (Gemini), buffered
 or streamed. Refusals replay the captured ``pii-detected`` 403 and
-``token-rate-limit`` 429 (``tests/fixtures/anypoint/llm_proxy``). It is a real
+``token-rate-limit`` 429 (the packaged ``anypoint/llm_proxy`` fixtures). It is a real
 TCP server, so it also sees the requests of a framework that builds its own HTTP
 client (CrewAI), not only those sent through the SDK's transport.
 
@@ -22,16 +22,25 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from donkey_kit.simulator.fixtures import parse_headers
+from donkey_kit.simulator.fixtures import fixture_bytes, parse_headers
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint"
 _HOP_BY_HOP = {"content-length", "connection", "transfer-encoding"}
 REQUEST_ID = "rid-contract"
 
 
-def _fixture_headers(name: str) -> dict[str, str]:
-    raw = parse_headers((_FIXTURES / name).read_text())
+def _strip(raw: dict[str, str]) -> dict[str, str]:
     return {k: v for k, v in raw.items() if k.lower() not in _HOP_BY_HOP}
+
+
+def _fixture_headers(name: str) -> dict[str, str]:
+    return _strip(parse_headers((_FIXTURES / name).read_text()))
+
+
+def _proxy_headers(name: str) -> dict[str, str]:
+    # The llm_proxy captures ship as simulator package data (#944).
+    raw = fixture_bytes("anypoint/llm_proxy", name).decode()
+    return _strip(parse_headers(raw))
 
 
 def _sse(events: list[tuple[str | None, Any]], *, done: bool = False) -> bytes:
@@ -227,11 +236,11 @@ class Gateway:
 
     def _answer(self, record: Recorded) -> tuple[int, dict[str, str], bytes]:
         if self.mode == "pii":
-            headers = _fixture_headers("llm_proxy/reject.pii-detected.headers.txt")
-            body = (_FIXTURES / "llm_proxy/reject.pii-detected.body.json").read_bytes()
+            headers = _proxy_headers("reject.pii-detected.headers.txt")
+            body = fixture_bytes("anypoint/llm_proxy", "reject.pii-detected.body.json")
             return 403, headers, body
         if self.mode == "budget":
-            return 429, _fixture_headers("llm_proxy/reject.token-rate-limit.headers.txt"), b""
+            return 429, _proxy_headers("reject.token-rate-limit.headers.txt"), b""
         return self._success(record)
 
     def _success(self, record: Recorded) -> tuple[int, dict[str, str], bytes]:

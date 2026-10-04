@@ -315,10 +315,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      # The framework extra in its own step: resolving it together with `dev`
-      # in one pip call drops `dev` on the runner (seen with llamaindex).
-      - run: pip install -e ".[dev,llm,local]"
-      - run: pip install -e ".[$DONKEY_CONTRACT_EXTRA]"
+      # Dev tooling is the `dev` dependency group (#943), not an extra.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev
       - run: >-
           python -m pytest -q
           tests/conformance/test_adapter_contract.py
