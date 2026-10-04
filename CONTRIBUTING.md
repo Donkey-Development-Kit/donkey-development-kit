@@ -223,11 +223,26 @@ The PR targets `develop` and its body includes `Closes #<issue#>`, a `## Summary
 (new/changed extras → the `pip install` users need; a value flipped to `VERIFIED`
 → note that `docs/verified-apis.md` moved with it; a new adapter/exemption → note
 the README table follow-up) — write `None.` explicitly when nothing applies,
-never omit the heading.
+never omit the heading. The repo's PR template
+([`.github/pull_request_template.md`](.github/pull_request_template.md)) lays
+these sections out, plus the **ADR needed?** checkbox below.
 
 Open the PR only once the gate is green — a red PR wastes reviewer attention. If
 `develop` advances while the PR is open, rebase (`git rebase origin/develop`) by
 default; merge only if a rebase would invalidate in-flight review comments.
+
+### Architecture decision records
+
+Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/README.md),
+one file each: the context, the decision, the alternatives rejected, the
+consequences, and a status (proposed, accepted, superseded or rejected). **A PR
+needs an ADR when it changes an `ARCHITECTURE.md` invariant, an import-linter
+contract, the API stability tiers or the dependency policy.** It adds a new
+ADR, or one that supersedes an accepted ADR, since an accepted decision isn't
+edited. Correcting a description so it matches what the code already does
+needs none. The PR template's **ADR needed?** checkbox asks on every PR, and
+a reviewer can ask for one when the answer is wrong. The process, the template
+and the index are in [`docs/adr/README.md`](docs/adr/README.md).
 
 ### Merging
 
@@ -524,6 +539,9 @@ build plan has the rationale behind each rule:
   `pyproject.toml` — add `foo>=X`, never `foo<Y`. Known incompatibilities are
   documented in `docs/verified-apis.md §8.1` as dev constraints, not encoded as
   pins; the nightly matrix exists to surface breakage from newest releases early.
+  Each floor is the lowest verified release (`docs/verified-apis.md §8.3`).
+  [ADR 0007](docs/adr/0007-dependency-policy.md) (proposed) records the
+  dependency policy, including the plan to run PR CI from a lock.
 - **Every direct dependency is a reviewed decision.** Adding a package to
   `dependencies`, an extra, or a dependency group means adding its entry to
   `python/dependency_allowlist.toml` (why it is needed, and the review date) in
@@ -542,16 +560,20 @@ build plan has the rationale behind each rule:
   such as `DonkeyConfig.with_overrides(...)`), and type keyword-override bags
   with `TypedDict` + `Unpack`. A plain `@dataclass` is only for mutable internal
   state. pydantic is used only at an external-schema boundary, where the SDK
-  validates a document it doesn't control; today that is only the legacy
-  `provisioning/spec.py`, which is why `pydantic` is still a base dependency and
-  the `pydantic.mypy` plugin is on. See
+  validates a document it doesn't control. No module has one today, so
+  `pydantic` is not a base dependency and the `pydantic.mypy` plugin is off;
+  `tests/unit/test_base_install_deps.py` and the `base-only` job keep it that
+  way (#730). See
   [ADR 0001](docs/adr/0001-value-objects.md). The package ships `py.typed`
   (PEP 561) — keep the public API fully annotated so downstream users get types.
 - **Public API surface.** Every public module (no `_` in its path) declares a
   sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey`
   signature is exported from `donkey_kit` (or `donkey_kit.core`), and no class
   name means two different types across those `__all__` lists
-  (`tests/unit/test_public_api_surface.py`). Submodule paths are not API. Don't
+  (`tests/unit/test_public_api_surface.py`). A type that exists only for a
+  verification-blocked surface goes in `donkey_kit.experimental`, not
+  `donkey_kit.__all__` (#730); a name moved there keeps a deprecated
+  `donkey_kit.<name>` alias for a release. Submodule paths are not API. Don't
   reach into another object's private members (ruff `SLF001`): the dev-only
   simulator and conformance siblings go through `donkey_kit._testing`, and each
   remaining exception carries a `# noqa: SLF001` with its reason.
@@ -613,7 +635,8 @@ build plan has the rationale behind each rule:
   `except` that only re-raises is dropped (ruff `TRY203`).
 - **Error contract.** Every `DonkeyError` subclass ships its own non-empty
   default `remediation` (overridable, never blank) and is exported from
-  `donkey_kit`, as is `classify`. A domain failure raises a `DonkeyError`
+  `donkey_kit`, as is `classify`; an error only a verification-blocked surface
+  raises is exported from `donkey_kit.experimental` instead (#730). A domain failure raises a `DonkeyError`
   subclass, never a builtin exception.
 - **One source of truth, no dead code.** Gateway header names live only in
   `core/_wire.py`; import them, never retype the string. Each env var is named
@@ -643,7 +666,8 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Every direct dependency is a reviewed decision (#936) | `tests/unit/test_house_style_config.py` (every declared name has a `dependency_allowlist.toml` entry with a reason and date, and no stale entry); `scripts/check_new_dependencies.py` (a new name exists on PyPI; age, staleness and lookalike warnings) | `pytest`; `new-dependencies` (PRs) |
 | 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
 | `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
-| Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it (the `pydantic.mypy` plugin types the one boundary, `provisioning/spec.py`) | review |
+| Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it. That no base module imports pydantic is checked by `tests/unit/test_base_install_deps.py` and the `base-only` job | review, `pytest`, `base-only` job |
+| An ADR for any change to an `ARCHITECTURE.md` invariant, an import-linter contract, the API stability tiers or the dependency policy (#731) | Review-only: the **ADR needed?** checkbox in `.github/pull_request_template.md`; process in `docs/adr/README.md` | review |
 | Three ergonomic forms per adapter | `tests/unit/test_adapter_ergonomics.py` | `pytest` |
 | No classification in an adapter (#724) | `tests/unit/test_refusal_bridge.py` (no adapter module calls `classify(`; every adapter exposes the shared bridge) | `pytest` |
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
@@ -654,7 +678,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
 | Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py` | `ruff check .`, `pytest` |
 | Docstrings on public symbols (#722) | ruff `D101`-`D103` on `src/`; `tests/unit/test_public_docstrings.py` (summary + docs link on the headline entry points) | `ruff check .`, `pytest` |
-| Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
+| Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported from `donkey_kit` or `donkey_kit.experimental`, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
 | One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |
 
 Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .`,
@@ -709,8 +733,8 @@ this is a PR-time discipline. The surface→page map (code paths under
 | `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
 | `tools/session.py` | `tool-access/binding.mdx` |
-| `governance.py` | none today: its verbs are `_verify.blocked(...)`, so no page documents them. Unblocking one needs a page (or a follow-up issue for one) |
-| `provisioning/cli.py`, `provisioning/doctor.py` | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is cut) |
+| `cli/*` (`init`, `doctor`, `mock`, `test`, the blocked `status`/`publish`/`verify`) | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
+| `experimental.py` | `reference/unsupported-boundary.mdx`, plus the page of the surface whose types moved (`publishing.mdx`, `tool-access/discovery.mdx`) |
 | `README.md` (install/status/extras) | `quickstart.mdx`, `index.mdx` |
 
 `docs/verified-apis.md` is not "engineering-internal" for this purpose: when

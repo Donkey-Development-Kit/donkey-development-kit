@@ -9,7 +9,7 @@ from .auth import AnypointConnectedApp, AuthProvider, ChainedAuth, StaticToken
 from .budget import Budget
 from .cache import TTLCache
 from .cachecontrol import CacheControls, CacheScope, cache_scope, current_cache_controls
-from .config import DonkeyConfig, Region
+from .config import ConfigOverrides, DonkeyConfig, Region
 from .cost import CostTags
 from .errors import (
     AgentKilled,
@@ -19,14 +19,11 @@ from .errors import (
     ContentSafetyBlocked,
     DonkeyError,
     GatewayUnavailable,
-    GovernanceDrift,
     ModelNotRoutable,
     ModelSubstituted,
     PIIDetected,
-    PlatformTeamOnly,
     PolicyViolation,
     PromptInjectionBlocked,
-    ProvisioningError,
     PublicationDrift,
     RegistryError,
     TokenBudgetExceeded,
@@ -65,6 +62,7 @@ __all__ = [
     "CacheScope",
     "ChainedAuth",
     "ConfigError",
+    "ConfigOverrides",
     "ContentSafetyBlocked",
     "CostTags",
     "DonkeyAsyncClient",
@@ -74,16 +72,13 @@ __all__ = [
     "DonkeyConfig",
     "DonkeyError",
     "GatewayUnavailable",
-    "GovernanceDrift",
     "LastCall",
     "LastCallStatus",
     "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
-    "PlatformTeamOnly",
     "PolicyViolation",
     "PromptInjectionBlocked",
-    "ProvisioningError",
     "PublicationDrift",
     "Region",
     "RegistryError",

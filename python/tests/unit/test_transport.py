@@ -16,7 +16,14 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
-from donkey_kit.core.errors import ConfigError, GatewayUnavailable, PIIDetected, classify
+from donkey_kit.core.errors import (
+    ConfigError,
+    GatewayUnavailable,
+    PIIDetected,
+    PolicyViolation,
+    TokenBudgetExceeded,
+    classify,
+)
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call
 from donkey_kit.core.telemetry import current_correlation_id, run_scope
 from donkey_kit.core.transport import (
@@ -41,31 +48,31 @@ def _sync_client(handler, cfg=None) -> DonkeyClient:
 
 
 class _RecordingAsync(DonkeyAsyncClient):
-    """Overrides the logical hooks with counters, to assert call-once semantics."""
+    """Overrides the logical hooks with recorders, to assert call-once semantics."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.requests = 0
         self.responses: list[int] = []
-
-    async def _on_request(self, request: httpx.Request) -> None:
-        self.requests += 1
+        self.refusals: list[PolicyViolation] = []
 
     async def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         self.responses.append(response.status_code)
+
+    async def _on_refusal(self, violation: PolicyViolation) -> None:
+        self.refusals.append(violation)
 
 
 class _RecordingSync(DonkeyClient):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.requests = 0
         self.responses: list[int] = []
-
-    def _on_request(self, request: httpx.Request) -> None:
-        self.requests += 1
+        self.refusals: list[PolicyViolation] = []
 
     def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         self.responses.append(response.status_code)
+
+    def _on_refusal(self, violation: PolicyViolation) -> None:
+        self.refusals.append(violation)
 
 
 async def test_correlation_and_attribution_headers_injected() -> None:
@@ -755,22 +762,60 @@ async def test_openai_sdk_with_its_own_retries_sends_a_refusal_once() -> None:
 
 
 # --- lifecycle hooks (BG §1.1, #179) --------------------------------------
-# The four seams every Phase 1 feature attaches to: _on_request / _on_response
-# fire exactly once per logical send(); _on_refusal is defined but has no caller
-# until classify() (#181); _transport is swappable on a live client.
+# The seams every Phase 1 feature attaches to: _inject_headers stamps each
+# logical send, _on_response fires exactly once per logical send(), _on_refusal
+# fires once with the classified PolicyViolation (#208), and the inner transport
+# is swappable on a live client through GovernedTransport.replace_inner() (#728).
+# The unused _on_request seam was deleted (#728).
 
 
 async def test_default_hooks_are_noop_seams() -> None:
-    """All four seams exist and the defaults are no-ops (byte-identical
-    behaviour to a hookless client — the rest of this module asserts that)."""
+    """The seams exist and the defaults are no-ops (byte-identical behaviour to
+    a hookless client — the rest of this module asserts that)."""
     async with _client(lambda r: httpx.Response(200)) as client:
         req = httpx.Request("GET", "https://x")
-        assert await client._on_request(req) is None
+        assert not hasattr(client, "_on_request")
         assert await client._on_response(req, httpx.Response(200)) is None
-        assert await client._on_refusal(None) is None
+        assert await client._on_refusal(TokenBudgetExceeded("over")) is None
 
 
-async def test_on_request_called_once_across_retries() -> None:
+@pytest.mark.parametrize("status", [200, 503, 500])
+async def test_on_refusal_is_not_called_without_a_refusal(status: int) -> None:
+    client = _RecordingAsync(
+        DonkeyConfig(max_retries=0),
+        None,
+        transport=httpx.MockTransport(lambda r: httpx.Response(status)),
+    )
+    async with client:
+        await client.get("https://x")
+    assert client.refusals == []
+
+
+async def test_on_refusal_called_once_with_the_classified_violation() -> None:
+    client = _RecordingAsync(
+        DonkeyConfig(max_retries=3),
+        None,
+        transport=httpx.MockTransport(lambda r: httpx.Response(429)),
+    )
+    async with client:
+        resp = await client.get("https://x")
+    assert resp.status_code == 429  # returned, not raised: the hook only observes
+    assert [type(v) for v in client.refusals] == [TokenBudgetExceeded]
+    assert client.refusals[0].response is resp
+    assert client.responses == [429]
+
+
+def test_sync_on_refusal_called_once_with_the_classified_violation() -> None:
+    client = _RecordingSync(
+        DonkeyConfig(max_retries=3), transport=httpx.MockTransport(lambda r: httpx.Response(429))
+    )
+    with client:
+        resp = client.get("https://x")
+    assert resp.status_code == 429
+    assert [type(v) for v in client.refusals] == [TokenBudgetExceeded]
+
+
+async def test_on_response_called_once_across_retries() -> None:
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -783,7 +828,6 @@ async def test_on_request_called_once_across_retries() -> None:
     async with client:
         resp = await client.get("https://x")
     assert resp.status_code == 200
-    assert client.requests == 1  # logical request hook fires once, not per wire retry
     assert client.responses == [200]  # response hook sees only the final response
 
 
@@ -804,7 +848,6 @@ async def test_hooks_fire_once_across_the_401_refresh_path() -> None:
         resp = await client.get("https://x")
     assert resp.status_code == 200
     assert calls["n"] == 2  # refreshed + retried once
-    assert client.requests == 1  # request hook still fires once for the logical send
     assert client.responses == [200]  # never sees the intermediate 401
 
 
@@ -838,18 +881,17 @@ async def test_on_response_not_called_when_transport_errors() -> None:
         with pytest.raises(GatewayUnavailable) as ei:  # typed, wrapping the transport error (#379)
             await client.get("https://x")
     assert isinstance(ei.value.__cause__, httpx.ConnectError)  # original preserved
-    assert client.requests == 1  # request hook ran before the send
     assert client.responses == []  # transport error is never masked by a response hook
 
 
 async def test_swap_transport_takes_effect_on_the_next_request() -> None:
     async with _client(lambda r: httpx.Response(500)) as client:
         assert (await client.get("https://x")).status_code == 500  # 500 is non-retryable
-        client._swap_transport(httpx.MockTransport(lambda r: httpx.Response(200)))
+        client.governed_transport.replace_inner(httpx.MockTransport(lambda r: httpx.Response(200)))
         assert (await client.get("https://x")).status_code == 200
 
 
-def test_sync_on_request_called_once_across_retries() -> None:
+def test_sync_on_response_called_once_across_retries() -> None:
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -860,7 +902,6 @@ def test_sync_on_request_called_once_across_retries() -> None:
     with client:
         resp = client.get("https://x")
     assert resp.status_code == 200
-    assert client.requests == 1
     assert client.responses == [200]
 
 
@@ -873,14 +914,13 @@ def test_sync_on_response_not_called_when_transport_errors() -> None:
         with pytest.raises(GatewayUnavailable) as ei:  # typed, wrapping the transport error (#379)
             client.get("https://x")
     assert isinstance(ei.value.__cause__, httpx.ConnectError)
-    assert client.requests == 1
     assert client.responses == []
 
 
 def test_sync_swap_transport_takes_effect_on_the_next_request() -> None:
     with _sync_client(lambda r: httpx.Response(500)) as client:
         assert client.get("https://x").status_code == 500
-        client._swap_transport(httpx.MockTransport(lambda r: httpx.Response(200)))
+        client.governed_transport.replace_inner(httpx.MockTransport(lambda r: httpx.Response(200)))
         assert client.get("https://x").status_code == 200
 
 
@@ -1046,7 +1086,11 @@ async def test_langgraph_adapter_does_not_retry_429_end_to_end() -> None:
     # shared client, so the transport is what governs the retry policy.
     kw = adapter.connection_kwargs()
     assert kw["max_retries"] == 0
-    assert kw["http_async_client"] is shared.view()
+    # The view on openai<3, the reusable httpx2 bridge onto ``shared`` on openai>=3 (#728).
+    assert kw["http_async_client"] is adapter._openai_kwarg_http_client()
+    assert kw["http_async_client"] is shared.view() or (
+        kw["http_async_client"]._transport._client is shared
+    )
     async with shared:
         model = adapter.chat_model("gpt-4o")
         with pytest.raises(openai.APIStatusError):
@@ -1710,7 +1754,7 @@ async def test_streaming_error_body_over_cap_is_replayed_unread(monkeypatch) -> 
     # Past the read cap the body is handed back intact and unread — the caller
     # gets every byte, and the span falls back to the status-only classification
     # rather than a type read from a body it never parsed (#805).
-    monkeypatch.setattr("donkey_kit.core.transport._ERROR_BODY_CAP", 8)
+    monkeypatch.setattr("donkey_kit.core.transport.streaming._ERROR_BODY_CAP", 8)
     exporter = _use_tracer(monkeypatch)
     chunks = [b'{"error":', b' {"type": "pii_detected",', b' "message": "x"}}']
     body = _AsyncSSE(chunks)
@@ -2047,8 +2091,10 @@ def _spy_capture_content(monkeypatch) -> list[bool]:
             seen.append(capture_content)
         return telemetry.GenAiSpan(None)
 
-    monkeypatch.setattr("donkey_kit.core.transport.genai_span", fake_genai_span)
-    monkeypatch.setattr("donkey_kit.core.transport.start_genai_span", fake_start_genai_span)
+    for client_module in ("async_client", "sync_client"):
+        module = f"donkey_kit.core.transport.{client_module}"
+        monkeypatch.setattr(f"{module}.genai_span", fake_genai_span)
+        monkeypatch.setattr(f"{module}.start_genai_span", fake_start_genai_span)
     return seen
 
 

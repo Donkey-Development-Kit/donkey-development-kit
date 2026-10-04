@@ -5,8 +5,10 @@ Supported at connection_kwargs() — not conformance-tested (BG §1.8).
 ``client_args`` is forwarded to the underlying OpenAI client, so header AND
 transport injection are both available (full injection). Strands builds and
 closes a fresh ``AsyncOpenAI(**client_args)`` for every request, so the
-``http_client`` it gets is the shared client's non-owning view: closing it leaves
-the shared client open for the next call and every other surface (#733).
+``http_client`` it gets never closes: the shared client's non-owning view on
+``openai<3``, a reusable bridge onto it (core ``httpx2`` bridge) on ``openai>=3``.
+Closing it leaves the client usable for the next call and the shared client open
+for every other surface (#733, #728).
 
 STREAMING (#830): the governed connection sets ``stream=False``. On an
 OpenAI-format proxy routing to Gemini the gateway answers a streamed request with
@@ -68,7 +70,7 @@ class StrandsAdapter(Adapter):
             {
                 "client_args": {
                     **conn,  # base_url, api_key, default_headers
-                    "http_client": self.http_client(),
+                    "http_client": self._openai_kwarg_http_client(),
                     "max_retries": 0,  # we retry in transport (BG §1.1)
                 },
                 "stream": False,

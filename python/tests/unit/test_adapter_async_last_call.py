@@ -97,7 +97,7 @@ def _donkey(handler: Any = _answer) -> Donkey:
             llm_proxy_client_secret="csecret",
         )
     )
-    donkey._http._swap_transport(httpx.MockTransport(handler))
+    donkey._http.governed_transport.replace_inner(httpx.MockTransport(handler))
     return donkey
 
 

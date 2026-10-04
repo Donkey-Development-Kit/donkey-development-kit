@@ -26,6 +26,7 @@ from ..core.transport import (
     proxy_api_key,
     proxy_auth_headers,
 )
+from ..llm.client import _openai_http_client, _openai_sync_http_client
 from . import ADAPTERS, missing_framework_error, typed_refusals
 
 
@@ -46,7 +47,7 @@ class Adapter(ABC):
     #: Whether a governed model call through this adapter reaches ``donkey.last_call``
     #: (#362). True when the adapter hands the framework our shared
     #: :class:`DonkeyAsyncClient`, through its view, a pre-built OpenAI client on
-    #: it, or the ``_httpx2_bridge`` (its ``_on_response`` observes the response);
+    #: it, or the core ``httpx2`` bridge (its ``_on_response`` observes the response);
     #: False when the SDK does not own the transport — the framework builds its own
     #: clients (CrewAI's native OpenAI provider, #740). A ``False`` here is why
     #: ``donkey.last_call`` reports "not available on this surface" rather than a
@@ -68,6 +69,9 @@ class Adapter(ABC):
         # lifecycle; standalone use falls back to one owned here.
         self._sync_http = sync_http_client or self._own_sync_client
         self._owned_sync: DonkeyClient | None = None
+        # The http_client each openai kwarg slot was given, with the shared client
+        # it sends through: one per adapter, as a view is one per shared client.
+        self._kwarg_clients: dict[str, tuple[object, Any]] = {}
 
     @contextmanager
     def _native_import(self) -> Iterator[None]:
@@ -128,6 +132,33 @@ class Adapter(ABC):
     _http_client = http_client
     _sync_http_client = sync_http_client
 
+    def _openai_kwarg_http_client(self) -> Any:
+        """The ``http_client`` for a framework that builds its own ``AsyncOpenAI``
+        from kwargs (LangGraph, LlamaIndex, Strands): the core ``httpx2`` bridge
+        on ``openai>=3``, the shared client's view (:meth:`http_client`) before
+        (#728). The bridge is reusable, because Strands closes the
+        ``AsyncOpenAI`` it builds around this client after every request, and
+        the same one is returned each time, as the view is."""
+        return self._kwarg_client(
+            "async", self._http, lambda: _openai_http_client(self._http, reusable=True)
+        )
+
+    def _openai_kwarg_sync_http_client(self) -> Any:
+        """Blocking twin of :meth:`_openai_kwarg_http_client`, for the ``OpenAI``
+        a framework builds for its sync calls. It sends through the blocking
+        shared client, which refuses in a token auth mode."""
+        sync = self._sync_http()
+        return self._kwarg_client(
+            "sync", sync, lambda: _openai_sync_http_client(sync, reusable=True)
+        )
+
+    def _kwarg_client(self, slot: str, shared: object, build: Callable[[], Any]) -> Any:
+        held = self._kwarg_clients.get(slot)
+        if held is None or held[0] is not shared:
+            held = (shared, build())
+            self._kwarg_clients[slot] = held
+        return held[1]
+
     def _proxy_openai_client(self, base_url: str | None = None) -> Any:
         """A native ``AsyncOpenAI`` bound to the proxy (or to ``base_url``, an
         override already allowed through :meth:`_allow_endpoints`) that sends
@@ -137,16 +168,14 @@ class Adapter(ABC):
         with self._native_import():
             from openai import AsyncOpenAI
 
-        # openai 3.x retyped http_client to httpx2.AsyncClient (a distinct class from a
-        # separate distribution); our DonkeyAsyncClient is an httpx subclass, duck-typed
-        # at runtime. Typecheck-only mismatch — docs/verified-apis.md (openai >=3.0 row).
-        # `cast(Any, …)` erases the argument type so this typechecks clean under BOTH
-        # majors; a bare `# type: ignore` is `unused-ignore` under openai<3 (#597).
+        # openai>=3 is built on httpx2: it gets the core httpx2 bridge, openai<3 the
+        # shared client's view (#728). ``cast(Any, …)`` because the argument type
+        # differs by installed major (#597).
         return AsyncOpenAI(
             base_url=base_url or conn["base_url"],
             api_key=conn["api_key"],
             default_headers=conn["default_headers"],
-            http_client=cast(Any, self.http_client()),
+            http_client=cast(Any, _openai_http_client(self._http)),
             max_retries=0,  # we retry in transport (BG §1.1)
         )
 

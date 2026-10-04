@@ -346,7 +346,7 @@ def semantic_routing(response: httpx.Response) -> tuple[str | None, float | None
     this response (``x-llm-proxy-semantic-routing-success``), or ``(None, None)``
     on a model-based / non-proxy / simulated response. These are the values that
     land on :attr:`LastCall.matched_topic` / :attr:`LastCall.routing_score` and the
-    span. Shared by :meth:`LastCall.from_response` and ``core/transport.py`` so the
+    span. Shared by :meth:`LastCall.from_response` and ``core/transport/`` so the
     record and the span read the header identically (one definition, #590)."""
     return _parse_semantic_routing(response.headers.get(SEMANTIC_ROUTING_SUCCESS_HEADER))
 
@@ -356,7 +356,7 @@ def semantic_cache(response: httpx.Response) -> tuple[str | None, float | None]:
     response (``x-semantic-cache-status`` / ``x-semantic-cache-score``), or
     ``(None, None)`` on a non-cached / non-proxy / simulated response. These are
     the values that land on :attr:`LastCall.cache_status` / :attr:`LastCall.cache_score`
-    and the span. Shared by :meth:`LastCall.from_response` and ``core/transport.py``
+    and the span. Shared by :meth:`LastCall.from_response` and ``core/transport/``
     so the record and the span read the headers identically (one definition, #587)."""
     return (
         _parse_cache_status(response.headers.get(SEMANTIC_CACHE_STATUS_HEADER)),

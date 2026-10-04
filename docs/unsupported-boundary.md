@@ -34,7 +34,7 @@ Classification:
 ## Deliberately outside the shipping boundary
 
 - Exchange search and asset resolution, API Manager governed-state reads, MCP
-  discovery/binding, and provisioning/publication raise
+  discovery/binding, and Exchange publication raise
   `NotImplementedError("blocked on verification: ...")` before network I/O.
   They are therefore not called platform APIs and are not classified above.
 - `LLMClient.list_models(live=True)` does not call `GET /models`; live capture

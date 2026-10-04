@@ -4,10 +4,9 @@ collision resolution, description quality, digest, governance evaluation."""
 from __future__ import annotations
 
 from donkey_kit.core.cache import TTLCache
-from donkey_kit.provisioning.publish import content_digest
 from donkey_kit.registry.criteria import Check, GovernanceCriteria, evaluate
 from donkey_kit.registry.models import AssetRef, McpServerHandle
-from donkey_kit.registry.publication import check_description_quality
+from donkey_kit.registry.publication import check_description_quality, content_digest
 from donkey_kit.tools.filter import ToolDescriptor, ToolFilter, resolve_collisions
 from donkey_kit.tools.session import ToolSet
 

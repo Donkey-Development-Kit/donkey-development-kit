@@ -1,7 +1,7 @@
 """Deprecated alias of :mod:`donkey_kit.registry.criteria` (#719).
 
-This module was renamed so it no longer shares a name with the top-level
-:mod:`donkey_kit.governance`. Import the criteria from :mod:`donkey_kit.registry`
+This module was renamed so it no longer shared a name with the top-level
+``donkey_kit.governance`` (since deleted, #730). Import the criteria from :mod:`donkey_kit.registry`
 instead; this alias will be removed in a later release.
 """
 

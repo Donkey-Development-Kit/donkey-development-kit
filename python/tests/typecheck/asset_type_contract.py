@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from donkey_kit import AssetRef, AssetType, Publication, PublicationAssetType
+from donkey_kit.experimental import AssetRef, AssetType, Publication, PublicationAssetType
 from donkey_kit.registry import ExchangeRegistry
 
 discovery_type: AssetType = "mcp"

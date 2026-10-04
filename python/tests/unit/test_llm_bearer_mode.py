@@ -114,7 +114,7 @@ def test_bearer_mode_static_headers_carry_no_consumer_credential() -> None:
 async def test_data_plane_request_carries_the_bearer_token_only() -> None:
     upstream = _Recorder()
     async with Donkey(_bearer_cfg(), llm_auth=StaticToken(_TOKEN)) as donkey:
-        donkey._http._swap_transport(httpx.MockTransport(upstream))
+        donkey._http.governed_transport.replace_inner(httpx.MockTransport(upstream))
         await donkey._http.post(f"{_PROXY}chat/completions", json={"model": "m"})
 
     (request,) = upstream.requests
@@ -132,7 +132,7 @@ async def test_a_401_refreshes_the_token_and_retries_once() -> None:
         return httpx.Response(401)
 
     async with Donkey(_bearer_cfg(), llm_auth=provider) as donkey:
-        donkey._http._swap_transport(httpx.MockTransport(upstream))
+        donkey._http.governed_transport.replace_inner(httpx.MockTransport(upstream))
         resp = await donkey._http.post(f"{_PROXY}chat/completions", json={"model": "m"})
 
     assert resp.status_code == 401  # a second 401 is terminal
@@ -145,7 +145,7 @@ async def test_the_token_never_reaches_a_control_plane_request() -> None:
     platform = _Recorder()
     cfg = _bearer_cfg(base_url="https://anypoint.example.test")
     async with Donkey(cfg, auth=StaticToken(_CONTROL_TOKEN), llm_auth=provider) as donkey:
-        donkey.registry._http._swap_transport(httpx.MockTransport(platform))
+        donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         await donkey.registry._http.get(f"{cfg.base_url}/exchange/api/v2/assets")
 
     (request,) = platform.requests
@@ -213,7 +213,7 @@ async def test_every_shared_client_form_sends_the_bearer_token(form: str) -> Non
     upstream = _Recorder()
     donkey = Donkey(_bearer_cfg(), llm_auth=StaticToken(_TOKEN))
     try:
-        donkey._http._swap_transport(httpx.MockTransport(upstream))
+        donkey._http.governed_transport.replace_inner(httpx.MockTransport(upstream))
         with contextlib.suppress(Exception):
             result = build(donkey)
             if hasattr(result, "__await__"):
@@ -315,7 +315,7 @@ async def test_client_id_mode_attaches_no_data_plane_token() -> None:
     )
     provider = _CountingProvider("tok")
     async with Donkey(cfg, llm_auth=provider) as donkey:
-        donkey._http._swap_transport(httpx.MockTransport(upstream))
+        donkey._http.governed_transport.replace_inner(httpx.MockTransport(upstream))
         await donkey._http.post(f"{_PROXY}chat/completions", json={"model": "m"})
 
     (request,) = upstream.requests
@@ -352,7 +352,7 @@ async def test_a_raw_request_does_not_fetch_the_token_for_a_project_llm_proxy_ur
     provider = _CountingProvider("tok")
     upstream = _Recorder()
     async with Donkey(DonkeyConfig.from_env(), llm_auth=provider) as donkey:
-        donkey._http._swap_transport(httpx.MockTransport(upstream))
+        donkey._http.governed_transport.replace_inner(httpx.MockTransport(upstream))
         with pytest.raises(ConfigError, match="llm.example.test"):
             await donkey._http.post(f"{_PROJECT_LLM}chat/completions", json={"model": "m"})
     assert provider.token_calls == 0
