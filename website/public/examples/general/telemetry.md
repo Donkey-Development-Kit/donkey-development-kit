@@ -157,15 +157,19 @@ The same two ids, on the exception
 
     # no Donkey-specific variable
     export OTEL_EXPORTER_OTLP_ENDPOINT=https://…
-    donkey = Donkey.from_env()   # installs OTLP behind a BatchSpanProcessor
+    donkey = Donkey.from_env()   # OTLP behind a BatchSpanProcessor, for Donkey's spans
     # no endpoint → inert, silent, nothing connects
     # DONKEY_TELEMETRY=false    → opt out even if an endpoint is set
+    # Donkey leaves trace.get_tracer_provider() alone; to make its provider
+    # the global one (other libraries' spans too):
+    #   export DONKEY_TELEMETRY_INSTALL_GLOBAL=true
 
   PASS  no OTEL_EXPORTER_OTLP_ENDPOINT — export stayed inert and silent
-  Donkey.from_env() installs OTLP only when that standard env var is set. It will not
-  clobber a TracerProvider the host already installed — which is why this demo's in-
-  memory table still works. Opt out with DONKEY_TELEMETRY=false (or telemetry = false in
-  .donkey-kit.toml). Cost tags on donkey.run(team=..., project=...) are what let a
+  Donkey.from_env() sets up OTLP only when that standard env var is set, and only for
+  its own spans: it does not take the global TracerProvider unless
+  DONKEY_TELEMETRY_INSTALL_GLOBAL=true, and a provider the host sets, even after
+  Donkey(), wins — which is why this demo's in-memory table works. Opt out with
+  DONKEY_TELEMETRY=false (or telemetry = false in .donkey-kit.toml). Cost tags on donkey.run(team=..., project=...) are what let a
   backend slice refusals, budget and latency by agent without another attribute
   convention.
 
@@ -256,8 +260,10 @@ with donkey.run(id="otel-zero-config", team="cx", project="welcome"):
 - **Cost tags are a fixed four** — `team`, `project`, `env`, `enduser.id` —
   set on `from_env()` and overridable per `run()`, landing on `donkey.cost.*`.
 - **Export is opt-in.** No endpoint means inert and silent;
-  `DONKEY_TELEMETRY=false` opts out even when one is set, and a host
-  `TracerProvider` is never replaced.
+  `DONKEY_TELEMETRY=false` opts out even when one is set. Donkey exports its
+  own spans through a provider of its own and never takes the global
+  `TracerProvider` unless `DONKEY_TELEMETRY_INSTALL_GLOBAL=true`; a host
+  provider, set before or after `Donkey()`, always wins.
 
 **Learn more:** [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md)
 

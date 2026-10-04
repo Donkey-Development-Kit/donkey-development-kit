@@ -12,6 +12,12 @@ their stable historical name; every other citation is a `BG §N.N`, a named
 invariant, or a `Phase N`. When a rule here feels arbitrary, read the cited
 section — the constraints are deliberate.
 
+Why each design decision was taken, and what was rejected, is recorded in the
+architecture decision records in [`docs/adr/`](docs/adr/README.md). Changing
+an invariant this document states, an import-linter contract, the API
+stability tiers or the dependency policy needs an ADR in the same PR
+([`CONTRIBUTING.md`](CONTRIBUTING.md#architecture-decision-records)).
+
 For *using* the SDK, see the consumer docs site (`website/`). For *working in*
 the repo — branch/PR flow, testing surfaces, coding conventions — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
@@ -138,7 +144,15 @@ boundary, and no module has one today: its only user was the deleted
   on the process-default runtime from `runtime.default()`: built lazily under a
   lock from the environment, exactly as `Donkey.from_env()` would be, shared by
   every factory, and closed at interpreter exit. It lives in `core` because
-  `integrations` may not import the top package (#725).
+  `integrations` may not import the top package (#725,
+  [ADR 0003](docs/adr/0003-core-runtime.md)).
+
+  The OTLP bootstrap has no hidden global side effect: it builds a
+  **DDK-scoped** `TracerProvider` for DDK's own spans and never sets the
+  process-global OpenTelemetry provider unless `telemetry_install_global`
+  opts in. `_tracer()` in `core/telemetry.py` prefers any global provider the
+  host sets, even after `Donkey()`, so OTel's set-once rule never locks the
+  host out (#732, `docs/adr/0010-no-hidden-global-side-effects.md`).
 
   Each client attaches credentials only to its **checked endpoints**
   (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
@@ -159,14 +173,20 @@ boundary, and no module has one today: its only user was the deleted
   module-level factory raise the same error. Each adapter returns the framework's own
   object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
-- **Configuration** resolves per key: values set in code → env vars →
-  `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
-  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml`, or
-  `~/.config/.donkey-kit.toml` when that variable is unset or empty → default.
-  `DonkeyConfig(...)` built directly reads neither env nor files. It reports
-  every missing field at once rather than one failure per run.
-  `Donkey.from_env()` is the entry point. This is what the code does today;
-  the precedence the build plan specifies (§2.1) is #727. Each field records its source
+- **Configuration** resolves per key (§2.1, `DonkeyConfig.resolve`): values
+  set in code (`resolve()` / `Donkey.from_env()` keyword arguments,
+  `with_overrides`) → env vars → `./.donkey-kit.local.toml` →
+  `./.donkey-kit.toml` → `$XDG_CONFIG_HOME/.donkey-kit.toml` (or
+  `~/.config/.donkey-kit.toml` when that variable is unset or empty) → default.
+  The three files merge key by key, nested tables recursively, so a lower file
+  fills what a higher one leaves unset; `resolve(path=...)` reads a named file
+  in place of `./.donkey-kit.toml`. One declarative field table (`_FIELDS` in
+  `core/config.py`) names each field's env var, TOML key, parser and value
+  check; the loader, the error messages and the configuration docs (pinned by a
+  unit test) all follow it. `DonkeyConfig(...)` built directly reads neither env
+  nor files. It reports every missing field, and every invalid value, at once
+  rather than one failure per run. `Donkey.from_env()` is the entry point.
+  Each field records its source
   (`DonkeyConfig.source_of`); a value that differs from the loaded one counts as
   set in code, however it was changed. So `llm_proxy_url` or `base_url` read
   from the working directory's files only receives credentials from those files
@@ -384,6 +404,9 @@ pytest plugin** users run against their own agent (#191).
   feature-by-feature scope and acceptance bars; cited as `BG §N.N`.
 - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
+- [`docs/adr/`](docs/adr/README.md) — the architecture decision records: why
+  each decision here was taken, the alternatives rejected, and the process for
+  changing one.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch/PR/release flow, testing surfaces,
   coding conventions, and the docs-sync map. It is the canonical contributor
   guide; maintainers' optional AI-agent tooling is not part of this repository
