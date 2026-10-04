@@ -29,7 +29,7 @@ from ..core.transport import (
     proxy_api_key,
     proxy_auth_headers,
 )
-from ..llm.client import _openai_http_client, _openai_sync_http_client
+from ..llm.client import openai_http_client, openai_sync_http_client
 from . import ADAPTERS, AdapterCapabilities, missing_framework_error, typed_refusals
 
 
@@ -178,7 +178,7 @@ class Adapter(ABC):
         ``AsyncOpenAI`` it builds around this client after every request, and
         the same one is returned each time, as the view is."""
         return self._kwarg_client(
-            "async", self._http, lambda: _openai_http_client(self._http, reusable=True)
+            "async", self._http, lambda: openai_http_client(self._http, reusable=True)
         )
 
     def _openai_kwarg_sync_http_client(self) -> Any:
@@ -187,7 +187,7 @@ class Adapter(ABC):
         shared client, which refuses in a token auth mode."""
         sync = self._sync_http()
         return self._kwarg_client(
-            "sync", sync, lambda: _openai_sync_http_client(sync, reusable=True)
+            "sync", sync, lambda: openai_sync_http_client(sync, reusable=True)
         )
 
     def _kwarg_client(self, slot: str, shared: object, build: Callable[[], Any]) -> Any:
@@ -213,7 +213,7 @@ class Adapter(ABC):
             base_url=base_url or conn["base_url"],
             api_key=conn["api_key"],
             default_headers=conn["default_headers"],
-            http_client=cast(Any, _openai_http_client(self._http)),
+            http_client=cast(Any, openai_http_client(self._http)),
             max_retries=0,  # we retry in transport (BG §1.1)
         )
 

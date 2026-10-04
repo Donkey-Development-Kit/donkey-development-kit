@@ -98,6 +98,56 @@ since every adapter importing it downward is expected. The `base-only` CI job
 additionally installs *only* the base package and imports `donkey_kit` to catch
 an accidental top-level framework import leaking into a lower layer.
 
+**The whole package is layered, not just the stack above** (#729). The
+`layered architecture (§1.1)` contract orders every top-level module, top to
+bottom:
+
+```
+cli                                 the `donkey` console script (#730)
+conformance → simulator → _testing  dev-only siblings
+donkey | experimental               experimental: non-first-class names (ADR 0008)
+integrations → tools → registry → llm → core
+```
+
+It is `exhaustive`, so a new top-level module fails `lint-imports` until it is
+placed. Its one ignored import is `Donkey.simulate()`'s lazy import of
+`simulator.inject`: public API whose implementation lives in the simulator.
+Beside it:
+
+- **Nothing imports the CLI.** `cli` sits on top, so no library module imports
+  it back and typer (the `[cli]` extra) stays off the base install.
+- **`import donkey_kit` loads only the production layers.** The root `__init__`
+  never reaches the dev-only siblings or the CLI. The contract has
+  to ignore `Donkey.simulate()`'s import, so it can't tell a lazy import from an
+  eager one; `test_import_donkey_kit_loads_only_the_production_layers` imports
+  the package in a fresh interpreter and checks `sys.modules`.
+- **core depends on httpx only.** A forbidden contract, with third-party
+  packages in the graph, bars the LLM SDKs, `httpx2`, `pydantic`, every
+  adapter's framework, the MCP SDK and the dev-only and CLI dependencies from `core`,
+  including imports inside functions, which the `base-only` job can't see. Its
+  allowlist twin is `test_core_depends_only_on_httpx_and_the_stdlib`
+  (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
+  level, plus the optional `opentelemetry` lazily.
+- **core is layered too:** `runtime` → `transport` → `budget | cache |
+  cachecontrol | telemetry | toolspec` → `auth` → `config` → `cost | endpoints |
+  header_names` → `errors` → `lastcall | masking` → `_verify` → `_wire`.
+  `lastcall` sits below `errors` because a `DonkeyError` reads its request id
+  through it. This contract is exhaustive too.
+
+Two rules the import graph can't express are tests in
+`tests/unit/test_architecture.py`:
+
+- **No cross-package private import**
+  (`test_no_private_import_across_top_level_packages`). No top-level package
+  imports another's `_name`, or any private module other than the four named
+  seams (`core._verify`, `core._wire`, `_testing`, `integrations._base`).
+- **A module size budget for `core/`**
+  (`test_core_modules_stay_within_the_size_budget`) of 500 lines. The five
+  modules already past it (`config`, `errors`, `lastcall`, `telemetry`,
+  `transport`) are held at their current size by a ratchet
+  (`test_oversized_core_modules_only_shrink`). A ceiling only comes down, and
+  the transport split (#728) removes `transport.py`'s entry.
+
 Because of that rule, adapters import their framework **lazily, inside methods** —
 never at module top level — so importing the base package never drags in a
 framework that may not be installed.
@@ -117,7 +167,8 @@ boundary, and no module has one today: its only user was the deleted
   governance/attribution headers) **per credential plane**, so each credential
   only ever rides its own plane's requests (`BG §1.1`):
   - the **data-plane** client goes to the LLM client and every adapter, so there
-    is exactly one transport and one header-injection point for model calls. It
+    is exactly one transport and one header-injection point for model calls
+    (`test_one_shared_client_per_credential_plane`). It
     carries only the LLM-proxy credential: the `client_id`/`client_secret` header
     pair in the default client-id mode (no token provider), or the model-wallet
     JWT from `Donkey(llm_auth=…)` in `jwt` mode. Frameworks never get this
@@ -141,8 +192,8 @@ boundary, and no module has one today: its only user was the deleted
   `http_client` kwarg (LangGraph, Strands, LlamaIndex) gets the same bridge on
   `openai>=3` (#728), in a *reusable* variant whose close is a no-op like the
   view's, because Strands closes its client after every request; on `openai<3`
-  it still gets the view. One helper, `llm.client._openai_http_client` /
-  `_openai_sync_http_client`, makes that choice for every OpenAI client the SDK
+  it still gets the view. One helper, `llm.client.openai_http_client` /
+  `openai_sync_http_client`, makes that choice for every OpenAI client the SDK
   wires. The bridge has an async and a blocking twin. The blocking twin sends
   through the blocking shared client, so it refuses in a token mode just as
   that client does. Both are imported lazily, because `httpx2` is not a base
@@ -181,8 +232,10 @@ boundary, and no module has one today: its only user was the deleted
   never a bare `ModuleNotFoundError`. The registry probes every module an
   adapter needs, not just the framework's own, and each factory wraps its lazy
   import in `Adapter._native_import()`, so the adapter method and the
-  module-level factory raise the same error. Each adapter returns the framework's own
-  object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
+  module-level factory raise the same error
+  (`test_donkey_form_raises_curated_error` and its siblings in
+  `tests/unit/test_missing_framework_error.py`). Each adapter returns the
+  framework's own object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
 - **One adapter contract, one roster (#726, ADR 0004).** Every adapter meets
   `AdapterProtocol` (`integrations/__init__.py`): `connection_kwargs()` plus
@@ -214,7 +267,7 @@ boundary, and no module has one today: its only user was the deleted
   unit test) all follow it. `DonkeyConfig(...)` built directly reads neither env
   nor files. It reports every missing field, and every invalid value, at once
   rather than one failure per run. `Donkey.from_env()` is the entry point.
-  Each field records its source
+  `test_config_precedence_code_env_files_default` pins it. Each field records its source
   (`DonkeyConfig.source_of`); a value that differs from the loaded one counts as
   set in code, however it was changed. So `llm_proxy_url` or `base_url` read
   from the working directory's files only receives credentials from those files
@@ -291,6 +344,11 @@ boundary, and no module has one today: its only user was the deleted
   `send()`).
   A hookless client behaves exactly as it did before the hooks were added. The
   full contracts live in the `core/transport/` docstrings.
+  `test_transport_hook_table_matches_both_clients` keeps this table and both
+  clients in step. The firing contracts are pinned in
+  `tests/unit/test_transport.py` (`test_default_hooks_are_noop_seams`,
+  `test_on_refusal_called_once_with_the_classified_violation`,
+  `test_hooks_fire_once_across_the_401_refresh_path`).
 - **Governed-state criteria** (`GovernanceCriteria`, `STRICT`, `evaluate`) live
   in `registry/criteria.py` (renamed from `registry/governance.py` in #719; the
   old path is a deprecated alias). The top-level `Governance` object
@@ -359,14 +417,19 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
    `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
    `ContentSafetyBlocked`) must be distinguishable from a transient error at the
    framework boundary, so a host framework never silently retries a governance
-   refusal. The transport treats these as terminal.
+   refusal. The transport treats these as terminal
+   (`test_429_is_terminal_but_5xx_still_retries` and
+   `test_terminal_4xx_is_stamped_should_retry_false` in
+   `tests/unit/test_transport.py`; per framework,
+   `test_framework_sends_a_refusal_once`).
 2. **Every error carries a `remediation`.** On `PolicyViolation` the human-readable
    next step is a *required* field — the concrete action to take (e.g. "the budget
    window resets in 42m; request an increase in API Manager") is worth more than a
    stack trace. `AuthError` uses its class-level LLM-proxy guidance by default and
    canonical class-level overrides for connected-app and provider-chain failures,
    so its message and remediation always name the same credential plane and auth
-   provider.
+   provider. `tests/unit/test_error_taxonomy.py` holds every error to it
+   (`test_every_error_ships_its_own_nonempty_default`).
 
 **`classify()` is fixture-driven, not guessed.** The HTTP-response → exception
 mapping in `classify()` is populated from real rejection captures taken against a
