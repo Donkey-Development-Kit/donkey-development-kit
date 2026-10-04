@@ -64,7 +64,7 @@ env config — so `core/` is untouched by this suite (#400).
 
 `test_injection_guard_rejection_classifies_and_captures` prints the live status,
 headers, and body when the Regex Prompt Guard rejects. To turn that into a
-verified contract: capture it into `tests/fixtures/anypoint/llm_proxy/` with
+verified contract: capture it into `src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/` with
 provenance recorded in that directory's README (org id, environment, proxy
 version, what produced the rejection, confirmation nothing sensitive survived),
 then flip the injection / content-moderation rows in `docs/verified-apis.md`

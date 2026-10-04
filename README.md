@@ -91,7 +91,7 @@ pip install -e ".[llm,langgraph]"
 Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
 `openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `mcp`, `a2a`, `otel`, `cli`,
 `local`, `test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
-`pytest --donkey-conformance --agent=my_app.agent:build`), and `all`. `mcp` and `a2a`
+`pytest --donkey-conformance --donkey-agent=my_app.agent:build`), and `all`. `mcp` and `a2a`
 are placeholders for **Roadmap** features (governed tool access, A2A agents): today they
 only install the upstream `mcp` / `a2a-sdk` packages, and nothing in `donkey_kit` uses
 them yet. `all` is

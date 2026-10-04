@@ -329,7 +329,7 @@ teardown, and inventory receipts go in the **PR description**, not a committed
 file.
 
 Record **how to reproduce the shape** in the fixture index
-(`python/tests/fixtures/rejections/README.md`): one line giving the trigger
+(`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`): one line giving the trigger
 input and the policy configuration that produced it. If what you observed
 differs from what the platform documents, record the discrepancy in the
 ledger row (e.g. "schema documents 403, gateway returned 400") — the ledger
@@ -659,7 +659,7 @@ shape, so one surface never says "live" while another still says "planned" or
 - `docs/unsupported-boundary.md`;
 - `website/content/**` **and** the generated `website/public/**` copies
   (regenerate with `npm run generate:llms`);
-- the fixture index (`python/tests/fixtures/rejections/README.md`);
+- the fixture index (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`);
 - the affected test module docstrings.
 
 Do **not** touch the top-level `README.md` status banner for an individual

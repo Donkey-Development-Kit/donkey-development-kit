@@ -42,7 +42,7 @@ Run context
   stack traces out of the caller's face, and it logs what it is doing. Run the suite
   against it.
 
-    pytest --donkey-conformance --agent=…:build_naive
+    pytest --donkey-conformance --donkey-agent=…:build_naive
 
     FFF.                                                                     [100%]
     Donkey conformance
@@ -106,7 +106,7 @@ What each failure actually means
         "correlation_id_propagated": "This agent's framework owns the HTTP …",
     }
     
-    pytest --donkey-conformance --agent=shipping_agent:build_naive \
+    pytest --donkey-conformance --donkey-agent=shipping_agent:build_naive \
            --donkey-known-limitations=exemptions:FRAMEWORK_LIMITS
 
     FF..                                                                     [100%]
@@ -152,7 +152,7 @@ Against your own agent, the suite is a plain pytest invocation:
 
 ```bash
 pip install "donkey-kit[test]"
-pytest --donkey-conformance --agent=my_app.agent:build
+pytest --donkey-conformance --donkey-agent=my_app.agent:build
 ```
 
 ## Key code
@@ -204,7 +204,7 @@ FRAMEWORK_LIMITS = {
 ```
 
 ```bash
-pytest --donkey-conformance --agent=shipping_agent:build_naive \
+pytest --donkey-conformance --donkey-agent=shipping_agent:build_naive \
        --donkey-known-limitations=exemptions:FRAMEWORK_LIMITS
 ```
 
