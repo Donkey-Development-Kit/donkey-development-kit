@@ -3,7 +3,7 @@ LangGraph app (BG §1.8, #198).
 
 This is the in-process customer harness (``donkey_kit.conformance``, #191) — the
 same one a team runs against its own agent with
-``pytest --donkey-conformance --agent=...`` — pointed at the shipped example's
+``pytest --donkey-conformance --donkey-agent=...`` — pointed at the shipped example's
 ``build`` factory (``examples/langgraph/main.py``). It exercises the actual
 compiled ``StateGraph`` (correlation node + a ``typed_refusals()``-wrapped model
 node), not a bare model call, so a green run here is the acceptance evidence
@@ -47,7 +47,7 @@ def _load_example_build() -> Any:
     module = importlib.util.module_from_spec(spec)
     # Register before exec so the graph's TypedDict state resolves its annotations
     # via get_type_hints (which reads sys.modules[__name__].__dict__) — the same
-    # as the real `--agent=module:build` import path.
+    # as the real `--donkey-agent=module:build` import path.
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module.build

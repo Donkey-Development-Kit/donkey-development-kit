@@ -91,7 +91,7 @@ pip install -e ".[llm,langgraph]"
 Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
 `openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `mcp`, `a2a`, `otel`, `cli`,
 `local`, `test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
-`pytest --donkey-conformance --agent=my_app.agent:build`), and `all`. `all` is
+`pytest --donkey-conformance --donkey-agent=my_app.agent:build`), and `all`. `all` is
 everything that installs together — `llm`, `langgraph`, `mcp`, `otel`, `cli`, `local`,
 `test` — and leaves out the seven other framework extras, whose current upstream releases
 cannot all be installed together. Add the one framework you use: `donkey-kit[all,crewai]`.
