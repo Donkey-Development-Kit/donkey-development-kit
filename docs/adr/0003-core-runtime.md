@@ -33,7 +33,11 @@ without breaking the layering.
    `build_http_client(` call exists outside `core/runtime.py` (apart from its
    definition in `core/transport.py`).
    `tests/unit/test_default_runtime.py`
-   `test_no_http_client_is_built_outside_the_runtime` holds this.
+   `test_no_http_client_is_built_outside_the_runtime` holds this. The rule
+   covers the shared clients only: an adapter or `LLMClient` used without a
+   runtime's blocking-client accessor builds its own blocking client on
+   demand (`_own_sync_client`, through `build_sync_http_client`). Nothing
+   closes that client today, and the test doesn't look for it.
 3. **`Donkey` wraps one `Runtime`.** `Donkey.__init__` builds it, and the
    handle's config, auth, budget and clients are the runtime's.
 4. **`core.runtime.default()` is the process-wide runtime** behind the

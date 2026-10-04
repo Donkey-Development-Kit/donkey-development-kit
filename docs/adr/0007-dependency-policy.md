@@ -19,9 +19,11 @@ encoded as pins. What the repo does today:
   the lowest release verified for every kwarg its adapter passes (#743). Each
   row there was installed with `uv pip install --resolution lowest-direct` and
   passed `pytest tests/unit` and `verify_frameworks.py --only <fw>`, offline.
-  No CI job keeps those floors honest yet (#769). Two jobs test one floor
-  each: `adk-stacks` pins `google-adk==2.4.0` and `anthropic-stacks` pins
-  `anthropic<1`, both in `.github/workflows/ci.yml`.
+  No CI job keeps those floors honest yet (#769). One job tests one floor:
+  `adk-stacks` in `.github/workflows/ci.yml` pins `google-adk==2.4.0`. Its
+  sibling `anthropic-stacks` runs `anthropic<1` beside `anthropic>=1` to
+  cover both majors (#701). Its `<1` leg resolves the newest 0.x release, not
+  the `anthropic>=0.116` floor.
 - **PR CI is not locked.** The repo has no Python lockfile or constraints
   file. Every job in `.github/workflows/ci.yml` runs `pip install -e
   ".[...]"`, so a PR's CI resolves the newest release of every dependency on

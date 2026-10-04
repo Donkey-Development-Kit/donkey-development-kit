@@ -34,7 +34,8 @@ connect", the configuration paragraph):
 1. **Precedence, per field, highest first:** a keyword argument set in code →
    the environment variable → `./.donkey-kit.local.toml` →
    `./.donkey-kit.toml` → the user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`,
-   or `~/.config/.donkey-kit.toml` when that variable is unset or empty) → the
+   or `~/.config/.donkey-kit.toml` when that variable is unset, empty or relative, as
+   `core/config.py` `_user_config_file` does today) → the
    field's default. The files are merged, not chosen: a field that no
    higher layer sets is filled from the next one down. Nested tables merge
    recursively; scalars and arrays replace, as #831 already does for the two
