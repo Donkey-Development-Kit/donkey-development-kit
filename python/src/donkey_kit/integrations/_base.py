@@ -26,7 +26,7 @@ from ..core.transport import (
     proxy_api_key,
     proxy_auth_headers,
 )
-from ..llm.client import _openai_http_client
+from ..llm.client import _openai_http_client, _openai_sync_http_client
 from . import ADAPTERS, missing_framework_error
 
 
@@ -78,6 +78,9 @@ class Adapter(ABC):
         # Which factories with a per-factory capability have built an object, so
         # observing_last_call() answers for what was used, not what was called last.
         self._built: set[str] = set()
+        # The http_client each openai kwarg slot was given, with the shared client
+        # it sends through: one per adapter, as a view is one per shared client.
+        self._kwarg_clients: dict[str, tuple[object, Any]] = {}
 
     def _record_factory(self, name: str) -> None:
         self._built.add(name)
@@ -142,6 +145,33 @@ class Adapter(ABC):
     # The names adapters used before the views were public.
     _http_client = http_client
     _sync_http_client = sync_http_client
+
+    def _openai_kwarg_http_client(self) -> Any:
+        """The ``http_client`` for a framework that builds its own ``AsyncOpenAI``
+        from kwargs (LangGraph, LlamaIndex, Strands): the core ``httpx2`` bridge
+        on ``openai>=3``, the shared client's view (:meth:`http_client`) before
+        (#728). The bridge is reusable, because Strands closes the
+        ``AsyncOpenAI`` it builds around this client after every request, and
+        the same one is returned each time, as the view is."""
+        return self._kwarg_client(
+            "async", self._http, lambda: _openai_http_client(self._http, reusable=True)
+        )
+
+    def _openai_kwarg_sync_http_client(self) -> Any:
+        """Blocking twin of :meth:`_openai_kwarg_http_client`, for the ``OpenAI``
+        a framework builds for its sync calls. It sends through the blocking
+        shared client, which refuses in a token auth mode."""
+        sync = self._sync_http()
+        return self._kwarg_client(
+            "sync", sync, lambda: _openai_sync_http_client(sync, reusable=True)
+        )
+
+    def _kwarg_client(self, slot: str, shared: object, build: Callable[[], Any]) -> Any:
+        held = self._kwarg_clients.get(slot)
+        if held is None or held[0] is not shared:
+            held = (shared, build())
+            self._kwarg_clients[slot] = held
+        return held[1]
 
     def _proxy_openai_client(self, base_url: str | None = None) -> Any:
         """A native ``AsyncOpenAI`` bound to the proxy (or to ``base_url``, an

@@ -121,10 +121,15 @@ still a base dependency. Dropping it from the base install is part of #730.
   client from the core bridge `core/transport/httpx2.py` instead, whose
   transport forwards every request through the same data-plane client, so it
   is still one transport. A framework that builds its OpenAI client from an
-  `http_client` kwarg (LangGraph, Strands, LlamaIndex) still gets the `httpx`
-  view, which `openai>=3` accepts at runtime (docs/verified-apis.md). The bridge
-  has an async and a blocking twin, and is imported lazily, because `httpx2`
-  is not a base dependency.
+  `http_client` kwarg (LangGraph, Strands, LlamaIndex) gets the same bridge on
+  `openai>=3` (#728), in a *reusable* variant whose close is a no-op like the
+  view's, because Strands closes its client after every request; on `openai<3`
+  it still gets the view. One helper, `llm.client._openai_http_client` /
+  `_openai_sync_http_client`, makes that choice for every OpenAI client the SDK
+  wires. The bridge has an async and a blocking twin. The blocking twin sends
+  through the blocking shared client, so it refuses in a token mode just as
+  that client does. Both are imported lazily, because `httpx2` is not a base
+  dependency.
 
   `Donkey` builds these through a **`Runtime`** (`core/runtime.py`), which owns
   the config, the OTLP bootstrap, the auth providers, the `Budget`, both clients

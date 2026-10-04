@@ -44,28 +44,39 @@ __all__ = ["LLMClient"]
 
 def _openai_on_httpx2() -> bool:
     """True when the installed ``openai`` is built on ``httpx2`` (3.0 and later):
-    its ``DefaultAsyncHttpxClient`` is then an ``httpx2.AsyncClient`` (#728)."""
-    import openai
-
+    its ``DefaultAsyncHttpxClient`` is then an ``httpx2.AsyncClient`` (#728).
+    False without ``openai``, so an adapter's ``connection_kwargs()`` still
+    builds on an install without it (with the view, as before)."""
+    try:
+        import openai
+    except ImportError:
+        return False
     return built_on_httpx2(getattr(openai, "DefaultAsyncHttpxClient", None))
 
 
-def _openai_http_client(http: DonkeyAsyncClient) -> object:
-    """The ``http_client`` for ``AsyncOpenAI``: the core ``httpx2`` bridge on
-    ``openai>=3``, the shared client's non-owning view before (#728, #733)."""
+def _openai_http_client(http: DonkeyAsyncClient, *, reusable: bool = False) -> object:
+    """The ``http_client`` for an ``AsyncOpenAI``: the core ``httpx2`` bridge on
+    ``openai>=3``, the shared client's non-owning view before (#728, #733).
+
+    The one place that picks between them, for ``donkey.llm``, the adapters that
+    pass a pre-built ``AsyncOpenAI`` and those whose framework builds its own
+    from an ``http_client`` kwarg. ``reusable`` keeps the bridge usable after
+    the framework closes it (see :func:`~donkey_kit.core.transport.httpx2.bridged_client`);
+    a view always is."""
     if _openai_on_httpx2():
         from ..core.transport.httpx2 import bridged_client
 
-        return bridged_client(http)
+        return bridged_client(http, reusable=reusable)
     return http.view()
 
 
-def _openai_sync_http_client(http: DonkeyClient) -> object:
-    """Blocking twin of :func:`_openai_http_client`, for ``OpenAI``."""
+def _openai_sync_http_client(http: DonkeyClient, *, reusable: bool = False) -> object:
+    """Blocking twin of :func:`_openai_http_client`, for ``OpenAI``. Either
+    client refuses to send in a token auth mode, as ``http`` does."""
     if _openai_on_httpx2():
         from ..core.transport.httpx2 import bridged_sync_client
 
-        return bridged_sync_client(http)
+        return bridged_sync_client(http, reusable=reusable)
     return http.view()
 
 

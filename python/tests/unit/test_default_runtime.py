@@ -125,7 +125,8 @@ def _normalised(value: Any) -> Any:
     """``connection_kwargs()`` with each client (or view of one, #733) replaced
     by what identifies its governance, since the two forms hold distinct (but
     identically built) client objects. A bridged ``httpx2`` client (anthropic>=1,
-    #701) is identified by the shared client its transport forwards to (#903)."""
+    #701; openai>=3, async or sync, #728) is identified by the shared client its
+    transport forwards to (#903)."""
     if isinstance(value, Mapping):
         return {k: _normalised(v) for k, v in value.items()}
     if isinstance(value, (DonkeyAsyncClientView, DonkeyClientView)):
@@ -141,7 +142,7 @@ def _normalised(value: Any) -> Any:
             _normalised(value._client),
         )
     transport = getattr(value, "_transport", None)
-    if type(transport).__name__ == "DonkeyForwardingTransport":
+    if type(transport).__name__ in ("DonkeyForwardingTransport", "DonkeyForwardingSyncTransport"):
         return (type(value).__name__, _normalised(transport._client))
     return value
 

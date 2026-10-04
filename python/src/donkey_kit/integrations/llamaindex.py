@@ -66,8 +66,8 @@ class LlamaIndexAdapter(Adapter):
                 "api_base": conn["base_url"],
                 "api_key": conn["api_key"],
                 "default_headers": conn["default_headers"],
-                "http_client": self.sync_http_client(),
-                "async_http_client": self.http_client(),
+                "http_client": self._openai_kwarg_sync_http_client(),
+                "async_http_client": self._openai_kwarg_http_client(),
                 "max_retries": 0,  # we retry in transport (BG §1.1)
                 "is_chat_model": True,  # never omit — see module docstring
                 "is_function_calling_model": True,

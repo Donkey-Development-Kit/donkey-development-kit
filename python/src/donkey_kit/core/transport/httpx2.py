@@ -229,16 +229,52 @@ class DonkeyForwardingSyncTransport(httpx2.BaseTransport):
         """Leave the shared client open (see :meth:`DonkeyForwardingTransport.aclose`)."""
 
 
-def bridged_client(client: DonkeyAsyncClient) -> httpx2.AsyncClient:
+class _ReusableBridgedClient(httpx2.AsyncClient):
+    """A bridged client that closing leaves usable, like a view (#733).
+
+    For a framework that builds and closes an ``AsyncOpenAI`` around the same
+    ``http_client`` on every request (Strands runs ``async with
+    AsyncOpenAI(**client_args)``): a plain ``httpx2.AsyncClient`` refuses every
+    send once closed, so the second request would fail. It owns nothing to
+    release: its transport forwards to the shared client and it has no pool."""
+
+    async def aclose(self) -> None:
+        """Stay usable; ``Donkey.aclose()`` owns the shared client."""
+
+    async def __aenter__(self) -> _ReusableBridgedClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        """Stay usable (see :meth:`aclose`)."""
+
+
+class _ReusableBridgedSyncClient(httpx2.Client):
+    """Blocking twin of :class:`_ReusableBridgedClient`."""
+
+    def close(self) -> None:
+        """Stay usable; ``Donkey.close()`` owns the shared client."""
+
+    def __enter__(self) -> _ReusableBridgedSyncClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Stay usable (see :meth:`close`)."""
+
+
+def bridged_client(client: DonkeyAsyncClient, *, reusable: bool = False) -> httpx2.AsyncClient:
     """An ``httpx2.AsyncClient`` that sends every request through ``client``.
 
     Its default timeout and redirect policy mirror the shared client's, so a
     framework that reads them off its ``http_client`` behaves as it would with
     the shared client itself. ``trust_env`` is off because the shared client
     already applied the environment's settings to the connection that is used.
-    Closing it leaves ``client`` open.
+    Closing it leaves ``client`` open. With ``reusable=True`` closing it also
+    leaves the bridged client itself usable, as closing a view does: for an
+    ``http_client`` handed out once and closed by the framework after each
+    request (the framework adapters, #728).
     """
-    return httpx2.AsyncClient(
+    cls = _ReusableBridgedClient if reusable else httpx2.AsyncClient
+    return cls(
         transport=DonkeyForwardingTransport(client),
         timeout=httpx2.Timeout(**client.timeout.as_dict()),
         follow_redirects=client.follow_redirects,
@@ -246,11 +282,13 @@ def bridged_client(client: DonkeyAsyncClient) -> httpx2.AsyncClient:
     )
 
 
-def bridged_sync_client(client: DonkeyClient) -> httpx2.Client:
+def bridged_sync_client(client: DonkeyClient, *, reusable: bool = False) -> httpx2.Client:
     """Blocking twin of :func:`bridged_client`: an ``httpx2.Client`` that sends
     every request through ``client``, for ``OpenAI(http_client=...)`` on
-    ``openai>=3`` (#728)."""
-    return httpx2.Client(
+    ``openai>=3`` (#728). ``client`` refuses to send in a token auth mode, so
+    neither does this."""
+    cls = _ReusableBridgedSyncClient if reusable else httpx2.Client
+    return cls(
         transport=DonkeyForwardingSyncTransport(client),
         timeout=httpx2.Timeout(**client.timeout.as_dict()),
         follow_redirects=client.follow_redirects,

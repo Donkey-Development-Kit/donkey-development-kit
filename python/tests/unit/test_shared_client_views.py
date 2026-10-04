@@ -238,7 +238,10 @@ def _http_clients(value: Any) -> list[Any]:
 
 
 def _is_bridged(value: Any) -> bool:
-    return type(getattr(value, "_transport", None)).__name__ == "DonkeyForwardingTransport"
+    return type(getattr(value, "_transport", None)).__name__ in (
+        "DonkeyForwardingTransport",
+        "DonkeyForwardingSyncTransport",
+    )
 
 
 def _handed_clients(adapter: Adapter, attr: str) -> list[Any]:
@@ -276,10 +279,10 @@ async def test_closing_what_an_adapter_hands_out_never_closes_the_shared_client(
         assert not isinstance(client, DonkeyAsyncClient | DonkeyClient), (
             f"{attr} hands a framework the owning shared client"
         )
-        if isinstance(client, httpx.Client):
-            client.close()
-        else:
+        if hasattr(client, "aclose"):
             await client.aclose()
+        else:  # a blocking client: httpx.Client, or an httpx2.Client bridge
+            client.close()
 
     assert not donkey._http.is_closed
     assert not donkey._sync_http_client().is_closed
