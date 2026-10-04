@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .core.budget import Budget
     from .core.cachecontrol import CacheControls, CacheScope
-    from .core.config import DonkeyConfig, Region
+    from .core.config import ConfigOverrides, DonkeyConfig, Region
     from .core.cost import CostTags
     from .core.errors import (
         AgentKilled,
@@ -82,6 +82,7 @@ _LAZY = {
     "CacheControls": ".core.cachecontrol",
     "CacheScope": ".core.cachecontrol",
     "ConfigError": ".core.errors",
+    "ConfigOverrides": ".core.config",
     "Contact": ".registry",
     "ContentSafetyBlocked": ".core.errors",
     "CostTags": ".core.cost",
@@ -152,6 +153,7 @@ __all__ = [
     "CacheControls",
     "CacheScope",
     "ConfigError",
+    "ConfigOverrides",
     "Contact",
     "ContentSafetyBlocked",
     "CostTags",
