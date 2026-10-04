@@ -8,20 +8,15 @@ To make that literally one read path, ``tests/unit/test_rejection_contract.py``
 and ``tests/unit/test_llm_proxy_contract.py`` import :func:`parse_headers` from
 here instead of keeping their own copies.
 
-Resolution order for every fixture (:func:`fixture_bytes`):
-
-1. Packaged ``donkey_kit/simulator/_fixtures/…`` — present in a built wheel via
-   the ``[tool.hatch.build.targets.wheel.force-include]`` mapping in
-   ``pyproject.toml`` (so a ``pip install``-ed ``donkey mock`` finds them).
-2. Source-checkout fallback ``python/tests/fixtures/…`` — where the classify()
-   tests read from, so in a source tree the simulator and the tests read the
-   byte-identical files.
-
-The fixture-integrity lock follows the same resolution order, so the public
-lock helpers work from both a source checkout and an installed wheel.
+Every fixture (:func:`fixture_bytes`) is package data under
+``donkey_kit/simulator/_fixtures/…`` (#746). That one directory is what a built
+wheel ships, what a ``pip install``-ed ``donkey mock`` replays, and what the
+classify() contract tests read in a source checkout, so the simulator and the
+tests always read byte-identical files and nothing depends on the repo's
+``tests/`` tree. The fixture-integrity lock lives beside them.
 
 Nothing here imports a web framework: this module is safe under the base-only
-CI job (``[dev]`` only, no ``[local]`` extra). It imports only the framework-free
+CI job (the ``dev`` group only, no ``[local]`` extra). It imports only the framework-free
 ``core`` layer for the verified header names (an allowed upward import).
 """
 
@@ -253,50 +248,27 @@ SHAPES: dict[str, _Spec] = {
     ),
 }
 
-# The two source directories rows resolve to in a checkout. Rows 3/4/6 live in
-# tests/fixtures/rejections/; the rest alias tests/fixtures/anypoint/llm_proxy/.
-# Derived from this module's location: fixtures.py is at
-# python/src/donkey_kit/simulator/fixtures.py, so parents[3] is python/.
-_SOURCE_ROOT = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
+# The package-data directory every row resolves to. Rows 3/4/6 live in
+# _fixtures/rejections/; the rest alias _fixtures/anypoint/llm_proxy/.
 _PACKAGED_ROOT = importlib.resources.files("donkey_kit.simulator") / "_fixtures"
 
 
-def _packaged_bytes(directory: str, name: str) -> bytes | None:
-    """Read ``_fixtures/<directory>/<name>`` from the installed package, or
-    ``None`` if it is not present (e.g. an editable/source checkout that never
-    ran the wheel force-include)."""
+def fixture_bytes(directory: str, name: str) -> bytes:
+    """Return the raw bytes of one packaged fixture file. Raises a clear,
+    actionable error if it is missing rather than serving a fabricated body
+    (verification discipline)."""
     res = _PACKAGED_ROOT
     # Chain single-segment ``/`` joins for 3.10 compatibility (multi-arg
     # joinpath() only landed in 3.11).
     for part in (directory, name):
         res = res / part
-    if res.is_file():
-        return res.read_bytes()
-    return None
-
-
-def _source_bytes(directory: str, name: str) -> bytes | None:
-    path = _SOURCE_ROOT / directory / name
-    if path.is_file():
-        return path.read_bytes()
-    return None
-
-
-def fixture_bytes(directory: str, name: str) -> bytes:
-    """Return the raw bytes of one fixture file, packaged copy first then the
-    source-checkout fallback. Raises a clear, actionable error if neither is
-    found rather than serving a fabricated body (verification discipline)."""
-    data = _packaged_bytes(directory, name)
-    if data is not None:
-        return data
-    data = _source_bytes(directory, name)
-    if data is not None:
-        return data
-    raise FileNotFoundError(
-        f"Simulator fixture {directory}/{name!r} is neither packaged under "
-        f"donkey_kit/simulator/_fixtures/ nor present at {_SOURCE_ROOT}. "
-        "A wheel build must force-include tests/fixtures/ (see pyproject.toml)."
-    )
+    if not res.is_file():
+        raise FileNotFoundError(
+            f"Simulator fixture {directory}/{name!r} is not packaged under "
+            "donkey_kit/simulator/_fixtures/. The installed donkey-kit is "
+            "incomplete; reinstall it."
+        )
+    return res.read_bytes()
 
 
 @dataclass(frozen=True)
@@ -373,15 +345,15 @@ def replay_headers(fixture: Fixture) -> dict[str, str]:
 # ``python -m donkey_kit.simulator.fixtures --relock`` — the deliberate,
 # reviewable "I re-captured this, I meant it" step. This is an integrity
 # assertion, not fixture-capture tooling (which #189 puts out of scope).
-_SOURCE_LOCK_PATH = _SOURCE_ROOT / "fixtures.lock"
-_PACKAGED_LOCK = _PACKAGED_ROOT / "fixtures.lock"
+#
 # ``LOCK_PATH`` is public and writable, so it must remain a concrete ``Path``.
-# Normal wheel installs are unpacked to a pathlib.Path. Zip-imported packages
-# can still read fixture bytes through Traversable, but cannot expose or rewrite
-# the lock through this Path-based public API.
-LOCK_PATH = _SOURCE_LOCK_PATH
-if not LOCK_PATH.is_file() and isinstance(_PACKAGED_LOCK, Path):
-    LOCK_PATH = _PACKAGED_LOCK
+# Normal wheel installs and editable checkouts are both on disk. Zip-imported
+# packages can still read fixture bytes through Traversable, but cannot expose
+# or rewrite the lock through this Path-based public API.
+LOCK_PATH = Path(__file__).resolve().parent / "_fixtures" / "fixtures.lock"
+# A source checkout is the one layout where a relock produces a file to commit:
+# fixtures.py sits at python/src/donkey_kit/simulator/, so parents[3] is python/.
+_CHECKOUT_PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
 
 
 def _served_files() -> list[tuple[str, str]]:
@@ -408,7 +380,7 @@ def compute_manifest() -> dict[str, str]:
 
 
 def read_lock() -> dict[str, str]:
-    """The committed manifest at :data:`LOCK_PATH`, from either package layout."""
+    """The committed manifest at :data:`LOCK_PATH`."""
     data: dict[str, str] = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
     return data
 
@@ -417,10 +389,9 @@ def write_lock() -> None:
     """Regenerate :data:`LOCK_PATH` from the current fixture bytes. Called by
     ``python -m donkey_kit.simulator.fixtures --relock`` after a re-capture.
 
-    A source checkout always wins when present, keeping the committed lock
-    canonical. From an installed wheel this updates that environment's packaged
-    lock; the ``--relock`` command rejects that layout because it cannot produce
-    a file to commit.
+    From an installed wheel this updates that environment's packaged lock; the
+    ``--relock`` command rejects that layout because it cannot produce a file
+    to commit.
     """
     LOCK_PATH.write_text(
         json.dumps(compute_manifest(), indent=2, sort_keys=True) + "\n",
@@ -440,13 +411,13 @@ def _main() -> None:
     )
     args = parser.parse_args()
     if args.relock:
-        if not _SOURCE_LOCK_PATH.is_file():
+        if not _CHECKOUT_PYPROJECT.is_file():
             parser.error(
                 "--relock must run from an editable source checkout so it updates "
-                "tests/fixtures/fixtures.lock"
+                "src/donkey_kit/simulator/_fixtures/fixtures.lock"
             )
         write_lock()
-        print(f"wrote {_SOURCE_LOCK_PATH} ({len(compute_manifest())} fixtures)")
+        print(f"wrote {LOCK_PATH} ({len(compute_manifest())} fixtures)")
     else:
         parser.error("nothing to do; pass --relock to regenerate the lock")
 

@@ -12,7 +12,7 @@ x-llm-proxy-model-based-routing-success: Request successfully matched. Provider:
 x-model-wallet-selected: ddk-model-wallet
 date: Wed, 30 Sep 2026 08:04:09 GMT
 server: Anypoint Flex Gateway
-x-envoy-decorator-operation: api-instance-21189395.14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a.svc
-x-correlation-id: 4c91de06-7107-4b96-8734-215282553a7a
+x-envoy-decorator-operation: api-instance-21189395.00000000-0000-4000-8000-5c4fd1a49fc3.svc
+x-correlation-id: 00000000-0000-4000-8000-fec05f757155
 strict-transport-security: max-age=31536000; includeSubdomains
 connection: Keep-Alive

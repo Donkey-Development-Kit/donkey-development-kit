@@ -22,7 +22,11 @@ against ``crewai.BaseLLM``, the actual common return type, rather than the
 Header injection: via ``extra_headers``, which ``OpenAICompletion`` has no named
 field for — CrewAI collects it into ``additional_params`` and merges that into
 its request parameters (docs/verified-apis.md §8). Our httpx client is not
-injected: the provider builds its own OpenAI client. Consequence: transport retries and
+injected: the provider builds its own OpenAI client, and no supported extension
+point can change that (#958, docs/verified-apis.md §8.2). Its one
+``client_params`` dict feeds both its sync and async clients, which type-check
+``http_client`` against different classes, and the ``interceptor`` hooks can
+edit a request but not reroute the send. Consequence: transport retries and
 correlation-ID-per-run degrade to per-client, a documented, asserted conformance
 exemption (the conformance kit's ``correlation_id_propagated``). The provider does
 take an ``interceptor``, which :meth:`CrewAIAdapter.connection_kwargs` supplies:
