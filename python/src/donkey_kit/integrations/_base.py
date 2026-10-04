@@ -10,13 +10,13 @@ from __future__ import annotations
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import AbstractContextManager, contextmanager
-from types import TracebackType
+from contextlib import contextmanager
 from typing import Any, TypeVar, cast
 
 from ..core import runtime
 from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, missing_llm_auth_error
 from ..core.masking import masked
+from ..core.refusals import TypedRefusals
 from ..core.transport import (
     DonkeyAsyncClient,
     DonkeyAsyncClientView,
@@ -27,7 +27,7 @@ from ..core.transport import (
     proxy_auth_headers,
 )
 from ..llm.client import _openai_http_client, _openai_sync_http_client
-from . import ADAPTERS, missing_framework_error
+from . import ADAPTERS, missing_framework_error, typed_refusals
 
 
 class Adapter(ABC):
@@ -89,6 +89,15 @@ class Adapter(ABC):
         and the whole supported surface for a ``connection_kwargs()``-only
         framework (BG §1.8). Returned through
         :func:`~donkey_kit.core.masking.masked`, so printing it hides secrets."""
+
+    @staticmethod
+    def typed_refusals() -> TypedRefusals:
+        """The typed-refusal bridge, :func:`donkey_kit.typed_refusals` (#724).
+
+        Lets ``with donkey.strands.typed_refusals(): ...`` read naturally next
+        to the adapter's factories. Every adapter shares this one bridge: no
+        adapter holds classification logic of its own (ADR 0002)."""
+        return typed_refusals()
 
     def _own_sync_client(self) -> DonkeyClient:
         if self._owned_sync is None:
@@ -223,54 +232,6 @@ class Adapter(ABC):
                 "default_headers": self._proxy_headers(),
             }
         )
-
-
-class _TypedRefusals(AbstractContextManager[None]):
-    """Re-raise an error caused by an ``openai.APIStatusError`` as the typed
-    refusal :func:`~donkey_kit.core.errors.classify` maps its response to (BG §1.2).
-
-    Shared by every adapter whose framework sends through an OpenAI SDK client
-    on the shared transport. It walks the ``__cause__`` chain, because frameworks
-    wrap the openai error in their own: LangChain subclasses it, Agent Framework
-    chains it under a ``ChatClientException``. Errors with no HTTP response
-    (``APIConnectionError``/``APITimeoutError``) pass through untouched.
-
-    A class, not ``@contextmanager``: a generator-based manager leaves
-    ``contextlib``'s ``__exit__`` frame, whose locals hold the framework error,
-    in the typed error's traceback, and reporters that render frame locals
-    (Sentry, ``pytest -l``) would print its message. This ``__exit__`` drops its
-    own references before raising. The typed error is raised without a chained
-    cause for the same reason; the original stays on ``.framework_error``.
-    """
-
-    def __enter__(self) -> None:
-        import openai  # noqa: F401  # lazy: only the framework path needs it
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        if exc is None:
-            return None
-        import openai
-
-        from ..core.errors import classify
-
-        cause: BaseException | None = exc
-        while cause is not None and not isinstance(cause, openai.APIStatusError):
-            cause = cause.__cause__
-        if cause is None:
-            return None
-        # openai>=3 vendors its own httpx, so ``cause.response`` is statically a
-        # distinct-but-duck-identical Response type. `cast(Any, …)` (not
-        # `cast("httpx.Response", …)`) typechecks clean under BOTH majors: under
-        # openai<3 a cast to httpx.Response is `redundant-cast` (#597).
-        typed = classify(cast(Any, cause.response))
-        typed.framework_error = exc
-        del exc, exc_type, tb, cause
-        raise typed from None
 
 
 A = TypeVar("A", bound=Adapter)

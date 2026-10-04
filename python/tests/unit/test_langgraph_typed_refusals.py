@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit.core import _wire
 from donkey_kit.core.errors import PIIDetected
 from donkey_kit.core.transport import build_http_client
 from donkey_kit.integrations.langgraph import LangGraphAdapter, typed_refusals
@@ -62,8 +63,16 @@ def test_call_matches_chat_model() -> None:
 
 def _pii_response() -> httpx.Response:
     """A 403 shaped like the captured PII rejection classify() maps to
-    PIIDetected (nested error object, ``type == "pii_detected"``)."""
-    request = httpx.Request("POST", "https://proxy/chat/completions")
+    PIIDetected (nested error object, ``type == "pii_detected"``).
+
+    Its request carries the extension the SDK's transport stamps on every send:
+    the bridge only classifies a response the transport sent (#724)."""
+    request = httpx.Request(
+        "POST",
+        "https://proxy/chat/completions",
+        headers={_wire.CALL_ID_HEADER: "call-1"},
+        extensions={"donkey_call_id_header": _wire.CALL_ID_HEADER},
+    )
     return httpx.Response(
         403,
         json={"error": {"type": "pii_detected", "message": "blocked: [{\"pii_type\": \"EMAIL\"}]"}},
@@ -84,6 +93,7 @@ def test_typed_refusals_converts_openai_status_error_to_typed() -> None:
     assert excinfo.value.framework_error is err
     assert excinfo.value.__cause__ is None
     assert "EMAIL" in excinfo.value.entities
+    assert excinfo.value.call_id == "call-1"
 
 
 def test_typed_refusals_passes_through_errors_without_a_response() -> None:
