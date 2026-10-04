@@ -102,7 +102,7 @@ async def test_async_call_carries_the_jwt(call: Callable[[Donkey], Awaitable[Non
         return _chat_completion(request)
 
     donkey = Donkey(_cfg(), llm_auth=StaticToken(_JWT))
-    donkey._http._swap_transport(httpx.MockTransport(respond))
+    donkey._http.governed_transport.replace_inner(httpx.MockTransport(respond))
     async with donkey:
         # The response body is only chat-completions-shaped; what is asserted is
         # what was sent. A refusal before sending leaves ``seen`` empty.

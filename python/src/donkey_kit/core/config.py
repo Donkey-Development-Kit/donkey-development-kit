@@ -147,6 +147,7 @@ class ConfigOverrides(TypedDict, total=False):
     telemetry_install_global: bool
     on_model_substitution: OnModelSubstitution
     send_cost_headers: bool
+    retry_model_calls_on_gateway_errors: bool
 
 
 TOML_NAME = ".donkey-kit.toml"
@@ -368,6 +369,12 @@ class DonkeyConfig:
     # When enabled, the headers go on data-plane (model) requests only, never on
     # a control-plane client's (#833).
     send_cost_headers: bool = False
+    # Re-send a model POST after a 502 or 504. Default FALSE: either status can
+    # follow an upstream call that completed and billed, so a re-send can bill
+    # twice, and docs/verified-apis.md records no gateway idempotency key that
+    # would make it safe (docs/adr/0009-*.md, #728). A 503 still retries, and
+    # so does every non-model request.
+    retry_model_calls_on_gateway_errors: bool = False
 
     # --- Provenance (config resolution) ---
     # Where each field was resolved from and a keyed digest of the value it had
@@ -907,6 +914,12 @@ _FIELDS: tuple[_Field, ...] = (
         "on_model_substitution", "DONKEY_ON_MODEL_SUBSTITUTION", _as_token, _one_of("off", "raise")
     ),
     _Field("send_cost_headers", "DONKEY_SEND_COST_HEADERS", _as_bool, _is_bool),
+    _Field(
+        "retry_model_calls_on_gateway_errors",
+        "DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS",
+        _as_bool,
+        _is_bool,
+    ),
 )
 
 # Views of the table.

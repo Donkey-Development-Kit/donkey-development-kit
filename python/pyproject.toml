@@ -235,7 +235,7 @@ ignore_missing_imports = true
 # The CrewAI adapter's interceptor subclasses crewai's BaseInterceptor, likewise,
 # and the LangGraph adapter's last_call handler langchain_core's BaseCallbackHandler.
 module = [
-    "donkey_kit.integrations._httpx2_bridge",
+    "donkey_kit.core.transport.httpx2",
     "donkey_kit.integrations.crewai",
     "donkey_kit.integrations.langgraph",
 ]

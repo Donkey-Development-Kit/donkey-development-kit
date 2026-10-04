@@ -113,6 +113,9 @@ you set even if you set it after `Donkey()`.
 
 Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public
 API (#927): a name is public when you can import it from `donkey_kit` or from
+a public module's `__all__`; submodule paths are not API. Sections 1 and 2
+still work but warn; sections 3 and 4 break code that used the old names;
+section 5 changes what the transport retries.
 a public module's `__all__`; submodule paths are not API. Sections 1, 2 and 6
 still work but warn; sections 3 and 4 break code that used the old names;
 section 5 changes which extras you can install.
@@ -208,6 +211,33 @@ importable in 0.1.1 (#927).
 | `donkey_kit.core.config._TOML_NAME` / `_LOCAL_TOML_NAME` | `TOML_NAME` / `LOCAL_TOML_NAME` |
 | `donkey_kit.simulator.inject._resolve` | `resolve_fixture` |
 | `donkey_kit.conformance.harness._offline_config` | `offline_config` |
+| `DonkeyAsyncClient._swap_transport()` / `DonkeyClient._swap_transport()` | `client.governed_transport.replace_inner()` (#728) |
+| `donkey_kit.integrations._httpx2_bridge` | `donkey_kit.core.transport.httpx2` (#728) |
+| `DonkeyAsyncClient._on_request()` (a no-op hook) | removed; the per-send `_inject_headers` event hook does request-side work (#728) |
+
+### 5. A 502 or 504 on a model call is no longer retried by default
+
+**Who:** code that relies on the transport re-sending a model call (a `POST`
+whose body, or native Gemini path, names a model) after a `502` or `504`
+(#728).
+
+**Symptom:** the `502` or `504` comes back on the first attempt, as an
+`UpstreamModelError` once classified. Either status can follow an upstream
+call that already completed and was billed, so a re-send could bill twice, and
+the gateway has no verified idempotency key (docs/adr/0009-*.md). A `503`, and
+every request that is not a model call, is still retried as before.
+
+**Fix:** if a second charge is acceptable, opt back in with
+`DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS=1` in the environment, or set
+`retry_model_calls_on_gateway_errors` in code:
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.core.config import DonkeyConfig
+
+cfg = DonkeyConfig.from_env().with_overrides(retry_model_calls_on_gateway_errors=True)
+donkey = Donkey(cfg)
+```
 
 ### 5. The `dev`, `mcp` and `a2a` extras are gone, and `[all]` installs no test runner
 

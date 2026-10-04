@@ -154,8 +154,8 @@ async def test_last_call_observed_after_call(call: _Call) -> None:
     # ainvoke() runs the request in a task asyncio.gather() spawns with a copy
     # of this context; the record must still reach the caller (#850).
     donkey = Donkey(_cfg())
-    donkey._http._swap_transport(httpx.MockTransport(_success_or_stream))
-    donkey._sync_http_client()._swap_transport(httpx.MockTransport(_success_or_stream))
+    donkey._http.governed_transport.replace_inner(httpx.MockTransport(_success_or_stream))
+    donkey._sync_http_client().governed_transport.replace_inner(httpx.MockTransport(_success_or_stream))
     async with donkey:
         await call(donkey.langgraph("gpt-4o"))
         assert donkey.last_call.status is LastCallStatus.OBSERVED
@@ -192,7 +192,7 @@ async def test_jwt_async_call_still_works() -> None:
         return _success(request)
 
     donkey = _jwt_donkey()
-    donkey._http._swap_transport(httpx.MockTransport(respond))
+    donkey._http.governed_transport.replace_inner(httpx.MockTransport(respond))
     async with donkey:
         await donkey.langgraph("gpt-4o").ainvoke("hi")
 
@@ -213,7 +213,7 @@ def _echo_rid(request: httpx.Request) -> httpx.Response:
 
 def _echo_donkey() -> Donkey:
     donkey = Donkey(_cfg())
-    donkey._http._swap_transport(httpx.MockTransport(_echo_rid))
+    donkey._http.governed_transport.replace_inner(httpx.MockTransport(_echo_rid))
     return donkey
 
 

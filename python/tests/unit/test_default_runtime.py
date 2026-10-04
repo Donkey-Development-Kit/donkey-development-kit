@@ -108,7 +108,7 @@ async def test_default_runtime_sends_the_same_headers_as_donkey(
         return httpx.Response(200, json={})
 
     for client in (rt.http, donkey._http):
-        client._swap_transport(httpx.MockTransport(capture))
+        client.governed_transport.replace_inner(httpx.MockTransport(capture))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         async with donkey.run(id="run-1"):
@@ -125,7 +125,8 @@ def _normalised(value: Any) -> Any:
     """``connection_kwargs()`` with each client (or view of one, #733) replaced
     by what identifies its governance, since the two forms hold distinct (but
     identically built) client objects. A bridged ``httpx2`` client (anthropic>=1,
-    #701) is identified by the shared client its transport forwards to (#903)."""
+    #701; openai>=3, async or sync, #728) is identified by the shared client its
+    transport forwards to (#903)."""
     if isinstance(value, Mapping):
         return {k: _normalised(v) for k, v in value.items()}
     if isinstance(value, (DonkeyAsyncClientView, DonkeyClientView)):
@@ -141,7 +142,7 @@ def _normalised(value: Any) -> Any:
             _normalised(value._client),
         )
     transport = getattr(value, "_transport", None)
-    if type(transport).__name__ == "DonkeyForwardingTransport":
+    if type(transport).__name__ in ("DonkeyForwardingTransport", "DonkeyForwardingSyncTransport"):
         return (type(value).__name__, _normalised(transport._client))
     return value
 
@@ -222,11 +223,12 @@ def test_default_runtime_is_closed_at_interpreter_exit(tmp_path: Path) -> None:
 
 def test_no_http_client_is_built_outside_the_runtime() -> None:
     # The runtime is the one place shared async clients are built (#725); the
-    # factory itself is defined in core/transport.py.
+    # factory itself is defined in core/transport/async_client.py.
+    allowed = {"core/runtime.py", "core/transport/async_client.py"}
     offenders = [
         str(path.relative_to(_SRC))
         for path in sorted(_SRC.rglob("*.py"))
         if "build_http_client(" in path.read_text()
-        and path.relative_to(_SRC).as_posix() not in {"core/runtime.py", "core/transport.py"}
+        and path.relative_to(_SRC).as_posix() not in allowed
     ]
     assert offenders == []

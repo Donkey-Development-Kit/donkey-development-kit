@@ -104,7 +104,8 @@ carries the SDK's HTTP client in the form that framework takes: `http_client`
 and `http_async_client` (LangGraph), `http_client` and `async_http_client`
 (LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
 or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
-Each HTTP client is a non-owning view of the SDK's shared client: it sends
+Each HTTP client is a non-owning view of the SDK's shared client (on `openai`
+3.x, the OpenAI kwargs carry an `httpx2` bridge onto it instead): it sends
 through the shared client, and closing it (as Strands does after every call, or
 `async with` on an OpenAI client) leaves the shared client open. Only
 `donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
@@ -178,7 +179,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 ## Retries happen once, in the SDK
 
 The SDK's transport retries `502`, `503` and `504` with backoff, up to
-`max_retries` times, and never retries a `4xx`. On the proxy a `429` is a
+`max_retries` times, and never retries a `4xx`. A `502` or `504` on a model
+call is retried only with `retry_model_calls_on_gateway_errors`, since the
+provider may already have billed it. On the proxy a `429` is a
 token-budget refusal (`TokenBudgetExceeded`), so sending it again would only
 spend more of a budget that is already gone. Every adapter therefore turns off
 the provider SDK's own retries (`max_retries=0`). The transport also marks every

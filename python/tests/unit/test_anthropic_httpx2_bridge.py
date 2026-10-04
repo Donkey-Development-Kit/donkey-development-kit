@@ -3,7 +3,7 @@
 ``anthropic>=1.0`` is built on ``httpx2`` and rejects any ``httpx`` object passed
 as ``http_client``, so the shared ``DonkeyAsyncClient`` cannot be handed to it
 directly. The adapter instead passes an ``httpx2.AsyncClient`` whose transport
-forwards every request through the shared client (``integrations/_httpx2_bridge``),
+forwards every request through the shared client (``core/transport/httpx2``),
 and keeps passing the shared client itself on ``anthropic<1``.
 
 Two halves: the bridge on its own, and the adapter choosing between the two
@@ -50,7 +50,7 @@ from donkey_kit.core.errors import (  # noqa: E402
 )
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call  # noqa: E402
 from donkey_kit.core.telemetry import run_scope  # noqa: E402
-from donkey_kit.integrations._httpx2_bridge import (  # noqa: E402
+from donkey_kit.core.transport.httpx2 import (  # noqa: E402
     bridged_client,
     wants_stream,
 )
