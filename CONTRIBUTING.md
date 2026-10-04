@@ -278,7 +278,7 @@ scenario nobody reviews). Pick by what the change exercises:
 | --- | --- |
 | Framework-free logic (`core/`, `registry/`, errors, config, transport) with no agent framework installed | **`tests/unit/`** — the `base-only` CI job |
 | An adapter's behavior against a fixed scenario set (any of the eight frameworks) | **`tests/conformance/suite.py`** — the conformance kit |
-| Behavior pinned to a **real captured** Anypoint request/response | **fixture-driven** test reading `tests/fixtures/anypoint/**` |
+| Behavior pinned to a **real captured** Anypoint request/response | **fixture-driven** test reading `tests/fixtures/anypoint/**` (test-only captures) or `src/donkey_kit/simulator/_fixtures/**` (captures the simulator ships) |
 | The pure-Python local gateway simulator (`donkey mock`, no Docker) | `@pytest.mark.local_gateway` (off by default) |
 | A real Anypoint sandbox | `@pytest.mark.sandbox` (off by default, gated by `DONKEY_SANDBOX_TESTS=1`) |
 | A framework's constructor signature/kwargs | `scripts/verify_frameworks.py` (not pytest) |
@@ -382,8 +382,10 @@ Wire the adapter by these rules:
 
 ### Fixture-driven tests — captures, not conveniences
 
-`tests/fixtures/anypoint/` holds **real captures** from a sandbox, not
-hand-written JSON. The error taxonomy is fixture-derived (BG §1.5), not
+`tests/fixtures/anypoint/` (test-only captures) and
+`src/donkey_kit/simulator/_fixtures/` (the captures `simulate()`, `donkey mock`
+and the `gateway` fixture replay, shipped in the wheel since #944) hold **real
+captures** from a sandbox, not hand-written JSON. The error taxonomy is fixture-derived (BG §1.5), not
 assumption-derived. If you need a new response shape, capture it for real — 
 never hand-write a synthetic body — and cite the fixture's `§`-section in the
 test docstring.
@@ -421,9 +423,12 @@ provider's account headers (`openai-organization`, `openai-project`,
 can't be changed afterwards. So the procedure is **capture → scrub → relock**:
 
 ```bash
-python scripts/scrub_fixtures.py tests/fixtures   # rewrite in place
+python scripts/scrub_fixtures.py tests/fixtures src/donkey_kit/simulator/_fixtures   # rewrite in place
 python -m donkey_kit.simulator.fixtures --relock
 ```
+
+Name both fixture trees. With no path the script scans only the files git
+already tracks, so it skips a capture you have not yet added.
 
 The scrub is deterministic: the same real value always maps to the same
 placeholder (`00000000-0000-4000-8000-…`, `<name>.example.invalid`), so
@@ -456,8 +461,8 @@ job via `pytest -q -m local_gateway`); `sandbox` is exercised by
   test surface (#661). Bind the simulator to a dynamically allocated port so
   parallel test workers don't collide, and keep the surface **gated behind the
   marker, off by default** — never run in plain unit tests.
-  `Governance.simulate()` is **not** this harness: it is a roadmap surface whose
-  `__aenter__` is still `_verify.blocked(...)`, so don't write tests against it.
+  `donkey.simulate()` is **not** this harness: it injects a captured refusal
+  in process, with no server and no port, so a plain unit test can use it.
 - **`@pytest.mark.sandbox`** needs a real Anypoint sandbox and is gated by
   `DONKEY_SANDBOX_TESTS=1`. The suite (`tests/sandbox/`) calls the LLM Gateway
   proxies provisioned in `donkey-development-kit-provisioning`, each declared in a
@@ -530,7 +535,7 @@ build plan has the rationale behind each rule:
   contracts are exhaustive: a new top-level module or core module is placed in
   `pyproject.toml` in the same PR. No library module imports the CLI. See
   [`ARCHITECTURE.md`](ARCHITECTURE.md#layered-architecture).
-- **Small core modules.** A module in `core/` stays within 500 lines. The five
+- **Small core modules.** A module in `core/` stays within 500 lines. The four
   already past it are held at their current size and may only shrink: lower a
   ratchet ceiling in the PR that shrinks the file, and drop the entry once it is
   within budget (`_OVERSIZED_CORE_MODULES` in `tests/unit/test_architecture.py`).
@@ -683,7 +688,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | `X \| None`, PEP 585/604 syntax | ruff `UP`, `FA` | `ruff check .` |
 | `from __future__ import annotations` in every module | ruff `I002` (`isort.required-imports`) | `ruff check .` |
 | Framework-free core, layering | import-linter contracts in `pyproject.toml` (whole-package and in-core layers, both exhaustive; the CLI on top, so nothing imports it; the root package loads only production layers; core's forbidden third-party packages, #729); `tests/unit/test_architecture.py` (core's third-party imports as an allowlist, imports inside functions included; `import donkey_kit` in a fresh interpreter loads no dev-only module or the CLI) | `lint-imports`, `pytest` |
-| Small core modules (#729) | `tests/unit/test_architecture.py` (500-line budget; a ratchet for the five modules already past it) | `pytest` |
+| Small core modules (#729) | `tests/unit/test_architecture.py` (500-line budget; a ratchet for the four modules already past it) | `pytest` |
 | Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
 | Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |

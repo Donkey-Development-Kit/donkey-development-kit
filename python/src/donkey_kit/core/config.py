@@ -5,7 +5,7 @@ per key: a value set in code (a ``resolve()`` keyword argument, or one changed
 afterwards with ``with_overrides`` or ``dataclasses.replace``) → env var →
 ``.donkey-kit.local.toml`` → ``.donkey-kit.toml`` → the user file
 ``$XDG_CONFIG_HOME/.donkey-kit.toml`` (``~/.config/.donkey-kit.toml`` when
-``XDG_CONFIG_HOME`` is unset or empty) → default. The three files merge key by
+``XDG_CONFIG_HOME`` is unset, empty or relative) → default. The three files merge key by
 key (nested tables such as ``[donkey.cost]`` recursively; scalars and arrays
 replace), so a lower file fills what a higher one leaves unset. ``resolve(path=...)``
 reads the named file in place of the working directory's ``.donkey-kit.toml``.

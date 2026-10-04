@@ -1,17 +1,29 @@
 # Migration guide
 
-## Unreleased: the CLI's own package, and the refused control plane removed (#730)
+## 0.1.2 (unreleased)
 
-These changes are breaking for code that imported the legacy modules or the
-blocked-surface types from `donkey_kit`. The `donkey` commands you can see in
-`donkey --help` are unchanged. The reasoning is ADR 0008 in
-[`docs/adr/`](docs/adr/) (legacy quarantine and the CLI's home).
+Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public
+API (#927): a name is public when you can import it from `donkey_kit` or from
+a public module's `__all__`; submodule paths are not API. It also deletes the
+refused provisioning control plane (#730).
+
+- Sections 1 to 3 break code that used the deleted control plane.
+- Sections 4 to 6 still work but emit a `DeprecationWarning`.
+- Sections 7 and 8 break code that used removed or internal names.
+- Sections 9 and 10 change what `pip` installs.
+- Section 11 renames a conformance-plugin option (the old one still works and
+  warns).
+- Sections 12 to 16 change runtime behaviour without an import error.
+
+The deprecated names stay for the rest of 0.1.x. The release that removes them
+says so here and in its Release notes' Breaking changes section. To find every
+call site now, run your tests with `-W error::DeprecationWarning`.
 
 ### 1. `donkey_kit.provisioning` and `donkey_kit.governance` are gone
 
 **Who:** code that imported `donkey_kit.provisioning` (`spec`, `planner`,
 `applier`, `lint`, `publish`, `cli`, `doctor`) or `donkey_kit.governance`
-(`Governance`, `GatewayTarget`, `PolicyBinding`).
+(`Governance`, `GatewayTarget`, `PolicyBinding`) (#730).
 
 **Symptom:** `ModuleNotFoundError: No module named 'donkey_kit.provisioning'`
 (or `'donkey_kit.governance'`).
@@ -19,16 +31,20 @@ blocked-surface types from `donkey_kit`. The `donkey` commands you can see in
 **Fix:** the declarative provisioning control plane is on the build plan's
 *Do not build* list, and every verb in it raised `blocked on verification`, so
 there is no replacement. Manage gateways and policies with API Manager or
-Terraform. Two pieces moved instead of going away:
+Terraform. The reasoning is ADR 0008 in [`docs/adr/`](docs/adr/) (legacy
+quarantine and the CLI's home). A few pieces moved instead of going away:
 
 | Was | Now |
 | --- | --- |
 | `donkey_kit.provisioning.cli` (`app`, `main`) | `donkey_kit.cli` |
 | `donkey_kit.provisioning.doctor` | `donkey_kit.cli.doctor` |
+| `donkey_kit.provisioning.doctor.Check` | `donkey_kit.cli.doctor.DoctorCheck` |
 | `donkey_kit.provisioning.publish.content_digest` / `publish_if_changed` | `donkey_kit.registry.publication` |
 
 The `[targets.*]` tables in `.donkey-kit.toml` and the `DONKEY_TARGET`
 variable were read only by `GatewayTarget.from_env()`. They are now ignored.
+
+The `donkey` commands you can see in `donkey --help` are unchanged.
 
 ### 2. Hidden CLI commands `validate`, `plan`, `apply`, `drift`, `lint`, `generate` are removed
 
@@ -51,91 +67,14 @@ calls. `DonkeyError` still catches everything the SDK raises.
 
 **Who:** code that imported `STRICT`, `AssetRef`, `AssetType`, `Contact`,
 `GovernanceCriteria`, `Publication`, `PublicationAssetType`,
-`PublicationDrift`, `RegistryError` or `ToolInvocationError` from `donkey_kit`.
+`PublicationDrift`, `RegistryError` or `ToolInvocationError` from `donkey_kit`
+(#730).
 
 **Symptom:** `DeprecationWarning: donkey_kit.AssetRef is deprecated; import it
 from donkey_kit.experimental`. The old spelling still works for now, but the
 names are out of `donkey_kit.__all__` (so `from donkey_kit import *` no longer
 brings them) and type checkers flag the old import. A later release removes the
 alias.
-## 0.1.2: configuration precedence
-
-### The user config file is merged beneath the project files
-
-**Who:** anyone with a user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`, or
-`~/.config/.donkey-kit.toml`) who also has a `.donkey-kit.toml` or
-`.donkey-kit.local.toml` in the working directory.
-
-**Symptom:** keys from the user file now apply wherever the working-directory
-files leave them unset. Before, the user file was read only when neither
-working-directory file existed
-([#727](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/727)).
-A credential from the user file is still never sent to an `llm_proxy_url` or
-`base_url` read from the working-directory files, so a project file that names
-a URL but no credentials now raises the endpoint `ConfigError` instead of a
-missing-field one.
-
-**Fix:** remove from the user file any key you don't want applied to every
-project, or set it in the project's own files. `donkey doctor` labels values
-from it `user file`.
-
-### `Donkey.from_env()` accepts every field
-
-`Donkey.from_env(...)` and the new `DonkeyConfig.resolve(...)` accept any
-`DonkeyConfig` field as a keyword argument, plus `path=` to read a named
-config file in place of `./.donkey-kit.toml`. An unknown name raises
-`TypeError`. `on_model_substitution=None` is no longer accepted; leave the
-argument out instead.
-## 0.1.2 (unreleased)
-
-Changes since `0.1.1` that can affect existing code.
-
-### 1. `Donkey()` no longer installs the global OpenTelemetry provider
-
-Reference: [DDK leaves the global provider to you](website/content/telemetry.mdx#ddk-leaves-the-global-provider-to-you).
-
-**Who:** anyone who sets `OTEL_EXPORTER_OTLP_ENDPOINT`, doesn't configure an
-OpenTelemetry `TracerProvider` of their own, and relied on `Donkey()` making
-its provider the global one. For example, spans from other libraries reached
-the collector only because DDK had installed its exporter globally.
-
-**Symptom:** DDK's own spans still reach the collector, but
-`trace.get_tracer_provider()` is unchanged after `Donkey()`, so spans that
-other code creates through the global provider are no longer exported. A
-`trace.get_tracer_provider().force_flush()` call no longer flushes DDK's spans
-either; they are flushed when the interpreter exits.
-
-**Fix:** set `DONKEY_TELEMETRY_INSTALL_GLOBAL=true` (or
-`telemetry_install_global = true` in `.donkey-kit.toml`) to get the old
-behaviour, or configure your own `TracerProvider`. DDK's spans go to a provider
-you set even if you set it after `Donkey()`.
-## 0.1.2: the public API surface, renames and removals
-
-Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public
-API (#927): a name is public when you can import it from `donkey_kit` or from
-a public module's `__all__`; submodule paths are not API. Sections 1 and 2
-still work but warn; sections 3 and 4 break code that used the old names;
-section 5 changes what the transport retries.
-a public module's `__all__`; submodule paths are not API. Sections 1, 2 and 6
-still work but warn; sections 3 and 4 break code that used the old names;
-section 5 changes which extras you can install.
-
-The deprecated names stay for the rest of 0.1.x. The release that removes them
-says so here and in its Release notes' Breaking changes section. To find every
-call site now, run your tests with `-W error::DeprecationWarning`.
-
-### 1. Three renamed names, with deprecated aliases
-
-**Who:** code that imports any name in the left column.
-
-**Symptom:** the import still works but emits a `DeprecationWarning` naming
-the replacement.
-
-| Was | Now | Why |
-| --- | --- | --- |
-| `donkey_kit.provisioning.ToolSpec` (also `provisioning.spec.ToolSpec`) | `donkey_kit.provisioning.ApiToolSpec` | It is the tool an `ApiSpec` exposes, a different type from `donkey_kit.ToolSpec`. |
-| `donkey_kit.registry.governance` | `donkey_kit.registry.criteria`, or import the names from `donkey_kit` | It shared a name with the top-level `donkey_kit.governance`. |
-| `donkey_kit.simulator.scenarios.Scenario` | `donkey_kit.simulator.scenarios.FaultScenario` | It clashed with `donkey_kit.conformance.Scenario`. |
 
 **Fix:**
 
@@ -150,25 +89,28 @@ back to `donkey_kit` when their surface is verified, and until then they may
 change in any release. The submodule paths (`donkey_kit.registry`,
 `donkey_kit.core.errors`) still work.
 
-### 5. pydantic and pyyaml are no longer installed for you
+### 5. Two renamed names, with deprecated aliases
 
-**Who:** code that imports `pydantic` or `yaml` and relied on `donkey-kit` (or
-`donkey-kit[cli]`) to install it.
+**Who:** code that imports any name in the left column (#927).
 
-**Symptom:** `ModuleNotFoundError: No module named 'pydantic'` (or `'yaml'`)
-in your own code after upgrading.
+**Symptom:** the import still works but emits a `DeprecationWarning` naming
+the replacement.
 
-**Fix:** depend on them directly. The SDK itself imports neither. Framework
-extras that need pydantic (LangChain, ADK, the OpenAI SDK) still bring it in.
-- from donkey_kit.provisioning import ToolSpec
-+ from donkey_kit.provisioning import ApiToolSpec
+| Was | Now | Why |
+| --- | --- | --- |
+| `donkey_kit.registry.governance` | `donkey_kit.registry.criteria`, or import the names from `donkey_kit.registry` | It shared a name with the old top-level `donkey_kit.governance`. |
+| `donkey_kit.simulator.scenarios.Scenario` | `donkey_kit.simulator.scenarios.FaultScenario` | It clashed with `donkey_kit.conformance.Scenario`. |
+
+**Fix:**
+
+```diff
 - from donkey_kit.registry.governance import GovernanceCriteria, STRICT
-+ from donkey_kit import GovernanceCriteria, STRICT
++ from donkey_kit.experimental import GovernanceCriteria, STRICT
 - from donkey_kit.simulator.scenarios import Scenario
 + from donkey_kit.simulator.scenarios import FaultScenario
 ```
 
-### 2. `run_context()` is deprecated
+### 6. `run_context()` is deprecated
 
 **Who:** code that calls `Donkey.run_context()` or
 `donkey_kit.core.run_context()` (#926).
@@ -185,7 +127,7 @@ extras that need pydantic (LangChain, ADK, the OpenAI SDK) still bring it in.
 
 Without a `Donkey` instance, use `donkey_kit.core.telemetry.run_scope()`.
 
-### 3. Removed names
+### 7. Removed names
 
 These are gone, with no alias (#926). Each was unused or had no working caller.
 
@@ -200,46 +142,33 @@ These are gone, with no alias (#926). Each was unused or had no working caller.
   property that reads the adapter roster. Reading it works as before;
   assigning it raises `AttributeError`.
 
-### 4. Internal names renamed without an alias
+### 8. Internal names renamed without an alias
 
 These were never public. They are listed only because the old names were
-importable in 0.1.1 (#927).
+importable in 0.1.1 (#927, #728, #726).
 
 | Was | Now |
 | --- | --- |
-| `donkey_kit.provisioning.doctor.Check` | `DoctorCheck` |
 | `donkey_kit.core.config._TOML_NAME` / `_LOCAL_TOML_NAME` | `TOML_NAME` / `LOCAL_TOML_NAME` |
 | `donkey_kit.simulator.inject._resolve` | `resolve_fixture` |
 | `donkey_kit.conformance.harness._offline_config` | `offline_config` |
-| `DonkeyAsyncClient._swap_transport()` / `DonkeyClient._swap_transport()` | `client.governed_transport.replace_inner()` (#728) |
-| `donkey_kit.integrations._httpx2_bridge` | `donkey_kit.core.transport.httpx2` (#728) |
-| `DonkeyAsyncClient._on_request()` (a no-op hook) | removed; the per-send `_inject_headers` event hook does request-side work (#728) |
+| `DonkeyAsyncClient._swap_transport()` / `DonkeyClient._swap_transport()` | `client.governed_transport.replace_inner()` |
+| `donkey_kit.integrations._httpx2_bridge` | `donkey_kit.core.transport.httpx2` |
+| `DonkeyAsyncClient._on_request()` (a no-op hook) | removed; the per-send `_inject_headers` event hook does request-side work |
+| `Adapter.factory_observes_last_call` | `Adapter.capabilities(factory).observes_last_call` |
 
-### 5. A 502 or 504 on a model call is no longer retried by default
+### 9. pydantic and pyyaml are no longer installed for you
 
-**Who:** code that relies on the transport re-sending a model call (a `POST`
-whose body, or native Gemini path, names a model) after a `502` or `504`
-(#728).
+**Who:** code that imports `pydantic` or `yaml` and relied on `donkey-kit` (or
+`donkey-kit[cli]`) to install it (#730).
 
-**Symptom:** the `502` or `504` comes back on the first attempt, as an
-`UpstreamModelError` once classified. Either status can follow an upstream
-call that already completed and was billed, so a re-send could bill twice, and
-the gateway has no verified idempotency key (docs/adr/0009-*.md). A `503`, and
-every request that is not a model call, is still retried as before.
+**Symptom:** `ModuleNotFoundError: No module named 'pydantic'` (or `'yaml'`)
+in your own code after upgrading.
 
-**Fix:** if a second charge is acceptable, opt back in with
-`DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS=1` in the environment, or set
-`retry_model_calls_on_gateway_errors` in code:
+**Fix:** depend on them directly. The SDK itself imports neither. Framework
+extras that need pydantic (LangChain, ADK, the OpenAI SDK) still bring it in.
 
-```python
-from donkey_kit import Donkey
-from donkey_kit.core.config import DonkeyConfig
-
-cfg = DonkeyConfig.from_env().with_overrides(retry_model_calls_on_gateway_errors=True)
-donkey = Donkey(cfg)
-```
-
-### 5. The `dev`, `mcp` and `a2a` extras are gone, and `[all]` installs no test runner
+### 10. The `dev`, `mcp` and `a2a` extras are gone, and `[all]` installs no test runner
 
 **Who:** anyone who installs `donkey-kit[dev]`, `donkey-kit[mcp]`,
 `donkey-kit[a2a]`, or relies on `donkey-kit[all]` to bring in pytest (#744).
@@ -264,9 +193,9 @@ donkey = Donkey(cfg)
 + pip install -e ".[llm,cli]" --group dev
 ```
 
-Drop `mcp` and `a2a` from any install line.
+Drop `mcp` and `a2a` from any install line. `--group` needs pip 25.1 or later.
 
-### 6. The conformance plugin's `--agent` is now `--donkey-agent`
+### 11. The conformance plugin's `--agent` is now `--donkey-agent`
 
 ```diff
 - pytest --donkey-conformance --agent=myagent:build
@@ -279,7 +208,94 @@ plugins register the same option, so all its options now start with
 unless another plugin registered `--agent` first. `donkey test --agent` is
 unchanged; it now forwards `--donkey-agent` to pytest.
 
-### 7. Shipped simulator fixtures moved into the package
+### 12. `Donkey()` no longer installs the global OpenTelemetry provider
+
+Reference: [DDK leaves the global provider to you](website/content/telemetry.mdx#ddk-leaves-the-global-provider-to-you).
+
+**Who:** anyone who sets `OTEL_EXPORTER_OTLP_ENDPOINT`, doesn't configure an
+OpenTelemetry `TracerProvider` of their own, and relied on `Donkey()` making
+its provider the global one (#732). For example, spans from other libraries
+reached the collector only because DDK had installed its exporter globally.
+
+**Symptom:** DDK's own spans still reach the collector, but
+`trace.get_tracer_provider()` is unchanged after `Donkey()`, so spans that
+other code creates through the global provider are no longer exported. A
+`trace.get_tracer_provider().force_flush()` call no longer flushes DDK's spans
+either; they are flushed when the interpreter exits.
+
+**Fix:** set `DONKEY_TELEMETRY_INSTALL_GLOBAL=true` (or
+`telemetry_install_global = true` in `.donkey-kit.toml`) to get the old
+behaviour, or configure your own `TracerProvider`. DDK's spans go to a provider
+you set even if you set it after `Donkey()`. ADR 0010 in
+[`docs/adr/`](docs/adr/) has the reasoning.
+
+### 13. The user config file is merged beneath the project files
+
+**Who:** anyone with a user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`, or
+`~/.config/.donkey-kit.toml`) who also has a `.donkey-kit.toml` or
+`.donkey-kit.local.toml` in the working directory.
+
+**Symptom:** keys from the user file now apply wherever the working-directory
+files leave them unset. Before, the user file was read only when neither
+working-directory file existed
+([#727](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/727)).
+A credential from the user file is still never sent to an `llm_proxy_url` or
+`base_url` read from the working-directory files, so a project file that names
+a URL but no credentials now raises the endpoint `ConfigError` instead of a
+missing-field one.
+
+**Fix:** remove from the user file any key you don't want applied to every
+project, or set it in the project's own files. `donkey doctor` labels values
+from it `user file`.
+
+### 14. `Donkey.from_env()` accepts every field
+
+`Donkey.from_env(...)` and the new `DonkeyConfig.resolve(...)` accept any
+`DonkeyConfig` field as a keyword argument, plus `path=` to read a named
+config file in place of `./.donkey-kit.toml` (#727). An unknown name raises
+`TypeError`. `on_model_substitution=None` is no longer accepted; leave the
+argument out instead.
+
+### 15. A 502 or 504 on a model call is no longer retried by default
+
+**Who:** code that relies on the transport re-sending a model call (a `POST`
+whose body, or native Gemini path, names a model) after a `502` or `504`
+(#728).
+
+**Symptom:** the `502` or `504` comes back on the first attempt, as an
+`UpstreamModelError` once classified. Either status can follow an upstream
+call that already completed and was billed, so a re-send could bill twice, and
+the gateway has no verified idempotency key (ADR 0009 in
+[`docs/adr/`](docs/adr/)). A `503`, and every request that is not a model
+call, is still retried as before.
+
+**Fix:** if a second charge is acceptable, opt back in with
+`DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS=1` in the environment, or set
+`retry_model_calls_on_gateway_errors` in code:
+
+```python
+from donkey_kit import Donkey
+
+donkey = Donkey.from_env(retry_model_calls_on_gateway_errors=True)
+```
+
+### 16. Errors leaving `donkey.run()` and `@donkey.governed` are typed
+
+**Who:** code that catches a framework's or HTTP SDK's own error (for example
+`openai.APIStatusError`) around a block wrapped in `donkey.run()` or a
+function decorated with `@donkey.governed` (#724).
+
+**Symptom:** a gateway refusal now leaves the block as the SDK's typed error,
+such as `PIIDetected`, instead of the framework's exception. The framework's
+error is on `exc.framework_error`. Errors that are not governed refusals pass
+through unchanged.
+
+**Fix:** catch the typed error (or `DonkeyError`), or pass
+`typed_refusals=False` to `donkey.run()` or `@donkey.governed` to get the
+framework's errors as before. See
+[Typed refusals at the framework boundary](website/content/errors.mdx#typed-refusals-at-the-framework-boundary).
+
+### Shipped simulator fixtures moved into the package (not breaking)
 
 The captured gateway responses that `simulate()`, `donkey mock` and the
 `gateway` fixture replay now ship inside the wheel, under
@@ -292,8 +308,11 @@ code. If you read those files from a source checkout, use the new path.
 The types that public `Donkey` members return can now be imported from
 `donkey_kit`: `LastCall`, `LastCallStatus`, `RunScope`, `ToolsFacade` (was the
 private `_ToolsFacade`), `CacheScope`, `DonkeyAsyncClientView`,
-`DonkeyClientView`, `LLMClient` and `ExchangeRegistry`. Import them from
-`donkey_kit` rather than from their submodules.
+`DonkeyClientView`, `LLMClient`, `ExchangeRegistry` and `ConfigOverrides`.
+Import them from `donkey_kit` rather than from their submodules. The
+typed-refusal bridge is new as `donkey_kit.typed_refusals` and
+`donkey_kit.TypedRefusals` (#724), and `donkey_kit.integrations` exports
+`AdapterProtocol` and `AdapterCapabilities` (#726).
 
 ### LlamaIndex, Agent Framework and ADK `model()` report `last_call` (not breaking)
 

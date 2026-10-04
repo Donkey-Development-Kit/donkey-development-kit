@@ -80,21 +80,24 @@ Two audiences, two doc sets:
 pip install "donkey-kit[llm,langgraph]"   # base + raw client + one framework
 ```
 
-To work on the SDK itself, install from source instead:
+To work on the SDK itself, install from source with the contributor tooling
+(the `dev` dependency group needs pip 25.1 or later):
 
 ```bash
 git clone https://github.com/Donkey-Development-Kit/donkey-development-kit.git
 cd donkey-development-kit/python
-pip install -e ".[llm,langgraph]"
+pip install -e ".[llm,cli]" --group dev
 ```
 
 Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
-`openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `mcp`, `a2a`, `otel`, `cli`,
-`local`, `test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
+`openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `otel`, `cli`, `local`,
+`test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
 `pytest --donkey-conformance --donkey-agent=my_app.agent:build`), and `all`. `all` is
-everything that installs together — `llm`, `langgraph`, `mcp`, `otel`, `cli`, `local`,
-`test` — and leaves out the seven other framework extras, whose current upstream releases
-cannot all be installed together. Add the one framework you use: `donkey-kit[all,crewai]`.
+everything a user runs that installs together — `llm`, `langgraph`, `otel`, `cli`,
+`local` — with no test runner, so add `test` for the conformance plugin:
+`donkey-kit[all,test]`. It leaves out the seven other framework extras, whose current
+upstream releases cannot all be installed together. Add the one framework you use:
+`donkey-kit[all,crewai]`.
 Configuration and first-agent walkthroughs live on the
 [documentation site](https://docs.donkey-kit.dev/).
 

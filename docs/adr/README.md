@@ -73,12 +73,12 @@ is not rewritten.
 | ADR | Title | Status | Issue |
 | --- | --- | --- | --- |
 | [0001](0001-value-objects.md) | Value objects are frozen dataclasses; pydantic only at external-schema boundaries | Accepted | #723 |
-| [0002](0002-typed-refusal-bridge.md) | One framework-agnostic typed-refusal bridge | Proposed | #724 |
+| [0002](0002-typed-refusal-bridge.md) | One framework-agnostic typed-refusal bridge | Accepted | #724 |
 | [0003](0003-core-runtime.md) | A core `Runtime` with a process default | Accepted | #725 |
-| [0004](0004-adapter-protocol-and-roster.md) | The adapter contract and a single roster | Proposed | #726 |
-| [0005](0005-config-precedence.md) | Config precedence: kwargs, env, local file, project file, user file, default | Proposed | #727 |
+| [0004](0004-adapter-protocol-and-roster.md) | The adapter contract and a single roster | Accepted | #726 |
+| [0005](0005-config-precedence.md) | Config precedence: kwargs, env, local file, project file, user file, default | Accepted | #727 |
 | [0006](0006-api-tiers-and-deprecation.md) | API stability tiers and the 0.x deprecation policy | Proposed | #236 |
 | [0007](0007-dependency-policy.md) | Dependency policy: verified floors, locked PR CI, the nightly run as the canary | Proposed | #731 |
-| [0008](0008-legacy-quarantine-and-cli-home.md) | Quarantine the legacy provisioning code and give the CLI its own package | Proposed | #730 |
-| [0009](0009-sans-io-transport.md) | A sans-IO transport policy, and no default retry of model POSTs on 502/504 | Proposed | #728 |
-| [0010](0010-no-hidden-global-side-effects.md) | No hidden global side effects: the OTel provider | Proposed | #732 |
+| [0008](0008-legacy-quarantine-and-cli-home.md) | Quarantine the legacy provisioning code and give the CLI its own package | Accepted | #730 |
+| [0009](0009-sans-io-transport.md) | A sans-IO transport policy, and no default retry of model POSTs on 502/504 | Accepted | #728 |
+| [0010](0010-no-hidden-global-side-effects.md) | No hidden global side effects: the OTel provider | Accepted | #732 |

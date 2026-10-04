@@ -1,6 +1,6 @@
 # ADR 0005: Config precedence is kwargs, env, local file, project file, user file, default, resolved per field from one table
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-03
 - **Issue:** #727 (part of #707). Recorded under the ADR process from #731.
 
