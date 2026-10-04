@@ -330,8 +330,12 @@ def test_a_path_file_counts_as_a_project_file_for_the_endpoint_rule(
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "env-secret")
     cfg = DonkeyConfig.resolve(path=chosen)
     assert cfg.source_of("llm_proxy_url") == config_module.ConfigSource("project", chosen)
-    with pytest.raises(ConfigError, match="Not sending llm_proxy_client_id"):
+    with pytest.raises(ConfigError, match="Not sending llm_proxy_client_id") as exc:
         cfg.validated(need="llm")
+    # The file may live anywhere, so the message must not call it the working directory's.
+    assert str(chosen) in str(exc.value)
+    assert "working directory" not in str(exc.value)
+    assert "credentials from outside the project config files" in str(exc.value)
     # Credentials in the overlay beside the named file are sent.
     _write(
         tmp_path / ".donkey-kit.local.toml",

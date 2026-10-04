@@ -694,10 +694,10 @@ The error names every credential that came from elsewhere, where each came
 from, the host, the key and the file:
 
 ```text
-ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the working directory's config files are only sent to hosts those files name when you opt in. To continue, do one of:
+ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the project config files are only sent to hosts those files name when you opt in. To continue, do one of:
   - set the URL in the environment instead (DONKEY_LLM_PROXY_URL=https://...)
   - keep the credentials in /home/me/my-agent/.donkey-kit.local.toml, next to the project file
-  - trust this directory's config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
+  - trust the project config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
 ```
 
 The source labels are `env`, `user file` and `code`.
@@ -711,7 +711,7 @@ The source labels are `env`, `user file` and `code`.
    Not available for the `llm_auth` token in `jwt` or `bearer` mode or for a
    `Donkey(auth=…)` token, because none of them comes from a file.
 3. **Opt in:** set `DONKEY_TRUST_PROJECT_CONFIG` to `1` (or `true`, `yes`,
-   `on`) in the environment if you trust this directory's config files. The
+   `on`) in the environment if you trust the project config files. The
    setting decides whether those files are trusted, so it is read from the
    environment only; a `[donkey]` key with that name is ignored.
 

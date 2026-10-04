@@ -331,13 +331,13 @@ export DONKEY_TELEMETRY_CAPTURE_CONTENT=true
 # or: telemetry_capture_content = true under [donkey] in .donkey-kit.toml
 ```
 
-In code, layer it over the resolved config. It isn't a `Donkey.from_env()`
-kwarg:
+In code, pass it to `Donkey.from_env()`, which takes any `DonkeyConfig` field as
+a keyword argument:
 
 ```python
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import Donkey
 
-donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_capture_content=True))
+donkey = Donkey.from_env(telemetry_capture_content=True)
 ```
 
 `telemetry_capture_content` resolves along the standard

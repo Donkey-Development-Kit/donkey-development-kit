@@ -698,12 +698,12 @@ def _binding_error(
         local = origin.path.parent / LOCAL_TOML_NAME
         options.append(f"keep the credentials in {local}, next to the project file")
     options.append(
-        f"trust this directory's config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
+        f"trust the project config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
     )
     return ConfigError(
         f"Not sending {', '.join(credentials)} to {host_of(url)}: {key} is set in "
-        f"{origin.path}, and credentials from outside the working directory's config "
-        "files are only sent to hosts those files name when you opt in. To continue, "
+        f"{origin.path}, and credentials from outside the project config files "
+        "are only sent to hosts those files name when you opt in. To continue, "
         "do one of:\n  - " + "\n  - ".join(options)
     )
 

@@ -99,10 +99,10 @@ config file; a `base_url` on `anypoint.mulesoft.com`, `eu1.`, `ca1.` or `jp1.`.
 `connection_kwargs()`) raises, before anything is sent:
 
 ```text
-ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the working directory's config files are only sent to hosts those files name when you opt in. To continue, do one of:
+ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the project config files are only sent to hosts those files name when you opt in. To continue, do one of:
   - set the URL in the environment instead (DONKEY_LLM_PROXY_URL=https://...)
   - keep the credentials in /home/me/my-agent/.donkey-kit.local.toml, next to the project file
-  - trust this directory's config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
+  - trust the project config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
 ```
 
 `donkey doctor` shows the same message on its `config` line (for `llm_proxy_url`) or its `control plane` line (for `base_url`).
