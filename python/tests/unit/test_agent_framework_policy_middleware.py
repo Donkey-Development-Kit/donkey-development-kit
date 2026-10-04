@@ -20,6 +20,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit._testing import swap_transport
 from donkey_kit.core.errors import DonkeyError, GatewayUnavailable, PIIDetected
 
 af = pytest.importorskip("agent_framework")
@@ -211,7 +212,7 @@ async def test_a_non_refusal_error_propagates_untouched(api: str) -> None:
         raise ValueError("a bug in the handler")
 
     fab = Donkey(_cfg())
-    fab._http._swap_transport(httpx.MockTransport(handler))
+    swap_transport(fab._http, httpx.MockTransport(handler))
     agent = _agent(fab, api)
 
     try:
