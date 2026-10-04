@@ -14,7 +14,6 @@ import inspect
 import pkgutil
 import types
 import typing
-import warnings
 from collections.abc import Iterator, Mapping
 from typing import Any
 
@@ -139,7 +138,8 @@ def test_donkey_signature_types_are_importable_from_donkey_kit() -> None:
         f"Donkey.{attr} -> {cls.__module__}.{cls.__qualname__}"
         for attr, hint in _public_member_hints()
         for cls in _donkey_kit_types(hint)
-        if getattr(donkey_kit, cls.__name__, None) is not cls
+        # __all__, not getattr: a deprecated alias resolves but is not an export.
+        if cls.__name__ not in donkey_kit.__all__ or getattr(donkey_kit, cls.__name__) is not cls
     }
     assert not missing, "not exported from donkey_kit:\n" + "\n".join(sorted(missing))
 
@@ -151,22 +151,63 @@ def test_the_check_sees_the_types_it_must() -> None:
 
 
 def test_renamed_names_keep_deprecated_aliases() -> None:
-    from donkey_kit import provisioning
-    from donkey_kit.registry import criteria
-
-    with pytest.warns(DeprecationWarning, match="ApiToolSpec"):
-        assert provisioning.ToolSpec is provisioning.ApiToolSpec
-    from donkey_kit.provisioning import spec
-
-    with pytest.warns(DeprecationWarning, match="ApiToolSpec"):
-        assert spec.ToolSpec is spec.ApiToolSpec
-
     import sys
+
+    from donkey_kit.registry import criteria
 
     sys.modules.pop("donkey_kit.registry.governance", None)
     with pytest.warns(DeprecationWarning, match="registry.criteria"):
         legacy = importlib.import_module("donkey_kit.registry.governance")
     assert legacy.GovernanceCriteria is criteria.GovernanceCriteria
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        assert provisioning.ApiToolSpec is spec.ApiToolSpec
+
+
+# Types that exist only for a verification-blocked surface (registry discovery,
+# governed-state checks, publication, MCP tool calls). They live in
+# donkey_kit.experimental, never in the stable namespace (#730).
+_BLOCKED_ONLY = {
+    "STRICT",
+    "AssetRef",
+    "AssetType",
+    "Contact",
+    "GovernanceCriteria",
+    "Publication",
+    "PublicationAssetType",
+    "PublicationDrift",
+    "RegistryError",
+    "ToolInvocationError",
+}
+
+# Names of the refused provisioning control plane, deleted in #730.
+_REFUSED = {
+    "Governance",
+    "GovernanceDrift",
+    "GatewayTarget",
+    "PlatformTeamOnly",
+    "ProvisioningError",
+}
+
+
+def test_top_level_exports_no_blocked_or_refused_type() -> None:
+    leaked = (_BLOCKED_ONLY | _REFUSED) & set(donkey_kit.__all__)
+    assert not leaked, f"blocked/refused types in donkey_kit.__all__: {sorted(leaked)}"
+    for name in _REFUSED:
+        assert not hasattr(donkey_kit, name), name
+
+
+@pytest.mark.parametrize("name", sorted(_BLOCKED_ONLY))
+def test_moved_names_keep_a_deprecated_top_level_alias(name: str) -> None:
+    # Deprecate before removing (CONTRIBUTING): the old donkey_kit.<name>
+    # spelling resolves to the experimental object, with a warning naming it.
+    from donkey_kit import experimental
+
+    with pytest.warns(DeprecationWarning, match=rf"donkey_kit\.{name} .*donkey_kit\.experimental"):
+        assert getattr(donkey_kit, name) is getattr(experimental, name)
+
+
+def test_experimental_is_exactly_the_blocked_only_types() -> None:
+    from donkey_kit import experimental
+
+    assert set(experimental.__all__) == _BLOCKED_ONLY
+    for name in experimental.__all__:
+        assert getattr(experimental, name) is not None
+

@@ -27,6 +27,13 @@ jobs:
       - run: python -m pip install --upgrade pip && pip install -e . --group dev
       - name: import donkey_kit with no framework extras installed
         run: python -c "import donkey_kit; from donkey_kit import Donkey; print(donkey_kit.__version__)"
+      - name: a plain install carries no pydantic (#730)
+        run: |
+          if pip show pydantic >/dev/null 2>&1; then
+            echo "pydantic is installed by .[dev]; the base install must not need it" >&2
+            exit 1
+          fi
+          python -c "import sys, donkey_kit, donkey_kit.experimental; assert 'pydantic' not in sys.modules"
       - run: pytest -q tests/unit
       - name: installed wheel resolves packaged simulator fixtures (BG §1.4)
         run: |

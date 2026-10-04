@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from donkey_kit.provisioning.cli import app
+from donkey_kit.cli import app
 
 runner = CliRunner()
 
