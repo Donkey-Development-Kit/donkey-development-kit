@@ -1,18 +1,19 @@
 # Google ADK example
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+Supported at connection_kwargs(). The example's `build(donkey)` makes one governed
+call through ADK's `InMemoryRunner` and runs through the public conformance kit
+(`tests/conformance/test_adapter_contract.py`).
 
 **What this shows.** A one-line factory call gets you a *native*
 `google.adk.models.lite_llm.LiteLlm` pointed at the governed Agent Fabric LLM
 proxy — correct `api_base`, `client_id`/`client_secret` auth via
 `extra_headers` (not bearer), and the model id auto-prefixed with `openai/`
 so LiteLLM routes it correctly. The returned object is ADK's own class, not
-a wrapper. Note: LiteLLM owns its own HTTP transport, so (unlike LangGraph)
-the SDK's shared http client/retry hooks are not injected here — this is a
-documented conformance exemption, not an oversight. This example only
-constructs the object; it deliberately does not attempt a live inference
-call, since ADK drives models through its own `Runner`/`Agent` session
-machinery rather than a simple method call.
+a wrapper. LiteLLM takes a pre-built OpenAI client, so the adapter hands it one that
+sends through the SDK's shared client (per-run correlation, `last_call`).
+`main()` only constructs the object; `build(donkey)` wires it into an
+`LlmAgent` and an `InMemoryRunner` and drives one turn, which is what the
+conformance kit runs.
 
 > 📖 **Prefer reading to running?** The canonical walkthrough — install,
 > configure, and the manual equivalent — is in the docs:

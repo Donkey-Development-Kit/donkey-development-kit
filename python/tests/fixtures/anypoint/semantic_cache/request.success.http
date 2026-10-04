@@ -13,7 +13,7 @@
 #   x-cache-principal-id: <s>  -> partition the similarity filter by principal
 
 POST /ddk-semantic-cache/chat/completions HTTP/1.1
-Host: private-space-omni-gateway-qrpud8.wxdmnv.usa-e2.cloudhub.io
+Host: private-space-omni-gateway.example.invalid
 Content-Type: application/json
 client_id: <redacted>
 client_secret: <redacted>

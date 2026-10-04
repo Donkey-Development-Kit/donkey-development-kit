@@ -280,12 +280,11 @@ class Donkey:
           it said nothing").
         * **UNOBSERVED** — no governed model call has returned in this context yet.
         * **UNAVAILABLE** — every adapter used on this Donkey routes outside our
-          transport (ADK ``model()`` via LiteLLM, CrewAI via its native OpenAI provider, or
-          ``default_headers``-only LlamaIndex / MS Agent Framework), so a
-          response can never reach the record. :attr:`LastCall.surface` names
-          which. This is derived from the adapters actually resolved, and the
-          conformance suite asserts the exemption rather than skipping it (the
-          conformance kit).
+          transport (today only CrewAI, whose native OpenAI provider builds its
+          own clients, #740), so a response can never reach the record.
+          :attr:`LastCall.surface` names which. This is derived from the
+          adapters actually resolved, and the conformance suite asserts the
+          exemption rather than skipping it (the conformance kit).
         """
         observed = current_last_call()
         if observed is not None:
@@ -296,7 +295,7 @@ class Donkey:
         # an indistinguishable UNOBSERVED (hazard #3). An empty cache (raw client
         # / not used yet) is a cold read, not UNAVAILABLE.
         used = list(self._adapter_cache.values())
-        if used and all(not a.observing_last_call() for a in used):
+        if used and all(not a.observes_last_call for a in used):
             return unavailable(", ".join(sorted(self._adapter_cache)))
         return UNOBSERVED
 

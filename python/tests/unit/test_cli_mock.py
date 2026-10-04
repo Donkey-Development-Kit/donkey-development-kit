@@ -1,7 +1,7 @@
 """``donkey mock`` (BG §1.4): flag wiring and the missing-``[local]``-extra
 guidance.
 
-Needs only ``[dev]`` (typer): ``serve`` is monkeypatched so neither uvicorn nor
+Needs only the ``dev`` group (typer): ``serve`` is monkeypatched so neither uvicorn nor
 starlette is required, and importing ``donkey_kit.simulator.server`` pulls in
 no web framework at module top. So this runs in the base-only job too.
 """

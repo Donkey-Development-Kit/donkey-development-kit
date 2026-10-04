@@ -65,6 +65,9 @@ class AgentFrameworkAdapter(Adapter):
     Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
     supported surface, and the factories are conveniences over it.
 
+    The chat clients send through the SDK's shared client, so a call carries the
+    run's correlation id and populates ``donkey.last_call`` (#740).
+
     Raises:
         ImportError: ``donkey.agent_framework`` was read without the
             ``agent_framework`` extra installed; the message carries the install
@@ -73,10 +76,6 @@ class AgentFrameworkAdapter(Adapter):
 
     Docs: https://docs.donkey-kit.dev/frameworks/agent-framework
     """
-
-    # Kept False while the conformance exemption table lists Agent Framework; its
-    # calls now go through the shared client (async_client).
-    observes_last_call = False
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` (or

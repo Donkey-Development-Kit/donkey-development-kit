@@ -4,8 +4,9 @@ Four questions a team usually cannot answer about its own agent: does it retry
 a budget refusal (it must not)? Does a typed refusal survive its error
 handling? Does the run's correlation id reach its logs? Does it still work when
 the gateway sends no budget headers? The conformance suite answers them without
-reading your code — it swaps a fixture-serving transport underneath, calls
-`agent.run(...)`, and watches the wire and the logs. So it grades behaviour, in
+reading your code — it swaps a fixture-serving transport underneath (the
+success body is shaped for the route your agent calls, Responses or chat
+completions), calls `agent.run(...)`, and watches the wire and the logs. So it grades behaviour, in
 any framework, and it runs in your CI as a pytest plugin with no gateway.
 
 | Example | Shows | Needs |
@@ -42,7 +43,7 @@ Run context
   stack traces out of the caller's face, and it logs what it is doing. Run the suite
   against it.
 
-    pytest --donkey-conformance --agent=…:build_naive
+    pytest --donkey-conformance --donkey-agent=…:build_naive
 
     FFF.                                                                     [100%]
     Donkey conformance
@@ -106,7 +107,7 @@ What each failure actually means
         "correlation_id_propagated": "This agent's framework owns the HTTP …",
     }
     
-    pytest --donkey-conformance --agent=shipping_agent:build_naive \
+    pytest --donkey-conformance --donkey-agent=shipping_agent:build_naive \
            --donkey-known-limitations=exemptions:FRAMEWORK_LIMITS
 
     FF..                                                                     [100%]
@@ -152,7 +153,7 @@ Against your own agent, the suite is a plain pytest invocation:
 
 ```bash
 pip install "donkey-kit[test]"
-pytest --donkey-conformance --agent=my_app.agent:build
+pytest --donkey-conformance --donkey-agent=my_app.agent:build
 ```
 
 ## Key code
@@ -204,7 +205,7 @@ FRAMEWORK_LIMITS = {
 ```
 
 ```bash
-pytest --donkey-conformance --agent=shipping_agent:build_naive \
+pytest --donkey-conformance --donkey-agent=shipping_agent:build_naive \
        --donkey-known-limitations=exemptions:FRAMEWORK_LIMITS
 ```
 

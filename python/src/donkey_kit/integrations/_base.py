@@ -11,8 +11,7 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from types import MappingProxyType
-from typing import Any, ClassVar, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from ..core import runtime
 from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, missing_llm_auth_error
@@ -46,22 +45,16 @@ class Adapter(ABC):
 
     #: Whether a governed model call through this adapter reaches ``donkey.last_call``
     #: (#362). True when the adapter hands the framework our shared
-    #: :class:`DonkeyAsyncClient`, through its view or the ``_httpx2_bridge``
-    #: (its ``_on_response`` observes the response);
+    #: :class:`DonkeyAsyncClient`, through its view, a pre-built OpenAI client on
+    #: it, or the ``_httpx2_bridge`` (its ``_on_response`` observes the response);
     #: False when the SDK does not own the transport — the framework builds its own
-    #: client (ADK ``model()`` via LiteLLM, CrewAI via its native OpenAI provider) or the
-    #: adapter is given only ``default_headers`` (LlamaIndex, MS Agent Framework).
-    #: A ``False`` here is why ``donkey.last_call`` reports "not available on this
-    #: surface" rather than a bare ``None`` (hazard #3),
+    #: clients (CrewAI's native OpenAI provider, #740). A ``False`` here is why
+    #: ``donkey.last_call`` reports "not available on this surface" rather than a
+    #: bare ``None`` (hazard #3),
     #: and it is the fact the conformance suite asserts as an exemption (the conformance kit).
-    #: It describes the adapter's default factory and its ``connection_kwargs()``;
-    #: a factory that routes differently is listed in
-    #: :attr:`factory_observes_last_call`. Neither is ever changed on an instance (#741).
+    #: It holds for every factory and ``connection_kwargs()`` accessor of the
+    #: adapter, and is never changed on an instance (#741).
     observes_last_call: bool = True
-
-    #: Per-factory overrides of :attr:`observes_last_call`, keyed by method name
-    #: (ADK ``gemini()`` observes where ``model()`` does not). Read-only.
-    factory_observes_last_call: ClassVar[Mapping[str, bool]] = MappingProxyType({})
 
     def __init__(
         self,
@@ -75,23 +68,6 @@ class Adapter(ABC):
         # lifecycle; standalone use falls back to one owned here.
         self._sync_http = sync_http_client or self._own_sync_client
         self._owned_sync: DonkeyClient | None = None
-        # Which factories with a per-factory capability have built an object, so
-        # observing_last_call() answers for what was used, not what was called last.
-        self._built: set[str] = set()
-
-    def _record_factory(self, name: str) -> None:
-        self._built.add(name)
-
-    def observing_last_call(self) -> bool:
-        """Whether a model call through anything this adapter built can reach
-        ``donkey.last_call``: true if any factory it was used through observes.
-        Before any such factory is used, the class's :attr:`observes_last_call`."""
-        if not self._built:
-            return self.observes_last_call
-        return any(
-            self.factory_observes_last_call.get(name, self.observes_last_call)
-            for name in self._built
-        )
 
     @contextmanager
     def _native_import(self) -> Iterator[None]:
