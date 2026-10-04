@@ -25,9 +25,10 @@ encoded as pins. What the repo does today:
   cover both majors (#701). Its `<1` leg resolves the newest 0.x release, not
   the `anthropic>=0.116` floor.
 - **PR CI is not locked.** The repo has no Python lockfile or constraints
-  file. Every job in `.github/workflows/ci.yml` runs `pip install -e
-  ".[...]"`, so a PR's CI resolves the newest release of every dependency on
-  the day it runs. An upstream release can turn a PR red that changed nothing
+  file. Every install step in `.github/workflows/ci.yml` resolves fresh: the
+  test jobs run `pip install -e ".[...]"` and `all-extra-resolves` runs
+  `pip install --dry-run ".[all]"`, so a PR's CI resolves the newest release
+  of every dependency on the day it runs. An upstream release can turn a PR red that changed nothing
   related (the `[all]` resolution failure in #697 is that kind of break).
 - **Nightly.** `.github/workflows/nightly-matrix.yml` runs at 06:00 UTC: the
   base gates, a `pip install --dry-run ".[all]"` on Python 3.10 to 3.12, and,
@@ -89,4 +90,5 @@ encoded as pins. What the repo does today:
   narrows where CI does a fresh resolve; it doesn't change what users get.
 - Adding a framework to the nightly matrix stays tied to promoting it to
   conformance-tested (`BG §1.8`, ADR 0004's roster-consistency test).
-- `CONTRIBUTING.md` (the "Extras are floors" row of the §3 map) cites this ADR.
+- `CONTRIBUTING.md` §3 (the "Extras are floors, never ceilings" rule) cites
+  this ADR.

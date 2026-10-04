@@ -9,7 +9,8 @@
 `core/telemetry.py` `configure_otlp_export` runs from every
 `core/runtime.py` `Runtime`, so from every `Donkey()` and from the process
 default behind the module-level factories (ADR 0003). When telemetry is on,
-an OTLP endpoint env var is set (`OTEL_EXPORTER_OTLP_ENDPOINT`) and `[otel]`
+an OTLP endpoint env var is set (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_ENDPOINT`) and `[otel]`
 is installed, it builds a `TracerProvider` with a `BatchSpanProcessor` and
 calls `trace.set_tracer_provider(provider)`, unless the global provider is
 already an SDK `TracerProvider`. It does this at most once per process.
@@ -57,7 +58,7 @@ on plain construction.
   and a host that configures OTel later in start-up loses its provider.
 - **Make export opt-in only, with no DDK-scoped provider.** Rejected as the
   default: it would remove the zero-config export (`BG §1.6`, #194) for users
-  who set only `OTEL_EXPORTER_OTLP_ENDPOINT`. The scoped provider keeps that
+  who set only an OTLP endpoint env var. The scoped provider keeps that
   working without touching global state.
 - **Document the behaviour and leave it.** Rejected: OTel's set-once rule
   makes the failure silent, so documentation would only help users who
