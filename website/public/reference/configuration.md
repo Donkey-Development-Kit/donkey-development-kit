@@ -319,6 +319,7 @@ kwarg; in code, use
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
 | `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
+| `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | Install DDK's OTLP provider as the process-global OpenTelemetry provider (default **`false`**). See [DDK leaves the global provider to you](https://docs.donkey-kit.dev/telemetry.md#ddk-leaves-the-global-provider-to-you). |
 
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
@@ -347,7 +348,7 @@ request is sent. One error lists every bad field and where each was set:
 |---|---|
 | `timeout_s` | A number greater than `0` |
 | `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
-| `telemetry`, `telemetry_capture_content`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
+| `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
 | `region` | `us`, `eu`, `ca` or `jp` |
 | `llm_proxy_auth` | `client-id` or `jwt` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |
