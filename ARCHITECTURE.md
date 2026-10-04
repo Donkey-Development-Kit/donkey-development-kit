@@ -129,8 +129,9 @@ Beside it:
   (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
   level, plus the optional `opentelemetry` lazily.
 - **core is layered too:** `runtime` → `transport` → `budget | cache |
-  cachecontrol | telemetry | toolspec` → `auth` → `config` → `cost | endpoints |
-  header_names` → `errors` → `lastcall | masking` → `_verify` → `_wire`.
+  cachecontrol | telemetry | toolspec` → `auth | correlation` → `config` →
+  `cost | endpoints | header_names | refusals` → `errors` → `lastcall |
+  masking` → `_verify` → `_wire`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
   through it. This contract is exhaustive too.
 
@@ -142,11 +143,12 @@ Two rules the import graph can't express are tests in
   imports another's `_name`, or any private module other than the four named
   seams (`core._verify`, `core._wire`, `_testing`, `integrations._base`).
 - **A module size budget for `core/`**
-  (`test_core_modules_stay_within_the_size_budget`) of 500 lines. The five
-  modules already past it (`config`, `errors`, `lastcall`, `telemetry`,
-  `transport`) are held at their current size by a ratchet
+  (`test_core_modules_stay_within_the_size_budget`) of 500 lines. The four
+  modules already past it (`config`, `errors`, `lastcall`, `telemetry`) are
+  held at their current size by a ratchet
   (`test_oversized_core_modules_only_shrink`). A ceiling only comes down, and
-  the transport split (#728) removes `transport.py`'s entry.
+  an entry goes once its module is back within budget, as `transport.py`'s did
+  when the transport split into a package (#728).
 
 Because of that rule, adapters import their framework **lazily, inside methods** —
 never at module top level — so importing the base package never drags in a
@@ -258,7 +260,7 @@ boundary, and no module has one today: its only user was the deleted
   set in code (`resolve()` / `Donkey.from_env()` keyword arguments,
   `with_overrides`) → env vars → `./.donkey-kit.local.toml` →
   `./.donkey-kit.toml` → `$XDG_CONFIG_HOME/.donkey-kit.toml` (or
-  `~/.config/.donkey-kit.toml` when that variable is unset or empty) → default.
+  `~/.config/.donkey-kit.toml` when that variable is unset, empty or relative) → default.
   The three files merge key by key, nested tables recursively, so a lower file
   fills what a higher one leaves unset; `resolve(path=...)` reads a named file
   in place of `./.donkey-kit.toml`. One declarative field table (`_FIELDS` in
@@ -338,10 +340,9 @@ boundary, and no module has one today: its only user was the deleted
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
   tracking silently breaks; and because a transport-level error escapes before
-  `_finish` runs, anything opened in `_on_request` has **no paired
-  `_on_response`** on that path — such a consumer must close in a `finally`,
-  never relying on the response hook (the OTel span avoids this by living in
-  `send()`).
+  `_finish` runs, `_on_response` **does not fire** on that path — anything
+  opened for a send must close in a `finally`, never relying on the response
+  hook (the OTel span does this by living in `send()`).
   A hookless client behaves exactly as it did before the hooks were added. The
   full contracts live in the `core/transport/` docstrings.
   `test_transport_hook_table_matches_both_clients` keeps this table and both
@@ -357,11 +358,14 @@ boundary, and no module has one today: its only user was the deleted
 
 Every governed surface ships in three ergonomic forms that must stay in lockstep:
 the `donkey.<framework>` factory, a `connection_kwargs()` accessor, and a
-module-level factory. Nothing checks this structurally yet: the lockstep is held
-by hand-written tests in `tests/unit/test_adapter_ergonomics.py`
+module-level factory. The adapter contract and its roster are checked
+structurally (#726, ADR 0004): `tests/unit/test_adapter_capabilities.py` holds
+every `ADAPTERS` entry to `AdapterProtocol`, and `tests/unit/test_adapter_roster.py`
+checks the lists derived from the roster (see *One adapter contract, one
+roster* above). The three forms themselves are compared by
+`tests/unit/test_adapter_ergonomics.py`
 (`test_factory_and_connection_kwargs_do_not_drift` and its per-adapter
-siblings), whose `_FACTORIES` table a new adapter must be added to by hand.
-Formalising the adapter contract and its roster is #726.
+siblings), whose `_FACTORIES` table a new adapter is still added to by hand.
 
 ---
 

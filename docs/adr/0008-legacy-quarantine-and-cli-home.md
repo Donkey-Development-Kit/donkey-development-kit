@@ -1,6 +1,6 @@
 # ADR 0008: The supported CLI gets its own package, and the legacy provisioning code is quarantined
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-03
 - **Issue:** #730 (part of #707). Recorded under the ADR process from #731.
 

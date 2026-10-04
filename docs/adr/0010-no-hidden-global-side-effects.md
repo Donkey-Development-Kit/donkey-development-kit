@@ -1,6 +1,6 @@
 # ADR 0010: No hidden global side effects; the SDK doesn't install the global OTel provider implicitly
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-03
 - **Issue:** #732 (part of #707). Recorded under the ADR process from #731.
 
