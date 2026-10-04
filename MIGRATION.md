@@ -4,8 +4,9 @@
 
 Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public
 API (#927): a name is public when you can import it from `donkey_kit` or from
-a public module's `__all__`; submodule paths are not API. Sections 1 and 2
-still work but warn; sections 3 and 4 break code that used the old names.
+a public module's `__all__`; submodule paths are not API. Sections 1, 2 and 6
+still work but warn; sections 3 and 4 break code that used the old names;
+section 5 changes which extras you can install.
 
 The deprecated names stay for the rest of 0.1.x. The release that removes them
 says so here and in its Release notes' Breaking changes section. To find every
@@ -78,6 +79,54 @@ importable in 0.1.1 (#927).
 | `donkey_kit.core.config._TOML_NAME` / `_LOCAL_TOML_NAME` | `TOML_NAME` / `LOCAL_TOML_NAME` |
 | `donkey_kit.simulator.inject._resolve` | `resolve_fixture` |
 | `donkey_kit.conformance.harness._offline_config` | `offline_config` |
+
+### 5. The `dev`, `mcp` and `a2a` extras are gone, and `[all]` installs no test runner
+
+**Who:** anyone who installs `donkey-kit[dev]`, `donkey-kit[mcp]`,
+`donkey-kit[a2a]`, or relies on `donkey-kit[all]` to bring in pytest (#744).
+
+**Symptom:** pip warns `donkey-kit 0.1.2 does not provide the extra 'mcp'`
+(or `'a2a'`, `'dev'`) and installs nothing for it. After `pip install
+"donkey-kit[all]"`, `pytest --donkey-conformance` is not available.
+
+- `mcp` and `a2a` had no code behind them: nothing in the SDK imported `mcp`
+  or `a2a-sdk`. Each comes back with the feature that uses it.
+- `dev` was contributor tooling (mypy, ruff, import-linter). It is now a
+  PEP 735 dependency group in a source checkout and is not published.
+- `[all]` is now everything a user runs: `llm`, `langgraph`, `otel`, `cli`
+  and `local`. The conformance plugin stays in `[test]`.
+
+**Fix:**
+
+```diff
+- pip install "donkey-kit[all]"
++ pip install "donkey-kit[all,test]"     # if you run the conformance plugin
+- pip install -e ".[dev,llm,cli]"        # contributors, from python/
++ pip install -e ".[llm,cli]" --group dev
+```
+
+Drop `mcp` and `a2a` from any install line.
+
+### 6. The conformance plugin's `--agent` is now `--donkey-agent`
+
+```diff
+- pytest --donkey-conformance --agent=myagent:build
++ pytest --donkey-conformance --donkey-agent=myagent:build
+```
+
+The plugin loads on every pytest run, and pytest refuses to start when two
+plugins register the same option, so all its options now start with
+`--donkey-` (#746). `--agent` still works and emits a `DeprecationWarning`,
+unless another plugin registered `--agent` first. `donkey test --agent` is
+unchanged; it now forwards `--donkey-agent` to pytest.
+
+### 7. Shipped simulator fixtures moved into the package
+
+The captured gateway responses that `simulate()`, `donkey mock` and the
+`gateway` fixture replay now ship inside the wheel, under
+`donkey_kit/simulator/_fixtures/`, instead of being copied in from
+`tests/fixtures/` at build time (#746). Nothing changes for installed
+code. If you read those files from a source checkout, use the new path.
 
 ### New exports (not breaking)
 
@@ -668,7 +717,7 @@ their names:
 
 ```diff
 - pytest --fabric-conformance --fabric-agent=myagent:build
-+ pytest --donkey-conformance --agent=myagent:build
++ pytest --donkey-conformance --donkey-agent=myagent:build
 ```
 
 The pytest plugin's entry-point key is now `donkey_kit_conformance`. If you had

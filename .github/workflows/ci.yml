@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev]"
+      - run: python -m pip install --upgrade pip && pip install -e . --group dev
       - name: import donkey_kit with no framework extras installed
         run: python -c "import donkey_kit; from donkey_kit import Donkey; print(donkey_kit.__version__)"
       - run: pytest -q tests/unit
@@ -44,8 +44,8 @@ jobs:
           "$venv_dir/bin/python" - <<'PY'
           from donkey_kit.simulator import fixtures
 
-          # Prove load() cannot silently fall back to checkout-only resources.
-          assert not fixtures._SOURCE_ROOT.exists(), fixtures._SOURCE_ROOT
+          # Prove load() reads the wheel's package data, not a checkout (#746).
+          assert "site-packages" in fixtures.LOCK_PATH.parts, fixtures.LOCK_PATH
           for shape in fixtures.SHAPES:
               fixtures.load(shape)
           assert fixtures.LOCK_PATH.exists(), fixtures.LOCK_PATH
@@ -83,7 +83,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,llm,cli]"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli]" --group dev
       - name: mypy --strict (blocking, working instruction #8)
         run: mypy
       # #721: the examples are user-facing code, so they get the same --strict
@@ -153,9 +153,9 @@ jobs:
       # skip the ASGI tests there, proving import donkey_kit.simulator stays
       # green without starlette/uvicorn). [otel] likewise: the GenAI-span
       # assertions (BG §1.6, #192) importorskip opentelemetry.sdk, so they only
-      # actually execute in this job — the typecheck job stays [dev,llm,cli] and
+      # actually execute in this job — the typecheck job stays [llm,cli] and
       # relies on the absence-only opentelemetry mypy override.
-      - run: pip install -e ".[dev,llm,cli,local,otel]"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev
       - run: pytest -q
       # The local gateway simulator's out-of-process boot (BG §1.4) is
       # local_gateway-marked and deselected from the default run above. It is
@@ -197,7 +197,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,anthropic]" "$ANTHROPIC_SPEC"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,anthropic]" --group dev "$ANTHROPIC_SPEC"
       - run: >-
           pytest -q
           tests/unit/test_anthropic_client_stacks.py
@@ -228,7 +228,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,adk]" "$ADK_SPEC"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,adk]" --group dev "$ADK_SPEC"
       - run: >-
           pytest -q
           tests/unit/test_adapter_ergonomics.py
@@ -246,7 +246,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,agent_framework]"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,agent_framework]" --group dev
       - run: >-
           pytest -q
           tests/unit/test_agent_framework_policy_middleware.py
@@ -263,11 +263,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      # Two steps: on the runner, resolving `.[dev,llm,llamaindex]` in one go
-      # drops the `dev` extra ("does not provide the extra 'dev'"), so pytest
-      # is never installed.
-      - run: pip install -e ".[dev,llm]"
-      - run: pip install -e ".[llamaindex]"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,llamaindex]" --group dev
       - run: >-
           pytest -q
           tests/unit/test_transport_injection.py
@@ -283,7 +279,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,openai-agents,strands]"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,openai-agents,strands]" --group dev
       - run: >-
           pytest -q
           tests/unit/test_adapter_async_last_call.py
@@ -342,7 +338,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,llm,cli,local,otel]"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev
       - name: GenAI span overhead < 1ms/call (BG §1.6, #194)
         run: pytest -q -m benchmark -s
 
@@ -374,7 +370,7 @@ jobs:
     # Timed on a clean runner (no credentials, no gateway) so the demo can never
     # silently rot, and the same build() factory is re-run through the
     # customer-facing conformance plugin — the exact `--donkey-conformance`
-    # invocation a team runs against its own agent. `[dev]` for pytest + the
+    # invocation a team runs against its own agent. The dev group for pytest + the
     # conformance plugin entry point.
     runs-on: ubuntu-latest
     steps:
@@ -382,7 +378,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,llm,langgraph,local,otel]"
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,langgraph,local,otel]" --group dev
       - name: mypy --strict over the LangGraph example, langgraph installed (#721)
         run: mypy -p examples.langgraph
       - name: run the gateway-free Scenario-A demo (must exit 0, no credentials)
@@ -390,9 +386,9 @@ jobs:
       - name: conformance passes against the demo's own agent factory
         # `python -m pytest` (not the bare `pytest` console script) so the
         # working directory (python/) lands on sys.path — that's what makes the
-        # `examples` namespace package importable for --agent=examples.langgraph.
+        # `examples` namespace package importable for --donkey-agent=examples.langgraph.
         # main:build. The bare script omits cwd from sys.path and fails to import.
-        run: python -m pytest -q --donkey-conformance --agent=examples.langgraph.main:build
+        run: python -m pytest -q --donkey-conformance --donkey-agent=examples.langgraph.main:build
 
   # Nightly framework matrix (§8.4) — runs the conformance kit against the
   # LATEST release of each framework and opens an issue on failure. Scheduled

@@ -11,7 +11,7 @@ fail CI loudly (floors-never-ceilings, docs/verified-apis.md §8.1) — rather
 than us discovering it in a customer sandbox.
 
 Guarded by ``importorskip("openai")`` at module top so the base-only CI job
-(``.[dev]`` only, no ``[llm]``) skips it cleanly; it runs in the full/nightly
+(the ``dev`` group only, no ``[llm]``) skips it cleanly; it runs in the full/nightly
 matrix where openai is installed and always the newest release.
 """
 

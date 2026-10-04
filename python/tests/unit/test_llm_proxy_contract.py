@@ -1,7 +1,7 @@
 """Pins the SDK's data-plane contract to LIVE captures from a real governed
 LLM proxy (`openai-sdk`, instance 21133858) deployed to `agent-network-ingress-gw`
-and called end-to-end on 2026-08-28. See tests/fixtures/anypoint/llm_proxy/README.md
-and docs/verified-apis.md §2/§3/§4.
+and called end-to-end on 2026-08-28. See
+src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/README.md and docs/verified-apis.md §2/§3/§4.
 
 Unlike the shape-only A2D fixtures, these are the direct Anypoint data-plane
 contract, so they may drive real SDK behavior (the BG §1.5 fixture-derived error
@@ -27,7 +27,11 @@ from donkey_kit.core.errors import (
 from donkey_kit.core.telemetry import policy_type_slug
 from donkey_kit.simulator.fixtures import parse_headers
 
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "llm_proxy"
+FIXTURES = (
+    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    / "anypoint"
+    / "llm_proxy"
+)
 
 
 def _headers(name: str) -> dict[str, str]:

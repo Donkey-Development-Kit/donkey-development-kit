@@ -14,7 +14,7 @@ gateway (BG §1.4, non-negotiable).
 
 Framework isolation (the layered architecture): ``starlette`` is imported **lazily inside**
 :func:`build_app`, never at module top, so ``import donkey_kit.simulator``
-stays green under the base-only CI job (``[dev]`` only, no ``[local]`` extra).
+stays green under the base-only CI job (the ``dev`` group only, no ``[local]`` extra).
 The public return type is a framework-free ASGI ``Protocol`` so no ``starlette``
 type leaks across the boundary under ``mypy --strict``.
 """
