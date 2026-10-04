@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]  # PEP 639 license metadata
 build-backend = "hatchling.build"
 
 [project]
@@ -8,12 +8,25 @@ version = "0.1.2.dev0"
 description = "An SDK for consuming Agent Fabric capabilities (governed model and tool access) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-authors = [{ name = "See README for maintainer + support statement" }]
+license = "Apache-2.0"
+# A copy of the repo-root LICENSE: hatch cannot read files above python/.
+# tests/unit/test_house_style_config.py keeps the two identical.
+license-files = ["LICENSE"]
+# Community-maintained (see the README support statement); report issues and
+# contact the maintainers through the Issues URL below.
+authors = [{ name = "Donkey Development Kit maintainers" }]
+maintainers = [{ name = "Donkey Development Kit maintainers" }]
 keywords = ["donkey-kit", "mulesoft", "anypoint", "agent", "llm", "mcp", "gateway"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    # One per CI `test` matrix leg (docs/python-support.md).
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
 ]
 
@@ -69,10 +82,6 @@ llamaindex = ["llama-index-llms-openai-like>=0.8"]
 # The OpenAIModel the adapter builds needs strands' own `openai` extra.
 strands = ["strands-agents[openai]>=1.57.1"]
 
-# --- Tool binding (MCP) ---
-mcp = ["mcp>=1.2"]
-a2a = ["a2a-sdk>=0.1"]
-
 # --- Local gateway simulator (BG §1.4): `donkey mock` ---
 # Pure-Python ASGI (starlette) served by uvicorn. Plain `uvicorn`, NOT
 # `uvicorn[standard]`: uvloop/httptools are C extensions and would break BG §1.4's
@@ -110,16 +119,25 @@ cli = ["typer>=0.15.4", "pyyaml>=6.0", "rich>=13.0"]
 # module-level `importorskip`; 0.23.1 is the lowest that runs the suite.
 test = ["pytest>=8.0", "pytest-asyncio>=0.23.1"]
 
-# --- Everything that installs together, for convenience ---
-# The framework-free extras plus the one deep adapter (BG §1.8). The seven
-# connection_kwargs()-only framework extras are deliberately NOT here: at their
-# current releases they are not co-installable upstream, and with floors-only
-# extras (§8.4) no floor makes them so — pip fails with resolution-too-deep.
-# Install those one at a time. See docs/verified-apis.md §8.1 (#697).
+# --- Everything a user runs, together ---
+# The framework-free extras plus the one deep adapter (BG §1.8). No test runner
+# or linter (#744): add `donkey-kit[all,test]` for the conformance plugin. The
+# seven connection_kwargs()-only framework extras are deliberately NOT here: at
+# their current releases they are not co-installable upstream, and with
+# floors-only extras (§8.4) no floor makes them so — pip fails with
+# resolution-too-deep. Install those one at a time. See docs/verified-apis.md
+# §8.1 (#697).
 all = [
-    "donkey-kit[llm,langgraph,mcp,otel,cli,local,test]",
+    "donkey-kit[llm,langgraph,otel,cli,local]",
 ]
 
+# Contributor tooling is a PEP 735 dependency group, not an extra, so it stays
+# out of the published metadata (#744): `pip install -e . --group dev` (pip
+# 25.1+) or `uv sync --group dev`. pytest + pytest-asyncio repeat the [test]
+# extra's floors because a group cannot include an extra; typer + pyyaml repeat
+# [cli]'s because the base-only CI job installs the group alone and still runs
+# the CLI unit tests.
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.1",
@@ -141,7 +159,7 @@ donkey = "donkey_kit.provisioning.cli:main"
 [project.entry-points.pytest11]
 # Registers the conformance plugin (BG §1.5). Entry points are package metadata,
 # so this loads on EVERY pytest run once donkey-kit is installed — even under
-# `[dev]` alone with no `[test]` extra. That is why plugin.py and its module-top
+# the dev group alone with no `[test]` extra. That is why plugin.py and its module-top
 # imports stay framework-free and openai-free (only stdlib + pytest + the
 # framework-free suite/report siblings); the harness that pulls in Donkey is
 # imported lazily. The plugin is inert unless `--donkey-conformance` is passed.
@@ -179,7 +197,7 @@ files = ["src/donkey_kit", "tests/typecheck"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-# Optional deps may be absent (CI installs only [dev,llm,cli]) or ship no stubs;
+# Optional deps may be absent (CI installs only [llm,cli] + the dev group) or ship no stubs;
 # neither should fail the base typecheck. opentelemetry IS typed when the [otel]
 # extra is present, so it is listed here for absence only — telemetry.py must not
 # carry an inline ignore that goes stale the moment someone installs it.
@@ -199,8 +217,7 @@ module = [
     "llama_index.*",
     "strands.*",
     "litellm.*",
-    "mcp.*",
-    # [local] simulator deps — absent under the typecheck job's [dev,llm,cli]
+    # [local] simulator deps — absent under the typecheck job's [llm,cli]
     # install; build_app()/serve() confine their use to function bodies and the
     # public return type is a framework-free Protocol, so no Any leaks out.
     "starlette.*",

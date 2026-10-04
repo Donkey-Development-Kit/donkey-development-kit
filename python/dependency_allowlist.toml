@@ -79,16 +79,6 @@ reviewed = 2026-10-03
 reason = "[strands]: Strands' OpenAIModel, supported at connection_kwargs()."
 reviewed = 2026-10-03
 
-# --- Tool binding ---
-
-[packages.mcp]
-reason = "[mcp]: MCP tool binding (BG §2.7); the extra has no code behind it yet (#744)."
-reviewed = 2026-10-03
-
-[packages.a2a-sdk]
-reason = "[a2a]: the official A2A SDK we wrap rather than reimplement (BG §2.9); no code yet (#744)."
-reviewed = 2026-10-03
-
 # --- [local]: the local gateway simulator (BG §1.4) ---
 
 [packages.starlette]
@@ -127,7 +117,7 @@ reviewed = 2026-10-03
 reason = "[cli]: typer renders help and errors with rich when installed; src/ does not import it."
 reviewed = 2026-10-03
 
-# --- [test]: the public conformance plugin (BG §1.5), and dev ---
+# --- [test]: the public conformance plugin (BG §1.5), and the dev group ---
 
 [packages.pytest]
 reason = "[test] and dev: the conformance plugin is a pytest plugin; also the repo's test runner."
@@ -137,7 +127,7 @@ reviewed = 2026-10-03
 reason = "[test] and dev: runs async agent tests under asyncio_mode = auto."
 reviewed = 2026-10-03
 
-# --- dev only: contributor tooling ---
+# --- dev group only: contributor tooling (not published, #744) ---
 
 [packages.respx]
 reason = "dev: mocks httpx in the unit tests."

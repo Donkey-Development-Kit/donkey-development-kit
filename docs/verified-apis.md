@@ -631,8 +631,8 @@ offline evidence, not a live round-trip.
 | `crewai` | `crewai>=1.15.3` | 1.15.3 added the `openai/` + explicit `base_url` route to the native `OpenAICompletion`. Earlier releases fall back to LiteLLM for any id that does not look like an OpenAI model, returning `crewai.LLM` and LiteLLM exceptions. Signature check against `OpenAICompletion` passes at 1.15.3. | CrewAI |
 | `llamaindex` | `llama-index-llms-openai-like>=0.8` | The verified release. | LlamaIndex |
 | `strands` | `strands-agents[openai]>=1.57.1` | The verified release, with Strands' own `openai` extra: the bare distribution does not install `openai`, so `model()` raised `ModuleNotFoundError`. `test_strands_real_model_is_built_and_called_through_our_transport` builds and calls the real model with only `[strands]` installed. | Strands |
-| `cli` / `dev` | `typer>=0.15.4` | typer below 0.13 rejects `Path \| None` options, and below 0.15.4 it breaks against a fresh click 8.2+ (`make_metavar() missing … 'ctx'`). | — |
-| `test` / `dev` | `pytest>=8.0`, `pytest-asyncio>=0.23.1` | pytest-asyncio 0.23.0 crashes collection (`INTERNALERROR`) on a module-level `importorskip`; 0.23.1 runs the suite. pytest 8.0.0 is fine. | — |
+| `cli` / dev group | `typer>=0.15.4` | typer below 0.13 rejects `Path \| None` options, and below 0.15.4 it breaks against a fresh click 8.2+ (`make_metavar() missing … 'ctx'`). | — |
+| `test` / dev group | `pytest>=8.0`, `pytest-asyncio>=0.23.1` | pytest-asyncio 0.23.0 crashes collection (`INTERNALERROR`) on a module-level `importorskip`; 0.23.1 runs the suite. pytest 8.0.0 is fine. | — |
 
 On Python 3.10 the extras pass the full unit suite at their floors. The one
 3.10 gap, `interrupt()` under `ainvoke()`, holds at every langgraph version and

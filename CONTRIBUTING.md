@@ -153,7 +153,7 @@ find yourself on `main` about to start work, `git checkout develop` first.
 **Use a worktree when there's any chance of a parallel session** (another editor
 window, a running dev server, a `pytest --looponfail` holding files): one issue =
 one branch = one worktree. A fresh worktree has no installed venv/extras — run
-`pip install -e ".[dev,llm,cli]"` in its `python/` before testing.
+`pip install -e ".[llm,cli]" --group dev` in its `python/` before testing.
 
 **No workarounds for prerequisites.** If work on issue #N turns out to need an
 out-of-scope change first (a missing `core/` primitive, a verification unblock),
@@ -190,8 +190,8 @@ If the diff touches an adapter or framework wiring, also run the signature check
 python scripts/verify_frameworks.py
 ```
 
-If you added or touched an adapter, sanity-check that a bare `pip install -e
-".[dev]"` + `python -c "import donkey_kit"` still succeeds — that's the
+If you added or touched an adapter, sanity-check that a bare `pip install -e .
+--group dev` + `python -c "import donkey_kit"` still succeeds — that's the
 `base-only` CI job catching a framework import that leaked into a lower layer.
 
 **(fork)** GitHub withholds repository secrets from pull requests opened from a
@@ -273,8 +273,8 @@ If a change fits none of these, stop and ask — don't invent a seventh surface.
 
 ### `tests/unit/` — the framework-free gate
 
-The `base-only` CI job installs **only** `.[dev]` (no `llm`, no framework
-extras), imports `donkey_kit`, then runs `pytest -q tests/unit`. Everything
+The `base-only` CI job installs **only** the base package and the `dev`
+dependency group (no `llm`, no framework extras), imports `donkey_kit`, then runs `pytest -q tests/unit`. Everything
 here must work with zero optional dependencies. **Never add a top-level framework
 import to a file under `tests/unit/`** — that's exactly the drift this job
 exists to catch. Error-classification changes must keep the taxonomy invariants
@@ -422,7 +422,7 @@ failure — don't "fix" the script to make a genuinely-blocked adapter pass.
 
 ```bash
 # from python/
-pip install -e ".[dev,llm,cli]"      # what CI installs
+pip install -e ".[llm,cli]" --group dev   # what CI installs (pip 25.1+)
 pytest -q                            # full suite
 pytest -q tests/unit                 # unit only (the base-only CI job)
 pytest -q -m local_gateway           # opt-in local-gateway tests
@@ -475,7 +475,9 @@ build plan has the rationale behind each rule:
   the same PR, and removing a package means removing its entry. On a PR that
   adds a name, CI also checks that the project exists on PyPI and warns when it
   is young, abandoned, or one or two characters off another allowlisted name.
-- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12.
+- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12,
+  and the version classifiers match it. When the floor moves is set by
+  [`docs/python-support.md`](docs/python-support.md).
   `tomllib` is stdlib only on 3.11+, so `tomli` is backfilled below 3.11;
   `typing-extensions` is pulled in below 3.12. Don't use 3.11+ syntax/stdlib
   without a backfill.

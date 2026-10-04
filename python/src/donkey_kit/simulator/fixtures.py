@@ -16,7 +16,7 @@ tests always read byte-identical files and nothing depends on the repo's
 ``tests/`` tree. The fixture-integrity lock lives beside them.
 
 Nothing here imports a web framework: this module is safe under the base-only
-CI job (``[dev]`` only, no ``[local]`` extra). It imports only the framework-free
+CI job (the ``dev`` group only, no ``[local]`` extra). It imports only the framework-free
 ``core`` layer for the verified header names (an allowed upward import).
 """
 
