@@ -30,6 +30,15 @@ def _empty_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mo
 
 
 @pytest.fixture(autouse=True)
+def _no_ambient_otlp_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop any OTLP endpoint the developer's or CI's shell exports, so a test
+    that builds a ``Donkey`` never ships spans to that collector (#732). A test
+    that needs an endpoint sets one itself."""
+    for name in ("OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_default_runtime() -> Iterator[None]:
     """Drop the process-default runtime after each test (#725), so a test that
     sets env vars and calls a module-level factory never sees a runtime built

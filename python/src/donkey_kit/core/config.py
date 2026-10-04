@@ -136,6 +136,7 @@ class ConfigOverrides(TypedDict, total=False):
     registry_cache_ttl_s: int
     telemetry: bool
     telemetry_capture_content: bool
+    telemetry_install_global: bool
     on_model_substitution: OnModelSubstitution
     send_cost_headers: bool
 
@@ -189,6 +190,7 @@ _ENV_VARS: dict[str, str] = {
     "registry_cache_ttl_s": "DONKEY_REGISTRY_CACHE_TTL_S",
     "telemetry": "DONKEY_TELEMETRY",
     "telemetry_capture_content": "DONKEY_TELEMETRY_CAPTURE_CONTENT",
+    "telemetry_install_global": "DONKEY_TELEMETRY_INSTALL_GLOBAL",
     "on_model_substitution": "DONKEY_ON_MODEL_SUBSTITUTION",
     "send_cost_headers": "DONKEY_SEND_COST_HEADERS",
 }
@@ -216,6 +218,7 @@ _CHECKED_KEYS: tuple[str, ...] = (
     "registry_cache_ttl_s",
     "telemetry",
     "telemetry_capture_content",
+    "telemetry_install_global",
     "send_cost_headers",
 )
 
@@ -226,7 +229,12 @@ _CHOICES: dict[str, tuple[str, ...]] = {
     "on_model_substitution": ("off", "raise"),
 }
 
-_BOOL_KEYS = ("telemetry", "telemetry_capture_content", "send_cost_headers")
+_BOOL_KEYS = (
+    "telemetry",
+    "telemetry_capture_content",
+    "telemetry_install_global",
+    "send_cost_headers",
+)
 _TRUE_TOKENS = ("1", "true", "yes", "on")
 _FALSE_TOKENS = ("0", "false", "no", "off")
 
@@ -389,6 +397,13 @@ class DonkeyConfig:
     # very content the platform just masked to whatever OTLP collector is wired
     # up (#306, BG §1.6). Opting in is the developer assuming that obligation.
     telemetry_capture_content: bool = False
+    # Install DDK's OTLP TracerProvider as the process-global OpenTelemetry
+    # provider. Default FALSE: OTel lets the global provider be set once, so a
+    # library that took it implicitly would lock out a host that configures its
+    # own afterwards. Off, DDK exports its own spans through a DDK-scoped
+    # provider and defers to any global provider the host sets (#732,
+    # docs/adr/0010-no-hidden-global-side-effects.md).
+    telemetry_install_global: bool = False
     # What to do when the gateway serves a different model than requested (docs/verified-apis.md §3,
     # #309). Default "off" — the substitution is surfaced passively on
     # ``donkey.last_call``; "raise" opts into a hard ``ModelSubstituted`` error.
@@ -515,6 +530,7 @@ class DonkeyConfig:
             registry_cache_ttl_s=parse("registry_cache_ttl_s", 300, _as_int),
             telemetry=parse("telemetry", True, _as_bool),
             telemetry_capture_content=parse("telemetry_capture_content", False, _as_bool),
+            telemetry_install_global=parse("telemetry_install_global", False, _as_bool),
             on_model_substitution=cast(
                 OnModelSubstitution, parse("on_model_substitution", "off", _as_token)
             ),
