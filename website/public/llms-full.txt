@@ -803,7 +803,8 @@ carries the SDK's HTTP client in the form that framework takes: `http_client`
 and `http_async_client` (LangGraph), `http_client` and `async_http_client`
 (LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
 or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
-Each HTTP client is a non-owning view of the SDK's shared client: it sends
+Each HTTP client is a non-owning view of the SDK's shared client (on `openai`
+3.x, the OpenAI kwargs carry an `httpx2` bridge onto it instead): it sends
 through the shared client, and closing it (as Strands does after every call, or
 `async with` on an OpenAI client) leaves the shared client open. Only
 `donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
@@ -1566,7 +1567,7 @@ llm = OpenAIModel(
         "base_url": ...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
-        "http_client": ...,       # a non-owning view of the SDK's shared client
+        "http_client": ...,       # sends through the SDK's shared client; closing it is a no-op
         "max_retries": 0,         # the SDK retries in its own transport layer
     },
     stream=False,                 # see Notes
@@ -1595,9 +1596,10 @@ Strands forwards to its internal OpenAI client.
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
 - **The client stays open.** Strands opens and closes an OpenAI client for
-  every request (`async with AsyncOpenAI(**client_args)`). The `http_client` it
-  gets is a view whose close is a no-op, so the SDK's shared client survives
-  every call. Only `donkey.aclose()` ends the connection pool.
+  every request (`async with AsyncOpenAI(**client_args)`). Closing the
+  `http_client` it gets is a no-op, so the SDK's shared client survives every
+  call. On `openai` 3.x that client is an `httpx2` bridge onto the shared
+  client, and on earlier releases a view of it. Only `donkey.aclose()` ends the connection pool.
 - **Streaming is off by default.** The governed model sets `stream=False`. A
   proxy routing to a Gemini upstream answers a streamed request with one whole
   `chat.completion` and no chunk deltas, and Strands fails on it. Pass
