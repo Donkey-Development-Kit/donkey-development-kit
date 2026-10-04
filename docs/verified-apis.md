@@ -110,7 +110,7 @@ request against the deployed gateway.
 | Streaming support | `llm/client.py` | VERIFIED (LIVE) | `"stream": true` → `200`, `content-type: text/event-stream`, chunked SSE (`event: response.created` / `response.in_progress` / …); same `x-llm-proxy-*` headers | 2026-08-28 | live probe (`responses.stream.*`) |
 | Chat-completions streaming over a Gemini upstream (#830) | `llm/client.py` (`donkey.llm.client()` callers), `integrations/strands.py`; `core/transport/streaming.py` (`_SseUsageScanner`) is unaffected | VERIFIED (LIVE) — **non-conformant** (upstream gap) | An OpenAI-format proxy that routes `chat/completions` with `"stream": true` to a **Gemini** upstream answers `200`, `content-type: text/event-stream`, chunked, but each `data:` event is a whole **`chat.completion`** carrying the next piece of text in `choices[0].message`; there is **no `delta`**. `finish_reason` is `"stop"` on **every** event (a tool call too, not `"tool_calls"`), there is **no `data: [DONE]`**, and `usage` sits on every event and is **cumulative** (`stream_options.include_usage` adds no usage-only chunk). Tool calls arrive whole in `message.tool_calls`. The openai SDK builds `ChatCompletionChunk`s without validating them, so `choices[0].delta` is `None` (openai 2.54.0 and 3.22.1), and `chat.completions.stream(...)` raises `AssertionError`. Strands streams by default and fails on every turn (strands-agents 1.57.1); `stream=False` works. The SSE usage scanner keeps the latest counts, so `donkey.last_call` and the span still get the terminal totals. Same on all three Gemini routes probed (`ddk-model-wallet`, `ddk-request-compression`, `ddk-multi-route-fallback`); an OpenAI route on the same host (`ddk-openai-model-routing`) streams conformant `chat.completion.chunk` deltas and `[DONE]`. The native Gemini ingress (row above) streams correctly. | 2026-10-01 | live probe — `python/tests/fixtures/anypoint/openai_gemini_stream/`, pinned by `tests/unit/test_openai_gemini_stream_contract.py` |
 | `/models` endpoint | `llm/catalog.py` | VERIFIED (LIVE) | **Does not exist** — `GET /openai-sdk/models` → `404`, `x-llm-proxy-model-based-routing-success: Request passed through without model-based routing`. The proxy only routes requests carrying `model` in the body; no catalog endpoint. `llm/catalog.py` must source models elsewhere | 2026-08-28 | live probe (`models.notfound.headers.txt`) |
-| Supported providers | `llm/catalog.py`, `governance.py` | VERIFIED (CLI) | openai, azureopenai, gemini, **bedrock**, **anthropic** (each a `*-llm-provider-policy-flex` in org `68ef9520…`) | 2026-08-28 | `exchange:asset:list llm` |
+| Supported providers | `llm/catalog.py` | VERIFIED (CLI) | openai, azureopenai, gemini, **bedrock**, **anthropic** (each a `*-llm-provider-policy-flex` in org `68ef9520…`) | 2026-08-28 | `exchange:asset:list llm` |
 
 **Note — single-header apikey/bearer convenience (no-op for DDK).** The default
 proxy's `dataweave-headers-transformation` policy (the §6 policy-stack row) is a
@@ -477,9 +477,10 @@ FINDING (CLI, 2026-08-28): provisioning is delivered as a **Maven-project + CLI*
 flow via the `mulesoft-anypoint-cli-agent-fabric-plugin` (v1.0.11), branded
 **"Agent Network"**, NOT a clean REST CRUD. The deploy target is a **Private
 Space** running **Flex Gateway** with a paired **ingress + egress** gateway.
-This reshapes §5: the SDK's declarative `donkey.yaml` plan/apply either wraps
-this CLI/Maven toolchain or emits its project layout — it does not invent a REST
-provisioning API. Exact REST calls behind the CLI are now recorded in §12
+This reshaped §5: a declarative `donkey.yaml` plan/apply would have had to wrap
+this CLI/Maven toolchain or emit its project layout, not invent a REST
+provisioning API. That control plane is refused, and its scaffolding was
+deleted in #730 (ADR 0008 in `docs/adr/`); the findings below stay as the record. Exact REST calls behind the CLI are now recorded in §12
 (static analysis of plugin v1.0.11 + `anypoint-cli-command` 1.6.8).
 
 | Item | Status | Finding | Date | Source |

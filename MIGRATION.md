@@ -1,5 +1,114 @@
 # Migration guide
 
+## Unreleased: the CLI's own package, and the refused control plane removed (#730)
+
+These changes are breaking for code that imported the legacy modules or the
+blocked-surface types from `donkey_kit`. The `donkey` commands you can see in
+`donkey --help` are unchanged. The reasoning is ADR 0008 in
+[`docs/adr/`](docs/adr/) (legacy quarantine and the CLI's home).
+
+### 1. `donkey_kit.provisioning` and `donkey_kit.governance` are gone
+
+**Who:** code that imported `donkey_kit.provisioning` (`spec`, `planner`,
+`applier`, `lint`, `publish`, `cli`, `doctor`) or `donkey_kit.governance`
+(`Governance`, `GatewayTarget`, `PolicyBinding`).
+
+**Symptom:** `ModuleNotFoundError: No module named 'donkey_kit.provisioning'`
+(or `'donkey_kit.governance'`).
+
+**Fix:** the declarative provisioning control plane is on the build plan's
+*Do not build* list, and every verb in it raised `blocked on verification`, so
+there is no replacement. Manage gateways and policies with API Manager or
+Terraform. Two pieces moved instead of going away:
+
+| Was | Now |
+| --- | --- |
+| `donkey_kit.provisioning.cli` (`app`, `main`) | `donkey_kit.cli` |
+| `donkey_kit.provisioning.doctor` | `donkey_kit.cli.doctor` |
+| `donkey_kit.provisioning.publish.content_digest` / `publish_if_changed` | `donkey_kit.registry.publication` |
+
+The `[targets.*]` tables in `.donkey-kit.toml` and the `DONKEY_TARGET`
+variable were read only by `GatewayTarget.from_env()`. They are now ignored.
+
+### 2. Hidden CLI commands `validate`, `plan`, `apply`, `drift`, `lint`, `generate` are removed
+
+**Who:** scripts that ran one of them. All of them except `validate` already
+exited 3 with `blocked on verification`.
+
+**Symptom:** `No such command 'plan'.` and exit status 2.
+
+**Fix:** remove the call. `donkey status`, `donkey publish` and `donkey verify`
+are still there, hidden, and still exit 3 until Exchange publication (BG §2.5)
+is verified.
+
+### 3. Three errors are removed
+
+`ProvisioningError`, `GovernanceDrift` and `PlatformTeamOnly` were raised only
+by the deleted modules. Drop them from `except` clauses and `simulate(...)`
+calls. `DonkeyError` still catches everything the SDK raises.
+
+### 4. Blocked-surface types moved to `donkey_kit.experimental`
+
+**Who:** code that imported `STRICT`, `AssetRef`, `AssetType`, `Contact`,
+`GovernanceCriteria`, `Publication`, `PublicationAssetType`,
+`PublicationDrift`, `RegistryError` or `ToolInvocationError` from `donkey_kit`.
+
+**Symptom:** `DeprecationWarning: donkey_kit.AssetRef is deprecated; import it
+from donkey_kit.experimental`. The old spelling still works for now, but the
+names are out of `donkey_kit.__all__` (so `from donkey_kit import *` no longer
+brings them) and type checkers flag the old import. A later release removes the
+alias.
+## 0.1.2: configuration precedence
+
+### The user config file is merged beneath the project files
+
+**Who:** anyone with a user file (`$XDG_CONFIG_HOME/.donkey-kit.toml`, or
+`~/.config/.donkey-kit.toml`) who also has a `.donkey-kit.toml` or
+`.donkey-kit.local.toml` in the working directory.
+
+**Symptom:** keys from the user file now apply wherever the working-directory
+files leave them unset. Before, the user file was read only when neither
+working-directory file existed
+([#727](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/727)).
+A credential from the user file is still never sent to an `llm_proxy_url` or
+`base_url` read from the working-directory files, so a project file that names
+a URL but no credentials now raises the endpoint `ConfigError` instead of a
+missing-field one.
+
+**Fix:** remove from the user file any key you don't want applied to every
+project, or set it in the project's own files. `donkey doctor` labels values
+from it `user file`.
+
+### `Donkey.from_env()` accepts every field
+
+`Donkey.from_env(...)` and the new `DonkeyConfig.resolve(...)` accept any
+`DonkeyConfig` field as a keyword argument, plus `path=` to read a named
+config file in place of `./.donkey-kit.toml`. An unknown name raises
+`TypeError`. `on_model_substitution=None` is no longer accepted; leave the
+argument out instead.
+## 0.1.2 (unreleased)
+
+Changes since `0.1.1` that can affect existing code.
+
+### 1. `Donkey()` no longer installs the global OpenTelemetry provider
+
+Reference: [DDK leaves the global provider to you](website/content/telemetry.mdx#ddk-leaves-the-global-provider-to-you).
+
+**Who:** anyone who sets `OTEL_EXPORTER_OTLP_ENDPOINT`, doesn't configure an
+OpenTelemetry `TracerProvider` of their own, and relied on `Donkey()` making
+its provider the global one. For example, spans from other libraries reached
+the collector only because DDK had installed its exporter globally.
+
+**Symptom:** DDK's own spans still reach the collector, but
+`trace.get_tracer_provider()` is unchanged after `Donkey()`, so spans that
+other code creates through the global provider are no longer exported. A
+`trace.get_tracer_provider().force_flush()` call no longer flushes DDK's spans
+either; they are flushed when the interpreter exits.
+
+**Fix:** set `DONKEY_TELEMETRY_INSTALL_GLOBAL=true` (or
+`telemetry_install_global = true` in `.donkey-kit.toml`) to get the old
+behaviour, or configure your own `TracerProvider`. DDK's spans go to a provider
+you set even if you set it after `Donkey()`.
 ## 0.1.2: the public API surface, renames and removals
 
 Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public
@@ -31,6 +140,26 @@ the replacement.
 **Fix:**
 
 ```diff
+- from donkey_kit import STRICT, AssetRef, RegistryError
++ from donkey_kit.experimental import STRICT, AssetRef, RegistryError
+```
+
+Every surface these types serve (registry discovery and governed-state checks,
+publication, MCP tool calls) still raises `blocked on verification`. They move
+back to `donkey_kit` when their surface is verified, and until then they may
+change in any release. The submodule paths (`donkey_kit.registry`,
+`donkey_kit.core.errors`) still work.
+
+### 5. pydantic and pyyaml are no longer installed for you
+
+**Who:** code that imports `pydantic` or `yaml` and relied on `donkey-kit` (or
+`donkey-kit[cli]`) to install it.
+
+**Symptom:** `ModuleNotFoundError: No module named 'pydantic'` (or `'yaml'`)
+in your own code after upgrading.
+
+**Fix:** depend on them directly. The SDK itself imports neither. Framework
+extras that need pydantic (LangChain, ADK, the OpenAI SDK) still bring it in.
 - from donkey_kit.provisioning import ToolSpec
 + from donkey_kit.provisioning import ApiToolSpec
 - from donkey_kit.registry.governance import GovernanceCriteria, STRICT
@@ -249,10 +378,10 @@ config file; a `base_url` on `anypoint.mulesoft.com`, `eu1.`, `ca1.` or `jp1.`.
 `connection_kwargs()`) raises, before anything is sent:
 
 ```text
-ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the working directory's config files are only sent to hosts those files name when you opt in. To continue, do one of:
+ConfigError: Not sending llm_proxy_client_secret (from env) to llm-proxy.example.com: llm_proxy_url is set in /home/me/my-agent/.donkey-kit.toml, and credentials from outside the project config files are only sent to hosts those files name when you opt in. To continue, do one of:
   - set the URL in the environment instead (DONKEY_LLM_PROXY_URL=https://...)
   - keep the credentials in /home/me/my-agent/.donkey-kit.local.toml, next to the project file
-  - trust this directory's config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
+  - trust the project config files by setting DONKEY_TRUST_PROJECT_CONFIG=1
 ```
 
 `donkey doctor` shows the same message on its `config` line (for `llm_proxy_url`) or its `control plane` line (for `base_url`).
@@ -692,7 +821,8 @@ donkey test --agent=myagent:build   # run the conformance suite against your age
 The provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
 `generate`, `status`, `publish`, `verify`) are hidden from `--help`. All of
 them except `validate` exit with status 3 and a `blocked on verification`
-message.
+message. (A later release removed all but `status`, `publish` and `verify`; see
+the first section of this guide.)
 
 ### 4. Configuration file
 

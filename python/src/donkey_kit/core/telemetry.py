@@ -3,10 +3,13 @@
 OpenTelemetry is an optional dependency (the ``[otel]`` extra). Telemetry is
 **on by default** (``DonkeyConfig.telemetry``), but the export pipeline is
 **inert unless an OTLP endpoint is configured**: :func:`configure_otlp_export`
-installs a real exporter only when ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the
+builds a real exporter only when ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the
 traces-specific variant) is set — so a process with no endpoint produces no
 spans, connects to nothing, and prints nothing (BG §1.6 "inert and silent",
-#194). This is what makes the zero-config promise hold: set the standard OTel
+#194). That exporter rides a **DDK-scoped** ``TracerProvider``; the
+process-global provider is never set unless the caller opts in with
+``telemetry_install_global`` (#732), so a host that configures its own provider
+later still gets DDK's spans. This is what makes the zero-config promise hold: set the standard OTel
 endpoint env var and spans flow to your sink with **no SDK-specific env var**.
 Opt out of telemetry entirely with the single flag ``DONKEY_TELEMETRY=false``.
 
@@ -205,22 +208,49 @@ _CONTENT_ATTRIBUTES = frozenset({GEN_AI_PROMPT, GEN_AI_COMPLETION})
 
 # --- Optional OpenTelemetry span helper -------------------------------------
 def _tracer() -> Any | None:
+    """DDK's tracer, resolved per span (#732).
+
+    A global provider the host has set always wins, even one set after
+    ``Donkey()``: OTel's default proxy provider forwards to it. Only while no
+    global provider is set do spans go to the DDK-scoped provider that
+    :func:`configure_otlp_export` built from an OTLP endpoint. With neither, the
+    default proxy tracer records nothing."""
     try:
         from opentelemetry import trace
     except ImportError:
         return None
+    if _scoped_tracer is not None and not _host_provider_set():
+        return _scoped_tracer
     return trace.get_tracer("donkey_kit")
 
 
+def _host_provider_set() -> bool:
+    """True once anything has set the process-global ``TracerProvider``.
+
+    Until then OTel hands out its placeholder ``ProxyTracerProvider``; any other
+    provider (an SDK one, ``opentelemetry-instrument``'s, or a deliberate
+    ``NoOpTracerProvider``) is the host's choice and DDK defers to it."""
+    from opentelemetry import trace
+
+    return not isinstance(trace.get_tracer_provider(), trace.ProxyTracerProvider)
+
+
 # --- Zero-config OTLP export bootstrap (BG §1.6, #194) -----------------------
-# The span helpers above only ever call ``trace.get_tracer(...)`` — they ride
-# whatever global TracerProvider the host process installed. On their own they
-# export nothing: OpenTelemetry's default is a no-op provider. This section is
+# The span helpers above get their tracer from ``_tracer()``, which rides
+# whatever global TracerProvider the host process installed, or the DDK-scoped
+# provider built below. Without either they export nothing: OpenTelemetry's
+# default is a no-op provider. This section is
 # what turns "we build spans" into "spans reach the customer's sink", with the
 # zero-config contract of BG §1.6:
 #
 #   set OTEL_EXPORTER_OTLP_ENDPOINT (the *standard* OTel env var) → spans export.
 #   no SDK-specific env var, and no endpoint set → inert and silent.
+#
+# The provider it builds is DDK-scoped: it carries DDK's own spans and is never
+# made the process-global provider unless ``telemetry_install_global`` is set.
+# OTel lets the global provider be set only once, so taking it implicitly would
+# silently lock out a host that configures its own afterwards (#732,
+# docs/adr/0010-no-hidden-global-side-effects.md).
 #
 # Export I/O runs on the BatchSpanProcessor's background thread, off the request
 # hot path — which is exactly why per-call overhead stays under the 1ms bar
@@ -235,10 +265,13 @@ class TelemetryExportWarning(UserWarning):
     """
 
 
-# Guards ``configure_otlp_export`` so multiple ``Donkey()`` constructions install
-# at most one provider per process (an OTel provider is a process-global; a second
-# install is refused by OTel with a warning anyway). Reset only by tests.
+# Guards ``configure_otlp_export`` so multiple ``Donkey()`` constructions build
+# at most one provider per process (one exporter, one batch thread). Reset only
+# by tests.
 _otlp_export_configured = False
+# The tracer of the DDK-scoped provider, set when an endpoint is configured and
+# the global provider was neither set by the host nor installed by opt-in.
+_scoped_tracer: Any | None = None
 # One-time de-dupe for the missing-exporter warning, keyed by protocol.
 _warned_missing_exporter: set[str] = set()
 
@@ -339,18 +372,24 @@ def _build_tracer_provider(config: DonkeyConfig) -> Any | None:
 
 
 def configure_otlp_export(config: DonkeyConfig) -> None:
-    """Install a zero-config OTLP exporter for this process, once (BG §1.6, #194).
+    """Wire a zero-config OTLP exporter for this process, once (BG §1.6, #194).
 
-    Called from ``Donkey.__init__``. Inert and silent (AC #4) when telemetry is
+    Called from ``Runtime.__init__``. Inert and silent (AC #4) when telemetry is
     off, when no OTLP endpoint env var is set, or when ``[otel]`` is not
-    installed. When an endpoint *is* set, installs a ``TracerProvider`` + OTLP
-    ``BatchSpanProcessor`` as the global provider — **unless a host already
-    installed an SDK provider** (``opentelemetry-instrument``, a manual setup),
-    in which case that one is left untouched and our spans simply ride it.
+    installed. When an endpoint *is* set, builds a ``TracerProvider`` + OTLP
+    ``BatchSpanProcessor`` and:
 
-    Idempotent: guarded so repeated ``Donkey()`` construction installs at most
+    - if a host already set the global provider (``opentelemetry-instrument``, a
+      manual setup), drops it and lets DDK's spans ride the host's;
+    - else, with ``telemetry_install_global`` on, installs it as the global
+      provider (the pre-#732 behaviour, now opt-in);
+    - else keeps it DDK-scoped: DDK's spans export through it and
+      ``trace.get_tracer_provider()`` is left unchanged, so a host provider set
+      later still wins and receives DDK's spans (#732).
+
+    Idempotent: guarded so repeated ``Donkey()`` construction builds at most
     one provider per process."""
-    global _otlp_export_configured
+    global _otlp_export_configured, _scoped_tracer
     if _otlp_export_configured:
         return
     provider = _build_tracer_provider(config)
@@ -364,18 +403,20 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
         )
         return
     from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
 
-    if isinstance(trace.get_tracer_provider(), TracerProvider):
+    _otlp_export_configured = True
+    if _host_provider_set():
         # A host already owns the global provider — never clobber it. Drop the
         # one we just built so its batch thread does not linger unused.
         provider.shutdown()
-        _otlp_export_configured = True
         _log.debug("OTLP export: keeping the host's TracerProvider; spans ride it")
         return
-    trace.set_tracer_provider(provider)
-    _otlp_export_configured = True
-    _log.debug("OTLP export installed (protocol %s)", _otlp_protocol())
+    if config.telemetry_install_global:
+        trace.set_tracer_provider(provider)
+        _log.debug("OTLP export installed as the global provider (protocol %s)", _otlp_protocol())
+        return
+    _scoped_tracer = provider.get_tracer("donkey_kit")
+    _log.debug("OTLP export installed on a DDK-scoped provider (protocol %s)", _otlp_protocol())
 
 
 # --- GenAI chat span (#192, BG §1.6) ----------------------------------------

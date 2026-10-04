@@ -350,9 +350,9 @@ python "demos/human-made/openai/10 - zero-config-otlp.py"                       
 OTEL_EXPORTER_OTLP_ENDPOINT=https://<collector> python "demos/human-made/openai/10 - zero-config-otlp.py"
 ```
 
-With no `TracerProvider` in the process, `Donkey.from_env()` installs an OTLP
-exporter itself when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, and stays silent
-when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
+With no `TracerProvider` in the process, `Donkey.from_env()` sets up an OTLP
+exporter for its own spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, without
+taking the global provider, and stays silent when it is not. `DONKEY_TELEMETRY=false` opts out even with an endpoint set.
 
 **You should see:** the endpoint (or `(unset — Donkey.from_env() will not
 install an exporter)`), the reply, and `last_call observed <model>`.

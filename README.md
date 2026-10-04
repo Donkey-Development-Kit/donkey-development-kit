@@ -129,8 +129,9 @@ adapter constructor is signature-confirmed offline (see
 [Framework support](#framework-support)).
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
 rather than guessing at an unverified endpoint, header, or class name — that
-currently includes Exchange→MCP tool discovery and the provisioning
-control-plane. The adapters build their framework's native object directly; they
+currently includes Exchange→MCP tool discovery and Exchange publication; their
+types live in `donkey_kit.experimental`, outside the stable namespace. The SDK
+does not ship a provisioning control plane (ADR 0008 in `docs/adr/`). The adapters build their framework's native object directly; they
 refuse only when the installed framework version lacks the class or field the
 adapter depends on.
 

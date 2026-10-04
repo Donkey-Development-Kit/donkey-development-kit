@@ -4,7 +4,7 @@ The CI dead-code check (``vulture``, configured under ``[tool.vulture]`` in
 pyproject.toml) reads only ``src/`` plus this file, so a symbol only the tests
 use counts as dead. Vulture can't see the uses of what is listed here: the
 public API a caller uses, framework and pytest hooks called by name, typer
-commands, dataclass and pydantic fields, keyword arguments of stubs that raise
+commands, dataclass fields, keyword arguments of stubs that raise
 ``blocked(...)`` until their API is verified, and lazy ``__getattr__`` modules.
 
 When vulture flags a new name, delete the code if it is dead. Add it here only
@@ -64,13 +64,6 @@ openai_agents  # unused variable (src/donkey_kit/donkey.py)
 crewai  # unused variable (src/donkey_kit/donkey.py)
 llamaindex  # unused variable (src/donkey_kit/donkey.py)
 _.last_call  # unused property (src/donkey_kit/donkey.py)
-BOTH  # unused variable (src/donkey_kit/governance.py)
-LOCAL_ONLY  # unused variable (src/donkey_kit/governance.py)
-gateway_name  # unused variable (src/donkey_kit/governance.py)
-connected  # unused variable (src/donkey_kit/governance.py)
-_.export  # unused method (src/donkey_kit/governance.py)
-_.apply  # unused method (src/donkey_kit/governance.py)
-_.skipped_policies  # unused method (src/donkey_kit/governance.py)
 conformance_tested  # unused variable (src/donkey_kit/integrations/__init__.py)
 _.policy_middleware  # unused method (src/donkey_kit/integrations/agent_framework.py)
 _.framework_error  # unused attribute (src/donkey_kit/integrations/agent_framework.py)
@@ -91,41 +84,6 @@ is_heuristic  # unused variable (src/donkey_kit/llm/catalog.py)
 display_name  # unused variable (src/donkey_kit/llm/catalog.py)
 capabilities  # unused variable (src/donkey_kit/llm/catalog.py)
 _.list_models  # unused method (src/donkey_kit/llm/client.py)
-applied  # unused variable (src/donkey_kit/provisioning/applier.py)
-not_applied  # unused variable (src/donkey_kit/provisioning/applier.py)
-apply  # unused function (src/donkey_kit/provisioning/applier.py)
-allow_list  # unused variable (src/donkey_kit/provisioning/applier.py)
-plan  # unused variable (src/donkey_kit/provisioning/applier.py)
-_global  # unused function (src/donkey_kit/provisioning/cli.py)
-validate  # unused function (src/donkey_kit/provisioning/cli.py)
-plan  # unused function (src/donkey_kit/provisioning/cli.py)
-dry_run  # unused variable (src/donkey_kit/provisioning/cli.py)
-apply  # unused function (src/donkey_kit/provisioning/cli.py)
-auto_approve  # unused variable (src/donkey_kit/provisioning/cli.py)
-drift  # unused function (src/donkey_kit/provisioning/cli.py)
-lint  # unused function (src/donkey_kit/provisioning/cli.py)
-generate  # unused function (src/donkey_kit/provisioning/cli.py)
-init  # unused function (src/donkey_kit/provisioning/cli.py)
-test  # unused function (src/donkey_kit/provisioning/cli.py)
-publish  # unused function (src/donkey_kit/provisioning/cli.py)
-if_changed  # unused variable (src/donkey_kit/provisioning/cli.py)
-verify  # unused function (src/donkey_kit/provisioning/cli.py)
-mock  # unused function (src/donkey_kit/provisioning/cli.py)
-WARNING  # unused variable (src/donkey_kit/provisioning/lint.py)
-_.render  # unused method (src/donkey_kit/provisioning/lint.py)
-_.render  # unused method (src/donkey_kit/provisioning/planner.py)
-build_plan  # unused function (src/donkey_kit/provisioning/planner.py)
-publish_if_changed  # unused function (src/donkey_kit/provisioning/publish.py)
-publication  # unused variable (src/donkey_kit/provisioning/publish.py)
-resource  # unused variable (src/donkey_kit/provisioning/spec.py)
-inputSchema  # unused variable (src/donkey_kit/provisioning/spec.py)
-dataweave  # unused variable (src/donkey_kit/provisioning/spec.py)
-assetId  # unused variable (src/donkey_kit/provisioning/spec.py)
-upstream  # unused variable (src/donkey_kit/provisioning/spec.py)
-httpMapping  # unused variable (src/donkey_kit/provisioning/spec.py)
-apis  # unused variable (src/donkey_kit/provisioning/spec.py)
-businessGroup  # unused variable (src/donkey_kit/provisioning/spec.py)
-apiVersion  # unused variable (src/donkey_kit/provisioning/spec.py)
 query  # unused variable (src/donkey_kit/registry/exchange.py)
 asset_types  # unused variable (src/donkey_kit/registry/exchange.py)
 domain  # unused variable (src/donkey_kit/registry/exchange.py)
@@ -173,3 +131,13 @@ _.strands  # unused method (src/donkey_kit/tools/session.py)
 _.llamaindex  # unused method (src/donkey_kit/tools/session.py)
 _.crewai  # unused method (src/donkey_kit/tools/session.py)
 _.agent_framework  # unused method (src/donkey_kit/tools/session.py)
+# The donkey CLI (#730): typer calls the callback and passes the blocked
+# command's option by name.
+_global  # unused function (src/donkey_kit/cli/_app.py)
+if_changed  # unused variable (src/donkey_kit/cli/_blocked.py)
+# DonkeyConfig.environment (ANYPOINT_ENV) is public config callers read; it is
+# also a keyword of the blocked registry search stubs. Its only in-tree reader
+# was the deleted governance.py (#730).
+environment  # unused variable (src/donkey_kit/core/config.py, src/donkey_kit/registry/exchange.py)
+# Keyword of the blocked publish_if_changed stub (BG §2.5).
+publication  # unused variable (src/donkey_kit/registry/publication.py)
