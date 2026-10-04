@@ -46,6 +46,10 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 >
 > **Security.** Report vulnerabilities privately, never in a public issue. See
 > [`SECURITY.md`](SECURITY.md) for supported versions and how to report.
+>
+> **Python versions.** CPython 3.10–3.12, each tested in CI; a version is
+> dropped in the first minor release after its end of life. See
+> [`docs/python-support.md`](docs/python-support.md).
 
 ## Documentation
 
