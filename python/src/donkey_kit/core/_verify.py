@@ -73,7 +73,7 @@ def blocked(what: str) -> NotImplementedError:
     """Construct the standard verification-blocked error.
 
     Use for surfaces where we have no defensible placeholder at all (e.g. the
-    MCP Bridge provisioning endpoint, verification discipline / provisioning-as-code).
+    Exchange publication API behind ``donkey publish``, BG §2.5).
     """
 
     return NotImplementedError(f"blocked on verification: {what}")

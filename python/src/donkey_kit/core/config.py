@@ -53,7 +53,6 @@ __all__ = [
     "OnModelSubstitution",
     "Region",
     "SourceKind",
-    "load_config_table",
     "missing_llm_auth_error",
 ]
 
@@ -108,7 +107,7 @@ LlmProxyAuth = Literal["client-id", "jwt", "bearer"]
 TOKEN_AUTH_MODES: frozenset[LlmProxyAuth] = frozenset({"jwt", "bearer"})
 
 # The capability :meth:`DonkeyConfig.validated` checks the config for: the
-# Anypoint control plane (registry/provisioning) or the LLM proxy (BG §1.1).
+# Anypoint control plane (registry) or the LLM proxy (BG §1.1).
 Capability = Literal["control_plane", "llm"]
 
 
@@ -270,7 +269,7 @@ class DonkeyConfig:
     fields afterwards with :meth:`with_overrides`.
 
     The control-plane credential (``client_id`` / ``client_secret``, for the
-    registry and provisioning) and the LLM-proxy credential (``llm_proxy_*``,
+    Exchange registry) and the LLM-proxy credential (``llm_proxy_*``,
     for model calls) are separate (BG §1.1). Call :meth:`validated` to get every
     missing field for a capability in one error.
 
@@ -281,7 +280,7 @@ class DonkeyConfig:
     Docs: https://docs.donkey-kit.dev/reference/configuration
     """
 
-    # --- Anypoint control plane (registry + provisioning) ---
+    # --- Anypoint control plane (registry) ---
     client_id: str | None = None
     client_secret: str | None = field(default=None, repr=False)
     org_id: str | None = None
@@ -570,7 +569,7 @@ class DonkeyConfig:
         """Return self if valid for the requested capability, else raise a
         :class:`ConfigError` listing EVERY missing field at once.
 
-        ``need`` is one of ``"control_plane"`` (registry/provisioning) or
+        ``need`` is one of ``"control_plane"`` (registry) or
         ``"llm"`` (proxy). The two credentials are independent (BG §1.1): a user
         may legitimately have proxy access and no Exchange access.
 
@@ -952,13 +951,6 @@ def _invalid_config(problems: list[str]) -> ConfigError:
         f"Configuration is invalid:\n  - {joined}\n"
         f"Fix each value where it is set: in code, an environment variable, or {TOML_NAME}."
     )
-
-
-def load_config_table(name: str) -> dict[str, object]:
-    """The merged ``[<name>]`` table from the same files, in the same order, as
-    ``[donkey]`` — so a table such as ``[targets]`` is never read from fewer
-    locations than the config it sits beside (#815)."""
-    return _load_config_files(name)[0]
 
 
 def _load_config_files(

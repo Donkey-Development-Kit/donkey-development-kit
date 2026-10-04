@@ -17,8 +17,10 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from donkey_kit.provisioning import cli
-from donkey_kit.provisioning.cli import app
+from donkey_kit.cli import app
+
+# The `test` command module, aliased so pytest does not try to collect it.
+from donkey_kit.cli import test as cli
 
 runner = CliRunner()
 

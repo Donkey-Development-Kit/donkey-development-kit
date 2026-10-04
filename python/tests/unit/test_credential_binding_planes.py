@@ -26,13 +26,13 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey
+from donkey_kit.cli import doctor
+from donkey_kit.cli.doctor import ProbeResult, run_diagnostics
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.integrations import ADAPTERS
-from donkey_kit.provisioning import doctor
-from donkey_kit.provisioning.doctor import ProbeResult, run_diagnostics
 
 _TOML = ".donkey-kit.toml"
 _LOCAL_TOML = ".donkey-kit.local.toml"
