@@ -70,6 +70,11 @@ on plain construction.
   use in each case and the opt-in.
 - `configure_otlp_export` and the `core/runtime.py` comment that calls it the
   "single funnel" change with #732.
+- Open gap, tracked as #954: with the DDK-scoped provider,
+  `trace.get_tracer_provider().force_flush()` no longer reaches the SDK's spans,
+  and there is no public flush for the provider the SDK owns, which matters to
+  a serverless caller that must flush before the process freezes. Until
+  #954 adds one, the caller opts in to the global provider or brings its own.
 - The unit suite stops sending spans to a collector named in the
   developer's environment.
 - A reviewer can reject a new import-time or construction-time global change by

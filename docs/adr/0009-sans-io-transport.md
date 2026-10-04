@@ -85,6 +85,13 @@ this path.
 - `website/content/errors.mdx` and the retry description in
   `ARCHITECTURE.md` and the `core/transport.py` module docstring say which
   statuses and methods retry.
+- Open gap, tracked as #953: when the transport decides not to retry a 502 or
+  504 on a model POST (rule 6, an unsafe finish), it doesn't stamp
+  `x-should-retry: false` on the response it hands back. Today only a final
+  4xx is stamped (`_mark_terminal` in `core/transport.py`, #734). A provider
+  SDK above the transport that retries 5xx by itself can therefore re-send the
+  POST on top of the transport's decision. Until #953 lands, the adapters'
+  SDK-retries-off setting is what prevents it.
 - After #728, no module in the transport package exceeds about 400 lines,
   nothing outside core touches `._transport`, and openai>=3 and anthropic>=1
   both go through the core httpx2 bridge.

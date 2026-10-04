@@ -63,6 +63,10 @@ A proposed ADR becomes accepted in the PR that makes the code match it: that
 PR changes the status line and the index row. Once an ADR is accepted, its
 decision doesn't change. To change it, write a new ADR that supersedes it.
 Fixing a typo, a broken link, or a file path that moved is fine at any time.
+When a later ADR makes a *consequence* of an accepted ADR untrue but leaves its
+decision standing, the older file gets an "Amended by" note under its status
+line and a dated "Amendment" section after its consequences; the decision text
+is not rewritten.
 
 ## Index
 

@@ -54,6 +54,18 @@ refused code, and it shapes the base install:
    0001 deferred to #730.
 5. **No new code goes into a quarantined package.** The CLI's growth happens in
    `donkey_kit/cli/`.
+6. **`ExchangeRegistry` and `ToolsFacade` stay top-level.** They are in
+   `donkey_kit.__all__` (`donkey_kit/__init__.py`) and reachable as
+   `donkey.registry` and `donkey.tools`, because the surfaces they front are
+   on the roadmap, not refused. Their method signatures take `AssetRef` and
+   `GovernanceCriteria` (`registry/exchange.py`), which move to
+   `donkey_kit.experimental`. So a top-level class has parameters whose types
+   are importable only from the provisional namespace. That is intended: the
+   methods still raise `NotImplementedError("blocked on verification: ...")`,
+   and `from donkey_kit.experimental import AssetRef, GovernanceCriteria, STRICT`
+   is how a caller builds the arguments. The old top-level names keep working
+   through a module `__getattr__` that warns and forwards to `experimental`
+   (ADR 0006 deprecation policy), not a silent drop.
 
 ### Alternatives considered
 
@@ -70,6 +82,18 @@ refused code, and it shapes the base install:
 
 ## Consequences
 
+- The whole-package import-linter `layers` contract from #729
+  (`python/pyproject.toml`, `exhaustive = true`) orders the dev-only and
+  legacy siblings above the production stack: `(cli)`, then
+  `provisioning | governance`, then `conformance`, `simulator` and `_testing`,
+  then `donkey`, `integrations`, `tools`, `registry`, `llm` and `core`. The
+  legacy quarantine therefore sits above conformance, simulator and `_testing`:
+  it may import them, and none of them may import it. #730 deletes
+  `provisioning/` and `governance.py` (no `_legacy/` package is kept), so that
+  layer entry has nothing left to hold once #730 lands and goes with them,
+  leaving `cli` as the one sibling above the conformance harness. The
+  "production code never imports the legacy packages" contract is replaced by
+  #730's contract that no library module imports `donkey_kit.cli`.
 - The `donkey` command is a stable surface (ADR 0006), so the commands and
   flags keep their names when they move. Only the import path of the module
   behind the console script changes.

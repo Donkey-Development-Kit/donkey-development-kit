@@ -37,7 +37,8 @@ without breaking the layering.
    covers the shared clients only: an adapter or `LLMClient` used without a
    runtime's blocking-client accessor builds its own blocking client on
    demand (`_own_sync_client`, through `build_sync_http_client`). Nothing
-   closes that client today, and the test doesn't look for it.
+   closes that client today, and the test doesn't look for it (tracked as
+   #949).
 3. **`Donkey` wraps one `Runtime`.** `Donkey.__init__` builds it, and the
    handle's config, auth, budget and clients are the runtime's.
 4. **`core.runtime.default()` is the process-wide runtime** behind the

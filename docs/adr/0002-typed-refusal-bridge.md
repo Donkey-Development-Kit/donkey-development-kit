@@ -57,7 +57,21 @@ by hand, and only one wrapper exists:
    promising it.** #724 picks one: apply it by default, or correct the
    docstrings and make it opt-in (`governed(typed=True)`). Either way the
    docstring and the behaviour agree.
-6. **`integrations.langgraph.typed_refusals` is rebuilt on the bridge**, and
+6. **A classified status error must have come through the SDK's own
+   transport.** `translate()` runs `classify()` on an `exc.response` only when
+   that response's request carries `extensions['donkey_correlation_header']`
+   or `extensions['donkey_call_id_header']` (`core/refusals.py`
+   `_SENT_BY_TRANSPORT`), which the transport stamps when it sends. A status
+   error from some other HTTP call in the same block is not a governed refusal
+   and passes through. The correlation stamp is set on every client the
+   transport builds, control-plane clients included
+   (`core/transport.py`: only the attribution and cost headers are skipped on
+   a `control_plane` client). So an `httpx.HTTPStatusError` from a
+   donkey-transport control-plane or MCP call inside `donkey.run()` is
+   classified too. That is intended for gateway-fronted MCP, where the
+   gateway's refusal should surface as its typed class; it is not limited to
+   model calls.
+7. **`integrations.langgraph.typed_refusals` is rebuilt on the bridge**, and
    each adapter exposes the same helper.
 
 ### Alternatives considered
@@ -83,3 +97,7 @@ by hand, and only one wrapper exists:
 - `typed_refusals` joins `donkey_kit.__all__`, which ADR 0006 governs.
 - Declarative refusal handlers (#208) can attach to the bridge rather than to a
   transport hook.
+- Follow-ups outside #724: unwrapping an `ExceptionGroup` (a refusal raised
+  inside a task group reaches the bridge wrapped) is #950; Strands retries a
+  429 before the bridge sees it (#951); bridge conformance for openai-agents,
+  LlamaIndex and the ADK gemini path is #955.

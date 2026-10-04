@@ -80,7 +80,7 @@ encoded as pins. What the repo does today:
 
 ## Consequences
 
-- Rule 3 is not implemented: there is no lockfile, and every PR job resolves
+- Rule 3 is not implemented (tracked as #948): there is no lockfile, and every PR job resolves
   fresh. It needs an issue for the lock format and tool, the jobs that move
   to it, and how the lock is refreshed. Until then this ADR stays proposed.
 - Rule 1's CI job is #769. Until it lands, `docs/verified-apis.md` §8.3 is
