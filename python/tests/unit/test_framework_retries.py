@@ -155,8 +155,9 @@ class _Case:
 _CREWAI_RATE_LIMIT_EXEMPTION = (
     "crewai>=1.15.23 wraps every BaseLLM.call/acall in its own rate-limit retry "
     "(crewai.llms.retry, 3 attempts, 1s/2s backoff) and takes any 429 for a "
-    "throttle. It has no setting to turn it off, so a budget refusal is sent 3 "
-    "times. The provider SDK's own retries are off (max_retries=0)."
+    "throttle. It has no public setting to turn it off (only a private context "
+    "variable, #958), so a budget refusal is sent 3 times. The provider SDK's own "
+    "retries are off (max_retries=0)."
 )
 
 
