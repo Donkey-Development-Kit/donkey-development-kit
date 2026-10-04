@@ -425,6 +425,8 @@ type = "forbidden"
 # dev-only and CLI dependencies (#729). A listed package nothing imports yet
 # (respx, rich) is still enforced: it fails the moment core imports it.
 # tests/unit/test_architecture.py checks the same rule as an allowlist.
+# The one exception is core's own httpx2 bridge (#728), which nothing imports at
+# package import (pinned by test_import_donkey_kit_loads_only_the_production_layers).
 source_modules = ["donkey_kit.core"]
 forbidden_modules = [
     "agent_framework",
@@ -451,6 +453,7 @@ forbidden_modules = [
     "uvicorn",
     "yaml",
 ]
+ignore_imports = ["donkey_kit.core.transport.httpx2 -> httpx2"]
 
 [[tool.importlinter.contracts]]
 name = "layers inside core"
@@ -470,9 +473,9 @@ layers = [
     "runtime",
     "transport",
     "budget | cache | cachecontrol | telemetry | toolspec",
-    "auth",
+    "auth | correlation",
     "config",
-    "cost | endpoints | header_names",
+    "cost | endpoints | header_names | refusals",
     "errors",
     "lastcall | masking",
     "_verify",

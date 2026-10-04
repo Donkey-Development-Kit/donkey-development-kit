@@ -192,8 +192,8 @@ boundary, and no module has one today: its only user was the deleted
   `http_client` kwarg (LangGraph, Strands, LlamaIndex) gets the same bridge on
   `openai>=3` (#728), in a *reusable* variant whose close is a no-op like the
   view's, because Strands closes its client after every request; on `openai<3`
-  it still gets the view. One helper, `llm.client._openai_http_client` /
-  `_openai_sync_http_client`, makes that choice for every OpenAI client the SDK
+  it still gets the view. One helper, `llm.client.openai_http_client` /
+  `openai_sync_http_client`, makes that choice for every OpenAI client the SDK
   wires. The bridge has an async and a blocking twin. The blocking twin sends
   through the blocking shared client, so it refuses in a token mode just as
   that client does. Both are imported lazily, because `httpx2` is not a base
