@@ -135,9 +135,10 @@ all = [
 # Contributor tooling is a PEP 735 dependency group, not an extra, so it stays
 # out of the published metadata (#744): `pip install -e . --group dev` (pip
 # 25.1+) or `uv sync --group dev`. pytest + pytest-asyncio repeat the [test]
-# extra's floors because a group cannot include an extra; typer + pyyaml repeat
-# [cli]'s because the base-only CI job installs the group alone and still runs
-# the CLI unit tests.
+# extra's floors because a group cannot include an extra; typer repeats [cli]'s
+# because the base-only CI job installs the group alone and still runs the CLI
+# unit tests. pyyaml is test-only: no SDK module imports it (#730), but
+# tests/unit/test_integration_checklist.py parses .github/workflows/ci.yml.
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -149,6 +150,7 @@ dev = [
     # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
     "vulture>=2.11",
     "typer>=0.15.4",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
