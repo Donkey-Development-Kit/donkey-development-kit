@@ -84,7 +84,8 @@ _CREWAI_TRANSPORT_EXEMPTION = (
 # that does not route through our httpx client can never observe it.
 # donkey.last_call reports UNAVAILABLE (naming the surface) rather than a bare
 # None — the honest-state contract (hazard #3) — and mirrors
-# Adapter.observes_last_call = False.
+# observes_last_call=False in the adapter's default-factory AdapterCapabilities
+# (#726; tests/unit/test_adapter_roster.py keeps them equal).
 _CREWAI_LAST_CALL_EXEMPTION = (
     _CREWAI_TRANSPORT + " No response reaches our _on_response, so donkey.last_call "
     "reports UNAVAILABLE (#362)."
@@ -94,6 +95,7 @@ _CREWAI_LAST_CALL_EXEMPTION = (
 # transport (#509). Every adapter that sends through it carries the JWT; CrewAI
 # would send the api-key placeholder as the bearer, so the adapter refuses jwt
 # mode with a ConfigError instead (#828) — asserted here rather than skipped.
+# Mirrors transport="framework" in its AdapterCapabilities (#726).
 _CREWAI_JWT_EXEMPTION = (
     _CREWAI_TRANSPORT + " The rotating model-wallet JWT, which only our httpx client "
     "adds per-send, never reaches its requests; donkey.crewai raises ConfigError in "
@@ -104,7 +106,8 @@ _CREWAI_JWT_EXEMPTION = (
 # raised it or sent the request behind it (#724, ADR 0002). A framework that owns
 # the transport raises its own errors for a call the SDK never saw, and one that
 # re-wraps a refusal around a response it rebuilt hides the one the SDK sent, so
-# the bridge leaves both as they are rather than guess at their shape.
+# the bridge leaves both as they are rather than guess at their shape. Mirrors
+# typed_refusals=False in the factory's AdapterCapabilities (#726).
 _LITELLM_REFUSAL_EXEMPTION = (
     "adk.model() only: LiteLLM sends through our transport (#946) but re-raises a "
     "refusal as its own exception around a response it rebuilt, which carries no "

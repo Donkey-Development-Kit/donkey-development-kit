@@ -11,10 +11,12 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any, TypeVar, cast
+from types import MappingProxyType
+from typing import Any, ClassVar, TypeVar, cast
 
 from ..core import runtime
-from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, missing_llm_auth_error
+from ..core.config import TOKEN_AUTH_MODES, DonkeyConfig, LlmProxyAuth
+from ..core.errors import ConfigError
 from ..core.masking import masked
 from ..core.refusals import TypedRefusals
 from ..core.transport import (
@@ -23,17 +25,23 @@ from ..core.transport import (
     DonkeyClient,
     DonkeyClientView,
     build_sync_http_client,
+    checked_llm_config,
     proxy_api_key,
     proxy_auth_headers,
 )
 from ..llm.client import _openai_http_client, _openai_sync_http_client
-from . import ADAPTERS, missing_framework_error, typed_refusals
+from . import ADAPTERS, AdapterCapabilities, missing_framework_error, typed_refusals
 
 
 class Adapter(ABC):
     """Base holding the config and the shared HTTP client every adapter needs,
-    and declaring the contract every adapter shares (BG §1.8): ``extra``,
-    ``observes_last_call`` and :meth:`connection_kwargs`."""
+    and declaring the contract every adapter shares (BG §1.8, #726):
+    :class:`~donkey_kit.integrations.AdapterProtocol`'s
+    :meth:`connection_kwargs` and :meth:`capabilities`, plus ``extra``.
+
+    A subclass declares :attr:`factories`, and every ``connection_kwargs()``
+    builds on :meth:`_connection`, so the config validation and the token-mode
+    guards run in one place (ADR 0004)."""
 
     @property
     def extra(self) -> str:
@@ -44,18 +52,48 @@ class Adapter(ABC):
         cls = type(self).__name__
         return next((s.extra for s in ADAPTERS.values() if s.cls == cls), "")
 
-    #: Whether a governed model call through this adapter reaches ``donkey.last_call``
-    #: (#362). True when the adapter hands the framework our shared
-    #: :class:`DonkeyAsyncClient`, through its view, a pre-built OpenAI client on
-    #: it, or the core ``httpx2`` bridge (its ``_on_response`` observes the response);
-    #: False when the SDK does not own the transport — the framework builds its own
-    #: clients (CrewAI's native OpenAI provider, #740). A ``False`` here is why
-    #: ``donkey.last_call`` reports "not available on this surface" rather than a
-    #: bare ``None`` (hazard #3),
-    #: and it is the fact the conformance suite asserts as an exemption (the conformance kit).
-    #: It holds for every factory and ``connection_kwargs()`` accessor of the
-    #: adapter, and is never changed on an instance (#741).
-    observes_last_call: bool = True
+    #: Each factory method's name, mapped to the frozen capabilities of the
+    #: native object it builds (#726). The first entry is the default factory,
+    #: the one ``connection_kwargs()`` configures. Declared once per class as a
+    #: read-only mapping and never changed on an instance (#741).
+    factories: ClassVar[Mapping[str, AdapterCapabilities]]
+
+    #: Whether a governed model call through the default factory reaches
+    #: ``donkey.last_call`` (#362): ``capabilities().observes_last_call``, set
+    #: from :attr:`factories` when the class is defined and kept for the callers
+    #: that read it directly. A ``False`` here is why ``donkey.last_call``
+    #: reports "not available on this surface" rather than a bare ``None``
+    #: (hazard #3), and it is the fact the conformance suite asserts as an
+    #: exemption.
+    observes_last_call: ClassVar[bool]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if "factories" in cls.__dict__:
+            if not cls.factories:
+                raise TypeError(f"{cls.__name__}.factories declares no factory")
+            # Read-only whatever mapping the subclass wrote (#741).
+            cls.factories = MappingProxyType(dict(cls.factories))
+            cls.observes_last_call = cls.capabilities().observes_last_call
+        elif not hasattr(cls, "factories") and not _still_abstract(cls):
+            # A concrete adapter with no capabilities would fail later, at
+            # donkey.last_call or capabilities(), far from the mistake.
+            raise TypeError(f"{cls.__name__} must declare factories (ADR 0004)")
+
+    @classmethod
+    def capabilities(cls, factory: str | None = None) -> AdapterCapabilities:
+        """The frozen :class:`~donkey_kit.integrations.AdapterCapabilities` of
+        ``factory`` (a factory method's name), by default the default factory's.
+        Raises ``ValueError`` for a name that is not one of :attr:`factories`."""
+        if factory is None:
+            return next(iter(cls.factories.values()))
+        try:
+            return cls.factories[factory]
+        except KeyError:
+            raise ValueError(
+                f"{cls.__name__} has no factory {factory!r}; "
+                f"its factories are {', '.join(cls.factories)}"
+            ) from None
 
     def __init__(
         self,
@@ -164,7 +202,7 @@ class Adapter(ABC):
         override already allowed through :meth:`_allow_endpoints`) that sends
         through the shared client, for a framework that takes a pre-built OpenAI
         client rather than an ``http_client``."""
-        conn = self._openai_connection()
+        conn = self._connection()
         with self._native_import():
             from openai import AsyncOpenAI
 
@@ -188,17 +226,6 @@ class Adapter(ABC):
         except ImportError:
             return {}
 
-    def _require_proxy(self) -> DonkeyConfig:
-        """The validated proxy config. In a token auth mode (jwt or bearer), also
-        refuses a shared client with no ``AuthProvider``: the token rides only
-        that client, so a client without one (the module-level factories, or a
-        Donkey built without llm_auth) would send none, or the api-key
-        placeholder as the bearer, and every call would 401 (#828, #836)."""
-        cfg = self._cfg.validated(need="llm")
-        if cfg.llm_proxy_auth in TOKEN_AUTH_MODES and self._http.token_provider is None:
-            raise missing_llm_auth_error(cfg.llm_proxy_auth)
-        return cfg
-
     def _allow_endpoints(self, overrides: Mapping[str, Any], *names: str) -> None:
         """Check each URL override in ``overrides`` under ``names`` — a URL passed
         in code to a factory — with the config's https check, then let the
@@ -210,21 +237,33 @@ class Adapter(ABC):
             if url is not None:
                 self._http.allow_endpoint(str(url), name=name)
 
-    def _openai_connection(self) -> dict[str, Any]:
+    def _connection(self, factory: str | None = None) -> dict[str, Any]:
         """The three governed values every OpenAI-compatible client needs to
         reach the proxy: ``base_url``, an ``api_key`` slot, and the verified
-        consumer-auth ``default_headers``. Validates proxy config first.
+        consumer-auth ``default_headers``, for ``factory`` (by default the
+        default factory). Every ``connection_kwargs()`` builds on this, so the
+        guards below run once, in one place, for every adapter (#726):
+
+        - a ``"framework"``-transport factory is refused in a token auth mode
+          (jwt or bearer), since the token rides only the shared client (#828);
+        - :func:`~donkey_kit.core.transport.checked_llm_config` validates the
+          proxy config and refuses a token mode with no ``AuthProvider`` on the
+          shared client, which would otherwise send no token and 401 (#836).
+
+        It does not refuse a token mode for a ``sync``-capable factory: each of
+        those also has an async path, and the blocking client refuses each
+        blocking send itself (#736).
 
         Adapters map these onto their framework's own kwarg names in the public
-        :meth:`connection_kwargs`; both the ``donkey.<framework>.<factory>()``
-        methods and the module-level factories build on top of this so there is
-        one source of truth for the governed connection.
-
-        Every ``connection_kwargs()`` returns its mapping through
+        :meth:`connection_kwargs`, returned through
         :func:`~donkey_kit.core.masking.masked`, so printing it never shows the
         ``api_key`` or the secret header.
         """
-        cfg = self._require_proxy()
+        caps = self.capabilities(factory)
+        mode = self._cfg.llm_proxy_auth
+        if caps.transport == "framework" and mode in TOKEN_AUTH_MODES:
+            raise self._token_mode_error(mode)
+        cfg = checked_llm_config(self._cfg, self._http)
         return masked(
             {
                 "base_url": cfg.llm_proxy_url,
@@ -232,6 +271,26 @@ class Adapter(ABC):
                 "default_headers": self._proxy_headers(),
             }
         )
+
+    def _token_mode_error(self, mode: LlmProxyAuth) -> ConfigError:
+        """The error for a token auth mode on a factory whose framework builds
+        its own HTTP clients. An adapter may override it to name alternatives."""
+        return ConfigError(
+            f"{type(self).__name__} does not support llm_proxy_auth={mode!r}: the "
+            "framework builds its own HTTP clients, so the rotating token, which "
+            "rides only the SDK's shared client, never reaches the request. Use "
+            "client-id auth with it."
+        )
+
+
+def _still_abstract(cls: type) -> bool:
+    """Whether ``cls`` leaves an abstract method unimplemented. ``inspect.isabstract``
+    cannot answer this inside ``__init_subclass__``: ``ABCMeta`` sets the new
+    class's ``__abstractmethods__`` only after it returns."""
+    return any(
+        getattr(getattr(cls, name, None), "__isabstractmethod__", False)
+        for name in Adapter.__abstractmethods__
+    )
 
 
 A = TypeVar("A", bound=Adapter)

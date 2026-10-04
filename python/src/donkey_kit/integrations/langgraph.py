@@ -27,10 +27,12 @@ docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from ..core.masking import masked
+from . import AdapterCapabilities
 from . import typed_refusals as _bridge
 from ._base import Adapter, default_adapter
 
@@ -64,13 +66,26 @@ class LangGraphAdapter(Adapter):
     Docs: https://docs.donkey-kit.dev/frameworks/langgraph
     """
 
+    # ChatOpenAI takes both shared clients, so invoke() and ainvoke() are governed (#726).
+    factories = MappingProxyType(
+        {
+            "chat_model": AdapterCapabilities(
+                transport="shared",
+                sync=True,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
+
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs to spread into a ``ChatOpenAI(model=…, **kwargs)`` you
         build yourself (BG §1.8). Same values the factory uses — one source of
         truth for the proxy connection. Both ``ainvoke`` and ``invoke`` send
         through the SDK's clients (``http_async_client`` / ``http_client``), which
         do not follow redirects and send credentials only to checked endpoints."""
-        conn = self._openai_connection()
+        conn = self._connection()
         return masked(
             {
                 **conn,  # base_url, api_key, default_headers
