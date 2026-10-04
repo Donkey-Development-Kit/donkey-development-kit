@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]  # PEP 639 license metadata
 build-backend = "hatchling.build"
 
 [project]
@@ -8,12 +8,25 @@ version = "0.1.2.dev0"
 description = "An SDK for consuming Agent Fabric capabilities (governed model and tool access) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-authors = [{ name = "See README for maintainer + support statement" }]
+license = "Apache-2.0"
+# A copy of the repo-root LICENSE: hatch cannot read files above python/.
+# tests/unit/test_house_style_config.py keeps the two identical.
+license-files = ["LICENSE"]
+# Community-maintained (see the README support statement); report issues and
+# contact the maintainers through the Issues URL below.
+authors = [{ name = "Donkey Development Kit maintainers" }]
+maintainers = [{ name = "Donkey Development Kit maintainers" }]
 keywords = ["donkey-kit", "mulesoft", "anypoint", "agent", "llm", "mcp", "gateway"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    # One per CI `test` matrix leg (docs/python-support.md).
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
 ]
 
