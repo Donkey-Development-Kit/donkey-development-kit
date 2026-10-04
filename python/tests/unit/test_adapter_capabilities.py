@@ -75,9 +75,7 @@ def _client_id_cfg() -> DonkeyConfig:
 
 def _token_cfg(mode: str) -> DonkeyConfig:
     extra = {"llm_proxy_wallet_client_id": "wallet-42"} if mode == "jwt" else {}
-    return DonkeyConfig(
-        llm_proxy_url="https://proxy/", llm_proxy_auth=mode, max_retries=0, **extra
-    )
+    return DonkeyConfig(llm_proxy_url="https://proxy/", llm_proxy_auth=mode, max_retries=0, **extra)
 
 
 @pytest.fixture
@@ -167,9 +165,7 @@ def test_adk_gemini_connection_uses_the_gemini_capabilities(
 
 @pytest.mark.parametrize("mode", ["jwt", "bearer"])
 @pytest.mark.parametrize("attr", _ROSTER)
-async def test_token_mode_without_a_provider_refuses_every_adapter(
-    attr: str, mode: str
-) -> None:
+async def test_token_mode_without_a_provider_refuses_every_adapter(attr: str, mode: str) -> None:
     cfg = _token_cfg(mode)
     http = build_http_client(cfg, None)
     try:
@@ -305,6 +301,11 @@ def _governed_kwargs(attr: str, factory: str, http: DonkeyAsyncClient) -> dict[s
         pytest.skip(f"{attr}'s connection needs a dependency not installed here")
 
 
+def _bridged(obj: object) -> object:
+    """The client an httpx2 bridge transport on ``obj`` forwards to, if any."""
+    return getattr(getattr(obj, "_transport", None), "_client", None)
+
+
 @pytest.mark.parametrize(("attr", "factory"), _FACTORIES)
 def test_capabilities_match_the_governed_wiring(
     attr: str, factory: str, http: DonkeyAsyncClient
@@ -312,9 +313,9 @@ def test_capabilities_match_the_governed_wiring(
     # The capabilities are facts about what the SDK hands the framework (§0.3),
     # so they are read back from the governed kwargs rather than restated: one
     # of our async clients anywhere in them (directly, inside a pre-built
-    # OpenAI client, or behind anthropic>=1's httpx2 bridge transport) is the
-    # shared transport, one of our blocking clients is sync, and stream=False
-    # is streaming off.
+    # OpenAI client, or behind the httpx2 bridge transport that anthropic>=1 and
+    # openai>=3 get, #728) is the shared transport, one of our blocking clients
+    # is sync, and stream=False is streaming off.
     caps = _adapter_class(attr).capabilities(factory)
     kwargs = _governed_kwargs(attr, factory, http)
     clients = [
@@ -323,7 +324,8 @@ def test_capabilities_match_the_governed_wiring(
         for c in (
             v,
             getattr(v, "_client", None),
-            getattr(getattr(v, "_transport", None), "_client", None),
+            _bridged(v),
+            _bridged(getattr(v, "_client", None)),
         )
     ]
     shared = any(isinstance(c, (DonkeyAsyncClient, DonkeyAsyncClientView)) for c in clients)
