@@ -53,24 +53,6 @@ _RUN_ID = "run-contract"
 _CORRELATION_HEADER = "x-correlation-id"
 _EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
-#: Adapters whose example does not expose ``build(donkey)`` yet, and so cannot be
-#: run through the public conformance kit. Shrink-only: a new adapter must ship an
-#: example with ``build()``.
-EXAMPLE_BUILD_GAPS: dict[str, str] = {
-    attr: "The example only constructs the native object; it has no build() that "
-    "makes a governed call for the conformance kit to drive."
-    for attr in (
-        "adk",
-        "strands",
-        "agent_framework",
-        "openai_agents",
-        "anthropic",
-        "crewai",
-        "llamaindex",
-    )
-}
-
-
 @pytest.fixture(scope="module")
 def gateway() -> Iterator[Gateway]:
     gw = Gateway()
@@ -235,9 +217,6 @@ async def test_last_call_matches_the_declared_metadata(driver: Driver, gateway: 
 async def test_example_build_passes_the_conformance_kit(attr: str) -> None:
     example = _EXAMPLES / attr / "main.py"
     has_build = "\ndef build(" in example.read_text()
-    if attr in EXAMPLE_BUILD_GAPS:
-        assert not has_build, f"examples/{attr} has build(); drop it from EXAMPLE_BUILD_GAPS"
-        return
     assert has_build, f"examples/{attr}/main.py must expose build(donkey)"
     spec = ADAPTERS[attr]
     if os.environ.get("DONKEY_CONTRACT_EXTRA") != spec.extra:
@@ -246,7 +225,16 @@ async def test_example_build_passes_the_conformance_kit(attr: str) -> None:
     from donkey_kit.conformance import run_conformance
 
     module = importlib.import_module(f"examples.{attr}.main")
-    results = await run_conformance(module.build, known_limitations=None)
+    # The example's own asserted exemptions, the way the pytest plugin reads them.
+    # Only an adapter the internal matrix records as structurally limited may have
+    # any, so an example cannot excuse a scenario it merely fails.
+    known = getattr(module, "KNOWN_LIMITATIONS", None)
+    assert bool(known) == (attr in KNOWN_LIMITATIONS), (
+        f"examples/{attr} KNOWN_LIMITATIONS must match the internal matrix's entry for "
+        f"{attr!r} in tests/conformance/suite.py"
+    )
+    results = await run_conformance(module.build, known_limitations=known)
     failed = [r for r in results if r.status == "fail"]
     assert failed == [], failed
+    assert {r.scenario for r in results if r.status == "exempt"} == set(known or {})
 
