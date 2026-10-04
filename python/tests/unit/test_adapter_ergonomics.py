@@ -548,6 +548,16 @@ def test_factory_and_connection_kwargs_do_not_drift(
     }
 
 
+def _shared_client(client: Any) -> Any:
+    """The client a pre-built OpenAI client sends through: its ``http_client``
+    itself, or, for the per-call ``httpx2`` bridge openai>=3 gets (#728), the
+    shared client the bridge forwards to."""
+    transport = getattr(client, "_transport", None)
+    if type(transport).__name__ == "DonkeyForwardingTransport":
+        return transport._client
+    return client
+
+
 def _comparable(value: Any) -> Any:
     if type(value).__name__ == "AsyncOpenAI":
         return (
@@ -556,7 +566,7 @@ def _comparable(value: Any) -> Any:
             value.default_headers["client_id"],
             value.default_headers["client_secret"],
             value.max_retries,
-            id(value._client),
+            id(_shared_client(value._client)),
         )
     return value
 

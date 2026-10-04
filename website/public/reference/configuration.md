@@ -341,7 +341,8 @@ trusted collector. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.
 | Env var | `DonkeyConfig` field | Default | Meaning |
 |---|---|---|---|
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `60.0` | HTTP timeout for governed calls, in seconds. |
-| `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. Policy refusals are never retried, and a gateway fallback is never retried twice. |
+| `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. A `502` or `504` on a model call is retried only with `retry_model_calls_on_gateway_errors` (below). Policy refusals are never retried, and a gateway fallback is never retried twice. |
+| `DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS` | `retry_model_calls_on_gateway_errors` | `false` | Also retry a `502` or `504` on a model call (a `POST` whose body, or native Gemini path, names a model). Off by default, because the provider may already have completed and billed the call, and the gateway offers no verified idempotency key. A `503`, and any other request, is retried either way. |
 | `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing). |
 | `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://docs.donkey-kit.dev/tool-access.md)) are cached in memory, in seconds. |
 | `DONKEY_NO_CACHE` | — | unset | Set to `1`, `true` or `yes` to bypass that in-memory registry cache. |
@@ -358,7 +359,7 @@ request is sent. One error lists every bad field and where each was set:
 |---|---|
 | `timeout_s` | A number greater than `0` |
 | `max_retries`, `registry_cache_ttl_s` | A whole number, `0` or more |
-| `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
+| `telemetry`, `telemetry_capture_content`, `telemetry_install_global`, `send_cost_headers`, `retry_model_calls_on_gateway_errors` | `True` or `False` in code; `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off` (any case) in the environment or a config file |
 | `region` | `us`, `eu`, `ca` or `jp` |
 | `llm_proxy_auth` | `client-id`, `jwt` or `bearer` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |

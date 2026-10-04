@@ -10,11 +10,16 @@ import httpx
 import pytest
 
 import donkey_kit
-from donkey_kit.core import transport
 from donkey_kit.core.auth import ChainedAuth, StaticToken
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.lastcall import ROUTING_FALLBACK_HEADER
-from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient, proxy_auth_headers
+from donkey_kit.core.transport import (
+    DonkeyAsyncClient,
+    DonkeyClient,
+    async_client,
+    proxy_auth_headers,
+    sync_client,
+)
 
 _TRANSPORT_LOGGER = "donkey_kit.core.transport"
 _CLIENT_ID = "cid-logging-test-7f3a"
@@ -29,8 +34,8 @@ def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _instant(_delay: float) -> None:
         return None
 
-    monkeypatch.setattr(transport.asyncio, "sleep", _instant)
-    monkeypatch.setattr(transport.time, "sleep", lambda _delay: None)
+    monkeypatch.setattr(async_client.asyncio, "sleep", _instant)
+    monkeypatch.setattr(sync_client.time, "sleep", lambda _delay: None)
 
 
 def _debug(caplog: pytest.LogCaptureFixture) -> list[str]:
@@ -72,7 +77,8 @@ async def test_retried_503_emits_debug_records(caplog: pytest.LogCaptureFixture)
         "GET https://proxy.example/v1/chat returned 503; retry 1 of 3 in 2.00s",
         "GET https://proxy.example/v1/chat returned 503; retry 2 of 3 in 2.00s",
     ]
-    assert all(r.name == _TRANSPORT_LOGGER for r in caplog.records)
+    # Every record comes from a module of the transport package (#728).
+    assert all(r.name.startswith(_TRANSPORT_LOGGER + ".") for r in caplog.records)
 
 
 def test_sync_retried_503_emits_debug_records(caplog: pytest.LogCaptureFixture) -> None:
@@ -173,6 +179,8 @@ async def test_no_log_record_contains_a_request_header_value(
         llm_proxy_client_id=_CLIENT_ID,
         llm_proxy_client_secret=_CLIENT_SECRET,
         max_retries=3,
+        # A 502 on a model POST retries only when opted in (#728).
+        retry_model_calls_on_gateway_errors=True,
     )
     with caplog.at_level(logging.DEBUG, logger="donkey_kit"):
         async with DonkeyAsyncClient(

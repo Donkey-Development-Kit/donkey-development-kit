@@ -133,9 +133,20 @@ boundary, and no module has one today: its only user was the deleted
     (opt-in) cost-tag headers; only the credentials differ.
 
   A framework built on `httpx2` that rejects `httpx` clients (`anthropic>=1.0`,
-  #701) gets an `httpx2.AsyncClient` from `integrations/_httpx2_bridge.py`
-  instead, whose transport forwards every request through the same data-plane
-  client, so it is still one transport.
+  #701), and every `OpenAI`/`AsyncOpenAI` the SDK builds itself on `openai>=3`
+  (`donkey.llm.client()` and `_proxy_openai_client`, #728), gets an `httpx2`
+  client from the core bridge `core/transport/httpx2.py` instead, whose
+  transport forwards every request through the same data-plane client, so it
+  is still one transport. A framework that builds its OpenAI client from an
+  `http_client` kwarg (LangGraph, Strands, LlamaIndex) gets the same bridge on
+  `openai>=3` (#728), in a *reusable* variant whose close is a no-op like the
+  view's, because Strands closes its client after every request; on `openai<3`
+  it still gets the view. One helper, `llm.client._openai_http_client` /
+  `_openai_sync_http_client`, makes that choice for every OpenAI client the SDK
+  wires. The bridge has an async and a blocking twin. The blocking twin sends
+  through the blocking shared client, so it refuses in a token mode just as
+  that client does. Both are imported lazily, because `httpx2` is not a base
+  dependency.
 
   `Donkey` builds these through a **`Runtime`** (`core/runtime.py`), which owns
   the config, the OTLP bootstrap, the auth providers, the `Budget`, both clients
@@ -155,7 +166,7 @@ boundary, and no module has one today: its only user was the deleted
   host out (#732, `docs/adr/0010-no-hidden-global-side-effects.md`).
 
   Each client attaches credentials only to its **checked endpoints**
-  (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
+  (`_CheckedEndpoints` in `core/transport/headers.py`), compared by scheme, host and
   port: the plane's configured URL, plus any URL override a factory accepted
   after the same https check (`allow_endpoint`). A request to any other origin,
   every redirect hop included (httpx runs request hooks per hop), goes out with
@@ -212,7 +223,7 @@ boundary, and no module has one today: its only user was the deleted
   error is raised `from None`, with the original on `framework_error`. Framework
   objects built from the kwargs keep their own `repr`, and some of them print
   credentials.
-- **The transport is the attachment point.** `DonkeyAsyncClient` exposes four
+- **The transport is the attachment point.** `DonkeyAsyncClient` exposes
   internal lifecycle hooks — no-op by default, **not** public API, mirrored on the
   sync twin `DonkeyClient` — so the six-piece minimum *attaches* rather than
   re-wiring `send()` (`BG §1.1`, #179/#287). This is what makes the skeleton one
@@ -220,17 +231,39 @@ boundary, and no module has one today: its only user was the deleted
 
   | Hook | When it fires | What attaches |
   | --- | --- | --- |
-  | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
-  | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
-  | `_on_refusal` | never — no caller today; `classify()` raises the typed error directly, and the LangGraph bridge maps it without the hook | typed-refusal reaction handlers (`BG §1.2`, #208); the framework-agnostic typed-refusal bridge is #724 |
-  | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
+  | `_inject_headers` | every attempt (an httpx request event hook, so every retry and redirect hop) | correlation, call-id, attribution, cache-control and opt-in cost-tag headers (`BG §1.7`); the plane's credentials, on checked endpoints only |
+  | `_on_response` | once, on the final response (in `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
+  | `_on_refusal` | once, when the final response is a policy refusal, with the `PolicyViolation` `classify()` made of it, after the span is recorded | typed-refusal reaction handlers (`BG §1.2`, #208); the default does nothing and the refusal is still returned. The LangGraph bridge maps refusals without it, and the framework-agnostic typed-refusal bridge is #724 |
+  | `governed_transport.replace_inner()` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`). Each client's transport is a `GovernedTransport` (`GovernedSyncTransport` on the sync twin) that owns the inner transport; the constructors fold httpx's proxy mounts into it, so a swap covers every route and fails closed if a mount appears later (#801, #728) |
 
-  Correlation, attribution, cache-control and opt-in cost-tag headers
-  (`BG §1.7`) are set on every attempt by the `_inject_headers` request event
-  hook, not by `_on_request`. The OTel span (`BG §1.6`) opens in `send()` and
-  closes there, or in the stream wrapper for a streamed response. Its response
-  attributes, including the `classify()`-derived policy decision, are recorded
-  by `_record_response`, which `_finish()` calls right after `_on_response`.
+  There is no per-`send()` request hook: the old no-op `_on_request` was
+  removed (#728), since the header hook covers every attempt. The OTel span
+  (`BG §1.6`) opens in `send()` and closes there, or in the stream wrapper for
+  a streamed response. Its response attributes, including the
+  `classify()`-derived policy decision, are recorded by `_record_response`,
+  which `_finish()` calls right after `_on_response`.
+
+  The two clients share one pipeline and differ only in IO. The package
+  `core/transport/` splits it by concern (#728):
+
+  | Module | Holds |
+  | --- | --- |
+  | `headers.py` | header policy: correlation/call ids, attribution, cost tags, credentials, checked endpoints |
+  | `policy.py` | the sans-IO decisions: `decide_retry()` (`Refresh` / `Retry` / `Finish`), the refusal (`classify()` of a final 4xx) and the substitution check |
+  | `pipeline.py` | `_GovernedPipeline`, the IO-free halves of a send both clients run |
+  | `observe.py` | budget and `last_call` observation, span recording, retry/finish logs |
+  | `streaming.py` | the bounded error-body read, the SSE usage scanner, the span-closing streams |
+  | `governed.py` | `GovernedTransport` / `GovernedSyncTransport`, the mount routers, the per-event-loop pool |
+  | `async_client.py`, `sync_client.py` | `DonkeyAsyncClient` / `DonkeyClient`: only the send loop's IO |
+  | `failures.py` | the typed errors a send raises instead of an httpx failure (`GatewayUnavailable`, the lifecycle `ConfigError`s, `sync_token_auth_error`) |
+  | `views.py` | the non-owning views (#733) and `built_on_httpx2()` |
+  | `httpx2.py` | the `httpx2` bridge (lazy, never imported at package import) |
+
+  A `502` or `504` on a model `POST` (a `POST` whose body, or native Gemini path, names a model) is
+  not re-sent by default: the upstream call may have completed and billed, and
+  no gateway idempotency key is verified (docs/verified-apis.md). Set
+  `retry_model_calls_on_gateway_errors` to retry it; a `503`, and every other
+  request, still retries (docs/adr/0009-*.md, #728).
 
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
@@ -240,7 +273,7 @@ boundary, and no module has one today: its only user was the deleted
   never relying on the response hook (the OTel span avoids this by living in
   `send()`).
   A hookless client behaves exactly as it did before the hooks were added. The
-  full contracts live in the `core/transport.py` docstrings.
+  full contracts live in the `core/transport/` docstrings.
 - **Governed-state criteria** (`GovernanceCriteria`, `STRICT`, `evaluate`) live
   in `registry/criteria.py` (renamed from `registry/governance.py` in #719; the
   old path is a deprecated alias). The top-level `Governance` object
