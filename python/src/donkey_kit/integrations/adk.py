@@ -9,9 +9,8 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   speaks ``/chat/completions``. Header injection is via LiteLLM's
   ``extra_headers``. LiteLLM takes a pre-built OpenAI client (``client``), so
   we pass an ``AsyncOpenAI`` that sends through the shared client: redirects
-  are not followed and credentials go only to checked endpoints. The
-  conformance kit still lists ``model()`` under ``correlation_id_propagated`` /
-  ``gateway_identity_observed`` and ``donkey.last_call`` stays unpopulated.
+  are not followed, credentials go only to checked endpoints, and each call
+  carries the run's correlation id and populates ``donkey.last_call`` (#740).
   ADK requires ``litellm>=1.84`` (floor, not ceiling). LiteLLM sets the
   client's ``max_retries`` on every call (default 2), so the kwarg goes to
   LiteLLM itself (#734).
@@ -22,7 +21,7 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   ``google-genai`` accepts ``HttpOptions.httpx_async_client``, so we hand it the
   shared :class:`~donkey_kit.core.transport.DonkeyAsyncClient`: full injection —
   per-run correlation, SDK retries, rotating JWTs and ``donkey.last_call`` all
-  work, and none of ``model()``'s exemptions apply. The default DDK proxies are
+  work. The default DDK proxies are
   ``Format=OpenAI``, so point ``base_url`` at a ``Format=Gemini`` proxy.
 
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
@@ -30,7 +29,6 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
@@ -62,13 +60,6 @@ class ADKAdapter(Adapter):
 
     Docs: https://docs.donkey-kit.dev/frameworks/adk
     """
-
-    # Kept False for ``model()`` while the conformance kit lists its
-    # correlation_id_propagated exemption (#362), although its calls now go
-    # through the shared client. ``gemini()`` observes (#691), recorded per
-    # factory rather than set on the instance (#741).
-    observes_last_call = False
-    factory_observes_last_call = MappingProxyType({"gemini": True})
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``LiteLlm(model="openai/<id>", **kwargs)`` you
@@ -160,9 +151,7 @@ class ADKAdapter(Adapter):
                 "older versions ADK drops the governed client without an error. "
                 "Upgrade with: pip install -U 'donkey-kit[adk]'"
             )
-        native = Gemini(model=model, **{**conn, **kw})
-        self._record_factory("gemini")
-        return native
+        return Gemini(model=model, **{**conn, **kw})
 
 
 def model(model: str, **kw: Any) -> LiteLlm:
