@@ -37,6 +37,7 @@ from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import build_http_client
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.integrations._base import Adapter
+from donkey_kit.llm import client as llm_client
 
 _GATEWAY_SCENARIO = "gateway_identity_observed"
 _CORRELATION_SCENARIO = "correlation_id_propagated"
@@ -97,10 +98,15 @@ def test_exemption_matches_observes_last_call_flag() -> None:
     )
 
 
-async def test_formerly_exempt_adapters_are_handed_the_shared_client() -> None:
+async def test_formerly_exempt_adapters_are_handed_the_shared_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # The fact that retires their exemptions (#740): each connection_kwargs()
     # carries our shared client's view, or an OpenAI client sending through it
-    # (adk.gemini() since #691).
+    # (adk.gemini() since #691). Pinned to openai<3, where that client is the
+    # view itself; on openai>=3 it is the httpx2 bridge over the same client,
+    # covered by test_adapter_openai3_bridge.py (#728).
+    monkeypatch.setattr(llm_client, "_openai_on_httpx2", lambda: False)
     cfg = DonkeyConfig(
         llm_proxy_url="https://proxy",
         llm_proxy_client_id="cid",
