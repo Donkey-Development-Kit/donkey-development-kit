@@ -112,6 +112,18 @@ request against the deployed gateway.
 | `/models` endpoint | `llm/catalog.py` | VERIFIED (LIVE) | **Does not exist** — `GET /openai-sdk/models` → `404`, `x-llm-proxy-model-based-routing-success: Request passed through without model-based routing`. The proxy only routes requests carrying `model` in the body; no catalog endpoint. `llm/catalog.py` must source models elsewhere | 2026-08-28 | live probe (`models.notfound.headers.txt`) |
 | Supported providers | `llm/catalog.py` | VERIFIED (CLI) | openai, azureopenai, gemini, **bedrock**, **anthropic** (each a `*-llm-provider-policy-flex` in org `68ef9520…`) | 2026-08-28 | `exchange:asset:list llm` |
 
+**Provider SDK retry override (#953, verified from installed SDK source, not a
+gateway contract).** `openai` (`openai._base_client.BaseClient._should_retry`;
+checked at the `1.66.0` floor, `2.54.0` and `3.24.0`) and `anthropic`
+(`anthropic._base_client.BaseClient._should_retry`; checked at the `0.116.0`
+floor and `1.11.0`) both check the response header `x-should-retry: false`
+before their default `>=500` retry rule. The governed transport stamps this SDK-facing header on a
+final 4xx and on a 502/504 model POST when its retry decision is `unsafe`.
+It does not claim the gateway emits the header. End-to-end mock-transport tests
+with default provider retries are in `test_transport.py` and
+`test_anthropic_client_stacks.py`; the shared sync/async policy is covered in
+`test_transport_both_clients.py`.
+
 **Note — single-header apikey/bearer convenience (no-op for DDK).** The default
 proxy's `dataweave-headers-transformation` policy (the §6 policy-stack row) is a
 gateway convenience for thin clients that carry only one auth field: it accepts a

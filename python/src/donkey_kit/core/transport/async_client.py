@@ -19,7 +19,7 @@ from .governed import GovernedTransport, _AsyncMountRouter, _LoopLocalTransport
 from .headers import Origin, _apply_auth, _apply_call_id_header
 from .observe import _log_target, _observe_final
 from .pipeline import AsyncClientOptions, _GovernedPipeline
-from .policy import Finish, Retry, _mark_terminal, _request_model
+from .policy import Finish, Retry, _request_model
 from .streaming import _aread_error_body, _is_streaming_success, _SpanClosingAsyncStream
 from .views import DonkeyAsyncClientView
 
@@ -287,7 +287,6 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
         fills ``gen_ai.usage.*`` and ends the span when the stream closes — on
         drain, mid-iteration abandonment, or exception. Anything else on a stream
         request has no SSE body to scan, so the span is ended inline."""
-        _mark_terminal(response)
         if streaming and response.status_code // 100 != 2:
             try:
                 await _aread_error_body(response)

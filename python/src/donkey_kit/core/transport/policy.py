@@ -115,15 +115,13 @@ def _is_model_post(request: httpx.Request) -> bool:
     return request.method == "POST" and _request_model(request) is not None
 
 
-def _mark_terminal(response: httpx.Response) -> None:
-    """Stamp ``x-should-retry: false`` on a final 4xx, so a provider SDK above the
-    transport does not re-send what the transport treats as terminal (BG §1.2,
-    #734). The adapters already turn SDK retries off; this covers a client a
-    developer builds from ``connection_kwargs()`` with their own retry setting.
-    Every 4xx is terminal here, including every policy refusal; a 5xx is left
-    alone, because a 502/503/504 is transient and the transport has already
-    decided whether to retry it."""
-    if 400 <= response.status_code < 500:
+def _mark_terminal(response: httpx.Response, decision: Finish) -> None:
+    """Prevent provider SDK retries on final 4xx and unsafe model POSTs (#734, #953).
+
+    Other 5xx finishes are left alone: a caller may choose to retry a transient
+    error after the transport's own retry budget is exhausted.
+    """
+    if 400 <= response.status_code < 500 or decision.reason == "unsafe":
         response.headers[_SHOULD_RETRY_HEADER] = "false"
 
 

@@ -16,7 +16,7 @@ from .governed import GovernedSyncTransport, _SyncMountRouter
 from .headers import Origin, _apply_auth, _apply_call_id_header
 from .observe import _observe_final
 from .pipeline import ClientOptions, _GovernedPipeline
-from .policy import Finish, Retry, _mark_terminal, _request_model
+from .policy import Finish, Retry, _request_model
 from .streaming import _is_streaming_success, _read_error_body, _SpanClosingSyncStream
 from .views import DonkeyClientView
 
@@ -200,7 +200,6 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
         """Fire the response hooks exactly once, on the response actually
         returned, then record the span (see :meth:`DonkeyAsyncClient._finish`,
         including the bounded read of a non-2xx stream body, #805)."""
-        _mark_terminal(response)
         if streaming and response.status_code // 100 != 2:
             try:
                 _read_error_body(response)
