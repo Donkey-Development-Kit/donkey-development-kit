@@ -19,11 +19,11 @@ own CI job. ``importorskip``s the SDK so a base-only environment skips it.
 
 Trending (#753): CI's ``benchmark`` job only enforces this fixed 1 ms budget,
 whose ~55x headroom over the measured ~18 us/call would not catch a 10x
-regression. When ``DONKEY_BENCHMARK_JSON`` names a path, the measured result is
-also written there as a small JSON record; the workflow writes that file only
-on ``main``-branch runs and hands it to ``scripts/compare_benchmark_trend.py``,
-which diffs it against the previous ``main`` run's recorded result and alerts
-on a relative regression beyond its ``--alert-threshold``.
+regression. When ``DONKEY_BENCHMARK_JSON`` names a path, a passing run also
+writes the measured result there as a small JSON record. The CI job sets it on
+every run; on ``main`` pushes it uploads the file and hands it to
+``scripts/compare_benchmark_trend.py``, which compares it with the last
+successful ``main`` run's result and fails at or past ``--alert-threshold``.
 """
 
 from __future__ import annotations
@@ -117,9 +117,9 @@ def test_genai_span_overhead_under_1ms_per_call(monkeypatch: pytest.MonkeyPatch)
         "regressed — export I/O must stay on the BatchSpanProcessor thread, not the call path."
     )
 
-    # #753: record the result for cross-run trending when the workflow asks for
-    # it (main-branch runs only — see scripts/compare_benchmark_trend.py). A
-    # fixed budget alone has ~55x headroom and would not catch a 10x regression.
+    # #753: record the result for cross-run trending when CI asks for it (see
+    # scripts/compare_benchmark_trend.py). The fixed budget alone has ~55x
+    # headroom and would not catch a 10x regression.
     result_path = os.environ.get("DONKEY_BENCHMARK_JSON")
     if result_path:
         Path(result_path).write_text(
@@ -129,5 +129,6 @@ def test_genai_span_overhead_under_1ms_per_call(monkeypatch: pytest.MonkeyPatch)
                     "value": overhead_per_call * 1e6,
                     "unit": "us/call",
                 }
-            )
+            ),
+            encoding="utf-8",
         )

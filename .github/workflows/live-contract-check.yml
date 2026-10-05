@@ -1,35 +1,30 @@
 # Weekly live-contract check against the real provisioned proxy (#753).
 #
-# Everything else that exercises `tests/sandbox/` is opt-in and manual
-# (DONKEY_SANDBOX_TESTS=1 + a hand-filled proxies.toml, see
-# tests/sandbox/README.md). Nothing ran it on a schedule, so a gateway
-# contract drift (a response shape change, a rejection body change) was only
-# ever caught by a human remembering to run the suite by hand. This workflow
-# is that missing scheduled run.
+# `tests/sandbox/` is otherwise opt-in and manual (DONKEY_SANDBOX_TESTS=1 + a
+# hand-filled proxies.toml, see tests/sandbox/README.md), so a gateway contract
+# drift (a response shape change, a rejection body change) was only caught if a
+# human remembered to run it. This workflow is the scheduled run.
 #
-# Scope: ONLY the `openai-model-routing` proxy (the one target whose secrets
-# are already in this repo's `live-sandbox` environment, below) — not the
-# full manifest `proxies.toml.example` documents, which need creds this repo
-# does not hold. tests/sandbox/test_proxy_contracts.py::
-# test_openai_routing_response_shape_matches_fixture is the shape/key-only
-# contract-drift guard this run is for (#753); the suite's other
-# `openai-model-routing` tests ride along for free.
+# Scope: ONLY the `openai-model-routing` proxy, one consumer credential triple
+# — not every proxy `proxies.toml.example` lists. The contract-drift guard is
+# tests/sandbox/test_proxy_contracts.py::
+# test_openai_routing_response_shape_matches_fixture; the suite's other
+# `openai-model-routing` tests run too, and tests for proxies not configured
+# here skip.
 #
-# Credentials are gated behind a protected GitHub `environment:` (required
-# reviewers / wait timer / branch restriction are configured on the
-# `live-sandbox` environment itself, in repo Settings → Environments — this
-# workflow only *names* it). This is stricter than nightly-matrix.yml's
-# `workflow_dispatch` `live` input, which reads `secrets.MULESOFT_LLM_PROXY_*`
-# directly with no environment gate; that precedent is for an opt-in manual
-# run, not an unattended weekly schedule, so it gets the stronger gate.
+# Credentials come from the `live-sandbox` GitHub environment. Its protection
+# rules (required reviewers, branch restriction) and its three secrets are set
+# in repo Settings → Environments; this workflow only names it. GitHub creates
+# a missing environment on first reference with no secrets and no protection,
+# so the first step fails the run (and so files the tracking issue) when any
+# secret is empty — otherwise every sandbox test would skip and the run would
+# go green having checked nothing.
 #
-# On failure, open-or-update a single tracking issue (never a new one per
-# run) via `gh issue list|create|comment`, labelled `live-contract-drift` so
-# it is easy to find and does not duplicate `ddk-filing-issues`' usual flow.
+# On any failure, open-or-update ONE tracking issue labelled
+# `live-contract-drift` (created if missing), never one issue per run.
 #
 # Security: every `${{ }}` value used in a `run:` body is bound to env: first
-# and referenced as a shell variable (never interpolated directly), per this
-# repo's injection-hardening convention (see nightly-matrix.yml).
+# and referenced as a quoted shell variable, never interpolated directly.
 
 name: live-contract-check
 
@@ -42,6 +37,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: live-contract-check
+  cancel-in-progress: false
+
 defaults:
   run:
     working-directory: python
@@ -50,24 +49,39 @@ jobs:
   live-contract-check:
     runs-on: ubuntu-latest
     environment: live-sandbox
+    timeout-minutes: 20
     steps:
+      - name: Require the live-sandbox credentials
+        working-directory: .
+        env:
+          PROXY_URL: ${{ secrets.DONKEY_LLM_PROXY_URL }}
+          CLIENT_ID: ${{ secrets.DONKEY_LLM_PROXY_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.DONKEY_LLM_PROXY_CLIENT_SECRET }}
+        run: |
+          missing=""
+          [ -n "$PROXY_URL" ] || missing="$missing DONKEY_LLM_PROXY_URL"
+          [ -n "$CLIENT_ID" ] || missing="$missing DONKEY_LLM_PROXY_CLIENT_ID"
+          [ -n "$CLIENT_SECRET" ] || missing="$missing DONKEY_LLM_PROXY_CLIENT_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::live-sandbox environment is missing secret(s):$missing"
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      # -c locks the resolve (ADR 0007 rule 3, #948); reuse ci.yml's `test`
-      # job combo verbatim (`llm,cli,local,otel` on 3.12 → the "test" lock) so
-      # this run doesn't need its own compile_constraints.py combo.
+      # -c locks the resolve (ADR 0007 rule 3, #948). Same extras, dev group
+      # and Python as ci.yml's `test` job, so it reuses that job's lock file.
       - name: Install
         run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/test-py3.12.txt
 
-      # The manifest format is tests/sandbox/proxies.toml.example (#400): base
-      # URL + model are not secret, only the two env-var *names* holding the
-      # client_id/client_secret are declared here, and conftest.py resolves
-      # them from the environment at test time. DONKEY_LLM_PROXY_URL carries
-      # NO trailing /v1 (docs/verified-apis.md §2), matching base_url verbatim.
-      - name: Materialize tests/sandbox/proxies.toml for openai-model-routing
+      # Manifest format: tests/sandbox/proxies.toml.example (#400). It holds the
+      # base URL, the model and the two env-var NAMES; conftest.py reads the
+      # creds from those env vars at test time. DONKEY_LLM_PROXY_URL is the
+      # proxy base with no `/v1` (docs/verified-apis.md §2).
+      - name: Write tests/sandbox/proxies.toml for openai-model-routing
         env:
           PROXY_URL: ${{ secrets.DONKEY_LLM_PROXY_URL }}
         run: |
@@ -81,28 +95,30 @@ jobs:
           EOF
 
       - name: Run the sandbox suite against the live proxy
-        id: sandbox
         env:
           DONKEY_SANDBOX_TESTS: "1"
           DONKEY_LLM_PROXY_CLIENT_ID: ${{ secrets.DONKEY_LLM_PROXY_CLIENT_ID }}
           DONKEY_LLM_PROXY_CLIENT_SECRET: ${{ secrets.DONKEY_LLM_PROXY_CLIENT_SECRET }}
-        run: pytest -q -m sandbox
+        run: pytest -q -m sandbox -rs
 
-      # Only reached on a failing `pytest` above (steps default to running on
-      # success; `if: failure()` flips that for this one step).
       - name: Open or update the live-contract-drift tracking issue
-        if: failure() && steps.sandbox.outcome == 'failure'
+        if: failure()
+        working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          EXISTING=$(gh issue list --repo "$REPO" --label live-contract-drift --state open --json number --jq '.[0].number')
-          BODY="The weekly live-contract-check run against the provisioned openai-model-routing proxy failed: ${RUN_URL}"
-          if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY"
+          # `gh issue create --label` fails when the label does not exist.
+          gh label create live-contract-drift --repo "$REPO" --force \
+            --color B60205 --description "Weekly live-contract check failed (#753)"
+          existing=$(gh issue list --repo "$REPO" --label live-contract-drift --state open \
+            --json number --jq '.[0].number // empty')
+          body="The weekly live-contract-check run against the openai-model-routing proxy failed: ${RUN_URL}"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
           else
-            gh issue create --repo "$REPO" --title "Live contract drift detected (openai-model-routing)" \
-              --label live-contract-drift --body "$BODY"
+            gh issue create --repo "$REPO" --title "Weekly live-contract check failing (openai-model-routing)" \
+              --label live-contract-drift --body "$body"
           fi

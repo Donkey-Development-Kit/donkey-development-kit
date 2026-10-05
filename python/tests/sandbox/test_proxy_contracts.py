@@ -40,47 +40,89 @@ _SUCCESS_FIXTURE = (
 )
 
 
-def _shape(value: object) -> object:
-    """Reduce a parsed JSON value to its *shape*: the set of keys present at
-    every nesting level, discarding scalar values, list length, and item
-    order (#753). Two responses with the same shape may differ in every
-    value — this is a structural check only, so it does not pin values the
-    provider is free to change (model snapshot id, token counts, timestamps)."""
-    if isinstance(value, dict):
-        return {key: _shape(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_shape(value[0])] if value else []
-    return None
+def _items_by_type(items: list[object]) -> dict[object, object]:
+    """Index array items by their ``type`` discriminator, the first item of each
+    type winning. Items that are not objects with a ``type`` share key ``None``."""
+    by_type: dict[object, object] = {}
+    for item in items:
+        by_type.setdefault(item.get("type") if isinstance(item, dict) else None, item)
+    return by_type
 
 
 def _kind(value: object) -> str:
     if isinstance(value, dict):
-        return "dict"
+        return "object"
     if isinstance(value, list):
-        return "list"
+        return "array"
     return "scalar"
 
 
-def _diff_shapes(expected: object, actual: object, path: str = "$") -> list[str]:
-    """Collect human-readable diffs between two shapes produced by :func:`_shape`."""
-    diffs: list[str] = []
-    expected_kind, actual_kind = _kind(expected), _kind(actual)
-    if expected_kind != actual_kind:
-        diffs.append(f"{path}: shape changed from {expected_kind} to {actual_kind}")
-        return diffs
+def _diff_shapes(expected: object, actual: object, path: str = "$") -> tuple[list[str], list[str]]:
+    """Compare the *shape* of two parsed JSON values (#753): which keys exist at
+    each level, and whether each value is an object, an array or a scalar. The
+    values themselves are ignored, so token counts, ids and timestamps never
+    matter.
+
+    Returns ``(breaking, added)``. ``breaking`` lists keys the live body lost
+    and values whose kind changed; ``added`` lists keys only the live body has.
+    ``null`` on either side matches any kind, because a nullable field is null
+    on one call and set on another. Array items are paired by their ``type``
+    discriminator, so a Responses ``output`` array that starts with a
+    ``reasoning`` item (any reasoning model) is still matched against the
+    fixture's ``message`` item. A ``type`` on only one side is not compared.
+    """
+    if expected is None or actual is None:
+        return [], []
+    if _kind(expected) != _kind(actual):
+        return [f"{path}: was {_kind(expected)}, live is {_kind(actual)}"], []
+    breaking: list[str] = []
+    added: list[str] = []
+    pairs: list[tuple[str, object, object]] = []
     if isinstance(expected, dict) and isinstance(actual, dict):
-        missing = sorted(set(expected) - set(actual))
-        added = sorted(set(actual) - set(expected))
-        if missing:
-            diffs.append(f"{path}: live response is missing key(s) {missing}")
-        if added:
-            diffs.append(f"{path}: live response has NEW key(s) {added}")
-        for key in sorted(set(expected) & set(actual)):
-            diffs.extend(_diff_shapes(expected[key], actual[key], f"{path}.{key}"))
+        breaking += [
+            f"{path}.{key}: missing from the live body" for key in expected if key not in actual
+        ]
+        added += [f"{path}.{key}" for key in actual if key not in expected]
+        pairs = [(f"{path}.{key}", expected[key], actual[key]) for key in expected if key in actual]
     elif isinstance(expected, list) and isinstance(actual, list):
-        if expected and actual:
-            diffs.extend(_diff_shapes(expected[0], actual[0], f"{path}[0]"))
-    return diffs
+        live = _items_by_type(actual)
+        pairs = [
+            (f"{path}[type={key}]", item, live[key])
+            for key, item in _items_by_type(expected).items()
+            if key in live
+        ]
+    for sub_path, sub_expected, sub_actual in pairs:
+        sub_breaking, sub_added = _diff_shapes(sub_expected, sub_actual, sub_path)
+        breaking += sub_breaking
+        added += sub_added
+    return breaking, added
+
+
+def test_shape_diff_reports_breaking_and_added_keys() -> None:
+    """Offline self-check of :func:`_diff_shapes`, so the live drift guard below
+    cannot pass vacuously. Needs no proxy: it runs whenever the sandbox suite
+    does, including in the weekly live-contract-check workflow."""
+    fixture = json.loads(_SUCCESS_FIXTURE.read_text())
+    assert _diff_shapes(fixture, fixture) == ([], [])
+
+    live = json.loads(_SUCCESS_FIXTURE.read_text())
+    del live["usage"]["output_tokens_details"]
+    live["status"] = {"nested": True}
+    live["brand_new"] = 1
+    live["error"] = {"message": "set on this call"}  # null in the fixture, so nullable
+    live["output"].insert(0, {"id": "rs_1", "type": "reasoning", "summary": []})
+    assert _diff_shapes(fixture, live) == (
+        [
+            "$.status: was scalar, live is object",
+            "$.usage.output_tokens_details: missing from the live body",
+        ],
+        ["$.brand_new"],
+    )
+
+    del live["output"][1]["content"]
+    assert _diff_shapes(fixture, live)[0][1] == (
+        "$.output[type=message].content: missing from the live body"
+    )
 
 
 def test_run_scope_attribution_is_warning_free(
@@ -189,11 +231,13 @@ def test_openai_routing_response_shape_matches_fixture(
     """Contract-drift guard (#753): nothing previously caught the gateway's
     response shape drifting from the captured fixture the simulator and the
     classification tests rely on (``tests/unit/test_llm_proxy_contract.py``).
-    This is a shape-only comparison — the set of keys present at every nesting
-    level, not their values — against ``responses.success.body.json``
-    (docs/verified-apis.md §2), so it stays green across token counts, model
-    snapshot ids, and timestamps changing on every call, and only fails when a
-    key the SDK depends on is added or removed."""
+    It compares only the shape (see :func:`_diff_shapes`) against
+    ``responses.success.body.json`` (docs/verified-apis.md §2), so token
+    counts, model snapshot ids and timestamps changing on every call never
+    matter. It FAILS when a fixture key is missing from the live body or a
+    value changed kind (object / array / scalar), and only WARNS on keys the
+    live body adds, because providers add fields routinely and nothing the SDK
+    reads can break on one."""
     donkey = open_proxy("openai-model-routing")
     client = donkey.llm.client(sync=True)
 
@@ -204,8 +248,13 @@ def test_openai_routing_response_shape_matches_fixture(
     live_body = raw.http_response.json()
     fixture_body = json.loads(_SUCCESS_FIXTURE.read_text())
 
-    diffs = _diff_shapes(_shape(fixture_body), _shape(live_body))
-    assert not diffs, (
+    breaking, added = _diff_shapes(fixture_body, live_body)
+    if added:
+        warnings.warn(
+            f"live gateway response has key(s) not in {_SUCCESS_FIXTURE.name}: " + ", ".join(added),
+            stacklevel=1,
+        )
+    assert not breaking, (
         "live gateway response shape drifted from the captured fixture "
-        f"({_SUCCESS_FIXTURE.name}, docs/verified-apis.md §2):\n" + "\n".join(diffs)
+        f"({_SUCCESS_FIXTURE.name}, docs/verified-apis.md §2):\n" + "\n".join(breaking)
     )
