@@ -174,6 +174,18 @@ lint-imports       # the layered, framework-free-core contract
 vulture            # dead code in src/; allowed names in vulture_whitelist.py
 ```
 
+The `test` job's Python 3.11 leg also measures branch coverage and fails below
+the floor (`fail_under` in `[tool.coverage.report]`, `python/pyproject.toml`,
+#751). It posts the report to the job summary. To reproduce it locally, run:
+
+```bash
+coverage run -m pytest -q && coverage run -m pytest -q -m local_gateway
+coverage combine && coverage report   # exits non-zero below the floor
+```
+
+The floor only goes up. Raise it in the PR whose tests lift the total past the
+next integer, and never lower it to make a PR pass.
+
 The secret scan runs outside `python/`, in its own `secret-scan` CI job (gitleaks
 over the full history, configured in `.gitleaks.toml`). Install the matching
 commit hook once per clone so a secret is caught before it is committed:

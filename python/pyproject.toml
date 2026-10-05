@@ -280,9 +280,9 @@ relative_files = true
 
 [tool.coverage.report]
 # Today's measured baseline (python -m coverage report, #751), rounded down to
-# an integer so a one-line fluctuation doesn't flap CI. Raise this as weak
-# modules (governance, llm/client, core/cache — see the issue) gain tests;
-# never lower it to make a PR pass.
+# an integer so a one-line fluctuation doesn't flap CI. Raise it when tests
+# lift the measured total past the next integer; never lower it to make a PR
+# pass.
 fail_under = 94
 show_missing = true
 skip_covered = false

@@ -32,15 +32,16 @@ def _client() -> LLMClient:
     return LLMClient(cfg, build_http_client(cfg, None))
 
 
-def test_heuristic_capabilities_known_model_is_not_heuristic_flagged() -> None:
-    # The bundled table marks every entry non-default, but `is_heuristic`
-    # keeps its dataclass default of True — the field only ever flips to
-    # False once a value is sourced from the platform (BG §1.1), which no
-    # bundled row does today.
+def test_heuristic_capabilities_known_model_reads_the_bundled_row() -> None:
+    # A bundled row overrides the conservative defaults, but it is still a
+    # heuristic: `is_heuristic` only means False once a value is sourced from
+    # the platform (BG §1.1), which no bundled row is today.
     caps = heuristic_capabilities("gpt-4o")
+    assert caps != ModelCapabilities()
     assert caps.function_calling is True
     assert caps.vision is True
     assert caps.json_output is True
+    assert caps.is_heuristic is True
 
 
 def test_heuristic_capabilities_unknown_model_falls_back_to_conservative_default() -> None:

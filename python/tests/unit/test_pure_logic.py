@@ -3,8 +3,6 @@ collision resolution, description quality, digest, governance evaluation."""
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from donkey_kit.core.cache import TTLCache
@@ -42,7 +40,6 @@ def test_ttl_cache_honours_the_no_cache_escape_hatch(
 
 def test_ttl_cache_no_cache_flag_off_is_a_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DONKEY_NO_CACHE", raising=False)
-    assert os.environ.get("DONKEY_NO_CACHE") is None
     cache: TTLCache[str] = TTLCache(ttl_s=10, clock=lambda: 0.0)
     cache.set("k", "v")
     assert cache.get("k") == "v"
