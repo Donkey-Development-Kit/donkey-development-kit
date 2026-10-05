@@ -225,6 +225,10 @@ jobs:
       # Bind the matrix value to an env var so it is never interpolated into a
       # run: body directly (injection hardening).
       ANTHROPIC_SPEC: ${{ matrix.anthropic }}
+      # #748: this is the only job that installs anthropic for real, so an
+      # unexpected `pytest.importorskip("anthropic")` elsewhere must fail here,
+      # not silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: anthropic
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -257,6 +261,10 @@ jobs:
       # Bind the matrix value to an env var so it is never interpolated into a
       # run: body directly (injection hardening).
       ADK_SPEC: ${{ matrix.adk }}
+      # #748: this is the only job that installs google-adk for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: adk
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -276,6 +284,11 @@ jobs:
     # Agent, which no other job installs. Run its tests with the extra present,
     # with the shared-client correlation and last_call tests (#740).
     runs-on: ubuntu-latest
+    env:
+      # #748: this is the only job that installs agent_framework for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: agent_framework
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -295,6 +308,11 @@ jobs:
     # through typed_refusals(). No other job installs it, so run those tests here,
     # with the typed-refusal bridge case for a FunctionAgent run (#955).
     runs-on: ubuntu-latest
+    env:
+      # #748: this is the only job that installs llamaindex for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: llamaindex
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -314,6 +332,11 @@ jobs:
     # skip. Run them with both extras present, with the typed-refusal bridge case
     # for an Agents SDK Runner run (#955).
     runs-on: ubuntu-latest
+    env:
+      # #748: this job installs both frameworks for real, so an unexpected
+      # `pytest.importorskip` on either must fail here, not silently skip (see
+      # tests/conftest.py; a comma-separated list is how one job owns two).
+      DONKEY_CONTRACT_EXTRA: "openai-agents,strands"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -369,6 +392,19 @@ jobs:
           tests/conformance/test_adapter_contract.py
           tests/unit/test_framework_retries.py
           tests/unit/test_missing_framework_error.py
+      # #748: LangGraph is the one deep, conformance-gated adapter (BG §1.8), so
+      # its refusal-mapping and run-correlation tests belong to a PR-gating job,
+      # not just the nightly matrix. This leg is the only one with langgraph
+      # installed, so it is the only place these files can run instead of skip.
+      - name: LangGraph refusal-mapping and correlation tests (BG §1.8, #748)
+        if: matrix.extra == 'langgraph'
+        run: >-
+          python -m pytest -q
+          tests/unit/test_langgraph_typed_refusals.py
+          tests/unit/test_langgraph_correlation.py
+          tests/conformance/test_langgraph_conformance.py
+          tests/unit/test_adapter_ergonomics.py
+          tests/unit/test_transport.py -k langgraph
 
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The

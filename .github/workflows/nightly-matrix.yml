@@ -6,10 +6,17 @@
 # signature, the verification harness turns red here *before* a user hits it.
 #
 # Scope (#197): the roster is "one deep, seven shallow" — only LangGraph is
-# conformance-tested, so it is the only framework in this matrix. The other seven
-# are supported at connection_kwargs() only; their governed-kwargs shape is
-# guarded by the blocking unit suite (tests/unit/test_adapter_ergonomics.py), and
-# their native-constructor signatures can be checked on demand with
+# conformance-tested, so it is the only framework in this nightly matrix (which
+# re-verifies §8 class/kwarg signatures against the newest upstream release).
+# The other seven are supported at connection_kwargs() only; their governed-kwargs
+# shape is guarded by the blocking unit suite (tests/unit/test_adapter_ergonomics.py).
+# All eight frameworks, including these seven, already get a REAL install and a
+# real import/build on every PR via ci.yml's adapter-contract/anthropic-stacks/
+# adk-stacks/agent-framework-middleware/llamaindex-transport/
+# agents-strands-last-call jobs (#748) — this nightly matrix is strictly about
+# the extra, upstream-signature-drift check that only the conformance-tested
+# adapter needs, not about which frameworks get a real install at all. Their
+# native-constructor signatures can also be checked on demand with
 # `python scripts/verify_frameworks.py` (FRAMEWORKS there stays the full roster).
 # A demoted framework rejoins this matrix when demand promotes it to deep support
 # (#223/#244).
@@ -102,8 +109,12 @@ jobs:
         # permanently-red jobs again (#140). To promote another framework to deep
         # support (#223/#244), add its key here AND flip conformance_tested=True in
         # the ADAPTERS registry. The other seven frameworks are supported at
-        # connection_kwargs() only and are covered by the blocking unit suite, not
-        # this matrix. `donkey.openai()` is a separate raw-client method (#277).
+        # connection_kwargs() only, guarded by the blocking unit suite, and already
+        # get a real install + real import/build on every PR via ci.yml (#748) —
+        # they are absent from this nightly matrix because it checks something they
+        # don't need (upstream §8 signature drift for the deep adapter), not because
+        # they lack real-install coverage. `donkey.openai()` is a separate raw-client
+        # method (#277).
         framework:
           - langgraph
     name: verify (${{ matrix.framework }})
