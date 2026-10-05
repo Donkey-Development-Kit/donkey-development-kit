@@ -40,6 +40,26 @@ _PROXY_VARS = (
 # otherwise receive real span exports, #732), DONKEY_* (this SDK's own config
 # env vars, §2.1) and MULESOFT_* (any ambient Anypoint/Mule tooling env).
 _ENV_PREFIXES = ("OTEL_", "DONKEY_", "MULESOFT_")
+# CI harness switches that share the DONKEY_ prefix but are not SDK config:
+# the SDK never reads them, and the test that does reads them on purpose.
+# ``DONKEY_CONTRACT_EXTRA`` is the ``adapter-contract`` CI leg's "this
+# framework must be installed, never skip" switch (#742,
+# tests/conformance/test_adapter_contract.py); clearing it would turn a broken
+# framework install back into a silent skip.
+_HARNESS_VARS = frozenset({"DONKEY_CONTRACT_EXTRA"})
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Exempt ``@pytest.mark.sandbox`` tests from pytest-socket's loopback-only
+    ``--allow-hosts`` (``addopts``, #747). Those tests call the real provisioned
+    proxies by design, so under the global restriction every one of them would
+    fail with ``SocketConnectBlockedError`` the moment a maintainer runs
+    ``pytest -m sandbox`` with ``DONKEY_SANDBOX_TESTS=1``. ``enable_socket`` is
+    pytest-socket's own per-test override and takes precedence over
+    ``--allow-hosts``."""
+    for item in items:
+        if item.get_closest_marker("sandbox") is not None:
+            item.add_marker(pytest.mark.enable_socket)
 
 
 @pytest.fixture(autouse=True)
@@ -60,18 +80,20 @@ def _hermetic_env(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatc
     which transport a test exercises, which collector a span export reaches, or
     which credentials a config resolve picks up. A test that needs one of these
     sets it itself (``monkeypatch.setenv``), which runs after this fixture.
+    CI harness switches in ``_HARNESS_VARS`` are kept.
 
     ``@pytest.mark.sandbox`` is the opt-in marker: those tests are off by
     default (``addopts``) and, when a maintainer explicitly runs
     ``pytest -m sandbox``, read real consumer credentials and proxy targets
     from the ambient environment (``tests/sandbox/conftest.py``) — clearing
-    them here would defeat the whole suite."""
+    them here would defeat the whole suite. The same marker also lifts the
+    loopback-only socket restriction (``pytest_collection_modifyitems``)."""
     if request.node.get_closest_marker("sandbox") is not None:
         return
     for name in _PROXY_VARS:
         monkeypatch.delenv(name, raising=False)
     for name in list(os.environ):
-        if name.startswith(_ENV_PREFIXES):
+        if name.startswith(_ENV_PREFIXES) and name not in _HARNESS_VARS:
             monkeypatch.delenv(name, raising=False)
 
 
