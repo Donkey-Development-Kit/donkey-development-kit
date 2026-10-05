@@ -113,7 +113,7 @@ _LITELLM_REFUSAL_EXEMPTION = (
     "refusal as its own exception around a response it rebuilt, which carries no "
     "sign that our transport sent it; the typed-refusal bridge cannot tell a gateway "
     "refusal from any other failure there, so it passes them through (#724). "
-    "adk.gemini() is handed our httpx client and is bridged."
+    "adk.gemini() is handed our httpx client and is bridged (conformance-tested, #955)."
 )
 _CREWAI_REFUSAL_EXEMPTION = (
     "CrewAI's native OpenAI provider owns the transport, so its errors come from a "
@@ -123,7 +123,8 @@ _CREWAI_REFUSAL_EXEMPTION = (
 
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # ADK's model() and CrewAI each raise a framework error the bridge cannot type;
-    # adk.gemini() is handed our httpx client and records no exemption (#691).
+    # adk.gemini() is handed our httpx client, records no exemption (#691) and is
+    # bridge-tested in test_typed_refusal_bridge.py (#955).
     "adk": {"typed_refusal_bridged": _LITELLM_REFUSAL_EXEMPTION},
     "crewai": {
         "correlation_id_propagated": _CREWAI_TRANSPORT_EXEMPTION,
