@@ -7,6 +7,7 @@ against a live endpoint except by a maintainer, by hand.
 
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import json
 from pathlib import Path
@@ -89,6 +90,71 @@ def test_capture_sends_exactly_the_requested_request() -> None:
     assert seen[0].method == "POST"
     assert seen[0].headers["client_id"] == "abc"
     assert seen[0].content == b'{"a": 1}'
+    # httpx would otherwise ask for gzip and decode it behind the capture's back.
+    assert seen[0].headers["accept-encoding"] == "identity"
+
+
+def test_capture_keeps_an_explicit_accept_encoding() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200)
+
+    with _client(httpx.MockTransport(handler)) as client:
+        capture_fixture.capture(
+            client, "GET", "https://example.invalid", {"accept-encoding": "br"}, None
+        )
+
+    assert seen[0].headers.get_list("accept-encoding") == ["br"]
+
+
+def test_write_capture_refuses_a_decoded_compressed_body(tmp_path: Path) -> None:
+    response = httpx.Response(
+        200,
+        headers={"content-type": "application/json", "content-encoding": "gzip"},
+        content=gzip.compress(b"{}"),
+        request=httpx.Request("GET", "https://example.invalid"),
+    )
+    assert response.content == b"{}"  # httpx decoded it; the wire bytes are gone
+
+    with pytest.raises(ValueError, match="content-encoding 'gzip'"):
+        capture_fixture.write_capture(response, tmp_path, "responses.success")
+    assert not any(tmp_path.iterdir())
+
+
+def test_render_headers_block_keeps_every_value_of_a_repeated_header() -> None:
+    response = httpx.Response(
+        200,
+        headers=[("set-cookie", "a=1"), ("set-cookie", "b=2")],
+        request=httpx.Request("GET", "https://example.invalid"),
+    )
+    lines = capture_fixture.render_headers_block(response).splitlines()
+    assert lines[1:3] == ["set-cookie: a=1", "set-cookie: b=2"]
+
+
+def test_out_dir_must_be_inside_a_fixture_root(tmp_path: Path) -> None:
+    assert capture_fixture.is_under_fixture_root(
+        capture_fixture.FIXTURE_ROOTS[0] / "anypoint" / "model_wallet"
+    )
+    assert not capture_fixture.is_under_fixture_root(tmp_path)
+
+
+def test_main_rejects_an_out_dir_that_would_go_unlocked(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        capture_fixture.main(
+            [
+                "--out-dir",
+                str(tmp_path),
+                "--name",
+                "x",
+                "--url",
+                "https://example.invalid",
+                "--provenance",
+                "p",
+            ]
+        )
+    assert not any(tmp_path.iterdir())
 
 
 def test_render_headers_block_matches_the_captured_shape() -> None:
@@ -197,6 +263,7 @@ def test_main_runs_end_to_end_against_a_mock_transport(
             return []
 
     monkeypatch.setattr(capture_fixture, "_load_scrub", lambda: _NoOpScrub())
+    monkeypatch.setattr(capture_fixture, "FIXTURE_ROOTS", (tmp_path,))
 
     out_dir = tmp_path / "model_wallet"
     exit_code = capture_fixture.main(

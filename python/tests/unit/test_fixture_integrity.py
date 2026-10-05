@@ -127,23 +127,88 @@ def test_test_fixtures_match_the_committed_lock() -> None:
     )
 
 
-def test_test_lock_covers_exactly_the_test_fixture_files() -> None:
-    """The test-only lock has no stale rows and no gaps — a new file dropped
-    under ``tests/fixtures/`` cannot ship unlocked."""
-    expected_keys = {
-        path.relative_to(fixtures._CHECKOUT_TESTS_FIXTURES).as_posix()
-        for path in fixtures._test_fixture_files()
+def test_test_lock_covers_every_test_fixture_directory() -> None:
+    """The test-only lock is not vacuous: it pins the directories TEST-07 named,
+    so an empty walk (a moved tree, a broken glob) cannot pass the drift test
+    above by comparing two empty manifests."""
+    locked = fixtures.read_test_lock()
+    directories = {key.rsplit("/", 1)[0] for key in locked if "/" in key}
+    for expected in (
+        "a2d",
+        "anypoint/anthropic_inbound",
+        "anypoint/gemini_inbound",
+        "anypoint/model_wallet",
+        "anypoint/openai_gemini_stream",
+        "anypoint/semantic_cache",
+    ):
+        assert expected in directories, expected
+    assert "fixtures.lock" not in locked
+
+
+def _point_test_lock_at(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
+    monkeypatch.setattr(fixtures, "_CHECKOUT_TESTS_FIXTURES", root)
+    monkeypatch.setattr(fixtures, "TEST_LOCK_PATH", root / "fixtures.lock")
+
+
+def test_test_lock_catches_a_one_byte_edit_and_a_new_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Editing any fixture byte, or adding an unlocked file, makes the manifest
+    disagree with the lock until ``write_test_lock()`` (``--relock``) runs."""
+    _point_test_lock_at(monkeypatch, tmp_path)
+    (tmp_path / "dir").mkdir()
+    body = tmp_path / "dir" / "responses.success.body.json"
+    body.write_bytes(b'{"ok": true}')
+    fixtures.write_test_lock()
+    assert fixtures.compute_test_manifest() == fixtures.read_test_lock()
+    assert set(fixtures.read_test_lock()) == {"dir/responses.success.body.json"}
+
+    body.write_bytes(b'{"ok": True}')
+    assert fixtures.compute_test_manifest() != fixtures.read_test_lock()
+
+    fixtures.write_test_lock()
+    (tmp_path / "dir" / "reject.new.headers.txt").write_text("HTTP/1.1 403 Forbidden\n")
+    assert set(fixtures.compute_test_manifest()) - set(fixtures.read_test_lock()) == {
+        "dir/reject.new.headers.txt"
     }
-    assert set(fixtures.read_test_lock()) == expected_keys
+
+
+def test_test_lock_ignores_git_ignored_litter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``.DS_Store`` or ``__pycache__`` (both in .gitignore) is never locked, so
+    a relock on a macOS checkout cannot commit a row a clean CI checkout lacks."""
+    _point_test_lock_at(monkeypatch, tmp_path)
+    (tmp_path / "a.json").write_text("{}")
+    (tmp_path / ".DS_Store").write_bytes(b"\0")
+    (tmp_path / "__pycache__").mkdir()
+    (tmp_path / "__pycache__" / "x.pyc").write_bytes(b"\0")
+    assert set(fixtures.compute_test_manifest()) == {"a.json"}
+
+
+def test_relock_cli_rewrites_both_locks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--relock`` is the one command that regenerates both manifests."""
+    _point_test_lock_at(monkeypatch, tmp_path)
+    (tmp_path / "a.json").write_text("{}")
+    shipped: list[bool] = []
+    monkeypatch.setattr(fixtures, "write_lock", lambda: shipped.append(True))
+    monkeypatch.setattr(fixtures, "compute_manifest", dict)
+    monkeypatch.setattr("sys.argv", ["fixtures", "--relock"])
+
+    fixtures._main()
+
+    assert shipped == [True]
+    assert set(fixtures.read_test_lock()) == {"a.json"}
+    assert str(tmp_path / "fixtures.lock") in capsys.readouterr().out
 
 
 def test_test_lock_is_not_shipped_package_data() -> None:
     """The test-only lock lives inside ``tests/``, never beside the shipped
-    fixtures — the two lock files, and the file sets they cover, are disjoint."""
+    fixtures, so the wheel (which takes nothing from ``tests/``) cannot carry it."""
     package_dir = Path(fixtures.__file__).resolve().parent
     assert fixtures.TEST_LOCK_PATH != fixtures.LOCK_PATH
-    assert "tests" in fixtures.TEST_LOCK_PATH.parts
+    tests_dir = Path(__file__).resolve().parents[1]
+    assert fixtures.TEST_LOCK_PATH == tests_dir / "fixtures" / "fixtures.lock"
     assert not fixtures.TEST_LOCK_PATH.is_relative_to(package_dir)
-    locked_keys = set(fixtures.read_lock())
-    test_locked_keys = set(fixtures.read_test_lock())
-    assert locked_keys.isdisjoint(test_locked_keys)

@@ -440,9 +440,15 @@ This is a **by-hand developer tool, not a CI step**: it makes one real request
 to whatever `--url` names, so only a maintainer capturing a real sandbox
 response runs it, never an automated agent against a live endpoint. Its own
 tests (`tests/unit/test_capture_fixture.py`) exercise every code path offline
-through `httpx.MockTransport`. After it runs, review the diff and confirm
-`scrub_fixtures.py --check` is still clean before committing the fixture pair,
-the `README.md` update, and both regenerated locks together.
+through `httpx.MockTransport`. `--out-dir` must sit under `tests/fixtures/` or
+`src/donkey_kit/simulator/_fixtures/`, the two trees it scrubs and relocks,
+and the script refuses a directory outside them before it sends anything. It
+requests `Accept-Encoding: identity` so the body it writes is the bytes on the
+wire, and it refuses to write a compressed response. After it runs, review the
+diff and confirm `scrub_fixtures.py --check` is still clean before committing
+the fixture pair, the `README.md` update, and both regenerated locks together.
+The script does not touch `docs/verified-apis.md`. If the capture verifies a
+shape, flip its ledger row by hand.
 
 Record **how to reproduce the shape** in the fixture index
 (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`): one line giving the trigger

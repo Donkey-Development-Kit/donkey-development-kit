@@ -408,8 +408,8 @@ def write_lock() -> None:
 
 # --- test-only fixture integrity lock (#752) ----------------------------------
 #
-# The lock above closes the honesty gap only for the 42-odd files the simulator
-# serves (``SHAPES``, packaged under src/donkey_kit/simulator/_fixtures/). The
+# The lock above closes the honesty gap only for the files the simulator serves
+# (``SHAPES``, packaged under src/donkey_kit/simulator/_fixtures/). The
 # much larger ``tests/fixtures/`` tree (model_wallet/, gemini_inbound/,
 # semantic_cache/, anthropic_inbound/, a2d/, openai_gemini_stream/, …) is test-only
 # captures: real traffic the error-classification and transport tests are pinned
@@ -431,12 +431,16 @@ def write_lock() -> None:
 # "I re-captured this, I meant it" step — it rewrites both locks that exist in
 # the checkout it is run from).
 TEST_LOCK_PATH = _CHECKOUT_TESTS_FIXTURES / "fixtures.lock"
+# Local litter git already ignores (.gitignore) and no test reads. Locking it
+# would make a macOS relock commit a ``.DS_Store`` row that every clean CI
+# checkout then reports as a removed fixture.
+_UNLOCKED_NAMES = frozenset({".DS_Store", "__pycache__"})
 
 
 def _test_fixture_files() -> list[Path]:
     """Every file under ``tests/fixtures/`` (recursively), sorted, excluding the
-    lock itself. Dev-only: raises if not run from a source checkout — a wheel
-    install has no ``tests/`` tree to walk."""
+    lock itself and git-ignored OS/bytecode litter. Dev-only: raises if not run
+    from a source checkout — a wheel install has no ``tests/`` tree to walk."""
     if not _CHECKOUT_TESTS_FIXTURES.is_dir():
         raise FileNotFoundError(
             f"{_CHECKOUT_TESTS_FIXTURES} does not exist; the test-fixture lock "
@@ -445,7 +449,9 @@ def _test_fixture_files() -> list[Path]:
     return sorted(
         path
         for path in _CHECKOUT_TESTS_FIXTURES.rglob("*")
-        if path.is_file() and path != TEST_LOCK_PATH
+        if path.is_file()
+        and path != TEST_LOCK_PATH
+        and _UNLOCKED_NAMES.isdisjoint(path.relative_to(_CHECKOUT_TESTS_FIXTURES).parts)
     )
 
 

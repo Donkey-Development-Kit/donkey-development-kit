@@ -40,6 +40,7 @@ import argparse
 import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import httpx
 
@@ -47,12 +48,18 @@ from donkey_kit.simulator import fixtures
 
 _PYTHON_ROOT = Path(__file__).resolve().parents[1]
 
+#: The two trees a capture may land in; both are scrubbed and relocked below.
+FIXTURE_ROOTS: tuple[Path, ...] = (
+    _PYTHON_ROOT / "tests" / "fixtures",
+    _PYTHON_ROOT / "src" / "donkey_kit" / "simulator" / "_fixtures",
+)
+
 # scrub_fixtures.py is a sibling script, not an installed module (no scripts/
 # package); load it the same way tests/unit/test_scrub_fixtures.py does.
 _SCRUB_SCRIPT = Path(__file__).resolve().parent / "scrub_fixtures.py"
 
 
-def _load_scrub() -> object:
+def _load_scrub() -> ModuleType:
     spec = importlib.util.spec_from_file_location("ddk_scrub_fixtures", _SCRUB_SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -98,16 +105,24 @@ def capture(
 ) -> httpx.Response:
     """Send the one request this capture records. No retry, no follow-redirects
     override: a fixture captures exactly what the gateway sent back for this
-    exact request."""
+    exact request.
+
+    httpx asks for gzip/deflate by default and transparently decodes the body,
+    which would pair a decoded body with a ``content-encoding: gzip`` header
+    block. Unless the caller sets ``Accept-Encoding`` explicitly, ask for
+    ``identity`` so the written body is the bytes the gateway sent."""
+    if not any(key.lower() == "accept-encoding" for key in headers):
+        headers = {**headers, "Accept-Encoding": "identity"}
     return client.request(method, url, headers=headers, content=data)
 
 
 def render_headers_block(response: httpx.Response) -> str:
     """The ``*.headers.txt`` text for ``response``, in the existing fixtures'
     format: an ``HTTP/1.1 <code> <reason>`` status line, one ``Name: value`` per
-    header, then a trailing blank line."""
+    header (a repeated header keeps one line per value), then a trailing blank
+    line."""
     lines = [f"HTTP/1.1 {response.status_code} {response.reason_phrase}".rstrip()]
-    lines.extend(f"{name}: {value}" for name, value in response.headers.items())
+    lines.extend(f"{name}: {value}" for name, value in response.headers.multi_items())
     return "\n".join(lines) + "\n\n"
 
 
@@ -115,7 +130,17 @@ def write_capture(response: httpx.Response, out_dir: Path, name: str) -> tuple[P
     """Write ``<name>.headers.txt`` and, if the response has a body,
     ``<name>.body.<suffix>`` under ``out_dir``. Returns the paths written (the
     body path is ``None`` for an empty body, matching the ``.body.empty``-free
-    convention the existing fixtures use for header-only captures)."""
+    convention the existing fixtures use for header-only captures).
+
+    Raises ``ValueError`` (before writing anything) for a compressed response:
+    httpx has already decoded its body, so the pair would not be a capture."""
+    encoding = response.headers.get("content-encoding", "identity").strip().lower()
+    if encoding != "identity":
+        raise ValueError(
+            f"response is content-encoding {encoding!r}; httpx decoded the body, so "
+            "the fixture pair would not match the wire. Re-run without an "
+            "Accept-Encoding header (the script then requests identity)."
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
     headers_path = out_dir / f"{name}.headers.txt"
     headers_path.write_text(render_headers_block(response), encoding="utf-8")
@@ -145,16 +170,18 @@ def append_provenance(out_dir: Path, name: str, provenance: str) -> Path:
     return readme_path
 
 
-def relock(scrub_module: object) -> None:
+def is_under_fixture_root(out_dir: Path) -> bool:
+    """Whether ``out_dir`` is inside one of :data:`FIXTURE_ROOTS`, the only
+    places a capture is scrubbed and relocked."""
+    resolved = out_dir.resolve()
+    return any(resolved.is_relative_to(root.resolve()) for root in FIXTURE_ROOTS)
+
+
+def relock(scrub_module: ModuleType) -> None:
     """Scrub the two fixture trees, then regenerate both integrity locks
     (#752) — the same two steps CONTRIBUTING.md's "capture, scrub, relock"
     procedure names, run as one step at the end of a capture."""
-    scrubbed = scrub_module.scrub(  # type: ignore[attr-defined]
-        [
-            _PYTHON_ROOT / "tests" / "fixtures",
-            _PYTHON_ROOT / "src" / "donkey_kit" / "simulator" / "_fixtures",
-        ]
-    )
+    scrubbed = scrub_module.scrub(list(FIXTURE_ROOTS))
     for path in scrubbed:
         print(f"scrubbed {path}")
 
@@ -198,12 +225,22 @@ def main(argv: list[str]) -> int:
     except ValueError as exc:
         parser.error(str(exc))
         return 2  # pragma: no cover - argparse.error() already exits
+    if not is_under_fixture_root(args.out_dir):
+        parser.error(
+            f"--out-dir {args.out_dir} is outside tests/fixtures/ and "
+            "src/donkey_kit/simulator/_fixtures/, so the capture would be neither "
+            "scrubbed nor locked"
+        )
 
     data = args.data.encode("utf-8") if args.data is not None else None
     with httpx.Client(timeout=args.timeout) as client:
         response = capture(client, args.method, args.url, headers, data)
 
-    headers_path, body_path = write_capture(response, args.out_dir, args.name)
+    try:
+        headers_path, body_path = write_capture(response, args.out_dir, args.name)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     print(f"wrote {headers_path}")
     if body_path is not None:
         print(f"wrote {body_path}")
