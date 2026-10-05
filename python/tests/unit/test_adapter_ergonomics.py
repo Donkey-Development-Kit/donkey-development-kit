@@ -709,15 +709,20 @@ def test_adk_last_call_status_does_not_depend_on_factory_order(
     # Both ADK factories send through the shared client (#691, #740), so a cold
     # read is UNOBSERVED whichever factory ran, in any order (#741).
     from donkey_kit import Donkey
+    from donkey_kit.core import lastcall
     from donkey_kit.core.lastcall import LastCallStatus
 
     _install_gemini_stub(monkeypatch)
     _install_native_stub(monkeypatch, "google.adk.models.lite_llm", "LiteLlm")
     monkeypatch.setattr("donkey_kit.donkey._missing_module", lambda _probe: None)
-    with Donkey(_cfg()) as donkey:
-        for factory in factories:
-            getattr(donkey.adk, factory)("gemini-2.5-flash")
-        assert donkey.last_call.status is LastCallStatus[status]
+    token = lastcall._last_call.set(None)
+    try:
+        with Donkey(_cfg()) as donkey:
+            for factory in factories:
+                getattr(donkey.adk, factory)("gemini-2.5-flash")
+            assert donkey.last_call.status is LastCallStatus[status]
+    finally:
+        lastcall._last_call.reset(token)
 
 
 @pytest.mark.parametrize(
