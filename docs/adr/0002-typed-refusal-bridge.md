@@ -1,6 +1,7 @@
 # ADR 0002: One framework-agnostic typed-refusal bridge, in core
 
 - **Status:** Accepted
+- **Amended by:** #950 (2026-10-05), exception groups.
 - **Date:** 2026-10-03
 - **Issue:** #724 (part of #707). Recorded under the ADR process from #731.
 
@@ -98,6 +99,52 @@ by hand, and only one wrapper exists:
 - Declarative refusal handlers (#208) can attach to the bridge rather than to a
   transport hook.
 - Follow-ups outside #724: unwrapping an `ExceptionGroup` (a refusal raised
-  inside a task group reaches the bridge wrapped) is #950; Strands retries a
+  inside a task group reaches the bridge wrapped) is #950, decided in the
+  amendment below; Strands retries a
   429 before the bridge sees it (#951); bridge conformance for openai-agents,
   LlamaIndex and the ADK gemini path is #955.
+
+## Amendment (2026-10-05, #950)
+
+A refusal raised inside an `asyncio.TaskGroup` (or an anyio task group)
+leaves the block wrapped in an `ExceptionGroup`, and the chain walk in
+decision 1 never looked inside one. The bridge now does, by this rule:
+
+1. **Each leaf is translated on its own.** The group is flattened depth first,
+   and every leaf that is an `Exception` goes through the same chain walk and
+   adapter translators as a lone exception. A `KeyboardInterrupt`,
+   `SystemExit` or cancellation leaf is never translated, matching the
+   non-group rule.
+2. **A uniform group collapses.** When every leaf translates to the same
+   `DonkeyError` class, the bridge raises that typed error in the group's
+   place: the first leaf's, depth first, as the same object `translate()`
+   returns for that leaf. So `except PIIDetected` catches a refusal from a
+   task group exactly as it does without one. `translate(group)` returns that
+   typed error, and `None` for any other group. The other leaves, all of the
+   same refusal class, are dropped. A leaf that was already a `DonkeyError` also counts, so a
+   `PIIDetected` raised directly in a task comes out typed rather than grouped.
+3. **A mixed group keeps its shape.** When the leaves are of different
+   classes, or any leaf is not a refusal, the bridge raises a rebuilt group:
+   the same nesting and messages, built with `derive()` like
+   `BaseExceptionGroup.split()`, with each translatable leaf replaced by its
+   typed error. `except* PIIDetected` then matches. A leaf the bridge cannot
+   type, and a subgroup with nothing to replace, is kept as the same object. A
+   `BaseExceptionGroup` stays a `BaseExceptionGroup`.
+4. **A group with nothing to translate is not touched.** It propagates as the
+   same object, as a non-refusal does under decision 2.
+5. **Chaining follows decision 4.** A collapsed error is raised as a lone
+   typed error is, `from` its own `__cause__`, with the leaf's framework error
+   on `framework_error`. A rebuilt group keeps the original group's
+   `__cause__`, `__traceback__` and `__notes__` and is raised with its context
+   suppressed, so the original group, whose leaves' messages can repeat the
+   blocked values, is not rendered. Each typed leaf carries its own framework
+   error on `framework_error`.
+6. **Python 3.10 needs no new dependency.** `BaseExceptionGroup` is builtin
+   from 3.11. Below it, the bridge also recognises the `exceptiongroup`
+   backport's class, which anyio raises there, once something else has
+   imported it. Core never imports the backport, so the httpx-and-stdlib rule
+   (`§1.1`) holds.
+
+Alternatives considered: always keeping the group, even a uniform one, would
+make `except PIIDetected` miss every task-group refusal. Raising the first
+refusal of a mixed group would hide the user's own bugs in sibling tasks.

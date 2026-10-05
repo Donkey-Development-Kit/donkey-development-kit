@@ -305,6 +305,38 @@ as `openai` 3 and later does for `GatewayUnavailable`). To get the framework's
 errors instead, pass `typed_refusals=False` to `donkey.run()` or
 `@donkey.governed`.
 
+### Refusals inside a task group
+
+A refusal raised in an `asyncio.TaskGroup` (or an anyio task group) reaches the
+bridge wrapped in an `ExceptionGroup`. The bridge looks at each leaf:
+
+- **Every leaf is the same refusal class:** the typed error is raised in the
+  group's place, so a plain `except PIIDetected` still works. When several
+  tasks were refused alike, you get the first one.
+- **The leaves are mixed** (two refusal classes, or a refusal next to your own
+  bug): the group is kept, with the same shape, and each refusal leaf is
+  replaced by its typed error. Catch it with `except*`.
+- **No leaf is a refusal:** the group propagates unchanged.
+
+```python
+import asyncio
+
+from donkey_kit import PIIDetected
+
+try:
+    async with donkey.run(id=ticket.id):
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(summarise(ticket))
+            tg.create_task(classify_intent(ticket))
+except* PIIDetected as eg:
+    print("blocked:", [e.entities for e in eg.exceptions])
+```
+
+`except*` also catches the collapsed case, because it wraps a lone exception
+in a group before matching. On Python 3.10, which has no builtin
+`ExceptionGroup`, the bridge recognises the `exceptiongroup` backport's groups
+that anyio raises.
+
   The bridge only sees calls that went through the SDK's transport. ADK's
   `model()` (LiteLLM) and CrewAI own their transport, so their errors pass
   through untyped. These are the same
