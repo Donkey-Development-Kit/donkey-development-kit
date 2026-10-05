@@ -18,7 +18,7 @@ except ImportError as exc:
         '    pip install "donkey-kit[cli]"'
     ) from exc
 
-from ..core.config import LOCAL_TOML_NAME, TOML_NAME
+from ..core.config import TOML_NAME
 from ..core.errors import DonkeyError
 
 __all__ = ["app", "main"]
@@ -36,7 +36,7 @@ def _global(
         None,
         "--config",
         metavar="PATH",
-        help=f"Where `init` writes {TOML_NAME} (default: cwd). init only.",
+        help=f"Where `init` writes {TOML_NAME}, or the project config file `doctor` reads.",
     ),
     env: str | None = typer.Option(
         None,
@@ -51,20 +51,22 @@ def _global(
     """Global flags. Precede the subcommand: ``donkey --json init``,
     ``donkey --config ./cfg.toml init``.
 
-    ``--config`` and ``--env`` only apply to ``init``. Any other command
-    resolves config from env and the working directory's files, so it rejects
-    them rather than silently diagnosing a different configuration (#811).
-    The loader can read an explicit file (``DonkeyConfig.resolve(path=...)``,
-    #727); wiring ``--config`` to it for ``doctor`` is a separate CLI change."""
+    ``--env`` only applies to ``init``; ``--config`` also selects the project
+    file for ``doctor`` (#952). Other commands reject flags they cannot use
+    rather than silently running against a different configuration (#811)."""
     command = ctx.invoked_subcommand
     if command != "init":
-        given = [flag for flag, value in (("--config", config), ("--env", env)) if value]
+        given = [
+            flag
+            for flag, value in (("--config", config), ("--env", env))
+            if value and (flag != "--config" or command != "doctor")
+        ]
         if given:
+            allowed = "`donkey init` or `donkey doctor`" if "--config" in given else "`donkey init`"
             typer.secho(
-                f"{' and '.join(given)} only apply to `donkey init`; `donkey {command}` "
-                "resolves config from environment variables and the working directory's "
-                f"{TOML_NAME} / {LOCAL_TOML_NAME}. Set ANYPOINT_ENV or run from the "
-                "directory holding the config file instead.",
+                f"{' and '.join(given)} only apply to {allowed}; `donkey {command}` "
+                "does not use the supplied flag. Set ANYPOINT_ENV for `donkey doctor` "
+                "to select an Anypoint environment instead.",
                 fg="red",
                 err=True,
             )
