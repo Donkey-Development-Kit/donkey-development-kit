@@ -1,3 +1,12 @@
+# ADR 0007 rule 3 (docs/adr/0007-dependency-policy.md, #948): PR-gating jobs
+# below install with `-c python/constraints/py3.NN.txt` so a PR's result
+# doesn't change because of what an upstream package released that day — only
+# because of what the PR itself changed. The jobs whose purpose IS a fresh
+# resolve (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`, and
+# everything in nightly-matrix.yml) deliberately keep resolving fresh — they
+# are the canary ADR 0007 rule 4 relies on. Refresh the lock with
+# `python scripts/compile_constraints.py` (see CONTRIBUTING.md); keep
+# `scripts/compile_constraints.py`'s `_COMBOS` in sync with the jobs below.
 name: CI
 
 on:
@@ -24,7 +33,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: python -m pip install --upgrade pip && pip install -e . --group dev
+      # -c locks the resolve so an upstream release can't turn this job red on
+      # its own (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e . --group dev -c constraints/py3.11.txt
       - name: import donkey_kit with no framework extras installed
         run: python -c "import donkey_kit; from donkey_kit import Donkey; print(donkey_kit.__version__)"
       - name: a plain install carries no pydantic (#730)
@@ -90,7 +101,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli]" --group dev
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli]" --group dev -c constraints/py3.11.txt
       - name: mypy --strict (blocking, working instruction #8)
         run: mypy
       # #721: the examples are user-facing code, so they get the same --strict
@@ -150,6 +162,10 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+    env:
+      # Bind the matrix value to an env var so it is never interpolated into a
+      # run: body directly (injection hardening); also names this job's lock.
+      PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -162,7 +178,11 @@ jobs:
       # assertions (BG §1.6, #192) importorskip opentelemetry.sdk, so they only
       # actually execute in this job — the typecheck job stays [llm,cli] and
       # relies on the absence-only opentelemetry mypy override.
-      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev
+      # -c locks the resolve per Python version (ADR 0007 rule 3, #948);
+      # refresh every constraints/py3.*.txt with scripts/compile_constraints.py.
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev -c "constraints/py${PYTHON_VERSION}.txt"
       - run: pytest -q
       # The local gateway simulator's out-of-process boot (BG §1.4) is
       # local_gateway-marked and deselected from the default run above. It is
@@ -253,7 +273,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pip && pip install -e ".[llm,agent_framework]" --group dev
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,agent_framework]" --group dev -c constraints/py3.12.txt
       - run: >-
           pytest -q
           tests/unit/test_agent_framework_policy_middleware.py
@@ -270,7 +291,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pip && pip install -e ".[llm,llamaindex]" --group dev
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,llamaindex]" --group dev -c constraints/py3.12.txt
       - run: >-
           pytest -q
           tests/unit/test_transport_injection.py
@@ -286,7 +308,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pip && pip install -e ".[llm,openai-agents,strands]" --group dev
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,openai-agents,strands]" --group dev -c constraints/py3.12.txt
       - run: >-
           pytest -q
           tests/unit/test_adapter_async_last_call.py
@@ -323,7 +346,10 @@ jobs:
         with:
           python-version: "3.12"
       # Dev tooling is the `dev` dependency group (#943), not an extra.
-      - run: python -m pip install --upgrade pip && pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev -c constraints/py3.12.txt
       - run: >-
           python -m pytest -q
           tests/conformance/test_adapter_contract.py
@@ -343,7 +369,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/py3.11.txt
       - name: GenAI span overhead < 1ms/call (BG §1.6, #194)
         run: pytest -q -m benchmark -s
 
@@ -362,7 +389,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[llm,local,otel]"
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: pip install -e ".[llm,local,otel]" -c constraints/py3.11.txt
       - name: run the gateway-free quickstart (must exit 0, no credentials)
         run: timeout 120 python examples/quickstart/main.py
 
@@ -383,7 +411,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: python -m pip install --upgrade pip && pip install -e ".[llm,langgraph,local,otel]" --group dev
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,langgraph,local,otel]" --group dev -c constraints/py3.11.txt
       - name: mypy --strict over the LangGraph example, langgraph installed (#721)
         run: mypy -p examples.langgraph
       - name: run the gateway-free Scenario-A demo (must exit 0, no credentials)
