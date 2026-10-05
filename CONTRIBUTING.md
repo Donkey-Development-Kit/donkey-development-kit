@@ -190,6 +190,14 @@ If the diff touches an adapter or framework wiring, also run the signature check
 python scripts/verify_frameworks.py
 ```
 
+If the diff adds, removes, or re-pins a dependency (`pyproject.toml`,
+`dependency_allowlist.toml`), refresh the PR-CI lock in the same PR (ADR 0007
+rule 3 — [§3](#3-coding-conventions) above has the full rule):
+
+```bash
+python scripts/compile_constraints.py   # needs `uv` on PATH; writes constraints/<combo>-py3.NN.txt
+```
+
 If you added or touched an adapter, sanity-check that a bare `pip install -e .
 --group dev` + `python -c "import donkey_kit"` still succeeds — that's the
 `base-only` CI job catching a framework import that leaked into a lower layer.
@@ -553,8 +561,48 @@ build plan has the rationale behind each rule:
   documented in `docs/verified-apis.md §8.1` as dev constraints, not encoded as
   pins; the nightly matrix exists to surface breakage from newest releases early.
   Each floor is the lowest verified release (`docs/verified-apis.md §8.3`).
-  [ADR 0007](docs/adr/0007-dependency-policy.md) (proposed) records the
-  dependency policy, including the plan to run PR CI from a lock.
+  [ADR 0007](docs/adr/0007-dependency-policy.md) records the dependency
+  policy. This does not apply to `python/constraints/*.txt` (below): those
+  are exact, CI-only pins for reproducibility, not a `pyproject.toml` ceiling.
+- **PR CI resolves from a lock (ADR 0007 rule 3).** The PR-gating jobs in
+  `.github/workflows/ci.yml` install with
+  `-c python/constraints/<combo>-py3.NN.txt` — one file per job's own exact
+  extras/dev-group/Python combo, **never** a file merged or shared across
+  combos — so a PR goes red only because of what it changed, never because an
+  upstream package released that day. One file per combo, not per Python
+  version, is load-bearing: `openai-agents`, `google-adk`, `crewai`, and
+  `llama-index-llms-openai(-like)` each put a ceiling on a package
+  (`websockets`, `regex`, `openai`) that a *different* combo's own compile
+  resolves past, so a file merged across combos is unsatisfiable for whichever
+  combo's ceiling it crosses (this shipped broken once, see
+  `scripts/compile_constraints.py`'s module docstring — don't reintroduce
+  merging to "simplify" the file count). The jobs that are deliberately a
+  fresh resolve (`all-extra-resolves`, `adk-stacks`, `anthropic-stacks`, and
+  everything in `.github/workflows/nightly-matrix.yml`, the canary ADR 0007
+  rule 4 relies on) have no `-c` flag and must keep none. **Refresh the lock**
+  after changing a dependency, or on whatever cadence a maintainer judges
+  useful — there is no scheduled job that does this automatically (opening a
+  PR from a scheduled workflow needs write-access credentials this repo
+  doesn't grant one, so it stays a manual step):
+  ```bash
+  cd python
+  python scripts/compile_constraints.py   # needs `uv` on PATH (dev-time only; CI still uses plain pip)
+  git diff constraints/                   # review before committing
+  ```
+  `python scripts/compile_constraints.py --check` recompiles every combo and
+  exits 1 without writing if any file would change; because each combo is
+  compiled on its own, a clean `--check` run also proves every committed file
+  is still satisfiable for its own combo (an unsatisfiable combo makes `uv pip
+  compile` fail outright, not produce a diff). `tests/unit/test_constraints_lock.py`
+  is the cheap offline check that every combo's own direct dependencies are
+  pinned in its own file, every `Combo` has its file(s) committed, every
+  committed file maps back to a `Combo`, and every `adapter-contract` matrix
+  leg has a matching `Combo` — catches drift between `_COMBOS`,
+  `pyproject.toml`, and `ci.yml`, not a stale version (that needs the script's
+  live `--check`). If you add a new extra or framework to a PR-gating job, add
+  its combo to `_COMBOS` in `scripts/compile_constraints.py`, matching that
+  job's install line's extras and `--group dev` flag exactly, in the same PR
+  and refresh.
 - **Every direct dependency is a reviewed decision.** Adding a package to
   `dependencies`, an extra, or a dependency group means adding its entry to
   `python/dependency_allowlist.toml` (why it is needed, and the review date) in
