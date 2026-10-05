@@ -189,14 +189,30 @@ jobs:
       - run: >-
           python -m pip install --upgrade pip &&
           pip install -e ".[llm,cli,local,otel]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
+      # Coverage (#751) is measured on ONE leg only (3.11, matching the other
+      # single-leg jobs' convention) — branch coverage on three Python
+      # versions would just triple the runtime for the same number, since the
+      # source under measurement doesn't change per interpreter. `coverage
+      # run -m pytest` instead of a bare `pytest` is the only difference on
+      # that leg; `[run] patch = ["subprocess"]` (pyproject.toml) makes it
+      # also measure the conformance plugin/report tests' own
+      # `pytester.runpytest_subprocess()` children, which a plain `pytest -q`
+      # run never did.
       - run: pytest -q
+        if: matrix.python-version != '3.11'
+      - run: coverage run -m pytest -q
+        if: matrix.python-version == '3.11'
       # The local gateway simulator's out-of-process boot (BG §1.4) is
       # local_gateway-marked and deselected from the default run above. It is
       # pure-Python (no docker), so run it explicitly here where [local] is
       # installed — the one marker path that is now safe in CI (sandbox stays
       # off, needing real Anypoint creds).
       - name: local gateway simulator boot (BG §1.4)
+        if: matrix.python-version != '3.11'
         run: pytest -q -m local_gateway
+      - name: local gateway simulator boot (BG §1.4), coverage leg (#751)
+        if: matrix.python-version == '3.11'
+        run: coverage run -m pytest -q -m local_gateway
       # #801: the offline seams (simulate(), the conformance harness) must stay
       # offline behind a corporate proxy. Every proxy variable points at a dead
       # port, so a request that escapes the swapped-in fixture fails the run.
@@ -208,6 +224,16 @@ jobs:
         run: >-
           pytest -q tests/unit/test_simulate.py tests/unit/test_conformance.py
           tests/unit/test_conformance_plugin.py tests/unit/test_transport_proxy_mounts.py
+      # Combine the parallel data files `coverage run` + the subprocess patch
+      # produced, then post the report to the PR job summary and enforce the
+      # floor (`fail_under` in `[tool.coverage.report]`, pyproject.toml) in the
+      # same step — `coverage report` prints the table before it raises on a
+      # floor miss, so the summary still shows the numbers that failed the job.
+      - name: coverage report + floor (#751)
+        if: matrix.python-version == '3.11'
+        run: |
+          coverage combine
+          { echo "### Coverage (branch, python 3.11 leg)"; echo; coverage report --format=markdown; } >> "$GITHUB_STEP_SUMMARY"
 
   anthropic-stacks:
     # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
