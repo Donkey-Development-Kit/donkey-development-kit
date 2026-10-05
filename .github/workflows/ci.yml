@@ -218,8 +218,9 @@ jobs:
     # #735: below google-adk 2.4, Gemini silently drops client_kwargs and
     # donkey.adk.gemini() would bypass the gateway; it now refuses instead. No
     # other job installs google-adk, so the real-ADK round-trip and redirect
-    # tests run here, at the extra's floor and at the newest release. The `==`
-    # pin tests the floor only; the extra keeps no ceiling (§8.4).
+    # tests run here, at the extra's floor and at the newest release, with the
+    # typed-refusal bridge case for adk.gemini() (#955). The `==` pin tests the
+    # floor only; the extra keeps no ceiling (§8.4).
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -242,6 +243,7 @@ jobs:
           tests/unit/test_framework_redirects.py
           tests/unit/test_adapter_async_last_call.py
           tests/unit/test_transport_injection.py
+          tests/conformance/test_typed_refusal_bridge.py
 
   agent-framework-middleware:
     # #739: policy_middleware() is only meaningful on a real Agent Framework
@@ -263,7 +265,8 @@ jobs:
   llamaindex-transport:
     # #740: LlamaIndex sends through the shared client, so its calls carry the
     # run's correlation id, populate donkey.last_call and refuse as typed errors
-    # through typed_refusals(). No other job installs it, so run those tests here.
+    # through typed_refusals(). No other job installs it, so run those tests here,
+    # with the typed-refusal bridge case for a FunctionAgent run (#955).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -275,11 +278,13 @@ jobs:
           pytest -q
           tests/unit/test_transport_injection.py
           tests/unit/test_adapter_ergonomics.py
+          tests/conformance/test_typed_refusal_bridge.py
 
   agents-strands-last-call:
     # #899: the OpenAI Agents SDK and Strands send through the shared client, but
     # no other job installs them, so their donkey.last_call tests would only
-    # skip. Run them with both extras present.
+    # skip. Run them with both extras present, with the typed-refusal bridge case
+    # for an Agents SDK Runner run (#955).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -291,6 +296,7 @@ jobs:
           pytest -q
           tests/unit/test_adapter_async_last_call.py
           tests/unit/test_adapter_ergonomics.py
+          tests/conformance/test_typed_refusal_bridge.py
 
   adapter-contract:
     # #742: the adapter contract suite, one leg per ADAPTERS extra, each with its

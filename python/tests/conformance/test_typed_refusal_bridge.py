@@ -6,23 +6,30 @@ transport failure must reach the caller as its typed
 call and the caller (BG §1.2, ADR 0002). Without the bridge each surface below
 raises its own generic error: ``openai`` and ``anthropic`` an
 ``APIConnectionError`` (the typed error hidden on ``__cause__``) or a
-``PermissionDeniedError``, and LangChain its ``OpenAIConnectionError`` /
-``OpenAIPermissionDeniedError`` subclasses.
+``PermissionDeniedError``, LangChain its ``OpenAIConnectionError`` /
+``OpenAIPermissionDeniedError`` subclasses, and google-genai (under ADK's
+``Gemini``) a ``ClientError``. The OpenAI Agents SDK and LlamaIndex sit on the
+``openai`` client and raise its errors.
 
-Three surfaces (the raw OpenAI client, the Anthropic client, a LangGraph graph)
-times three errors, each raised by the real transport:
+Six surfaces (the raw OpenAI client, the Anthropic client, a LangGraph graph, an
+OpenAI Agents SDK ``Runner`` run, a LlamaIndex ``FunctionAgent`` run and an ADK
+``LlmAgent`` on ``adk.gemini()``, #955) times three errors, each raised by the
+real transport:
 
 * ``PIIDetected`` — ``donkey.simulate(PIIDetected)`` serves the captured 403.
 * ``ModelSubstituted`` — with ``on_model_substitution="raise"``, a 200 whose
   served-model header names another model.
 * ``GatewayUnavailable`` — the transport cannot connect.
 
-Each runs in both scopes. ``importorskip``-guarded per framework.
+Each runs in both scopes. ``importorskip``-guarded per framework. ``adk.model()``
+and CrewAI are exempt (``KNOWN_LIMITATIONS``), as their
+``capabilities().typed_refusals`` says (#726).
 """
 
 from __future__ import annotations
 
 import contextvars
+import importlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -42,6 +49,7 @@ from donkey_kit import (
 )
 from donkey_kit._testing import http_clients, swap_transport
 from donkey_kit.core import _wire
+from donkey_kit.integrations import ADAPTERS
 
 Call = Callable[[Donkey], Awaitable[None]]
 
@@ -56,7 +64,7 @@ def _cfg() -> DonkeyConfig:
     )
 
 
-# --- the three surfaces -----------------------------------------------------
+# --- the six surfaces -------------------------------------------------------
 
 
 async def _openai(donkey: Donkey) -> None:
@@ -91,7 +99,40 @@ async def _langgraph(donkey: Donkey) -> None:
     await builder.compile().ainvoke({"messages": [("user", "hi")]})
 
 
-SURFACES: dict[str, Call] = {"openai": _openai, "anthropic": _anthropic, "langgraph": _langgraph}
+async def _openai_agents(donkey: Donkey) -> None:
+    agents = pytest.importorskip("agents")
+    agent = agents.Agent(name="bridge", model=donkey.openai_agents.model("gpt-4o"))
+    # Tracing off: the Agents SDK would otherwise export spans to OpenAI.
+    await agents.Runner.run(agent, "hi", run_config=agents.RunConfig(tracing_disabled=True))
+
+
+async def _llamaindex(donkey: Donkey) -> None:
+    pytest.importorskip("llama_index.llms.openai_like")
+    workflow = pytest.importorskip("llama_index.core.agent.workflow")
+    agent = workflow.FunctionAgent(tools=[], llm=donkey.llamaindex.llm("gpt-4o"))
+    await agent.run(user_msg="hi")
+
+
+async def _adk_gemini(donkey: Donkey) -> None:
+    adk_agents = pytest.importorskip("google.adk.agents")
+    runners = pytest.importorskip("google.adk.runners")
+    types = pytest.importorskip("google.genai.types")
+    agent = adk_agents.LlmAgent(name="bridge", model=donkey.adk.gemini("gemini-2.5-flash"))
+    runner = runners.InMemoryRunner(agent=agent, app_name="bridge")
+    session = await runner.session_service.create_session(app_name="bridge", user_id="u")
+    message = types.Content(role="user", parts=[types.Part(text="hi")])
+    async for _ in runner.run_async(user_id="u", session_id=session.id, new_message=message):
+        pass
+
+
+SURFACES: dict[str, Call] = {
+    "openai": _openai,
+    "anthropic": _anthropic,
+    "langgraph": _langgraph,
+    "openai_agents": _openai_agents,
+    "llamaindex": _llamaindex,
+    "adk.gemini": _adk_gemini,
+}
 
 
 # --- the three errors, each raised by the real transport ---------------------
@@ -145,6 +186,27 @@ def test_scenario_is_registered() -> None:
     assert exempt == {"adk", "crewai"}
 
 
+#: The adapter factory behind each surface; the raw OpenAI client is no adapter.
+_FACTORIES = {
+    "anthropic": ("anthropic", "client"),
+    "langgraph": ("langgraph", "chat_model"),
+    "openai_agents": ("openai_agents", "model"),
+    "llamaindex": ("llamaindex", "llm"),
+    "adk.gemini": ("adk", "gemini"),
+}
+
+
+def test_bridged_surfaces_declare_typed_refusals() -> None:
+    # Each surface proven below declares typed_refusals=True, and the exempt
+    # adk.model() declares False (#726), so the claim and the test cannot drift.
+    assert set(_FACTORIES) == set(SURFACES) - {"openai"}
+    for attr, factory in [*_FACTORIES.values(), ("adk", "model")]:
+        spec = ADAPTERS[attr]
+        module = importlib.import_module(spec.module, package="donkey_kit.integrations")
+        caps = getattr(module, spec.cls).capabilities(factory)
+        assert caps.typed_refusals is ((attr, factory) != ("adk", "model")), (attr, factory)
+
+
 @pytest.mark.parametrize("scope", SCOPES)
 @pytest.mark.parametrize("error", ERRORS, ids=lambda e: e.__name__)
 @pytest.mark.parametrize("surface", SURFACES)
@@ -171,6 +233,8 @@ async def test_refusal_reaches_user_code_typed(
     # lets a transport-raised typed error (GatewayUnavailable, ModelSubstituted)
     # through as it is, so there is no wrapper to keep; under openai<3 the same
     # case arrives as an APIConnectionError and the bridge unwraps it.
+    # google-genai (adk.gemini()) lets a transport-raised typed error through on
+    # every version.
     assert type(excinfo.value) is error
     framework_error = excinfo.value.framework_error
     if error is PIIDetected:
