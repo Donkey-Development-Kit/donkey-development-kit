@@ -144,6 +144,20 @@ class Adapter(ABC):
             )
         return self._owned_sync
 
+    def close(self) -> None:
+        """Close the blocking client built by this standalone adapter, if any.
+
+        A client supplied by a Runtime and the shared async client stay with
+        their original owner.
+        """
+        if self._owned_sync is not None:
+            self._owned_sync.close()
+            self._owned_sync = None
+
+    async def aclose(self) -> None:
+        """Close this adapter's owned blocking client in an async scope."""
+        self.close()
+
     def _proxy_headers(self) -> dict[str, str]:
         """Default headers for a native OpenAI-compatible client pointed at the
         proxy: the client_id/client_secret consumer-auth pair plus
