@@ -1,6 +1,7 @@
 # ADR 0003: A core `Runtime` owns the governed wiring, with one process default
 
 - **Status:** Accepted
+- **Amended by:** #949 (2026-10-05), closing the standalone blocking-client gap.
 - **Date:** 2026-10-03
 - **Issue:** #725 (part of #707), merged as #843. Recorded after the fact under
   the ADR process from #731.
@@ -37,8 +38,7 @@ without breaking the layering.
    covers the shared clients only: an adapter or `LLMClient` used without a
    runtime's blocking-client accessor builds its own blocking client on
    demand (`_own_sync_client`, through `build_sync_http_client`). Nothing
-   closes that client today, and the test doesn't look for it (tracked as
-   #949).
+   closed that client when this ADR was accepted (tracked as #949).
 3. **`Donkey` wraps one `Runtime`.** `Donkey.__init__` builds it, and the
    handle's config, auth, budget and clients are the runtime's.
 4. **`core.runtime.default()` is the process-wide runtime** behind the
@@ -80,3 +80,10 @@ without breaking the layering.
   user calls a module-level factory, so it is not the kind of side effect ADR
   0010 forbids. The OTLP bootstrap it runs, like every `Runtime`, is, and ADR
   0010 changes that bootstrap, not this ADR.
+
+## Amendment (2026-10-05, #949)
+
+Standalone `Adapter` and `LLMClient` instances now expose `close()` and
+`aclose()` for the blocking client they build on demand. Neither method closes
+the shared async client or a Runtime-supplied blocking client. The ownership
+decision above is unchanged; this closes the gap recorded in decision 2.

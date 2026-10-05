@@ -25,6 +25,7 @@ import pytest
 from donkey_kit import Donkey
 from donkey_kit.core import runtime
 from donkey_kit.core.auth import AnypointConnectedApp
+from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import (
     DonkeyAsyncClient,
     DonkeyAsyncClientView,
@@ -33,6 +34,7 @@ from donkey_kit.core.transport import (
 )
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.integrations._base import Adapter, default_adapter
+from donkey_kit.llm.client import LLMClient
 
 _SRC = Path(__file__).resolve().parents[2] / "src" / "donkey_kit"
 
@@ -66,6 +68,72 @@ def test_every_default_adapter_shares_the_default_runtime(env: pytest.MonkeyPatc
     adapters = [default_adapter(_adapter_cls(name)) for name in ADAPTERS]
     assert all(a._http is rt.http for a in adapters)
     assert all(a._sync_http() is rt.sync_http() for a in adapters)
+
+
+@pytest.mark.parametrize("owner", ["adapter", "llm"])
+def test_standalone_owner_closes_only_its_blocking_client(owner: str) -> None:
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy")
+    shared = DonkeyAsyncClient(cfg, None)
+    instance = (
+        _adapter_cls("langgraph")(cfg, shared)
+        if owner == "adapter"
+        else LLMClient(cfg, shared)
+    )
+    blocking = instance._sync_http()
+
+    assert not blocking.is_closed
+    instance.close()
+    instance.close()
+    assert blocking.is_closed
+    assert not shared.is_closed
+
+
+@pytest.mark.parametrize("owner", ["adapter", "llm"])
+def test_closing_standalone_owner_without_a_blocking_client_is_safe(owner: str) -> None:
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy")
+    shared = DonkeyAsyncClient(cfg, None)
+    instance = (
+        _adapter_cls("langgraph")(cfg, shared)
+        if owner == "adapter"
+        else LLMClient(cfg, shared)
+    )
+
+    instance.close()
+    assert instance._owned_sync is None
+    assert not shared.is_closed
+
+
+@pytest.mark.parametrize("owner", ["adapter", "llm"])
+def test_runtime_injected_blocking_client_stays_caller_owned(owner: str) -> None:
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy")
+    shared = DonkeyAsyncClient(cfg, None)
+    blocking = DonkeyClient(cfg)
+    instance = (
+        _adapter_cls("langgraph")(cfg, shared, lambda: blocking)
+        if owner == "adapter"
+        else LLMClient(cfg, shared, lambda: blocking)
+    )
+
+    instance._sync_http()
+    instance.close()
+    assert not blocking.is_closed
+    blocking.close()
+
+
+@pytest.mark.parametrize("owner", ["adapter", "llm"])
+async def test_standalone_async_close_closes_owned_blocking_client(owner: str) -> None:
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy")
+    shared = DonkeyAsyncClient(cfg, None)
+    instance = (
+        _adapter_cls("langgraph")(cfg, shared)
+        if owner == "adapter"
+        else LLMClient(cfg, shared)
+    )
+    blocking = instance._sync_http()
+
+    await instance.aclose()
+    assert blocking.is_closed
+    assert not shared.is_closed
 
 
 @pytest.mark.parametrize("name", list(ADAPTERS))

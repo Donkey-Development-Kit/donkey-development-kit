@@ -103,6 +103,19 @@ class LLMClient:
             )
         return self._owned_sync
 
+    def close(self) -> None:
+        """Close the blocking client built by this standalone factory, if any.
+
+        An injected blocking client and the shared async client stay caller-owned.
+        """
+        if self._owned_sync is not None:
+            self._owned_sync.close()
+            self._owned_sync = None
+
+    async def aclose(self) -> None:
+        """Close this factory's owned blocking client in an async scope."""
+        self.close()
+
     @overload
     def client(self, *, sync: Literal[False] = ..., **kw: Any) -> AsyncOpenAI: ...
 
