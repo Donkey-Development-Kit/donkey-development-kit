@@ -9,43 +9,31 @@ framework rejoins with its own conformance run when demand promotes it
 (#223/#244). The customer-facing pytest plugin (``donkey_kit.conformance``, #191)
 is the shipped deliverable this internal matrix backstops.
 
-Every name below has an executable body today — none is a bare name with no
-test behind it (#749). Each is proven by the adapter contract suite
-(``tests/conformance/test_adapter_contract.py``, ``contract_drivers.py``, #742,
-run per real framework against a loopback gateway) unless noted:
+Every name below has an executable body (#749). ``SCENARIO_BODIES`` maps each
+one to the tests that run it, and ``test_transport_exemptions.py`` checks that
+the two lists match and that every listed test exists, so a name cannot outlive
+its body. Most bodies are in the adapter contract suite
+(``test_adapter_contract.py``, #742), which drives each real framework against a
+loopback gateway. ``attribution_headers_present`` asserts the consumer-auth
+``client_id`` / ``client_secret`` headers. The ``client_id`` is the verified
+per-agent attribution unit. The application and business-group header names
+are still UNVERIFIED placeholders (docs/verified-apis.md §3).
 
-- ``simple_completion`` / ``streaming_completion`` — ``test_sync_call`` /
-  ``test_streamed_call`` make the buffered/streamed call through the driver and
-  assert the gateway saw exactly one send.
-- ``attribution_headers_present`` / ``correlation_id_propagated`` —
-  ``test_call_sends_governed_headers_and_correlation`` asserts the consumer-auth
-  headers and (absent an exemption) the run's correlation id on the wire.
-- ``policy_violation_terminal`` — ``test_refusal_is_sent_once_and_typed`` sends
-  one PII refusal and asserts it reaches the caller typed, exactly once.
-- ``gateway_identity_observed`` — ``test_last_call_matches_the_declared_metadata``
-  asserts ``donkey.last_call`` against ``Adapter.observes_last_call``.
-- ``jwt_token_refreshed`` — ``test_formerly_exempt_adapters_are_handed_the_shared_client``
-  in ``test_transport_exemptions.py`` asserts the adapter's
-  ``connection_kwargs()`` carries the shared, JWT-refreshing client.
-- ``typed_refusal_bridged`` — ``test_typed_refusal_bridge.py`` runs six real
-  framework surfaces through three transport-raised refusals in both
-  ``donkey.run()`` and ``@donkey.governed``.
-
-Thirteen names that described the registry/tools/governance/publication
-surfaces (``single_tool_call``, ``multi_tool_multi_server``, ``tool_filtering``,
-``governed_filter_excludes``, ``governance_resolve_drift``,
-``governance_target_switch``, ``descriptor_auto_stable``,
-``publication_verify_drift``, ``publication_idempotent``,
-``descriptor_matches_framework``, ``auto_vs_live_agree``,
-``dynamic_tools_detected``, ``asset_type_detection``) were **retired, not
-implemented** (#749): every one of those surfaces (Exchange→MCP tool
-discovery, Exchange publication, governed-state resolution) still raises
-``_verify.blocked(...)`` (``registry/exchange.py``, ``registry/publication.py``,
-``registry/introspect.py``, ``tools/session.py``) per the verification
-discipline (§0.3) — there is no defensible scenario body to write for a surface
-that unconditionally refuses. They rejoin this list, newly, once their
-underlying surface is verified and built; a `TODO` here would just be a tracker
-substitute, so none is left.
+Thirteen names were **retired, not implemented** (#749): ``single_tool_call``,
+``multi_tool_multi_server``, ``tool_filtering``, ``governed_filter_excludes``,
+``governance_resolve_drift``, ``governance_target_switch``,
+``descriptor_auto_stable``, ``publication_verify_drift``,
+``publication_idempotent``, ``descriptor_matches_framework``,
+``auto_vs_live_agree``, ``dynamic_tools_detected`` and ``asset_type_detection``.
+Each one needs a per-adapter surface that still raises ``_verify.blocked(...)``
+under the verification discipline. Binding MCP tools into a framework is
+blocked in ``tools/session.py``. Exchange discovery is blocked in
+``registry/exchange.py``, publication in ``registry/publication.py`` and live
+introspection in ``registry/introspect.py``. No adapter can run a scenario
+against a surface that always refuses. The pure logic beneath them
+(``ToolFilter``, collision prefixes, governance criteria, content digests) is
+unit-tested in ``tests/unit/test_pure_logic.py``. A retired name comes back
+only with a body, once its surface is verified and built.
 """
 
 from __future__ import annotations
@@ -76,6 +64,36 @@ CONFORMANCE_SCENARIOS = [
     # owns the transport record an asserted exemption below.
     "typed_refusal_bridged",
 ]
+
+# Where each scenario runs (#749), as pytest node ids relative to ``python/``.
+# test_transport_exemptions.py keeps the keys equal to CONFORMANCE_SCENARIOS and
+# checks that every node id names a test function that exists.
+_CONTRACT = "tests/conformance/test_adapter_contract.py"
+SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
+    "simple_completion": (
+        f"{_CONTRACT}::test_call_sends_governed_headers_and_correlation",
+        f"{_CONTRACT}::test_sync_call",
+    ),
+    "streaming_completion": (f"{_CONTRACT}::test_streamed_call",),
+    "policy_violation_terminal": (f"{_CONTRACT}::test_refusal_is_sent_once_and_typed",),
+    "attribution_headers_present": (
+        f"{_CONTRACT}::test_call_sends_governed_headers_and_correlation",
+    ),
+    "correlation_id_propagated": (
+        f"{_CONTRACT}::test_call_sends_governed_headers_and_correlation",
+    ),
+    "gateway_identity_observed": (
+        f"{_CONTRACT}::test_last_call_matches_the_declared_metadata",
+        "tests/conformance/test_transport_exemptions.py::test_exemption_matches_observes_last_call_flag",
+    ),
+    "jwt_token_refreshed": (
+        "tests/unit/test_adapter_jwt_mode.py::test_async_call_carries_the_jwt",
+        "tests/unit/test_adapter_jwt_mode.py::test_crewai_refuses_jwt_mode_before_sending",
+    ),
+    "typed_refusal_bridged": (
+        "tests/conformance/test_typed_refusal_bridge.py::test_refusal_reaches_user_code_typed",
+    ),
+}
 
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
 # that cannot satisfy a scenario records WHY here rather than skipping silently.
