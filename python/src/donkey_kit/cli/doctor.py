@@ -38,6 +38,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -308,11 +309,13 @@ def _bridge(exc: Exception, cfg: DonkeyConfig) -> DonkeyError:
     return gateway_unavailable(base_url=cfg.llm_proxy_url, cause=exc)
 
 
-def run_diagnostics(model: str, *, probe: Probe | None = None) -> list[DoctorCheck]:
+def run_diagnostics(
+    model: str, *, path: Path | None = None, probe: Probe | None = None
+) -> list[DoctorCheck]:
     """Run every check and return the report lines. ``probe`` defaults to a live
     governed call; tests inject a canned :class:`ProbeResult` to exercise each
-    diagnosis without a gateway."""
-    cfg = DonkeyConfig.from_env()
+    diagnosis without a gateway. ``path`` replaces the project config file."""
+    cfg = DonkeyConfig.resolve(path=path)
     config_check, can_probe = _config_check(cfg)
     checks = [config_check, *_endpoint_checks(cfg)]
     if not can_probe:
@@ -372,7 +375,8 @@ def doctor(
     as_json = as_json or bool((ctx.obj or {}).get("json"))
 
     try:
-        checks = run_diagnostics(model)
+        config_path = (ctx.obj or {}).get("config")
+        checks = run_diagnostics(model, path=config_path) if config_path else run_diagnostics(model)
     except ImportError as exc:  # openai (the [llm] extra) not installed
         typer.secho(
             'donkey doctor needs the [llm] extra for the probe client. Install it with:\n'
