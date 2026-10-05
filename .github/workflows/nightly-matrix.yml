@@ -25,7 +25,7 @@
 #   1. verify_frameworks.py --only <fw>  — signature check (offline). Fails the job
 #      if an INSTALLED framework's class/kwarg signature no longer matches §8.
 #   2. examples/<fw>/main.py             — smoke: must exit 0 with no creds set
-#      (each example prints setup guidance and exits cleanly when unconfigured).
+#      (the LangGraph example runs against the in-process local simulator).
 #   3. pytest                            — the unit + ergonomics suites.
 #
 # NOTE (known constraint): the extras carry no `openai` upper bound ("floors,

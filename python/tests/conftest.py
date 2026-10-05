@@ -8,7 +8,6 @@ without the flag, a clean UsageError on misuse, a scenario table on success.
 
 from __future__ import annotations
 
-import importlib
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -22,31 +21,35 @@ from donkey_kit.integrations import ADAPTERS
 pytest_plugins = ["pytester"]
 
 
-@pytest.fixture(autouse=True)
-def _fail_unexpected_skip_for_contract_extra(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CI's ``adapter-contract-<extra>`` leg (``.github/workflows/ci.yml``) installs
-    exactly one real framework and sets ``DONKEY_CONTRACT_EXTRA=<extra>`` (#742).
-    ``tests/conformance/test_adapter_contract.py`` already turns its own skip into a
-    failure for that framework; everywhere else in the suite still calls
-    ``pytest.importorskip`` on that framework's modules and would silently SKIP
-    instead of FAIL if the real install were ever broken — exactly the "never a
-    silent skip" gap #748 closes. Patch ``pytest.importorskip`` for the duration of
-    the leg's own framework modules only: every other framework's calls keep
-    skipping normally (they are not installed in this leg and are not supposed to
-    be)."""
-    # A job that installs more than one framework (agents-strands-last-call) sets
-    # a comma-separated list; the adapter-contract matrix (and every other
-    # single-framework job) sets exactly one — ``test_adapter_contract.py``'s own
-    # exact-equality check against a single extra is unaffected either way, since
-    # it never runs in a job that sets more than one.
+def pytest_configure(config: pytest.Config) -> None:
+    """Fail, never skip, an ``importorskip`` of a framework this CI job installs.
+
+    The CI jobs that install a real framework (``.github/workflows/ci.yml``: the
+    ``adapter-contract`` matrix and the per-framework stacks jobs) set
+    ``DONKEY_CONTRACT_EXTRA`` to the extra(s) they install (#742). If that install
+    were broken, every ``pytest.importorskip`` of the framework would SKIP and the
+    job would still pass, which is the "never a silent skip" gap #748 closes. So
+    for those modules only, a skip becomes a failure. Every other framework's
+    calls keep skipping, because they are not installed in that job.
+
+    The patch is installed here rather than in a fixture so that it also covers
+    module-level ``importorskip`` calls, which run at collection time before any
+    fixture (a module-level skip would otherwise drop the whole file silently).
+    """
+    # A job that installs two frameworks (agents-strands-last-call) sets a
+    # comma-separated list. test_adapter_contract.py compares the variable to a
+    # single extra itself, and only the adapter-contract matrix (one extra per
+    # leg) relies on that.
     raw = os.environ.get("DONKEY_CONTRACT_EXTRA", "")
     extras = {e.strip() for e in raw.split(",") if e.strip()}
-    if not extras:
-        return
     owned: set[str] = set()
     for spec in ADAPTERS.values():
         if spec.extra in extras:
             owned.update(spec.probe)
+            # The attribute name doubles as the top-level package for LangGraph,
+            # whose graph-runtime modules (langgraph.graph, langgraph.types) are
+            # not in its probe; for the other adapters it names no module and
+            # never matches.
             owned.add(spec.attr)
     if not owned:
         return
@@ -55,16 +58,18 @@ def _fail_unexpected_skip_for_contract_extra(monkeypatch: pytest.MonkeyPatch) ->
     def _strict_importorskip(modname: str, *args: Any, **kwargs: Any) -> Any:
         if modname in owned or any(modname.startswith(f"{root}.") for root in owned):
             try:
-                return importlib.import_module(modname)
-            except ImportError as exc:
+                return real_importorskip(modname, *args, **kwargs)
+            except pytest.skip.Exception as exc:
                 pytest.fail(
-                    f"DONKEY_CONTRACT_EXTRA={extras!r} but importing {modname!r} "
-                    f"failed ({exc}) — the real framework install is broken in "
-                    "this CI leg (#748)."
+                    f"DONKEY_CONTRACT_EXTRA={raw!r} but importorskip({modname!r}) "
+                    f"skipped ({exc}). The real framework install is broken in "
+                    "this CI job (#748)."
                 )
         return real_importorskip(modname, *args, **kwargs)
 
-    monkeypatch.setattr(pytest, "importorskip", _strict_importorskip)
+    patch = pytest.MonkeyPatch()
+    patch.setattr(pytest, "importorskip", _strict_importorskip)
+    config.add_cleanup(patch.undo)
 
 
 @pytest.fixture(autouse=True)
