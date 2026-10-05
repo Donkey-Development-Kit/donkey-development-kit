@@ -143,6 +143,11 @@ all = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.1",
+    # Randomises test order every run and prints the seed by default (#750), so
+    # a leaked module-level cache or warning de-dupe set surfaces as a flaky
+    # failure instead of hiding behind one fixed collection order. CI reruns a
+    # failure's exact order with `--randomly-seed=<printed seed>`.
+    "pytest-randomly>=3.15",
     "respx>=0.21",
     "mypy>=1.10",
     "ruff>=0.5",

@@ -46,6 +46,7 @@ pygments==2.21.0
 pyjwt==2.15.1
 pytest==9.1.1
 pytest-asyncio==1.4.0
+pytest-randomly==5.0.0
 python-multipart==0.0.32
 pyyaml==6.0.3
 referencing==0.37.0

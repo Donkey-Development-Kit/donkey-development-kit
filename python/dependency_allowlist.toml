@@ -145,3 +145,7 @@ reviewed = 2026-10-03
 reason = "dev: tests/unit/test_integration_checklist.py parses .github/workflows/ci.yml. No SDK module imports it (#730)."
 reviewed = 2026-10-04
 
+[packages.pytest-randomly]
+reason = "dev: randomises test order every run (seed printed) so module-level-state leaks surface instead of hiding behind one fixed order (#750)."
+reviewed = 2026-10-05
+

@@ -103,3 +103,9 @@ def _clear_registry() -> None:
     """Reset the process-global registry. For tests only — production code never
     unregisters a tool."""
     _REGISTRY.clear()
+
+
+# Alias so the autouse fixture in tests/conftest.py (#750) can call every
+# module's reset the same way; `_clear_registry` predates that convention and
+# keeps its name since it is already imported directly by some tests.
+_reset_for_tests = _clear_registry

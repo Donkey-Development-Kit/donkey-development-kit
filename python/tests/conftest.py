@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from donkey_kit.core import runtime
+from donkey_kit.core import _verify, runtime, telemetry, toolspec
+from donkey_kit.integrations import _base
 
 pytest_plugins = ["pytester"]
 
@@ -45,3 +46,27 @@ def _fresh_default_runtime() -> Iterator[None]:
     from an earlier test's environment."""
     yield
     runtime.close_default()
+
+
+@pytest.fixture(autouse=True)
+def _reset_module_state() -> Iterator[None]:
+    """Reset every module-level cache/flag the SDK keeps for process lifetime,
+    before AND after each test (#750).
+
+    Without this, whichever test reads an :class:`Unverified` placeholder,
+    builds a module-level adapter default, or configures OTLP export first
+    "spends" that module-level state for every test after it — so results
+    depend on collection order (reverse order, a new test, or a random seed can
+    all flip a previously-passing assertion). Reset before the test too, so a
+    test's own ``pytest.warns``/cache assertions never depend on what an
+    earlier test happened to leave behind. Individual tests must not clear
+    these by hand; add a new module's ``_reset_for_tests()`` here instead."""
+    _verify._reset_for_tests()
+    _base._reset_for_tests()
+    telemetry._reset_for_tests()
+    toolspec._reset_for_tests()
+    yield
+    _verify._reset_for_tests()
+    _base._reset_for_tests()
+    telemetry._reset_for_tests()
+    toolspec._reset_for_tests()

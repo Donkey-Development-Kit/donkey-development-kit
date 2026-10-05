@@ -182,7 +182,8 @@ def test_module_level_factory_raises_curated_error(
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    monkeypatch.setattr(_base, "_DEFAULT_ADAPTERS", {})
+    # The autouse `_reset_module_state` fixture (tests/conftest.py, #750) already
+    # clears `_DEFAULT_ADAPTERS` before this test runs.
     reported = missing(module)
     adapter_module = importlib.import_module(f"donkey_kit.integrations{ADAPTERS[attr].module}")
     with pytest.raises(ImportError) as exc:

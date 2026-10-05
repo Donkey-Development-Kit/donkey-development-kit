@@ -339,3 +339,17 @@ def default_adapter(cls: type[A]) -> A:
             inst = cls(rt.config, rt.http, rt.sync_http)
             _DEFAULT_ADAPTERS[cls] = inst
     return cast(A, inst)
+
+
+def _reset_for_tests() -> None:
+    """Drop every cached default adapter (#750).
+
+    :data:`_DEFAULT_ADAPTERS` caches one instance per adapter class for the
+    lifetime of the process-default runtime, so a test that builds a module-
+    level factory (e.g. ``donkey_kit.integrations.langgraph.chat_model``)
+    leaves a cached instance that the next test — possibly asserting a curated
+    ``ImportError`` for a *missing* dependency — would otherwise reuse. Called
+    from the autouse fixture in ``tests/conftest.py``; test code should never
+    clear this by hand."""
+    with _DEFAULT_ADAPTERS_LOCK:
+        _DEFAULT_ADAPTERS.clear()

@@ -42,6 +42,19 @@ class UnverifiedValueWarning(UserWarning):
 _warned: set[str] = set()
 
 
+def _reset_for_tests() -> None:
+    """Clear the one-time-warning de-dupe set (#750).
+
+    Each :class:`Unverified` placeholder warns at most once per process, keyed
+    by ``key`` in :data:`_warned`. Left alone, whichever test reads a given
+    placeholder first "spends" that warning for the rest of the run, so a test
+    asserting ``pytest.warns(UnverifiedValueWarning)`` passes or fails
+    depending on execution order. Called from the autouse fixture in
+    ``tests/conftest.py`` so every test starts from a clean slate; test code
+    should never clear this by hand."""
+    _warned.clear()
+
+
 @dataclass(frozen=True)
 class Unverified:
     """A placeholder value that is not yet confirmed against a real sandbox.

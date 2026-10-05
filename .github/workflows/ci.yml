@@ -189,7 +189,11 @@ jobs:
       - run: >-
           python -m pip install --upgrade pip &&
           pip install -e ".[llm,cli,local,otel]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
-      - run: pytest -q
+      # No -q: pytest-randomly (dev group, #750) randomises collection order
+      # every run and reports the seed via the session header, which -q
+      # suppresses. Reproduce a failure locally with
+      # `pytest --randomly-seed=<seed printed above>`.
+      - run: pytest
       # The local gateway simulator's out-of-process boot (BG §1.4) is
       # local_gateway-marked and deselected from the default run above. It is
       # pure-Python (no docker), so run it explicitly here where [local] is
