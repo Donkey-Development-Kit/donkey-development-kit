@@ -761,6 +761,32 @@ async def test_openai_sdk_with_its_own_retries_sends_a_refusal_once() -> None:
         assert len(sends) == expected, f"{status}: {len(sends)} sends"
 
 
+@pytest.mark.parametrize("status", [502, 504])
+async def test_openai_default_retries_do_not_resend_unsafe_model_post(status: int) -> None:
+    openai = pytest.importorskip("openai")
+    from typing import Any, cast
+
+    from donkey_kit.llm.client import openai_http_client
+
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(status)
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as http:
+        client = openai.AsyncOpenAI(
+            base_url="https://x/", api_key="k", http_client=cast(Any, openai_http_client(http))
+        )
+        with pytest.raises(openai.APIStatusError) as exc:
+            await client.chat.completions.create(
+                model="m", messages=[{"role": "user", "content": "hi"}]
+            )
+
+    assert exc.value.response.headers["x-should-retry"] == "false"
+    assert len(sent) == 1
+
+
 # --- lifecycle hooks (BG §1.1, #179) --------------------------------------
 # The seams every Phase 1 feature attaches to: _inject_headers stamps each
 # logical send, _on_response fires exactly once per logical send(), _on_refusal

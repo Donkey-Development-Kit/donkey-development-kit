@@ -34,7 +34,15 @@ from .headers import (
     effective_cost_tags,
 )
 from .observe import _log_finish, _log_retry, _record_response
-from .policy import Finish, Retry, RetryDecision, _substitution_error, decide_retry, refusal
+from .policy import (
+    Finish,
+    Retry,
+    RetryDecision,
+    _mark_terminal,
+    _substitution_error,
+    decide_retry,
+    refusal,
+)
 
 __all__ = ["AsyncClientOptions", "ClientOptions"]
 
@@ -131,6 +139,7 @@ class _GovernedPipeline(_CheckedEndpoints):
         if isinstance(decision, Retry):
             _log_retry(request, response, attempt, attempts, decision)
         elif isinstance(decision, Finish):
+            _mark_terminal(response, decision)
             _log_finish(request, response, decision, attempts)
         return decision
 
