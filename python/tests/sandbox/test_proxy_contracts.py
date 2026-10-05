@@ -12,8 +12,10 @@ otherwise.
 
 from __future__ import annotations
 
+import json
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,63 @@ from donkey_kit.core.errors import DonkeyError, classify
 from donkey_kit.donkey import Donkey
 
 pytestmark = pytest.mark.sandbox
+
+# The shipped success-body capture this drift test diffs the live gateway
+# against (docs/verified-apis.md §2); see the README next to it (under
+# src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/) for its provenance.
+_SUCCESS_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
+    / "anypoint"
+    / "llm_proxy"
+    / "responses.success.body.json"
+)
+
+
+def _shape(value: object) -> object:
+    """Reduce a parsed JSON value to its *shape*: the set of keys present at
+    every nesting level, discarding scalar values, list length, and item
+    order (#753). Two responses with the same shape may differ in every
+    value — this is a structural check only, so it does not pin values the
+    provider is free to change (model snapshot id, token counts, timestamps)."""
+    if isinstance(value, dict):
+        return {key: _shape(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_shape(value[0])] if value else []
+    return None
+
+
+def _kind(value: object) -> str:
+    if isinstance(value, dict):
+        return "dict"
+    if isinstance(value, list):
+        return "list"
+    return "scalar"
+
+
+def _diff_shapes(expected: object, actual: object, path: str = "$") -> list[str]:
+    """Collect human-readable diffs between two shapes produced by :func:`_shape`."""
+    diffs: list[str] = []
+    expected_kind, actual_kind = _kind(expected), _kind(actual)
+    if expected_kind != actual_kind:
+        diffs.append(f"{path}: shape changed from {expected_kind} to {actual_kind}")
+        return diffs
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        missing = sorted(set(expected) - set(actual))
+        added = sorted(set(actual) - set(expected))
+        if missing:
+            diffs.append(f"{path}: live response is missing key(s) {missing}")
+        if added:
+            diffs.append(f"{path}: live response has NEW key(s) {added}")
+        for key in sorted(set(expected) & set(actual)):
+            diffs.extend(_diff_shapes(expected[key], actual[key], f"{path}.{key}"))
+    elif isinstance(expected, list) and isinstance(actual, list):
+        if expected and actual:
+            diffs.extend(_diff_shapes(expected[0], actual[0], f"{path}[0]"))
+    return diffs
 
 
 def test_run_scope_attribution_is_warning_free(
@@ -120,4 +179,33 @@ def test_injection_guard_rejection_classifies_and_captures(
         "policy, "
         "then capture the rejection body into "
         "src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/."
+    )
+
+
+def test_openai_routing_response_shape_matches_fixture(
+    open_proxy: Callable[[str], Donkey],
+    model_for: Callable[[str], str],
+) -> None:
+    """Contract-drift guard (#753): nothing previously caught the gateway's
+    response shape drifting from the captured fixture the simulator and the
+    classification tests rely on (``tests/unit/test_llm_proxy_contract.py``).
+    This is a shape-only comparison — the set of keys present at every nesting
+    level, not their values — against ``responses.success.body.json``
+    (docs/verified-apis.md §2), so it stays green across token counts, model
+    snapshot ids, and timestamps changing on every call, and only fails when a
+    key the SDK depends on is added or removed."""
+    donkey = open_proxy("openai-model-routing")
+    client = donkey.llm.client(sync=True)
+
+    raw = client.responses.with_raw_response.create(
+        model=model_for("openai-model-routing"),
+        input="Reply with the single word: hello.",
+    )
+    live_body = raw.http_response.json()
+    fixture_body = json.loads(_SUCCESS_FIXTURE.read_text())
+
+    diffs = _diff_shapes(_shape(fixture_body), _shape(live_body))
+    assert not diffs, (
+        "live gateway response shape drifted from the captured fixture "
+        f"({_SUCCESS_FIXTURE.name}, docs/verified-apis.md §2):\n" + "\n".join(diffs)
     )
