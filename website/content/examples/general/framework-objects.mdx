@@ -216,6 +216,11 @@ kwargs = donkey.strands.connection_kwargs()
 SomeFrameworkModel(model="gpt-4o", **kwargs)
 ```
 
+An adapter or `LLMClient` you construct directly owns any blocking transport it
+builds on demand. Call its `close()` (or `await aclose()`) when finished; neither
+method closes the async client you passed in. Adapters obtained from `Donkey`
+use the `Donkey` runtime's blocking client instead, so close the `Donkey` handle.
+
 Model handles and the missing catalog (narrative demo 07):
 
 ```python
