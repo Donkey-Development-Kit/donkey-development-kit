@@ -490,6 +490,10 @@ or a decorator; `donkey.run()` and `@donkey.governed` apply it on exit unless
 A classified refusal is raised `from None` with the framework error on
 `.framework_error`, because that error's message can repeat the blocked
 values. A transport-raised typed error keeps its own `__cause__`.
+An exception group from a task group is looked inside (#950, ADR 0002
+amendment): it collapses to the typed error when every leaf is the same
+`DonkeyError` class, and is otherwise rebuilt with its refusal leaves typed so
+`except*` matches them.
 
 ---
 
