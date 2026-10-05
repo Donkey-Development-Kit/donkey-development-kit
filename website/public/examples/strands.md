@@ -105,10 +105,9 @@ PromptInjectionBlocked prompt-injection-protection strands-simulated-PromptInjec
 ContentSafetyBlocked content-safety strands-simulated-ContentSafetyBlocked
 ```
 
-`TokenBudgetExceeded` is deliberately absent. Strands retries a 429 itself
-(`ModelThrottledException`), so the one simulated 429 is absorbed and the
-retry succeeds. Against a live proxy the same retry means a real budget 429
-takes a while to surface.
+`TokenBudgetExceeded` is not in this demo. A Strands agent built on
+`donkey.strands.model()` raises it typed after one request, without the
+agent's own throttle retry (see the [Strands page](https://docs.donkey-kit.dev/frameworks/strands.md#notes)).
 
 ## 04 — Typed refusals, live
 

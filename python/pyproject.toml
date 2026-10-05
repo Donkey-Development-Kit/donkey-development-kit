@@ -236,10 +236,12 @@ ignore_missing_imports = true
 # fail the base typecheck; an inline ignore would go stale whenever it is present.
 # The CrewAI adapter's interceptor subclasses crewai's BaseInterceptor, likewise,
 # and the LangGraph adapter's last_call handler langchain_core's BaseCallbackHandler.
+# The Strands adapter's model subclasses the OpenAIModel class it is handed (#951).
 module = [
     "donkey_kit.core.transport.httpx2",
     "donkey_kit.integrations.crewai",
     "donkey_kit.integrations.langgraph",
+    "donkey_kit.integrations.strands",
 ]
 disallow_subclassing_any = false
 

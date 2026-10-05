@@ -920,7 +920,7 @@ Some frameworks retry above the provider SDK, where the SDK can't reach:
 | Framework | A budget `429` is sent | A persistent `503` is sent | What to do |
 |---|---|---|---|
 | LangGraph, OpenAI Agents SDK, Anthropic SDK, LlamaIndex, MS Agent Framework, Google ADK | once | `max_retries + 1` times | Nothing. |
-| Strands | once from the model; up to 6 times from a default `Agent` | `max_retries + 1` times | Build the agent with `Agent(retry_strategy=None)`. |
+| Strands | once | `max_retries + 1` times | Nothing with `donkey.strands.model()`. A model built from `connection_kwargs()` needs `Agent(retry_strategy=None)`. See the [Strands page](https://docs.donkey-kit.dev/frameworks/strands.md#notes). |
 | CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://docs.donkey-kit.dev/frameworks/crewai.md#notes). |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
@@ -1614,19 +1614,28 @@ Strands forwards to its internal OpenAI client.
 
 ## Notes
 
-- **Build the agent with `retry_strategy=None`.** A Strands `Agent` retries a
-  throttled model call by default (up to 6 attempts), and Strands treats every
-  `429` as throttling. On the proxy a `429` is a budget refusal, so turn the
-  agent's retry off and let the SDK's transport handle the transient `5xx`:
+- **A budget refusal is sent once.** A Strands `Agent` retries a throttled
+  model call by default (up to 6 attempts), and Strands treats every `429` as
+  throttling. On the proxy a `429` is a budget refusal, so the model
+  `donkey.strands.model()` builds raises it as the typed `TokenBudgetExceeded`
+  instead. The agent's retry strategy doesn't retry that error, and it reaches
+  your code as it is, after one request:
 
   ```python
   from strands import Agent
+  from donkey_kit import TokenBudgetExceeded
 
-  agent = Agent(model=donkey.strands.model("gpt-4o"), retry_strategy=None)
+  agent = Agent(model=donkey.strands.model("gpt-4o"))
+  try:
+      await agent.invoke_async("hello")
+  except TokenBudgetExceeded as err:
+      print(err.retry_after)
   ```
 
   The model itself has `max_retries=0`, so the OpenAI client under it doesn't
-  retry either.
+  retry either, and the SDK's transport handles the transient `5xx`. An
+  `OpenAIModel` you build yourself from `connection_kwargs()` doesn't get this:
+  build its agent with `Agent(model=..., retry_strategy=None)`.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
@@ -8929,10 +8938,9 @@ PromptInjectionBlocked prompt-injection-protection strands-simulated-PromptInjec
 ContentSafetyBlocked content-safety strands-simulated-ContentSafetyBlocked
 ```
 
-`TokenBudgetExceeded` is deliberately absent. Strands retries a 429 itself
-(`ModelThrottledException`), so the one simulated 429 is absorbed and the
-retry succeeds. Against a live proxy the same retry means a real budget 429
-takes a while to surface.
+`TokenBudgetExceeded` is not in this demo. A Strands agent built on
+`donkey.strands.model()` raises it typed after one request, without the
+agent's own throttle retry (see the [Strands page](https://docs.donkey-kit.dev/frameworks/strands.md#notes)).
 
 ## 04 — Typed refusals, live
 
