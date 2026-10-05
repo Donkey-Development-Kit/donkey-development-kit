@@ -47,16 +47,20 @@ __all__ = [
     "REMAINING_HEADER",
     "RESET_HEADER",
     "SHAPES",
+    "TEST_LOCK_PATH",
     "Fixture",
     "compute_manifest",
+    "compute_test_manifest",
     "fixture_bytes",
     "load",
     "parse_headers",
     "parse_status",
     "read_lock",
+    "read_test_lock",
     "render_ratelimit_prose",
     "replay_headers",
     "write_lock",
+    "write_test_lock",
 ]
 
 
@@ -354,6 +358,9 @@ LOCK_PATH = Path(__file__).resolve().parent / "_fixtures" / "fixtures.lock"
 # A source checkout is the one layout where a relock produces a file to commit:
 # fixtures.py sits at python/src/donkey_kit/simulator/, so parents[3] is python/.
 _CHECKOUT_PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
+# tests/fixtures/ lives one level below python/ (parents[3] above), alongside
+# pyproject.toml. Only meaningful in a source checkout — see TEST_LOCK_PATH below.
+_CHECKOUT_TESTS_FIXTURES = _CHECKOUT_PYPROJECT.parent / "tests" / "fixtures"
 
 
 def _served_files() -> list[tuple[str, str]]:
@@ -399,6 +406,76 @@ def write_lock() -> None:
     )
 
 
+# --- test-only fixture integrity lock (#752) ----------------------------------
+#
+# The lock above closes the honesty gap only for the 42-odd files the simulator
+# serves (``SHAPES``, packaged under src/donkey_kit/simulator/_fixtures/). The
+# much larger ``tests/fixtures/`` tree (model_wallet/, gemini_inbound/,
+# semantic_cache/, anthropic_inbound/, a2d/, openai_gemini_stream/, …) is test-only
+# captures: real traffic the error-classification and transport tests are pinned
+# to, but never read by the simulator and never packaged (#746's "one directory
+# a wheel ships" rule is about ``_fixtures/``, not ``tests/``). Those files had no
+# lock at all, so a hand-edit there went undetected — the exact gap TEST-07
+# (code review, commit 11b806b) flagged.
+#
+# This is a second, independent lock over a disjoint file set, deliberately kept
+# as its own manifest rather than folded into ``compute_manifest()``/``LOCK_PATH``:
+# the two lock files have different shipping rules (``LOCK_PATH`` is package data
+# a wheel ships; ``TEST_LOCK_PATH`` is a tests/-tree file a wheel must NEVER ship,
+# since #746 forbids force-including anything from tests/ into the build — see
+# test_wheel_build_takes_nothing_from_the_test_tree). Mixing them into one
+# manifest would make that boundary one `if` away from being crossed by accident.
+# Same discipline otherwise: committed sha256 per file, checked in
+# tests/unit/test_fixture_integrity.py, regenerated only by
+# ``python -m donkey_kit.simulator.fixtures --relock`` (same command, same
+# "I re-captured this, I meant it" step — it rewrites both locks that exist in
+# the checkout it is run from).
+TEST_LOCK_PATH = _CHECKOUT_TESTS_FIXTURES / "fixtures.lock"
+
+
+def _test_fixture_files() -> list[Path]:
+    """Every file under ``tests/fixtures/`` (recursively), sorted, excluding the
+    lock itself. Dev-only: raises if not run from a source checkout — a wheel
+    install has no ``tests/`` tree to walk."""
+    if not _CHECKOUT_TESTS_FIXTURES.is_dir():
+        raise FileNotFoundError(
+            f"{_CHECKOUT_TESTS_FIXTURES} does not exist; the test-fixture lock "
+            "only applies to a source checkout, not an installed wheel"
+        )
+    return sorted(
+        path
+        for path in _CHECKOUT_TESTS_FIXTURES.rglob("*")
+        if path.is_file() and path != TEST_LOCK_PATH
+    )
+
+
+def compute_test_manifest() -> dict[str, str]:
+    """A ``{"<relative/path>": "sha256:<hex>"}`` map over every file under
+    ``tests/fixtures/``, computed from the bytes on disk right now. Keys use
+    POSIX-style separators so the manifest is stable across platforms."""
+    return {
+        path.relative_to(_CHECKOUT_TESTS_FIXTURES).as_posix(): "sha256:"
+        + hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in _test_fixture_files()
+    }
+
+
+def read_test_lock() -> dict[str, str]:
+    """The committed manifest at :data:`TEST_LOCK_PATH`."""
+    data: dict[str, str] = json.loads(TEST_LOCK_PATH.read_text(encoding="utf-8"))
+    return data
+
+
+def write_test_lock() -> None:
+    """Regenerate :data:`TEST_LOCK_PATH` from the current ``tests/fixtures/``
+    bytes. Called by ``python -m donkey_kit.simulator.fixtures --relock``
+    alongside :func:`write_lock`, after a re-capture under ``tests/fixtures/``."""
+    TEST_LOCK_PATH.write_text(
+        json.dumps(compute_test_manifest(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _main() -> None:
     """Run the dev-only relock command."""
     import argparse
@@ -407,7 +484,7 @@ def _main() -> None:
     parser.add_argument(
         "--relock",
         action="store_true",
-        help="regenerate fixtures.lock from the current fixture bytes",
+        help="regenerate fixtures.lock and tests/fixtures/fixtures.lock from the current bytes",
     )
     args = parser.parse_args()
     if args.relock:
@@ -418,6 +495,9 @@ def _main() -> None:
             )
         write_lock()
         print(f"wrote {LOCK_PATH} ({len(compute_manifest())} fixtures)")
+        if _CHECKOUT_TESTS_FIXTURES.is_dir():
+            write_test_lock()
+            print(f"wrote {TEST_LOCK_PATH} ({len(compute_test_manifest())} fixtures)")
     else:
         parser.error("nothing to do; pass --relock to regenerate the lock")
 

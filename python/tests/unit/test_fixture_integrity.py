@@ -1,4 +1,5 @@
-"""The fixture-integrity lock (BG §1.4 honesty, #189).
+"""The fixture-integrity lock (BG §1.4 honesty, #189; extended to all of
+``tests/fixtures/`` by #752).
 
 A simulator that is *subtly* wrong is worse than none: it teaches an agent to
 handle a shape production never sends. The "same files, both fail together"
@@ -15,6 +16,15 @@ re-capture is accepted by regenerating the lock
 (``python -m donkey_kit.simulator.fixtures --relock``) and committing it — the
 deliberate, reviewable "I meant this" step. It is an integrity assertion, not
 fixture-capture tooling (which #189 puts out of scope).
+
+#752 closed the matching gap for the much larger ``tests/fixtures/`` tree
+(test-only captures the simulator never serves, e.g. ``model_wallet/``,
+``gemini_inbound/``, ``semantic_cache/``, ``anthropic_inbound/``), which had no
+lock at all. :data:`donkey_kit.simulator.fixtures.TEST_LOCK_PATH`
+(``tests/fixtures/fixtures.lock``) is the second, independent manifest — kept
+separate from :data:`LOCK_PATH` because it must never ship in the wheel (see
+``test_wheel_build_takes_nothing_from_the_test_tree`` below). The same
+``--relock`` command regenerates both.
 
 Base-only safe: imports only the framework-free ``simulator.fixtures`` module.
 """
@@ -90,3 +100,50 @@ def test_wheel_build_takes_nothing_from_the_test_tree() -> None:
     wheel = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]
     assert "force-include" not in wheel
     assert "hooks" not in wheel
+
+
+# --- the test-only lock over tests/fixtures/ (#752) --------------------------
+
+
+def test_test_fixtures_match_the_committed_lock() -> None:
+    """Every file under ``tests/fixtures/`` matches ``tests/fixtures/fixtures.lock``.
+
+    If this fails, a test-only fixture changed on disk without the lock being
+    updated — exactly the hand-edit TEST-07 (code review, commit 11b806b)
+    flagged as undetectable before #752.
+    """
+    current = fixtures.compute_test_manifest()
+    locked = fixtures.read_test_lock()
+
+    assert current == locked, (
+        f"A test fixture's bytes changed but {fixtures.TEST_LOCK_PATH} "
+        "was not updated. If you re-captured a shape from a real gateway, scrub it "
+        "(python scripts/scrub_fixtures.py) then run\n"
+        "    python -m donkey_kit.simulator.fixtures --relock\n"
+        "and commit the updated lock. If you did NOT intend to change a "
+        "fixture, revert the edit. Drift:\n"
+        f"  changed/added: {sorted(k for k in current if current.get(k) != locked.get(k))}\n"
+        f"  removed:       {sorted(k for k in locked if k not in current)}"
+    )
+
+
+def test_test_lock_covers_exactly_the_test_fixture_files() -> None:
+    """The test-only lock has no stale rows and no gaps — a new file dropped
+    under ``tests/fixtures/`` cannot ship unlocked."""
+    expected_keys = {
+        path.relative_to(fixtures._CHECKOUT_TESTS_FIXTURES).as_posix()
+        for path in fixtures._test_fixture_files()
+    }
+    assert set(fixtures.read_test_lock()) == expected_keys
+
+
+def test_test_lock_is_not_shipped_package_data() -> None:
+    """The test-only lock lives inside ``tests/``, never beside the shipped
+    fixtures — the two lock files, and the file sets they cover, are disjoint."""
+    package_dir = Path(fixtures.__file__).resolve().parent
+    assert fixtures.TEST_LOCK_PATH != fixtures.LOCK_PATH
+    assert "tests" in fixtures.TEST_LOCK_PATH.parts
+    assert not fixtures.TEST_LOCK_PATH.is_relative_to(package_dir)
+    locked_keys = set(fixtures.read_lock())
+    test_locked_keys = set(fixtures.read_test_lock())
+    assert locked_keys.isdisjoint(test_locked_keys)
