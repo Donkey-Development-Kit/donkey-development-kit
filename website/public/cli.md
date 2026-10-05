@@ -67,15 +67,17 @@ Three global flags precede the subcommand:
 
 ```bash
 donkey --config ./cfg.toml init   # write the generated config file to a non-default path
+donkey --config ./cfg.toml doctor # diagnose against this project config file
 donkey --env Sandbox init         # write this Anypoint environment into the generated file
 donkey --json init                # machine-readable output where a command supports it
 ```
 
-`--config` and `--env` apply to `init` only. Every other command reads its
-configuration from environment variables and the working directory's config
-files, so it rejects them with exit `2` rather than run against a configuration
-you didn't ask for. To point `doctor` at another environment, set
-`ANYPOINT_ENV`, or run it from the directory that holds the config file.
+`--config` selects the file `init` writes or the project file `doctor` reads;
+`doctor` still applies the normal per-field precedence: explicit kwargs (when
+calling the config loader in code), environment variables, the named file's
+local overlay, the named file, user config, then defaults. `--env` applies to
+`init` only; set `ANYPOINT_ENV` for `doctor`. Other commands reject these flags
+with exit `2` rather than silently ignore them.
 
 ### Exit codes
 
@@ -154,6 +156,7 @@ output, the entry with `"name": "plain http"`):
 
 ```bash
 donkey doctor
+donkey --config ./cfg.toml doctor  # read cfg.toml and its adjacent local overlay
 ```
 
 ```text
