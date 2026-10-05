@@ -13,20 +13,10 @@ Driven with ``httpx.MockTransport``, so no network is touched.
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from donkey_kit import Donkey
-from donkey_kit.core import _verify
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
-
-
-@pytest.fixture(autouse=True)
-def _isolate_unverified_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The attribution header names are UNVERIFIED and warn once per process;
-    keep this module from using up that warning for later tests."""
-    monkeypatch.setattr(_verify, "_warned", set())
-
 
 _PROXY = "https://gw.example.internal/openai-sdk/"
 _CONTROL_PLANE = "https://anypoint.example.internal"

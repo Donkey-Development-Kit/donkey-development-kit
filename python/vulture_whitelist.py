@@ -45,7 +45,6 @@ qualname  # unused variable (src/donkey_kit/core/toolspec.py)
 docstring  # unused variable (src/donkey_kit/core/toolspec.py)
 is_async  # unused variable (src/donkey_kit/core/toolspec.py)
 tool_spec  # unused function (src/donkey_kit/core/toolspec.py)
-_clear_registry  # unused function (src/donkey_kit/core/toolspec.py)
 # `_reset_for_tests` seams: only called from tests/conftest.py's autouse
 # fixture (#750), never from src/.
 _reset_for_tests  # unused function (src/donkey_kit/core/_verify.py, src/donkey_kit/core/telemetry.py, src/donkey_kit/integrations/_base.py, src/donkey_kit/core/toolspec.py)

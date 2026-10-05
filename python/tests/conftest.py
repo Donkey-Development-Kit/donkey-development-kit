@@ -19,6 +19,20 @@ from donkey_kit.integrations import _base
 pytest_plugins = ["pytester"]
 
 
+def pytest_terminal_summary(
+    terminalreporter: pytest.TerminalReporter, config: pytest.Config
+) -> None:
+    """Repeat pytest-randomly's seed at the end of the run (#750).
+
+    pytest-randomly reports the seed only in the session header, which ``-q``
+    suppresses, and most CI jobs run ``pytest -q``. Printing it here too lets
+    any job's order-dependent failure be replayed with ``--randomly-seed``."""
+    if config.pluginmanager.hasplugin("randomly"):
+        seed = config.getoption("randomly_seed")
+        msg = f"pytest-randomly seed: {seed} (replay: --randomly-seed={seed})"
+        terminalreporter.write_line(msg)
+
+
 @pytest.fixture(autouse=True)
 def _empty_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the home directory at an empty temp dir, so a test that unsets
