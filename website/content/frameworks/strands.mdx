@@ -103,19 +103,28 @@ Strands forwards to its internal OpenAI client.
 
 ## Notes
 
-- **Build the agent with `retry_strategy=None`.** A Strands `Agent` retries a
-  throttled model call by default (up to 6 attempts), and Strands treats every
-  `429` as throttling. On the proxy a `429` is a budget refusal, so turn the
-  agent's retry off and let the SDK's transport handle the transient `5xx`:
+- **A budget refusal is sent once.** A Strands `Agent` retries a throttled
+  model call by default (up to 6 attempts), and Strands treats every `429` as
+  throttling. On the proxy a `429` is a budget refusal, so the model
+  `donkey.strands.model()` builds raises it as the typed `TokenBudgetExceeded`
+  instead. The agent's retry strategy doesn't retry that error, and it reaches
+  your code as it is, after one request:
 
   ```python
   from strands import Agent
+  from donkey_kit import TokenBudgetExceeded
 
-  agent = Agent(model=donkey.strands.model("gpt-4o"), retry_strategy=None)
+  agent = Agent(model=donkey.strands.model("gpt-4o"))
+  try:
+      await agent.invoke_async("hello")
+  except TokenBudgetExceeded as err:
+      print(err.retry_after)
   ```
 
   The model itself has `max_retries=0`, so the OpenAI client under it doesn't
-  retry either.
+  retry either, and the SDK's transport handles the transient `5xx`. An
+  `OpenAIModel` you build yourself from `connection_kwargs()` doesn't get this:
+  build its agent with `Agent(model=..., retry_strategy=None)`.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.

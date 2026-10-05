@@ -134,9 +134,9 @@ async def _strands_stream(model: Any) -> None:
 async def _strands_agent(model: Any) -> None:
     from strands import Agent
 
-    # The documented contract: the transport owns retries, so the agent's own
-    # throttle retry (which takes every 429 for a throttle) is turned off.
-    await Agent(model=model, retry_strategy=None, callback_handler=None).invoke_async("hi")
+    # The agent's default throttle retry stays on: the model raises a budget 429
+    # as the typed refusal, which it does not retry (#951).
+    await Agent(model=model, callback_handler=None).invoke_async("hi")
 
 
 @dataclass(frozen=True)

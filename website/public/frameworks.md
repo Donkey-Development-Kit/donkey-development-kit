@@ -210,7 +210,7 @@ Some frameworks retry above the provider SDK, where the SDK can't reach:
 | Framework | A budget `429` is sent | A persistent `503` is sent | What to do |
 |---|---|---|---|
 | LangGraph, OpenAI Agents SDK, Anthropic SDK, LlamaIndex, MS Agent Framework, Google ADK | once | `max_retries + 1` times | Nothing. |
-| Strands | once from the model; up to 6 times from a default `Agent` | `max_retries + 1` times | Build the agent with `Agent(retry_strategy=None)`. |
+| Strands | once | `max_retries + 1` times | Nothing with `donkey.strands.model()`. A model built from `connection_kwargs()` needs `Agent(retry_strategy=None)`. See the [Strands page](https://docs.donkey-kit.dev/frameworks/strands.md#notes). |
 | CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://docs.donkey-kit.dev/frameworks/crewai.md#notes). |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is
