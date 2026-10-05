@@ -377,7 +377,24 @@ jobs:
     # instrumentation expensive fails the build. `[otel]` for the real SDK
     # TracerProvider it measures against; `-s` so the measured µs/call is visible
     # in the job log even on a pass.
+    #
+    # #753: the fixed 1ms budget has ~55x headroom over the ~18us/call
+    # measured, so it would not catch a 10x regression on its own. On a
+    # `main`-branch run (never a PR), the result is also recorded as a JSON
+    # artifact and diffed against the previous `main` run's own recorded
+    # result — least new infra: no gh-pages branch, no new third-party action
+    # (scripts/compare_benchmark_trend.py). All values below are workflow- or
+    # runner-controlled, never attacker-controlled input.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      # Bind every value interpolated into a run: body to an env var first
+      # (injection hardening), even though all three are workflow/runner-owned.
+      BENCHMARK_RESULT_PATH: ${{ runner.temp }}/benchmark-result.json
+      REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.run_id }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -386,7 +403,25 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/benchmark-py3.11.txt
       - name: GenAI span overhead < 1ms/call (BG §1.6, #194)
+        env:
+          DONKEY_BENCHMARK_JSON: ${{ env.BENCHMARK_RESULT_PATH }}
         run: pytest -q -m benchmark -s
+      - name: Upload the benchmark result for trending (#753)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: ${{ env.BENCHMARK_RESULT_PATH }}
+          retention-days: 90
+      - name: Alert on a relative regression vs. the previous main run (#753)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/compare_benchmark_trend.py
+          --current "$BENCHMARK_RESULT_PATH"
+          --repo "$REPO" --workflow ci.yml --run-id "$RUN_ID"
+          --alert-threshold 2.0
 
   quickstart:
     # #203 / BG §1.4: the gateway-free 15-minute quickstart, executed on a clean
