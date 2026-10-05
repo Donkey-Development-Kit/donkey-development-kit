@@ -168,6 +168,7 @@ def test_a_gateway_error_on_a_model_post_is_not_resent_by_default(kind: str, sta
     response, _ = _send(kind, handler)
     assert response.status_code == status
     assert len(sent) == 1
+    assert response.headers["x-should-retry"] == "false"
 
 
 @pytest.mark.parametrize("status", [502, 504])

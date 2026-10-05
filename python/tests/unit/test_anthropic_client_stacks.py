@@ -81,6 +81,25 @@ async def test_a_governed_call_reaches_the_wire_and_last_call() -> None:
     assert (record.cached_tokens, record.cache_write_tokens) == (0, 0)
 
 
+@pytest.mark.parametrize("status", [502, 504])
+async def test_anthropic_default_retries_do_not_resend_unsafe_model_post(status: int) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(status)
+
+    async with shared_client(handler) as shared:
+        kwargs = AnthropicAdapter(CFG, shared).connection_kwargs()
+        kwargs.pop("max_retries")  # Leave the provider SDK's retry default enabled.
+        llm = anthropic.AsyncAnthropic(**kwargs)
+        with pytest.raises(anthropic.APIStatusError) as exc:
+            await llm.messages.create(**BODY)
+
+    assert exc.value.response.headers["x-should-retry"] == "false"
+    assert len(seen) == 1
+
+
 async def test_anthropic_cache_counts_reach_last_call() -> None:
     body = json.loads(success_response().content)
     body["usage"].update(
