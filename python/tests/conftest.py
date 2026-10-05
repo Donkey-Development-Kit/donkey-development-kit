@@ -56,16 +56,19 @@ def pytest_configure(config: pytest.Config) -> None:
     real_importorskip = pytest.importorskip
 
     def _strict_importorskip(modname: str, *args: Any, **kwargs: Any) -> Any:
-        if modname in owned or any(modname.startswith(f"{root}.") for root in owned):
-            try:
-                return real_importorskip(modname, *args, **kwargs)
-            except pytest.skip.Exception as exc:
-                pytest.fail(
-                    f"DONKEY_CONTRACT_EXTRA={raw!r} but importorskip({modname!r}) "
-                    f"skipped ({exc}). The real framework install is broken in "
-                    "this CI job (#748)."
-                )
-        return real_importorskip(modname, *args, **kwargs)
+        # Report a skip or failure at the caller's line, not at this wrapper.
+        __tracebackhide__ = True
+        if not (modname in owned or any(modname.startswith(f"{root}.") for root in owned)):
+            return real_importorskip(modname, *args, **kwargs)
+        try:
+            return real_importorskip(modname, *args, **kwargs)
+        except pytest.skip.Exception as exc:
+            reason = str(exc)
+        # Outside the except block, so the report shows only this failure.
+        pytest.fail(
+            f"DONKEY_CONTRACT_EXTRA={raw!r} but importorskip({modname!r}) skipped "
+            f"({reason}). The real framework install is broken in this CI job (#748)."
+        )
 
     patch = pytest.MonkeyPatch()
     patch.setattr(pytest, "importorskip", _strict_importorskip)

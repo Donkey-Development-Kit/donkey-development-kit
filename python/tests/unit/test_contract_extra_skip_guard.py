@@ -42,7 +42,7 @@ def _in_test(modname: str) -> str:
 def _run(pytester: pytest.Pytester, source: str) -> pytest.RunResult:
     pytester.makeconftest(_CONFTEST)
     pytester.makepyfile(test_guarded=source)
-    return pytester.runpytest_subprocess("-p", "no:cacheprovider")
+    return pytester.runpytest_subprocess("-rs", "-p", "no:cacheprovider")
 
 
 def test_module_level_skip_of_owned_framework_fails_collection(
@@ -77,6 +77,8 @@ def test_skip_of_a_framework_the_job_does_not_install_still_skips(
         _module_level(_UNOWNED_MISSING),
     )
     result.assert_outcomes(skipped=1)
+    # The skip is reported at the caller's line, not inside the wrapper.
+    result.stdout.fnmatch_lines(["SKIPPED [[]1[]] test_guarded.py:2: *"])
 
 
 def test_without_the_variable_every_skip_stays_a_skip(
