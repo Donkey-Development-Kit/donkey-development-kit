@@ -65,6 +65,26 @@ def test_scenario_is_registered() -> None:
     )
 
 
+def test_conformance_scenarios_are_exactly_the_executable_set() -> None:
+    # Locks the #749 retire decision: every surviving name has a real test body
+    # (see the module docstring's mapping), and a scenario describing a
+    # registry/tools/governance/publication surface that still raises
+    # _verify.blocked(...) never sneaks back in without one.
+    assert set(CONFORMANCE_SCENARIOS) == {
+        "simple_completion",
+        "streaming_completion",
+        "policy_violation_terminal",
+        "attribution_headers_present",
+        "correlation_id_propagated",
+        "gateway_identity_observed",
+        "jwt_token_refreshed",
+        "typed_refusal_bridged",
+    }
+    assert len(CONFORMANCE_SCENARIOS) == len(set(CONFORMANCE_SCENARIOS)), (
+        "CONFORMANCE_SCENARIOS has a duplicate entry"
+    )
+
+
 def test_every_known_limitation_names_a_real_scenario() -> None:
     scenarios = set(CONFORMANCE_SCENARIOS)
     for adapter, limits in KNOWN_LIMITATIONS.items():

@@ -9,10 +9,43 @@ framework rejoins with its own conformance run when demand promotes it
 (#223/#244). The customer-facing pytest plugin (``donkey_kit.conformance``, #191)
 is the shipped deliverable this internal matrix backstops.
 
-The scenario bodies are wired against captured contract fixtures (BG §1.5) and
-the local gateway (BG §1.4) as their gating features land (#444). This module
-fixes the scenario list and the exemption table now so the kit exists before
-the second adapter is built (working instruction #5).
+Every name below has an executable body today — none is a bare name with no
+test behind it (#749). Each is proven by the adapter contract suite
+(``tests/conformance/test_adapter_contract.py``, ``contract_drivers.py``, #742,
+run per real framework against a loopback gateway) unless noted:
+
+- ``simple_completion`` / ``streaming_completion`` — ``test_sync_call`` /
+  ``test_streamed_call`` make the buffered/streamed call through the driver and
+  assert the gateway saw exactly one send.
+- ``attribution_headers_present`` / ``correlation_id_propagated`` —
+  ``test_call_sends_governed_headers_and_correlation`` asserts the consumer-auth
+  headers and (absent an exemption) the run's correlation id on the wire.
+- ``policy_violation_terminal`` — ``test_refusal_is_sent_once_and_typed`` sends
+  one PII refusal and asserts it reaches the caller typed, exactly once.
+- ``gateway_identity_observed`` — ``test_last_call_matches_the_declared_metadata``
+  asserts ``donkey.last_call`` against ``Adapter.observes_last_call``.
+- ``jwt_token_refreshed`` — ``test_formerly_exempt_adapters_are_handed_the_shared_client``
+  in ``test_transport_exemptions.py`` asserts the adapter's
+  ``connection_kwargs()`` carries the shared, JWT-refreshing client.
+- ``typed_refusal_bridged`` — ``test_typed_refusal_bridge.py`` runs six real
+  framework surfaces through three transport-raised refusals in both
+  ``donkey.run()`` and ``@donkey.governed``.
+
+Thirteen names that described the registry/tools/governance/publication
+surfaces (``single_tool_call``, ``multi_tool_multi_server``, ``tool_filtering``,
+``governed_filter_excludes``, ``governance_resolve_drift``,
+``governance_target_switch``, ``descriptor_auto_stable``,
+``publication_verify_drift``, ``publication_idempotent``,
+``descriptor_matches_framework``, ``auto_vs_live_agree``,
+``dynamic_tools_detected``, ``asset_type_detection``) were **retired, not
+implemented** (#749): every one of those surfaces (Exchange→MCP tool
+discovery, Exchange publication, governed-state resolution) still raises
+``_verify.blocked(...)`` (``registry/exchange.py``, ``registry/publication.py``,
+``registry/introspect.py``, ``tools/session.py``) per the verification
+discipline (§0.3) — there is no defensible scenario body to write for a surface
+that unconditionally refuses. They rejoin this list, newly, once their
+underlying surface is verified and built; a `TODO` here would just be a tracker
+substitute, so none is left.
 """
 
 from __future__ import annotations
@@ -20,22 +53,9 @@ from __future__ import annotations
 CONFORMANCE_SCENARIOS = [
     "simple_completion",
     "streaming_completion",
-    "single_tool_call",
-    "multi_tool_multi_server",
-    "tool_filtering",
     "policy_violation_terminal",
     "attribution_headers_present",
     "correlation_id_propagated",
-    "governed_filter_excludes",
-    "governance_resolve_drift",
-    "governance_target_switch",
-    "descriptor_auto_stable",
-    "publication_verify_drift",
-    "publication_idempotent",
-    "descriptor_matches_framework",
-    "auto_vs_live_agree",
-    "dynamic_tools_detected",
-    "asset_type_detection",
     # After a governed 200, donkey.last_call carries the gateway's own identity
     # (request_id / api_instance_id / environment_id) for the call just made
     # (BG §1.1, #362). Mirrors correlation_id_propagated: the adapters that route
