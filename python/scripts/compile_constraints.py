@@ -5,43 +5,54 @@ an upstream package releases between the branch being cut and CI running
 (docs/adr/0007-dependency-policy.md, rule 3). This script is that lock's
 refresh command: it drives `uv pip compile` (dev-time only; CI itself still
 installs with plain `pip install -c <constraints>`, per ADR 0007) once per
-`(Python version, extras combo)` pair actually installed by a PR-gating CI job
-in `.github/workflows/ci.yml`, then merges the results into one constraints
-file per Python version under `python/constraints/`.
+exact `(extras, dev-group, Python version)` combination a PR-gating job in
+`.github/workflows/ci.yml` installs, and writes each compile straight to its
+own file under `python/constraints/`.
 
-Why one merged file per Python version, not one per job: pip constraints only
-restrict the version of a package a job actually asks to install — an unused
-pin in the file is simply ignored. So the eight (soon ten) distinct extras
-combinations across `ci.yml`'s PR-gating jobs can be merged into a single
-`constraints/py3.NN.txt`; a job's `pip install -e ".[...]" --group dev -c
-constraints/py3.NN.txt` only ever reads the pins for what it installed. Why
-not one file total: the Python matrix is 3.10/3.11/3.12 and some pins (e.g.
-`typing-extensions`, anything with a `python_version` marker upstream)
-legitimately differ by interpreter version, so each gets its own file.
+One file per (combo, python version) — NEVER merged. An earlier version of
+this script merged every combo's pins into one file per Python version,
+reasoning that pip constraints only restrict a package a job actually
+requests, so an unused pin is harmless. That reasoning is wrong when two
+combos need the SAME package at genuinely incompatible versions: merging
+took the higher version, and `openai-agents`, `google-adk`, `crewai`, and
+`llama-index-llms-openai(-like)` all pin ceilings on dependencies (`websockets`,
+`regex`, `openai`) that a *different* combo's own compile pushed past. A
+merged constraints file does not make the install satisfiable for the combo
+whose ceiling it violates — it makes it fail (confirmed: `uv pip compile`
+against the old merged file raised "No solution found" for
+`[openai-agents,strands]`, `[llamaindex]`, `[adk]`, and `[crewai]`). Compiling
+each combo on its own and writing its own file sidesteps the whole problem:
+each file is exactly the resolution `uv` found for exactly that combo, so it
+is satisfiable for that combo by construction. The price is more files
+(one per combo per Python version it actually runs on, not all three) and a
+little duplication (two combos with identical extras get two files with
+identical content) — both fine for a generated, never-hand-edited lock.
 
 The *jobs* this script's output must stay in sync with are listed as
-`_COMBOS` below, each tagged with the `ci.yml` job(s) it covers. A job that
-ADR 0007 rules 1-2 require to resolve fresh (`all-extra-resolves`,
-`anthropic-stacks`, `adk-stacks`) and the nightly matrix are deliberately
-NOT compiled here and must never gain a `-c constraints/...` flag.
+`_COMBOS` below, each tagged with the `ci.yml` job(s) it covers and the exact
+`extras`/`dev_group` its `pip install -e ".[...]" --group dev` line uses — this
+must match the job's install step byte for byte, or the file compiled here
+is not the file CI needs. A job that ADR 0007 rules 1-2 require to resolve
+fresh (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`) and the nightly
+matrix are deliberately NOT compiled here and must never gain a
+`-c constraints/...` flag.
 
 Usage (from `python/`, needs `uv` on PATH — a dev-time tool only; see
 CONTRIBUTING.md):
 
-    python scripts/compile_constraints.py          # refresh constraints/py3.*.txt
+    python scripts/compile_constraints.py          # refresh constraints/*.txt
     python scripts/compile_constraints.py --check   # exit 1 if refreshing would change a file
 
-Conflicting pins across combos (the same package resolved to two different
-versions for two different frameworks) are resolved by taking the higher
-version — consistent with "floors, never ceilings" (§8.4): a merged
-constraints file should never hold a framework back from the version its own
-compile selected.
+`--check` recompiles every combo and diffs against the committed file. Because
+each combo is compiled on its own (never merged), a successful `--check` run
+also proves every committed file is still satisfiable for its own combo: an
+unsatisfiable combo makes `uv pip compile` fail outright (a hard error, not a
+diff), not produce a file this script could silently accept.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 import sys
 import tempfile
@@ -50,81 +61,141 @@ from pathlib import Path
 
 _PYTHON_ROOT = Path(__file__).resolve().parents[1]
 _CONSTRAINTS_DIR = _PYTHON_ROOT / "constraints"
-_PYTHON_VERSIONS = ["3.10", "3.11", "3.12"]  # the ci.yml / nightly-matrix.yml matrix
-
-_PIN_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;]+)")
 
 
 @dataclass(frozen=True)
 class Combo:
-    """One `(extras, dev group?)` combination a PR-gating ci.yml job installs."""
+    """One exact `pip install -e ".[...]" [--group dev]` a PR-gating ci.yml job runs."""
 
     name: str
     extras: tuple[str, ...]
     dev_group: bool
+    python_versions: tuple[str, ...]
     covers: str  # which ci.yml job(s), for the comment header
+
+    def file_name(self, python_version: str) -> str:
+        return f"{self.name}-py{python_version}.txt"
 
 
 # Every PR-gating job in .github/workflows/ci.yml that installs from this
-# repo's own extras/dev group, grouped by distinct (extras, dev-group) pair.
-# Keep this in sync with ci.yml: a job added there with a new combo needs a
-# line here, or its `-c constraints/...` flag will pin against a stale set.
+# repo's own extras/dev group, one Combo per distinct install line. `extras`
+# and `dev_group` must match that job's `pip install -e ".[...]" [--group dev]`
+# step EXACTLY — not a superset "to be safe": a superset can make `uv pip
+# compile` select versions the job's own, narrower install would never have
+# requested, which is exactly how the old merged-file design broke (see the
+# module docstring).
 #
 # Deliberately NOT covered (ADR 0007 rules 1-2, resolve fresh every run):
 #   all-extra-resolves, anthropic-stacks, adk-stacks, and everything in
 #   nightly-matrix.yml.
 _COMBOS: tuple[Combo, ...] = (
+    Combo("base-only", (), True, ("3.11",), "base-only"),
+    Combo("typecheck-and-lint", ("llm", "cli"), True, ("3.11",), "typecheck-and-lint"),
     Combo(
-        "base",
+        "test",
         ("llm", "cli", "local", "otel"),
         True,
-        "base-only, typecheck-and-lint, test, benchmark, quickstart",
+        ("3.10", "3.11", "3.12"),
+        "test (matrix)",
+    ),
+    Combo("benchmark", ("llm", "cli", "local", "otel"), True, ("3.11",), "benchmark"),
+    Combo("quickstart", ("llm", "local", "otel"), False, ("3.11",), "quickstart"),
+    Combo(
+        "langgraph-demo",
+        ("llm", "langgraph", "local", "otel"),
+        True,
+        ("3.11",),
+        "langgraph-demo",
     ),
     Combo(
-        "langgraph",
-        ("llm", "cli", "local", "otel", "langgraph"),
+        "agent-framework-middleware",
+        ("llm", "agent_framework"),
         True,
-        "langgraph-demo, adapter-contract(langgraph)",
-    ),
-    Combo("adk", ("llm", "cli", "local", "otel", "adk"), True, "adapter-contract(adk)"),
-    Combo("strands", ("llm", "cli", "local", "otel", "strands"), True, "adapter-contract(strands)"),
-    Combo(
-        "agent_framework",
-        ("llm", "cli", "local", "otel", "agent_framework"),
-        True,
-        "adapter-contract(agent_framework), agent-framework-middleware",
+        ("3.12",),
+        "agent-framework-middleware",
     ),
     Combo(
-        "openai-agents",
-        ("llm", "cli", "local", "otel", "openai-agents"),
+        "llamaindex-transport",
+        ("llm", "llamaindex"),
         True,
+        ("3.12",),
+        "llamaindex-transport",
+    ),
+    Combo(
+        "agents-strands-last-call",
+        ("llm", "openai-agents", "strands"),
+        True,
+        ("3.12",),
+        "agents-strands-last-call",
+    ),
+    # One combo per adapter-contract matrix leg: that job installs
+    # `.[llm,local,$DONKEY_CONTRACT_EXTRA]` — no `cli`, no `otel` — so each
+    # leg's own compile must use exactly that, not the base combo's extras.
+    Combo(
+        "adapter-contract-langgraph",
+        ("llm", "local", "langgraph"),
+        True,
+        ("3.12",),
+        "adapter-contract(langgraph)",
+    ),
+    Combo(
+        "adapter-contract-adk",
+        ("llm", "local", "adk"),
+        True,
+        ("3.12",),
+        "adapter-contract(adk)",
+    ),
+    Combo(
+        "adapter-contract-strands",
+        ("llm", "local", "strands"),
+        True,
+        ("3.12",),
+        "adapter-contract(strands)",
+    ),
+    Combo(
+        "adapter-contract-agent_framework",
+        ("llm", "local", "agent_framework"),
+        True,
+        ("3.12",),
+        "adapter-contract(agent_framework)",
+    ),
+    Combo(
+        "adapter-contract-openai-agents",
+        ("llm", "local", "openai-agents"),
+        True,
+        ("3.12",),
         "adapter-contract(openai-agents)",
     ),
     Combo(
-        "anthropic",
-        ("llm", "cli", "local", "otel", "anthropic"),
+        "adapter-contract-anthropic",
+        ("llm", "local", "anthropic"),
         True,
+        ("3.12",),
         "adapter-contract(anthropic)",
     ),
-    Combo("crewai", ("llm", "cli", "local", "otel", "crewai"), True, "adapter-contract(crewai)"),
     Combo(
-        "llamaindex",
-        ("llm", "cli", "local", "otel", "llamaindex"),
+        "adapter-contract-crewai",
+        ("llm", "local", "crewai"),
         True,
-        "adapter-contract(llamaindex), llamaindex-transport",
+        ("3.12",),
+        "adapter-contract(crewai)",
     ),
     Combo(
-        "agents-strands",
-        ("llm", "cli", "local", "otel", "openai-agents", "strands"),
+        "adapter-contract-llamaindex",
+        ("llm", "local", "llamaindex"),
         True,
-        "agents-strands-last-call",
+        ("3.12",),
+        "adapter-contract(llamaindex)",
     ),
 )
 
 
-def _compile_one(combo: Combo, python_version: str, out_dir: Path) -> dict[str, str]:
-    """``{name: version}`` for one combo, via ``uv pip compile`` (dev-time tool only)."""
-    out_file = out_dir / f"{combo.name}-py{python_version}.txt"
+def _compile_one(combo: Combo, python_version: str, out_file: Path) -> str:
+    """Compile exactly ``combo``'s install line for ``python_version``, write ``out_file``.
+
+    Returns the rendered content (header + the compiled pins), so the caller
+    can either write it or diff it against what's committed.
+    """
     cmd = [
         "uv",
         "pip",
@@ -135,7 +206,7 @@ def _compile_one(combo: Combo, python_version: str, out_dir: Path) -> dict[str, 
         "--python-platform",
         "linux",  # ci.yml and nightly-matrix.yml both run on ubuntu-latest
         "--no-annotate",
-        "--no-header",
+        "--no-header",  # uv's own header embeds the scratch dir's absolute path
         "-o",
         str(out_file),
     ]
@@ -148,49 +219,17 @@ def _compile_one(combo: Combo, python_version: str, out_dir: Path) -> dict[str, 
     except subprocess.CalledProcessError as exc:
         print(exc.stderr, file=sys.stderr)
         raise
-    pins: dict[str, str] = {}
-    for line in out_file.read_text(encoding="utf-8").splitlines():
-        match = _PIN_RE.match(line.strip())
-        if match:
-            pins[match.group(1).lower()] = match.group(2)
-    return pins
-
-
-def _max_version(a: str, b: str) -> str:
-    """The higher of two PEP 440-ish version strings (falls back to string order)."""
-    try:
-        from packaging.version import Version
-
-        return a if Version(a) >= Version(b) else b
-    except ImportError:  # pragma: no cover - packaging always available via uv's venv
-        return max(a, b)
-
-
-def merged_pins_for(python_version: str, out_dir: Path) -> dict[str, str]:
-    """The merged ``{name: version}`` map across every combo, for one Python version."""
-    merged: dict[str, str] = {}
-    for combo in _COMBOS:
-        pins = _compile_one(combo, python_version, out_dir)
-        for name, version in pins.items():
-            if name in merged and merged[name] != version:
-                merged[name] = _max_version(merged[name], version)
-            else:
-                merged[name] = version
-    return merged
-
-
-def render(python_version: str, pins: dict[str, str]) -> str:
-    """The committed ``constraints/py3.NN.txt`` content for one Python version."""
-    lines = [
-        "# GENERATED FILE — do not edit by hand.",
-        f"# Refresh with: python scripts/compile_constraints.py  (python {python_version})",
-        "# See scripts/compile_constraints.py and docs/adr/0007-dependency-policy.md rule 3.",
-        "",
-    ]
-    for name in sorted(pins):
-        lines.append(f"{name}=={pins[name]}")
-    lines.append("")
-    return "\n".join(lines)
+    compiled = out_file.read_text(encoding="utf-8")
+    header = (
+        "# GENERATED FILE — do not edit by hand.\n"
+        f"# Refresh with: python scripts/compile_constraints.py  "
+        f"(combo={combo.name!r}, python {python_version})\n"
+        "# Covers ci.yml job(s): "
+        f"{combo.covers}\n"
+        "# See scripts/compile_constraints.py and docs/adr/0007-dependency-policy.md rule 3.\n"
+        "#\n"
+    )
+    return header + compiled
 
 
 def main(argv: list[str]) -> int:
@@ -198,7 +237,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="exit 1 if refreshing would change any committed constraints/py3.*.txt",
+        help="exit 1 if refreshing would change any committed constraints/*.txt",
     )
     args = parser.parse_args(argv)
 
@@ -206,17 +245,25 @@ def main(argv: list[str]) -> int:
     changed: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
-        for python_version in _PYTHON_VERSIONS:
-            pins = merged_pins_for(python_version, tmp_dir)
-            content = render(python_version, pins)
-            target = _CONSTRAINTS_DIR / f"py{python_version}.txt"
-            if args.check:
-                existing = target.read_text(encoding="utf-8") if target.is_file() else ""
-                if existing != content:
-                    changed.append(target.name)
-            else:
-                target.write_text(content, encoding="utf-8")
-                print(f"wrote {target.relative_to(_PYTHON_ROOT)} ({len(pins)} pins)")
+        for combo in _COMBOS:
+            for python_version in combo.python_versions:
+                target = _CONSTRAINTS_DIR / combo.file_name(python_version)
+                # Always compile to a scratch file, never straight to the
+                # committed path — a --check run must not mutate it.
+                scratch = tmp_dir / combo.file_name(python_version)
+                content = _compile_one(combo, python_version, scratch)
+                if args.check:
+                    existing = target.read_text(encoding="utf-8") if target.is_file() else ""
+                    if existing != content:
+                        changed.append(target.name)
+                else:
+                    target.write_text(content, encoding="utf-8")
+                    pins = sum(
+                        1
+                        for line in content.splitlines()
+                        if line.strip() and not line.strip().startswith("#")
+                    )
+                    print(f"wrote {target.relative_to(_PYTHON_ROOT)} ({pins} pins)")
 
     if args.check and changed:
         names = ", ".join(changed)
