@@ -24,13 +24,13 @@ iniconfig==2.3.0
 jiter==0.17.0
 jsonpatch==1.33
 jsonpointer==3.1.1
-langchain-core==1.6.6
+langchain-core==1.6.7
 langchain-openai==1.6.7
 langchain-protocol==0.0.19
-langgraph==1.2.13
+langgraph==1.2.14
 langgraph-checkpoint==4.2.0
 langgraph-prebuilt==1.1.0
-langgraph-sdk==0.4.5
+langgraph-sdk==0.4.6
 langsmith==0.14.4
 librt==0.16.0
 markdown-it-py==4.2.0
@@ -48,6 +48,8 @@ pydantic-core==2.46.5
 pygments==2.21.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
+pytest-socket==0.8.1
+pytest-timeout==2.4.0
 pyyaml==6.0.3
 regex==2026.9.29
 requests==2.34.2

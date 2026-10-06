@@ -499,6 +499,16 @@ markers gate *infra availability*, so a clean skip is correct; the conformance
 kit gates *framework support*, where a silent skip is not. Run them explicitly
 with `pytest -q -m local_gateway` / `-m sandbox` (with the extra / env var in place).
 
+**The suite is hermetic (#747).** An autouse fixture in `tests/conftest.py`
+clears the proxy variables and every `OTEL_*`, `DONKEY_*` and `MULESOFT_*`
+variable before each test, so a test that needs one sets it with
+`monkeypatch.setenv`. pytest-socket allows only loopback and Unix sockets, so a
+real outbound connection fails with `SocketConnectBlockedError`; pytest-timeout
+fails any test that runs past 60s (raise it per test with
+`@pytest.mark.timeout(...)`). `@pytest.mark.sandbox` tests are exempt from the
+env clearing and the socket restriction, because they call the real proxies
+with ambient credentials.
+
 ### `scripts/verify_frameworks.py` — signatures, outside pytest
 
 This is the executable verification-discipline step for adapters' native constructor

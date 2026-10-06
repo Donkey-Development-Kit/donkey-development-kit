@@ -149,3 +149,11 @@ reviewed = 2026-10-04
 reason = "dev: measures branch coverage in one CI test leg and enforces the floor (#751)."
 reviewed = 2026-10-05
 
+[packages.pytest-socket]
+reason = "dev: blocks any non-loopback socket in the default/local_gateway suites, so an offline test can't silently make a real network call (#747)."
+reviewed = 2026-10-05
+
+[packages.pytest-timeout]
+reason = "dev: caps every test at 60s, so a stalled proxy/collector call fails fast instead of hanging CI (#747)."
+reviewed = 2026-10-05
+
