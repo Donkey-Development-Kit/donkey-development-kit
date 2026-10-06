@@ -145,6 +145,10 @@ reviewed = 2026-10-03
 reason = "dev: tests/unit/test_integration_checklist.py parses .github/workflows/ci.yml. No SDK module imports it (#730)."
 reviewed = 2026-10-04
 
+[packages.coverage]
+reason = "dev: measures branch coverage in one CI test leg and enforces the floor (#751)."
+reviewed = 2026-10-05
+
 [packages.pytest-socket]
 reason = "dev: blocks any non-loopback socket in the default/local_gateway suites, so an offline test can't silently make a real network call (#747)."
 reviewed = 2026-10-05
