@@ -52,12 +52,9 @@ _CI = yaml.safe_load((_REPO / ".github" / "workflows" / "ci.yml").read_text())
 #: Module-level names in an adapter's ``__all__`` that are helpers, not factories.
 _HELPERS = {"refusal_translator", "typed_refusals"}
 
-#: The suite files the ``adapter-contract`` CI leg must run for each framework.
-_CONTRACT_SUITE = (
-    "tests/conformance/test_adapter_contract.py",
-    "tests/unit/test_framework_retries.py",
-    "tests/unit/test_missing_framework_error.py",
-)
+#: The ``adapter-contract`` CI leg runs the whole suite (#748): the contract
+#: files and every other test that needs the leg's framework run against it.
+_WHOLE_SUITE = "python -m pytest -q"
 
 _ATTRS = list(ADAPTERS)
 
@@ -199,8 +196,8 @@ def test_contract_ci_matrix_is_exactly_the_registry() -> None:
     job = _contract_job()
     assert sorted(job["strategy"]["matrix"]["extra"]) == sorted(s.extra for s in ADAPTERS.values())
     assert job["env"]["DONKEY_CONTRACT_EXTRA"] == "${{ matrix.extra }}"
-    run = " ".join(str(step.get("run", "")) for step in job["steps"])
-    assert all(path in run for path in _CONTRACT_SUITE), run
+    runs = [str(step.get("run", "")).strip() for step in job["steps"]]
+    assert _WHOLE_SUITE in runs, runs
 
 
 def test_contributing_states_the_checklist() -> None:

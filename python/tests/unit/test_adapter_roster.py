@@ -149,9 +149,28 @@ def test_nightly_matrix_is_the_conformance_tested_set() -> None:
     assert set(matrix) == {attr for attr, s in ADAPTERS.items() if s.conformance_tested}
 
 
+def test_nightly_framework_legs_match_adapters() -> None:
+    # #748: one framework-legs entry per ADAPTERS key, pair for pair against
+    # the registry's own (attr, extra) — not just the attr set — because the
+    # FRAMEWORKS/DONKEY_CONTRACT_EXTRA key (e.g. "openai_agents") and the pip
+    # extra (e.g. "openai-agents") are not always the same string. A mismatched
+    # pair here would install the wrong extra for a leg's own
+    # verify_frameworks.py / DONKEY_CONTRACT_EXTRA check.
+    workflow = yaml.safe_load(_NIGHTLY.read_text())
+    include = workflow["jobs"]["framework-legs"]["strategy"]["matrix"]["include"]
+    pairs = {(entry["framework"], entry["extra"]) for entry in include}
+    assert pairs == {(attr, s.extra) for attr, s in ADAPTERS.items()}
+    env = workflow["jobs"]["framework-legs"]["env"]
+    assert env["DONKEY_CONTRACT_EXTRA"] == "${{ matrix.extra }}"
+    steps = [str(step.get("run", "")) for step in workflow["jobs"]["framework-legs"]["steps"]]
+    assert any("verify_frameworks.py" in s and "--require-installed" in s for s in steps)
+    assert any(s.strip() == "python -m pytest -q" for s in steps)
+    assert any('scripts/smoke_example.py "$FRAMEWORK"' in s for s in steps)
+
+
 @pytest.mark.parametrize("attr", sorted(ADAPTERS))
 def test_every_adapter_has_a_runnable_example(attr: str) -> None:
-    # The nightly matrix runs examples/<fw>/main.py for a promoted framework.
+    # scripts/smoke_example.py loads examples/<fw>/main.py for every framework leg.
     assert (_EXAMPLES / attr / "main.py").is_file()
 
 
