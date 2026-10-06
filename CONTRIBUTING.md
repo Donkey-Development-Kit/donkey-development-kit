@@ -331,7 +331,10 @@ exemptions are published in the README as credibility. When adding an adapter,
 wire every scenario; if one genuinely can't pass for a structural reason, add a
 `KNOWN_LIMITATIONS` entry (not "not supported yet"). Never add a
 framework-specific scenario — a shared-suite invariant must apply to all
-frameworks or it doesn't belong there.
+frameworks or it doesn't belong there. A scenario is added together with the
+tests that run it: `SCENARIO_BODIES` in the same file maps each name to its
+tests, and CI fails on a name with no body or a README exemption row that the
+code does not assert (#749).
 
 ### Adding a framework adapter: the integration checklist
 
