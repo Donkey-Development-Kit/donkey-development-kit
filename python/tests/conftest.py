@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from donkey_kit.core import _verify, runtime, telemetry, toolspec
+from donkey_kit.core import _verify, lastcall, runtime, telemetry, toolspec
 from donkey_kit.integrations import ADAPTERS, _base
 
 pytest_plugins = ["pytester"]
@@ -189,7 +189,8 @@ def _reset_module_state() -> Iterator[None]:
     before AND after each test (#750).
 
     Without this, whichever test reads an :class:`Unverified` placeholder,
-    builds a module-level adapter default, or configures OTLP export first
+    builds a module-level adapter default, configures OTLP export, or leaves a
+    sync call's ``last_call`` record in the main context first
     "spends" that module-level state for every test after it — so results
     depend on collection order (reverse order, a new test, or a random seed can
     all flip a previously-passing assertion). Reset before the test too, so a
@@ -200,8 +201,15 @@ def _reset_module_state() -> Iterator[None]:
     _base._reset_for_tests()
     telemetry._reset_for_tests()
     toolspec._reset_for_tests()
+    # A sync governed call records ``last_call`` into the caller's context,
+    # which for a sync test is the main context every later test inherits; an
+    # async test's tasks copy it and read a stale call instead of UNOBSERVED.
+    # Cleared here, not through a lastcall._reset_for_tests(), because
+    # core/lastcall.py is at its size ratchet (test_architecture.py).
+    lastcall._last_call.set(None)
     yield
     _verify._reset_for_tests()
     _base._reset_for_tests()
     telemetry._reset_for_tests()
     toolspec._reset_for_tests()
+    lastcall._last_call.set(None)
