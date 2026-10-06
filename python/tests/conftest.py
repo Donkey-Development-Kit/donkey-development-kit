@@ -48,6 +48,13 @@ _ENV_PREFIXES = ("OTEL_", "DONKEY_", "MULESOFT_")
 # framework install back into a silent skip.
 _HARNESS_VARS = frozenset({"DONKEY_CONTRACT_EXTRA"})
 
+# LiteLLM (pulled in by ADK's ``model()`` and CrewAI) fetches its model cost
+# map from raw.githubusercontent.com at import time, which pytest-socket's
+# loopback-only ``--allow-hosts`` blocks (#747). This switch makes it load the
+# copy bundled in the wheel instead. It is read once at import, so it is set
+# here at conftest load, before any test can import litellm.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Exempt ``@pytest.mark.sandbox`` tests from pytest-socket's loopback-only
