@@ -411,6 +411,48 @@ mypy / ruff / import-linter output); CI is the record for those. Deployment,
 teardown, and inventory receipts go in the **PR description**, not a committed
 file.
 
+**Both fixture trees are integrity-locked, and editing either without
+relocking fails CI (#752).** `python -m donkey_kit.simulator.fixtures
+--relock` regenerates **two** lock files in one run:
+`src/donkey_kit/simulator/_fixtures/fixtures.lock` (the ~25 files the
+simulator serves; package data, shipped in the wheel) and
+`tests/fixtures/fixtures.lock` (every file under `tests/fixtures/`; test-only,
+never shipped — `tests/unit/test_fixture_integrity.py` pins that boundary too).
+`--relock` is the **only** way to update either lock: a hand-edited fixture
+byte with no matching lock change fails
+`tests/unit/test_fixture_integrity.py` loudly, naming the drifted
+file. There is no bypass flag.
+
+**One command does the whole capture.** `scripts/capture_fixture.py` sends one
+HTTP request, writes the `*.headers.txt` / `*.body.<ext>` pair, appends a
+provenance line to the target directory's `README.md`, then runs the scrub and
+`--relock` steps below for you:
+
+```bash
+python scripts/capture_fixture.py \
+    --out-dir tests/fixtures/anypoint/model_wallet \
+    --name responses.success \
+    --method POST --url https://<sandbox-host>/v1/chat/completions \
+    --header "client_id: $DONKEY_LLM_PROXY_CLIENT_ID" \
+    --header "client_secret: $DONKEY_LLM_PROXY_CLIENT_SECRET" \
+    --data '{"model": "openai/gpt-5-mini", "messages": [...]}' \
+    --provenance "Captured 2026-10-05 against sandbox instance 123, model-wallet policy v2."
+```
+
+This is a **by-hand developer tool, not a CI step**: it makes one real request
+to whatever `--url` names, so only a maintainer capturing a real sandbox
+response runs it, never an automated agent against a live endpoint. Its own
+tests (`tests/unit/test_capture_fixture.py`) exercise every code path offline
+through `httpx.MockTransport`. `--out-dir` must sit under `tests/fixtures/` or
+`src/donkey_kit/simulator/_fixtures/`, the two trees it scrubs and relocks,
+and the script refuses a directory outside them before it sends anything. It
+requests `Accept-Encoding: identity` so the body it writes is the bytes on the
+wire, and it refuses to write a compressed response. After it runs, review the
+diff and confirm `scrub_fixtures.py --check` is still clean before committing
+the fixture pair, the `README.md` update, and both regenerated locks together.
+The script does not touch `docs/verified-apis.md`. If the capture verifies a
+shape, flip its ledger row by hand.
+
 Record **how to reproduce the shape** in the fixture index
 (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`): one line giving the trigger
 input and the policy configuration that produced it. If what you observed
