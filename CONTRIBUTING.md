@@ -504,8 +504,11 @@ the file reviewable as text.
 Both markers are declared in `python/pyproject.toml`. `local_gateway` is
 exercised by `tests/conformance/test_simulator_boot.py` (and run in CI's `test`
 job via `pytest -q -m local_gateway`); `sandbox` is exercised by
-`tests/sandbox/` (#400), which calls the real provisioned proxies and is
-**never** run in CI — it is opt-in, local only.
+`tests/sandbox/` (#400), which calls the real provisioned proxies and never
+runs in PR CI. It is opt-in locally, and the weekly
+`.github/workflows/live-contract-check.yml` runs it against the
+`openai-model-routing` proxy only, using the protected `live-sandbox`
+environment's secrets (#753; see `tests/sandbox/README.md`).
 
 - **`@pytest.mark.local_gateway`** boots the pure-Python local gateway simulator
   (BG §1.4) on a real TCP port — it needs the optional `[local]` extra
