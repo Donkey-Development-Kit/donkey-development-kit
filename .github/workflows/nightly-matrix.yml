@@ -193,11 +193,10 @@ jobs:
     #   3. The WHOLE suite, DONKEY_CONTRACT_EXTRA set to this leg's extra, so
     #      tests/conftest.py's skip guard turns an unexpected
     #      importorskip(this framework) into a failure rather than a silent skip.
-    #   4. The strict example smoke (DONKEY_STRICT_EXAMPLE=1): examples/<fw>/
-    #      main.py must exit non-zero on ImportError and drive build() through the
-    #      conformance kit (governed calls, in-process) rather than printing
-    #      install guidance and exiting 0. LangGraph's example runs its own
-    #      simulator smoke.
+    #   4. scripts/smoke_example.py <fw>: build examples/<fw>/main.py's native
+    #      object (non-zero on ImportError) and drive it through the conformance
+    #      kit (governed calls, in-process) rather than printing install guidance
+    #      and exiting 0.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -228,18 +227,14 @@ jobs:
       # tests/conftest.py reads this (the PIP EXTRA name, not the FRAMEWORKS
       # key) to decide which importorskip calls must fail instead of skip.
       DONKEY_CONTRACT_EXTRA: ${{ matrix.extra }}
-      # examples/<fw>/main.py (#748): exit non-zero on a missing framework and
-      # drive build() through the conformance kit, instead of printing install
-      # guidance and exiting 0.
-      DONKEY_STRICT_EXAMPLE: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      # `local` + `otel`: LangGraph's example boots the simulator (uvicorn, from
-      # `local`) and flushes spans (`otel`), as in ci.yml's langgraph-demo. No `-c`: a fresh resolve is this job's whole point.
+      # `local` + `otel`: so the whole-suite step's simulator (uvicorn) and span
+      # tests run rather than skip. No `-c`: a fresh resolve is this job's whole point.
       - name: Install SDK + framework extra (fresh resolve; ADR 0007 rule 4)
         run: >-
           python -m pip install --upgrade pip &&
@@ -252,4 +247,4 @@ jobs:
         run: python -m pytest -q
 
       - name: Strict example smoke (non-zero on a missing framework; governed calls via the conformance kit)
-        run: timeout 120 python "examples/$FRAMEWORK/main.py"
+        run: timeout 120 python scripts/smoke_example.py "$FRAMEWORK"

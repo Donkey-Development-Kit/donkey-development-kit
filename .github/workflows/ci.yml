@@ -393,20 +393,13 @@ jobs:
       # mapping, run correlation and conformance tests, so breaking them fails a
       # required check. Other frameworks' tests skip, as they are not installed.
       - run: python -m pytest -q
-      # #748: strict example smoke. DONKEY_STRICT_EXAMPLE=1 makes the example fail
-      # on a missing framework (instead of printing install guidance and exiting 0)
-      # and drive its build() through the conformance kit in-process: no network,
-      # no credentials. ADAPTERS keys use underscores where extras use hyphens
-      # (openai-agents), hence the substitution. LangGraph's example runs its own
-      # simulator smoke in the langgraph-demo job below.
+      # #748: strict example smoke. Build the example's native object (non-zero
+      # on a missing framework or a drifted constructor, instead of printing
+      # install guidance and exiting 0) and drive it through the conformance kit
+      # in-process: no network, no credentials. ADAPTERS keys use underscores
+      # where extras use hyphens (openai-agents), hence the substitution.
       - name: Strict example smoke
-        env:
-          DONKEY_STRICT_EXAMPLE: "1"
-        run: |
-          example="${DONKEY_CONTRACT_EXTRA//-/_}"
-          if [ "$example" != "langgraph" ]; then
-            python "examples/${example}/main.py"
-          fi
+        run: python scripts/smoke_example.py "${DONKEY_CONTRACT_EXTRA//-/_}"
 
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The

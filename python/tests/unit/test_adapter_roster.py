@@ -162,16 +162,15 @@ def test_nightly_framework_legs_match_adapters() -> None:
     assert pairs == {(attr, s.extra) for attr, s in ADAPTERS.items()}
     env = workflow["jobs"]["framework-legs"]["env"]
     assert env["DONKEY_CONTRACT_EXTRA"] == "${{ matrix.extra }}"
-    assert env["DONKEY_STRICT_EXAMPLE"] == "1"
     steps = [str(step.get("run", "")) for step in workflow["jobs"]["framework-legs"]["steps"]]
     assert any("verify_frameworks.py" in s and "--require-installed" in s for s in steps)
     assert any(s.strip() == "python -m pytest -q" for s in steps)
-    assert any("examples/$FRAMEWORK/main.py" in s for s in steps)
+    assert any('scripts/smoke_example.py "$FRAMEWORK"' in s for s in steps)
 
 
 @pytest.mark.parametrize("attr", sorted(ADAPTERS))
 def test_every_adapter_has_a_runnable_example(attr: str) -> None:
-    # The nightly matrix runs examples/<fw>/main.py for a promoted framework.
+    # scripts/smoke_example.py loads examples/<fw>/main.py for every framework leg.
     assert (_EXAMPLES / attr / "main.py").is_file()
 
 
