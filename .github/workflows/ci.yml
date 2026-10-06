@@ -212,6 +212,18 @@ jobs:
         run: >-
           pytest -q tests/unit/test_simulate.py tests/unit/test_conformance.py
           tests/unit/test_conformance_plugin.py tests/unit/test_transport_proxy_mounts.py
+      # #747: the default suite itself (not just the four offline-seam files
+      # above) must stay green with a dead corporate proxy and a dead OTLP
+      # collector ambient in the shell — that is exactly the hermetic-env
+      # autouse fixture in tests/conftest.py's job. Both point at a closed
+      # port, so a test that reads either var without going through the
+      # fixture (or that leaks a real socket past pytest-socket) fails loud
+      # instead of silently depending on the runner's own environment.
+      - name: default suite stays green under a dead proxy/collector (#747)
+        env:
+          HTTPS_PROXY: http://127.0.0.1:9
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:9
+        run: pytest -q
 
   anthropic-stacks:
     # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
