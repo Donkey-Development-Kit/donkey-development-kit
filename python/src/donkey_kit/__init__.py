@@ -157,7 +157,7 @@ def __dir__() -> list[str]:
 # records stay silent until the application configures logging (#717).
 _logging.getLogger(__name__).addHandler(_logging.NullHandler())
 
-__version__ = "0.1.2.dev0"
+__version__ = "0.1.2.dev1"
 
 __all__ = [
     "AgentKilled",
