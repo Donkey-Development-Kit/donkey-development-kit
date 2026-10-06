@@ -53,6 +53,30 @@ this repo and never in `proxies.toml`.
 A proxy whose creds are absent from the environment is skipped, not an error, so
 you can configure one proxy at a time.
 
+## The weekly live-contract check (#753)
+
+`.github/workflows/live-contract-check.yml` runs this suite every Monday at
+07:00 UTC, and on `workflow_dispatch`. It covers the `openai-model-routing`
+proxy only. It reads the proxy's base URL and consumer pair from the
+`live-sandbox` GitHub environment's three secrets (`DONKEY_LLM_PROXY_URL`,
+`DONKEY_LLM_PROXY_CLIENT_ID`, `DONKEY_LLM_PROXY_CLIENT_SECRET`) and writes a
+one-entry `proxies.toml`. Tests for the other proxies skip.
+
+The contract-drift guard is
+`test_openai_routing_response_shape_matches_fixture`. It compares the live
+response's *shape* (keys, and whether each value is an object, array or
+scalar) with `responses.success.body.json`. A key that disappears, or a value
+that changes kind, fails the run. A key the live body adds only warns. Output
+items are matched by their `type`, so a reasoning model's leading `reasoning`
+item does not count as drift. `test_shape_diff_reports_breaking_and_added_keys`
+is the offline self-check of that comparison; it needs no proxy:
+`pytest -q -m sandbox -k shape_diff`.
+
+The first step fails the run when any of the three secrets is empty, because
+otherwise every test would skip and the run would pass having checked nothing.
+Any failure opens, or comments on, one open issue labelled
+`live-contract-drift`.
+
 ## Why the manifest exists (multi-target)
 
 `core/config.DonkeyConfig` resolves a single `DONKEY_LLM_PROXY_*` triple, but the

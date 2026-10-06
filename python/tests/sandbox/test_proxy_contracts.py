@@ -12,8 +12,10 @@ otherwise.
 
 from __future__ import annotations
 
+import json
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,105 @@ from donkey_kit.core.errors import DonkeyError, classify
 from donkey_kit.donkey import Donkey
 
 pytestmark = pytest.mark.sandbox
+
+# The shipped success-body capture this drift test diffs the live gateway
+# against (docs/verified-apis.md §2); see the README next to it (under
+# src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/) for its provenance.
+_SUCCESS_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
+    / "anypoint"
+    / "llm_proxy"
+    / "responses.success.body.json"
+)
+
+
+def _items_by_type(items: list[object]) -> dict[object, object]:
+    """Index array items by their ``type`` discriminator, the first item of each
+    type winning. Items that are not objects with a ``type`` share key ``None``."""
+    by_type: dict[object, object] = {}
+    for item in items:
+        by_type.setdefault(item.get("type") if isinstance(item, dict) else None, item)
+    return by_type
+
+
+def _kind(value: object) -> str:
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    return "scalar"
+
+
+def _diff_shapes(expected: object, actual: object, path: str = "$") -> tuple[list[str], list[str]]:
+    """Compare the *shape* of two parsed JSON values (#753): which keys exist at
+    each level, and whether each value is an object, an array or a scalar. The
+    values themselves are ignored, so token counts, ids and timestamps never
+    matter.
+
+    Returns ``(breaking, added)``. ``breaking`` lists keys the live body lost
+    and values whose kind changed; ``added`` lists keys only the live body has.
+    ``null`` on either side matches any kind, because a nullable field is null
+    on one call and set on another. Array items are paired by their ``type``
+    discriminator, so a Responses ``output`` array that starts with a
+    ``reasoning`` item (any reasoning model) is still matched against the
+    fixture's ``message`` item. A ``type`` on only one side is not compared.
+    """
+    if expected is None or actual is None:
+        return [], []
+    if _kind(expected) != _kind(actual):
+        return [f"{path}: was {_kind(expected)}, live is {_kind(actual)}"], []
+    breaking: list[str] = []
+    added: list[str] = []
+    pairs: list[tuple[str, object, object]] = []
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        breaking += [
+            f"{path}.{key}: missing from the live body" for key in expected if key not in actual
+        ]
+        added += [f"{path}.{key}" for key in actual if key not in expected]
+        pairs = [(f"{path}.{key}", expected[key], actual[key]) for key in expected if key in actual]
+    elif isinstance(expected, list) and isinstance(actual, list):
+        live = _items_by_type(actual)
+        pairs = [
+            (f"{path}[type={key}]", item, live[key])
+            for key, item in _items_by_type(expected).items()
+            if key in live
+        ]
+    for sub_path, sub_expected, sub_actual in pairs:
+        sub_breaking, sub_added = _diff_shapes(sub_expected, sub_actual, sub_path)
+        breaking += sub_breaking
+        added += sub_added
+    return breaking, added
+
+
+def test_shape_diff_reports_breaking_and_added_keys() -> None:
+    """Offline self-check of :func:`_diff_shapes`, so the live drift guard below
+    cannot pass vacuously. Needs no proxy: it runs whenever the sandbox suite
+    does, including in the weekly live-contract-check workflow."""
+    fixture = json.loads(_SUCCESS_FIXTURE.read_text())
+    assert _diff_shapes(fixture, fixture) == ([], [])
+
+    live = json.loads(_SUCCESS_FIXTURE.read_text())
+    del live["usage"]["output_tokens_details"]
+    live["status"] = {"nested": True}
+    live["brand_new"] = 1
+    live["error"] = {"message": "set on this call"}  # null in the fixture, so nullable
+    live["output"].insert(0, {"id": "rs_1", "type": "reasoning", "summary": []})
+    assert _diff_shapes(fixture, live) == (
+        [
+            "$.status: was scalar, live is object",
+            "$.usage.output_tokens_details: missing from the live body",
+        ],
+        ["$.brand_new"],
+    )
+
+    del live["output"][1]["content"]
+    assert _diff_shapes(fixture, live)[0][1] == (
+        "$.output[type=message].content: missing from the live body"
+    )
 
 
 def test_run_scope_attribution_is_warning_free(
@@ -120,4 +221,40 @@ def test_injection_guard_rejection_classifies_and_captures(
         "policy, "
         "then capture the rejection body into "
         "src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/."
+    )
+
+
+def test_openai_routing_response_shape_matches_fixture(
+    open_proxy: Callable[[str], Donkey],
+    model_for: Callable[[str], str],
+) -> None:
+    """Contract-drift guard (#753): nothing previously caught the gateway's
+    response shape drifting from the captured fixture the simulator and the
+    classification tests rely on (``tests/unit/test_llm_proxy_contract.py``).
+    It compares only the shape (see :func:`_diff_shapes`) against
+    ``responses.success.body.json`` (docs/verified-apis.md §2), so token
+    counts, model snapshot ids and timestamps changing on every call never
+    matter. It FAILS when a fixture key is missing from the live body or a
+    value changed kind (object / array / scalar), and only WARNS on keys the
+    live body adds, because providers add fields routinely and nothing the SDK
+    reads can break on one."""
+    donkey = open_proxy("openai-model-routing")
+    client = donkey.llm.client(sync=True)
+
+    raw = client.responses.with_raw_response.create(
+        model=model_for("openai-model-routing"),
+        input="Reply with the single word: hello.",
+    )
+    live_body = raw.http_response.json()
+    fixture_body = json.loads(_SUCCESS_FIXTURE.read_text())
+
+    breaking, added = _diff_shapes(fixture_body, live_body)
+    if added:
+        warnings.warn(
+            f"live gateway response has key(s) not in {_SUCCESS_FIXTURE.name}: " + ", ".join(added),
+            stacklevel=1,
+        )
+    assert not breaking, (
+        "live gateway response shape drifted from the captured fixture "
+        f"({_SUCCESS_FIXTURE.name}, docs/verified-apis.md §2):\n" + "\n".join(breaking)
     )
