@@ -14,7 +14,7 @@ README does not publish.
 
 from __future__ import annotations
 
-import importlib
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -61,9 +61,24 @@ def _published(readme: Path) -> set[tuple[str, str]]:
     return pairs
 
 
+def _crewai_example_limits() -> dict[str, str]:
+    """``KNOWN_LIMITATIONS`` from ``examples/crewai/main.py``, loaded by path.
+
+    Plain ``pytest`` (unlike ``python -m pytest``) does not put ``python/`` on
+    ``sys.path``, so ``examples`` is not importable as a package.
+    """
+    path = _PYTHON_ROOT / "examples" / "crewai" / "main.py"
+    spec = importlib.util.spec_from_file_location("_crewai_example_main", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    limits: dict[str, str] = module.KNOWN_LIMITATIONS
+    return limits
+
+
 @pytest.mark.parametrize("readme", _READMES, ids=_IDS)
 def test_every_readme_row_is_an_exemption_in_code(readme: Path) -> None:
-    example = importlib.import_module("examples.crewai.main").KNOWN_LIMITATIONS
+    example = _crewai_example_limits()
     for framework, scenario in _published(readme):
         if scenario in _PUBLIC_ONLY:
             assert framework == "crewai", (framework, scenario)
