@@ -37,7 +37,7 @@ agent-framework-purview==1.0.0b261002
 agent-framework-redis==1.0.0b261002
 agent-framework-tools==1.0.0b261002
 aiohappyeyeballs==2.7.1
-aiohttp==3.14.3
+aiohttp==3.14.4
 aiologic==0.17.1
 aiosignal==1.4.0
 annotated-doc==0.0.5
@@ -114,7 +114,7 @@ jinja2==3.1.6
 jiter==0.17.0
 jmespath==1.1.0
 json-rpc==1.15.0
-jsonpath-ng==1.8.0
+jsonpath-ng==1.9.0
 jsonpath-python==1.1.6
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
@@ -192,6 +192,8 @@ pygments==2.21.0
 pyjwt==2.15.1
 pytest==9.1.1
 pytest-asyncio==1.4.0
+pytest-socket==0.8.1
+pytest-timeout==2.4.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
 python-multipart==0.0.32

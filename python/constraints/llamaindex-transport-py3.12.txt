@@ -4,7 +4,7 @@
 # See scripts/compile_constraints.py and docs/adr/0007-dependency-policy.md rule 3.
 #
 aiohappyeyeballs==2.7.1
-aiohttp==3.14.3
+aiohttp==3.14.4
 aiosignal==1.4.0
 aiosqlite==0.22.1
 annotated-doc==0.0.5
@@ -69,6 +69,8 @@ pydantic-core==2.46.5
 pygments==2.21.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
+pytest-socket==0.8.1
+pytest-timeout==2.4.0
 pyyaml==6.0.3
 regex==2026.9.29
 requests==2.34.2
