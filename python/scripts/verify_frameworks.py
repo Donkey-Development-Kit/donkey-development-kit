@@ -31,13 +31,23 @@ Usage:
     python scripts/verify_frameworks.py                # signature check, all installed
     python scripts/verify_frameworks.py --live         # + one real proxy round-trip
     python scripts/verify_frameworks.py --only langgraph strands
+    python scripts/verify_frameworks.py --only langgraph --require-installed
+        # also fail if "langgraph" (or any --only key) is NOT INSTALLED
     python scripts/verify_frameworks.py --emit-verified
         # print docs/verified-apis.md §8 markdown rows to paste
     python scripts/verify_frameworks.py --json
 
 Exit code is non-zero if any *installed* framework (its distribution is present)
 fails its signature check, so this doubles as a CI gate (see
-.github/workflows/nightly-matrix.yml).
+.github/workflows/nightly-matrix.yml). Without ``--only``, a framework that
+simply is not installed is reported as "NOT INSTALLED" and exits 0 — that is
+correct for an ad hoc, offline, "check whatever I have" run. But a CI leg that
+installed one specific framework and calls ``--only <fw>`` has a different
+failure mode to guard against: if that install silently broke (wrong extra
+name, a resolver skip, …), the framework reads as NOT INSTALLED and the leg
+still exits 0 (#748) — the exact "a broken install passes as absent" gap this
+flag closes. ``--require-installed`` makes that case fail too: every key named
+by ``--only`` must come back installed, not just signature-correct.
 """
 
 from __future__ import annotations
@@ -361,6 +371,14 @@ def main() -> int:
     ap.add_argument("--only", nargs="+", metavar="FW", help="restrict to these framework keys")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a table")
     ap.add_argument(
+        "--require-installed", action="store_true",
+        help=(
+            "fail if a framework named by --only is NOT INSTALLED, instead of "
+            "exiting 0 (a CI leg that installed a specific extra wants this; see "
+            "nightly-matrix.yml's framework-legs job, #748)"
+        ),
+    )
+    ap.add_argument(
         "--emit-verified", action="store_true",
         help="print docs/verified-apis.md §8 markdown rows for confirmed frameworks",
     )
@@ -388,6 +406,21 @@ def main() -> int:
         print(f"\n{len(failed)} installed framework(s) failed signature verification: "
               f"{', '.join(r.framework for r in failed)}", file=sys.stderr)
         return 1
+
+    # #748: a CI leg naming a framework via --only expects it to actually be
+    # installed. Without this, a broken/misnamed extra install reads as NOT
+    # INSTALLED above (not a signature failure) and the leg exits 0 silently —
+    # the exact gap a reviewer flagged for the nightly per-framework legs.
+    if args.require_installed and args.only:
+        not_installed = [r for r in results if not r.installed]
+        if not_installed:
+            print(
+                f"\n{len(not_installed)} --only framework(s) are NOT INSTALLED "
+                f"(--require-installed): {', '.join(r.framework for r in not_installed)}",
+                file=sys.stderr,
+            )
+            return 1
+
     return 0
 
 
