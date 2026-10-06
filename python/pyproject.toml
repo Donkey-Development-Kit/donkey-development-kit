@@ -153,6 +153,11 @@ dev = [
     "vulture>=2.11",
     "typer>=0.15.4",
     "pyyaml>=6.0",
+    # Coverage floor (#751): 7.10 is the first release documenting `[run]
+    # patch = ["subprocess"]`, which this repo relies on to measure the
+    # conformance plugin/report through pytester's runpytest_subprocess()
+    # children (see [tool.coverage.run] below).
+    "coverage[toml]>=7.10",
     # Hermetic test suite (#747): fails fast on any non-loopback socket the
     # default/local_gateway suites open, instead of a real network call
     # succeeding, hanging, or silently depending on the shell's proxy.
@@ -290,6 +295,30 @@ timeout = 60
 # silent pass-through (#747) — an `xfail` whose bug got fixed should fail loud
 # so the marker gets removed, not keep reporting green forever.
 xfail_strict = true
+
+# --- coverage (#751): measured in ONE CI `test` leg, not every matrix leg ---
+[tool.coverage.run]
+branch = true
+source = ["donkey_kit"]
+# `patch = ["subprocess"]` installs the env var + startup hook coverage.py
+# needs to measure a *subprocess* interpreter — specifically the ones
+# `pytester.runpytest_subprocess()` spawns for the conformance plugin/report
+# tests (BG §1.5), which previously ran with no coverage attached at all. It
+# implies `parallel = true` on its own; the explicit setting below just makes
+# the "many data files, one combine step" intent visible without relying on
+# that side effect.
+patch = ["subprocess"]
+parallel = true
+relative_files = true
+
+[tool.coverage.report]
+# Today's measured baseline (python -m coverage report, #751), rounded down to
+# an integer so a one-line fluctuation doesn't flap CI. Raise it when tests
+# lift the measured total past the next integer; never lower it to make a PR
+# pass.
+fail_under = 94
+show_missing = true
+skip_covered = false
 
 [tool.ruff]
 line-length = 100

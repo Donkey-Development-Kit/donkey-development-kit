@@ -12,6 +12,8 @@ venv/
 .ruff_cache/
 .import_linter_cache/
 .coverage
+# parallel data files (`[tool.coverage.run] parallel`), until `coverage combine`
+.coverage.*
 htmlcov/
 .env/
 env/
