@@ -343,7 +343,10 @@ exemptions are published in the README as credibility. When adding an adapter,
 wire every scenario; if one genuinely can't pass for a structural reason, add a
 `KNOWN_LIMITATIONS` entry (not "not supported yet"). Never add a
 framework-specific scenario — a shared-suite invariant must apply to all
-frameworks or it doesn't belong there.
+frameworks or it doesn't belong there. A scenario is added together with the
+tests that run it: `SCENARIO_BODIES` in the same file maps each name to its
+tests, and CI fails on a name with no body or a README exemption row that the
+code does not assert (#749).
 
 ### Adding a framework adapter: the integration checklist
 
@@ -420,6 +423,48 @@ mypy / ruff / import-linter output); CI is the record for those. Deployment,
 teardown, and inventory receipts go in the **PR description**, not a committed
 file.
 
+**Both fixture trees are integrity-locked, and editing either without
+relocking fails CI (#752).** `python -m donkey_kit.simulator.fixtures
+--relock` regenerates **two** lock files in one run:
+`src/donkey_kit/simulator/_fixtures/fixtures.lock` (the ~25 files the
+simulator serves; package data, shipped in the wheel) and
+`tests/fixtures/fixtures.lock` (every file under `tests/fixtures/`; test-only,
+never shipped — `tests/unit/test_fixture_integrity.py` pins that boundary too).
+`--relock` is the **only** way to update either lock: a hand-edited fixture
+byte with no matching lock change fails
+`tests/unit/test_fixture_integrity.py` loudly, naming the drifted
+file. There is no bypass flag.
+
+**One command does the whole capture.** `scripts/capture_fixture.py` sends one
+HTTP request, writes the `*.headers.txt` / `*.body.<ext>` pair, appends a
+provenance line to the target directory's `README.md`, then runs the scrub and
+`--relock` steps below for you:
+
+```bash
+python scripts/capture_fixture.py \
+    --out-dir tests/fixtures/anypoint/model_wallet \
+    --name responses.success \
+    --method POST --url https://<sandbox-host>/v1/chat/completions \
+    --header "client_id: $DONKEY_LLM_PROXY_CLIENT_ID" \
+    --header "client_secret: $DONKEY_LLM_PROXY_CLIENT_SECRET" \
+    --data '{"model": "openai/gpt-5-mini", "messages": [...]}' \
+    --provenance "Captured 2026-10-05 against sandbox instance 123, model-wallet policy v2."
+```
+
+This is a **by-hand developer tool, not a CI step**: it makes one real request
+to whatever `--url` names, so only a maintainer capturing a real sandbox
+response runs it, never an automated agent against a live endpoint. Its own
+tests (`tests/unit/test_capture_fixture.py`) exercise every code path offline
+through `httpx.MockTransport`. `--out-dir` must sit under `tests/fixtures/` or
+`src/donkey_kit/simulator/_fixtures/`, the two trees it scrubs and relocks,
+and the script refuses a directory outside them before it sends anything. It
+requests `Accept-Encoding: identity` so the body it writes is the bytes on the
+wire, and it refuses to write a compressed response. After it runs, review the
+diff and confirm `scrub_fixtures.py --check` is still clean before committing
+the fixture pair, the `README.md` update, and both regenerated locks together.
+The script does not touch `docs/verified-apis.md`. If the capture verifies a
+shape, flip its ledger row by hand.
+
 Record **how to reproduce the shape** in the fixture index
 (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`): one line giving the trigger
 input and the policy configuration that produced it. If what you observed
@@ -471,8 +516,11 @@ the file reviewable as text.
 Both markers are declared in `python/pyproject.toml`. `local_gateway` is
 exercised by `tests/conformance/test_simulator_boot.py` (and run in CI's `test`
 job via `pytest -q -m local_gateway`); `sandbox` is exercised by
-`tests/sandbox/` (#400), which calls the real provisioned proxies and is
-**never** run in CI — it is opt-in, local only.
+`tests/sandbox/` (#400), which calls the real provisioned proxies and never
+runs in PR CI. It is opt-in locally, and the weekly
+`.github/workflows/live-contract-check.yml` runs it against the
+`openai-model-routing` proxy only, using the protected `live-sandbox`
+environment's secrets (#753; see `tests/sandbox/README.md`).
 
 - **`@pytest.mark.local_gateway`** boots the pure-Python local gateway simulator
   (BG §1.4) on a real TCP port — it needs the optional `[local]` extra
