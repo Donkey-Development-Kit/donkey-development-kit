@@ -19,6 +19,7 @@ against a real Anypoint sandbox versus what is still assumed or blocked.
 | [`python-support.md`](python-support.md) | **The Python support policy** — which CPython versions are supported and tested, and when one is dropped (the first minor release after its end of life). |
 | [`adr/`](adr/README.md) | **Architecture decision records** — one file per design decision (context, decision, alternatives, consequences, status), with the template and the index in [`adr/README.md`](adr/README.md). An ADR is required for any change to an `ARCHITECTURE.md` invariant, an import-linter contract, the API stability tiers or the dependency policy (#731). |
 | [`releasing.md`](releasing.md) | **How a release reaches PyPI** — the Trusted Publishing (OIDC) workflows wired as `.github/workflows/publish-pypi.yml` and `.github/workflows/publish-testpypi.yml` (#206, #674), the public API surface semver governs, and the one-time human step to register the trusted publisher. The version scheme and tag convention are in its *Versioning & naming* section. |
+| [`ci.md`](ci.md) | **How CI/CD is organised** — which question each workflow answers (PR gate, nightly canary, live-contract check, publish), and the conventions every workflow change follows, each marked in place or target with the issue that delivers it (#711). |
 
 *"Agent Fabric", "Anypoint", and "Omni Gateway" are Salesforce trademarks; this
 project is a descriptive, non-first-party SDK for consuming those capabilities
