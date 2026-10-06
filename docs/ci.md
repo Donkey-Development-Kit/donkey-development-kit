@@ -63,6 +63,49 @@ adapter (LangGraph) against §8 signatures, and `framework-legs` runs every
 it by adapting the code or by moving the lock, never by adding a ceiling
 (`§8.4`).
 
+### `live-contract-check.yml`: the gateway contract
+
+Every Monday this workflow runs the `sandbox` suite (`tests/sandbox/`) against
+one real proxy, `openai-model-routing`. From the repository secrets it writes a
+`tests/sandbox/proxies.toml` with that one entry, so tests for every other proxy
+skip. The drift guard is `test_openai_routing_response_shape_matches_fixture`.
+Any failure opens one issue labelled `live-contract-drift`, or updates it if it
+is already open (#753).
+
+**One-time setup.** The workflow names the environment; repository settings
+supply its contents. A maintainer with admin rights on the repository sets them
+up (#999):
+
+1. Create a `live-sandbox` environment in **Settings → Environments**. Under
+   deployment branches, allow only `develop`; scheduled runs use the default
+   branch. Leave required reviewers off, because the Monday run is unattended.
+   A reviewer would hold every run until someone approved it.
+2. Add three environment secrets:
+
+   | Secret | Value |
+   | --- | --- |
+   | `DONKEY_LLM_PROXY_URL` | The proxy base URL, `https://<gateway-host>/<base-path>`. No `/v1`, same shape as the SDK's `.env` |
+   | `DONKEY_LLM_PROXY_CLIENT_ID` | The `client_id` of a consumer app with a contract on that proxy |
+   | `DONKEY_LLM_PROXY_CLIENT_SECRET` | That app's `client_secret` |
+
+   `gh secret set <NAME> --env live-sandbox` prompts for each value, so the
+   value never reaches your shell history.
+3. Check the setup with a manual run, without waiting for Monday:
+   `gh workflow run live-contract-check.yml --ref develop`. A healthy run
+   passes the `openai-model-routing` tests and skips the rest.
+
+**Reading a red run.**
+
+- *Missing secret(s).* The first step fails the run when a secret is empty.
+  Without it, every sandbox test would skip and the run would go green having
+  checked nothing.
+- *`InvalidURL` in every test, before any request.* `DONKEY_LLM_PROXY_URL` is
+  not a plain URL; it may be a truncated or placeholder value. Set it again.
+- *A 401 or 403 from the proxy.* The credentials are wrong, or the consumer
+  app's contract was revoked.
+- *A fixture or shape mismatch.* The gateway's contract really drifted. Track
+  it on the `live-contract-drift` issue.
+
 ## Conventions
 
 ### 1. PR CI resolves from a lock; the nightly run resolves fresh. **In place** (#982)
