@@ -1,24 +1,30 @@
 # Nightly framework matrix (§8.4, BG §1.8).
 #
-# Purpose: catch upstream framework churn early for the CONFORMANCE-TESTED
-# adapter(s). Each adapter targets class names/kwargs recorded in
-# docs/verified-apis.md §8; when a framework renames a class or changes a
-# signature, the verification harness turns red here *before* a user hits it.
+# Purpose: two different nightly checks, in two different jobs below.
 #
-# Scope (#197): the roster is "one deep, seven shallow" — only LangGraph is
-# conformance-tested, so it is the only framework in this matrix. The other seven
-# are supported at connection_kwargs() only; their governed-kwargs shape is
-# guarded by the blocking unit suite (tests/unit/test_adapter_ergonomics.py), and
-# their native-constructor signatures can be checked on demand with
-# `python scripts/verify_frameworks.py` (FRAMEWORKS there stays the full roster).
-# A demoted framework rejoins this matrix when demand promotes it to deep support
-# (#223/#244).
+#   `matrix`         — catches upstream framework churn for the
+#                       CONFORMANCE-TESTED adapter(s) (today: LangGraph only).
+#   `framework-legs`  — catches upstream churn for EVERY ADAPTERS entry via a
+#                       fresh, unconstrained resolve (#748; see that job's own
+#                       comment for why it exists alongside ci.yml's
+#                       constraint-locked `adapter-contract` legs).
 #
-# What runs per framework:
+# `matrix` scope (#197): the roster is "one deep, seven shallow" — only
+# LangGraph is conformance-tested, so it is the only framework in `matrix`
+# (which re-verifies §8 class/kwarg signatures against the newest upstream
+# release). The other seven are supported at connection_kwargs() only; their
+# governed-kwargs shape is guarded by the blocking unit suite
+# (tests/unit/test_adapter_ergonomics.py) and, since #748, by their own
+# `framework-legs` entry below. Native-constructor signatures can also be
+# checked on demand with `python scripts/verify_frameworks.py` (FRAMEWORKS
+# there stays the full roster). A demoted framework rejoins `matrix` when
+# demand promotes it to deep support (#223/#244).
+#
+# What `matrix` runs per framework:
 #   1. verify_frameworks.py --only <fw>  — signature check (offline). Fails the job
 #      if an INSTALLED framework's class/kwarg signature no longer matches §8.
 #   2. examples/<fw>/main.py             — smoke: must exit 0 with no creds set
-#      (each example prints setup guidance and exits cleanly when unconfigured).
+#      (the LangGraph example runs against the in-process local simulator).
 #   3. pytest                            — the unit + ergonomics suites.
 #
 # NOTE (known constraint): the extras carry no `openai` upper bound ("floors,
@@ -102,8 +108,12 @@ jobs:
         # permanently-red jobs again (#140). To promote another framework to deep
         # support (#223/#244), add its key here AND flip conformance_tested=True in
         # the ADAPTERS registry. The other seven frameworks are supported at
-        # connection_kwargs() only and are covered by the blocking unit suite, not
-        # this matrix. `donkey.openai()` is a separate raw-client method (#277).
+        # connection_kwargs() only, guarded by the blocking unit suite, and already
+        # get a real install + real import/build on every PR via ci.yml (#748) —
+        # they are absent from this nightly matrix because it checks something they
+        # don't need (upstream §8 signature drift for the deep adapter), not because
+        # they lack real-install coverage. `donkey.openai()` is a separate raw-client
+        # method (#277).
         framework:
           - langgraph
     name: verify (${{ matrix.framework }})
@@ -153,3 +163,88 @@ jobs:
           DONKEY_LLM_PROXY_CLIENT_ID: ${{ secrets.MULESOFT_LLM_PROXY_CLIENT_ID }}
           DONKEY_LLM_PROXY_CLIENT_SECRET: ${{ secrets.MULESOFT_LLM_PROXY_CLIENT_SECRET }}
         run: python scripts/verify_frameworks.py --only "${FRAMEWORK}" --live --emit-verified
+
+  framework-legs:
+    # #748 Step 2: one leg per `donkey_kit.integrations.ADAPTERS` key — not just
+    # the conformance-tested set `matrix` above covers. ci.yml's PR-gating
+    # `adapter-contract` matrix already installs each of these frameworks for
+    # real, but with `-c constraints/adapter-contract-<extra>-py3.12.txt`
+    # (ADR 0007 rule 3): a PR's result must not change because of what upstream
+    # released that day. This job is the deliberate opposite: a FRESH,
+    # unconstrained resolve of each framework's own extra, so an upstream
+    # release that breaks a framework is caught here, overnight, before it ever
+    # reaches a PR (ADR 0007 rule 4 — this job is one of the fresh-resolve
+    # canaries that rule names).
+    #
+    # `extra` is listed explicitly alongside `framework` because they are NOT
+    # always the same string: `donkey_kit.integrations.ADAPTERS["openai_agents"]`
+    # (the key verify_frameworks.py and DONKEY_CONTRACT_EXTRA's skip-guard use)
+    # has `.extra == "openai-agents"` (the pyproject/pip extra, hyphenated) — a
+    # gap a previous reviewer flagged (#748). `test_nightly_framework_legs_
+    # match_adapters` (tests/unit/test_adapter_roster.py) asserts this list is
+    # exactly ADAPTERS, pair for pair, so a new or renamed adapter can't drift
+    # out of sync here silently.
+    #
+    # What runs per leg:
+    #   1. pip install, no `-c` (fresh resolve, see above).
+    #   2. verify_frameworks.py --only <framework> --require-installed —
+    #      signature check, and fail (not exit 0) if the install silently did
+    #      not actually provide the framework (#748 reviewer note).
+    #   3. The WHOLE suite, DONKEY_CONTRACT_EXTRA set to this leg's extra, so
+    #      tests/conftest.py's skip guard turns an unexpected
+    #      importorskip(this framework) into a failure rather than a silent skip.
+    #   4. scripts/smoke_example.py <fw>: build examples/<fw>/main.py's native
+    #      object (non-zero on ImportError) and drive it through the conformance
+    #      kit (governed calls, in-process) rather than printing install guidance
+    #      and exiting 0.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - framework: langgraph
+            extra: langgraph
+          - framework: adk
+            extra: adk
+          - framework: strands
+            extra: strands
+          - framework: agent_framework
+            extra: agent_framework
+          - framework: openai_agents
+            extra: openai-agents
+          - framework: anthropic
+            extra: anthropic
+          - framework: crewai
+            extra: crewai
+          - framework: llamaindex
+            extra: llamaindex
+    name: framework-legs (${{ matrix.framework }})
+    env:
+      # Bind matrix values to env vars so they are never interpolated directly
+      # into a run: body (injection hardening).
+      FRAMEWORK: ${{ matrix.framework }}
+      EXTRA: ${{ matrix.extra }}
+      # tests/conftest.py reads this (the PIP EXTRA name, not the FRAMEWORKS
+      # key) to decide which importorskip calls must fail instead of skip.
+      DONKEY_CONTRACT_EXTRA: ${{ matrix.extra }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # `local` + `otel`: so the whole-suite step's simulator (uvicorn) and span
+      # tests run rather than skip. No `-c`: a fresh resolve is this job's whole point.
+      - name: Install SDK + framework extra (fresh resolve; ADR 0007 rule 4)
+        run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,local,otel,$EXTRA]" --group dev
+
+      - name: Signature verification (§8), fail if not actually installed (#748)
+        run: python scripts/verify_frameworks.py --only "$FRAMEWORK" --require-installed
+
+      - name: Whole suite, this leg's framework real, skip guard armed (#748)
+        run: python -m pytest -q
+
+      - name: Strict example smoke (non-zero on a missing framework; governed calls via the conformance kit)
+        run: timeout 120 python scripts/smoke_example.py "$FRAMEWORK"

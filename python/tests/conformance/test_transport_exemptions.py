@@ -17,6 +17,7 @@ these things so the exemption stays honest:
 3. The adapters that record no exemption really are handed the shared client:
    MS Agent Framework and ADK ``model()`` get an OpenAI client that sends
    through it; LlamaIndex and ADK ``gemini()`` get its view (#740).
+4. Every scenario names the tests that run it, and those tests exist (#749).
 
 Reading ``capabilities()`` off each adapter class imports only the adapter
 modules, which import their framework lazily inside methods — so this needs no
@@ -26,13 +27,15 @@ framework extra installed (it lives in ``tests/conformance``, not the base-only
 
 from __future__ import annotations
 
+import ast
 import importlib
+from pathlib import Path
 
 import pytest
 
 # Sibling data module: tests/conformance/ is not a package, so pytest's prepend
 # import mode puts this directory on sys.path and ``suite`` resolves to it.
-from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS
+from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS, SCENARIO_BODIES
 
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import build_http_client
@@ -40,6 +43,7 @@ from donkey_kit.integrations import ADAPTERS
 from donkey_kit.integrations._base import Adapter
 from donkey_kit.llm import client as llm_client
 
+_PYTHON_ROOT = Path(__file__).resolve().parents[2]
 _GATEWAY_SCENARIO = "gateway_identity_observed"
 _CORRELATION_SCENARIO = "correlation_id_propagated"
 _JWT_SCENARIO = "jwt_token_refreshed"
@@ -63,6 +67,30 @@ def test_scenario_is_registered() -> None:
     assert {_GATEWAY_SCENARIO, _CORRELATION_SCENARIO, _JWT_SCENARIO} <= set(
         CONFORMANCE_SCENARIOS
     )
+
+
+def _test_functions(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text())
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    }
+
+
+def test_every_scenario_has_an_executable_body() -> None:
+    # #749: a scenario name with no test behind it overstates what is verified.
+    # Each name maps to the tests that run it, and each of those tests exists.
+    assert len(CONFORMANCE_SCENARIOS) == len(set(CONFORMANCE_SCENARIOS))
+    assert set(SCENARIO_BODIES) == set(CONFORMANCE_SCENARIOS)
+    for scenario, node_ids in SCENARIO_BODIES.items():
+        assert node_ids, f"{scenario!r} lists no test"
+        for node_id in node_ids:
+            path, _, name = node_id.partition("::")
+            file = _PYTHON_ROOT / path
+            assert file.is_file(), f"{scenario!r}: {path} does not exist"
+            assert name in _test_functions(file), f"{scenario!r}: {node_id} does not exist"
 
 
 def test_every_known_limitation_names_a_real_scenario() -> None:

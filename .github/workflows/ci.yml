@@ -241,6 +241,10 @@ jobs:
       # Bind the matrix value to an env var so it is never interpolated into a
       # run: body directly (injection hardening).
       ANTHROPIC_SPEC: ${{ matrix.anthropic }}
+      # #748: this job installs anthropic for real, so an
+      # unexpected `pytest.importorskip("anthropic")` elsewhere must fail here,
+      # not silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: anthropic
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -273,6 +277,10 @@ jobs:
       # Bind the matrix value to an env var so it is never interpolated into a
       # run: body directly (injection hardening).
       ADK_SPEC: ${{ matrix.adk }}
+      # #748: this job installs google-adk for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: adk
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -292,6 +300,11 @@ jobs:
     # Agent, which no other job installs. Run its tests with the extra present,
     # with the shared-client correlation and last_call tests (#740).
     runs-on: ubuntu-latest
+    env:
+      # #748: this job installs agent_framework for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: agent_framework
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -311,6 +324,11 @@ jobs:
     # through typed_refusals(). No other job installs it, so run those tests here,
     # with the typed-refusal bridge case for a FunctionAgent run (#955).
     runs-on: ubuntu-latest
+    env:
+      # #748: this job installs llamaindex for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: llamaindex
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -330,6 +348,11 @@ jobs:
     # skip. Run them with both extras present, with the typed-refusal bridge case
     # for an Agents SDK Runner run (#955).
     runs-on: ubuntu-latest
+    env:
+      # #748: this job installs both frameworks for real, so an unexpected
+      # `pytest.importorskip` on either must fail here, not silently skip (see
+      # tests/conftest.py; a comma-separated list is how one job owns two).
+      DONKEY_CONTRACT_EXTRA: "openai-agents,strands"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -380,11 +403,19 @@ jobs:
           python -m pip install --upgrade pip &&
           pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev
           -c "constraints/adapter-contract-${DONKEY_CONTRACT_EXTRA}-py3.12.txt"
-      - run: >-
-          python -m pytest -q
-          tests/conformance/test_adapter_contract.py
-          tests/unit/test_framework_retries.py
-          tests/unit/test_missing_framework_error.py
+      # #748: the whole suite, not a file list, so every test that needs this
+      # leg's framework runs against the real install instead of skipping. For
+      # LangGraph, the one deep adapter (BG §1.8), that includes its refusal
+      # mapping, run correlation and conformance tests, so breaking them fails a
+      # required check. Other frameworks' tests skip, as they are not installed.
+      - run: python -m pytest -q
+      # #748: strict example smoke. Build the example's native object (non-zero
+      # on a missing framework or a drifted constructor, instead of printing
+      # install guidance and exiting 0) and drive it through the conformance kit
+      # in-process: no network, no credentials. ADAPTERS keys use underscores
+      # where extras use hyphens (openai-agents), hence the substitution.
+      - name: Strict example smoke
+        run: python scripts/smoke_example.py "${DONKEY_CONTRACT_EXTRA//-/_}"
 
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The
@@ -393,7 +424,25 @@ jobs:
     # instrumentation expensive fails the build. `[otel]` for the real SDK
     # TracerProvider it measures against; `-s` so the measured µs/call is visible
     # in the job log even on a pass.
+    #
+    # #753: the fixed 1ms budget has ~55x headroom over the ~18us/call
+    # measured, so it would not catch a 10x regression on its own. Every run
+    # writes the measured result to a JSON file; on a `main` push only (never
+    # a PR) it is uploaded as an artifact and compared against the most recent
+    # earlier successful `main` run's artifact by
+    # scripts/compare_benchmark_trend.py, which fails this job on a regression
+    # at or past `--alert-threshold`. No gh-pages branch, no new third-party
+    # action.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Read earlier runs' artifacts (compare_benchmark_trend.py).
+      actions: read
+    env:
+      # Job-level `env:` cannot use the `runner` context (an invalid-workflow
+      # error that would stop every job in this file), so the file sits in the
+      # workspace. `github.*` values are workflow-owned, not PR input.
+      DONKEY_BENCHMARK_JSON: ${{ github.workspace }}/benchmark-result.json
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -403,6 +452,25 @@ jobs:
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/benchmark-py3.11.txt
       - name: GenAI span overhead < 1ms/call (BG §1.6, #194)
         run: pytest -q -m benchmark -s
+      - name: Upload the benchmark result for trending (#753)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: ${{ env.DONKEY_BENCHMARK_JSON }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Alert on a relative regression vs. the previous main run (#753)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: >-
+          python scripts/compare_benchmark_trend.py
+          --current "$DONKEY_BENCHMARK_JSON"
+          --repo "$REPO" --workflow ci.yml --run-id "$RUN_ID"
+          --alert-threshold 2.0
 
   quickstart:
     # #203 / BG §1.4: the gateway-free 15-minute quickstart, executed on a clean
@@ -454,9 +522,10 @@ jobs:
         # main:build. The bare script omits cwd from sys.path and fails to import.
         run: python -m pytest -q --donkey-conformance --donkey-agent=examples.langgraph.main:build
 
-  # Nightly framework matrix (§8.4) — runs the conformance kit against the
-  # LATEST release of each framework and opens an issue on failure. Scheduled
-  # separately during Phase 1 and later.
+  # The nightly framework matrix (§8.4) is .github/workflows/nightly-matrix.yml.
+  # It re-checks LangGraph, the one conformance-tested adapter, against its
+  # newest release. A failed run is reported only as a failed scheduled run;
+  # it opens no issue.
 
   docs-llms-drift:
     # #205 / BG §1.10: llms.txt, llms-full.txt, and the per-page .md files are

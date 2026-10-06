@@ -113,6 +113,56 @@ def test_exit_code_fails_on_an_import_error_from_an_installed_framework(
     assert "SIGNATURE FAIL" in capsys.readouterr().out
 
 
+def test_require_installed_passes_when_the_only_framework_is_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = _fake_adapter(monkeypatch, lambda model: Fraction(1))
+    row = ("fake", adapter, "build", "fractions.Fraction", _INSTALLED)
+    monkeypatch.setattr(vf, "FRAMEWORKS", [row])
+    monkeypatch.setattr(
+        sys, "argv", ["verify_frameworks.py", "--only", "fake", "--require-installed"]
+    )
+    for var in vf.PROXY_ENV:
+        monkeypatch.setenv(var, "placeholder")
+
+    assert vf.main() == 0
+
+
+def test_require_installed_fails_when_the_only_framework_is_not_installed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # #748: a CI leg that installs one framework and calls --only <fw> must not
+    # exit 0 just because the install silently failed (wrong extra name, a
+    # resolver skip, …) — that reads as NOT INSTALLED without this flag.
+    adapter = _fake_adapter(monkeypatch, lambda model: Fraction(1))
+    row = ("fake", adapter, "build", "fractions.Fraction", _ABSENT)
+    monkeypatch.setattr(vf, "FRAMEWORKS", [row])
+    monkeypatch.setattr(
+        sys, "argv", ["verify_frameworks.py", "--only", "fake", "--require-installed"]
+    )
+    for var in vf.PROXY_ENV:
+        monkeypatch.setenv(var, "placeholder")
+
+    assert vf.main() == 1
+    out = capsys.readouterr()
+    assert "NOT INSTALLED" in out.err
+    assert "fake" in out.err
+
+
+def test_require_installed_is_a_no_op_without_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Without --only, "not installed" is the expected, ad hoc "whatever I have"
+    # outcome, not a broken-install signal, so --require-installed alone (no
+    # --only) must not turn a merely-absent framework into a failure.
+    adapter = _fake_adapter(monkeypatch, lambda model: Fraction(1))
+    row = ("fake", adapter, "build", "fractions.Fraction", _ABSENT)
+    monkeypatch.setattr(vf, "FRAMEWORKS", [row])
+    monkeypatch.setattr(sys, "argv", ["verify_frameworks.py", "--require-installed"])
+    for var in vf.PROXY_ENV:
+        monkeypatch.setenv(var, "placeholder")
+
+    assert vf.main() == 0
+
+
 def test_each_framework_checks_a_distribution_its_extra_installs() -> None:
     # The nightly matrix installs the framework's extra and then runs the harness;
     # a distribution the extra doesn't ship would read as NOT INSTALLED and exit 0.
