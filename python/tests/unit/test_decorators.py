@@ -7,13 +7,11 @@ an undescribed tool.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig, ToolSpec, registered_tools
 from donkey_kit.core.telemetry import current_correlation_id, current_cost_tags
-from donkey_kit.core.toolspec import TOOL_MARKER, _clear_registry, tool_spec
+from donkey_kit.core.toolspec import TOOL_MARKER, tool_spec
 
 
 def _cfg() -> DonkeyConfig:
@@ -24,12 +22,8 @@ def _cfg() -> DonkeyConfig:
     )
 
 
-@pytest.fixture(autouse=True)
-def _isolate_registry() -> Iterator[None]:
-    """Each test sees an empty process-global tool registry."""
-    _clear_registry()
-    yield
-    _clear_registry()
+# The autouse `_reset_module_state` fixture (tests/conftest.py, #750) already
+# clears the process-global tool registry before and after every test.
 
 
 # --- @donkey.governed -------------------------------------------------------

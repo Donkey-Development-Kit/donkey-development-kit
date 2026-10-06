@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from donkey_kit.core import runtime
-from donkey_kit.integrations import ADAPTERS
+from donkey_kit.core import _verify, lastcall, runtime, telemetry, toolspec
+from donkey_kit.integrations import ADAPTERS, _base
 
 pytest_plugins = ["pytester"]
 
@@ -69,6 +69,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if item.get_closest_marker("sandbox") is not None:
             item.add_marker(pytest.mark.enable_socket)
+
+
+def pytest_terminal_summary(
+    terminalreporter: pytest.TerminalReporter, config: pytest.Config
+) -> None:
+    """Repeat pytest-randomly's seed at the end of the run (#750).
+
+    pytest-randomly reports the seed only in the session header, which ``-q``
+    suppresses, and most CI jobs run ``pytest -q``. Printing it here too lets
+    any job's order-dependent failure be replayed with ``--randomly-seed``."""
+    if config.pluginmanager.hasplugin("randomly"):
+        seed = config.getoption("randomly_seed")
+        msg = f"pytest-randomly seed: {seed} (replay: --randomly-seed={seed})"
+        terminalreporter.write_line(msg)
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -167,3 +181,35 @@ def _fresh_default_runtime() -> Iterator[None]:
     from an earlier test's environment."""
     yield
     runtime.close_default()
+
+
+@pytest.fixture(autouse=True)
+def _reset_module_state() -> Iterator[None]:
+    """Reset every module-level cache/flag the SDK keeps for process lifetime,
+    before AND after each test (#750).
+
+    Without this, whichever test reads an :class:`Unverified` placeholder,
+    builds a module-level adapter default, configures OTLP export, or leaves a
+    sync call's ``last_call`` record in the main context first
+    "spends" that module-level state for every test after it — so results
+    depend on collection order (reverse order, a new test, or a random seed can
+    all flip a previously-passing assertion). Reset before the test too, so a
+    test's own ``pytest.warns``/cache assertions never depend on what an
+    earlier test happened to leave behind. Individual tests must not clear
+    these by hand; add a new module's ``_reset_for_tests()`` here instead."""
+    _verify._reset_for_tests()
+    _base._reset_for_tests()
+    telemetry._reset_for_tests()
+    toolspec._reset_for_tests()
+    # A sync governed call records ``last_call`` into the caller's context,
+    # which for a sync test is the main context every later test inherits; an
+    # async test's tasks copy it and read a stale call instead of UNOBSERVED.
+    # Cleared here, not through a lastcall._reset_for_tests(), because
+    # core/lastcall.py is at its size ratchet (test_architecture.py).
+    lastcall._last_call.set(None)
+    yield
+    _verify._reset_for_tests()
+    _base._reset_for_tests()
+    telemetry._reset_for_tests()
+    toolspec._reset_for_tests()
+    lastcall._last_call.set(None)
