@@ -216,7 +216,6 @@ def test_otlp_bootstrap_inert_path_logs_debug(
 
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", raising=False)
-    monkeypatch.setattr(telemetry, "_otlp_export_configured", False)
     with caplog.at_level(logging.DEBUG, logger="donkey_kit.core.telemetry"):
         telemetry.configure_otlp_export(DonkeyConfig())
 

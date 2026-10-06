@@ -158,25 +158,23 @@ DONKEY_POLICY_TYPE = "donkey.policy.type"
 DONKEY_BUDGET_REMAINING = "donkey.budget.remaining"
 # Cost-attribution dimensions (docs/verified-apis.md §3, BG §1.7, #196). One
 # donkey.cost.* attribute per fixed dimension; ``enduser.id`` keeps its dotted
-# external name. These carry the full value on the span even while the
-# request-header names are UNVERIFIED (docs/verified-apis.md §3), so
-# per-dimension spend attribution works end to end.
+# external name. These carry the full value even while the request-header
+# names are UNVERIFIED (docs/verified-apis.md §3), for end-to-end attribution.
 DONKEY_COST_TEAM = "donkey.cost.team"
 DONKEY_COST_PROJECT = "donkey.cost.project"
 DONKEY_COST_ENV = "donkey.cost.env"
 DONKEY_COST_ENDUSER = "donkey.cost.enduser.id"
 # Gateway routing & resilience (docs/verified-apis.md §3, #309). The served
-# provider already lands on
-# ``gen_ai.system`` and the served model on ``gen_ai.response.model``; these two
-# carry the gateway-specific routing facts the semconv has no key for. Emitted
-# even when ``fallback`` is ``False`` — "we routed normally" is a signal an
-# operator wants on every span, not just the failover ones.
+# provider already lands on ``gen_ai.system`` and the served model on
+# ``gen_ai.response.model``; these two carry the gateway-specific routing facts
+# the semconv has no key for. Emitted even when ``fallback`` is ``False`` — "we
+# routed normally" is a signal an operator wants on every span, not just the
+# failover ones.
 DONKEY_ROUTING_TYPE = "donkey.routing.type"
 DONKEY_ROUTING_FALLBACK = "donkey.routing.fallback"
 # Semantic-routing match detail (docs/verified-apis.md §3, #590). Populated only
-# on a semantic-routing proxy (``routing_type == "Semantic"``); absent —and so
-# dropped from the span— on model-based routing. The topic and score explain the
-# routing decision the bare ``donkey.routing.type`` leaves opaque.
+# on a semantic-routing proxy (``routing_type == "Semantic"``), absent on
+# model-based routing — the topic/score explain what ``donkey.routing.type`` leaves opaque.
 DONKEY_ROUTING_MATCHED_TOPIC = "donkey.routing.matched_topic"
 DONKEY_ROUTING_SCORE = "donkey.routing.score"
 # Semantic-cache outcome (docs/verified-apis.md §2, #587). Populated only when the
@@ -200,9 +198,8 @@ POLICY_DECISION_REFUSE = "refuse"
 # --- Content redaction boundary (#306, BG §1.6) -----------------------------
 # The attributes that carry message TEXT. Emitting any of these requires an
 # explicit ``telemetry_capture_content=True`` opt-in — see :data:`GEN_AI_PROMPT`.
-# Adding a new content-bearing attribute (e.g. tool-call arguments/results, when
-# that span grows one) means adding it HERE, so the single switch keeps covering
-# it.
+# Add a new content-bearing attribute (e.g. tool-call args/results) HERE, so
+# the single switch keeps covering it.
 _CONTENT_ATTRIBUTES = frozenset({GEN_AI_PROMPT, GEN_AI_COMPLETION})
 
 
@@ -239,23 +236,19 @@ def _host_provider_set() -> bool:
 # The span helpers above get their tracer from ``_tracer()``, which rides
 # whatever global TracerProvider the host process installed, or the DDK-scoped
 # provider built below. Without either they export nothing: OpenTelemetry's
-# default is a no-op provider. This section is
-# what turns "we build spans" into "spans reach the customer's sink", with the
-# zero-config contract of BG §1.6:
-#
+# default is a no-op provider. This is what turns "we build spans" into "spans
+# reach the customer's sink", with the zero-config contract of BG §1.6:
 #   set OTEL_EXPORTER_OTLP_ENDPOINT (the *standard* OTel env var) → spans export.
 #   no SDK-specific env var, and no endpoint set → inert and silent.
-#
 # The provider it builds is DDK-scoped: it carries DDK's own spans and is never
 # made the process-global provider unless ``telemetry_install_global`` is set.
 # OTel lets the global provider be set only once, so taking it implicitly would
 # silently lock out a host that configures its own afterwards (#732,
-# docs/adr/0010-no-hidden-global-side-effects.md).
-#
-# Export I/O runs on the BatchSpanProcessor's background thread, off the request
-# hot path — which is exactly why per-call overhead stays under the 1ms bar
-# (benchmarked in CI, #194): the call site only creates the span, sets attributes
-# and enqueues; the network flush is somebody else's thread.
+# docs/adr/0010-no-hidden-global-side-effects.md). Export I/O runs on the
+# BatchSpanProcessor's background thread, off the request hot path — which is
+# exactly why per-call overhead stays under the 1ms bar (benchmarked in CI,
+# #194): the call site only creates the span, sets attributes and enqueues;
+# the network flush is somebody else's thread.
 
 
 class TelemetryExportWarning(UserWarning):
@@ -265,15 +258,22 @@ class TelemetryExportWarning(UserWarning):
     """
 
 
-# Guards ``configure_otlp_export`` so multiple ``Donkey()`` constructions build
-# at most one provider per process (one exporter, one batch thread). Reset only
-# by tests.
+# Guards ``configure_otlp_export`` to build at most one provider per process
+# (one exporter, one batch thread). Reset by `_reset_for_tests` below.
 _otlp_export_configured = False
-# The tracer of the DDK-scoped provider, set when an endpoint is configured and
-# the global provider was neither set by the host nor installed by opt-in.
+# The DDK-scoped provider's tracer, set when an endpoint is configured and the
+# global provider was neither set by the host nor installed by opt-in.
 _scoped_tracer: Any | None = None
 # One-time de-dupe for the missing-exporter warning, keyed by protocol.
 _warned_missing_exporter: set[str] = set()
+
+
+def _reset_for_tests() -> None:
+    """Drop the three flags above so no test's export config outlives it (#750)."""
+    global _otlp_export_configured, _scoped_tracer
+    _otlp_export_configured = False
+    _scoped_tracer = None
+    _warned_missing_exporter.clear()
 
 
 def _otlp_endpoint_configured() -> bool:

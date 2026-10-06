@@ -39,11 +39,11 @@ mdurl==0.1.2
 mypy==2.4.0
 mypy-extensions==1.1.0
 openai==2.54.0
-opentelemetry-api==1.45.0
-opentelemetry-instrumentation==0.66b0
-opentelemetry-instrumentation-threading==0.66b0
-opentelemetry-sdk==1.45.0
-opentelemetry-semantic-conventions==0.66b0
+opentelemetry-api==1.45.1
+opentelemetry-instrumentation==0.66b1
+opentelemetry-instrumentation-threading==0.66b1
+opentelemetry-sdk==1.45.1
+opentelemetry-semantic-conventions==0.66b1
 packaging==26.3
 pathspec==1.1.1
 pluggy==1.6.0
@@ -54,6 +54,7 @@ pygments==2.21.0
 pyjwt==2.15.1
 pytest==9.1.1
 pytest-asyncio==1.4.0
+pytest-randomly==5.0.0
 pytest-socket==0.8.1
 pytest-timeout==2.4.0
 python-dateutil==2.9.0.post0
@@ -73,7 +74,7 @@ starlette==1.7.0
 strands-agents==1.58.0
 tqdm==4.70.1
 truststore==0.10.4
-typer==0.27.2
+typer==0.27.3
 typing-extensions==4.16.0
 typing-inspection==0.4.4
 urllib3==2.8.0

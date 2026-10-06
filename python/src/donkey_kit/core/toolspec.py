@@ -99,7 +99,7 @@ def tool_spec(func: Callable[..., Any]) -> ToolSpec | None:
     return marker if isinstance(marker, ToolSpec) else None
 
 
-def _clear_registry() -> None:
-    """Reset the process-global registry. For tests only — production code never
-    unregisters a tool."""
+def _reset_for_tests() -> None:
+    """Reset the process-global registry (#750). Called only from the autouse
+    fixture in ``tests/conftest.py`` — production code never unregisters a tool."""
     _REGISTRY.clear()

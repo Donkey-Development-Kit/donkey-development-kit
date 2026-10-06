@@ -27,6 +27,7 @@ pluggy==1.6.0
 pygments==2.21.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
+pytest-randomly==5.0.0
 pytest-socket==0.8.1
 pytest-timeout==2.4.0
 pyyaml==6.0.3
@@ -35,6 +36,6 @@ rich==15.0.0
 ruff==0.16.10
 shellingham==1.5.4
 tomli==2.4.1
-typer==0.27.2
+typer==0.27.3
 typing-extensions==4.16.0
 vulture==2.16

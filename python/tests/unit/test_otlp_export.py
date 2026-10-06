@@ -60,11 +60,12 @@ _PROVIDER_VARS = (
 
 @pytest.fixture(autouse=True)
 def _clean_otel_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every test starts from a known OTel env and a fresh warning de-dupe set,
-    so one test's endpoint/protocol/warning never leaks into the next."""
+    """Every test starts from a known OTel env, so one test's endpoint/protocol
+    setting never leaks into the next. The warning de-dupe set and the other
+    module-level export flags are reset by the autouse `_reset_module_state`
+    fixture (tests/conftest.py, #750)."""
     for var in _ENDPOINT_VARS + _PROTOCOL_VARS + _PROVIDER_VARS:
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(telemetry, "_warned_missing_exporter", set())
 
 
 # --- the inert-and-silent gate (AC #4) --------------------------------------
@@ -359,8 +360,8 @@ def test_scoped_provider_exports_ddk_spans_without_touching_the_global(
     scoped.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(telemetry, "_build_tracer_provider", lambda _config: scoped)
     monkeypatch.setattr(telemetry, "_host_provider_set", lambda: False)
-    monkeypatch.setattr(telemetry, "_otlp_export_configured", False)
-    monkeypatch.setattr(telemetry, "_scoped_tracer", None)
+    # `_otlp_export_configured` / `_scoped_tracer` already start clean — reset
+    # by the autouse `_reset_module_state` fixture (tests/conftest.py, #750).
 
     before = trace.get_tracer_provider()
     telemetry.configure_otlp_export(DonkeyConfig())
