@@ -8,13 +8,12 @@ across the package's ``__all__`` lists. Submodule paths are not API.
 
 from __future__ import annotations
 
-import builtins
 import importlib
 import inspect
 import pkgutil
 import types
 import typing
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -84,24 +83,24 @@ class _External:
     type such as ``openai.AsyncOpenAI``): not a donkey_kit type, so not checked."""
 
 
-class _Namespace(Mapping[str, Any]):
-    """Resolve a name from the module, then builtins, else :class:`_External`."""
+def _type_hints(
+    func: Any, module_globals: dict[str, Any], stand_ins: dict[str, Any]
+) -> dict[str, Any]:
+    """``typing.get_type_hints`` with every name the module does not define at
+    runtime (a ``TYPE_CHECKING``-only import) resolved to :class:`_External`.
 
-    def __init__(self, module_globals: dict[str, Any]) -> None:
-        self._globals = module_globals
-
-    def __getitem__(self, key: str) -> Any:
-        if key in self._globals:
-            return self._globals[key]
-        if hasattr(builtins, key):
-            return getattr(builtins, key)
-        return _External
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._globals)
-
-    def __len__(self) -> int:
-        return len(self._globals)
+    A plain dict that learns each missing name from the ``NameError``, not a
+    ``Mapping`` with a fallback ``__getitem__``: Python 3.14's
+    ``ForwardRef.evaluate`` copies ``localns`` with ``dict()`` before using it
+    (#1026), which keeps only the iterated keys and drops the fallback.
+    """
+    while True:
+        try:
+            return typing.get_type_hints(func, globalns=module_globals, localns=stand_ins)
+        except NameError as exc:
+            if exc.name is None or exc.name in stand_ins:
+                raise
+            stand_ins[exc.name] = _External
 
 
 def _donkey_kit_types(hint: object) -> Iterator[type]:
@@ -118,7 +117,7 @@ def _donkey_kit_types(hint: object) -> Iterator[type]:
 
 def _public_member_hints() -> Iterator[tuple[str, object]]:
     module_globals = vars(importlib.import_module(Donkey.__module__))
-    ns = _Namespace(module_globals)
+    stand_ins: dict[str, Any] = {}
     for attr, member in inspect.getmembers(Donkey):
         if attr.startswith("_"):
             continue
@@ -126,7 +125,7 @@ def _public_member_hints() -> Iterator[tuple[str, object]]:
         func = getattr(func, "__func__", func)
         if not callable(func):
             continue
-        hints = typing.get_type_hints(func, globalns=module_globals, localns=ns)
+        hints = _type_hints(func, module_globals, stand_ins)
         for hint in hints.values():
             yield attr, hint
     # The lazily resolved adapter attributes are framework-specific and come
