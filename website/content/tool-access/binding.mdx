@@ -48,8 +48,9 @@ filtered = tools.filter(predicate=lambda t: t.name.startswith("get_"))
 ```
 
 <Callout type="info">
-  The SDK logs the descriptor token count for a `ToolSet` at debug level, so
-  you can see the cost of skipping `filter()` before a model does.
+  The SDK logs how many tool descriptors a `ToolSet` exposes out of the total
+  at debug level, so you can see the cost of skipping `filter()` before a
+  model does. See [Debug logging](/telemetry#debug-logging) to turn it on.
 </Callout>
 
 ## Per-framework binding
