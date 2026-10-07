@@ -327,7 +327,7 @@ _CORE_MODULE_BUDGET = 500  # lines
 # transport split (#728) left no transport module past it.
 _OVERSIZED_CORE_MODULES = {
     "config.py": 1108,
-    "errors.py": 1146,
+    "errors.py": 1095,
     "lastcall.py": 828,
     "telemetry.py": 657,
 }

@@ -6,7 +6,7 @@ HARD RULE (the layered architecture): nothing in this package may import from
 from __future__ import annotations
 
 from .auth import AnypointConnectedApp, AuthProvider, ChainedAuth, StaticToken
-from .budget import Budget
+from .budget import Budget, RequestWindow
 from .cache import TTLCache
 from .cachecontrol import CacheControls, CacheScope, cache_scope, current_cache_controls
 from .config import ConfigOverrides, DonkeyConfig, Region
@@ -26,6 +26,7 @@ from .errors import (
     PromptInjectionBlocked,
     PublicationDrift,
     RegistryError,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     ToolInvocationError,
     UpstreamModelError,
@@ -82,6 +83,8 @@ __all__ = [
     "PublicationDrift",
     "Region",
     "RegistryError",
+    "RequestRateLimitExceeded",
+    "RequestWindow",
     "RunScope",
     "StaticToken",
     "TTLCache",

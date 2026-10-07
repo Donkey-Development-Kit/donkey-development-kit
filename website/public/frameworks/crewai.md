@@ -128,8 +128,9 @@ A `base_url` / `api_base` passed to `llm()` must pass the
 - **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
   rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as
   a rate limit. On the proxy a `429` is a budget refusal, so CrewAI re-sends it
-  twice before raising. CrewAI has no setting to turn this retry off. The
-  OpenAI client underneath has `max_retries=0`, and transient `5xx` errors are
+  twice before raising. CrewAI has no setting to turn this retry off. This also
+  applies to `RequestRateLimitExceeded`, the `429` of the request
+  `rate-limiting` policy. The OpenAI client underneath has `max_retries=0`, and transient `5xx` errors are
   not retried at all, because the SDK's transport isn't used.
 - **Printing the model shows the API key.** `OpenAICompletion`'s own `repr()` /
   `str()` include `api_key`. Don't print or log it.

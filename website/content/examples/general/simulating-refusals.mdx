@@ -191,7 +191,10 @@ donkey mock --scenario pii_block:every=2 \
 
 `pii_block` fails every Nth call, `injection` matches request text, and
 `budget` is a real wall-clock window that serves the token-rate-limit 429 on
-exhaustion until the window rolls over.
+exhaustion until the window rolls over. `--scenario request_limit:limit=3,window=60s`
+adds the request-counting equivalent for the `rate-limiting` policy, and
+`donkey.simulate(RequestRateLimitExceeded)` or the model sentinel
+`donkey-sim/request-rate-limit` injects that `429` directly.
 
 <Callout type="info">
   `simulate()` only injects shapes that have a captured wire body.

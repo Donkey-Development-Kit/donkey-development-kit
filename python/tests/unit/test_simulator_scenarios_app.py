@@ -22,6 +22,7 @@ from donkey_kit import Budget
 from donkey_kit.core.errors import (
     PIIDetected,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     classify,
 )
@@ -89,6 +90,51 @@ async def test_budget_scenario_paces_then_429_with_token_headers() -> None:
     assert r4.headers["x-token-remaining"] == "0"
     assert int(r4.headers["x-token-reset"]) > 0
     assert isinstance(classify(r4), TokenBudgetExceeded)
+
+
+async def test_request_limit_scenario_paces_then_serves_the_captured_429() -> None:
+    """#974: the 200s carry the x-ratelimit-* trio from the live counter, and the
+    call past the limit is the captured rate-limiting 429."""
+    async with _client("request_limit:limit=3,window=60s") as client:
+        responses = [
+            await client.post("/v1/responses", json={"model": "gpt-5.1"}) for _ in range(4)
+        ]
+
+    assert [r.status_code for r in responses] == [200, 200, 200, 429]
+    assert [r.headers["x-ratelimit-remaining"] for r in responses[:3]] == ["2", "1", "0"]
+    assert all(r.headers["x-ratelimit-limit"] == "3" for r in responses)
+    budget = Budget()
+    budget.observe(responses[0])
+    assert budget.requests.remaining == 2
+    # The default token counter still runs alongside the request window.
+    assert "x-llm-proxy-ratelimit" in responses[0].headers
+
+    rejected = responses[3]
+    assert rejected.content == b'{"error":"Too Many Requests"}'
+    assert rejected.headers["x-ratelimit-remaining"] == "0"
+    assert "x-token-limit" not in rejected.headers
+    assert isinstance(classify(rejected), RequestRateLimitExceeded)
+
+
+async def test_request_limit_and_budget_scenarios_compose() -> None:
+    async with _client(
+        "request_limit:limit=1,window=60s", "budget:limit=1000,window=60s,cost=10"
+    ) as client:
+        ok = await client.post("/v1/responses", json={"model": "gpt-5.1"})
+        refused = await client.post("/v1/responses", json={"model": "gpt-5.1"})
+    assert ok.headers["x-ratelimit-remaining"] == "0"
+    assert "990 tokens remaining" in ok.headers["x-llm-proxy-ratelimit"]
+    # The request-rate-limit refusal is served before the budget is spent.
+    assert isinstance(classify(refused), RequestRateLimitExceeded)
+
+
+async def test_request_rate_limit_sentinel_serves_the_captured_shape() -> None:
+    async with _client() as client:
+        resp = await client.post(
+            "/v1/responses", json={"model": "donkey-sim/request-rate-limit"}
+        )
+    assert resp.status_code == 429
+    assert isinstance(classify(resp), RequestRateLimitExceeded)
 
 
 async def test_injection_wins_over_pii_and_budget_precedence() -> None:

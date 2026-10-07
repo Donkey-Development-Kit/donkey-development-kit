@@ -1,0 +1,20 @@
+HTTP/1.1 429 Too Many Requests
+x-ratelimit-limit: 3
+x-ratelimit-remaining: 0
+x-ratelimit-reset: 47668
+content-type: application/json; charset=UTF-8
+content-length: 29
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: azureopenai
+x-llm-proxy-llm-model: gpt-5-mini
+x-llm-proxy-input-tokens-cost-per-1m: 0.25
+x-llm-proxy-output-tokens-cost-per-1m: 2
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: azureopenai, Model: gpt-5-mini.
+date: Wed, 07 Oct 2026 14:29:21 GMT
+server: Anypoint Flex Gateway
+x-envoy-decorator-operation: api-instance-21188400.00000000-0000-4000-8000-5c4fd1a49fc3.svc
+x-correlation-id: 00000000-0000-4000-8000-dae786fbb75c
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive
+

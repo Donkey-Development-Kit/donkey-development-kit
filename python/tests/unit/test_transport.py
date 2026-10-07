@@ -971,6 +971,25 @@ async def test_does_not_retry_429_budget_refusal() -> None:
     assert calls["n"] == 1  # terminal on the first hit — never retried (BG §1.2, #183)
 
 
+async def test_does_not_retry_429_request_rate_limit_refusal() -> None:
+    """#974: the request-window 429 is terminal too."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            429,
+            headers={"x-ratelimit-limit": "3", "x-ratelimit-remaining": "0",
+                     "x-ratelimit-reset": "40000"},
+            content=b'{"error":"Too Many Requests"}',
+        )
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as client:
+        resp = await client.get("https://x")
+    assert resp.status_code == 429
+    assert calls["n"] == 1
+
+
 async def test_does_not_retry_403_policy_rejection() -> None:
     calls = {"n": 0}
 

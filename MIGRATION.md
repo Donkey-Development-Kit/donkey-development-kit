@@ -13,7 +13,7 @@ refused provisioning control plane (#730).
 - Sections 9 and 10 change what `pip` installs.
 - Section 11 renames a conformance-plugin option (the old one still works and
   warns).
-- Sections 12 to 16 change runtime behaviour without an import error.
+- Sections 12 to 17 change runtime behaviour without an import error.
 
 The deprecated names stay for the rest of 0.1.x. The release that removes them
 says so here and in its Release notes' Breaking changes section. To find every
@@ -295,6 +295,35 @@ through unchanged.
 framework's errors as before. See
 [Typed refusals at the framework boundary](website/content/errors.mdx#typed-refusals-at-the-framework-boundary).
 
+### 17. A request-rate-limit 429 is `RequestRateLimitExceeded`
+
+**Who:** code that catches `TokenBudgetExceeded` to handle every `429` from a
+proxy, or that checks `exc.policy == "token-rate-limit"` (#974).
+
+**Symptom:** on a proxy with the stock `rate-limiting` policy (request count,
+`exposeHeaders: true`), the `429` now raises `RequestRateLimitExceeded`. It is
+a sibling of `TokenBudgetExceeded`, not a subclass, so an `except
+TokenBudgetExceeded:` block no longer catches it. Its `policy` is
+`"request-rate-limit"`, and its `retry_after` comes from `x-ratelimit-reset`.
+The telemetry attribute `donkey.policy.type` reads `request_rate_limit`. A
+token-rate-limit `429`, and any `429` without the `x-ratelimit-*` headers, is
+still `TokenBudgetExceeded`.
+
+**Fix:** catch both, or catch their common base `PolicyViolation`:
+
+```python
+from donkey_kit import RequestRateLimitExceeded, TokenBudgetExceeded
+
+try:
+    ...
+except (TokenBudgetExceeded, RequestRateLimitExceeded) as exc:
+    wait = exc.retry_after
+```
+
+`donkey.budget.pace()` now also refuses when the request window is spent, and
+`BudgetReserveReached.window` says which window it was (`"tokens"` or
+`"requests"`). Pass it to `donkey.budget.wait_for_reset(window=exc.window)`.
+
 ### Shipped simulator fixtures moved into the package (not breaking)
 
 The captured gateway responses that `simulate()`, `donkey mock` and the
@@ -312,7 +341,9 @@ private `_ToolsFacade`), `CacheScope`, `DonkeyAsyncClientView`,
 Import them from `donkey_kit` rather than from their submodules. The
 typed-refusal bridge is new as `donkey_kit.typed_refusals` and
 `donkey_kit.TypedRefusals` (#724), and `donkey_kit.integrations` exports
-`AdapterProtocol` and `AdapterCapabilities` (#726).
+`AdapterProtocol` and `AdapterCapabilities` (#726). `RequestRateLimitExceeded`
+and `RequestWindow` (the type of `donkey.budget.requests`) are new in
+`donkey_kit` (#974).
 
 ### LlamaIndex, Agent Framework and ADK `model()` report `last_call` (not breaking)
 
