@@ -110,6 +110,136 @@ up (#999):
 - *A fixture or shape mismatch.* The gateway's contract really drifted. Track
   it on the `live-contract-drift` issue.
 
+## Scenario maps
+
+Which workflows fire for a change, and what to do when a run goes red. Merge
+mechanics (squash vs rebase vs no-ff) live in
+[`CONTRIBUTING.md` §1](../CONTRIBUTING.md#1-branch-pr--release-workflow);
+these diagrams only show the Actions side.
+
+### Feature or fix (normal path)
+
+Branch from `develop`, PR into `develop`, later promote when a milestone is
+ready. `docs.yml` and the publish workflows are optional legs on that path.
+
+Grey boxes are human / git steps. Coloured boxes are workflows: blue =
+PR/push gates (`ci.yml`, `secret-scan.yml`), violet = PR hygiene
+(`pr-labels.yml`), green = site deploy (`docs.yml`), amber = publish.
+
+```mermaid
+flowchart TD
+  issue[Issue filed] --> branch["Branch from develop<br/>feat|fix|docs|chore/#-slug"]
+  branch --> push[Push commits]
+  push --> pr[Open PR → develop]
+  pr --> prci["ci.yml + secret-scan.yml"]
+  pr --> labels["pr-labels.yml"]
+  prci -->|ci-ok green| review[Review + squash merge]
+  review --> developPush["Push to develop"]
+  developPush --> developCi["ci.yml + secret-scan.yml<br/>again on develop"]
+  developCi --> wait[More issues / milestone → 0 open]
+  wait --> promo["Promotion PR: develop → main<br/>merge commit, no fast-forward"]
+  promo --> mainPush["Push to main"]
+  mainPush --> mainCi["ci.yml + secret-scan.yml"]
+  mainPush -->|website/** or docs.yml changed| docs["docs.yml<br/>build + deploy Pages"]
+  mainPush --> tag["Tag main + GitHub Release<br/>see releasing.md"]
+  tag -->|final, non-prerelease| pypi["publish-pypi.yml"]
+  developPush -.->|manual workflow_dispatch| testpypi["publish-testpypi.yml<br/>.devN dry-run"]
+
+  classDef gate fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef hygiene fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+  classDef deploy fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef publish fill:#fef3c7,stroke:#d97706,color:#78350f
+  class prci,developCi,mainCi gate
+  class labels hygiene
+  class docs deploy
+  class pypi,testpypi publish
+```
+
+Scheduled workflows (`nightly-matrix.yml`, `live-contract-check.yml`, the
+`docs.yml` cron) are independent of this path; they keep running on their own
+cadence.
+
+### Hotfix (into `main`, then back to `develop`)
+
+The exception when `main` must move without waiting for a full promotion —
+usually a broken live docs site (`website/**` / `docs.yml`), sometimes a
+package patch. Branch from `main`, rebase-merge one commit, then cherry-pick
+onto `develop` via a second PR. A docs hotfix never bumps the version; a
+package hotfix does (see [`releasing.md`](releasing.md)).
+
+Same colour key as the feature path: blue gates, green deploy.
+
+```mermaid
+flowchart TD
+  break["Live main broken<br/>or urgent package patch"] --> issue[Issue filed]
+  issue --> branch["Branch from main<br/>hotfix/#-slug"]
+  branch --> prMain["PR → main"]
+  prMain --> prci["ci.yml + secret-scan.yml<br/>required on the PR"]
+  prci -->|ci-ok green| rebase["Rebase-merge<br/>one commit on main"]
+  rebase --> mainCi["ci.yml + secret-scan.yml<br/>on the push"]
+  rebase -->|website/** or docs.yml| docs["docs.yml<br/>rebuilds live site"]
+  rebase --> cherry["Cherry-pick SHA onto<br/>hotfix/#-cherry-pick-develop"]
+  cherry --> prDev["PR → develop"]
+  prDev --> prDevCi["ci.yml + secret-scan.yml"]
+  prDevCi -->|ci-ok green| squash["Squash-merge into develop"]
+  squash --> developCi["ci.yml + secret-scan.yml<br/>on develop"]
+
+  classDef gate fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef deploy fill:#dcfce7,stroke:#16a34a,color:#14532d
+  class prci,mainCi,prDevCi,developCi gate
+  class docs deploy
+```
+
+Never merge `main` back into `develop` as a branch merge — only the
+cherry-pick PR. Never push straight to `main` without a PR.
+
+### Error scenarios and recovery
+
+Red / orange / pink boxes are the failing workflow; grey boxes are the
+recovery steps.
+
+```mermaid
+flowchart TD
+  red{Which signal is red?}
+
+  red -->|PR: ci-ok or secret-scan| prFail["ci.yml / secret-scan.yml"]
+  prFail --> prFix["Fix on the branch and push.<br/>Concurrency cancels the previous PR run."]
+  prFix --> prGate["Re-run is the same gates.<br/>Do not open a second PR."]
+
+  red -->|Push to develop after merge| developFail["ci.yml on develop"]
+  developFail --> developRed["Two green PRs can still break develop.<br/>That is why convention 3 exists."]
+  developRed --> developRecover["Fix-forward PR, or<br/>git revert the squash SHA on develop."]
+
+  red -->|Push / PR to main hotfix| mainFail["ci.yml on main / hotfix PR"]
+  mainFail --> mainRed["main ruleset requires ci-ok.<br/>Fix the hotfix branch; do not force-push past a red gate."]
+  mainRed --> mainRecover["If already merged: git revert the hotfix SHA<br/>and revert the cherry-pick on develop too."]
+
+  red -->|nightly-matrix.yml| nightly["nightly-matrix.yml<br/>opens or updates nightly-failure"]
+  nightly --> nightlyFix["Adapt the code or refresh the lock.<br/>Never add an upper ceiling ADR 0007 / §8.4."]
+  nightlyFix --> nightlyClose["Close the issue when the next nightly is green."]
+
+  red -->|live-contract-check.yml| live["live-contract-check.yml<br/>opens or updates live-contract-drift"]
+  live --> liveRead["Read Reading a red run above:<br/>empty secret, bad URL, 401/403, or real drift."]
+  liveRead --> liveClose["Fix env/creds or the fixture;<br/>close the issue when Monday or a manual run is green."]
+
+  red -->|docs.yml deploy| docsRed["docs.yml"]
+  docsRed --> docsPath["If visitors are broken and promotion cannot wait:<br/>use the hotfix path above.<br/>Else fix on develop and ride the next promotion."]
+
+  classDef failGate fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  classDef failNightly fill:#ffedd5,stroke:#ea580c,color:#7c2d12
+  classDef failLive fill:#fce7f3,stroke:#db2777,color:#831843
+  classDef failDeploy fill:#fecaca,stroke:#b91c1c,color:#7f1d1d
+  class prFail,developFail,mainFail failGate
+  class nightly failNightly
+  class live failLive
+  class docsRed failDeploy
+```
+
+A red PR is expected during development; a red `develop` after merge, a red
+nightly, or a red live-contract run is a maintainer signal — track it on the
+labelled issue those workflows open, and close that issue only when the signal
+is green again.
+
 ## Conventions
 
 ### 1. PR CI resolves from a lock; the nightly run resolves fresh. **In place** (#982)
