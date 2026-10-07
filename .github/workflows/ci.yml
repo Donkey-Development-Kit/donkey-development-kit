@@ -659,6 +659,7 @@ jobs:
       - langgraph-demo
       - docs-llms-drift
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         # No checkout here, so python/ does not exist.
