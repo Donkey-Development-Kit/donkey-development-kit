@@ -200,7 +200,7 @@ def test_unrecognised_403_falls_through_to_honest_policy_violation() -> None:
 def test_unrecognised_403_names_the_observed_policy_headers() -> None:
     """The message names the observable discriminators — status plus any
     ``x-llm-proxy-*`` policy headers present — so the unconfirmed shape can be
-    typed from the report alone (#184, #253)."""
+    typed from the report alone (#184)."""
     err = classify(
         _resp(403, {"x-llm-proxy-mystery-verdict": "deny", "content-type": "application/json"})
     )

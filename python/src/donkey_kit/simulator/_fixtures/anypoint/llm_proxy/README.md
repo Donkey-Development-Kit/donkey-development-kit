@@ -67,6 +67,15 @@ targets — the first live confirmation of docs/verified-apis.md §§2–4 (prev
 
 Both policies above were applied to instance `21133858` only to capture these
 rejection contracts and were removed afterward.
+
+**Re-confirmed 2026-10-07 (#253)** against two independently provisioned
+proxies on `private-space-omni-gateway`, with a full raw header dump of each:
+`ddk-pii-masking` (instance `21188402`, `action: Reject`) returned the same
+`403` nested `type: pii_detected` body, differing only in the echoed entity
+value, and **no** `www-authenticate` header; `ddk-token-rate-limit` (instance
+`21188394`, `maximumTokens: 500`) returned the same empty-body `429` with the
+numeric `x-token-limit` / `x-token-remaining` / `x-token-reset` (ms) trio and no
+`retry-after`. The committed fixtures are unchanged.
 - `responses.stream.sample.sse` / `responses.stream.headers.txt` — `stream:true`
   → HTTP 200, `content-type: text/event-stream`, chunked SSE (`event:
   response.created`, `response.in_progress`, …). Confirms docs/verified-apis.md §2 streaming.

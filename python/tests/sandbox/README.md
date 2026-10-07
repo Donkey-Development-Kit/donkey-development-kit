@@ -5,8 +5,8 @@ provisioned in
 [`donkey-development-kit-provisioning`](https://github.com/Donkey-Development-Kit/donkey-development-kit-provisioning).
 This is the live twin of the fixture-driven `tests/unit/test_llm_proxy_contract.py`:
 that file replays captured contracts, this one confirms them against the
-deployed proxies — and captures the two rejection shapes still pending live
-capture (#253). Tracked in #400.
+deployed proxies — and prints a raw capture of any rejection it provokes, the
+path that captured the #253 rejection shapes. Tracked in #400.
 
 ## Off by default
 
@@ -84,7 +84,11 @@ provisioning repo hosts several proxies, each with its own credential pair. The
 manifest is how the suite addresses them all without contorting the single-triple
 env config — so `core/` is untouched by this suite (#400).
 
-## Capturing the #253 rejection bodies
+## Capturing a rejection body
+
+Every shape #253 tracked is now LIVE-captured (`docs/verified-apis.md` §4). The
+procedure below is how the next one gets captured, e.g. a federated-guardrail
+verdict (#305).
 
 `test_injection_guard_rejection_classifies_and_captures` prints the live status,
 headers, and body when the Regex Prompt Guard rejects. To turn that into a
