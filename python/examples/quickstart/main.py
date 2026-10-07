@@ -133,10 +133,7 @@ def _run_demo() -> None:
                 input="My SSN is 123-45-6789, please store it.",
             )
         except openai.APIStatusError as exc:
-            # openai>=3 hands back an httpx2.Response, which classify() handles at
-            # runtime (#738) but is annotated as httpx.Response; `unused-ignore`
-            # keeps this quiet on openai<3, where the types already match.
-            governed = classify(exc.response)  # type: ignore[arg-type, unused-ignore]
+            governed = classify(exc.response)
             if not isinstance(governed, PIIDetected):  # pragma: no cover - defensive
                 raise AssertionError(
                     f"expected PIIDetected, got {type(governed).__name__}"

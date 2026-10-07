@@ -51,7 +51,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from types import TracebackType
 from typing import Any, ParamSpec, TypeVar, cast
 
-from .errors import DonkeyError, classify
+from .errors import DonkeyError, ResponseLike, classify
 
 __all__ = ["Translator", "TypedRefusals", "translate"]
 
@@ -137,7 +137,7 @@ def _translate_one(exc: BaseException, hooks: tuple[Translator, ...]) -> DonkeyE
                 return typed
         response = _status_response(link)
         if response is not None:
-            return classify(cast(Any, response)) if _sent_by_transport(response) else None
+            return classify(cast(ResponseLike, response)) if _sent_by_transport(response) else None
         if not _carries_http(link):
             return None
         link = link.__cause__ or (None if link.__suppress_context__ else link.__context__)

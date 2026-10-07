@@ -69,6 +69,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from ._response import ResponseLike
 from ._verify import SEMANTIC_CACHE_SCORE_HEADER, SEMANTIC_CACHE_STATUS_HEADER
 from ._wire import (
     AMZN_REQUEST_ID_HEADER,
@@ -313,7 +314,7 @@ def is_substitution(
     return requested_model != served_model
 
 
-def request_id(response: httpx.Response) -> str | None:
+def request_id(response: ResponseLike) -> str | None:
     """The upstream provider's request id for a response, resolved from the first
     present of :data:`REQUEST_ID_HEADERS` (``x-request-id``, then
     ``x-amzn-requestid``, then ``apim-request-id``, then Anthropic's
@@ -326,8 +327,7 @@ def request_id(response: httpx.Response) -> str | None:
     :func:`donkey_kit.core.errors.classify` so the success and refusal paths agree.
     Never raises (verification discipline)."""
     for name in REQUEST_ID_HEADERS:
-        value: str | None = response.headers.get(name)
-        if value is not None:
+        if (value := response.headers.get(name)) is not None:
             return value
     return None
 
