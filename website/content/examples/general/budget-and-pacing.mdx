@@ -160,6 +160,33 @@ terminal, while this is a local signal you are expected to recover from. If you
 do cross the window, the resulting `TokenBudgetExceeded` is not retried by the
 transport — retrying only burns the same window.
 
+### The request window
+
+When the gateway's `rate-limiting` policy has `exposeHeaders: true`,
+`donkey.budget.requests` (a `RequestWindow`) tracks the request count the same
+way, and `pace()` refuses when either window has reached the reserve.
+`BudgetReserveReached.window` names which one (`"tokens"` or `"requests"`), so
+pass it on to `wait_for_reset()`:
+
+```python
+while True:
+    try:
+        async with donkey.budget.pace(reserve=0.05):
+            await enrich(batch)
+    except BudgetReserveReached as exc:
+        if exc.reset_at is None:
+            raise
+        await donkey.budget.wait_for_reset(window=exc.window)
+        continue
+    break
+```
+
+On a small request limit a fractional reserve is coarse (with 3 requests,
+`reserve=0.05` behaves like `0.0`), and `pace()` is not a concurrency limiter.
+Run it locally with `donkey mock --scenario request_limit:limit=3,window=60s`.
+The refusal itself is `RequestRateLimitExceeded`, terminal like
+`TokenBudgetExceeded`.
+
 **Learn more:** [Budget & pacing](/budget)
 
 **Source:**

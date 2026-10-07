@@ -1,4 +1,4 @@
-# Rejection contracts — the nine documented shapes (#181, #289, #694, docs/verified-apis.md §4)
+# Rejection contracts — the ten documented shapes (#181, #289, #694, #974, docs/verified-apis.md §4)
 
 The canonical index of the gateway rejection shapes `core/errors.classify()`
 discriminates, one row per shape. These fixtures are **shared with the local
@@ -64,7 +64,7 @@ discriminator, so `.headers.txt` records just the status line and
 `content-type`; the body is byte-faithful. No token or credential survived the
 capture (the JWT was a request header, never written to disk).
 
-## The nine rows
+## The ten rows
 
 | # | Shape | Fixture | classify() → | Discriminator | Provenance |
 |---|-------|---------|--------------|---------------|------------|
@@ -77,6 +77,7 @@ capture (the JWT was a request header, never written to disk).
 | 7 | Regex Prompt Guard | `reject.regex-prompt-guard.{headers.txt,body.json}` | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | 403 + top-level `matched_patterns` list (flat-string `error`) | **VERIFIED (LIVE), 2026-09-22 (#253)** — body matches the live capture byte-for-byte against `ddk-injection-guard` (instance 21179713). [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4). |
 | 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **VERIFIED (LIVE)** — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0). |
 | 9 | Agent Kill Switch | `reject.agent-killed.{headers.txt,body.json}` | `AgentKilled` (`policy="agent-kill-switch"`) | nested `error.code == "agent_killed"` (no `type`, no `www-authenticate`) | **VERIFIED (LIVE), 2026-09-29 (#694)** — captured against `ddk-agent-kill-switch` (instance 21206201) with a quarantined agent's JWT. |
+| 10 | Request rate limit | `../anypoint/request_rate_limit/reject.request-rate-limit.{headers.txt,body.json}` | `RequestRateLimitExceeded` (`policy="request-rate-limit"`) | 429 + unsuffixed `x-ratelimit-limit`/`-remaining`, no `x-token-limit` (body `{"error":"Too Many Requests"}`) | **VERIFIED (LIVE), 2026-10-07 (#974)** — captured against `ddk-request-rate-limit` (instance 21188400, stock `rate-limiting` 1.5.1, `exposeHeaders: true`). With `exposeHeaders: false` the headers are absent; that shape is not captured and classifies as row 1. |
 
 Rows 1, 2, 5 **alias** the existing live captures in `../anypoint/llm_proxy/`
 (referenced, not copied — moving them would break that directory's contract-test
@@ -102,7 +103,7 @@ row 3's discriminator is the header alone, so its body is carried on
 `err.response` without classify() reading it.
 
 Client-ID enforcement (401 + `www-authenticate` → `AuthError`) is a separate
-**consumer-auth** case, deliberately **not** one of the nine policy-rejection
+**consumer-auth** case, deliberately **not** one of the ten policy-rejection
 rows.
 
 ## Which headers each `.headers.txt` records (#670)

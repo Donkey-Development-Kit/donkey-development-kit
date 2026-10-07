@@ -30,7 +30,7 @@ from importlib import import_module as _import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .core.budget import Budget
+    from .core.budget import Budget, RequestWindow
     from .core.cachecontrol import CacheControls, CacheScope
     from .core.config import ConfigOverrides, DonkeyConfig, Region
     from .core.cost import CostTags
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
         PIIDetected,
         PolicyViolation,
         PromptInjectionBlocked,
+        RequestRateLimitExceeded,
         TokenBudgetExceeded,
         UpstreamModelError,
         UpstreamRequestError,
@@ -71,6 +72,7 @@ _LAZY = {
     "AuthError": ".core.errors",
     "Budget": ".core.budget",
     "BudgetReserveReached": ".core.errors",
+    "RequestWindow": ".core.budget",
     "CacheControls": ".core.cachecontrol",
     "CacheScope": ".core.cachecontrol",
     "ConfigError": ".core.errors",
@@ -93,6 +95,7 @@ _LAZY = {
     "PolicyViolation": ".core.errors",
     "PromptInjectionBlocked": ".core.errors",
     "Region": ".core.config",
+    "RequestRateLimitExceeded": ".core.errors",
     "RunScope": ".core.telemetry",
     "TokenBudgetExceeded": ".core.errors",
     "ToolSpec": ".core.toolspec",
@@ -186,6 +189,8 @@ __all__ = [
     "PolicyViolation",
     "PromptInjectionBlocked",
     "Region",
+    "RequestRateLimitExceeded",
+    "RequestWindow",
     "RunScope",
     "TokenBudgetExceeded",
     "ToolSpec",

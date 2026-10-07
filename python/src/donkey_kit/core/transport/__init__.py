@@ -24,9 +24,10 @@ The client:
     not re-sent unless ``retry_model_calls_on_gateway_errors`` is on: the
     upstream call may have completed and billed (docs/adr/0009-*.md)
   * does NOT retry 4xx — gateway policy rejections are terminal (BG §1.2). This
-    includes 429: on this proxy a 429 is a token-budget refusal
-    (TokenBudgetExceeded), and retrying it only burns the same exhausted window
-    (BG §1.2, #183). retry_after is still surfaced for wait_for_reset() (#186).
+    includes 429: on this proxy a 429 is a rate-limit refusal
+    (TokenBudgetExceeded, or RequestRateLimitExceeded for the request window,
+    #974), and retrying it only burns the same exhausted window (BG §1.2, #183).
+    retry_after is still surfaced for wait_for_reset() (#186).
     A final 4xx is stamped ``x-should-retry: false``, so the openai and
     anthropic SDKs above the transport do not retry it either (#734).
   * refreshes the attached provider's token and retries exactly once on 401

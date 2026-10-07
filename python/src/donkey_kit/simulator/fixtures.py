@@ -37,6 +37,9 @@ from ..core.budget import (
     LIMIT_HEADER,
     RATELIMIT_HEADER,
     REMAINING_HEADER,
+    REQUEST_LIMIT_HEADER,
+    REQUEST_REMAINING_HEADER,
+    REQUEST_RESET_HEADER,
     RESET_HEADER,
 )
 
@@ -45,6 +48,9 @@ __all__ = [
     "LOCK_PATH",
     "RATELIMIT_HEADER",
     "REMAINING_HEADER",
+    "REQUEST_LIMIT_HEADER",
+    "REQUEST_REMAINING_HEADER",
+    "REQUEST_RESET_HEADER",
     "RESET_HEADER",
     "SHAPES",
     "TEST_LOCK_PATH",
@@ -92,9 +98,13 @@ def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
 # API-instance/environment ids (#362) — so replaying them is what makes
 # simulate()/`donkey mock` populate the record from the committed fixtures. The
 # honesty marker stays the injected `x-donkey-simulator: true`, not the absence
-# of identity headers.
+# of identity headers. The unsuffixed request-window trio is kept (#974); the
+# upstream's suffixed ``x-ratelimit-*-requests`` / ``-tokens`` passthrough is not.
 _KEEP_EXACT = frozenset(
     {
+        _wire.REQUEST_LIMIT_HEADER,
+        _wire.REQUEST_REMAINING_HEADER,
+        _wire.REQUEST_RESET_HEADER,
         _wire.WWW_AUTHENTICATE_HEADER,
         _wire.INJECTION_PROTECTION_HEADER,
         _wire.CORRELATION_ID_HEADER.lower(),
@@ -154,7 +164,7 @@ class _Spec:
 
 
 # The full shape table. Keys are the canonical shape names the simulator and the
-# tests share. The eight policy-rejection rows classify() is tested against, plus
+# tests share. The policy-rejection rows classify() is tested against, plus
 # the consumer-auth 401, the gateway's bare-model-name 400, the happy path, the
 # SSE stream, the /models 404, and the /chat/completions happy path and stream.
 SHAPES: dict[str, _Spec] = {
@@ -162,6 +172,14 @@ SHAPES: dict[str, _Spec] = {
     #     content-safety) ---
     "token-rate-limit": _Spec(
         "anypoint/llm_proxy", "reject.token-rate-limit.headers.txt", None, 429
+    ),
+    # The stock rate-limiting policy's request-count 429 (docs/verified-apis.md
+    # §4, #974): a flat-string body and the x-ratelimit-* trio.
+    "request-rate-limit": _Spec(
+        "anypoint/request_rate_limit",
+        "reject.request-rate-limit.headers.txt",
+        "reject.request-rate-limit.body.json",
+        429,
     ),
     "pii-detected": _Spec(
         "anypoint/llm_proxy",

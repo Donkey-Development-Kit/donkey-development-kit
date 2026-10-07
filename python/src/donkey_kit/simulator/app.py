@@ -37,7 +37,7 @@ from .fixtures import (
     render_ratelimit_prose,
     replay_headers,
 )
-from .scenarios import BudgetScenario, FaultScenario, request_text
+from .scenarios import BudgetScenario, FaultScenario, RequestLimitScenario, request_text
 
 __all__ = [
     "RATELIMIT_HEADER",
@@ -68,11 +68,12 @@ SIM_MODEL_PREFIX = "donkey-sim/"
 # format string is fixed by the live/fixture capture (#352/#353):
 #   "Token rate limit: {remaining} tokens remaining of {limit} limit. Reset in {ms}ms."
 
-# Shapes selectable via the model-id sentinel: the nine documented rejections
+# Shapes selectable via the model-id sentinel: the documented rejections
 # plus the consumer-auth 401 and the gateway's bare-model-name 400 (#891).
 _REJECTION_SHAPES = frozenset(
     {
         "token-rate-limit",
+        "request-rate-limit",
         "pii-detected",
         "injection-protection",
         "regex-prompt-guard",
@@ -158,15 +159,23 @@ class _Simulator:
         self._remaining = config.token_limit
         self._lock = asyncio.Lock()
         # Split scenarios: rejection rules run first (in injection-before-pii
-        # precedence, independent of CLI order), then the single budget scenario
-        # (#188). A budget scenario, when it passes, owns the happy-path prose
-        # ratelimit header instead of the default synthesised counter.
+        # precedence, independent of CLI order), then the single request-limit
+        # scenario (#974), then the single budget scenario (#188). Each window
+        # scenario, when it passes, adds its own headers to the happy path; a
+        # budget scenario's prose header replaces the default synthesised counter.
+        self._request_limit: RequestLimitScenario | None = next(
+            (s for s in config.scenarios if isinstance(s, RequestLimitScenario)), None
+        )
         self._budget: BudgetScenario | None = next(
             (s for s in config.scenarios if isinstance(s, BudgetScenario)), None
         )
         _order = {"injection": 0, "pii_block": 1}
         self._reject_scenarios: list[FaultScenario] = sorted(
-            (s for s in config.scenarios if not isinstance(s, BudgetScenario)),
+            (
+                s
+                for s in config.scenarios
+                if not isinstance(s, (BudgetScenario, RequestLimitScenario))
+            ),
             key=lambda s: _order.get(s.name, 99),
         )
 
@@ -231,29 +240,35 @@ class _Simulator:
             # Unknown sentinel suffix falls through to the scenario/happy path.
 
         # Scenario fault-injection (#188): rejection rules first (injection, then
-        # pii_block), then the budget scenario; the first hit short-circuits.
-        if self._reject_scenarios or self._budget is not None:
-            text = request_text(payload)
-            for scenario in self._reject_scenarios:
-                hit = scenario.on_call(text)
-                if hit is not None:
-                    return self._response(load(hit.shape), extra=hit.extra_headers)
-            if self._budget is not None:
-                hit = self._budget.on_call(text)
-                if hit is not None:
-                    return self._response(load(hit.shape), extra=hit.extra_headers)
-                # Budget passed: it owns the happy-path prose ratelimit header.
-                ratelimit_header = self._budget.happy_path_headers()
-                return self._happy(payload, route, ratelimit_header)
-
-        ratelimit_header = await self._synth_ratelimit_header()
-        return self._happy(payload, route, ratelimit_header)
+        # pii_block), then the request-limit scenario (#974), then the budget
+        # scenario; the first hit short-circuits.
+        window_headers: dict[str, str] = {}
+        text = request_text(payload)
+        for scenario in self._reject_scenarios:
+            hit = scenario.on_call(text)
+            if hit is not None:
+                return self._response(load(hit.shape), extra=hit.extra_headers)
+        if self._request_limit is not None:
+            hit = self._request_limit.on_call(text)
+            if hit is not None:
+                return self._response(load(hit.shape), extra=hit.extra_headers)
+            window_headers.update(self._request_limit.happy_path_headers())
+        if self._budget is not None:
+            hit = self._budget.on_call(text)
+            if hit is not None:
+                return self._response(load(hit.shape), extra=hit.extra_headers)
+            # Budget passed: it owns the happy-path prose ratelimit header.
+            window_headers.update(self._budget.happy_path_headers())
+        else:
+            window_headers.update(await self._synth_ratelimit_header())
+        return self._happy(payload, route, window_headers)
 
     def _happy(
         self, payload: Any, route: _Route, ratelimit_header: dict[str, str]
     ) -> Any:
         """Serve the route's happy-path 200 (or its stream), carrying the given
-        budget-window prose header."""
+        window headers (the token prose header, and the request trio when a
+        request-limit scenario is on)."""
         if isinstance(payload, dict) and payload.get("stream") is True:
             # /responses: the captured stream sample is a single, truncated
             # `response.created` event — a real capture, NOT a complete SSE

@@ -17,6 +17,12 @@ token budget on its responses, in **two shapes** depending on the response:
 | Success `200` (and a `403` refusal) | `x-llm-proxy-ratelimit`, as prose | `Token rate limit: 10000 tokens remaining of 10000 limit. Reset in 56711ms.` |
 | Budget refusal `429` | `x-token-limit`, `x-token-remaining`, `x-token-reset` | numeric values |
 
+A separate **request** window is reported when the gateway's stock
+`rate-limiting` policy has `exposeHeaders: true`: the numeric
+`x-ratelimit-limit` / `x-ratelimit-remaining` / `x-ratelimit-reset` trio, in
+requests, on every `200` and on the `429`. Only `exposeHeaders: true` is
+verified.
+
 Parsing those yourself in every call site is tedious, and most code skips
 it — so the first time budget matters is the moment it runs out.
 
@@ -35,6 +41,20 @@ donkey.budget.observed_at    # when headers were last seen (staleness)
 donkey.budget.fraction_used  # 0.0–1.0
 ```
 
+The request window is `donkey.budget.requests`, a `RequestWindow` (importable
+from `donkey_kit`) with the same five fields, counted in requests:
+
+```python
+donkey.budget.requests.limit          # int, requests per window
+donkey.budget.requests.remaining
+donkey.budget.requests.reset_at       # datetime, converted from the ms-to-reset value
+donkey.budget.requests.observed_at
+donkey.budget.requests.fraction_used  # 0.0–1.0
+```
+
+All of them are `None` until a response carrying the trio is observed. Unlike
+the token trio, the gateway sends this one on every `200` as well as the `429`.
+
 And two helpers that use it:
 
 ```python
@@ -43,6 +63,11 @@ await donkey.budget.wait_for_reset()          # sleeps until reset_at
 async with donkey.budget.pace(reserve=0.10):  # raises BudgetReserveReached at 90%
     ...
 ```
+
+`pace()` refuses when **either** window, tokens or requests, has reached the
+reserve. `BudgetReserveReached.window` is `"tokens"` or `"requests"`; when both
+are spent it names the one that releases last. `wait_for_reset(window=...)`
+accepts the same two values.
 
 `pace()` raises **before** issuing the request that would cross your reserve —
 not after a `429` comes back.
@@ -68,7 +93,7 @@ for batch in chunks(records, 200):
         except BudgetReserveReached as exc:
             if exc.reset_at is None:
                 raise  # waiting cannot make progress without a reset time
-            await donkey.budget.wait_for_reset()
+            await donkey.budget.wait_for_reset(window=exc.window)
             continue
         break
     checkpoint(batch)
@@ -151,6 +176,22 @@ site**, not on the first request. The **outcome** of each call is on
 [degradation](/frameworks) as `donkey.run(...)` applies: a
 `connection_kwargs()`-only adapter that does not route through the shared
 transport does not see the context variable, so its calls are not steered.
+
+## Request window limits
+
+- `pace(reserve=0.0)` on a 3-request window refuses the 4th call without
+  sending it. On a small request limit a fractional reserve is coarse: with 3
+  requests, `reserve=0.05` behaves like `0.0` and refuses only when all 3 are
+  used.
+- `pace()` is not a concurrency limiter. With `remaining=1`, N concurrent calls
+  can all pass `pace()` before any response updates the window.
+- Pass `window=exc.window` to `wait_for_reset()`, especially when several tasks
+  share one `Donkey`. Without it, it waits on the window the most recent
+  `pace()` refusal named, or the token window.
+- A semantic-cache hit does not update either window. Whether a hit counts
+  against the gateway's request limit is `UNVERIFIED`.
+- The upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens`
+  headers are a different window and are not read.
 
 ## Behaviour guarantees
 

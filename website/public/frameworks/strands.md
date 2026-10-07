@@ -107,8 +107,9 @@ Strands forwards to its internal OpenAI client.
   model call by default (up to 6 attempts), and Strands treats every `429` as
   throttling. On the proxy a `429` is a budget refusal, so the model
   `donkey.strands.model()` builds raises it as the typed `TokenBudgetExceeded`
-  instead. The agent's retry strategy doesn't retry that error, and it reaches
-  your code as it is, after one request:
+  instead. The same holds for `RequestRateLimitExceeded`, the `429` of the
+  request `rate-limiting` policy. The agent's retry strategy doesn't retry that
+  error, and it reaches your code as it is, after one request:
 
   ```python
   from strands import Agent

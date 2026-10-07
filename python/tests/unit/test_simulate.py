@@ -30,6 +30,7 @@ from donkey_kit.core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -61,6 +62,7 @@ def _sentinel(status: int = 299) -> httpx.MockTransport:
 # spec; test_mapping_table_matches_documented_set pins the implementation to it.
 _ROUND_TRIP = [
     (TokenBudgetExceeded, "token-rate-limit"),
+    (RequestRateLimitExceeded, "request-rate-limit"),
     (PIIDetected, "pii-detected"),
     (PromptInjectionBlocked, "injection-protection"),
     (ContentSafetyBlocked, "content-safety"),

@@ -616,7 +616,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
 
   
     **Purpose:** turn every gateway rejection into a typed exception —
-    `PIIDetected`, `TokenBudgetExceeded`, `PromptInjectionBlocked`,
+    `PIIDetected`, `TokenBudgetExceeded`, `RequestRateLimitExceeded`,
+    `PromptInjectionBlocked`,
     `ContentSafetyBlocked`, `AuthError`, `GatewayUnavailable` and more.
     **Goal:** branch on the governance outcome, not on a parsed error body.
     **Advantage:** a PII block is never mistaken for an auth failure, and a
@@ -1628,8 +1629,9 @@ Strands forwards to its internal OpenAI client.
   model call by default (up to 6 attempts), and Strands treats every `429` as
   throttling. On the proxy a `429` is a budget refusal, so the model
   `donkey.strands.model()` builds raises it as the typed `TokenBudgetExceeded`
-  instead. The agent's retry strategy doesn't retry that error, and it reaches
-  your code as it is, after one request:
+  instead. The same holds for `RequestRateLimitExceeded`, the `429` of the
+  request `rate-limiting` policy. The agent's retry strategy doesn't retry that
+  error, and it reaches your code as it is, after one request:
 
   ```python
   from strands import Agent
@@ -2312,8 +2314,9 @@ A `base_url` / `api_base` passed to `llm()` must pass the
 - **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
   rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as
   a rate limit. On the proxy a `429` is a budget refusal, so CrewAI re-sends it
-  twice before raising. CrewAI has no setting to turn this retry off. The
-  OpenAI client underneath has `max_retries=0`, and transient `5xx` errors are
+  twice before raising. CrewAI has no setting to turn this retry off. This also
+  applies to `RequestRateLimitExceeded`, the `429` of the request
+  `rate-limiting` policy. The OpenAI client underneath has `max_retries=0`, and transient `5xx` errors are
   not retried at all, because the SDK's transport isn't used.
 - **Printing the model shows the API key.** `OpenAICompletion`'s own `repr()` /
   `str()` include `api_key`. Don't print or log it.
@@ -2516,7 +2519,7 @@ branch on the governance outcome instead of parsing bodies.
 
 ## The rejection shapes `classify()` types
 
-`classify()` types nine rejection shapes. **Neither the status code nor the
+`classify()` types ten rejection shapes. **Neither the status code nor the
 shape of the `error` value alone is a sufficient discriminator** — a `403` can be
 PII, a killed agent, a regex-guard block, a content-safety block (all policy
 blocks) *or* auth,
@@ -2533,6 +2536,7 @@ specific headers.
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
 | Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
+| Request rate limit | `429` | body `{"error":"Too Many Requests"}`; `x-ratelimit-limit`/`-remaining`/`-reset` headers (ms), **no** `x-token-*`, **no** `retry-after` | `RequestRateLimitExceeded` (`retry_after` derived) |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
@@ -2546,7 +2550,20 @@ an upstream request mistake, when the upstream was never called. Likewise the in
 `x-injection-protection` header, so an ordinary malformed `400` stays an
 ordinary refusal.
 
-Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the nine
+`RequestRateLimitExceeded` is the `429` of the gateway's stock `rate-limiting`
+policy, which counts requests rather than tokens. It is a subclass of
+`PolicyViolation` and a sibling of `TokenBudgetExceeded`, not a subclass of it.
+A `429` carrying `x-ratelimit-limit` and `x-ratelimit-remaining` and no
+`x-token-limit` is a `RequestRateLimitExceeded`; any other `429` stays
+`TokenBudgetExceeded`. The headers appear only when the policy has
+`exposeHeaders: true`, the only configuration verified. With
+`exposeHeaders: false` there is nothing to key on: that shape is `UNVERIFIED`
+and is classified as `TokenBudgetExceeded`. `retry_after` comes from
+`retry-after` if present, else from `x-ratelimit-reset` (milliseconds). The
+upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens` headers are
+a different window and are not read.
+
+Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the ten
 policy-rejection rows.
 
 The Injection Protection shape is live-verified against a deployed proxy
@@ -2565,13 +2582,14 @@ DonkeyError                     # base of the whole tree
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
+│  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 ├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
-├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
+├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at/.window
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
 └─ ToolInvocationError, RegistryError, PublicationDrift
                                 # tool access, registry and publishing (Roadmap surfaces;
@@ -2598,6 +2616,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
+| `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
@@ -2685,6 +2704,8 @@ a canonical default. For the refusals:
   Governance > Security.
 - `TokenBudgetExceeded` → wait for the window to reset (see `retry_after`) or
   request an increase.
+- `RequestRateLimitExceeded` → wait for the window to reset (see
+  `retry_after`) or request an increase.
 - `PromptInjectionBlocked` → review and sanitise the untrusted input, or adjust
   the policy's sensitivity.
 - `ContentSafetyBlocked` → revise the flagged content, or adjust the policy's
@@ -2877,7 +2898,8 @@ Both clients retry only transient upstream/gateway failures (502/503/504).
 A 502 or 504 on a model call is not re-sent unless you set
 `retry_model_calls_on_gateway_errors`, because the provider may already have
 billed it. Every 4xx is terminal — **including a 429**: on this proxy a 429 is a
-token-budget refusal (`TokenBudgetExceeded`), so retrying it would only burn the
+token-budget refusal (`TokenBudgetExceeded`) or a request-rate-limit refusal
+(`RequestRateLimitExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
 against, but the transport never silently retries it.
 
@@ -2921,6 +2943,12 @@ token budget on its responses, in **two shapes** depending on the response:
 | Success `200` (and a `403` refusal) | `x-llm-proxy-ratelimit`, as prose | `Token rate limit: 10000 tokens remaining of 10000 limit. Reset in 56711ms.` |
 | Budget refusal `429` | `x-token-limit`, `x-token-remaining`, `x-token-reset` | numeric values |
 
+A separate **request** window is reported when the gateway's stock
+`rate-limiting` policy has `exposeHeaders: true`: the numeric
+`x-ratelimit-limit` / `x-ratelimit-remaining` / `x-ratelimit-reset` trio, in
+requests, on every `200` and on the `429`. Only `exposeHeaders: true` is
+verified.
+
 Parsing those yourself in every call site is tedious, and most code skips
 it — so the first time budget matters is the moment it runs out.
 
@@ -2939,6 +2967,20 @@ donkey.budget.observed_at    # when headers were last seen (staleness)
 donkey.budget.fraction_used  # 0.0–1.0
 ```
 
+The request window is `donkey.budget.requests`, a `RequestWindow` (importable
+from `donkey_kit`) with the same five fields, counted in requests:
+
+```python
+donkey.budget.requests.limit          # int, requests per window
+donkey.budget.requests.remaining
+donkey.budget.requests.reset_at       # datetime, converted from the ms-to-reset value
+donkey.budget.requests.observed_at
+donkey.budget.requests.fraction_used  # 0.0–1.0
+```
+
+All of them are `None` until a response carrying the trio is observed. Unlike
+the token trio, the gateway sends this one on every `200` as well as the `429`.
+
 And two helpers that use it:
 
 ```python
@@ -2947,6 +2989,11 @@ await donkey.budget.wait_for_reset()          # sleeps until reset_at
 async with donkey.budget.pace(reserve=0.10):  # raises BudgetReserveReached at 90%
     ...
 ```
+
+`pace()` refuses when **either** window, tokens or requests, has reached the
+reserve. `BudgetReserveReached.window` is `"tokens"` or `"requests"`; when both
+are spent it names the one that releases last. `wait_for_reset(window=...)`
+accepts the same two values.
 
 `pace()` raises **before** issuing the request that would cross your reserve —
 not after a `429` comes back.
@@ -2972,7 +3019,7 @@ for batch in chunks(records, 200):
         except BudgetReserveReached as exc:
             if exc.reset_at is None:
                 raise  # waiting cannot make progress without a reset time
-            await donkey.budget.wait_for_reset()
+            await donkey.budget.wait_for_reset(window=exc.window)
             continue
         break
     checkpoint(batch)
@@ -3053,6 +3100,22 @@ site**, not on the first request. The **outcome** of each call is on
 [degradation](https://docs.donkey-kit.dev/frameworks.md) as `donkey.run(...)` applies: a
 `connection_kwargs()`-only adapter that does not route through the shared
 transport does not see the context variable, so its calls are not steered.
+
+## Request window limits
+
+- `pace(reserve=0.0)` on a 3-request window refuses the 4th call without
+  sending it. On a small request limit a fractional reserve is coarse: with 3
+  requests, `reserve=0.05` behaves like `0.0` and refuses only when all 3 are
+  used.
+- `pace()` is not a concurrency limiter. With `remaining=1`, N concurrent calls
+  can all pass `pace()` before any response updates the window.
+- Pass `window=exc.window` to `wait_for_reset()`, especially when several tasks
+  share one `Donkey`. Without it, it waits on the window the most recent
+  `pace()` refusal named, or the token window.
+- A semantic-cache hit does not update either window. Whether a hit counts
+  against the gateway's request limit is `UNVERIFIED`.
+- The upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens`
+  headers are a different window and are not read.
 
 ## Behaviour guarantees
 
@@ -3262,7 +3325,7 @@ for the governance layer that generic instrumentation cannot know about:
 
 ```
 donkey.policy.decision      = allow | refuse
-donkey.policy.type          = pii_detected | token_budget | injection | agent_killed | …
+donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | …
 donkey.budget.remaining     = 18450
 donkey.correlation_id       = …
 donkey.cost.team            = support
@@ -3940,8 +4003,9 @@ curl -s http://localhost:8080/responses \
 The selectable shapes are `token-rate-limit`, `pii-detected`,
 `injection-protection`, `regex-prompt-guard`, `content-safety`,
 `content-moderation`, `agent-killed`, `model-not-found`, `upstream-5xx`,
-`client-id-missing`, and `model-not-routable` — the nine documented rejections
-plus the consumer-auth `401` and the gateway's `400` for a bare model name on a
+`client-id-missing`, `model-not-routable`, and `request-rate-limit` — the ten documented rejections
+(including the request-rate-limit `429`, `RequestRateLimitExceeded`) plus the
+consumer-auth `401` and the gateway's `400` for a bare model name on a
 multi-provider proxy (`ModelNotRoutable`). One happy-path
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
@@ -4039,7 +4103,9 @@ Happy-path `200` responses carry a synthesised `x-llm-proxy-ratelimit` budget
 window that decrements on every call, so the pacing logic from
 [Budget & pacing](https://docs.donkey-kit.dev/budget.md) runs end-to-end against the simulator. For a real
 windowed counter that resets and emits the `429` on exhaustion, use the
-[`budget` scenario](#scenario-scripting).
+[`budget` scenario](#scenario-scripting). The request window
+(`donkey.budget.requests`) is filled only by the
+[`request_limit` scenario](#request_limitlimitrequestswindowduration).
 
 ## Scenario scripting
 
@@ -4052,11 +4118,12 @@ grammar is `<name>:<key=value,key=value>`.
 donkey mock --port 8080 \
   --scenario pii_block:every=5 \
   --scenario budget:limit=20000,window=60s \
+  --scenario request_limit:limit=3,window=60s \
   --scenario injection:on-pattern="ignore previous"
 ```
 
 When more than one is set, they are evaluated `injection` → `pii_block` →
-`budget`, and the first that fires wins. The `donkey-sim/<shape>` sentinel
+`request_limit` → `budget`, and the first that fires wins. The `donkey-sim/<shape>` sentinel
 takes precedence over all of them — it is an explicit "force this exact shape"
 override.
 
@@ -4097,6 +4164,23 @@ accepts `ms`, `s`, or `m` (a bare number is seconds).
   The numeric `x-token-*` headers appear only on the `429`, and the prose
   `x-llm-proxy-ratelimit` header only on the `200` — matching the real gateway.
   The simulator never emits a header shape the gateway does not.
+
+### `request_limit:limit=<requests>,window=<duration>`
+
+Runs a **request counter** for the gateway's `rate-limiting` policy, which
+counts requests rather than tokens. It composes with the `budget` scenario.
+
+```bash
+donkey mock --scenario request_limit:limit=3,window=60s
+```
+
+Each `200` carries the `x-ratelimit-limit` / `-remaining` / `-reset` trio from
+the live counter, so `donkey.budget.requests` and
+[`pace()`](https://docs.donkey-kit.dev/budget.md) run end-to-end. Once the window is spent, calls receive the
+captured request-rate-limit `429`, a typed
+[`RequestRateLimitExceeded`](https://docs.donkey-kit.dev/errors.md). The window is fixed: it starts when the
+simulator starts and rolls every `window`; the first call does not start it.
+`duration` takes the same units as `budget` (`ms`, `s`, `m`; a bare number is seconds).
 
 ### `injection:on-pattern=<substring>`
 
@@ -4195,8 +4279,8 @@ async def test_agent_masks_pii():
   configured proxy.
 
 The selectable refusals are the ones produced from a captured fixture:
-`TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
-`ContentSafetyBlocked`, `AgentKilled`, `UpstreamRequestError`, `ModelNotRoutable`,
+`TokenBudgetExceeded`, `RequestRateLimitExceeded`, `PIIDetected`,
+`PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`, `UpstreamRequestError`, `ModelNotRoutable`,
 `UpstreamModelError`, `AuthError`, and the generic `PolicyViolation` (the
 content-moderation shape).
 Asking for a refusal no gateway response produces — for example a client-side
@@ -4512,7 +4596,8 @@ rejections. Needs the `[local]` extra.
 ```bash
 donkey mock --port 8080 --host 127.0.0.1 \
   --scenario pii_block:every=5 \
-  --scenario budget:limit=20000,window=60s
+  --scenario budget:limit=20000,window=60s \
+  --scenario request_limit:limit=3,window=60s
 ```
 
 | Flag | Default | Meaning |
@@ -6635,6 +6720,33 @@ terminal, while this is a local signal you are expected to recover from. If you
 do cross the window, the resulting `TokenBudgetExceeded` is not retried by the
 transport — retrying only burns the same window.
 
+### The request window
+
+When the gateway's `rate-limiting` policy has `exposeHeaders: true`,
+`donkey.budget.requests` (a `RequestWindow`) tracks the request count the same
+way, and `pace()` refuses when either window has reached the reserve.
+`BudgetReserveReached.window` names which one (`"tokens"` or `"requests"`), so
+pass it on to `wait_for_reset()`:
+
+```python
+while True:
+    try:
+        async with donkey.budget.pace(reserve=0.05):
+            await enrich(batch)
+    except BudgetReserveReached as exc:
+        if exc.reset_at is None:
+            raise
+        await donkey.budget.wait_for_reset(window=exc.window)
+        continue
+    break
+```
+
+On a small request limit a fractional reserve is coarse (with 3 requests,
+`reserve=0.05` behaves like `0.0`), and `pace()` is not a concurrency limiter.
+Run it locally with `donkey mock --scenario request_limit:limit=3,window=60s`.
+The refusal itself is `RequestRateLimitExceeded`, terminal like
+`TokenBudgetExceeded`.
+
 **Learn more:** [Budget & pacing](https://docs.donkey-kit.dev/budget.md)
 
 **Source:**
@@ -6826,7 +6938,10 @@ donkey mock --scenario pii_block:every=2 \
 
 `pii_block` fails every Nth call, `injection` matches request text, and
 `budget` is a real wall-clock window that serves the token-rate-limit 429 on
-exhaustion until the window rolls over.
+exhaustion until the window rolls over. `--scenario request_limit:limit=3,window=60s`
+adds the request-counting equivalent for the `rate-limiting` policy, and
+`donkey.simulate(RequestRateLimitExceeded)` or the model sentinel
+`donkey-sim/request-rate-limit` injects that `429` directly.
 
   `simulate()` only injects shapes that have a captured wire body.
   `simulate(ToolInvocationError)` (imported from `donkey_kit.experimental`) and

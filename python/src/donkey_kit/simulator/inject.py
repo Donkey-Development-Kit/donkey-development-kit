@@ -34,6 +34,7 @@ from ..core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -58,6 +59,7 @@ __all__ = ["resolve_fixture", "simulate"]
 # generic ``PolicyViolation`` (the "content-moderation" shape).
 _EXC_TO_SHAPE: dict[type[DonkeyError], str] = {
     TokenBudgetExceeded: "token-rate-limit",
+    RequestRateLimitExceeded: "request-rate-limit",
     PIIDetected: "pii-detected",
     PromptInjectionBlocked: "injection-protection",
     ContentSafetyBlocked: "content-safety",

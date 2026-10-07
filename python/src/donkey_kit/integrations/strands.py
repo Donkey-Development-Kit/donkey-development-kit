@@ -19,11 +19,12 @@ sends deltas.
 Retries (#734, #951): ``client_args`` sets ``max_retries=0``, so the transport
 alone retries. A Strands ``Agent`` adds its own throttle retry on top (6 attempts
 by default): its ``ModelRetryStrategy`` retries every ``ModelThrottledException``,
-which ``OpenAIModel.stream`` raises for any 429. A 429 here is a budget refusal,
-terminal by contract (BG §1.2), so ``model()`` builds an ``OpenAIModel``
-subclass whose ``stream`` raises the typed ``TokenBudgetExceeded`` in its place.
+which ``OpenAIModel.stream`` raises for any 429. A 429 here is a budget or
+request-rate-limit refusal, terminal by contract (BG §1.2), so ``model()``
+builds an ``OpenAIModel`` subclass whose ``stream`` raises the typed
+``TokenBudgetExceeded`` or ``RequestRateLimitExceeded`` (#974) in its place.
 The strategy does not retry it and the event loop re-raises it unwrapped, so a
-default ``Agent`` sends a budget refusal once (docs/verified-apis.md §8). A
+default ``Agent`` sends a rate-limit refusal once (docs/verified-apis.md §8). A
 throttle the SDK's transport did not send passes through, and Strands still
 retries it. An ``OpenAIModel`` you build yourself from ``connection_kwargs()``
 gets none of this: build its ``Agent`` with ``retry_strategy=None``.
@@ -38,7 +39,7 @@ from collections.abc import AsyncGenerator, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from ..core.errors import TokenBudgetExceeded
+from ..core.errors import RequestRateLimitExceeded, TokenBudgetExceeded
 from ..core.masking import masked
 from ..core.refusals import TypedRefusals, translate
 from . import AdapterCapabilities
@@ -106,9 +107,10 @@ class StrandsAdapter(Adapter):
         ``client_args`` override must pass the https check. Pass ``stream=True``
         to stream (#830).
 
-        The object is an ``OpenAIModel`` subclass that raises a budget 429 as
-        the typed ``TokenBudgetExceeded``, so a Strands ``Agent`` does not retry
-        it (#951, see the module docstring)."""
+        The object is an ``OpenAIModel`` subclass that raises a rate-limit 429
+        as the typed ``TokenBudgetExceeded`` or ``RequestRateLimitExceeded``, so
+        a Strands ``Agent`` does not retry it (#951, #974, see the module
+        docstring)."""
         client_args = kw.get("client_args")
         if isinstance(client_args, Mapping):
             self._allow_endpoints(client_args, "base_url")
@@ -130,12 +132,12 @@ def _governed_model_class(base: Any) -> type[OpenAIModel]:
     Only ``stream`` is overridden, through the public ``Model.stream`` interface.
     Strands' event loop calls it for every model request, and its default
     ``ModelRetryStrategy.is_retryable`` retries only ``ModelThrottledException``
-    (docs/verified-apis.md §8). A budget 429 leaves as the typed refusal, and
-    any other error, a throttle included, leaves unchanged."""
+    (docs/verified-apis.md §8). A rate-limit 429 leaves as the typed refusal,
+    and any other error, a throttle included, leaves unchanged."""
 
     class GovernedOpenAIModel(base):
-        """Strands' ``OpenAIModel``, with a budget 429 raised as the typed
-        ``TokenBudgetExceeded`` instead of a retryable throttle (#951)."""
+        """Strands' ``OpenAIModel``, with a rate-limit 429 raised as the typed
+        refusal instead of a retryable throttle (#951, #974)."""
 
         async def stream(self, *args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
             from strands.types.exceptions import ModelThrottledException
@@ -145,7 +147,7 @@ def _governed_model_class(base: Any) -> type[OpenAIModel]:
                     yield event
                 return
             except ModelThrottledException as exc:
-                typed = _budget_refusal(exc)
+                typed = _rate_limit_refusal(exc)
                 if typed is None:
                     raise
             # Raised outside the handler, as the typed-refusal bridge does: no
@@ -155,11 +157,15 @@ def _governed_model_class(base: Any) -> type[OpenAIModel]:
     return GovernedOpenAIModel
 
 
-def _budget_refusal(exc: BaseException) -> TokenBudgetExceeded | None:
-    """The typed ``TokenBudgetExceeded`` behind a Strands throttle, or ``None``
-    when ``exc`` is not a governed budget refusal."""
+def _rate_limit_refusal(
+    exc: BaseException,
+) -> TokenBudgetExceeded | RequestRateLimitExceeded | None:
+    """The typed rate-limit refusal behind a Strands throttle, or ``None`` when
+    ``exc`` is not a governed token-budget or request-rate-limit refusal."""
     typed = TypedRefusals(lambda: (refusal_translator,)).resolve(exc)
-    return typed if isinstance(typed, TokenBudgetExceeded) else None
+    if isinstance(typed, (TokenBudgetExceeded, RequestRateLimitExceeded)):
+        return typed
+    return None
 
 
 def model(model: str, **kw: Any) -> OpenAIModel:

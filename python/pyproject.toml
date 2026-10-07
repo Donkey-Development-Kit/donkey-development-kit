@@ -547,7 +547,7 @@ layers = [
     "config",
     "cost | endpoints | header_names | refusals",
     "errors",
-    "lastcall | masking",
+    "_refusal_body | lastcall | masking",
     "_verify",
     "_wire | _response",
 ]

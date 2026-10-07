@@ -1,4 +1,4 @@
-"""The nine documented rejection shapes (#181, +#289, +#694), asserted from the shared
+"""The ten documented rejection shapes (#181, +#289, +#694, +#974), asserted from the shared
 ``src/donkey_kit/simulator/_fixtures/rejections/`` index so the local gateway simulator (#187) can
 replay the identical files and any contract drift fails both at once (AC #4).
 
@@ -16,7 +16,9 @@ were confirmed against ``ddk-azure-content-safety`` (instance 21180957) — see
 stays documented-only: it is a synthetic minimal 4xx proving the fall-through
 stays generic, not a captured policy shape (#253). Row 9 (Agent Kill Switch,
 nested ``error.code == "agent_killed"``) was live-captured 2026-09-29 against
-``ddk-agent-kill-switch`` (instance 21206201, #694).
+``ddk-agent-kill-switch`` (instance 21206201, #694). Row 10 (request rate
+limit, the unsuffixed ``x-ratelimit-*`` trio on a 429) was live-captured
+2026-10-07 against ``ddk-request-rate-limit`` (instance 21188400, #974).
 The discriminator is the error ``type`` + specific headers, NEVER the status code
 alone — which is exactly why rows 7/8 (both 403) must not be swallowed by the
 401/403 → auth rule.
@@ -36,6 +38,7 @@ from donkey_kit.core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -46,6 +49,7 @@ from donkey_kit.simulator.fixtures import parse_headers
 _FIXTURES = Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
 REJECTIONS = _FIXTURES / "rejections"
 LIVE = _FIXTURES / "anypoint" / "llm_proxy"
+REQUEST_LIMIT = _FIXTURES / "anypoint" / "request_rate_limit"
 
 
 def _headers(path: Path) -> dict[str, str]:
@@ -176,3 +180,10 @@ def test_row9_agent_kill_switch_is_agent_killed_not_upstream_or_auth() -> None:
     assert "Governance > Security" in err.remediation
     assert str(err) == "This agent has been blocked by an active kill switch."
     assert err.correlation_id == "00000000-0000-4000-8000-ede8f2783ba7"
+
+
+def test_row10_request_rate_limit_is_its_own_type_not_token_budget() -> None:
+    err = classify(_response(REQUEST_LIMIT, "request-rate-limit", 429))
+    assert isinstance(err, RequestRateLimitExceeded)
+    assert not isinstance(err, TokenBudgetExceeded)
+    assert err.policy == "request-rate-limit"

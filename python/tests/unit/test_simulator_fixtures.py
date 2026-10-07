@@ -20,6 +20,7 @@ _FIXTURES = Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simula
 # status than the SDK's typed refusals were verified against.
 _CONTRACT_STATUS = {
     "token-rate-limit": 429,
+    "request-rate-limit": 429,
     "pii-detected": 403,
     "injection-protection": 400,
     "regex-prompt-guard": 403,

@@ -15,6 +15,14 @@ model call the simulator serves (``POST /responses`` and
   ``x-token-remaining``/``x-token-reset``/``x-token-limit`` recomputed from the
   live counter and the real milliseconds left in the window — until the window
   rolls over and the budget resets.
+- ``request_limit:limit=<requests>,window=<dur>`` — a wall-clock windowed
+  request counter (#974). Each passing ``200`` carries the gateway's
+  ``x-ratelimit-limit`` / ``x-ratelimit-remaining`` / ``x-ratelimit-reset``
+  trio, as the stock ``rate-limiting`` policy sends it with ``exposeHeaders:
+  true``; once ``limit`` calls are spent, calls are served the captured
+  ``request-rate-limit`` **429** with the trio recomputed, until the window
+  rolls over. The live window is aligned to the gateway's clock; this one
+  starts on the first call.
 
 **Verification discipline (#352/#353/#354).** The live happy-path ``200``
 carries the budget window as the prose ``x-llm-proxy-ratelimit`` header, *not*
@@ -45,6 +53,9 @@ from .fixtures import (
     LIMIT_HEADER,
     RATELIMIT_HEADER,
     REMAINING_HEADER,
+    REQUEST_LIMIT_HEADER,
+    REQUEST_REMAINING_HEADER,
+    REQUEST_RESET_HEADER,
     RESET_HEADER,
     load,
     render_ratelimit_prose,
@@ -55,6 +66,7 @@ __all__ = [
     "FaultScenario",
     "InjectionScenario",
     "PiiBlockScenario",
+    "RequestLimitScenario",
     "ScenarioError",
     "ScenarioHit",
     "parse_scenario",
@@ -70,6 +82,7 @@ _log = logging.getLogger(__name__)
 _PII_SHAPE = "pii-detected"
 _INJECTION_SHAPE = "injection-protection"
 _BUDGET_SHAPE = "token-rate-limit"
+_REQUEST_LIMIT_SHAPE = "request-rate-limit"
 
 # Fallback per-call cost if the success fixture carries no usage total — a
 # defensible non-zero default so the counter still moves (see _default_cost).
@@ -261,10 +274,70 @@ class BudgetScenario:
         }
 
 
+class RequestLimitScenario:
+    """A wall-clock-windowed request counter (#974).
+
+    Each passing call spends one request, and its ``200`` carries the
+    ``x-ratelimit-*`` trio from the live counter. Once ``limit`` requests are
+    spent, calls are served the ``request-rate-limit`` 429 with the trio
+    recomputed, until the window rolls over and the count resets to ``limit``.
+    Like :class:`BudgetScenario`, single-use and atomic per call.
+
+    The window is fixed, as on the live gateway (docs/verified-apis.md §4): it
+    starts when the scenario is built, not on the first call, and rolls over
+    every ``window_ms`` whether or not calls arrive. The gateway's own alignment
+    is not captured, so the simulator does not imitate it.
+    """
+
+    name = "request_limit"
+
+    def __init__(self, limit: int, window_ms: int) -> None:
+        if limit < 1:
+            raise ScenarioError(f"request_limit: limit must be >= 1, got {limit}")
+        if window_ms < 1:
+            raise ScenarioError(f"request_limit: window must be >= 1ms, got {window_ms}ms")
+        self._limit = limit
+        self._window_ms = window_ms
+        self._remaining = limit
+        self._window_start = time.monotonic()
+        self._reset_ms = window_ms
+
+    def _advance_window(self) -> None:
+        """Roll the fixed window over by whole windows once ``window_ms`` has
+        passed, and record the ms left."""
+        elapsed_ms = (time.monotonic() - self._window_start) * 1000.0
+        if elapsed_ms >= self._window_ms:
+            windows = int(elapsed_ms // self._window_ms)
+            self._window_start += windows * self._window_ms / 1000.0
+            self._remaining = self._limit
+            elapsed_ms -= windows * self._window_ms
+        self._reset_ms = max(0, int(self._window_ms - elapsed_ms))
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            REQUEST_LIMIT_HEADER: str(self._limit),
+            REQUEST_REMAINING_HEADER: str(self._remaining),
+            REQUEST_RESET_HEADER: str(self._reset_ms),
+        }
+
+    def on_call(self, text: str) -> ScenarioHit | None:  # noqa: ARG002 - Scenario protocol
+        """Spend one request; reject with the request-rate-limit shape once the window is spent."""
+        self._advance_window()
+        if self._remaining <= 0:
+            return ScenarioHit(_REQUEST_LIMIT_SHAPE, self._headers())
+        self._remaining -= 1
+        return None
+
+    def happy_path_headers(self) -> dict[str, str]:
+        """The ``x-ratelimit-*`` trio for a passing call, from the live counter.
+        Call only after :meth:`on_call` returned ``None``."""
+        return self._headers()
+
+
 _DURATION_UNITS_MS = {"ms": 1, "s": 1000, "m": 60_000}
 
 
-def _parse_duration_ms(raw: str) -> int:
+def _parse_duration_ms(raw: str, scenario: str) -> int:
     """Parse a duration like ``60s``, ``500ms``, ``2m`` into milliseconds. A bare
     number is read as seconds (``window=60`` == ``60s``)."""
     raw = raw.strip()
@@ -272,11 +345,11 @@ def _parse_duration_ms(raw: str) -> int:
         if raw.endswith(unit):
             num = raw[: -len(unit)].strip()
             if not num.isdigit():
-                raise ScenarioError(f"budget: invalid duration {raw!r}")
+                raise ScenarioError(f"{scenario}: invalid duration {raw!r}")
             return int(num) * _DURATION_UNITS_MS[unit]
     if raw.isdigit():  # bare number -> seconds
         return int(raw) * 1000
-    raise ScenarioError(f"budget: invalid duration {raw!r} (use e.g. 60s, 500ms, 2m)")
+    raise ScenarioError(f"{scenario}: invalid duration {raw!r} (use e.g. 60s, 500ms, 2m)")
 
 
 def _parse_params(raw: str) -> dict[str, str]:
@@ -311,6 +384,7 @@ def parse_scenario(spec: str) -> FaultScenario:
     - ``pii_block:every=N``
     - ``injection:on-pattern=<substr>``
     - ``budget:limit=<tokens>,window=<dur>[,cost=<tokens>]``
+    - ``request_limit:limit=<requests>,window=<dur>``
     """
     name, sep, rest = spec.partition(":")
     name = name.strip()
@@ -333,11 +407,18 @@ def parse_scenario(spec: str) -> FaultScenario:
         window_raw = params.get("window")
         if window_raw is None:
             raise ScenarioError("budget: missing required param 'window'")
-        window_ms = _parse_duration_ms(window_raw)
+        window_ms = _parse_duration_ms(window_raw, "budget")
         cost = _parse_int(params, "cost", "budget") if "cost" in params else None
         return BudgetScenario(limit, window_ms, cost)
+    if name == "request_limit":
+        params = _parse_params(rest)
+        limit = _parse_int(params, "limit", "request_limit")
+        window_raw = params.get("window")
+        if window_raw is None:
+            raise ScenarioError("request_limit: missing required param 'window'")
+        return RequestLimitScenario(limit, _parse_duration_ms(window_raw, "request_limit"))
     raise ScenarioError(
-        f"unknown scenario {name!r}; supported: injection, pii_block, budget"
+        f"unknown scenario {name!r}; supported: injection, pii_block, budget, request_limit"
     )
 
 
