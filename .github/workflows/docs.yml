@@ -1,4 +1,4 @@
-name: Docs (GitHub Pages)
+name: Deploy docs
 
 # Deploys the Nextra consumer site (website/) to GitHub Pages as a static
 # export. Bucket A of the docs split (#144); contributor docs stay in-repo and
