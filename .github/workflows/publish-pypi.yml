@@ -23,6 +23,7 @@ jobs:
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -68,6 +69,7 @@ jobs:
     # workflow has no workflow_dispatch trigger at all, so that can't happen.
     if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: pypi
     permissions:
       id-token: write # OIDC token for Trusted Publishing; no stored secret.

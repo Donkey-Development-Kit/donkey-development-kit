@@ -154,14 +154,23 @@ in `ci.yml` are the source of truth, and CONTRIBUTING's gate is a subset of
 them. `.pre-commit-config.yaml` exists today with gitleaks only. #765 adds
 ruff, ruff-format, lint-imports and `llms.txt` regeneration.
 
-### 6. Jobs are bounded and superseded runs are cancelled. **Partly in place** (#761)
+### 6. Jobs are bounded and superseded runs are cancelled. **In place** (#761)
 
-The matrices set `fail-fast: false`, so each Python version reports on its own.
-Still open: `timeout-minutes` on every job (10–15, or 30 for
-dependency-resolution jobs), a `concurrency:` group per ref in `ci.yml` with
-`cancel-in-progress` on pull requests, and `cache: pip` keyed on the
-constraints file. `docs.yml` deliberately serialises its deploys and never
-cancels one mid-flight.
+- Every job in every workflow sets `timeout-minutes`: 10–15 for most jobs, 30
+  for jobs that resolve dependencies fresh (`all-extra-resolves`,
+  `anthropic-stacks`, `adk-stacks` and the nightly jobs).
+- Every matrix sets `fail-fast: false`, so each leg reports on its own.
+- `ci.yml` has one `concurrency:` group per PR (per ref for pushes). A new push
+  to a PR cancels the PR's previous run. Branch pushes are never cancelled.
+- Each `ci.yml` job that installs packages uses `cache: pip`. The cache key is
+  the job's constraints file, or `python/pyproject.toml` for the fresh-resolve
+  jobs. The cache stores downloaded wheels only, so a fresh-resolve job still
+  resolves against the index.
+
+`tests/unit/test_workflow_bounds.py` fails on a job without a timeout of 30
+minutes or less, a matrix without `fail-fast: false`, or a `ci.yml` without the
+concurrency group. `docs.yml` and `live-contract-check.yml` deliberately
+serialise their runs and never cancel one mid-flight.
 
 ### 7. Least-privilege workflows. **Partly in place** (#757, #771)
 
