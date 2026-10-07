@@ -124,11 +124,19 @@ A governed call can fail for several reasons that look identical from the
 outside. `doctor` makes one real governed call and tells them apart:
 
 - **Wrong credentials** — the `client_id`/`client_secret` pair is rejected.
-- **Wrong URL** — the credentials are fine but the base URL is not a proxy
-  instance. (A trailing `/v1` lands here; the governed proxy has no `/v1`
-  segment.)
+- **Wrong URL** — the gateway answers, but no proxy is deployed on that base
+  path: an empty `404` with no `x-llm-proxy-*` headers. The `gateway` line
+  fails and `credentials` and `model` show as not checked. A typo in the path,
+  a trailing `/v1` (the governed proxy has no `/v1` segment), or a proxy that
+  is not Active in API Manager all land here.
 - **Credentials fine, model not in the allow-list** — nothing is misconfigured;
   your platform team has not granted that model.
+- **`/responses` not served on this route** — the proxy accepted the
+  credentials and routed the model, but the upstream answered the Responses API
+  with `404`. An Azure OpenAI route does this. `doctor` then tries
+  `/chat/completions` once and reports the route as working if that answers.
+  Call it with `client.chat.completions.create(...)` on `donkey.llm.client()`,
+  or with your framework's chat-completions client.
 
 Each verdict prints the same remediation string the matching typed exception
 carries, so the fix is in the output rather than in a runbook. The budget line
@@ -167,6 +175,18 @@ donkey --config ./cfg.toml doctor  # read cfg.toml and its adjacent local overla
 [ok] credentials    client_id accepted
 [ok] model          accepted by the proxy
 [i]  budget         99,000 / 100,000 remaining, resets in 59s, observed 0s ago
+```
+
+On an Azure OpenAI route, the `responses` line explains the `404` and the run
+still exits `0`:
+
+```text
+[ok] gateway           reachable, responded
+[ok] credentials       client_id accepted
+[ok] model             accepted by the proxy
+[i]  responses         /responses not served on this route (404 from the azureopenai upstream)
+     remediation: This route's upstream does not serve the OpenAI Responses API. Call it with the Chat Completions API: client.chat.completions.create(...) on donkey.llm.client(), or a framework's chat-completions client.
+[ok] chat completions  served on this route
 ```
 
 ```bash
