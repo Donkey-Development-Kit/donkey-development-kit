@@ -8,13 +8,15 @@ raises its own generic error: ``openai`` and ``anthropic`` an
 ``APIConnectionError`` (the typed error hidden on ``__cause__``) or a
 ``PermissionDeniedError``, LangChain its ``OpenAIConnectionError`` /
 ``OpenAIPermissionDeniedError`` subclasses, and google-genai (under ADK's
-``Gemini``) a ``ClientError``. The OpenAI Agents SDK and LlamaIndex sit on the
-``openai`` client and raise its errors.
+``Gemini``) a ``ClientError``. The OpenAI Agents SDK, LlamaIndex and Strands
+sit on the ``openai`` client and raise its errors; Agent Framework wraps them in
+a ``ChatClientException``.
 
-Six surfaces (the raw OpenAI client, the Anthropic client, a LangGraph graph, an
-OpenAI Agents SDK ``Runner`` run, a LlamaIndex ``FunctionAgent`` run and an ADK
-``LlmAgent`` on ``adk.gemini()``, #955) times three errors, each raised by the
-real transport:
+Eight surfaces (the raw OpenAI client, the Anthropic client, a LangGraph graph,
+an OpenAI Agents SDK ``Runner`` run, a LlamaIndex ``FunctionAgent`` run, an ADK
+``LlmAgent`` on ``adk.gemini()`` (#955), a Strands ``Agent`` and an Agent
+Framework ``Agent`` (#983)) times three errors, each raised by the real
+transport:
 
 * ``PIIDetected`` — ``donkey.simulate(PIIDetected)`` serves the captured 403.
 * ``ModelSubstituted`` — with ``on_model_substitution="raise"``, a 200 whose
@@ -125,6 +127,22 @@ async def _adk_gemini(donkey: Donkey) -> None:
         pass
 
 
+async def _strands(donkey: Donkey) -> None:
+    strands = pytest.importorskip("strands")
+    pytest.importorskip("strands.models.openai")
+    # The default retry strategy, as a user's Agent has it (#951).
+    agent = strands.Agent(model=donkey.strands.model("gpt-4o"), callback_handler=None)
+    await agent.invoke_async("hi")
+
+
+async def _agent_framework(donkey: Donkey) -> None:
+    af = pytest.importorskip("agent_framework")
+    pytest.importorskip("agent_framework.openai")
+    # No policy_middleware(): the run()/@governed scope alone bridges the refusal.
+    agent = af.Agent(client=donkey.agent_framework.chat_client("gpt-4o"))
+    await agent.run("hi")
+
+
 SURFACES: dict[str, Call] = {
     "openai": _openai,
     "anthropic": _anthropic,
@@ -132,6 +150,8 @@ SURFACES: dict[str, Call] = {
     "openai_agents": _openai_agents,
     "llamaindex": _llamaindex,
     "adk.gemini": _adk_gemini,
+    "strands": _strands,
+    "agent_framework": _agent_framework,
 }
 
 
@@ -193,18 +213,26 @@ _FACTORIES = {
     "openai_agents": ("openai_agents", "model"),
     "llamaindex": ("llamaindex", "llm"),
     "adk.gemini": ("adk", "gemini"),
+    "strands": ("strands", "model"),
+    "agent_framework": ("agent_framework", "chat_client"),
 }
 
 
 def test_bridged_surfaces_declare_typed_refusals() -> None:
-    # Each surface proven below declares typed_refusals=True, and the exempt
-    # adk.model() declares False (#726), so the claim and the test cannot drift.
+    # The factories that declare typed_refusals=True are exactly the surfaces
+    # proven below, and only the exempt adk.model() and CrewAI declare False
+    # (#726, #983), so the claim and the test cannot drift.
     assert set(_FACTORIES) == set(SURFACES) - {"openai"}
-    for attr, factory in [*_FACTORIES.values(), ("adk", "model")]:
-        spec = ADAPTERS[attr]
+    declared: dict[tuple[str, str], bool] = {}
+    for attr, spec in ADAPTERS.items():
         module = importlib.import_module(spec.module, package="donkey_kit.integrations")
-        caps = getattr(module, spec.cls).capabilities(factory)
-        assert caps.typed_refusals is ((attr, factory) != ("adk", "model")), (attr, factory)
+        for factory, caps in getattr(module, spec.cls).factories.items():
+            declared[(attr, factory)] = caps.typed_refusals
+    assert {key for key, typed in declared.items() if typed} == set(_FACTORIES.values())
+    assert {key for key, typed in declared.items() if not typed} == {
+        ("adk", "model"),
+        ("crewai", "llm"),
+    }
 
 
 @pytest.mark.parametrize("scope", SCOPES)
