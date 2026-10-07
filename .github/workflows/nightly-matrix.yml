@@ -44,7 +44,7 @@
 # referenced as shell variables (never interpolated directly into run: bodies),
 # per the GitHub Actions injection-hardening guidance.
 
-name: nightly-framework-matrix
+name: Nightly matrix
 
 on:
   schedule:
