@@ -30,6 +30,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import os
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TypeGuard
@@ -214,7 +215,9 @@ async def test_last_call_matches_the_declared_metadata(driver: Driver, gateway: 
 
 
 @pytest.mark.parametrize("attr", list(ADAPTERS))
-async def test_example_build_passes_the_conformance_kit(attr: str) -> None:
+async def test_example_build_passes_the_conformance_kit(
+    attr: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     example = _EXAMPLES / attr / "main.py"
     has_build = "\ndef build(" in example.read_text()
     assert has_build, f"examples/{attr}/main.py must expose build(donkey)"
@@ -225,7 +228,16 @@ async def test_example_build_passes_the_conformance_kit(attr: str) -> None:
     from donkey_kit.conformance import run_conformance
     from donkey_kit.conformance.suite import SCENARIOS
 
-    module = importlib.import_module(f"examples.{attr}.main")
+    # Loaded by path: plain ``pytest`` (unlike ``python -m pytest``) does not put
+    # ``python/`` on ``sys.path``, so ``examples`` is not importable as a package.
+    # Registered in ``sys.modules`` so frameworks that resolve the example's type
+    # hints through its module (LangGraph's state schema) can find it.
+    name = f"_{attr}_example_main"
+    module_spec = importlib.util.spec_from_file_location(name, example)
+    assert module_spec is not None and module_spec.loader is not None
+    module = importlib.util.module_from_spec(module_spec)
+    monkeypatch.setitem(sys.modules, name, module)
+    module_spec.loader.exec_module(module)
     # The example's own asserted exemptions, the way the pytest plugin reads them.
     # Only an adapter the internal matrix records as structurally limited on a
     # public scenario may have any, so an example cannot excuse a scenario it
