@@ -527,8 +527,9 @@ jobs:
     # real framework installed. DONKEY_CONTRACT_EXTRA turns that framework's
     # skips into failures, so a broken install cannot pass as a skip. The matrix
     # must list exactly the registry's extras: test_integration_checklist.py
-    # asserts it. `python -m pytest` puts python/ on sys.path, so the example
-    # conformance check can import examples.<fw>.main.
+    # asserts it. The example conformance check loads examples/<fw>/main.py by
+    # path, so it does not depend on `python -m pytest` putting python/ on
+    # sys.path (#1014: the nightly runs plain `pytest`).
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
