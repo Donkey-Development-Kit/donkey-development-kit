@@ -14,6 +14,7 @@ too.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -98,3 +99,25 @@ def test_ci_saves_pip_caches_from_pushes_only() -> None:
         name for name, step in saves if "github.event_name == 'push'" not in str(step.get("if", ""))
     }
     assert not unguarded, f"cache save steps not limited to pushes: {unguarded}"
+
+
+@pytest.mark.skipif(not _FILES, reason="not a repo checkout (no .github/workflows)")
+def test_ci_pip_cache_keys_hash_a_real_file() -> None:
+    """A ``${{ }}`` nested inside ``hashFiles('...')`` is not expanded (#1005).
+
+    The glob then matches nothing, ``hashFiles`` returns ``''`` and the key never
+    changes when the constraints do. Matrix paths go through ``format()``.
+    """
+    keys = {
+        name: str(step["with"]["key"])
+        for name, step in _ci_steps()
+        if str(step.get("uses", "")).startswith("actions/cache/restore@")
+    }
+    assert keys, "ci.yml restores no pip cache"
+    bad = {
+        name
+        for name, key in keys.items()
+        if not (args := re.findall(r"hashFiles\(([^)]*)\)", key))
+        or any("${{" in arg for arg in args)
+    }
+    assert not bad, f"cache keys with no hashFiles or a nested ${{{{ }}}} in it: {bad}"

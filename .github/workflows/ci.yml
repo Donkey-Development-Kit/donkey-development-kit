@@ -240,7 +240,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ~/.cache/pip
-          key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-${{ hashFiles('python/constraints/test-py${{ matrix.python-version }}.txt') }}
+          key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-${{ hashFiles(format('python/constraints/test-py{0}.txt', matrix.python-version)) }}
           restore-keys: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-
       # [local] here (and only here) so the simulator's ASGI tests execute; the
       # base-only and typecheck jobs deliberately omit it (importorskip guards
@@ -553,7 +553,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ~/.cache/pip
-          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/adapter-contract-${{ matrix.extra }}-py3.12.txt') }}
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles(format('python/constraints/adapter-contract-{0}-py3.12.txt', matrix.extra)) }}
           restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
       # Dev tooling is the `dev` dependency group (#943), not an extra.
       # -c locks the resolve (ADR 0007 rule 3, #948), one file per matrix leg
