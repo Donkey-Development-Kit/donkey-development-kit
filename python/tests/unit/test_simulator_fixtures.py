@@ -34,6 +34,8 @@ _CONTRACT_STATUS = {
     "success-semantic": 200,
     "stream": 200,
     "models-notfound": 404,
+    "chat-success": 200,
+    "chat-stream": 200,
 }
 
 
