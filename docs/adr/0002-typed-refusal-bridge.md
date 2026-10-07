@@ -100,9 +100,10 @@ by hand, and only one wrapper exists:
   transport hook.
 - Follow-ups outside #724: unwrapping an `ExceptionGroup` (a refusal raised
   inside a task group reaches the bridge wrapped) is #950, decided in the
-  amendment below; Strands retries a
-  429 before the bridge sees it (#951); bridge conformance for openai-agents,
-  LlamaIndex and the ADK gemini path is #955.
+  amendment below; Strands retrying a 429 before the bridge sees it was
+  #951, done (`donkey.strands.model()` raises `TokenBudgetExceeded` in place
+  of the throttle); bridge conformance for openai-agents, LlamaIndex and the
+  ADK gemini path was #955, done.
 
 ## Amendment (2026-10-05, #950)
 

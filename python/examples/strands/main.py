@@ -72,15 +72,16 @@ class StrandsAgent:
 
 def build(donkey: Donkey) -> StrandsAgent:
     """Wrap the governed ``OpenAIModel`` in a ``strands.Agent`` and return an
-    agent that makes one call through ``Agent.invoke_async``. ``retry_strategy=None``
-    turns off Strands' own retry: on the proxy a ``429`` is a budget refusal,
-    and sending it again only burns the same window."""
+    agent that makes one call through ``Agent.invoke_async``. The default
+    ``Agent`` is safe here: ``model()`` raises a budget ``429`` as the typed
+    ``TokenBudgetExceeded``, which Strands' throttle retry leaves alone, so the
+    refusal is sent once. Only an ``OpenAIModel`` built from
+    ``connection_kwargs()`` needs ``retry_strategy=None``."""
     from strands import Agent
 
     agent = Agent(
         model=donkey.strands.model(os.environ.get("DEMO_MODEL", "gpt-4o")),
         callback_handler=None,
-        retry_strategy=None,
     )
     return StrandsAgent(agent)
 
