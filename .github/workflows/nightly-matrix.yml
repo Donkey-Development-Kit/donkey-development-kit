@@ -64,6 +64,7 @@ jobs:
   # Base gates on the framework-free core — must pass regardless of any framework.
   gates:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -81,6 +82,7 @@ jobs:
   # against the newest releases; ci.yml runs the same check per PR.
   all-extra-resolves:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -96,6 +98,7 @@ jobs:
 
   matrix:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Don't let one framework's upstream break cancel the others — we want the
     # full per-framework signal every night.
     strategy:
@@ -198,6 +201,7 @@ jobs:
     #      kit (governed calls, in-process) rather than printing install guidance
     #      and exiting 0.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
