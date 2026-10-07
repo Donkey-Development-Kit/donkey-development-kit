@@ -275,6 +275,16 @@ donkey doctor
 `donkey doctor` tells a wrong URL from wrong credentials from a model that is
 not on the proxy's allow-list, instead of one opaque failure.
 
+If `doctor` reports a `404`, read which line it is on:
+
+- **`gateway` fails with "no proxy on this base path"** — check the path in
+  `DONKEY_LLM_PROXY_URL` against the proxy's base path (trailing slash, no
+  `/v1`), and that the proxy is Active in API Manager.
+- **`responses` says "/responses not served on this route"** — the proxy
+  works, but its upstream (an Azure OpenAI route, for example) does not serve
+  the Responses API. Use the Chat Completions API on that route; see
+  [`donkey doctor`](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
+
 ## Next steps
 
 - **[Pick your framework](https://docs.donkey-kit.dev/frameworks.md)** — get a native LangGraph, ADK,
