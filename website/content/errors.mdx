@@ -389,6 +389,11 @@ surfaces immediately as `AuthError`. The Anypoint control-plane credential
 lives on a separate client: model calls never fetch, send or refresh it. See
 [What the SDK sends where](/reference/configuration#what-the-sdk-sends-where).
 
+To watch the retries and the token refresh happen, turn on the SDK's
+[debug logging](/telemetry#debug-logging). It records each retry with its
+status and delay, the 401 refresh, a routing fallback that is not retried, and
+an auth provider falling through to the next one.
+
 ## Unrecognised shapes
 
 Any content-moderation or federated-guardrail response that matches none of the

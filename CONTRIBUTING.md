@@ -854,6 +854,11 @@ Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .
   Ruff selects `BLE`, `LOG`, and `G`, so a blind `except Exception` needs a
   `# noqa: BLE001 — <reason>` that states the reason. Pass log arguments
   lazily (`_log.debug("%s", x)`), never as an f-string.
+- **Keep the docs in step.** The "Debug logging" section of
+  `website/content/telemetry.mdx` tells consumers how to turn these records on
+  and lists what each module logger records. A new DEBUG record, a renamed
+  logger, or a change to what a record may carry updates that table in the same
+  PR.
 
 ---
 

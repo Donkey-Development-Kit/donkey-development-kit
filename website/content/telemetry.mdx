@@ -11,7 +11,9 @@ import { Badge } from '../components'
 
 DDK answers two questions about every governed call: *what happened?* and *who
 pays for it?* It does so with OpenTelemetry GenAI spans, per-run correlation
-IDs, cost-attribution tags, and routing and resilience signals.
+IDs, cost-attribution tags, and routing and resilience signals. For what the
+SDK itself does along the way, such as retries and token refreshes, see
+[Debug logging](#debug-logging).
 
 ## OpenTelemetry GenAI spans
 
@@ -652,3 +654,54 @@ For compliance — *"prove the HR bot's answer to user X on date Y went through
 the content-safety policy"* — the correlation ID on the log line joins to the
 gateway record, and the span carries `donkey.cost.enduser.id` and `donkey.policy.type`. An
 EU AI Act Article 12 log request becomes one query, not an investigation.
+
+## Debug logging
+
+Spans tell you what a call did. When you need to see what the SDK did *for*
+you along the way, such as a retry, a token refresh or a fallback, turn on its
+DEBUG logging. It uses the standard library `logging` module, with one logger
+per module under the `donkey_kit` package logger:
+
+```python
+import logging
+
+logging.basicConfig()                                   # or your own handlers
+logging.getLogger("donkey_kit").setLevel(logging.DEBUG)
+```
+
+A retried 503 then reads:
+
+```text
+DEBUG:donkey_kit.core.transport.observe:GET https://proxy.example/v1/chat/completions returned 503; retry 1 of 3 in 0.48s
+```
+
+The SDK attaches only a `NullHandler` to `donkey_kit` and never configures a
+handler, level or format of its own, so nothing prints until your application
+does. That also means you can narrow it. Set the level on one module logger,
+such as `donkey_kit.core.auth`, instead of the package.
+
+| What is logged at DEBUG | Logger |
+| --- | --- |
+| Each retry: the status, which retry it is, and the delay | `donkey_kit.core.transport.observe` |
+| A retryable status that is not retried: after a gateway routing fallback, a 502/504 on a model call (see [Retry behaviour](/errors#retry-behaviour)), or once retries run out | `donkey_kit.core.transport.observe` |
+| A 401 on the async client, followed by one token refresh and re-send | `donkey_kit.core.transport.async_client` |
+| A connected-app token fetch (the token URL only) and token invalidation | `donkey_kit.core.auth` |
+| An auth provider in a `ChainedAuth` failing over to the next one (type names only) | `donkey_kit.core.auth` |
+| The OTLP export bootstrap: inert, kept your `TracerProvider`, or installed (global or DDK-scoped) | `donkey_kit.core.telemetry` |
+| How many tool descriptors a `ToolSet` exposes after its filter, out of the total | `donkey_kit.tools.session` |
+| A best-effort step that failed and was skipped (with the traceback), e.g. a refusal translator or recording usage on a span | the module that skipped it |
+
+<Callout type="info">
+  **A log record never carries a credential.** Records name a request by
+  method, scheme, host and path only. They never include a header value,
+  token, client secret, query string or request body, and an auth failure is
+  logged by exception type, not message. A unit test pins this against every
+  credential the SDK sends: the bearer token, client id and client secret.
+</Callout>
+
+The SDK does not use WARNING log records for configuration problems. A one-time
+problem you have to fix is a Python warning instead, raised through
+`warnings.warn` with its own category, so you can filter it or make it an
+error with the `warnings` module. For example, an OTLP endpoint set without its
+exporter installed raises `donkey_kit.core.telemetry.TelemetryExportWarning`
+(see [Zero-config export](#zero-config-export)).
