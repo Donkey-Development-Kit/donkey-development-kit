@@ -36,6 +36,10 @@
 # run: it needs sandbox credentials. Trigger it manually via workflow_dispatch
 # with `live: true` and the MULESOFT_LLM_PROXY_* repo secrets configured.
 #
+# Alerting (#755): a red run (scheduled or manual) opens or updates ONE open
+# issue labelled `nightly-failure`, never one issue per run, from the `alert`
+# job at the bottom. Only that job gets `issues: write`.
+#
 # Security: matrix values and inputs are passed into steps via `env:` and
 # referenced as shell variables (never interpolated directly into run: bodies),
 # per the GitHub Actions injection-hardening guidance.
@@ -52,7 +56,8 @@ on:
         type: boolean
         default: false
 
-# Least privilege: the matrix only reads the checkout, never writes back.
+# Least privilege: the matrix only reads the checkout, never writes back. The
+# `alert` job alone adds `issues: write`.
 permissions:
   contents: read
 
@@ -248,3 +253,42 @@ jobs:
 
       - name: Strict example smoke (non-zero on a missing framework; governed calls via the conformance kit)
         run: timeout 120 python scripts/smoke_example.py "$FRAMEWORK"
+
+  alert:
+    # #755: the dependency policy (floors, never ceilings, §8.4) relies on this
+    # run to catch upstream breakage, so a red run must reach a human. `needs:`
+    # lists EVERY other job in this file (tests/unit/test_ci_workflows.py
+    # asserts it); `failure()` is true when any of them failed. Open-or-update
+    # one tracking issue, the same pattern as live-contract-check.yml (#753).
+    if: failure()
+    needs: [gates, all-extra-resolves, matrix, framework-legs]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    defaults:
+      run:
+        # No checkout here, so python/ does not exist.
+        working-directory: .
+    steps:
+      - name: Open or update the nightly-failure tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # `gh issue create --label` fails when the label does not exist.
+          gh label create nightly-failure --repo "$REPO" --force \
+            --color B60205 --description "Nightly framework matrix failed (#755)"
+          existing=$(gh issue list --repo "$REPO" --label nightly-failure --state open \
+            --json number --jq '.[0].number // empty')
+          body="The nightly framework matrix failed (${EVENT} run): ${RUN_URL}
+
+          A red nightly is an upstream signal: adapt the code or move the lock, never add a ceiling (§8.4, docs/ci.md)."
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "Nightly framework matrix failing" \
+              --label nightly-failure --body "$body"
+          fi

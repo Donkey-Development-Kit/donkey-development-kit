@@ -15,9 +15,12 @@
 # each entry's `extras`/`dev_group` must match that job's install line exactly.
 name: CI
 
+# #755: `develop` too, so two individually green PRs that combine into a broken
+# `develop` fail at merge time instead of at promotion to `main`. No
+# `merge_group:` trigger: the repo has no merge queue.
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 # Least privilege: this workflow only reads the checkout, never writes back.
@@ -545,9 +548,10 @@ jobs:
         run: python -m pytest -q --donkey-conformance --donkey-agent=examples.langgraph.main:build
 
   # The nightly framework matrix (§8.4) is .github/workflows/nightly-matrix.yml.
-  # It re-checks LangGraph, the one conformance-tested adapter, against its
-  # newest release. A failed run is reported only as a failed scheduled run;
-  # it opens no issue.
+  # It resolves fresh against the newest upstream releases: `matrix` re-checks
+  # LangGraph, the one conformance-tested adapter, against §8 signatures, and
+  # `framework-legs` runs every ADAPTERS entry (#748). A red run opens or
+  # updates one `nightly-failure` tracking issue (#755).
 
   docs-llms-drift:
     # #205 / BG §1.10: llms.txt, llms-full.txt, and the per-page .md files are
@@ -577,3 +581,46 @@ jobs:
             exit 1
           fi
           echo "llms artifacts are up to date."
+
+  ci-ok:
+    # #755: the one required status check. Branch protection requires only this
+    # job, so renaming a job or changing a matrix never silently drops a
+    # required check. `needs:` lists EVERY other job in this file (a new job is
+    # added here in the same PR; tests/unit/test_ci_workflows.py asserts it).
+    # `if: always()` so it still reports when a dependency failed: a skipped
+    # required check would otherwise count as passing. `skipped` is a pass
+    # (`new-dependencies` only runs on PRs); `failure` and `cancelled` are not.
+    if: always()
+    needs:
+      - base-only
+      - all-extra-resolves
+      - typecheck-and-lint
+      - new-dependencies
+      - test
+      - anthropic-stacks
+      - adk-stacks
+      - agent-framework-middleware
+      - llamaindex-transport
+      - agents-strands-last-call
+      - adapter-contract
+      - benchmark
+      - quickstart
+      - langgraph-demo
+      - docs-llms-drift
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # No checkout here, so python/ does not exist.
+        working-directory: .
+    steps:
+      - name: every CI job succeeded or was skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key): \(.value.result)"' <<<"$NEEDS")
+          if [ -n "$failed" ]; then
+            echo "::error::CI jobs did not succeed:"
+            echo "$failed"
+            exit 1
+          fi
+          echo "All CI jobs succeeded or were skipped."
