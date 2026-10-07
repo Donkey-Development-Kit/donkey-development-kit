@@ -322,7 +322,8 @@ jobs:
     # so donkey.anthropic hands it a bridged httpx2 client instead, while
     # anthropic<1 still gets the shared client itself. No other job installs
     # anthropic, so its tests run on both majors here. The `<1` pin tests the
-    # older major only; the extra keeps its floor and no ceiling (§8.4).
+    # older major only; the extra keeps its floor and no ceiling (§8.4). The
+    # typed-refusal bridge case for the Anthropic client runs here too (#983).
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -363,6 +364,7 @@ jobs:
           tests/unit/test_adapter_async_last_call.py
           tests/unit/test_default_runtime.py
           tests/unit/test_shared_client_views.py
+          tests/conformance/test_typed_refusal_bridge.py
 
   adk-stacks:
     # #735: below google-adk 2.4, Gemini silently drops client_kwargs and
@@ -414,7 +416,8 @@ jobs:
   agent-framework-middleware:
     # #739: policy_middleware() is only meaningful on a real Agent Framework
     # Agent, which no other job installs. Run its tests with the extra present,
-    # with the shared-client correlation and last_call tests (#740).
+    # with the shared-client correlation and last_call tests (#740) and the
+    # typed-refusal bridge case for an Agent Framework Agent run (#983).
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -445,6 +448,7 @@ jobs:
           tests/unit/test_agent_framework_policy_middleware.py
           tests/unit/test_adapter_ergonomics.py
           tests/unit/test_transport_injection.py
+          tests/conformance/test_typed_refusal_bridge.py
 
   llamaindex-transport:
     # #740: LlamaIndex sends through the shared client, so its calls carry the
@@ -485,8 +489,8 @@ jobs:
   agents-strands-last-call:
     # #899: the OpenAI Agents SDK and Strands send through the shared client, but
     # no other job installs them, so their donkey.last_call tests would only
-    # skip. Run them with both extras present, with the typed-refusal bridge case
-    # for an Agents SDK Runner run (#955).
+    # skip. Run them with both extras present, with the typed-refusal bridge cases
+    # for an Agents SDK Runner run (#955) and a Strands Agent run (#983).
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
