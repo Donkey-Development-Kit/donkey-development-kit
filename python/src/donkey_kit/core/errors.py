@@ -31,9 +31,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import httpx
-
 from . import _verify, _wire
+from ._response import RequestLike, ResponseLike
 from .lastcall import request_id as read_request_id
 
 if TYPE_CHECKING:
@@ -55,6 +54,8 @@ __all__ = [
     "PromptInjectionBlocked",
     "PublicationDrift",
     "RegistryError",
+    "RequestLike",
+    "ResponseLike",
     "TokenBudgetExceeded",
     "ToolInvocationError",
     "UpstreamModelError",
@@ -115,7 +116,7 @@ class DonkeyError(Exception):
         correlation_id: str | None = None,
         call_id: str | None = None,
         request_id: str | None = None,
-        response: httpx.Response | None = None,
+        response: ResponseLike | None = None,
     ) -> None:
         super().__init__(message)
         resolved = remediation if remediation is not None else type(self).remediation
@@ -596,7 +597,7 @@ class PublicationDrift(DonkeyError):
 
 
 def classify(
-    response: httpx.Response,
+    response: ResponseLike,
     *,
     correlation_id: str | None = None,
     call_id: str | None = None,
@@ -684,7 +685,7 @@ class _Shape:
     ``status`` (``INVALID_ARGUMENT``), which stands in for it (#548). ``kw``
     are the constructor kwargs every classified error shares."""
 
-    response: httpx.Response
+    response: ResponseLike
     status: int
     body: dict[str, Any] | None
     error_obj: dict[str, Any] | None
@@ -692,9 +693,7 @@ class _Shape:
     kw: dict[str, Any]
 
 
-def _shape(
-    response: httpx.Response, *, correlation_id: str | None, call_id: str | None
-) -> _Shape:
+def _shape(response: ResponseLike, *, correlation_id: str | None, call_id: str | None) -> _Shape:
     """Parse ``response`` once for :func:`classify`'s matchers."""
     sent_correlation, sent_call = _sent_ids(response)
     error_obj = _nested_error(response)
@@ -927,7 +926,7 @@ _MATCHERS: tuple[Callable[[_Shape], DonkeyError | None], ...] = (
 )
 
 
-def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
+def _sent_ids(response: ResponseLike) -> tuple[str | None, str | None]:
     """The ``(correlation_id, call_id)`` the client sent, read back from the
     response's own request headers under the names the transport actually used
     (BG §1.1, #195, #363).
@@ -959,7 +958,7 @@ def _sent_ids(response: httpx.Response) -> tuple[str | None, str | None]:
     return headers.get(corr_name), headers.get(call_name)
 
 
-def _retry_after(response: httpx.Response) -> float | None:
+def _retry_after(response: ResponseLike) -> float | None:
     """Seconds until the caller may retry. Prefers the standard ``retry-after``
     (delta-seconds) header; falls back to the LLM token-rate-limit policy's
     ``x-token-reset`` header, which is captured in **milliseconds** (docs/verified-apis.md §4)."""
@@ -1055,19 +1054,20 @@ def _int_or_none(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-def _parse_json(response: httpx.Response) -> object:
+def _parse_json(response: ResponseLike) -> object:
     """The response's parsed JSON body (of any shape — object, list, scalar), or
     ``None`` when the body is absent or not JSON. Never raises on the caller's
     request path (verification discipline). An unread streamed body
     (``ResponseNotRead``) is "absent" too: the transport reads a streamed refusal
-    before classifying it (#805), so this only guards a direct caller."""
+    before classifying it (#805), so this only guards a direct caller. Caught as
+    ``RuntimeError``, its base on both HTTP stacks (#933)."""
     try:
         return response.json()
-    except (ValueError, UnicodeDecodeError, httpx.ResponseNotRead):
+    except (ValueError, UnicodeDecodeError, RuntimeError):
         return None
 
 
-def _json_body(response: httpx.Response) -> dict[str, Any] | None:
+def _json_body(response: ResponseLike) -> dict[str, Any] | None:
     """The response's top-level JSON *object*, or ``None`` when the body is
     absent, not JSON, or not an object. Fail-open: a list-shaped body (e.g.
     Gemini's error envelope, #548) returns ``None`` here — its nested error is
@@ -1076,7 +1076,7 @@ def _json_body(response: httpx.Response) -> dict[str, Any] | None:
     return body if isinstance(body, dict) else None
 
 
-def _nested_error(response: httpx.Response) -> dict[str, Any] | None:
+def _nested_error(response: ResponseLike) -> dict[str, Any] | None:
     """The provider's nested ``error`` object, or ``None``.
 
     Two envelope shapes are seen live (docs/verified-apis.md §4):
@@ -1130,7 +1130,7 @@ _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
 )
 
 
-def _content_safety_reject(response: httpx.Response) -> tuple[str, list[str]] | None:
+def _content_safety_reject(response: ResponseLike) -> tuple[str, list[str]] | None:
     """``(vendor, categories)`` when a content-safety policy header reports
     ``action: reject``, else ``None``. Categories are the comma-separated flagged
     reasons from the sibling ``...-reason`` header (empty list if absent)."""
