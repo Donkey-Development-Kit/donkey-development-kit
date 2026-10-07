@@ -552,3 +552,37 @@ def test_bare_list_body_still_falls_through_to_policy_violation() -> None:
         assert isinstance(err, PolicyViolation), body
         assert not isinstance(err, UpstreamRequestError), body
         assert "shape unconfirmed" in str(err)
+
+
+# --- the httpx2 stack (openai>=3, anthropic>=1), #933 ---------------------------
+
+
+def test_classify_types_an_httpx2_response_and_reads_its_ids() -> None:
+    """``APIStatusError.response`` is an ``httpx2.Response`` on openai>=3 and
+    anthropic>=1; classify() reads it like an httpx one (#738, #933)."""
+    httpx2 = pytest.importorskip("httpx2")
+    request = httpx2.Request(
+        "POST",
+        "https://proxy.example.com/v1/chat/completions",
+        headers={CORRELATION_HEADER: "run-abc", CALL_ID_HEADER: "call-xyz"},
+    )
+    response = httpx2.Response(401, headers={"x-request-id": "gw-1"}, request=request)
+    err = classify(response)
+    assert isinstance(err, AuthError)
+    assert (err.correlation_id, err.call_id, err.request_id) == ("run-abc", "call-xyz", "gw-1")
+    assert err.response is response
+
+
+def test_classify_treats_an_unread_httpx2_body_as_absent() -> None:
+    """An unread streamed body raises httpx2's own ``ResponseNotRead``, which
+    ``httpx.ResponseNotRead`` does not catch; classify() must not raise (#933)."""
+    httpx2 = pytest.importorskip("httpx2")
+
+    class _Unread(httpx2.SyncByteStream):  # type: ignore[misc]
+        def __iter__(self):  # type: ignore[no-untyped-def]
+            yield b'{"error": {"type": "pii_detected"}}'
+
+    response = httpx2.Response(403, stream=_Unread())
+    err = classify(response)
+    assert isinstance(err, PolicyViolation)
+    assert "shape unconfirmed" in str(err)
