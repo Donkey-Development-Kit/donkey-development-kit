@@ -85,7 +85,7 @@ async def _adk(model: Any, *, stream: bool = False) -> None:
 async def _strands_call(d: Donkey) -> None:
     from strands import Agent
 
-    agent = Agent(model=d.strands.model("m"), callback_handler=None, retry_strategy=None)
+    agent = Agent(model=d.strands.model("m"), callback_handler=None)
     await agent.invoke_async(_PROMPT)
 
 
@@ -97,7 +97,7 @@ async def _strands_stream(d: Donkey) -> None:
 def _strands_sync(d: Donkey) -> None:
     from strands import Agent
 
-    Agent(model=d.strands.model("m"), callback_handler=None, retry_strategy=None)(_PROMPT)
+    Agent(model=d.strands.model("m"), callback_handler=None)(_PROMPT)
 
 
 # --- MS Agent Framework -------------------------------------------------------------
