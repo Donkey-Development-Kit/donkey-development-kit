@@ -40,8 +40,9 @@ filtered = tools.filter(deny=["delete_*"])
 filtered = tools.filter(predicate=lambda t: t.name.startswith("get_"))
 ```
 
-  The SDK logs the descriptor token count for a `ToolSet` at debug level, so
-  you can see the cost of skipping `filter()` before a model does.
+  The SDK logs how many tool descriptors a `ToolSet` exposes out of the total
+  at debug level, so you can see the cost of skipping `filter()` before a
+  model does. See [Debug logging](https://docs.donkey-kit.dev/telemetry.md#debug-logging) to turn it on.
 
 ## Per-framework binding
 
