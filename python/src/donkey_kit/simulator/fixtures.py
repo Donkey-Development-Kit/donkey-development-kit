@@ -156,7 +156,7 @@ class _Spec:
 # The full shape table. Keys are the canonical shape names the simulator and the
 # tests share. The eight policy-rejection rows classify() is tested against, plus
 # the consumer-auth 401, the gateway's bare-model-name 400, the happy path, the
-# SSE stream, and the /models 404.
+# SSE stream, the /models 404, and the /chat/completions happy path and stream.
 SHAPES: dict[str, _Spec] = {
     # --- the documented rejection shapes (#181, +#289 regex-prompt-guard /
     #     content-safety) ---
@@ -249,6 +249,24 @@ SHAPES: dict[str, _Spec] = {
     ),
     "models-notfound": _Spec(
         "anypoint/llm_proxy", "models.notfound.headers.txt", None, 404
+    ),
+    # --- the /chat/completions happy path (#895) ---
+    # The non-streaming 200 is a live capture (docs/verified-apis.md §2, Chat
+    # Completions row): the Azure OpenAI model-based route, #896.
+    "chat-success": _Spec(
+        "anypoint/azure_openai_routing",
+        "responses.chat-completions.success.headers.txt",
+        "responses.chat-completions.success.body.json",
+        200,
+    ),
+    # The stream is NOT a capture: no streamed OpenAI-route /chat/completions
+    # response has been kept (§2), so it is OpenAI's public chunk shape, in its
+    # own directory with a README that says so, until #894 captures it.
+    "chat-stream": _Spec(
+        "openai_public",
+        "chat-completions.stream.headers.txt",
+        "chat-completions.stream.sse",
+        200,
     ),
 }
 

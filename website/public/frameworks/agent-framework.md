@@ -129,8 +129,8 @@ answers it with `404 Resource not found`, which reaches you as a
 llm = chat_client("azure/gpt-4.1-mini", api="chat_completions")
 ```
 
-Both clients work with `policy_middleware()`. The local simulator serves
-`/responses` only, so keep the default when you run against it.
+Both clients work with `policy_middleware()`, and the local simulator serves
+both routes.
 
 ## Policy middleware
 

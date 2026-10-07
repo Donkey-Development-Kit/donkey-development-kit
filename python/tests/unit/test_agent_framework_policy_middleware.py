@@ -243,3 +243,54 @@ async def test_chat_client_sends_to_the_chosen_api(kwargs: dict[str, str], path:
 
     assert response.text == "hello"
     assert [r.url.path for r in sent] == [path]
+
+
+def _simulated(fab: Donkey) -> None:
+    """Point ``fab`` at the local gateway simulator, in process (BG §1.4)."""
+    pytest.importorskip("starlette")
+    from donkey_kit.simulator import build_app
+
+    fab._http.governed_transport.replace_inner(httpx.ASGITransport(app=build_app()))
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_chat_completions_agent_runs_against_the_simulator(stream: bool) -> None:
+    """An ``api="chat_completions"`` agent runs end to end against the simulator,
+    which serves ``/chat/completions`` (#895): the captured 200 without
+    streaming, OpenAI's public chunk shape with it."""
+    fab = Donkey(_cfg())
+    _simulated(fab)
+    agent = _agent(fab, "chat_completions")
+
+    try:
+        if stream:
+            updates = [u async for u in agent.run("ping", stream=True)]  # type: ignore[attr-defined]
+            text = "".join(u.text for u in updates)
+        else:
+            text = (await agent.run("ping")).text  # type: ignore[attr-defined]
+    finally:
+        await fab.aclose()
+
+    assert text == "pong — how can I help?"
+    assert fab.last_call is not None
+    # The captured 200 carries the gateway's routing headers; the public-shape
+    # stream carries none, so it names no provider.
+    assert fab.last_call.served_provider == (None if stream else "azureopenai")
+
+
+async def test_chat_completions_agent_under_simulate_refuses_then_recovers() -> None:
+    """``simulate()`` injects the refusal into a ``/chat/completions`` call the
+    same way it does on ``/responses``; the next call reaches the simulator."""
+    fab = Donkey(_cfg())
+    _simulated(fab)
+    agent = _agent(fab, "chat_completions")
+
+    try:
+        with fab.simulate(PIIDetected):
+            with pytest.raises(PIIDetected):
+                await agent.run("my email is a@b.example")  # type: ignore[attr-defined]
+        response = await agent.run("ping")  # type: ignore[attr-defined]
+    finally:
+        await fab.aclose()
+
+    assert response.text == "pong — how can I help?"

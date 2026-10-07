@@ -12,7 +12,7 @@ failures that look identical from the outside apart:
   ``model_not_found`` shape, docs/verified-apis.md §4) → :class:`UpstreamRequestError`.
 
 Two ``404`` shapes are read from the response itself, not its error type
-(#896, ``tests/fixtures/anypoint/azure_openai_routing/``):
+(#896, ``src/donkey_kit/simulator/_fixtures/anypoint/azure_openai_routing/``):
 
 * **no proxy on the base path** — an empty ``404`` with no ``x-llm-proxy-*``
   header. The gateway answered, but nothing is deployed at that path, so
