@@ -777,7 +777,7 @@ _REGEX_PROMPT_GUARD_REMEDIATION = (
 )
 _UNCONFIRMED_REFUSAL_REMEDIATION = (
     "This refusal matched no documented rejection shape, so its contract is "
-    "unconfirmed (#184, #253). It is terminal and was NOT retried. Please file an "
+    "unconfirmed (#184). It is terminal and was NOT retried. Please file an "
     "issue on the donkey-development-kit repo with the response status, headers "
     "and body (all carried on this exception's .response) so the shape can be typed."
 )

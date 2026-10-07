@@ -22,9 +22,11 @@
 > 2026-09-24 against `ddk-bedrock-guardrails` (#568). The Injection Protection
 > body (`x-injection-protection: blocked`) was itself `VERIFIED (LIVE)` on
 > 2026-09-27 against `ddk-injection-protection` (instance 21200898, #669) — a
-> real 79-byte body, replacing the honest empty placeholder. Still
-> `UNVERIFIED`: any other unrecognised content-moderation shape (§4, pending
-> live capture #253), and the **framework
+> real 79-byte body, replacing the honest empty placeholder. The PII and
+> token-rate-limit shapes were re-confirmed on 2026-10-07 against
+> `ddk-pii-masking` / `ddk-token-rate-limit` (#253). Still
+> `UNVERIFIED`: any other unrecognised content-moderation shape (§4, the
+> fall-through; federated-guardrail verdicts are tracked in #305), and the **framework
 > constructor/binding names** (§§8–10). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
@@ -300,9 +302,12 @@ headers.
    `{"error":{"message":"Request contains PII data: […]","type":"pii_detected"}}`,
    **no** `code`/`param`, and crucially **no** `www-authenticate` header. The
    `message` embeds a JSON list of `{"pii_type","value","start","end"}` entries.
+   Re-confirmed 2026-10-07 on `ddk-pii-masking` (instance 21188402) from a full
+   raw header dump, which settles the `www-authenticate` absence (#253).
 4. **Token rate limit** — `429` with an **empty body** (`content-length: 0`).
    Budget state is header-only: `x-token-limit`, `x-token-remaining`,
    `x-token-reset` (**milliseconds** to reset). There is **NO** `retry-after`.
+   Re-confirmed 2026-10-07 on `ddk-token-rate-limit` (instance 21188394, #253).
 5. **Agent Kill Switch** — `403` **but NOT auth and NOT upstream**: nested object
    `{"error":{"code":"agent_killed","message":"This agent has been blocked by an active kill switch."}}`,
    **no** `type`, **no** `www-authenticate`, and **no** kill-reason field (#314).
@@ -384,7 +389,7 @@ is these rows, not an `Unverified(...)` flip:
 | Injection Protection | `400` | header `x-injection-protection: blocked` (not the status) | `PromptInjectionBlocked` (`policy="prompt-injection-protection"`) | [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection) (v1.12.0); VERIFIED (LIVE) 2026-09-27 on `ddk-injection-protection` (instance 21200898, #669) — real 79-byte body |
 | Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4); VERIFIED (LIVE) 2026-09-22 on `ddk-injection-guard` (instance 21179713) |
 | Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` == `reject`; reasons in the sibling `…-reason` header | `ContentSafetyBlocked` (parses `categories`) | [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); VERIFIED (LIVE) 2026-09-22 on `ddk-azure-content-safety` (instance 21180957) + 2026-09-24 on `ddk-bedrock-guardrails` (#568) |
-| Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no known contract; capture + type via #184/#253 |
+| Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no known contract by design (#184); federated-guardrail verdicts tracked in #305 |
 
 The Injection Protection (row 3), Regex Prompt Guard (row 7), and Content
 Safety (row 8) shapes are now LIVE-captured — Injection Protection on
@@ -398,9 +403,11 @@ refusal **honestly** — a `PolicyViolation` whose message states the shape is
 unconfirmed and whose remediation asks the operator to file the observed
 status/headers/body so the shape can be typed (#184). This is the last row
 above; it is deliberately **not** an `AuthError`, even for a `403`, once the
-verified `www-authenticate` auth shape is excluded. Closing this last residual
-needs a live capture of an unrecognised content-moderation / federated-
-guardrail refusal; that keeps #253 open.
+verified `www-authenticate` auth shape is excluded. The fall-through is a
+standing catch-all, not a pending contract: no capture can verify "any
+unrecognised shape", so it closes nothing and blocks nothing. A specific
+vendor verdict that turns up is captured and typed on its own issue; the
+federated guardrails (Akamai, CrowdStrike, Google Armor) are tracked in #305.
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two
@@ -512,8 +519,8 @@ driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
 | model-based-routing, bare model name, more than one provider | applied to `ddk-multi-route-fallback`, `ddk-azure-openai-model-routing` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Failed to parse model from request: Model '…' is not in the known unique model map and multiple providers are configured. Use 'provider/model' format."}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` (item 6 above) | 2026-10-01 | live probe (#825) |
 | LLM proxy core | `llm-proxy-core` `1.0.5` | applied VERIFIED (LIVE) | on `openai-sdk`; rejection body not yet triggered | 2026-08-28 | `policy:list` |
 | Request rate limiting | `rate-limiting` `1.5.1` (impl `rate-limiting-flex` `1.2.2`), `exposeHeaders: true` | VERIFIED (LIVE) | `429`, body `{"error":"Too Many Requests"}`, the unsuffixed `x-ratelimit-limit`/`-remaining`/`-reset`(ms) trio, no `retry-after`, no `x-token-*`; the same trio on every `200` → `RequestRateLimitExceeded` (item 7 above). See "Request window emission" above. | 2026-10-07 | live probe, `ddk-request-rate-limit` instance 21188400 (#974) |
-| Token rate limiting | interface `llm-token-rate-limit` `1.0.2` (impl `-policy-flex` `1.0.4`) | VERIFIED (LIVE) | Two emission forms: `429` limit-exceeded → **empty body**, numeric trio `x-token-limit`/`x-token-remaining`/`x-token-reset`(ms), no `retry-after`; `200`/`403` under the same policy → the window as prose in a single `x-llm-proxy-ratelimit` header (ms reset). See "Budget window emission" above. | 2026-08-28 | applied + live probe |
-| PII detection | interface `llm-pii-detection-policy` `1.0.0` (impl `-flex` `1.0.2`) | VERIFIED (LIVE) | `403`, nested `{"error":{message,type:"pii_detected"}}`, no `www-authenticate` | 2026-08-28 | applied + live probe |
+| Token rate limiting | interface `llm-token-rate-limit` `1.0.2` (impl `-policy-flex` `1.0.4`) | VERIFIED (LIVE) | Two emission forms: `429` limit-exceeded → **empty body**, numeric trio `x-token-limit`/`x-token-remaining`/`x-token-reset`(ms), no `retry-after`; `200`/`403` under the same policy → the window as prose in a single `x-llm-proxy-ratelimit` header (ms reset). See "Budget window emission" above. | 2026-08-28; re-confirmed 2026-10-07 | applied + live probe; re-probe on `ddk-token-rate-limit` (instance 21188394, #253) |
+| PII detection | interface `llm-pii-detection-policy` `1.0.0` (impl `-flex` `1.0.2`) | VERIFIED (LIVE) | `403`, nested `{"error":{message,type:"pii_detected"}}`, no `www-authenticate` | 2026-08-28; re-confirmed 2026-10-07 | applied + live probe; raw header dump on `ddk-pii-masking` (instance 21188402, #253) |
 | Regex Prompt Guard | `regex-prompt-guard-policy` `1.0.0` | VERIFIED (LIVE) | `403`, flat-string `error` + top-level `matched_patterns` list; body matched the committed fixture byte-for-byte | 2026-09-22 | live probe, `ddk-injection-guard` instance 21179713 |
 | Azure Content Safety | `azure-content-safety-policy` `1.0.0` | VERIFIED (LIVE) | `403`, `x-llm-proxy-azure-content-safety-action: reject` + `-phase` + `-reason` headers; body `{"error":…,"categories":[…]}` (categories prompt-dependent, e.g. `severity_hate,severity_violence`, `prompt_shield`) | 2026-09-22 | live probe, `ddk-azure-content-safety` instance 21180957 (private-space gateway) |
 | Agent Kill Switch | applied to `ddk-agent-kill-switch` | VERIFIED (LIVE) | `403`, nested `{"error":{code:"agent_killed",message}}` — no `type`, no `www-authenticate`, no reason field (#314). Discriminator: nested `error.code == "agent_killed"` → `AgentKilled` | 2026-09-29 | live probe, `ddk-agent-kill-switch` instance 21206201 (shared-omni-gateway), quarantined agent `act.sub=21206128`, correlation id `00000000-0000-4000-8000-ede8f2783ba7` (#694) |
