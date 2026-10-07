@@ -168,14 +168,19 @@ ruff, ruff-format, lint-imports and `llms.txt` regeneration.
 - Every matrix sets `fail-fast: false`, so each leg reports on its own.
 - `ci.yml` has one `concurrency:` group per PR (per ref for pushes). A new push
   to a PR cancels the PR's previous run. Branch pushes are never cancelled.
-- Each `ci.yml` job that installs packages uses `cache: pip`. The cache key is
-  the job's constraints file, or `python/pyproject.toml` for the fresh-resolve
-  jobs. The cache stores downloaded wheels only, so a fresh-resolve job still
-  resolves against the index.
+- Each `ci.yml` job that installs packages restores a pip cache, but only
+  pushes to `main` and `develop` save one (#1005). A PR's own cache would be
+  readable by that PR alone, so PRs restore what `develop` saved and add
+  nothing to the repository's 10 GB cache quota. The key is the Python minor
+  (not the patch, #1004), the job, and the job's constraints file, or
+  `python/pyproject.toml` for the fresh-resolve jobs. The cache stores
+  downloaded wheels only, so a fresh-resolve job still resolves against the
+  index. On #1002, a warm cache did not shorten the run (5m06s warm, 4m39s
+  cold): the point is staying under the quota, not speed.
 
 `tests/unit/test_workflow_bounds.py` fails on a job without a timeout of 30
-minutes or less, a matrix without `fail-fast: false`, or a `ci.yml` without the
-concurrency group. `docs.yml` and `live-contract-check.yml` deliberately
+minutes or less, a matrix without `fail-fast: false`, a `ci.yml` without the
+concurrency group, or a `ci.yml` cache that a PR run can save. `docs.yml` and `live-contract-check.yml` deliberately
 serialise their runs and never cancel one mid-flight.
 
 ### 7. Least-privilege workflows. **Partly in place** (#757, #771)
