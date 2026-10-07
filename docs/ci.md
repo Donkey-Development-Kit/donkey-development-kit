@@ -217,6 +217,26 @@ promotion PR. Today the version lives in both `python/pyproject.toml` and
 `python/src/donkey_kit/__init__.py`, kept in sync by `scripts/bump-version.sh`,
 and the publish build runs `twine check` and the upper-pin grep only.
 
+### 10. Workflow names follow one style. **In place** (#1009)
+
+The same rules apply in every Donkey-Development-Kit repo:
+
+- **Display name.** The top-level `name:` is what the Actions tab and the PR
+  checks show. Write it in sentence case, keep acronyms upper case (CI, PR,
+  SDK, UI, PyPI), and use at most four words. No kebab case, no parentheses,
+  and no hosting detail such as "GitHub Pages". Start with a verb when the
+  workflow does something (`Deploy docs`, `Publish to PyPI`). Use a noun phrase
+  when it checks something (`Secret scan`, `Nightly matrix`).
+- **Filename.** Kebab case, and don't rename an existing one. PyPI Trusted
+  Publishing pins the `publish-*.yml` filenames, docs and scripts refer to
+  workflows by filename, and a rename splits the Actions run history.
+- **Shared workflows.** A workflow that exists in several repos has the same
+  filename and display name in each, such as `ci.yml` / `CI` and
+  `sdk-alignment.yml` / `SDK alignment`.
+- **Job names.** Renaming a workflow must not rename its jobs. Required status
+  checks match on job names: `ci-ok` here, and `<branch> ↔ SDK <branch>` in
+  the demos repo.
+
 ## Changing a workflow
 
 - Keep each job's header comment accurate. It is the job's spec. Say which

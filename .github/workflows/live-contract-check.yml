@@ -26,7 +26,7 @@
 # Security: every `${{ }}` value used in a `run:` body is bound to env: first
 # and referenced as a quoted shell variable, never interpolated directly.
 
-name: live-contract-check
+name: Live contract check
 
 on:
   schedule:
