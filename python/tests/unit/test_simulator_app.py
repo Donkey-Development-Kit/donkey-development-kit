@@ -14,6 +14,8 @@ typed refusals against the simulator with no real gateway.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytest.importorskip("starlette")
@@ -246,3 +248,92 @@ async def test_semantic_success_sentinel_populates_matched_topic_and_score() -> 
     assert record.matched_topic == "Finance"
     assert record.routing_score == 0.62
     assert record.fallback is False
+
+
+# --- POST /chat/completions (#895) -------------------------------------------
+
+
+async def test_chat_completions_replays_the_captured_200() -> None:
+    # The live Azure OpenAI model-based-routing capture (#896), byte-identical,
+    # with its routing headers and the default budget window.
+    async with _client() as client:
+        resp = await client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5-mini", "messages": [{"role": "user", "content": "ping"}]},
+        )
+    assert resp.status_code == 200
+    assert resp.content == fx.load("chat-success").body
+    assert resp.json()["object"] == "chat.completion"
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.headers[SIMULATOR_HEADER] == "true"
+    assert resp.headers["x-llm-proxy-llm-provider"] == "azureopenai"
+    assert resp.headers[RATELIMIT_HEADER] == (
+        "Token rate limit: 99500 tokens remaining of 100000 limit. Reset in 60000ms."
+    )
+    assert "server" not in resp.headers
+
+
+async def test_chat_completions_stream_is_a_complete_chunk_stream() -> None:
+    # OpenAI's public chunk shape (not a capture): chunks, then data: [DONE].
+    async with _client() as client:
+        resp = await client.post(
+            "/v1/chat/completions", json={"model": "gpt-5-mini", "stream": True}
+        )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    assert resp.headers[SIMULATOR_HEADER] == "true"
+    assert RATELIMIT_HEADER in resp.headers
+    assert resp.content == fx.load("chat-stream").body
+    events = [line[len("data: ") :] for line in resp.text.splitlines() if line]
+    assert events[-1] == "[DONE]"
+    assert {json.loads(e)["object"] for e in events[:-1]} == {"chat.completion.chunk"}
+
+
+async def test_chat_completions_and_responses_share_one_budget_window() -> None:
+    async with _client() as client:
+        await client.post("/v1/responses", json={"model": "gpt-5.1"})
+        resp = await client.post("/v1/chat/completions", json={"model": "gpt-5-mini"})
+    assert resp.headers[RATELIMIT_HEADER].startswith("Token rate limit: 99000 tokens")
+
+
+@pytest.mark.parametrize("shape,exc", _CLASSIFY)
+async def test_chat_completions_sentinel_rejection_classifies(
+    shape: str, exc: type[Exception]
+) -> None:
+    async with _client() as client:
+        resp = await client.post(
+            "/v1/chat/completions", json={"model": SIM_MODEL_PREFIX + shape}
+        )
+    assert resp.headers[SIMULATOR_HEADER] == "true"
+    assert resp.content == fx.load(shape).body
+    assert isinstance(classify(resp), exc)
+
+
+async def test_get_chat_completions_is_an_honest_404() -> None:
+    async with _client() as client:
+        resp = await client.get("/v1/chat/completions")
+    assert resp.status_code == 404
+    assert resp.headers[SIMULATOR_HEADER] == "true"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_stock_openai_client_reads_chat_completions(stream: bool) -> None:
+    openai = pytest.importorskip("openai")
+    async with _client() as http_client:
+        client = openai.AsyncOpenAI(
+            base_url="http://sim/v1", api_key="unused", http_client=http_client, max_retries=0
+        )
+        messages = [{"role": "user", "content": "ping"}]
+        if stream:
+            chunks = await client.chat.completions.create(
+                model="gpt-5-mini", messages=messages, stream=True
+            )
+            text = "".join(
+                [c.choices[0].delta.content or "" async for c in chunks if c.choices]
+            )
+        else:
+            completion = await client.chat.completions.create(
+                model="gpt-5-mini", messages=messages
+            )
+            text = completion.choices[0].message.content or ""
+    assert text == "pong — how can I help?"

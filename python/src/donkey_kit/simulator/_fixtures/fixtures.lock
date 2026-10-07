@@ -1,4 +1,6 @@
 {
+  "anypoint/azure_openai_routing/responses.chat-completions.success.body.json": "sha256:1cf2cc6846479c39d8db01b2635cc6c8c9f4a9ec4020361baea34d79c9c4a132",
+  "anypoint/azure_openai_routing/responses.chat-completions.success.headers.txt": "sha256:8dc2713a2bdf785f0e958710d9d89b96e14976c94da79b5b92ca6de17f84f444",
   "anypoint/llm_proxy/models.notfound.headers.txt": "sha256:c74a31f6c9dd41ff96e24f5fb1b1ea671e37bdd3f7613bde46ca01fdc2c66111",
   "anypoint/llm_proxy/reject.client-id-missing.body.json": "sha256:941cbdfbf3ef3d0180c49724810ddbd41f858d32a7e0780dcb070dda855890e6",
   "anypoint/llm_proxy/reject.client-id-missing.headers.txt": "sha256:3d9bc878643e399c6800dca5708a58309a4ae6b2fd9b8ca26e802cafc74e73c2",
@@ -14,6 +16,8 @@
   "anypoint/llm_proxy/responses.success.headers.txt": "sha256:81cad7414031069eec5af216712f67e256c9622d63479704451870f03d1f13cd",
   "anypoint/semantic_routing/responses.finance.body.json": "sha256:c913879adfae69f1e2c9c9c3d6aaea9522b4bdce737cafbd1e63ecf3ff53feb9",
   "anypoint/semantic_routing/responses.finance.headers.txt": "sha256:e280e5626145faf847fbe06e8ada4f72cd4177d4845a588f7cdafe41e76ccbf6",
+  "openai_public/chat-completions.stream.headers.txt": "sha256:a919cfc196fc1f66285a0f1cd7441adfac0f70b83eb423f318104ead71e6c3ee",
+  "openai_public/chat-completions.stream.sse": "sha256:5ff297c0f5d01ee1df6982e3bde388ba3a1307eed0a705d368658fc9e363a435",
   "rejections/reject.agent-killed.body.json": "sha256:fdee000a838111cd2459860802349cc388c88b738a972b4bee543068b055aa23",
   "rejections/reject.agent-killed.headers.txt": "sha256:01c9848a2470e700602713dc0530656c4ff6be647b69441308b24e78ab3e11ae",
   "rejections/reject.content-moderation.headers.txt": "sha256:5df6a849d1ea245db54617e66f1d380566270f23102ca0cb8046a1c8b990cbda",

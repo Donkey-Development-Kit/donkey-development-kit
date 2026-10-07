@@ -2,7 +2,8 @@
 
 The simulator is only useful if a developer can provoke a *specific* failure on
 demand. A scenario is a small, stateful fault-injection rule applied to every
-``POST /responses`` the simulator serves:
+model call the simulator serves (``POST /responses`` and
+``POST /chat/completions``, #895):
 
 - ``pii_block:every=N`` — every Nth call is served the ``pii-detected`` 403.
 - ``injection:on-pattern=<substr>`` — a call whose request text contains
@@ -93,7 +94,8 @@ class ScenarioHit:
 
 @runtime_checkable
 class FaultScenario(Protocol):
-    """A stateful fault-injection rule evaluated once per ``POST /responses``.
+    """A stateful fault-injection rule evaluated once per model call
+    (``POST /responses`` or ``POST /chat/completions``).
     Named ``Scenario`` before #719, which collided with the conformance kit's
     :class:`donkey_kit.conformance.Scenario`."""
 

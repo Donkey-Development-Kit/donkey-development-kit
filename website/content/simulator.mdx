@@ -52,6 +52,21 @@ Because each body is the *same fixture* the SDK's error classifier is tested
 against, a sentinel request surfaces in your agent as the typed exception — a
 [`PIIDetected`](/errors), not a raw `403`.
 
+## Routes
+
+The simulator serves the two OpenAI-format model routes:
+
+| Route | Non-streaming `200` | Streaming (`"stream": true`) |
+|---|---|---|
+| `POST /responses` | the captured OpenAI-upstream `200` | the captured SSE sample (one `response.created` event, as captured) |
+| `POST /chat/completions` | the captured Azure OpenAI `chat.completion` `200` | a complete `chat.completion.chunk` stream ending in `data: [DONE]` |
+
+The streamed `/chat/completions` body follows OpenAI's public chunk format. It
+is not a gateway capture: no streamed `/chat/completions` response has been
+captured yet. Everything else on this page applies to both routes: the
+`donkey-sim/` sentinel, the scenarios below, one shared budget window, and the
+`x-donkey-simulator` header. Any other route answers `404`.
+
 ## Choosing a port or host
 
 `donkey mock` binds `127.0.0.1:8080` by default. Two flags move it:
@@ -155,7 +170,8 @@ override.
 
 ### `pii_block:every=N`
 
-Serves the captured `pii-detected` **403** on every Nth `POST /responses`; the
+Serves the captured `pii-detected` **403** on every Nth model call (`POST /responses`
+or `POST /chat/completions`); the
 other calls get the happy path.
 
 ```bash

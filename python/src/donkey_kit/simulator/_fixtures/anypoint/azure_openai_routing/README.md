@@ -40,3 +40,11 @@ routed 404 is "`/responses` not served on this route" followed by a
 - `reject.responses-not-served.headers.txt` / `.body.json` — the routed `/responses` 404.
 - `responses.chat-completions.success.headers.txt` / `.body.json` — the `/chat/completions` 200.
 - `reject.unserved-base-path.headers.txt` — the empty 404 (no body file: the body is empty).
+
+## Served by the simulator
+
+This directory is package data because the local gateway simulator serves the
+`/chat/completions` 200 from it: `responses.chat-completions.success.*` is the
+`chat-success` shape in `donkey_kit/simulator/fixtures.py` (#895), what
+`donkey mock` answers a non-streaming `POST …/chat/completions` with. The
+streaming answer is not a capture; see `../../openai_public/`.

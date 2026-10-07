@@ -38,7 +38,10 @@ from donkey_kit.core.errors import (
 from donkey_kit.simulator.fixtures import parse_headers
 
 #: Live captures from ``ddk-azure-openai-model-routing`` (2026-10-07, #896).
-_AZURE = Path(__file__).parents[1] / "fixtures" / "anypoint" / "azure_openai_routing"
+_AZURE = (
+    Path(__file__).resolve().parents[2]
+    / "src" / "donkey_kit" / "simulator" / "_fixtures" / "anypoint" / "azure_openai_routing"
+)
 
 
 @pytest.fixture

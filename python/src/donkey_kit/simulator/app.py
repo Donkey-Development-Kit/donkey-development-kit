@@ -7,6 +7,10 @@ or ``donkey.llm.client()`` — sees byte-identical rejection bodies and the exac
 discriminator headers, and the SDK's typed refusals light up locally without a
 real Anypoint sandbox.
 
+It serves the two OpenAI-format model-call routes: ``POST …/responses`` and
+``POST …/chat/completions`` (#895), each non-streaming and streaming. Any other
+route gets the captured ``/models`` 404.
+
 What it is NOT: it enforces no policy, evaluates nothing, and forwards no live
 traffic. It is a separate process serving static fixtures. Every response
 carries ``x-donkey-simulator: true`` so it can never be mistaken for a real
@@ -92,6 +96,21 @@ _HAPPY_SHAPES = frozenset({"success-semantic"})
 # Every shape the model-id sentinel can force to a specific captured fixture.
 _SENTINEL_SHAPES = _REJECTION_SHAPES | _HAPPY_SHAPES
 
+@dataclass(frozen=True)
+class _Route:
+    """The happy-path fixture shapes one model-call route serves."""
+
+    success: str
+    stream: str
+
+
+_RESPONSES_ROUTE = _Route(success="success", stream="stream")
+# Chat Completions (#895): the non-streaming 200 is the live capture behind the
+# docs/verified-apis.md §2 Chat Completions row; the stream is OpenAI's public
+# shape until #894 captures one.
+_CHAT_COMPLETIONS_ROUTE = _Route(success="chat-success", stream="chat-stream")
+
+
 class ASGIApp(Protocol):
     """The framework-free ASGI callable :func:`build_app` returns — so callers
     (``httpx.ASGITransport``, ``uvicorn.run``) and ``mypy`` never see a
@@ -123,7 +142,8 @@ class SimulatorConfig:
     token_limit: int = 100_000
     token_step: int = 500
     token_reset_ms: int = 60_000
-    # Scripted fault-injection rules applied per POST /responses (#188). Parsed
+    # Scripted fault-injection rules applied per model call (#188), on both
+    # POST /responses and POST /chat/completions (#895). Parsed
     # from the CLI's repeatable --scenario flag. Stateful and single-use: one set
     # drives one simulator instance (see donkey_kit.simulator.scenarios).
     scenarios: tuple[FaultScenario, ...] = ()
@@ -179,7 +199,9 @@ class _Simulator:
     async def dispatch(self, request: Any) -> Any:
         path = request.url.path
         if request.method == "POST" and path.endswith("/responses"):
-            return await self._responses(request)
+            return await self._model_call(request, _RESPONSES_ROUTE)
+        if request.method == "POST" and path.endswith("/chat/completions"):
+            return await self._model_call(request, _CHAT_COMPLETIONS_ROUTE)
         if request.method == "GET" and path.endswith("/models"):
             # No catalog endpoint is verified; mirror the captured 404 rather
             # than fabricate a model list (verification discipline).
@@ -187,7 +209,11 @@ class _Simulator:
         # Unknown route: an honest, honesty-stamped 404.
         return self._response(load("models-notfound"))
 
-    async def _responses(self, request: Any) -> Any:
+    async def _model_call(self, request: Any, route: _Route) -> Any:
+        """Serve one model call on either route (#895). The sentinel, the
+        scenario rules and the budget window are the same on both: a rejection
+        is the gateway's policy answer, and the gateway applies its policies
+        before it picks an upstream API. Only the happy-path bodies differ."""
         try:
             payload = await request.json()
         except Exception:  # noqa: BLE001 — a malformed/empty body is just "happy path"
@@ -218,23 +244,27 @@ class _Simulator:
                     return self._response(load(hit.shape), extra=hit.extra_headers)
                 # Budget passed: it owns the happy-path prose ratelimit header.
                 ratelimit_header = self._budget.happy_path_headers()
-                return self._happy(payload, ratelimit_header)
+                return self._happy(payload, route, ratelimit_header)
 
         ratelimit_header = await self._synth_ratelimit_header()
-        return self._happy(payload, ratelimit_header)
+        return self._happy(payload, route, ratelimit_header)
 
-    def _happy(self, payload: Any, ratelimit_header: dict[str, str]) -> Any:
-        """Serve the happy-path 200 (or the stream sample), carrying the given
+    def _happy(
+        self, payload: Any, route: _Route, ratelimit_header: dict[str, str]
+    ) -> Any:
+        """Serve the route's happy-path 200 (or its stream), carrying the given
         budget-window prose header."""
         if isinstance(payload, dict) and payload.get("stream") is True:
-            # The captured stream sample is a single, truncated `response.created`
-            # event — a real capture, NOT a complete SSE stream ending in
-            # `data: [DONE]`. It is replayed verbatim rather than fabricating the
-            # remaining events (verification discipline: never invent gateway output); a complete
-            # SSE capture is a follow-up. It still carries the budget window prose
-            # header, like any happy path.
-            return self._response(load("stream"), extra=ratelimit_header)
-        return self._response(load("success"), extra=ratelimit_header)
+            # /responses: the captured stream sample is a single, truncated
+            # `response.created` event — a real capture, NOT a complete SSE
+            # stream ending in `data: [DONE]`. It is replayed verbatim rather than
+            # fabricating the remaining events (verification discipline: never
+            # invent gateway output); a complete SSE capture is a follow-up.
+            # /chat/completions: OpenAI's public chunk shape, not a capture (see
+            # the "chat-stream" row in fixtures.SHAPES). Either way it carries the
+            # budget window prose header, like any happy path.
+            return self._response(load(route.stream), extra=ratelimit_header)
+        return self._response(load(route.success), extra=ratelimit_header)
 
 
 class _HonestyStamp:
