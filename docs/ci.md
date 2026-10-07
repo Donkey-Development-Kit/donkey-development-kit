@@ -21,7 +21,7 @@ should be split.
 
 | Question | Answered by | When it runs |
 | --- | --- | --- |
-| Did this change break something? | `ci.yml` (PR-gating jobs, resolving from the committed lock) | Every PR; pushes to `main` |
+| Did this change break something? | `ci.yml` (PR-gating jobs, resolving from the committed lock) | Every PR; pushes to `main` and `develop` |
 | Did an upstream release break us? | `nightly-matrix.yml`, plus the fresh-resolve jobs in `ci.yml` (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`) | Daily 06:00 UTC; every PR for the `ci.yml` jobs |
 | Did the live gateway's contract drift? | `live-contract-check.yml` (the `openai-model-routing` proxy only) | Mondays 07:00 UTC |
 | Did a secret get committed? | `secret-scan.yml` (gitleaks over the full history) | Every PR; pushes to `main` and `develop` |
@@ -52,6 +52,8 @@ The jobs, grouped by what they protect:
   (BG §1.6) and trends it across runs. `quickstart` and `langgraph-demo` run
   the documented examples against the local simulator. `docs-llms-drift`
   regenerates `llms.txt` and fails on any diff.
+- **The gate itself.** `ci-ok` needs every other job and fails unless each one
+  succeeded or was skipped. It is the one required status check (convention 2).
 
 ### `nightly-matrix.yml`: the canary
 
@@ -61,7 +63,9 @@ adapter (LangGraph) against §8 signatures, and `framework-legs` runs every
 `ADAPTERS` entry (#748). A live proxy round-trip is available only through
 `workflow_dispatch` with `live: true`. A red nightly is an upstream signal: fix
 it by adapting the code or by moving the lock, never by adding a ceiling
-(`§8.4`).
+(`§8.4`). Any failed run, scheduled or manual, opens one issue labelled
+`nightly-failure`, or comments on it if it is already open (#755). Close that
+issue once the nightly is green again.
 
 ### `live-contract-check.yml`: the gateway contract
 
@@ -123,27 +127,29 @@ Dependabot-driven lock bumps, and making `mypy` independent of which extras are
 installed. Still open under #769: a lowest-direct job that keeps the declared
 floors honest, an `openai<2` leg, and Python 3.13/3.14 in the matrix.
 
-### 2. One required status check: `ci-ok`. **Target** (#755)
+### 2. One required status check: `ci-ok`. **In place** (#755)
 
 An aggregate `ci-ok` job `needs:` every other job, runs with `if: always()`, and
-fails if any dependency did not succeed. Branch protection requires only
-`ci-ok`, so renaming a job or changing a matrix never silently drops a required
-check. A new job is added to `ci-ok`'s `needs:` in the same PR.
+fails if any dependency did not succeed (`skipped` counts as a pass, because
+`new-dependencies` runs on PRs only). The `develop` and `main` rulesets require
+only `ci-ok`, so renaming a job or changing a matrix never silently drops a
+required check. A new job is added to `ci-ok`'s `needs:` in the same PR;
+`tests/unit/test_ci_workflows.py` fails when one is missing.
 
-### 3. CI runs on `develop`, not just on PRs. **Target** (#755)
+### 3. CI runs on `develop`, not just on PRs. **In place** (#755)
 
 `ci.yml` also runs on pushes to `develop`, so two individually green PRs that
 combine into a broken `develop` are caught at merge time instead of at
-promotion. Today it runs on pushes to `main` only. `secret-scan.yml` already
-covers `develop`.
+promotion. `secret-scan.yml` covers `develop` too. There is no merge queue, so
+`ci.yml` has no `merge_group:` trigger; add one if a queue is adopted.
 
 ### 4. Every scheduled workflow alerts on failure. **Partly in place**
 
-Each cron workflow ends with an `if: failure()` step that opens or updates one
-labelled tracking issue (never one issue per run), using `issues: write` on
-that job only. `live-contract-check.yml` already does this, with the
-`live-contract-drift` label (#753). `nightly-matrix.yml` does not yet (#755).
-`docs.yml`'s cron needs the same step.
+Each cron workflow ends with an `if: failure()` job or step that opens or
+updates one labelled tracking issue (never one issue per run), using
+`issues: write` on that job only. `live-contract-check.yml` does this with the
+`live-contract-drift` label (#753), and `nightly-matrix.yml` with the
+`nightly-failure` label (#755). `docs.yml`'s cron still needs the same step.
 
 ### 5. One task runner mirrors CI. **Target** (#765)
 
@@ -213,8 +219,8 @@ and the publish build runs `twine check` and the upper-pin grep only.
   behaviour changes (#755 found comments promising behaviour that did not
   exist).
 - A new PR-gating job installs from its own constraints file, gets a
-  `_COMBOS` entry in `compile_constraints.py` and, once #755 lands, a place in
-  `ci-ok`'s `needs:`.
+  `_COMBOS` entry in `compile_constraints.py` and a place in `ci-ok`'s
+  `needs:`. A new job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
 - A new scheduled workflow ships with its failure-alert step (convention 4).
 - A change to which tests run where updates the test-surface table in
   [`CONTRIBUTING.md` §2](../CONTRIBUTING.md#2-testing-strategy).
