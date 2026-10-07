@@ -130,10 +130,12 @@ Beside it:
   level, plus the optional `opentelemetry` lazily.
 - **core is layered too:** `runtime` → `transport` → `budget | cache |
   cachecontrol | telemetry | toolspec` → `auth | correlation` → `config` →
-  `cost | endpoints | header_names | refusals` → `errors` → `lastcall |
-  masking` → `_verify` → `_wire`.
+  `cost | endpoints | header_names | refusals` → `errors` → `_refusal_body |
+  lastcall | masking` → `_verify` → `_wire`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
-  through it. This contract is exhaustive too.
+  through it. `_refusal_body` holds the refusal-body parsers (`errors`' JSON
+  envelope and PII-span helpers), split out to keep `errors` under its size
+  ceiling. This contract is exhaustive too.
 
 Two rules the import graph can't express are tests in
 `tests/unit/test_architecture.py`:
@@ -418,8 +420,8 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 `core/errors.py`:
 
 1. **A policy refusal is never retried.** `PolicyViolation` (and its subclasses —
-   `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
-   `ContentSafetyBlocked`) must be distinguishable from a transient error at the
+   `TokenBudgetExceeded`, `RequestRateLimitExceeded`, `PIIDetected`,
+   `PromptInjectionBlocked`, `ContentSafetyBlocked`) must be distinguishable from a transient error at the
    framework boundary, so a host framework never silently retries a governance
    refusal. The transport treats these as terminal
    (`test_429_is_terminal_but_5xx_still_retries` and
@@ -448,6 +450,11 @@ code alone.** The captures established, for example, that:
 - A **token-budget** rejection is a **429** with an *empty body*; the budget state
   lives entirely in headers (`x-token-reset` in ms), with no standard `retry-after`
   → `TokenBudgetExceeded`.
+- A **request-rate-limit** rejection is also a **429**, from the stock
+  `rate-limiting` policy, but it carries the unsuffixed `x-ratelimit-limit` /
+  `-remaining` / `-reset` trio and no `x-token-*` → `RequestRateLimitExceeded`
+  (#974). Without those headers it cannot be told apart, so it stays
+  `TokenBudgetExceeded`.
 - An **upstream provider** rejection (e.g. OpenAI `model_not_found`) is a non-429
   4xx carrying the provider's nested `code`/`type`/`param`, passed through
   verbatim → `UpstreamRequestError` (terminal, but distinct from a policy refusal).

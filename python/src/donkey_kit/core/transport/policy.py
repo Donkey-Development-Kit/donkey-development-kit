@@ -25,10 +25,11 @@ from ..telemetry import POLICY_DECISION_ALLOW, POLICY_DECISION_REFUSE, policy_ty
 
 __all__ = ["Finish", "Refresh", "Retry", "RetryDecision", "decide_retry"]
 
-# 429 is deliberately NOT here: on this proxy every 429 is a token-budget
-# refusal that classify() maps to TokenBudgetExceeded (a PolicyViolation), and a
-# PolicyViolation is terminal — retrying it only burns the same exhausted budget
-# window (BG §1.2, #183). Only genuinely transient upstream/gateway failures retry.
+# 429 is deliberately NOT here: on this proxy every 429 is a rate-limit refusal
+# that classify() maps to TokenBudgetExceeded or RequestRateLimitExceeded (#974),
+# both PolicyViolations, and a PolicyViolation is terminal — retrying it only
+# burns the same exhausted window (BG §1.2, #183). Only genuinely transient
+# upstream/gateway failures retry.
 _RETRYABLE_STATUS = frozenset({502, 503, 504})
 # The two retryable statuses that do not say the request went unprocessed: a
 # 502 or 504 can follow an upstream call that completed and was billed, so a

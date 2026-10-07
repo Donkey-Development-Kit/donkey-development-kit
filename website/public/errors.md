@@ -8,7 +8,7 @@ branch on the governance outcome instead of parsing bodies.
 
 ## The rejection shapes `classify()` types
 
-`classify()` types nine rejection shapes. **Neither the status code nor the
+`classify()` types ten rejection shapes. **Neither the status code nor the
 shape of the `error` value alone is a sufficient discriminator** — a `403` can be
 PII, a killed agent, a regex-guard block, a content-safety block (all policy
 blocks) *or* auth,
@@ -25,6 +25,7 @@ specific headers.
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
 | Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
+| Request rate limit | `429` | body `{"error":"Too Many Requests"}`; `x-ratelimit-limit`/`-remaining`/`-reset` headers (ms), **no** `x-token-*`, **no** `retry-after` | `RequestRateLimitExceeded` (`retry_after` derived) |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
@@ -38,7 +39,20 @@ an upstream request mistake, when the upstream was never called. Likewise the in
 `x-injection-protection` header, so an ordinary malformed `400` stays an
 ordinary refusal.
 
-Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the nine
+`RequestRateLimitExceeded` is the `429` of the gateway's stock `rate-limiting`
+policy, which counts requests rather than tokens. It is a subclass of
+`PolicyViolation` and a sibling of `TokenBudgetExceeded`, not a subclass of it.
+A `429` carrying `x-ratelimit-limit` and `x-ratelimit-remaining` and no
+`x-token-limit` is a `RequestRateLimitExceeded`; any other `429` stays
+`TokenBudgetExceeded`. The headers appear only when the policy has
+`exposeHeaders: true`, the only configuration verified. With
+`exposeHeaders: false` there is nothing to key on: that shape is `UNVERIFIED`
+and is classified as `TokenBudgetExceeded`. `retry_after` comes from
+`retry-after` if present, else from `x-ratelimit-reset` (milliseconds). The
+upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens` headers are
+a different window and are not read.
+
+Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the ten
 policy-rejection rows.
 
 The Injection Protection shape is live-verified against a deployed proxy
@@ -57,13 +71,14 @@ DonkeyError                     # base of the whole tree
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
+│  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 ├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
-├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
+├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at/.window
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
 └─ ToolInvocationError, RegistryError, PublicationDrift
                                 # tool access, registry and publishing (Roadmap surfaces;
@@ -90,6 +105,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
+| `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
@@ -177,6 +193,8 @@ a canonical default. For the refusals:
   Governance > Security.
 - `TokenBudgetExceeded` → wait for the window to reset (see `retry_after`) or
   request an increase.
+- `RequestRateLimitExceeded` → wait for the window to reset (see
+  `retry_after`) or request an increase.
 - `PromptInjectionBlocked` → review and sanitise the untrusted input, or adjust
   the policy's sensitivity.
 - `ContentSafetyBlocked` → revise the flagged content, or adjust the policy's
@@ -369,7 +387,8 @@ Both clients retry only transient upstream/gateway failures (502/503/504).
 A 502 or 504 on a model call is not re-sent unless you set
 `retry_model_calls_on_gateway_errors`, because the provider may already have
 billed it. Every 4xx is terminal — **including a 429**: on this proxy a 429 is a
-token-budget refusal (`TokenBudgetExceeded`), so retrying it would only burn the
+token-budget refusal (`TokenBudgetExceeded`) or a request-rate-limit refusal
+(`RequestRateLimitExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
 against, but the transport never silently retries it.
 

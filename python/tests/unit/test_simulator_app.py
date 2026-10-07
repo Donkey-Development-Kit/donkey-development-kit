@@ -31,6 +31,7 @@ from donkey_kit.core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -152,7 +153,7 @@ async def test_framework_generated_405_is_still_honesty_stamped() -> None:
     assert resp.headers[SIMULATOR_HEADER] == "true"
 
 
-# The nine documented rejection shapes plus the consumer-auth 401, each fed to
+# The ten documented rejection shapes plus the consumer-auth 401, each fed to
 # classify() exactly as a stock client would receive it from the simulator.
 # regex-prompt-guard classifies to PromptInjectionBlocked (its captured 403 carries
 # matched_patterns), content-safety to ContentSafetyBlocked (its provider action
@@ -160,6 +161,7 @@ async def test_framework_generated_405_is_still_honesty_stamped() -> None:
 # (its nested error code is agent_killed, #694).
 _CLASSIFY = [
     ("token-rate-limit", TokenBudgetExceeded),
+    ("request-rate-limit", RequestRateLimitExceeded),
     ("pii-detected", PIIDetected),
     ("injection-protection", PromptInjectionBlocked),
     ("regex-prompt-guard", PromptInjectionBlocked),

@@ -1,4 +1,5 @@
-"""A Strands agent does not retry a terminal budget refusal (#951).
+"""A Strands agent does not retry a terminal budget refusal (#951), nor a
+request-rate-limit refusal (#974).
 
 Strands' ``OpenAIModel.stream`` wraps an openai ``RateLimitError`` in
 ``ModelThrottledException``, and the agent's default ``ModelRetryStrategy``
@@ -22,7 +23,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
-from donkey_kit.core.errors import TokenBudgetExceeded
+from donkey_kit.core.errors import RequestRateLimitExceeded, TokenBudgetExceeded
 
 pytest.importorskip("strands.models.openai")
 
@@ -89,6 +90,24 @@ async def test_the_model_stream_raises_the_typed_refusal(stream_calls: list[int]
     finally:
         await donkey.aclose()
     assert len(stream_calls) == 1
+
+
+async def test_a_simulated_request_rate_limit_is_raised_once_typed(
+    stream_calls: list[int],
+) -> None:
+    donkey = _donkey()
+    try:
+        agent = Agent(model=donkey.strands.model("m"), callback_handler=None)
+        with (
+            donkey.simulate(RequestRateLimitExceeded),
+            pytest.raises(RequestRateLimitExceeded) as info,
+        ):
+            await agent.invoke_async("hi")
+    finally:
+        await donkey.aclose()
+    assert len(stream_calls) == 1
+    assert type(info.value) is RequestRateLimitExceeded
+    assert isinstance(info.value.framework_error, ModelThrottledException)
 
 
 async def test_a_throttle_that_is_not_a_budget_refusal_is_still_retried(

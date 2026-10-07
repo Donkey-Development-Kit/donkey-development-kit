@@ -52,6 +52,7 @@ from .errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
 )
 
@@ -420,26 +421,25 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
 
 
 # --- GenAI chat span (#192, BG §1.6) ----------------------------------------
+# Most-specific subclass first: a PIIDetected is also a PolicyViolation.
+_POLICY_SLUGS: tuple[tuple[type[DonkeyError], str], ...] = (
+    (TokenBudgetExceeded, "token_budget"),
+    (RequestRateLimitExceeded, "request_rate_limit"),
+    (PIIDetected, "pii_detected"),
+    (PromptInjectionBlocked, "injection"),
+    (ContentSafetyBlocked, "content_safety"),
+    (AgentKilled, "agent_killed"),
+    (PolicyViolation, "policy_violation"),
+)
+
+
 def policy_type_slug(error: DonkeyError) -> str | None:
     """The :data:`DONKEY_POLICY_TYPE` value for a classified refusal, or ``None``
     for a non-policy error (auth / upstream / transport) that carries no
-    governance allow-or-refuse decision.
-
-    Ordered most-specific-subclass first so a :class:`PIIDetected` (which *is* a
-    :class:`PolicyViolation`) reports ``"pii_detected"``, not the generic slug.
-    """
-    if isinstance(error, TokenBudgetExceeded):
-        return "token_budget"
-    if isinstance(error, PIIDetected):
-        return "pii_detected"
-    if isinstance(error, PromptInjectionBlocked):
-        return "injection"
-    if isinstance(error, ContentSafetyBlocked):
-        return "content_safety"
-    if isinstance(error, AgentKilled):
-        return "agent_killed"
-    if isinstance(error, PolicyViolation):
-        return "policy_violation"
+    governance allow-or-refuse decision."""
+    for kind, slug in _POLICY_SLUGS:
+        if isinstance(error, kind):
+            return slug
     return None
 
 
