@@ -68,6 +68,15 @@ TOKEN_REMAINING_HEADER = "x-token-remaining"
 TOKEN_RESET_HEADER = "x-token-reset"
 RATELIMIT_HEADER = "x-llm-proxy-ratelimit"
 
+# Request-rate-limit window (docs/verified-apis.md §4): the stock
+# ``rate-limiting`` policy's trio, sent only with ``exposeHeaders: true``. The
+# reset is milliseconds until the window ends. These unsuffixed names are the
+# gateway's; the upstream's own ``x-ratelimit-*-requests`` / ``-tokens``
+# passthrough is a different window and is not read.
+REQUEST_LIMIT_HEADER = "x-ratelimit-limit"
+REQUEST_REMAINING_HEADER = "x-ratelimit-remaining"
+REQUEST_RESET_HEADER = "x-ratelimit-reset"
+
 # The prefix every LLM proxy policy header shares.
 LLM_PROXY_HEADER_PREFIX = "x-llm-proxy-"
 

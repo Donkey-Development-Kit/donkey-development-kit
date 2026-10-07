@@ -18,7 +18,8 @@ def mock(
         "--scenario",
         help=(
             "Fault-injection rule, repeatable. e.g. 'pii_block:every=5', "
-            "'budget:limit=20000,window=60s', 'injection:on-pattern=ignore previous'."
+            "'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', "
+            "'injection:on-pattern=ignore previous'."
         ),
     ),
 ) -> None:
@@ -36,8 +37,10 @@ def mock(
     needs gateway-side dry-run mode (#250).
 
     ``--scenario`` scripts a specific failure on demand (#188): ``pii_block``
-    fails every Nth call, ``injection`` matches request text, and ``budget``
-    runs a real windowed token counter (429 on exhaustion). Repeatable.
+    fails every Nth call, ``injection`` matches request text, ``budget``
+    runs a real windowed token counter (429 on exhaustion), and
+    ``request_limit`` runs a request counter with the ``x-ratelimit-*`` headers
+    (the request-rate-limit 429 once spent, #974). Repeatable.
 
     Needs the ``[local]`` extra (starlette + uvicorn); this is NOT one of the
     verification-gated platform commands, so a missing extra is an install

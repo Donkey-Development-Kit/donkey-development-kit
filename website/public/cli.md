@@ -202,7 +202,8 @@ rejections. Needs the `[local]` extra.
 ```bash
 donkey mock --port 8080 --host 127.0.0.1 \
   --scenario pii_block:every=5 \
-  --scenario budget:limit=20000,window=60s
+  --scenario budget:limit=20000,window=60s \
+  --scenario request_limit:limit=3,window=60s
 ```
 
 | Flag | Default | Meaning |

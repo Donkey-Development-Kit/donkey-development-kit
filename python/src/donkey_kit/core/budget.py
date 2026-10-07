@@ -35,6 +35,14 @@ Both the numeric ``x-token-reset`` and the prose ``Reset in … ms`` are
 **milliseconds *to* reset** — a delta, not an epoch (docs/verified-apis.md §4) —
 so ``reset_at`` is anchored to ``observed_at`` the same way ``errors._retry_after``
 treats the header.
+
+A second, independent window counts **requests** rather than tokens (#974):
+``donkey.budget.requests`` (a :class:`RequestWindow`, same five fields), filled
+from the stock ``rate-limiting`` policy's ``x-ratelimit-limit`` /
+``x-ratelimit-remaining`` / ``x-ratelimit-reset`` trio. Unlike the token trio,
+the gateway sends it on every ``200`` as well as on its ``429`` (when the policy
+sets ``exposeHeaders: true``, docs/verified-apis.md §4). :meth:`Budget.pace`
+refuses when *either* window has reached the reserve.
 """
 
 from __future__ import annotations
@@ -51,7 +59,17 @@ from . import _wire
 from .errors import BudgetReserveReached
 from .lastcall import is_cache_hit
 
-__all__ = ["LIMIT_HEADER", "RATELIMIT_HEADER", "REMAINING_HEADER", "RESET_HEADER", "Budget"]
+__all__ = [
+    "LIMIT_HEADER",
+    "RATELIMIT_HEADER",
+    "REMAINING_HEADER",
+    "REQUEST_LIMIT_HEADER",
+    "REQUEST_REMAINING_HEADER",
+    "REQUEST_RESET_HEADER",
+    "RESET_HEADER",
+    "Budget",
+    "RequestWindow",
+]
 
 # The three numeric budget headers of the token-rate-limit policy
 # (docs/verified-apis.md §4, row `Token rate limiting`) — present on the
@@ -64,6 +82,13 @@ RESET_HEADER = _wire.TOKEN_RESET_HEADER
 # emitted on the 200 (and the 403) that never carry the numeric trio (#352). Listed
 # in the API's CORS `exposedHeaders`, so it is an intended part of the contract.
 RATELIMIT_HEADER = _wire.RATELIMIT_HEADER
+
+# The request-rate-limit trio (docs/verified-apis.md §4, row `Request rate
+# limiting`), on the 200 and the 429 alike. The reset is a ms delta, like the
+# token trio's.
+REQUEST_LIMIT_HEADER = _wire.REQUEST_LIMIT_HEADER
+REQUEST_REMAINING_HEADER = _wire.REQUEST_REMAINING_HEADER
+REQUEST_RESET_HEADER = _wire.REQUEST_RESET_HEADER
 
 # Matches `… 10000 tokens remaining of 10000 limit. Reset in 56711ms.`. Requires
 # all three values: a partial or reworded sentence fails to match and is treated
@@ -108,15 +133,9 @@ def _parse_ratelimit_prose(raw: str | None) -> tuple[int | None, int | None, int
     return int(m["limit"]), int(m["remaining"]), int(m["reset"])
 
 
-class Budget:
-    """The token-budget window for one :class:`~donkey_kit.Donkey`, updated
-    in-band from each response's budget headers (numeric ``x-token-*`` or the
-    prose ``x-llm-proxy-ratelimit`` fallback, #352).
-
-    Per-``Donkey``, never global: two instances with different credentials hold
-    independent state. Construct empty (unobserved); :meth:`observe` mutates it
-    from a response. Reads are cheap attribute/property access — no I/O.
-    """
+class _Window:
+    """One rate-limit window's observed state: the five fields both windows
+    share."""
 
     def __init__(self) -> None:
         self.limit: int | None = None
@@ -135,6 +154,73 @@ class Budget:
         used = (self.limit - self.remaining) / self.limit
         return min(1.0, max(0.0, used))
 
+
+def _record(
+    window: _Window,
+    limit: int | None,
+    remaining: int | None,
+    reset_ms: int | None,
+    ts: datetime,
+) -> None:
+    """Apply whichever fields resolved to ``window``. All ``None`` is a no-op, so
+    a response without this window's signal leaves ``observed_at`` untouched."""
+    if limit is None and remaining is None and reset_ms is None:
+        return
+    window.observed_at = ts
+    if limit is not None:
+        window.limit = limit
+    if remaining is not None:
+        window.remaining = remaining
+    if reset_ms is not None:
+        window.reset_at = ts + timedelta(milliseconds=reset_ms)
+
+
+def _reached(window: _Window, reserve: float, current: datetime) -> float | None:
+    """``window``'s used fraction if it has reached ``1.0 - reserve`` and has not
+    yet reset, else ``None``."""
+    used = window.fraction_used
+    expired = window.reset_at is not None and current >= window.reset_at
+    if used is not None and used >= 1.0 - reserve and not expired:
+        return used
+    return None
+
+
+class RequestWindow(_Window):
+    """The gateway's request-count window, ``donkey.budget.requests`` (#974).
+
+    Filled by :meth:`Budget.observe` from the stock ``rate-limiting`` policy's
+    ``x-ratelimit-limit`` / ``x-ratelimit-remaining`` / ``x-ratelimit-reset``
+    headers. The fields mean what they mean on :class:`Budget`, counted in
+    requests: ``limit`` requests per window, ``remaining`` from the last
+    response, ``reset_at`` (``observed_at`` plus the ms delta), ``observed_at``,
+    and :attr:`fraction_used`. Every field is ``None`` until a response carries
+    the trio; the policy sends it only with ``exposeHeaders: true``.
+
+    The upstream provider's own ``x-ratelimit-*-requests`` headers are a
+    different window (the provider's quota, not the gateway's) and are not read.
+    """
+
+
+class Budget(_Window):
+    """The token-budget window for one :class:`~donkey_kit.Donkey`, updated
+    in-band from each response's budget headers (numeric ``x-token-*`` or the
+    prose ``x-llm-proxy-ratelimit`` fallback, #352). Its request-count sibling is
+    :attr:`requests` (#974).
+
+    Per-``Donkey``, never global: two instances with different credentials hold
+    independent state. Construct empty (unobserved); :meth:`observe` mutates it
+    from a response. Reads are cheap attribute/property access — no I/O.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        #: The gateway's request-count window (``x-ratelimit-*``).
+        self.requests = RequestWindow()
+        # The window the last pace() refusal named; wait_for_reset() waits on it.
+        # Sticky: a later pass through pace() leaves it alone, so a concurrent
+        # task's success cannot redirect another task's pending wait.
+        self._tripped: _Window = self
+
     def observe(self, response: httpx.Response, *, now: datetime | None = None) -> None:
         """Update from a response's budget headers.
 
@@ -149,6 +235,9 @@ class Budget:
         budget headers never resets freshness or raises. If any field is resolved,
         ``observed_at`` is stamped and each resolved field is applied; a missing or
         unparseable value leaves that field untouched.
+
+        The same response also fills :attr:`requests` from the ``x-ratelimit-*``
+        trio, independently: either window can be observed without the other.
 
         ``now`` is injectable for tests; production passes nothing and the wall
         clock (UTC) is used.
@@ -178,17 +267,15 @@ class Budget:
             if reset_ms is None:
                 reset_ms = p_reset
 
-        if limit is None and remaining is None and reset_ms is None:
-            return  # no budget signal on this response; nothing observed
-
         ts = now if now is not None else _utcnow()
-        self.observed_at = ts
-        if limit is not None:
-            self.limit = limit
-        if remaining is not None:
-            self.remaining = remaining
-        if reset_ms is not None:
-            self.reset_at = ts + timedelta(milliseconds=reset_ms)
+        _record(self, limit, remaining, reset_ms, ts)
+        _record(
+            self.requests,
+            _parse_int(headers.get(REQUEST_LIMIT_HEADER)),
+            _parse_int(headers.get(REQUEST_REMAINING_HEADER)),
+            _parse_int(headers.get(REQUEST_RESET_HEADER)),
+            ts,
+        )
 
     @asynccontextmanager
     async def pace(
@@ -199,10 +286,14 @@ class Budget:
 
         ``reserve`` is the fraction of the window to keep in hand (``0.0``-``1.0``):
         ``reserve=0.10`` trips at 90% used, ``reserve=0.0`` (the default) only at
-        full exhaustion. On entry, if the observed :attr:`fraction_used` has reached
-        ``1.0 - reserve``, :class:`~donkey_kit.core.errors.BudgetReserveReached` is
-        raised and the guarded block never runs — so the request that would cross
-        the reserve is never issued. Recover with :meth:`wait_for_reset` and retry
+        full exhaustion. It applies to both windows, the token window and
+        :attr:`requests` (#974). On entry, if either window's observed
+        ``fraction_used`` has reached ``1.0 - reserve``,
+        :class:`~donkey_kit.core.errors.BudgetReserveReached` is raised, naming
+        the window in its ``window`` attribute (``"tokens"`` or ``"requests"``),
+        and the guarded block never runs — so the request that would cross the
+        reserve is never issued. On a request window of 3, ``reserve=0.0``
+        refuses the 4th call. Recover with :meth:`wait_for_reset` and retry
         the same work::
 
             while True:
@@ -212,7 +303,7 @@ class Budget:
                 except BudgetReserveReached as exc:
                     if exc.reset_at is None:
                         raise  # no reset time means wait_for_reset() cannot make progress
-                    await donkey.budget.wait_for_reset()
+                    await donkey.budget.wait_for_reset(window=exc.window)
                     continue
                 break
 
@@ -229,27 +320,48 @@ class Budget:
         observed — the reserve guard remains active. The no-reset state does not age
         out on its own: there is no known safe time to release the guard, so the
         caller must handle or propagate :class:`BudgetReserveReached` rather than
-        retrying through :meth:`pace`. ``now`` is injectable for tests; production
-        passes nothing and the wall clock (UTC) is used.
+        retrying through :meth:`pace`. Each window follows these rules on its own.
+        When both have reached the reserve, the exception names the one that
+        releases last (one with no known reset first). ``now`` is injectable for
+        tests; production passes nothing and the wall clock (UTC) is used.
         """
         if not 0.0 <= reserve <= 1.0:
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")
-        used = self.fraction_used
         current = now if now is not None else _utcnow()
-        window_expired = self.reset_at is not None and current >= self.reset_at
-        if used is not None and used >= 1.0 - reserve and not window_expired:
+        reached = [
+            (name, window, used)
+            for name, window in (("tokens", self), ("requests", self.requests))
+            if (used := _reached(window, reserve, current)) is not None
+        ]
+        if reached:
+            # The window that releases last: an unknown reset outranks any time.
+            name, window, used = max(
+                reached,
+                key=lambda r: (r[1].reset_at is None, r[1].reset_at or current),
+            )
+            self._tripped = window
+            unit = "token" if name == "tokens" else "request"
             raise BudgetReserveReached(
-                f"Budget reserve reached: {used:.1%} of the window used, "
+                f"Budget reserve reached: {used:.1%} of the {unit} window used, "
                 f"reserve is {reserve:.1%} (trips at {1.0 - reserve:.1%}).",
                 fraction_used=used,
                 reserve=reserve,
-                reset_at=self.reset_at,
+                reset_at=window.reset_at,
+                window=name,
             )
         yield
 
-    async def wait_for_reset(self, *, now: datetime | None = None) -> None:
-        """Sleep until :attr:`reset_at`, then return — the recovery half of pacing
-        (BG §1.3, #186).
+    async def wait_for_reset(
+        self, *, window: str | None = None, now: datetime | None = None
+    ) -> None:
+        """Sleep until the tripped window's ``reset_at``, then return — the
+        recovery half of pacing (BG §1.3, #186).
+
+        ``window`` picks the window to wait on: ``"tokens"`` or ``"requests"``,
+        as named by :attr:`BudgetReserveReached.window`. Pass it when several
+        tasks share one ``Donkey``. Without it, the window is the one the most
+        recent :meth:`pace` refusal named (#974), or the token window if none
+        has.
 
         A single sleep, never a spin loop. If the reset time is unobserved
         (:attr:`reset_at` is ``None``) or already past, this returns immediately —
@@ -259,9 +371,18 @@ class Budget:
         injectable for tests; production passes nothing and the wall clock (UTC)
         is used.
         """
-        if self.reset_at is None:
+        if window is None:
+            target = self._tripped
+        elif window == "tokens":
+            target = self
+        elif window == "requests":
+            target = self.requests
+        else:
+            raise ValueError(f"window must be 'tokens' or 'requests', got {window!r}")
+        reset_at = target.reset_at
+        if reset_at is None:
             return
         current = now if now is not None else _utcnow()
-        delay = (self.reset_at - current).total_seconds()
+        delay = (reset_at - current).total_seconds()
         if delay > 0:
             await asyncio.sleep(delay)

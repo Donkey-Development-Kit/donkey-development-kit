@@ -45,8 +45,8 @@ async def test_agent_masks_pii():
   configured proxy.
 
 The selectable refusals are the ones produced from a captured fixture:
-`TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
-`ContentSafetyBlocked`, `AgentKilled`, `UpstreamRequestError`, `ModelNotRoutable`,
+`TokenBudgetExceeded`, `RequestRateLimitExceeded`, `PIIDetected`,
+`PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`, `UpstreamRequestError`, `ModelNotRoutable`,
 `UpstreamModelError`, `AuthError`, and the generic `PolicyViolation` (the
 content-moderation shape).
 Asking for a refusal no gateway response produces — for example a client-side

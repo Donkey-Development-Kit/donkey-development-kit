@@ -46,7 +46,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
 
   
     **Purpose:** turn every gateway rejection into a typed exception —
-    `PIIDetected`, `TokenBudgetExceeded`, `PromptInjectionBlocked`,
+    `PIIDetected`, `TokenBudgetExceeded`, `RequestRateLimitExceeded`,
+    `PromptInjectionBlocked`,
     `ContentSafetyBlocked`, `AuthError`, `GatewayUnavailable` and more.
     **Goal:** branch on the governance outcome, not on a parsed error body.
     **Advantage:** a PII block is never mistaken for an auth failure, and a

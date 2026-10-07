@@ -319,6 +319,14 @@ headers.
    gateway text kept in the message). VERIFIED (LIVE) 2026-10-01 on
    `ddk-multi-route-fallback` and `ddk-azure-openai-model-routing`, byte-identical
    on both (#825); fixture `reject.model-not-routable.{headers.txt,body.json}`.
+7. **Request rate limit** — `429` from the stock `rate-limiting` policy (it
+   counts requests, not tokens): body `{"error":"Too Many Requests"}`
+   (`content-type: application/json; charset=UTF-8`), the unsuffixed
+   `x-ratelimit-limit` / `x-ratelimit-remaining: 0` / `x-ratelimit-reset`
+   (**milliseconds** to reset), **no** `retry-after`, **no** `x-token-*`; the
+   upstream is never called. VERIFIED (LIVE) 2026-10-07 on
+   `ddk-request-rate-limit` (instance 21188400, #974); fixture
+   `request_rate_limit/reject.request-rate-limit.{headers.txt,body.json}`.
 
 `core/errors.classify()` implements this (tests: `test_llm_proxy_contract.py`,
 `test_rejection_contract.py`, `test_errors.py`): error `type == "pii_detected"` →
@@ -335,8 +343,10 @@ mis-typed as auth; header `x-injection-protection: blocked` (VERIFIED LIVE
 2026-09-27 against `ddk-injection-protection`, instance 21200898, #669 — see
 the [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection)) →
 `PromptInjectionBlocked` (the header, not the status, is the discriminator, so a
-bare `400` is unaffected); `429` → `TokenBudgetExceeded` with `retry_after`
-derived from `x-token-reset` (ms→s); non-auth 4xx with a nested `error` object —
+bare `400` is unaffected); a `429` carrying `x-ratelimit-limit` and
+`x-ratelimit-remaining` but no `x-token-limit` → `RequestRateLimitExceeded`
+(item 7, #974; `retry_after` from `x-ratelimit-reset`, ms→s); any other `429` →
+`TokenBudgetExceeded` with `retry_after` derived from `x-token-reset` (ms→s); non-auth 4xx with a nested `error` object —
 in either an OpenAI-style object envelope or a Gemini-style **list** envelope
 (`[{"error":{…}}]`, #548) — → `UpstreamRequestError` (carries provider
 `code`/`type`/`param`, with Gemini's `status` standing in for `type`); a non-auth
@@ -348,7 +358,7 @@ map" → `ModelNotRoutable` (item 6, #825); `5xx` →
 therefore *not* coerced to auth — it falls through to a generic `PolicyViolation`
 whose message names the observed status and any `x-llm-proxy-*` policy headers and
 states the **shape is unconfirmed** (#184), rather than being mis-typed. The full
-nine-shape taxonomy is indexed in `src/donkey_kit/simulator/_fixtures/rejections/README.md`.
+taxonomy is indexed in `src/donkey_kit/simulator/_fixtures/rejections/README.md`.
 
 The committed rejection fixtures record only the **semantic header subset**
 each discriminator needs (plus `content-type` when the body is JSON) — not
@@ -417,10 +427,47 @@ only because it predates the policy being applied.
 
 **Distinct from the gateway window: the upstream provider's quota passthrough.**
 The `x-ratelimit-limit-tokens` / `x-ratelimit-remaining-tokens` /
-`x-ratelimit-reset-tokens` headers on a `200` are the **upstream provider's**
-own quota, passed straight through — not the gateway's budget. Their reset
-values are Go-style **duration strings** (`0s`, `12ms`), **not** integer
-milliseconds, so they must not be parsed with the `x-token-*` / `ms` rule.
+`x-ratelimit-reset-tokens` headers on a `200` (and their `-requests` siblings)
+are the **upstream provider's** own quota, passed straight through — not the
+gateway's budget. Their reset values are Go-style **duration strings** (`0s`,
+`12ms`), **not** integer milliseconds, so they must not be parsed with the
+`x-token-*` / `ms` rule. The SDK does not read them. They are also not the
+gateway's request window below, which uses the **unsuffixed** names
+`x-ratelimit-limit` / `-remaining` / `-reset`.
+
+**Request window emission (LIVE-VERIFIED 2026-10-07, #974).** The stock
+`rate-limiting` policy counts requests per window. With `exposeHeaders: true`
+it sends one numeric trio on **every** response, success and refusal alike:
+
+| Response | Request-window signal | Reset unit | Status |
+|---|---|---|---|
+| `200` success (streaming too) | `x-ratelimit-limit` / `x-ratelimit-remaining` / `x-ratelimit-reset` | milliseconds | VERIFIED (LIVE) |
+| `429` limit exceeded | the same trio, `remaining: 0` (item 7 above) | milliseconds | VERIFIED (LIVE) |
+
+`Budget.observe()` fills `donkey.budget.requests` (a `RequestWindow`) from the
+trio, and `Budget.pace()` refuses when either window has reached the reserve.
+Probed on `ddk-request-rate-limit` (instance 21188400, 3 requests per
+`client_id` per 60000 ms, model-based to `azureopenai`/`gpt-5-mini`): three
+`200`s with `remaining` `2`/`1`/`0` and a reset counting down with the wall
+clock, then `429`s, then `remaining: 2` after the reset. The window is fixed
+and wall-clock aligned: the first request does not start it, and two observed
+windows ended on the same second-of-minute. Fixtures in
+`src/donkey_kit/simulator/_fixtures/anypoint/request_rate_limit/` (the served
+`429`) and `tests/fixtures/anypoint/request_rate_limit/` (the `200`s, the
+repeat `429`, the post-reset `200`). The probe was a hand-written `httpx`
+script, not `scripts/capture_fixture.py`.
+
+Still **UNVERIFIED**:
+
+- **`exposeHeaders: false`.** The policy then sends no `x-ratelimit-*` header,
+  so the `429` has no header to key on. That shape is not captured, and
+  `classify()` maps it to `TokenBudgetExceeded`, as for any unmarked `429`.
+  The body `{"error":"Too Many Requests"}` was seen only with the headers on,
+  so it is not used as a discriminator.
+- **Semantic-cache hits.** Whether a cache hit counts against the request
+  window is not probed. `Budget.observe()` skips a hit for both windows.
+- **Other window units and clustering.** Only one 60 s window on one gateway
+  replica was probed.
 
 **Simulator budget window (corrected, #353).** Resolved (#354): a live probe
 confirms the production proxy **does** carry its budget window on a `200` success
@@ -464,6 +511,7 @@ driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
 | model-based-routing / upstream | `model-based-routing` `1.0.3` | VERIFIED (LIVE) | passthrough of provider error (OpenAI `400 model_not_found` object) | 2026-08-28 | live probe |
 | model-based-routing, bare model name, more than one provider | applied to `ddk-multi-route-fallback`, `ddk-azure-openai-model-routing` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Failed to parse model from request: Model '…' is not in the known unique model map and multiple providers are configured. Use 'provider/model' format."}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` (item 6 above) | 2026-10-01 | live probe (#825) |
 | LLM proxy core | `llm-proxy-core` `1.0.5` | applied VERIFIED (LIVE) | on `openai-sdk`; rejection body not yet triggered | 2026-08-28 | `policy:list` |
+| Request rate limiting | `rate-limiting` `1.5.1` (impl `rate-limiting-flex` `1.2.2`), `exposeHeaders: true` | VERIFIED (LIVE) | `429`, body `{"error":"Too Many Requests"}`, the unsuffixed `x-ratelimit-limit`/`-remaining`/`-reset`(ms) trio, no `retry-after`, no `x-token-*`; the same trio on every `200` → `RequestRateLimitExceeded` (item 7 above). See "Request window emission" above. | 2026-10-07 | live probe, `ddk-request-rate-limit` instance 21188400 (#974) |
 | Token rate limiting | interface `llm-token-rate-limit` `1.0.2` (impl `-policy-flex` `1.0.4`) | VERIFIED (LIVE) | Two emission forms: `429` limit-exceeded → **empty body**, numeric trio `x-token-limit`/`x-token-remaining`/`x-token-reset`(ms), no `retry-after`; `200`/`403` under the same policy → the window as prose in a single `x-llm-proxy-ratelimit` header (ms reset). See "Budget window emission" above. | 2026-08-28 | applied + live probe |
 | PII detection | interface `llm-pii-detection-policy` `1.0.0` (impl `-flex` `1.0.2`) | VERIFIED (LIVE) | `403`, nested `{"error":{message,type:"pii_detected"}}`, no `www-authenticate` | 2026-08-28 | applied + live probe |
 | Regex Prompt Guard | `regex-prompt-guard-policy` `1.0.0` | VERIFIED (LIVE) | `403`, flat-string `error` + top-level `matched_patterns` list; body matched the committed fixture byte-for-byte | 2026-09-22 | live probe, `ddk-injection-guard` instance 21179713 |

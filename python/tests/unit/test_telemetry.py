@@ -33,6 +33,7 @@ from donkey_kit.core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -208,6 +209,7 @@ def test_build_genai_attributes_omits_none_usage_details_keeps_zero() -> None:
     ("error", "expected"),
     [
         (TokenBudgetExceeded("x", remediation="r"), "token_budget"),
+        (RequestRateLimitExceeded("x", remediation="r"), "request_rate_limit"),
         (PIIDetected("x", remediation="r"), "pii_detected"),
         (PromptInjectionBlocked("x", remediation="r"), "injection"),
         (ContentSafetyBlocked("x", remediation="r"), "content_safety"),
