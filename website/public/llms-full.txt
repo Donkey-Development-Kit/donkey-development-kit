@@ -6392,7 +6392,7 @@ What is typed from docs, and what is still unnamed
   is specified, not because a capture has landed yet.
 
   content-moderation     PolicyViolation
-  remediation            This refusal matched no documented rejection shape, so its contract is unconfirmed (#184, #253). It is terminal and was NOT retried. Please file an issue on the donkey-development-kit repo with the response status, headers and body (all carried on this exception's .response) so the shape can be typed.
+  remediation            This refusal matched no documented rejection shape, so its contract is unconfirmed (#184). It is terminal and was NOT retried. Please file an issue on the donkey-development-kit repo with the response status, headers and body (all carried on this exception's .response) so the shape can be typed.
 
   An undiscriminated content-moderation 4xx still falls through to a generic
   PolicyViolation. That leftover shape has never been captured from a live gateway, so
@@ -8225,7 +8225,7 @@ TokenBudgetExceeded  (policy: token-rate-limit)
 
 PolicyViolation  (policy: unknown)
   Request refused by a gateway policy; shape unconfirmed (status 400). It matched no documented rejection contract.
-  remediation    This refusal matched no documented rejection shape, so its contract is unconfirmed (#184, #253). It is terminal and was NOT retried. Please file an issue on the donkey-development-kit repo with the response status, headers and body (all carried on this exception's .response) so the shape can be typed.
+  remediation    This refusal matched no documented rejection shape, so its contract is unconfirmed (#184). It is terminal and was NOT retried. Please file an issue on the donkey-development-kit repo with the response status, headers and body (all carried on this exception's .response) so the shape can be typed.
   correlation_id typed-refusals-PolicyViolation
   call_id        6910b17935bf4820a651d7fc7794eac5
   request_id     None

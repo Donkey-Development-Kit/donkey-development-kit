@@ -537,7 +537,7 @@ environment's secrets (#753; see `tests/sandbox/README.md`).
   gitignored `proxies.toml` (copy from `proxies.toml.example`) that names a
   `base_url` plus the env vars holding that proxy's consumer creds. See
   `tests/sandbox/README.md`. It is the live twin of the fixture-driven
-  `test_llm_proxy_contract.py`, and the path that captures the #253 rejection
+  `test_llm_proxy_contract.py`, and the path that captured the #253 rejection
   bodies against real proxies.
 
 A test under either marker must **degrade to a clean skip** (not a failure) when

@@ -2,8 +2,8 @@
 
 These are the live twin of ``tests/unit/test_llm_proxy_contract.py``: that file
 *replays* captured fixtures; this one confirms the same contract against the
-real deployed proxies, and captures the two rejection shapes that are still
-pending live capture (#253 — injection, content-moderation).
+real deployed proxies, and prints a raw capture of any rejection it provokes
+(the path that captured the #253 injection and content-safety shapes).
 
 Opt-in only: ``pytest -m sandbox`` with ``DONKEY_SANDBOX_TESTS=1`` and a filled
 ``tests/sandbox/proxies.toml`` (see ``conftest.py``). Everything skips cleanly
