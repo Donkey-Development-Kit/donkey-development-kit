@@ -11,6 +11,19 @@ failures that look identical from the outside apart:
   provider passthrough rejected the model (the ``400``
   ``model_not_found`` shape, docs/verified-apis.md §4) → :class:`UpstreamRequestError`.
 
+Two ``404`` shapes are read from the response itself, not its error type
+(#896, ``tests/fixtures/anypoint/azure_openai_routing/``):
+
+* **no proxy on the base path** — an empty ``404`` with no ``x-llm-proxy-*``
+  header. The gateway answered, but nothing is deployed at that path, so
+  neither the credentials nor the model were checked.
+* **``/responses`` not served on this route** — a ``404`` that carries the
+  proxy's routing headers: the proxy accepted the credentials and routed the
+  model, and the upstream (an Azure OpenAI route, docs/verified-apis.md §2) does not
+  serve the Responses API. Doctor then makes one ``/chat/completions`` probe
+  (docs/verified-apis.md §2, Chat Completions row) and reports the route as
+  working if it answers.
+
 Every failure line prints the remediation string carried by the exception it
 stands for, so the CLI and the taxonomy can never disagree (AC2, one source of
 wording). The budget line always states ``observed_at`` staleness — the proxy
@@ -43,6 +56,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
+from ..core._wire import LLM_PROVIDER_HEADER, LLM_PROXY_HEADER_PREFIX
 from ..core.config import ConfigSource, DonkeyConfig
 from ..core.endpoints import allow_http_enabled, allow_http_setting, host_of
 from ..core.errors import (
@@ -55,6 +69,8 @@ from ..core.errors import (
 from ._app import app
 
 if TYPE_CHECKING:
+    import httpx
+
     from ..core.budget import Budget
 
 __all__ = [
@@ -102,10 +118,13 @@ class ProbeResult:
     """The outcome of the single governed probe call. ``error`` is ``None`` on a
     clean success; otherwise it is the typed :class:`DonkeyError` the taxonomy
     mapped the failure to. ``budget`` is the Donkey's budget window as it stood
-    after the probe (unobserved if nothing came back)."""
+    after the probe (unobserved if nothing came back). ``chat`` is the
+    ``/chat/completions`` probe, made only when the proxy routed the model and
+    the upstream answered ``/responses`` with ``404`` (#896)."""
 
     error: DonkeyError | None
     budget: Budget | None
+    chat: ProbeResult | None = None
 
 
 #: A probe takes the resolved config + the model to test and returns a
@@ -198,6 +217,46 @@ def _endpoint_checks(cfg: DonkeyConfig) -> list[DoctorCheck]:
     return checks
 
 
+#: Remediation for an empty 404: no proxy answers on the configured base path.
+_UNSERVED_REMEDIATION = (
+    "No proxy answers on this base path. Check that the path in "
+    "DONKEY_LLM_PROXY_URL is the proxy's base path, with a trailing slash and "
+    "no /v1, and that the proxy is Active in API Manager on a running gateway."
+)
+
+#: Remediation for a routed 404 on /responses: use Chat Completions instead.
+_RESPONSES_REMEDIATION = (
+    "This route's upstream does not serve the OpenAI Responses API. Call it "
+    "with the Chat Completions API: client.chat.completions.create(...) on "
+    "donkey.llm.client(), or a framework's chat-completions client."
+)
+
+
+def _not_found(err: DonkeyError | None) -> httpx.Response | None:
+    """The 404 response behind ``err``, or ``None`` for any other outcome."""
+    response = getattr(err, "response", None)
+    return response if response is not None and response.status_code == 404 else None
+
+
+def _proxy_headers_present(response: httpx.Response) -> bool:
+    return any(k.lower().startswith(LLM_PROXY_HEADER_PREFIX) for k in response.headers)
+
+
+def _unserved_base_path(err: DonkeyError | None) -> bool:
+    """An empty 404 with no ``x-llm-proxy-*`` header: nothing is deployed at the
+    configured base path (``reject.unserved-base-path``)."""
+    response = _not_found(err)
+    return response is not None and not response.content and not _proxy_headers_present(response)
+
+
+def _route_not_served(err: DonkeyError | None) -> httpx.Response | None:
+    """The 404 response when it carries the proxy's routing headers: the proxy
+    routed the model and the upstream does not serve the path
+    (``reject.responses-not-served``)."""
+    response = _not_found(err)
+    return response if response is not None and _proxy_headers_present(response) else None
+
+
 def _probe_checks(result: ProbeResult) -> list[DoctorCheck]:
     """Turn one probe outcome into the gateway / credentials / model lines. A
     downstream diagnosis that can't be reached (credentials when the gateway is
@@ -229,6 +288,40 @@ def _probe_checks(result: ProbeResult) -> list[DoctorCheck]:
         model = DoctorCheck("model", Level.FAIL, str(err).split(": ", 1)[-1] or "rejected",
                       _model_remediation(err))
         return [gateway, creds, model]
+
+    if _unserved_base_path(err):
+        gateway = DoctorCheck("gateway", Level.FAIL,
+                              "reachable, but no proxy on this base path (empty 404)",
+                              _UNSERVED_REMEDIATION)
+        not_checked = "not checked — no proxy on this base path"
+        return [gateway, DoctorCheck("credentials", Level.SKIP, not_checked),
+                DoctorCheck("model", Level.SKIP, not_checked)]
+
+    not_served = _route_not_served(err)
+    if not_served is not None:
+        provider = not_served.headers.get(LLM_PROVIDER_HEADER) or "upstream"
+        responses = DoctorCheck(
+            "responses", Level.INFO,
+            f"/responses not served on this route (404 from the {provider} upstream)",
+            _RESPONSES_REMEDIATION,
+        )
+        chat = result.chat
+        if chat is None:
+            model = DoctorCheck("model", Level.SKIP,
+                                "not checked — /responses not served on this route")
+            return [gateway, creds, model, responses]
+        if _route_not_served(chat.error) is not None:
+            model = DoctorCheck(
+                "model", Level.FAIL,
+                "routed, but the upstream serves neither /responses nor /chat/completions",
+                _RESPONSES_REMEDIATION,
+            )
+            return [gateway, creds, model, responses]
+        checks = _probe_checks(chat)
+        checks.append(responses)
+        if chat.error is None:
+            checks.append(DoctorCheck("chat completions", Level.OK, "served on this route"))
+        return checks
 
     # Any other typed error (a policy refusal or an upstream 5xx on the probe):
     # auth and the model were both accepted; the failure is reported on its own
@@ -278,15 +371,35 @@ def _live_probe(cfg: DonkeyConfig, model: str) -> ProbeResult:
     donkey = Donkey(cfg)
     try:
         client = donkey.openai(sync=True)
-        try:
-            client.responses.create(model=model, input="ping", max_output_tokens=16)
-            return ProbeResult(None, donkey.budget)
-        except DonkeyError as exc:
-            return ProbeResult(exc, donkey.budget)
-        except Exception as exc:  # noqa: BLE001 - bridge the raw client's errors
-            return ProbeResult(_bridge(exc, cfg), donkey.budget)
+        error = _attempt(
+            lambda: client.responses.create(model=model, input="ping", max_output_tokens=16),
+            cfg,
+        )
+        chat: ProbeResult | None = None
+        if _route_not_served(error) is not None:
+            # The proxy routed the model but the upstream has no /responses
+            # (#896): try the other verified route once (docs/verified-apis.md §2).
+            chat_error = _attempt(
+                lambda: client.chat.completions.create(
+                    model=model, messages=[{"role": "user", "content": "ping"}]
+                ),
+                cfg,
+            )
+            chat = ProbeResult(chat_error, donkey.budget)
+        return ProbeResult(error, donkey.budget, chat)
     finally:
         donkey.close()
+
+
+def _attempt(call: Callable[[], object], cfg: DonkeyConfig) -> DonkeyError | None:
+    """Run one probe call; ``None`` on success, else the typed error."""
+    try:
+        call()
+    except DonkeyError as exc:
+        return exc
+    except Exception as exc:  # noqa: BLE001 - bridge the raw client's errors
+        return _bridge(exc, cfg)
+    return None
 
 
 def _bridge(exc: Exception, cfg: DonkeyConfig) -> DonkeyError:

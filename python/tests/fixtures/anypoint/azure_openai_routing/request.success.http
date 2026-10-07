@@ -1,0 +1,33 @@
+# Live requests against the Azure OpenAI model-based-routing proxy (consumer
+# creds redacted). The same body on two routes: /responses is 404 from the
+# Azure upstream, /chat/completions is 200 (#896).
+
+POST /ddk-azure-openai-model-routing/responses HTTP/1.1
+Host: private-space-omni-gateway.example.invalid
+Content-Type: application/json
+client_id: <redacted>
+client_secret: <redacted>
+
+{"model": "azureopenai/gpt-5-mini", "input": "ping", "max_output_tokens": 16}
+
+# -> reject.responses-not-served.*
+
+POST /ddk-azure-openai-model-routing/chat/completions HTTP/1.1
+Host: private-space-omni-gateway.example.invalid
+Content-Type: application/json
+client_id: <redacted>
+client_secret: <redacted>
+
+{"model": "azureopenai/gpt-5-mini", "messages": [{"role": "user", "content": "ping"}]}
+
+# -> responses.chat-completions.success.*
+
+POST /ddk-no-such-proxy-896/responses HTTP/1.1
+Host: private-space-omni-gateway.example.invalid
+Content-Type: application/json
+client_id: <redacted>
+client_secret: <redacted>
+
+{"model": "azureopenai/gpt-5-mini", "input": "ping"}
+
+# -> reject.unserved-base-path.headers.txt (empty body)
