@@ -365,4 +365,8 @@ def test_the_secrets_warning_names_the_callers_file(
     _write(layers["project"], client_secret="s")
     with pytest.warns(config_module.ConfigWarning, match="client_secret") as record:
         build()
-    assert {Path(w.filename).name for w in record} == {Path(__file__).name}
+    # #1010: `record` holds every warning raised in the block, including another
+    # package's, depending on what a lazy first import emits. Check ours only.
+    ours = [w for w in record if issubclass(w.category, config_module.ConfigWarning)]
+    seen = [f"{w.category.__name__} {w.filename}: {w.message}" for w in record]
+    assert {Path(w.filename).name for w in ours} == {Path(__file__).name}, seen
