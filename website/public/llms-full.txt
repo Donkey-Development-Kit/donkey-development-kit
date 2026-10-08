@@ -1058,17 +1058,18 @@ llm = ChatOpenAI(
     http_async_client=...,    # the SDK's shared httpx async client (ainvoke)
     http_client=...,          # the SDK's shared blocking client (invoke)
     max_retries=0,            # the SDK retries in its own transport layer
-    use_responses_api=True,   # /responses, the route the raw client uses
+    use_responses_api=False,  # /chat/completions, the route every upstream serves
 )
 ```
 
 `connection_kwargs()` returns exactly these keys, so you can drop the factory
 and construct `ChatOpenAI` by hand at any time. An OpenAI-format proxy serves
-both the Responses API (`/responses`) and `/chat/completions`. The adapter uses
-`/responses` because the raw `donkey.llm` client does. The local simulator
-serves both routes.
-Pass `use_responses_api=False` to `chat_model(...)` to call
-`/chat/completions` instead. A `base_url` / `openai_api_base` passed to
+both `/chat/completions` and the Responses API (`/responses`). The adapter
+uses `/chat/completions`, because it is the only route every upstream serves.
+Azure OpenAI answers `/responses` with a 404, and Bedrock and Gemini stream it
+only partially. The local simulator serves both routes.
+Pass `use_responses_api=True` to `chat_model(...)` to call `/responses` on a
+proxy that routes to OpenAI. A `base_url` / `openai_api_base` passed to
 `chat_model(...)` must pass the
 [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
@@ -1677,9 +1678,9 @@ rejection with the SDK's typed refusal.
 
 **What you get**
 
-- A native `agent_framework.openai.OpenAIChatClient`, which calls the
-  Responses API (`POST /responses`), checked against agent-framework 1.19.0.
-  Pass `api="chat_completions"` for the Chat Completions client (see
+- A native `agent_framework.openai.OpenAIChatCompletionClient`, which calls
+  the Chat Completions API (`POST /chat/completions`), checked against
+  agent-framework 1.19.0. Pass `api="responses"` for the Responses client (see
   [Which API](#which-api)).
 - `policy_middleware()`, which ends a run on a proxy refusal with a typed
   `PolicyViolation` such as `PIIDetected`.
@@ -1786,18 +1787,24 @@ agent-framework-openai has two OpenAI-compatible chat clients, and
 
 | `api=` | Client | Request |
 | --- | --- | --- |
-| `"responses"` (default) | `OpenAIChatClient` | `POST /responses` |
-| `"chat_completions"` | `OpenAIChatCompletionClient` | `POST /chat/completions` |
+| `"chat_completions"` (default) | `OpenAIChatCompletionClient` | `POST /chat/completions` |
+| `"responses"` | `OpenAIChatClient` | `POST /responses` |
 
-The default is the Responses API because it is the proxy route the SDK has
-verified live, the same one `donkey.llm` and the LangGraph adapter use. It is
-verified on an OpenAI upstream only. A proxy can route a model to any
-upstream, and not every upstream serves `/responses`: a route to Azure OpenAI
-answers it with `404 Resource not found`, which reaches you as a
-`ChatClientException`. For such a route, ask for the Chat Completions client:
+The default is Chat Completions because it is the one route every upstream
+behind an OpenAI-format proxy serves. That was verified live on OpenAI, Azure
+OpenAI, Bedrock-Anthropic and Gemini.
+
+`/responses` works fully only on an OpenAI upstream:
+
+- Azure OpenAI answers it with `404 Resource not found`, which reaches you as a
+  `ChatClientException`.
+- Bedrock and Gemini answer it through the gateway's transcoder, which streams
+  it only partially.
+
+On a proxy that routes to OpenAI, you can still ask for the Responses client:
 
 ```python
-llm = chat_client("azure/gpt-4.1-mini", api="chat_completions")
+llm = chat_client("openai/gpt-4.1-mini", api="responses")
 ```
 
 Both clients work with `policy_middleware()`, and the local simulator serves
@@ -7616,16 +7623,15 @@ Run context
     http_async_client              <donkey_kit.core.transport.DonkeyAsyncClient object at 0x10aac2a50>
     http_client                    <donkey_kit.core.transport.DonkeyClient object at 0x10aac2c10>
     max_retries                    0
-    use_responses_api              True
+    use_responses_api              False
 
   Same base URL, same verified client_id / client_secret pair, handed to the framework's
   own constructor. Bringing a framework up to the deep bar is demand-driven and happens
   one at a time, so this is not a stepping stone that everything is queued behind — it
   is the supported surface.
   LangGraph is the only adapter held to the conformance bar. It sets
-  use_responses_api=True so ChatOpenAI calls /responses rather than its
-  /chat/completions default: /responses is the raw client's route and the only one the
-  local simulator serves.
+  use_responses_api=False so ChatOpenAI calls /chat/completions, the one route every
+  upstream behind an OpenAI-format proxy serves.
 
 What is and is not verified here
 ────────────────────────────────
@@ -7699,7 +7705,7 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 
   `donkey.openai_agents` is the OpenAI Agents SDK adapter; `donkey.openai()` is
   the raw OpenAI client factory. The LangGraph adapter sets
-  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. The
+  `use_responses_api=False`, so `ChatOpenAI` calls the `/chat/completions` route. The
   adapters build the native object directly. They refuse with "blocked on
   verification" only when the installed framework version lacks the class or
   field the adapter depends on (for example, `gemini()` on google-adk older than
@@ -7798,8 +7804,8 @@ the caller's scope. On a direct call it is populated (see
 in [#613](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/613).
 
 The adapter targets the
-`/responses` route (`use_responses_api=True`), the same one `donkey.openai()`
-uses. `DEMO_MODEL` defaults to `gpt-4o-mini` in this example; set it to a model
+`/chat/completions` route (`use_responses_api=False`), the one every upstream
+serves. `DEMO_MODEL` defaults to `gpt-4o-mini` in this example; set it to a model
 your proxy routes.
 
 If the gateway is unavailable, [Framework objects](https://docs.donkey-kit.dev/examples/general/framework-objects.md)
@@ -8579,8 +8585,8 @@ Source: https://docs.donkey-kit.dev/examples/langgraph.md
 # LangGraph
 
 `donkey.langgraph("…")` returns a real `langchain_openai.ChatOpenAI` with
-`use_responses_api=True`, so calls go to the live-verified `/responses` route
-on the governed transport. It is the one deep, conformance-gated adapter:
+`use_responses_api=False`, so calls go to `/chat/completions`, the route every
+upstream serves, on the governed transport. It is the one deep, conformance-gated adapter:
 `donkey.langgraph.typed_refusals()` turns the openai error a graph node raises
 back into the SDK's typed refusal.
 
@@ -8631,7 +8637,7 @@ python "demos/human-made/langgraph/02 - basic-gw.py"
 
 ```python
 async with Donkey.from_env() as donkey:
-    model = donkey.langgraph("gpt-4o")   # native ChatOpenAI on /responses
+    model = donkey.langgraph("gpt-4o")   # native ChatOpenAI on /chat/completions
 
     reply = await model.ainvoke("Say hello in exactly three words.")
     print(reply.text)
@@ -8967,9 +8973,9 @@ Source: https://docs.donkey-kit.dev/examples/agent-framework.md
 
 # Microsoft Agent Framework
 
-`donkey.agent_framework.chat_client("…")` builds an `OpenAIChatClient`
+`donkey.agent_framework.chat_client("…")` builds an `OpenAIChatCompletionClient`
 (verified against 1.19.0, where the keyword is `model=`) that calls
-`/responses`. It sends through the SDK's shared HTTP client, so the run id
+`/chat/completions`. It sends through the SDK's shared HTTP client, so the run id
 reaches the proxy and `last_call` is set in the task that made the call.
 Refusals come back typed — Agent Framework wraps the
 openai error in `ChatClientException`, and the response rides on `__cause__`.

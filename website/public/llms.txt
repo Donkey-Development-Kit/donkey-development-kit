@@ -78,7 +78,7 @@
 ## Examples
 
 - [OpenAI](https://docs.donkey-kit.dev/examples/openai.md): Sixteen straight-line scripts for the stock openai client governed by donkey.openai() — last_call, typed refusals, budget pacing, spans, decorators, streaming, guardrails, JWT wallets and the local simulator.
-- [LangGraph](https://docs.donkey-kit.dev/examples/langgraph.md): Nine LangGraph scripts — a real ChatOpenAI on /responses, typed refusals out of create_agent, the run id reaching tools, streaming, spans and the local simulator.
+- [LangGraph](https://docs.donkey-kit.dev/examples/langgraph.md): Nine LangGraph scripts — a real ChatOpenAI on /chat/completions, typed refusals out of create_agent, the run id reaching tools, streaming, spans and the local simulator.
 - [OpenAI Agents SDK](https://docs.donkey-kit.dev/examples/openai-agents.md): Three OpenAI Agents SDK scripts — an OpenAIResponsesModel on the governed client, a tool-calling Runner, typed refusals and the local simulator.
 - [MS Agent Framework](https://docs.donkey-kit.dev/examples/agent-framework.md): Three Microsoft Agent Framework scripts — an OpenAIChatClient built by donkey.agent_framework, typed refusals unwrapped from ChatClientException, and the local simulator.
 - [Strands](https://docs.donkey-kit.dev/examples/strands.md): Four Strands Agents scripts — OpenAIModel on a pre-built governed client, the run id reaching a tool, typed refusals simulated and live.
