@@ -11,7 +11,8 @@ DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
 goal; the progress bars and issue lists below are loaded from those milestones
 when you open the page. Phase 1 shipped as `donkey-kit` 0.1.0, and its
 stabilisation release, 0.1.1, is the current release on
-[PyPI](https://pypi.org/project/donkey-kit/). Phase 2 is next.
+[PyPI](https://pypi.org/project/donkey-kit/). Two more stabilisation
+releases, 0.1.2 and 0.1.3, come before Phase 2.
 <RoadmapUpdated />
 
 <Callout type="info">
@@ -53,6 +54,34 @@ stabilisation release, 0.1.1, is the current release on
   `donkey.adk.gemini()` model for Gemini-format proxies, and a pass over the
   docs. Upgrading from 0.1.0? See the
   [migration guide](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/MIGRATION.md).
+</RoadmapPhase>
+
+## Phase 1.2 — Stabilize the MVP
+
+<RoadmapPhase milestone="Phase 1.2">
+  **Version 0.1.2 · Goal:** act on a full code review of the 0.1.1 surface,
+  so later phases build on settled foundations.
+
+  One transport core shared by the sync and async clients, the documented
+  config precedence, a single adapter contract and roster, and typed refusals
+  recovered from whatever a framework re-raises, including inside an
+  `ExceptionGroup`. Telemetry no longer installs the global OpenTelemetry
+  provider unless you ask it to, the public API surface is defined, and
+  budget pacing also honours request-count rate limits. Around them: security
+  and packaging hygiene, architecture decision records, and a stricter test
+  suite. No Phase 2 scope.
+</RoadmapPhase>
+
+## Phase 1.3 — Stabilize the MVP
+
+<RoadmapPhase milestone="Phase 1.3">
+  **Version 0.1.3 · Goal:** make the docs and the release process as
+  dependable as the code.
+
+  Planned: documentation with one source of truth per class of fact,
+  automated release gates, a tested support matrix across Python and
+  dependency versions, a hardened build supply chain, and typed refusals
+  carried across ADK's `model()` (LiteLLM) path. No Phase 2 scope.
 </RoadmapPhase>
 
 ## Phase 2 — Differentiate, go beyond

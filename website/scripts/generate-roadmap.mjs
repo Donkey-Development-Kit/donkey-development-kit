@@ -26,7 +26,7 @@ const API = `https://api.github.com/repos/${REPO}`
 // Milestones shown on the Roadmap page, in display order. Matched by title
 // prefix so a version bump in the title does not drop a phase. The prefix must
 // end at a word boundary, so 'Phase 1' never matches 'Phase 1.1 — …'.
-const TRACKED = ['Phase 1', 'Phase 1.1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'Verification', 'Upstream gaps']
+const TRACKED = ['Phase 1', 'Phase 1.1', 'Phase 1.2', 'Phase 1.3', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'Verification', 'Upstream gaps']
 const matches = (title, prefix) => title === prefix || title.startsWith(`${prefix} `)
 
 async function gh(path) {

@@ -72,14 +72,16 @@ deep adapter, and the on-ramps that make the six pieces reachable.
 
 ## Phases and milestones
 
-Eight milestones. Five are sequential product phases carrying a semver
-target; one is a patch release that stabilises Phase 1; two are standing and
-unversioned.
+Ten milestones. Five are sequential product phases carrying a semver
+target; three are patch releases that stabilise Phase 1 (`Phase 1.N`, added as
+they're created); two are standing and unversioned.
 
 | Milestone | Issues | Scope |
 |---|---|---|
 | `Phase 1 — Build the MVP (0.1.0)` | 30 | Skeleton + the six-piece minimum (typed refusals, budget, simulator, simulate()+conformance, OTel GenAI, correlation/cost tags), one deep LangGraph adapter, decorators + CLI, docs, PyPI. Build guide 1.1-1.10. |
 | `Phase 1.1 — Stabilize the MVP (0.1.1)` | — | Patch release after the 0.1.0 publish: fixes, hardening and small additions to the Phase 1 surface — credential scoping and endpoint trust, secret-free output, adapter and transport fixes, the Agent Kill Switch refusal type, an installable `all` extra, `donkey.adk.gemini()`, and docs corrections. No Phase 2 scope. |
+| `Phase 1.2 — Stabilize the MVP (0.1.2)` | — | Patch release from a code review of the 0.1.1 surface: ADRs for the architecture decisions, import-linter contracts for every layer invariant, the sans-IO transport split shared by the sync and async clients, the specified config precedence, one adapter roster and contract, a framework-agnostic typed-refusal bridge, no implicit global OTel provider, a defined public API surface, security and packaging hygiene, a hermetic test suite with a coverage floor, and CI hardening. No Phase 2 scope. |
+| `Phase 1.3 — Stabilize the MVP (0.1.3)` | — | Patch release on top of 0.1.2: the documentation and CI/CD review — one source of truth per class of fact in the docs, automated release gates, a tested support matrix, a hardened Actions supply chain, the hotfix release process, and typed refusals through ADK `model()`. No Phase 2 scope. |
 | `Phase 2 — Differentiate, go beyond (0.2.0)` | 21 | Refusal handlers, classification registry, HITL, identity helpers, in-repo scanner + Action, kill-switch, MCP discovery, second adapter, A2A serve/expose/dev. Build guide 2.1-2.9. |
 | `Phase 3 — Platform capabilities (0.3.0)` | 6 | Policy handshake, to-the-code push, structured output + eval hooks. Largely gated on the Upstream gaps milestone. Build guide 3.2-3.4. |
 | `Phase 4 — Enterprise readiness (0.4.0)` | 10 | Security review, performance budget, error-message pass, migration and deprecation policy, compliance evidence, log shipping, residency, workload identity, support model. |
