@@ -1,0 +1,1 @@
+{"error":{"message":"Error while executing the request: {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"* GenerateContentRequest.generation_config.temperature: temperature must be in the range [0.0, 2.0].\\n\",\n    \"status\": \"INVALID_ARGUMENT\"\n  }\n}\n","type":"","param":null,"code":"400"}}
