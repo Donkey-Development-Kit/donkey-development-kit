@@ -1,0 +1,24 @@
+HTTP/1.1 400 Bad Request
+vary: X-Origin,Referer,Origin,Accept-Encoding
+content-type: application/json; charset=UTF-8
+date: Thu, 08 Oct 2026 09:05:30 GMT
+server: Anypoint Flex Gateway
+x-xss-protection: 0
+x-frame-options: SAMEORIGIN
+x-content-type-options: nosniff
+server-timing: gfet4t7; dur=77
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+accept-ranges: none
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: gemini
+x-llm-proxy-llm-model: gemini-2.5-flash
+x-llm-proxy-input-tokens-cost-per-1m: 0.3
+x-llm-proxy-output-tokens-cost-per-1m: 2.5
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: gemini, Model: gemini-2.5-flash.
+x-envoy-decorator-operation: api-instance-21188199.00000000-0000-4000-8000-5c4fd1a49fc3.svc
+transfer-encoding: chunked
+x-correlation-id: ddk-894-gemini-responses-reject
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive
+
