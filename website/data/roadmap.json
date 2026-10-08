@@ -1,6 +1,6 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-10-02T09:10:29.071Z",
+  "generatedAt": "2026-10-08T10:00:44.442Z",
   "milestones": [
     {
       "number": 11,
@@ -960,10 +960,10 @@
     {
       "number": 19,
       "title": "Phase 1.1 — Stabilize the MVP (0.1.1)",
-      "state": "open",
+      "state": "closed",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/19",
-      "open": 2,
-      "closed": 80,
+      "open": 0,
+      "closed": 83,
       "issues": [
         {
           "number": 630,
@@ -1451,7 +1451,7 @@
         {
           "number": 838,
           "title": "chore(release): close the pending security advisories after 0.1.1",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/838",
           "epic": false
         },
@@ -1535,8 +1535,679 @@
         {
           "number": 915,
           "title": "Update release docs and version references for the 0.1.1 release",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/915",
+          "epic": false
+        },
+        {
+          "number": 916,
+          "title": "Enable the Cloudflare Web Analytics beacon on docs.donkey-kit.dev",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/916",
+          "epic": false
+        }
+      ]
+    },
+    {
+      "number": 20,
+      "title": "Phase 1.2 — Stabilize the MVP (0.1.2)",
+      "state": "open",
+      "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/20",
+      "open": 2,
+      "closed": 72,
+      "issues": [
+        {
+          "number": 706,
+          "title": "epic(conventions): code review — coding conventions & code quality",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/706",
+          "epic": true
+        },
+        {
+          "number": 707,
+          "title": "epic(architecture): code review — architecture",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/707",
+          "epic": true
+        },
+        {
+          "number": 708,
+          "title": "epic(adapters): code review — framework integrations",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/708",
+          "epic": true
+        },
+        {
+          "number": 709,
+          "title": "epic(packaging): code review — packaging & dependencies",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/709",
+          "epic": true
+        },
+        {
+          "number": 710,
+          "title": "epic(testing): code review — testing",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/710",
+          "epic": true
+        },
+        {
+          "number": 713,
+          "title": "epic(robustness): code review — robustness bugs",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/713",
+          "epic": true
+        },
+        {
+          "number": 714,
+          "title": "epic(security): code review — security & repository hygiene",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/714",
+          "epic": true
+        },
+        {
+          "number": 717,
+          "title": "feat(logging): adopt a logging convention and stop swallowing failures silently",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/717",
+          "epic": false
+        },
+        {
+          "number": 719,
+          "title": "feat(api): define the public API surface and remove cross-package private access",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/719",
+          "epic": false
+        },
+        {
+          "number": 720,
+          "title": "chore(core): remove dead code and single-source duplicated definitions",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/720",
+          "epic": false
+        },
+        {
+          "number": 721,
+          "title": "chore(lint): encode the house style in ruff and mypy config",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/721",
+          "epic": false
+        },
+        {
+          "number": 722,
+          "title": "docs(src): add docstrings to the main public entry points",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/722",
+          "epic": false
+        },
+        {
+          "number": 723,
+          "title": "feat(conventions): ADR for value objects — frozen dataclasses, pydantic only at external-schema boundaries",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/723",
+          "epic": false
+        },
+        {
+          "number": 724,
+          "title": "feat(refusals): a framework-agnostic typed-refusal bridge",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/724",
+          "epic": false
+        },
+        {
+          "number": 726,
+          "title": "feat(adapters): formalise the adapter contract and keep the roster in one place",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/726",
+          "epic": false
+        },
+        {
+          "number": 727,
+          "title": "feat(config): implement the specified config precedence with a declarative field table",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/727",
+          "epic": false
+        },
+        {
+          "number": 728,
+          "title": "refactor(transport): split core/transport.py around a sans-IO policy shared by the sync and async clients",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/728",
+          "epic": false
+        },
+        {
+          "number": 729,
+          "title": "feat(lint-imports): architecture rules as code — extend the import contracts and test each invariant",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/729",
+          "epic": false
+        },
+        {
+          "number": 730,
+          "title": "refactor(cli): move the supported CLI to donkey_kit/cli and quarantine legacy provisioning",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/730",
+          "epic": false
+        },
+        {
+          "number": 731,
+          "title": "feat(adr): introduce an ADR process and seed the architecture decisions from this review",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/731",
+          "epic": false
+        },
+        {
+          "number": 732,
+          "title": "feat(telemetry): don't install the global OTel TracerProvider implicitly",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/732",
+          "epic": false
+        },
+        {
+          "number": 740,
+          "title": "feat(adapters): use transport injection for LlamaIndex, MAF and CrewAI",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740",
+          "epic": false
+        },
+        {
+          "number": 742,
+          "title": "test(adapters): add an integration checklist and an adapter contract suite parametrised from ADAPTERS",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/742",
+          "epic": false
+        },
+        {
+          "number": 744,
+          "title": "build(deps): move dev tooling to dependency groups and stop publishing extras with no code behind them",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/744",
+          "epic": false
+        },
+        {
+          "number": 745,
+          "title": "build(pkg): modernise the license and classifier metadata and publish a Python support policy",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/745",
+          "epic": false
+        },
+        {
+          "number": 746,
+          "title": "build(pkg): ship simulator fixtures as package data and make the pytest11 plugin cheap and collision-safe",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/746",
+          "epic": false
+        },
+        {
+          "number": 747,
+          "title": "test: make the suite hermetic — clear proxy/OTEL/DONKEY env, block real sockets, cap test time",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/747",
+          "epic": false
+        },
+        {
+          "number": 748,
+          "title": "test(ci): run framework-dependent tests against real framework installs",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/748",
+          "epic": false
+        },
+        {
+          "number": 749,
+          "title": "test(conformance): implement or retire the internal 20-scenario conformance matrix",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/749",
+          "epic": false
+        },
+        {
+          "number": 750,
+          "title": "test: reset module-level state between tests and randomise test order in CI",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/750",
+          "epic": false
+        },
+        {
+          "number": 751,
+          "title": "test(ci): measure coverage in CI and enforce a floor that only goes up",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/751",
+          "epic": false
+        },
+        {
+          "number": 752,
+          "title": "test(fixtures): extend the integrity lock to every captured fixture",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/752",
+          "epic": false
+        },
+        {
+          "number": 753,
+          "title": "test: scheduled live-contract check against the fixtures, plus benchmark trending",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/753",
+          "epic": false
+        },
+        {
+          "number": 755,
+          "title": "ci: run CI on pushes to develop and alert on nightly failures",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/755",
+          "epic": false
+        },
+        {
+          "number": 761,
+          "title": "ci: add job timeouts, concurrency cancellation, pip caching and fail-fast: false",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/761",
+          "epic": false
+        },
+        {
+          "number": 819,
+          "title": "chore(security): commit ignore rules for local secret-bearing config files and add secret scanning",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/819",
+          "epic": false
+        },
+        {
+          "number": 821,
+          "title": "chore(security): scrub tenant identifiers and live endpoints from fixtures and the published wheel",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/821",
+          "epic": false
+        },
+        {
+          "number": 823,
+          "title": "chore(security): add SECURITY.md and enable private vulnerability reporting",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/823",
+          "epic": false
+        },
+        {
+          "number": 832,
+          "title": "chore(governance): apply the endpoint rule to [targets.*] base URLs before target calls are enabled",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/832",
+          "epic": false
+        },
+        {
+          "number": 895,
+          "title": "simulator: serve POST /chat/completions",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/895",
+          "epic": false
+        },
+        {
+          "number": 896,
+          "title": "llm/cli: check donkey.llm and donkey doctor on routes that 404 /responses",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/896",
+          "epic": false
+        },
+        {
+          "number": 920,
+          "title": "Keep the PyPI version badge current right after a release",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/920",
+          "epic": false
+        },
+        {
+          "number": 922,
+          "title": "Move the PyPI badge before the search field in the docs-site top bar",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/922",
+          "epic": false
+        },
+        {
+          "number": 932,
+          "title": "docs: document how to turn on the SDK's DEBUG logging",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/932",
+          "epic": false
+        },
+        {
+          "number": 933,
+          "title": "`classify(exc.response)` fails mypy --strict on openai>=3 and anthropic>=1",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/933",
+          "epic": false
+        },
+        {
+          "number": 934,
+          "title": "docs: add the 0.1.2 deprecations, removals and renames to MIGRATION.md",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/934",
+          "epic": false
+        },
+        {
+          "number": 935,
+          "title": "Group auto-generated release notes by label and always include a Breaking changes section",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/935",
+          "epic": false
+        },
+        {
+          "number": 936,
+          "title": "chore(deps): gate new direct dependencies behind a reviewed allowlist and a PyPI existence check",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/936",
+          "epic": false
+        },
+        {
+          "number": 948,
+          "title": "chore(ci): resolve PR CI dependencies from a lock (ADR 0007 rule 3)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/948",
+          "epic": false
+        },
+        {
+          "number": 949,
+          "title": "fix(runtime): close the standalone adapter's own blocking client (ADR 0003 gap)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/949",
+          "epic": false
+        },
+        {
+          "number": 950,
+          "title": "feat(refusals): translate refusals inside ExceptionGroup / TaskGroup",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/950",
+          "epic": false
+        },
+        {
+          "number": 951,
+          "title": "fix(strands): don't let Strands retry a terminal 429 token-budget refusal",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/951",
+          "epic": false
+        },
+        {
+          "number": 953,
+          "title": "fix(transport): stamp x-should-retry: false when a 502/504 model POST is not retried",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/953",
+          "epic": false
+        },
+        {
+          "number": 955,
+          "title": "test(refusals): typed-refusal bridge conformance for openai-agents, LlamaIndex, ADK gemini()",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/955",
+          "epic": false
+        },
+        {
+          "number": 956,
+          "title": "fix(tests): make test_adk_last_call_status_does_not_depend_on_factory_order order-independent",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/956",
+          "epic": false
+        },
+        {
+          "number": 957,
+          "title": "Give the seven framework examples a build() for the conformance kit",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/957",
+          "epic": false
+        },
+        {
+          "number": 958,
+          "title": "Route CrewAI through the shared transport via interceptor hooks, or record why not",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/958",
+          "epic": false
+        },
+        {
+          "number": 970,
+          "title": "docs: fix 0.1.2 doc drift in MIGRATION, READMEs, CONTRIBUTING, ARCHITECTURE and ADRs",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/970",
+          "epic": false
+        },
+        {
+          "number": 972,
+          "title": "Ignore .venv* variants in .gitignore",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/972",
+          "epic": false
+        },
+        {
+          "number": 974,
+          "title": "budget: pace on request-count rate limits, not only the token window",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/974",
+          "epic": false
+        },
+        {
+          "number": 983,
+          "title": "test(conformance): cover every typed_refusals=True factory in the bridge suite",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/983",
+          "epic": false
+        },
+        {
+          "number": 984,
+          "title": "docs(readme): correct the ADK model() typed-refusal exemption wording",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/984",
+          "epic": false
+        },
+        {
+          "number": 985,
+          "title": "chore(strands): drop the retry_strategy=None workaround now that #951 landed",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/985",
+          "epic": false
+        },
+        {
+          "number": 996,
+          "title": "Add docs/ci.md: CI/CD conventions and workflow map",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/996",
+          "epic": false
+        },
+        {
+          "number": 999,
+          "title": "docs: document live-contract-check setup (live-sandbox environment + secrets) in docs/ci.md",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/999",
+          "epic": false
+        },
+        {
+          "number": 1004,
+          "title": "ci: pin one Python patch version per minor so pip cache keys match",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1004",
+          "epic": false
+        },
+        {
+          "number": 1005,
+          "title": "ci: save pip caches only from main/develop pushes; PRs restore only",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1005",
+          "epic": false
+        },
+        {
+          "number": 1006,
+          "title": "ci-ok and nightly alert jobs lack timeout-minutes, failing develop CI",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1006",
+          "epic": false
+        },
+        {
+          "number": 1009,
+          "title": "ci: make GitHub Actions workflow names uniform across DDK repos",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1009",
+          "epic": false
+        },
+        {
+          "number": 1010,
+          "title": "test: test_the_secrets_warning_names_the_callers_file is flaky",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1010",
+          "epic": false
+        },
+        {
+          "number": 1014,
+          "title": "Nightly framework matrix failing",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1014",
+          "epic": false
+        },
+        {
+          "number": 1015,
+          "title": "docs(ci): add Mermaid scenario maps for feature, hotfix, and recovery",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1015",
+          "epic": false
+        },
+        {
+          "number": 1043,
+          "title": "feat(adapters): default agent-framework and LangGraph to Chat Completions",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1043",
+          "epic": false
+        },
+        {
+          "number": 1044,
+          "title": "chore(testing): replay captured route fixtures in contract_gateway.py",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1044",
+          "epic": false
+        }
+      ]
+    },
+    {
+      "number": 21,
+      "title": "Phase 1.3 — Stabilize the MVP (0.1.3)",
+      "state": "open",
+      "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/21",
+      "open": 14,
+      "closed": 4,
+      "issues": [
+        {
+          "number": 711,
+          "title": "epic(ci): code review — CI/CD & developer experience",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/711",
+          "epic": true
+        },
+        {
+          "number": 712,
+          "title": "epic(docs): code review — documentation, examples & website",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/712",
+          "epic": true
+        },
+        {
+          "number": 757,
+          "title": "ci(security): harden the Actions supply chain — SHA pins, Dependabot, CODEOWNERS, least-privilege Pages",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/757",
+          "epic": false
+        },
+        {
+          "number": 759,
+          "title": "ci(site): build, type-check and link-check the docs site on PRs, and move off Node 20",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/759",
+          "epic": false
+        },
+        {
+          "number": 763,
+          "title": "ci(deps): pin the dev and release toolchain with a lock, and make mypy independent of installed extras",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/763",
+          "epic": false
+        },
+        {
+          "number": 765,
+          "title": "chore(dx): one task runner that mirrors CI, pre-commit, and an honest CONTRIBUTING gate section",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/765",
+          "epic": false
+        },
+        {
+          "number": 767,
+          "title": "ci(release): automated release gates — one version source, tag check, wheel smoke test, reviewers, attestations",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/767",
+          "epic": false
+        },
+        {
+          "number": 769,
+          "title": "ci: test the declared support matrix — lowest-direct per extra, openai<2, Python 3.13/3.14, co-installability",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/769",
+          "epic": false
+        },
+        {
+          "number": 771,
+          "title": "ci(site): pin manual docs deploys to main",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/771",
+          "epic": false
+        },
+        {
+          "number": 795,
+          "title": "docs: one source of truth per class of fact — generated tables, API reference, release notes, version banner",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/795",
+          "epic": false
+        },
+        {
+          "number": 797,
+          "title": "docs: make doc snippets tests, add a frontmatter status vocabulary, and add a path-based docs-sync reminder",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/797",
+          "epic": false
+        },
+        {
+          "number": 799,
+          "title": "feat(site): add baseline SEO and share metadata",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/799",
+          "epic": false
+        },
+        {
+          "number": 969,
+          "title": "feat(refusals): bridge typed refusals through ADK model() (LiteLLM)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/969",
+          "epic": false
+        },
+        {
+          "number": 1031,
+          "title": "Add mermaid diagrams for release scenarios to docs/releasing.md",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1031",
+          "epic": false
+        },
+        {
+          "number": 1033,
+          "title": "docs(verified-apis): reflect Strands stream=False default and Gemini streaming caveat",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1033",
+          "epic": false
+        },
+        {
+          "number": 1035,
+          "title": "docs(architecture): add mermaid diagrams for client wiring and classify()",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1035",
+          "epic": false
+        },
+        {
+          "number": 1038,
+          "title": "Document the hotfix release process in docs/releasing.md",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1038",
+          "epic": false
+        },
+        {
+          "number": 1042,
+          "title": "Add Phase 1.2 and 1.3 milestones to the docs/releasing.md version table",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1042",
           "epic": false
         }
       ]
@@ -1546,8 +2217,8 @@
       "title": "Phase 2 — Differentiate, go beyond (0.2.0)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/12",
-      "open": 47,
-      "closed": 1,
+      "open": 49,
+      "closed": 2,
       "issues": [
         {
           "number": 15,
@@ -1884,6 +2555,27 @@
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/585",
           "epic": false
+        },
+        {
+          "number": 952,
+          "title": "feat(cli): wire donkey --config to DonkeyConfig.resolve(path=) for doctor",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/952",
+          "epic": false
+        },
+        {
+          "number": 954,
+          "title": "feat(telemetry): public flush for the scoped TracerProvider",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/954",
+          "epic": false
+        },
+        {
+          "number": 991,
+          "title": "test(conformance): restore the 13 retired scenarios once their surfaces are verified",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/991",
+          "epic": false
         }
       ]
     },
@@ -2132,8 +2824,8 @@
       "title": "Verification",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/16",
-      "open": 34,
-      "closed": 12,
+      "open": 33,
+      "closed": 15,
       "issues": [
         {
           "number": 1,
@@ -2236,7 +2928,7 @@
         {
           "number": 253,
           "title": "verify: re-confirm the v1.11-v1.13 rejection contracts against current docs and a sandbox",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/253",
           "epic": false
         },
@@ -2285,7 +2977,7 @@
         {
           "number": 300,
           "title": "verify: whether the gateway echoes the client x-correlation-id or mints its own",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/300",
           "epic": false
         },
@@ -2453,8 +3145,22 @@
         {
           "number": 894,
           "title": "verification: capture /chat/completions and /responses per upstream as §2 fixtures",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/894",
+          "epic": false
+        },
+        {
+          "number": 1024,
+          "title": "Verify the per-framework descriptor-derivation attributes (live introspection)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1024",
+          "epic": false
+        },
+        {
+          "number": 1039,
+          "title": "verify: whether the platform's End-to-End Correlation ID uses a header other than x-correlation-id",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1039",
           "epic": false
         }
       ]
