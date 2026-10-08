@@ -1,0 +1,22 @@
+HTTP/1.1 200 OK
+date: Thu, 08 Oct 2026 09:05:16 GMT
+content-type: application/json
+x-amzn-requestid: 00000000-0000-4000-8000-9bea6edac115
+x-amzn-bedrock-invocation-latency: 1035
+x-amzn-bedrock-cache-write-input-token-count: 0
+x-amzn-bedrock-cache-read-input-token-count: 0
+x-amzn-bedrock-output-token-count: 4
+x-amzn-bedrock-input-token-count: 16
+content-length: 561
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: bedrockanthropic
+x-llm-proxy-llm-model: us.anthropic.claude-sonnet-5
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: bedrockanthropic, Model: us.anthropic.claude-sonnet-5.
+x-llm-proxy-request-success: Request completed successfully. Provider: bedrockanthropic, Model: us.anthropic.claude-sonnet-5.
+server: Anypoint Flex Gateway
+x-envoy-decorator-operation: api-instance-21192625.00000000-0000-4000-8000-5c4fd1a49fc3.svc
+x-correlation-id: ddk-894-bedrockanthropic-chat_completions-success
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive
+

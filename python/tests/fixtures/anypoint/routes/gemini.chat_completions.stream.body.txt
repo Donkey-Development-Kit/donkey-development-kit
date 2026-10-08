@@ -1,0 +1,2 @@
+data: {"id":"1lzHatb5DpLI-sAPpcDLiQs","object":"chat.completion","created":0,"model":"gemini-2.5-flash","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","refusal":"","content":"ok","tool_calls":null},"logprobs":null}],"usage":{"prompt_tokens":8,"completion_tokens":1,"total_tokens":25,"completion_tokens_details":{"accepted_prediction_tokens":1,"audio_tokens":0,"reasoning_tokens":16,"rejected_prediction_tokens":0},"prompt_tokens_details":{"audio_tokens":0,"cached_tokens":0}},"service_tier":"default"}
+
