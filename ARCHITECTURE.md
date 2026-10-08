@@ -166,6 +166,34 @@ boundary, and no module has one today: its only user was the deleted
 
 ### How the pieces connect
 
+```mermaid
+flowchart LR
+  donkey["Donkey"] --> runtime
+  factories["module-level factories<br/>integrations.&lt;framework&gt;.&lt;factory&gt;()"] -->|"runtime.default()"| runtime
+  runtime["Runtime · core/runtime.py<br/>config · OTLP bootstrap · auth providers · Budget<br/>the only place shared clients are built"]
+
+  runtime --> dp["data-plane DonkeyAsyncClient<br/>(+ blocking DonkeyClient twin)<br/>credential: client_id/client_secret pair,<br/>or the model-wallet JWT in jwt mode"]
+  runtime --> cp["control-plane DonkeyAsyncClient<br/>credential: connected-app token"]
+
+  dp --> view["view() = Donkey.http_client()<br/>non-owning: close() is a no-op"]
+  dp --> bridge["httpx2 bridge · core/transport/httpx2.py<br/>forwards every request through the data-plane client"]
+  dp --> icpt["interceptor"]
+
+  view --> fwView["frameworks that take an httpx client<br/>(http_client-kwarg frameworks on openai 2.x)"]
+  bridge --> fwBridge["anthropic 1.x · every OpenAI client the SDK builds on openai 3+<br/>· LangGraph, Strands, LlamaIndex on openai 3+ (reusable variant)"]
+  icpt --> crewai["CrewAI (its provider builds its own client)"]
+
+  cp --> registry["registry/ and other Anypoint platform calls"]
+
+  dp -.-> gate{"_CheckedEndpoints<br/>request origin checked?<br/>(scheme, host, port)"}
+  cp -.-> gate
+  gate -->|"yes: plane URL or an allow_endpoint override"| withCreds["sent with that plane's credentials"]
+  gate -->|"no: any other origin, every redirect hop"| stripped["sent with credential headers removed"]
+```
+
+Solid arrows are what builds or consumes what; the dotted arrows show that every
+request either plane sends passes the same origin check.
+
 - **`Donkey`** is the public surface and orchestrator. It owns one shared
   **`DonkeyAsyncClient`** (an `httpx.AsyncClient` subclass that injects the
   governance/attribution headers) **per credential plane**, so each credential
@@ -421,7 +449,7 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 
 1. **A policy refusal is never retried.** `PolicyViolation` (and its subclasses —
    `TokenBudgetExceeded`, `RequestRateLimitExceeded`, `PIIDetected`,
-   `PromptInjectionBlocked`, `ContentSafetyBlocked`) must be distinguishable from a transient error at the
+   `PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`) must be distinguishable from a transient error at the
    framework boundary, so a host framework never silently retries a governance
    refusal. The transport treats these as terminal
    (`test_429_is_terminal_but_5xx_still_retries` and
@@ -441,12 +469,53 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 mapping in `classify()` is populated from real rejection captures taken against a
 live governed proxy (BG §1.5), not hand-written assumptions. The authoritative
 discriminator is the error **`type`** plus specific headers — **not the status
-code alone.** The captures established, for example, that:
+code alone.** `classify()` tries its matchers in a fixed order (`_MATCHERS` in
+`core/errors.py`) and returns the first hit. The policy signals in the body and
+headers come before any status rule:
+
+```mermaid
+flowchart TD
+  start(["final error response"]) --> sig{"policy signal in the<br/>body or headers?<br/>(checked before any status rule)"}
+  sig -->|"nested error type<br/>pii_detected"| PIIDetected
+  sig -->|"nested error code<br/>agent_killed"| AgentKilled
+  sig -->|"x-llm-proxy-*-action:<br/>reject"| ContentSafetyBlocked
+  sig -->|"top-level matched_patterns,<br/>or x-injection-protection: blocked"| PromptInjectionBlocked
+  sig -->|none| status{"status?"}
+
+  status -->|"401, or 403 with<br/>www-authenticate"| AuthError
+  status -->|429| r429{"x-ratelimit-limit and -remaining,<br/>no x-token-limit?"}
+  r429 -->|yes| RequestRateLimitExceeded
+  r429 -->|"no (empty body, x-token-* headers)"| TokenBudgetExceeded
+  status -->|"any other 4xx"| c4xx{"body?"}
+  c4xx -->|"nested provider error object"| UpstreamRequestError
+  c4xx -->|"flat error: not in the known<br/>unique model map"| ModelNotRoutable
+  c4xx -->|"anything else, incl. a 403<br/>without www-authenticate"| PV["PolicyViolation<br/>(policy=unknown, shape unconfirmed)"]
+  status -->|5xx| UpstreamModelError["UpstreamModelError<br/>(retryable)"]
+  status -->|"anything else"| DonkeyError["DonkeyError<br/>(unexpected response)"]
+
+  classDef refusal fill:#fde2e2,stroke:#c0392b,color:#000
+  classDef other fill:#e8f0fe,stroke:#3367d6,color:#000
+  class PIIDetected,AgentKilled,ContentSafetyBlocked,PromptInjectionBlocked,RequestRateLimitExceeded,TokenBudgetExceeded,PV refusal
+  class AuthError,UpstreamRequestError,ModelNotRoutable,UpstreamModelError,DonkeyError other
+```
+
+Red marks a policy refusal (a `PolicyViolation`, never retried); blue is
+everything else. The captures established, for example, that:
 
 - A **PII** block is a **403** with a *nested* error object whose `type` is
   `"pii_detected"` and **no** `www-authenticate` header — so it is decided *before*
   the generic 401/403→auth rule (`AuthError`). A 403 is not automatically an auth
   error.
+- An **Agent Kill Switch** block is a **403** whose nested error carries
+  `code: "agent_killed"` (no `type`, no `www-authenticate`) → `AgentKilled`
+  (#694). It is keyed on the body `code`, ahead of the auth and generic-4xx rules.
+- A **content-safety / guardrail** block (Azure Content Safety, Amazon Bedrock
+  Guardrails) is a **403** with a vendor `x-llm-proxy-<vendor>-…-action: reject`
+  header → `ContentSafetyBlocked`, its flagged categories parsed from the sibling
+  `…-reason` header (#253, #568).
+- A **Regex Prompt Guard** block is a **403** with a flat-string `error` and a
+  top-level `matched_patterns` list → `PromptInjectionBlocked`
+  (`policy="regex-prompt-guard"`), also ahead of the auth rule (#253).
 - A **token-budget** rejection is a **429** with an *empty body*; the budget state
   lives entirely in headers (`x-token-reset` in ms), with no standard `retry-after`
   → `TokenBudgetExceeded`.
@@ -458,16 +527,20 @@ code alone.** The captures established, for example, that:
 - An **upstream provider** rejection (e.g. OpenAI `model_not_found`) is a non-429
   4xx carrying the provider's nested `code`/`type`/`param`, passed through
   verbatim → `UpstreamRequestError` (terminal, but distinct from a policy refusal).
+- A **bare model name on a multi-provider proxy** is a **400** with a flat-string
+  `error` saying the model "is not in the known unique model map" →
+  `ModelNotRoutable`: a client mistake, not a policy refusal (#825).
 - A **5xx** is a retryable provider outage → `UpstreamModelError`.
 
 A **prompt-injection** block is typed on its own signal: the
 `x-injection-protection: blocked` response header decides `PromptInjectionBlocked`
 *before* the generic 4xx / nested-error branch; its rejection *body* is now
-LIVE-VERIFIED, a real 79-byte capture (#669). Only **content-moderation /
-federated-guardrail** shapes remain under-documented, and those deliberately fall
-through to a generic `PolicyViolation` whose message *says so* rather than
-pretending to a precision the captures don't yet support — the same verification-discipline honesty
-as the verification ledger. All errors subclass `DonkeyError`, which carries the
+LIVE-VERIFIED, a real 79-byte capture (#669). Any other non-429 4xx, including a
+403 with no `www-authenticate` header, matches no documented contract
+(federated-guardrail verdicts among them, #305). It deliberately falls through to
+a generic `PolicyViolation` (`policy="unknown"`) whose message *says so* rather
+than pretending to a precision the captures don't yet support — the same
+verification-discipline honesty as the verification ledger. All errors subclass `DonkeyError`, which carries the
 correlation/request IDs and the raw response for inspection.
 
 **Typed refusals cross the framework boundary in one place (#724, ADR 0002).**
