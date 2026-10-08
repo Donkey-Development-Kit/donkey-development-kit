@@ -2558,6 +2558,34 @@ an upstream request mistake, when the upstream was never called. Likewise the in
 `x-injection-protection` header, so an ordinary malformed `400` stays an
 ordinary refusal.
 
+`classify()` checks the policy discriminators first, whatever the status, and
+only then falls back to the status code. Within each step the first match wins,
+top to bottom:
+
+```mermaid
+flowchart TD
+    R(["Error response"]) --> D{"1 · Policy discriminator<br/>in the body or headers?"}
+    D -->|"nested error type = pii_detected"| X1["PIIDetected"]
+    D -->|"nested error code = agent_killed"| X2["AgentKilled"]
+    D -->|"x-llm-proxy-*-action: reject"| X3["ContentSafetyBlocked"]
+    D -->|"top-level matched_patterns"| X4["PromptInjectionBlocked<br/>regex-prompt-guard"]
+    D -->|"x-injection-protection: blocked"| X5["PromptInjectionBlocked"]
+    D -->|none| S{"2 · Status"}
+    S -->|"401, or 403 + www-authenticate"| X6["AuthError"]
+    S -->|429| Q{"x-ratelimit-limit and -remaining,<br/>no x-token-limit?"}
+    Q -->|yes| X7["RequestRateLimitExceeded"]
+    Q -->|no| X8["TokenBudgetExceeded"]
+    S -->|"other 4xx"| F{"Body"}
+    F -->|"nested error object"| X9["UpstreamRequestError"]
+    F -->|"flat error: not in the<br/>known unique model map"| X10["ModelNotRoutable"]
+    F -->|anything else| X11["PolicyViolation<br/>unconfirmed shape"]
+    S -->|5xx| X12["UpstreamModelError<br/>retryable"]
+    S -->|"anything else"| X13["DonkeyError"]
+```
+
+`GatewayUnavailable` never reaches `classify()`: it is raised when there is no
+response to classify.
+
 `RequestRateLimitExceeded` is the `429` of the gateway's stock `rate-limiting`
 policy, which counts requests rather than tokens. It is a subclass of
 `PolicyViolation` and a sibling of `TokenBudgetExceeded`, not a subclass of it.
@@ -10575,6 +10603,40 @@ token endpoint. A URL you pass to a factory in code gets the `https://` check
 when the factory is called; see
 [Credentials go only to checked endpoints](#credentials-go-only-to-checked-endpoints). They don't cover OTLP exporter endpoints (configured by
 OpenTelemetry).
+
+The two checks, in the order a credential meets them:
+
+```mermaid
+flowchart TD
+    subgraph C1["Check 1 · endpoints must use https://"]
+        H["Scheme and host"]
+        AH["DONKEY_ALLOW_HTTP<br/>in the environment?"]
+    end
+    subgraph C2["Check 2 · project-file URLs get project-file credentials"]
+        P["URL read from .donkey-kit.toml<br/>or .donkey-kit.local.toml?"]
+        T["DONKEY_TRUST_PROJECT_CONFIG<br/>in the environment?"]
+        R["base_url on a regional<br/>anypoint.mulesoft.com host?"]
+        C["Every credential it would receive<br/>also read from those two files?"]
+    end
+    H -->|"https://, or http:// to loopback"| P
+    H -->|"http:// to another host"| AH
+    H -->|"other scheme, or no host"| E1["ConfigError"]
+    AH -->|"yes, with a ConfigWarning"| P
+    AH -->|no| E1
+    P -->|"no: env, user file, code or region default"| OK(["Sent"])
+    P -->|yes| T
+    T -->|yes| OK
+    T -->|no| R
+    R -->|yes| OK
+    R -->|no| C
+    C -->|yes| OK
+    C -->|no| E2["ConfigError<br/>names each credential and its source"]
+```
+
+A token from `llm_auth` (`jwt` and `bearer` mode) or from a `Donkey(auth=…)`
+provider never comes from a file, so it always fails the last check. With its
+URL in a project file, only `DONKEY_TRUST_PROJECT_CONFIG` (or, for `base_url`, a
+regional Anypoint host) lets it through.
 
 #### Endpoints must use `https://`
 
