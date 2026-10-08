@@ -51,8 +51,8 @@ def test_connection_kwargs_carry_governed_values() -> None:
     assert "client_secret" in kw["default_headers"]
     assert kw["max_retries"] == 0  # we retry in transport, not the framework
     assert kw["http_async_client"] is not None  # our shared, hooked client
-    # verified /responses endpoint (docs/verified-apis.md §2)
-    assert kw["use_responses_api"] is True
+    # /chat/completions, the route every upstream serves (docs/verified-apis.md §2, #1043)
+    assert kw["use_responses_api"] is False
     # No model id — the caller supplies that: ChatOpenAI(model=…, **kw)
     assert "model" not in kw
 
@@ -313,10 +313,10 @@ def test_agent_framework_chat_client_blocks_unverified_import(
 
 def test_agent_framework_chat_client_constructs_with_package_present() -> None:
     """The mirror of the blocks-on-import test (#520): with agent-framework
-    actually installed, the factory returns a real ``OpenAIChatClient`` built
-    with the VERIFIED ``model=`` kwarg — the path the acceptance harness hit
-    that the package-absent test never exercised. ``api="chat_completions"``
-    returns the Chat Completions client instead (#826). VERIFIED: agent-framework
+    actually installed, the factory returns a real ``OpenAIChatCompletionClient``
+    built with the VERIFIED ``model=`` kwarg — the path the acceptance harness
+    hit that the package-absent test never exercised. ``api="responses"``
+    returns the Responses client instead (#826, #1043). VERIFIED: agent-framework
     1.19.0 (docs/verified-apis.md §8)."""
     pytest.importorskip("agent_framework")
     from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
@@ -324,10 +324,8 @@ def test_agent_framework_chat_client_constructs_with_package_present() -> None:
     from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 
     adapter = AgentFrameworkAdapter(_cfg(), _http())
-    assert isinstance(adapter.chat_client("gpt-4o"), OpenAIChatClient)
-    assert isinstance(
-        adapter.chat_client("gpt-4o", api="chat_completions"), OpenAIChatCompletionClient
-    )
+    assert isinstance(adapter.chat_client("gpt-4o"), OpenAIChatCompletionClient)
+    assert isinstance(adapter.chat_client("gpt-4o", api="responses"), OpenAIChatClient)
 
 
 def test_agent_framework_chat_client_rejects_an_unknown_api() -> None:
@@ -438,7 +436,7 @@ _FACTORIES = [
         "chat_client",
         "AgentFrameworkAdapter",
         "agent_framework.openai",
-        "OpenAIChatClient",
+        "OpenAIChatCompletionClient",
         ("gpt-4o",),
         "base_url",
         "https://override",

@@ -1,8 +1,8 @@
 # LangGraph
 
 `donkey.langgraph("…")` returns a real `langchain_openai.ChatOpenAI` with
-`use_responses_api=True`, so calls go to the live-verified `/responses` route
-on the governed transport. It is the one deep, conformance-gated adapter:
+`use_responses_api=False`, so calls go to `/chat/completions`, the route every
+upstream serves, on the governed transport. It is the one deep, conformance-gated adapter:
 `donkey.langgraph.typed_refusals()` turns the openai error a graph node raises
 back into the SDK's typed refusal.
 
@@ -53,7 +53,7 @@ python "demos/human-made/langgraph/02 - basic-gw.py"
 
 ```python
 async with Donkey.from_env() as donkey:
-    model = donkey.langgraph("gpt-4o")   # native ChatOpenAI on /responses
+    model = donkey.langgraph("gpt-4o")   # native ChatOpenAI on /chat/completions
 
     reply = await model.ainvoke("Say hello in exactly three words.")
     print(reply.text)

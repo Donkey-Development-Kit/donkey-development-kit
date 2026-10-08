@@ -81,8 +81,14 @@ def network_sends(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[httpx.Reques
     yield sends
 
 
+def _is_chat(request: httpx.Request) -> bool:
+    """The adapter defaults to ``/chat/completions`` (#1043); ``use_responses_api=True``
+    sends ``/responses``. Serve each route its own recorded body."""
+    return request.url.path.endswith("/chat/completions")
+
+
 def _success(request: httpx.Request) -> httpx.Response:
-    fixture = load("success")
+    fixture = load("chat-success" if _is_chat(request) else "success")
     headers = replay_headers(fixture)
     headers["content-type"] = "application/json"
     return httpx.Response(200, headers=headers, content=fixture.body, request=request)
@@ -144,6 +150,11 @@ _STREAM = _sse(
 def _success_or_stream(request: httpx.Request) -> httpx.Response:
     if not json.loads(request.content).get("stream"):
         return _success(request)
+    if _is_chat(request):
+        chat = load("chat-stream")
+        headers = replay_headers(chat)
+        headers["content-type"] = "text/event-stream"
+        return httpx.Response(200, headers=headers, content=chat.body, request=request)
     headers = replay_headers(load("stream"))
     headers["content-type"] = "text/event-stream"
     return httpx.Response(200, headers=headers, content=_STREAM, request=request)
@@ -206,7 +217,8 @@ def _echo_rid(request: httpx.Request) -> httpx.Response:
     """The success fixture, with ``x-request-id`` set to the prompt text, so each
     call's record names the call that made it."""
     response = _success(request)
-    rid = json.loads(request.content)["input"][0]["content"]
+    sent = json.loads(request.content)
+    rid = sent["messages" if _is_chat(request) else "input"][0]["content"]
     response.headers["x-request-id"] = rid if isinstance(rid, str) else rid[0]["text"]
     return response
 

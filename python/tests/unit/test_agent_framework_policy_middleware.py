@@ -8,7 +8,7 @@ rejected at ``Agent(...)`` construction and that only re-raised a
 shared client to an ``httpx.MockTransport``, so the refusal takes the same path
 it takes against the proxy: openai raises ``PermissionDeniedError`` and MAF
 wraps it in a ``ChatClientException``. Each test runs on both chat clients
-(``api="responses"``, the default, and ``api="chat_completions"``, #826).
+(``api="chat_completions"``, the default since #1043, and ``api="responses"``).
 
 Skipped where ``agent_framework`` is not installed; the
 ``agent-framework-middleware`` CI job installs it.
@@ -225,12 +225,12 @@ async def test_a_non_refusal_error_propagates_untouched(api: str) -> None:
 
 @pytest.mark.parametrize(
     ("kwargs", "path"),
-    [({}, "/responses"), ({"api": "chat_completions"}, "/chat/completions")],
+    [({}, "/chat/completions"), ({"api": "responses"}, "/responses")],
 )
 async def test_chat_client_sends_to_the_chosen_api(kwargs: dict[str, str], path: str) -> None:
-    """The default client posts to ``/responses``, the verified data-plane
-    route; ``api="chat_completions"`` posts to ``/chat/completions`` for a
-    route, such as Azure OpenAI, that 404s ``/responses`` (#826)."""
+    """The default client posts to ``/chat/completions``, the route every
+    upstream serves (docs/verified-apis.md §2, #1043); ``api="responses"``
+    posts to ``/responses``, which Azure OpenAI 404s (#826)."""
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
     fab._http.governed_transport.replace_inner(_ok_proxy(sent))
