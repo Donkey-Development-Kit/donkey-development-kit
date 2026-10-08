@@ -44,6 +44,32 @@ X.Y.Z.dev0  <  X.Y.Z.dev1  <  …  <  X.Y.Za1  <  X.Y.Zb1  <  X.Y.Zrc1  <  X.Y.Z
    dev0            devN            alpha 1       beta 1      rc 1        final
 ```
 
+Each rung maps to a different publish outcome. Only `.devN` builds reach
+TestPyPI, and only a final `X.Y.Z` reaches production PyPI. Amber boxes are
+indexes a build lands on. The grey box is the dead end for pre-release
+GitHub Releases.
+
+```mermaid
+flowchart LR
+  dev0["X.Y.Z.dev0"] --> devN["X.Y.Z.devN"]
+  devN --> a1["X.Y.Za1"]
+  a1 --> b1["X.Y.Zb1"]
+  b1 --> rc1["X.Y.Zrc1"]
+  rc1 --> final["X.Y.Z<br/>milestone at 0 open issues"]
+
+  dev0 -.->|manual dispatch| testpypi[("TestPyPI")]
+  devN -.->|manual dispatch| testpypi
+  a1 -.->|pre-release Release| nowhere["Publishes nowhere"]
+  b1 -.->|pre-release Release| nowhere
+  rc1 -.->|pre-release Release| nowhere
+  final ==>|non-pre-release Release| pypi[("PyPI")]
+
+  classDef publish fill:#fef3c7,stroke:#d97706,color:#78350f
+  classDef dead fill:#f3f4f6,stroke:#9ca3af,color:#374151,stroke-dasharray: 4 3
+  class testpypi,pypi publish
+  class nowhere dead
+```
+
 - **`.devN`** — dev snapshots toward the next version: work in progress on the
   way to the milestone's release, not yet promoted to a pre-release or final.
 - **`aN` / `bN`** — alpha/beta: real feature surface exists, still unstable.
@@ -82,6 +108,34 @@ workflow filename, and the GitHub Environment.
 There are **two workflows, one per destination** (#410, #674), and they never
 overlap:
 
+```mermaid
+flowchart TD
+  start{What are you shipping?}
+
+  start -->|dev snapshot| bump["Bump .devN in pyproject.toml<br/>and __init__.py, push to develop"]
+  bump --> dispatch["Actions → Publish to TestPyPI<br/>→ Run workflow"]
+  dispatch --> ref{Dispatched from develop?}
+  ref -->|no| skipped["publish job skipped"]
+  ref -->|yes| tbuild["publish-testpypi.yml<br/>build job"]
+  tbuild --> testpypi[("TestPyPI<br/>env: testpypi")]
+
+  start -->|final X.Y.Z| finish["Bump X.Y.Z on develop<br/>milestone at 0 open issues"]
+  finish --> promote["Promotion PR develop → main<br/>no-fast-forward merge"]
+  promote --> tag["Annotated vX.Y.Z tag on main's tip<br/>+ GitHub Release"]
+  tag --> pre{Release flagged<br/>pre-release?}
+  pre -->|yes| nowhere["Publishes nowhere<br/>prerelease == false guard"]
+  pre -->|no| pbuild["publish-pypi.yml<br/>build job"]
+  pbuild --> approve["pypi environment<br/>required-reviewer approval"]
+  approve --> pypi[("PyPI<br/>env: pypi")]
+
+  classDef gate fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef publish fill:#fef3c7,stroke:#d97706,color:#78350f
+  classDef dead fill:#f3f4f6,stroke:#9ca3af,color:#374151,stroke-dasharray: 4 3
+  class tbuild,pbuild,approve gate
+  class testpypi,pypi publish
+  class skipped,nowhere dead
+```
+
 - **Dev snapshots → TestPyPI, via `publish-testpypi.yml`'s manual
   `workflow_dispatch`.** Dev builds are deliberately **not** GitHub Releases —
   the Releases page is reserved for real releases. To dry-run: bump the
@@ -106,6 +160,30 @@ overlap:
   still gates on `prerelease == false`, and `publish-testpypi.yml` has no
   `release:` trigger at all, so nothing picks it up. Prod stays protected
   rather than a mis-flagged pre-release being silently routed anywhere.
+
+The final-release path end to end, from the version bump to the upload:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor M as Maintainer
+  participant D as develop
+  participant Main as main
+  participant GH as GitHub Release
+  participant W as publish-pypi.yml
+  actor R as pypi reviewer
+  participant P as PyPI
+
+  M->>D: PR bumping version in pyproject.toml + __init__.py
+  M->>Main: Promotion PR, no-fast-forward merge
+  M->>Main: Annotated tag vX.Y.Z on main's tip
+  M->>GH: Publish non-pre-release Release (notes incl. Breaking changes)
+  GH-->>W: release: published
+  W->>W: build: sdist + wheel, twine check,<br/>scrub check, floors-never-ceilings
+  W->>R: publish-pypi job waits on pypi environment
+  R-->>W: Approve
+  W->>P: Upload via OIDC trusted publishing
+```
 
 Each workflow runs its own `build` job first — sdist + wheel, `twine check`,
 and the assertion that the built metadata carries only `>=` floors
