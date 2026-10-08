@@ -218,6 +218,31 @@ jobs:
       - name: new direct dependencies exist on PyPI (#936)
         run: python scripts/check_new_dependencies.py --base "$RUNNER_TEMP/base-pyproject.toml"
 
+  commit-identities:
+    # #1048: a squash merge turns every PR-commit author into a Co-authored-by
+    # trailer on develop, and GitHub credits whoever claimed that email. A
+    # placeholder like `x <x@x>` credited an unrelated account and could only be
+    # removed by rewriting develop, so it fails here, before the merge. The
+    # script is stdlib-only and needs no install.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Bind the SHAs to env vars so they are never interpolated into a run:
+      # body directly (injection hardening).
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so BASE_SHA..HEAD_SHA resolves.
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: no placeholder git identities in the PR's commits (#1048)
+        run: python scripts/check_commit_identities.py "$BASE_SHA..$HEAD_SHA"
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -777,6 +802,7 @@ jobs:
       - all-extra-resolves
       - typecheck-and-lint
       - new-dependencies
+      - commit-identities
       - test
       - anthropic-stacks
       - adk-stacks

@@ -38,7 +38,8 @@ The jobs, grouped by what they protect:
   here. It then checks the built wheel in its own environment.
   `all-extra-resolves` dry-runs `pip install ".[all]"` on every supported
   Python (#697). `new-dependencies` checks that any direct dependency new to
-  the PR exists on PyPI (#936).
+  the PR exists on PyPI (#936). `commit-identities` fails a PR whose commits
+  carry a placeholder git identity such as `x <x@x>` (#1048).
 - **Static checks.** `typecheck-and-lint` runs `mypy`, `ruff check`,
   `lint-imports`, the verification-claim and doc-link checkers, the fixture
   scrub check and `vulture`.
@@ -261,7 +262,7 @@ floors honest, an `openai<2` leg, and Python 3.13/3.14 in the matrix.
 
 An aggregate `ci-ok` job `needs:` every other job, runs with `if: always()`, and
 fails if any dependency did not succeed (`skipped` counts as a pass, because
-`new-dependencies` runs on PRs only). The `develop` and `main` rulesets require
+`new-dependencies` and `commit-identities` run on PRs only). The `develop` and `main` rulesets require
 only `ci-ok`, so renaming a job or changing a matrix never silently drops a
 required check. A new job is added to `ci-ok`'s `needs:` in the same PR;
 `tests/unit/test_ci_workflows.py` fails when one is missing.
