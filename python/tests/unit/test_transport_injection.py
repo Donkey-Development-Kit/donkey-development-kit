@@ -165,7 +165,7 @@ async def _llamaindex_sync_stream_chat(donkey: Donkey) -> None:
 
 
 async def _maf_responses(donkey: Donkey) -> None:
-    await donkey.agent_framework.chat_client("m").get_response("hi")
+    await donkey.agent_framework.chat_client("m", api="responses").get_response("hi")
 
 
 async def _maf_chat_completions_stream(donkey: Donkey) -> None:

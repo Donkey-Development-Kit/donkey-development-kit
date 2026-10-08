@@ -14,9 +14,9 @@ rejection with the SDK's typed refusal.
 
 **What you get**
 
-- A native `agent_framework.openai.OpenAIChatClient`, which calls the
-  Responses API (`POST /responses`), checked against agent-framework 1.19.0.
-  Pass `api="chat_completions"` for the Chat Completions client (see
+- A native `agent_framework.openai.OpenAIChatCompletionClient`, which calls
+  the Chat Completions API (`POST /chat/completions`), checked against
+  agent-framework 1.19.0. Pass `api="responses"` for the Responses client (see
   [Which API](#which-api)).
 - `policy_middleware()`, which ends a run on a proxy refusal with a typed
   `PolicyViolation` such as `PIIDetected`.
@@ -115,18 +115,24 @@ agent-framework-openai has two OpenAI-compatible chat clients, and
 
 | `api=` | Client | Request |
 | --- | --- | --- |
-| `"responses"` (default) | `OpenAIChatClient` | `POST /responses` |
-| `"chat_completions"` | `OpenAIChatCompletionClient` | `POST /chat/completions` |
+| `"chat_completions"` (default) | `OpenAIChatCompletionClient` | `POST /chat/completions` |
+| `"responses"` | `OpenAIChatClient` | `POST /responses` |
 
-The default is the Responses API because it is the proxy route the SDK has
-verified live, the same one `donkey.llm` and the LangGraph adapter use. It is
-verified on an OpenAI upstream only. A proxy can route a model to any
-upstream, and not every upstream serves `/responses`: a route to Azure OpenAI
-answers it with `404 Resource not found`, which reaches you as a
-`ChatClientException`. For such a route, ask for the Chat Completions client:
+The default is Chat Completions because it is the one route every upstream
+behind an OpenAI-format proxy serves. That was verified live on OpenAI, Azure
+OpenAI, Bedrock-Anthropic and Gemini.
+
+`/responses` works fully only on an OpenAI upstream:
+
+- Azure OpenAI answers it with `404 Resource not found`, which reaches you as a
+  `ChatClientException`.
+- Bedrock and Gemini answer it through the gateway's transcoder, which streams
+  it only partially.
+
+On a proxy that routes to OpenAI, you can still ask for the Responses client:
 
 ```python
-llm = chat_client("azure/gpt-4.1-mini", api="chat_completions")
+llm = chat_client("openai/gpt-4.1-mini", api="responses")
 ```
 
 Both clients work with `policy_middleware()`, and the local simulator serves

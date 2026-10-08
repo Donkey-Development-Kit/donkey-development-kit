@@ -10,11 +10,11 @@ agent-framework 1.19.0 (docs/verified-apis.md §8):
 ``POST /chat/completions``) and ``agent_framework.openai.OpenAIChatClient``
 (Responses API, ``POST /responses``). Both take ``model``, ``base_url``,
 ``api_key``, ``default_headers`` and ``async_client``. :meth:`chat_client`
-builds the Responses client by default: ``/responses`` is the data-plane route
-in docs/verified-apis.md §2, the same one ``donkey.llm`` and the LangGraph
-adapter use. Not every upstream serves it (an Azure OpenAI route answers with a
-404), so ``api="chat_completions"`` builds the Chat Completions client for such
-routes (#826). Both the
+builds the Chat Completions client by default: ``/chat/completions`` is the
+only route every upstream behind an OpenAI-format proxy serves
+(docs/verified-apis.md §2, per-upstream route matrix, #894). ``/responses``
+404s on Azure OpenAI (#826) and streams only partially on transcoded upstreams,
+so ``api="responses"`` is an opt-in for OpenAI-routed proxies (#1043). Both the
 import and the construction stay guarded so a future upstream rename surfaces
 as a ``_verify.blocked(...)`` refusal, never a raw ``ImportError``/``TypeError``
 reaching the caller; a missing package raises the curated install hint every
@@ -108,27 +108,27 @@ class AgentFrameworkAdapter(Adapter):
 
     @overload
     def chat_client(
-        self, model: str, *, api: Literal["responses"] = ..., **kw: Any
-    ) -> OpenAIChatClient: ...
+        self, model: str, *, api: Literal["chat_completions"] = ..., **kw: Any
+    ) -> OpenAIChatCompletionClient: ...
 
     @overload
     def chat_client(
-        self, model: str, *, api: Literal["chat_completions"], **kw: Any
-    ) -> OpenAIChatCompletionClient: ...
+        self, model: str, *, api: Literal["responses"], **kw: Any
+    ) -> OpenAIChatClient: ...
 
     def chat_client(
-        self, model: str, *, api: ChatAPI = "responses", **kw: Any
+        self, model: str, *, api: ChatAPI = "chat_completions", **kw: Any
     ) -> OpenAIChatClient | OpenAIChatCompletionClient:
         """Return a native Agent Framework chat client at the proxy.
 
-        ``api="responses"`` (the default) returns an ``OpenAIChatClient``, which
-        sends ``POST /responses`` (docs/verified-apis.md §2). An Azure OpenAI
-        route answers that with a 404 (#826); for such a route pass
-        ``api="chat_completions"`` to get an ``OpenAIChatCompletionClient``,
-        which sends ``POST /chat/completions``. A ``base_url`` override must
-        pass the https check."""
+        ``api="chat_completions"`` (the default) returns an
+        ``OpenAIChatCompletionClient``, which sends ``POST /chat/completions``,
+        the route every upstream serves (docs/verified-apis.md §2, #894).
+        ``api="responses"`` returns an ``OpenAIChatClient``, which sends
+        ``POST /responses``; an Azure OpenAI route answers that with a 404
+        (#826). A ``base_url`` override must pass the https check."""
         if api not in _CHAT_CLIENT_CLASSES:
-            raise ValueError(f"api must be 'responses' or 'chat_completions', not {api!r}")
+            raise ValueError(f"api must be 'chat_completions' or 'responses', not {api!r}")
         cls_name = _CHAT_CLIENT_CLASSES[api]
         self._allow_endpoints(kw, "base_url")
         self._connection()
@@ -245,17 +245,17 @@ def refusal_translator(exc: BaseException) -> DonkeyError | None:
 
 
 @overload
-def chat_client(model: str, *, api: Literal["responses"] = ..., **kw: Any) -> OpenAIChatClient: ...
-
-
-@overload
 def chat_client(
-    model: str, *, api: Literal["chat_completions"], **kw: Any
+    model: str, *, api: Literal["chat_completions"] = ..., **kw: Any
 ) -> OpenAIChatCompletionClient: ...
 
 
+@overload
+def chat_client(model: str, *, api: Literal["responses"], **kw: Any) -> OpenAIChatClient: ...
+
+
 def chat_client(
-    model: str, *, api: ChatAPI = "responses", **kw: Any
+    model: str, *, api: ChatAPI = "chat_completions", **kw: Any
 ) -> OpenAIChatClient | OpenAIChatCompletionClient:
     """Module-level convenience: an Agent Framework chat client at the proxy
     using a cached default env-configured Donkey. Equivalent to

@@ -92,14 +92,13 @@ class LangGraphAdapter(Adapter):
                 "http_async_client": self._openai_kwarg_http_client(),  # our client, our hooks
                 "http_client": self._openai_kwarg_sync_http_client(),  # the same, for invoke()
                 "max_retries": 0,  # we retry in transport (BG §1.1)
-                # Use the OpenAI Responses API (``/responses``) rather than
-                # ChatOpenAI's chat-completions default. An OpenAI-format proxy
-                # serves both (docs/verified-apis.md §2); ``/responses`` is the
-                # route the raw ``donkey.llm`` client uses and the only one the
-                # local simulator serves, and this is the adapter the
-                # conformance suite runs against it. Override per call
-                # (``use_responses_api=False``) to use ``/chat/completions``.
-                "use_responses_api": True,
+                # Chat Completions (``/chat/completions``), ChatOpenAI's own
+                # default: the only route every upstream behind an OpenAI-format
+                # proxy serves (docs/verified-apis.md §2, per-upstream route
+                # matrix, #894; #1043). Override per call
+                # (``use_responses_api=True``) to use ``/responses`` on an
+                # OpenAI-routed proxy.
+                "use_responses_api": False,
             }
         )
 

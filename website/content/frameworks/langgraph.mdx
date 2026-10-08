@@ -101,17 +101,18 @@ llm = ChatOpenAI(
     http_async_client=...,    # the SDK's shared httpx async client (ainvoke)
     http_client=...,          # the SDK's shared blocking client (invoke)
     max_retries=0,            # the SDK retries in its own transport layer
-    use_responses_api=True,   # /responses, the route the raw client uses
+    use_responses_api=False,  # /chat/completions, the route every upstream serves
 )
 ```
 
 `connection_kwargs()` returns exactly these keys, so you can drop the factory
 and construct `ChatOpenAI` by hand at any time. An OpenAI-format proxy serves
-both the Responses API (`/responses`) and `/chat/completions`. The adapter uses
-`/responses` because the raw `donkey.llm` client does. The local simulator
-serves both routes.
-Pass `use_responses_api=False` to `chat_model(...)` to call
-`/chat/completions` instead. A `base_url` / `openai_api_base` passed to
+both `/chat/completions` and the Responses API (`/responses`). The adapter
+uses `/chat/completions`, because it is the only route every upstream serves.
+Azure OpenAI answers `/responses` with a 404, and Bedrock and Gemini stream it
+only partially. The local simulator serves both routes.
+Pass `use_responses_api=True` to `chat_model(...)` to call `/responses` on a
+proxy that routes to OpenAI. A `base_url` / `openai_api_base` passed to
 `chat_model(...)` must pass the
 [`https://` rule](/reference/configuration#endpoints-must-use-https).
 
