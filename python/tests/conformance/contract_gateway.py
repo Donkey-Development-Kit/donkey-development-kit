@@ -8,9 +8,10 @@ or streamed. Refusals replay the captured ``pii-detected`` 403 and
 TCP server, so it also sees the requests of a framework that builds its own HTTP
 client (CrewAI), not only those sent through the SDK's transport.
 
-Buffered success bodies replay the captured fixtures where one exists; the
-OpenAI streams are synthetic but carry the event names and shapes the SDKs'
-stream readers consume.
+Success bodies replay live captures: the OpenAI ``/chat/completions`` and
+``/responses`` routes, buffered and streamed, replay the 2026-10-08 OpenAI
+upstream captures in ``tests/fixtures/anypoint/routes/`` (#894, #1044). Only the
+Anthropic stream is still synthetic; no capture of it exists yet.
 """
 
 from __future__ import annotations
@@ -43,111 +44,18 @@ def _proxy_headers(name: str) -> dict[str, str]:
     return _strip(parse_headers(raw))
 
 
-def _sse(events: list[tuple[str | None, Any]], *, done: bool = False) -> bytes:
+def _sse(events: list[tuple[str | None, Any]]) -> bytes:
     out = []
     for name, data in events:
         line = f"event: {name}\n" if name else ""
         out.append(f"{line}data: {json.dumps(data)}\n\n")
-    if done:
-        out.append("data: [DONE]\n\n")
     return "".join(out).encode()
 
 
-def _chat_completion(model: str) -> dict[str, Any]:
-    return {
-        "id": "chatcmpl-contract",
-        "object": "chat.completion",
-        "created": 0,
-        "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "message": {"role": "assistant", "content": "PONG"},
-                "finish_reason": "stop",
-            }
-        ],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-    }
-
-
-def _chat_stream(model: str) -> bytes:
-    def chunk(delta: dict[str, Any], finish: str | None) -> dict[str, Any]:
-        return {
-            "id": "chatcmpl-contract",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "model": model,
-            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
-        }
-
-    usage = chunk({}, None) | {
-        "choices": [],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-    }
-    events: list[tuple[str | None, Any]] = [
-        (None, chunk({"role": "assistant", "content": "PONG"}, None)),
-        (None, chunk({}, "stop")),
-        (None, usage),
-    ]
-    return _sse(events, done=True)
-
-
-def _response(model: str) -> dict[str, Any]:
-    return {
-        "id": "resp_contract",
-        "object": "response",
-        "created_at": 0,
-        "model": model,
-        "status": "completed",
-        "output": [
-            {
-                "type": "message",
-                "id": "msg_contract",
-                "role": "assistant",
-                "status": "completed",
-                "content": [{"type": "output_text", "text": "PONG", "annotations": []}],
-            }
-        ],
-        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-        "parallel_tool_calls": False,
-        "tool_choice": "auto",
-        "tools": [],
-    }
-
-
-def _responses_stream(model: str) -> bytes:
-    done = _response(model)
-    pending = done | {"status": "in_progress", "output": [], "usage": None}
-    item = done["output"][0]
-    part = item["content"][0]
-    events: list[tuple[str | None, Any]] = [
-        ("response.created", {"type": "response.created", "sequence_number": 0,
-                              "response": pending}),
-        ("response.output_item.added", {
-            "type": "response.output_item.added", "sequence_number": 1, "output_index": 0,
-            "item": item | {"status": "in_progress", "content": []}}),
-        ("response.content_part.added", {
-            "type": "response.content_part.added", "sequence_number": 2,
-            "item_id": item["id"], "output_index": 0, "content_index": 0,
-            "part": part | {"text": ""}}),
-        ("response.output_text.delta", {
-            "type": "response.output_text.delta", "sequence_number": 3,
-            "item_id": item["id"], "output_index": 0, "content_index": 0,
-            "delta": "PONG", "logprobs": []}),
-        ("response.output_text.done", {
-            "type": "response.output_text.done", "sequence_number": 4,
-            "item_id": item["id"], "output_index": 0, "content_index": 0,
-            "text": "PONG", "logprobs": []}),
-        ("response.content_part.done", {
-            "type": "response.content_part.done", "sequence_number": 5,
-            "item_id": item["id"], "output_index": 0, "content_index": 0, "part": part}),
-        ("response.output_item.done", {
-            "type": "response.output_item.done", "sequence_number": 6, "output_index": 0,
-            "item": item}),
-        ("response.completed", {"type": "response.completed", "sequence_number": 7,
-                                "response": done}),
-    ]
-    return _sse(events)
+def _route(name: str) -> tuple[dict[str, str], bytes]:
+    """Headers and body of an OpenAI-upstream route capture (#894)."""
+    body = next((_FIXTURES / "routes").glob(f"openai.{name}.body.*")).read_bytes()
+    return _fixture_headers(f"routes/openai.{name}.headers.txt"), body
 
 
 def _anthropic_stream(model: str) -> bytes:
@@ -265,10 +173,6 @@ class Gateway:
                 return 200, sse, _anthropic_stream(model)
             body = (_FIXTURES / "anthropic_inbound/responses.success.body.json").read_bytes()
             return 200, js, body
-        if path.endswith("/responses"):
-            if stream:
-                return 200, sse, _responses_stream(model)
-            return 200, js, json.dumps(_response(model)).encode()
-        if stream:
-            return 200, sse, _chat_stream(model)
-        return 200, js, json.dumps(_chat_completion(model)).encode()
+        route = "responses" if path.endswith("/responses") else "chat_completions"
+        headers, body = _route(f"{route}.{'stream' if stream else 'success'}")
+        return 200, headers | ids, body
