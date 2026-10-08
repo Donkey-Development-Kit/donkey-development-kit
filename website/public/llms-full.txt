@@ -300,11 +300,12 @@ Omni Gateway later is an environment change, not a code change.
 ### Install
 
 ```bash
-pip install "donkey-kit[llm,local,otel]"
+pip install "donkey-kit[llm,local,otel,cli]"
 ```
 
 `llm` adds the OpenAI client, `local` the gateway simulator, `otel` the
-OpenTelemetry SDK. Quote the extras — zsh treats unquoted brackets as a glob.
+OpenTelemetry SDK, `cli` the `donkey` command. Quote the extras — zsh treats
+unquoted brackets as a glob.
 
 ### Start the local gateway
 
