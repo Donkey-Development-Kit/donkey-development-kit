@@ -24,10 +24,17 @@ of the **milestone being shipped**. The milestone titles are the ground truth
 | --- | --- |
 | `Phase 1 — Build the MVP (0.1.0)` | `0.1.0` |
 | `Phase 1.1 — Stabilize the MVP (0.1.1)` | `0.1.1` |
+| `Phase 1.2 — Stabilize the MVP (0.1.2)` | `0.1.2` |
+| `Phase 1.3 — Stabilize the MVP (0.1.3)` | `0.1.3` |
 | `Phase 2 — Differentiate, go beyond (0.2.0)` | `0.2.0` |
 | `Phase 3 — Platform capabilities (0.3.0)` | `0.3.0` |
 | `Phase 4 — Enterprise readiness (0.4.0)` | `0.4.0` |
 | `Phase 5 — Complete rollout (1.0.0)` | `1.0.0` |
+
+Patch milestones (`Phase 1.N`) are added as they're created, so keep this
+table in step with them: add a row for each new milestone, and rename the rows
+when a [package hotfix](#package-hotfix-next-patch-milestones-shift) shifts
+their versions.
 
 A milestone ships its **final** version only when it reaches **0 open issues**.
 The `Verification` and `Upstream gaps` milestones have no version and never ship
