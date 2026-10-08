@@ -165,7 +165,7 @@ The exception when `main` must move without waiting for a full promotion —
 usually a broken live docs site (`website/**` / `docs.yml`), sometimes a
 package patch. Branch from `main`, rebase-merge one commit, then cherry-pick
 onto `develop` via a second PR. A docs hotfix never bumps the version; a
-package hotfix does (see [`releasing.md`](releasing.md)).
+package hotfix does (see [`releasing.md` → Hotfix releases](releasing.md#hotfix-releases)).
 
 Same colour key as the feature path: blue gates, green deploy.
 
