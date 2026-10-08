@@ -814,6 +814,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
 | Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |
 | Every direct dependency is a reviewed decision (#936) | `tests/unit/test_house_style_config.py` (every declared name has a `dependency_allowlist.toml` entry with a reason and date, and no stale entry); `scripts/check_new_dependencies.py` (a new name exists on PyPI; age, staleness and lookalike warnings) | `pytest`; `new-dependencies` (PRs) |
+| No placeholder git identities in PR commits (#1048) | `scripts/check_commit_identities.py` (author, committer and `Co-authored-by` trailers; a squash merge turns each PR-commit author into a trailer on `develop`) | `commit-identities` (PRs) |
 | 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
 | `py.typed` shipped | `py.typed` presence in `tests/unit/test_house_style_config.py` | `pytest` |
 | Value objects are frozen dataclasses; pydantic only at external-schema boundaries (#723) | Review-only: ADR 0001 records the decision; no tool checks it. That no base module imports pydantic is checked by `tests/unit/test_base_install_deps.py` and the `base-only` job | review, `pytest`, `base-only` job |
