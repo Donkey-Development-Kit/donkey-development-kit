@@ -272,10 +272,13 @@ Merge method is fixed by direction — don't pick per PR:
 | --- | --- | --- |
 | `<type>/<#>-<slug>` → `develop` | **Squash** | One commit per issue; WIP commits collapse; `git revert <sha>` backs out the whole issue. |
 | `develop` → `main` | **Merge commit (no fast-forward)** | Each release is one identifiable, revertable merge commit. |
+| `hotfix/<#>-<slug>` → `main` | **Rebase, one commit** | The `main` ruleset allows only merge and rebase; one commit is one revertable fix. |
+| `hotfix/<#>-cherry-pick-develop` → `develop` | **Squash** | Carries `main`'s hotfix back to `develop` (`git cherry-pick -x`). |
 
 Never rebase-merge into `develop`, never squash or fast-forward `develop` into
 `main`, and never merge `main` back into `develop` (cherry-pick a hotfix onto
-`develop` instead). **(fork)** You can't run this step — a maintainer
+`develop` instead). Hotfixes, and when they bump the version, are covered in
+[`docs/releasing.md` → Hotfix releases](docs/releasing.md#hotfix-releases). **(fork)** You can't run this step — a maintainer
 squash-merges your PR and closes the linked issue with the merge SHA.
 
 After a PR merges, **close the linked issue explicitly** with the merge SHA —
