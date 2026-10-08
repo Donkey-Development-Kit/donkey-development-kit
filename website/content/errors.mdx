@@ -46,6 +46,34 @@ an upstream request mistake, when the upstream was never called. Likewise the in
 `x-injection-protection` header, so an ordinary malformed `400` stays an
 ordinary refusal.
 
+`classify()` checks the policy discriminators first, whatever the status, and
+only then falls back to the status code. Within each step the first match wins,
+top to bottom:
+
+```mermaid
+flowchart TD
+    R(["Error response"]) --> D{"1 · Policy discriminator<br/>in the body or headers?"}
+    D -->|"nested error type = pii_detected"| X1["PIIDetected"]
+    D -->|"nested error code = agent_killed"| X2["AgentKilled"]
+    D -->|"x-llm-proxy-*-action: reject"| X3["ContentSafetyBlocked"]
+    D -->|"top-level matched_patterns"| X4["PromptInjectionBlocked<br/>regex-prompt-guard"]
+    D -->|"x-injection-protection: blocked"| X5["PromptInjectionBlocked"]
+    D -->|none| S{"2 · Status"}
+    S -->|"401, or 403 + www-authenticate"| X6["AuthError"]
+    S -->|429| Q{"x-ratelimit-limit and -remaining,<br/>no x-token-limit?"}
+    Q -->|yes| X7["RequestRateLimitExceeded"]
+    Q -->|no| X8["TokenBudgetExceeded"]
+    S -->|"other 4xx"| F{"Body"}
+    F -->|"nested error object"| X9["UpstreamRequestError"]
+    F -->|"flat error: not in the<br/>known unique model map"| X10["ModelNotRoutable"]
+    F -->|anything else| X11["PolicyViolation<br/>unconfirmed shape"]
+    S -->|5xx| X12["UpstreamModelError<br/>retryable"]
+    S -->|"anything else"| X13["DonkeyError"]
+```
+
+`GatewayUnavailable` never reaches `classify()`: it is raised when there is no
+response to classify.
+
 `RequestRateLimitExceeded` is the `429` of the gateway's stock `rate-limiting`
 policy, which counts requests rather than tokens. It is a subclass of
 `PolicyViolation` and a sibling of `TokenBudgetExceeded`, not a subclass of it.

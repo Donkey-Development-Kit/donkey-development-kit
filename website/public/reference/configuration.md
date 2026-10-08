@@ -597,6 +597,40 @@ when the factory is called; see
 [Credentials go only to checked endpoints](#credentials-go-only-to-checked-endpoints). They don't cover OTLP exporter endpoints (configured by
 OpenTelemetry).
 
+The two checks, in the order a credential meets them:
+
+```mermaid
+flowchart TD
+    subgraph C1["Check 1 · endpoints must use https://"]
+        H["Scheme and host"]
+        AH["DONKEY_ALLOW_HTTP<br/>in the environment?"]
+    end
+    subgraph C2["Check 2 · project-file URLs get project-file credentials"]
+        P["URL read from .donkey-kit.toml<br/>or .donkey-kit.local.toml?"]
+        T["DONKEY_TRUST_PROJECT_CONFIG<br/>in the environment?"]
+        R["base_url on a regional<br/>anypoint.mulesoft.com host?"]
+        C["Every credential it would receive<br/>also read from those two files?"]
+    end
+    H -->|"https://, or http:// to loopback"| P
+    H -->|"http:// to another host"| AH
+    H -->|"other scheme, or no host"| E1["ConfigError"]
+    AH -->|"yes, with a ConfigWarning"| P
+    AH -->|no| E1
+    P -->|"no: env, user file, code or region default"| OK(["Sent"])
+    P -->|yes| T
+    T -->|yes| OK
+    T -->|no| R
+    R -->|yes| OK
+    R -->|no| C
+    C -->|yes| OK
+    C -->|no| E2["ConfigError<br/>names each credential and its source"]
+```
+
+A token from `llm_auth` (`jwt` and `bearer` mode) or from a `Donkey(auth=…)`
+provider never comes from a file, so it always fails the last check. With its
+URL in a project file, only `DONKEY_TRUST_PROJECT_CONFIG` (or, for `base_url`, a
+regional Anypoint host) lets it through.
+
 #### Endpoints must use `https://`
 
 This applies wherever the URL comes from: environment, file or code.
