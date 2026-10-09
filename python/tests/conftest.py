@@ -47,8 +47,11 @@ _ENV_PREFIXES = ("OTEL_", "DONKEY_", "MULESOFT_")
 # ``DONKEY_CONTRACT_EXTRA`` is the ``adapter-contract`` CI leg's "this
 # framework must be installed, never skip" switch (#742,
 # tests/conformance/test_adapter_contract.py); clearing it would turn a broken
-# framework install back into a silent skip.
-_HARNESS_VARS = frozenset({"DONKEY_CONTRACT_EXTRA"})
+# framework install back into a silent skip. ``DONKEY_BENCHMARK_JSON`` is the
+# ``benchmark`` CI job's result path (#753,
+# tests/benchmark/test_span_overhead.py); clearing it means no result file, so
+# the job's upload step fails on every ``main`` push (#1060).
+_HARNESS_VARS = frozenset({"DONKEY_CONTRACT_EXTRA", "DONKEY_BENCHMARK_JSON"})
 
 # LiteLLM (pulled in by ADK's ``model()`` and CrewAI) fetches its model cost
 # map from raw.githubusercontent.com at import time, which pytest-socket's
