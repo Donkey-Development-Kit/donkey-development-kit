@@ -1,6 +1,6 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-10-08T10:00:44.442Z",
+  "generatedAt": "2026-10-09T08:26:36.609Z",
   "milestones": [
     {
       "number": 11,
@@ -1553,8 +1553,8 @@
       "title": "Phase 1.2 — Stabilize the MVP (0.1.2)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/20",
-      "open": 2,
-      "closed": 72,
+      "open": 1,
+      "closed": 75,
       "issues": [
         {
           "number": 706,
@@ -2063,15 +2063,29 @@
         {
           "number": 1043,
           "title": "feat(adapters): default agent-framework and LangGraph to Chat Completions",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1043",
           "epic": false
         },
         {
           "number": 1044,
           "title": "chore(testing): replay captured route fixtures in contract_gateway.py",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1044",
+          "epic": false
+        },
+        {
+          "number": 1050,
+          "title": "docs: quickstart install omits the cli extra, so donkey mock fails",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1050",
+          "epic": false
+        },
+        {
+          "number": 1057,
+          "title": "Update release docs and version references for the 0.1.2 release",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1057",
           "epic": false
         }
       ]
@@ -2081,8 +2095,8 @@
       "title": "Phase 1.3 — Stabilize the MVP (0.1.3)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/21",
-      "open": 14,
-      "closed": 4,
+      "open": 13,
+      "closed": 7,
       "issues": [
         {
           "number": 711,
@@ -2206,8 +2220,22 @@
         {
           "number": 1042,
           "title": "Add Phase 1.2 and 1.3 milestones to the docs/releasing.md version table",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1042",
+          "epic": false
+        },
+        {
+          "number": 1048,
+          "title": "Reject placeholder git identities in PR commits",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1048",
+          "epic": false
+        },
+        {
+          "number": 1053,
+          "title": "docs(site): add mermaid diagrams for classify() order and credential checks",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1053",
           "epic": false
         }
       ]

@@ -1,6 +1,6 @@
 # Migration guide
 
-## 0.1.2 (unreleased)
+## 0.1.2: public API surface, removed control plane and typed errors
 
 Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public
 API (#927): a name is public when you can import it from `donkey_kit` or from
