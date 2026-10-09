@@ -30,6 +30,7 @@ _AMBIENT = {
     "DONKEY_LLM_PROXY_URL": "http://127.0.0.1:9/",
     "MULESOFT_ANYTHING": "1",
     "DONKEY_CONTRACT_EXTRA": "langgraph",
+    "DONKEY_BENCHMARK_JSON": "/tmp/benchmark-result.json",
 }
 
 
@@ -50,9 +51,11 @@ def test_ambient_proxy_and_governance_env_is_cleared(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A default-suite test sees no proxy, ``OTEL_*``, ``DONKEY_*`` or
-    ``MULESOFT_*`` variable from the calling shell, except the CI harness switch
-    ``DONKEY_CONTRACT_EXTRA`` (#742), which the adapter-contract leg relies on
-    to turn a missing framework into a failure instead of a skip."""
+    ``MULESOFT_*`` variable from the calling shell, except the CI harness
+    switches: ``DONKEY_CONTRACT_EXTRA`` (#742), which the adapter-contract leg
+    relies on to turn a missing framework into a failure instead of a skip, and
+    ``DONKEY_BENCHMARK_JSON`` (#753, #1060), the path the benchmark job uploads
+    its result from."""
     result = _run_with_ambient_env(
         pytester,
         monkeypatch,
@@ -61,6 +64,7 @@ def test_ambient_proxy_and_governance_env_is_cleared(
 
         def test_env():
             assert os.environ.get("DONKEY_CONTRACT_EXTRA") == "langgraph"
+            assert os.environ.get("DONKEY_BENCHMARK_JSON") == "/tmp/benchmark-result.json"
             for name in ("HTTPS_PROXY", "http_proxy", "OTEL_EXPORTER_OTLP_ENDPOINT",
                          "DONKEY_LLM_PROXY_URL", "MULESOFT_ANYTHING"):
                 assert name not in os.environ, name
