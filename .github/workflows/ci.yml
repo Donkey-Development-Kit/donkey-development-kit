@@ -1,14 +1,47 @@
+# ADR 0007 rule 3 (docs/adr/0007-dependency-policy.md, #948): PR-gating jobs
+# below install with `-c python/constraints/<combo>-py3.NN.txt` so a PR's
+# result doesn't change because of what an upstream package released that
+# day — only because of what the PR itself changed. One constraints file per
+# job's own exact extras/dev-group/python combo, NEVER a file merged across
+# combos: `openai-agents`, `google-adk`, `crewai` and `llama-index-llms-openai`
+# all put ceilings on packages (`websockets`, `regex`, `openai`) that other
+# combos resolve past, so a merged file is unsatisfiable for those jobs (see
+# scripts/compile_constraints.py's module docstring). The jobs whose purpose
+# IS a fresh resolve (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`,
+# and everything in nightly-matrix.yml) deliberately keep resolving fresh —
+# they are the canary ADR 0007 rule 4 relies on. Refresh the lock with
+# `python scripts/compile_constraints.py` (see CONTRIBUTING.md); keep
+# `scripts/compile_constraints.py`'s `_COMBOS` in sync with the jobs below —
+# each entry's `extras`/`dev_group` must match that job's install line exactly.
 name: CI
 
+# #755: `develop` too, so two individually green PRs that combine into a broken
+# `develop` fail at merge time instead of at promotion to `main`. No
+# `merge_group:` trigger: the repo has no merge queue.
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 # Least privilege: this workflow only reads the checkout, never writes back.
 permissions:
   contents: read
 
+# #761: a new push to a PR supersedes its previous run, so cancel that run
+# instead of finishing all of its jobs. Pushes to a branch are never cancelled:
+# every merge commit there gets a complete result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# #1005: pip caches are restored on every run but saved only by pushes to
+# main/develop (the `actions/cache/save` step after each install, guarded on
+# github.event_name). A PR's own cache is scoped to refs/pull/<N>/merge, so no
+# other PR could read it; PRs restore what develop saved instead. The key is
+# pip-<os>-py<minor>-<job>-<hash of the job's constraints file> (pyproject.toml
+# for the fresh-resolve jobs): the minor, not the patch, so runners on
+# different patches of one minor share an entry (#1004). It holds downloaded
+# wheels only, so a fresh-resolve job still resolves against the index.
 defaults:
   run:
     working-directory: python
@@ -19,14 +52,35 @@ jobs:
     # suite to catch accidental top-level framework imports. The installed-wheel
     # check runs afterward in its own environment.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev]"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/base-only-py3.11.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.11-${{ github.job }}-
+      # -c locks the resolve so an upstream release can't turn this job red on
+      # its own (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e . --group dev -c constraints/base-only-py3.11.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - name: import donkey_kit with no framework extras installed
         run: python -c "import donkey_kit; from donkey_kit import Donkey; print(donkey_kit.__version__)"
+      - name: a plain install carries no pydantic (#730)
+        run: |
+          if pip show pydantic >/dev/null 2>&1; then
+            echo "pydantic is installed by .[dev]; the base install must not need it" >&2
+            exit 1
+          fi
+          python -c "import sys, donkey_kit, donkey_kit.experimental; assert 'pydantic' not in sys.modules"
       - run: pytest -q tests/unit
       - name: installed wheel resolves packaged simulator fixtures (BG §1.4)
         run: |
@@ -37,13 +91,15 @@ jobs:
           python -m build --wheel --outdir "$wheel_dir"
           set -- "$wheel_dir"/*.whl
           test "$#" -eq 1
+          # #821: the wheel ships fixtures; none may carry a tenant identifier.
+          python scripts/scrub_fixtures.py --check "$1"
           python -m venv "$venv_dir"
           "$venv_dir/bin/pip" install "$1"
           "$venv_dir/bin/python" - <<'PY'
           from donkey_kit.simulator import fixtures
 
-          # Prove load() cannot silently fall back to checkout-only resources.
-          assert not fixtures._SOURCE_ROOT.exists(), fixtures._SOURCE_ROOT
+          # Prove load() reads the wheel's package data, not a checkout (#746).
+          assert "site-packages" in fixtures.LOCK_PATH.parts, fixtures.LOCK_PATH
           for shape in fixtures.SHAPES:
               fixtures.load(shape)
           assert fixtures.LOCK_PATH.exists(), fixtures.LOCK_PATH
@@ -61,6 +117,7 @@ jobs:
     # into a failure instead of a hung job. The nightly matrix repeats this to
     # catch upstream releases between PRs.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -70,20 +127,58 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
+          restore-keys: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-
       - run: python -m pip install --upgrade pip
       - name: pip resolves donkey-kit[all]
         run: timeout 300 pip install --dry-run ".[all]"
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
 
   typecheck-and-lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,llm,cli]"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/typecheck-and-lint-py3.11.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.11-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - name: mypy --strict (blocking, working instruction #8)
         run: mypy
+      # #721: the examples are user-facing code, so they get the same --strict
+      # config, one directory per invocation (each is its own program). The
+      # framework extras are absent here, so their imports resolve through the
+      # absence-only overrides in pyproject.toml. LangGraph is the exception: it
+      # is not in those overrides and is checked against the real package in the
+      # langgraph-demo job below.
+      - name: mypy --strict over python/examples (#721)
+        run: |
+          for dir in examples/*/; do
+            name="$(basename "$dir")"
+            if [ "$name" = langgraph ]; then continue; fi
+            echo "mypy -p examples.$name"
+            mypy -p "examples.$name"
+          done
       - run: ruff check .
       - name: import-linter (framework-free core, §1.1)
         run: lint-imports
@@ -91,33 +186,128 @@ jobs:
         run: python scripts/check_verification_claims.py
       - name: no doc links to untracked paths, no committed plan files (#785)
         run: python scripts/check_doc_links.py
+      - name: no tenant identifiers or live platform hosts in tracked files (#821)
+        run: python scripts/scrub_fixtures.py --check
+      - name: no dead code in src/ (vulture, whitelist in vulture_whitelist.py, #720)
+        run: vulture
+
+  new-dependencies:
+    # #936: a direct dependency new to this PR must exist on PyPI, so a
+    # hallucinated or typosquatted name fails here instead of at install time.
+    # The allowlist itself is checked offline by test_house_style_config.py;
+    # this job adds the network check a unit test cannot make. The script is
+    # stdlib-only and exits early when no name is new, so it needs no install
+    # and no path filter.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Bind the base ref to an env var so it is never interpolated into a
+      # run: body directly (injection hardening).
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: fetch the base branch's pyproject.toml
+        # A base without python/pyproject.toml counts as declaring nothing.
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          git show "FETCH_HEAD:python/pyproject.toml" > "$RUNNER_TEMP/base-pyproject.toml" || true
+      - name: new direct dependencies exist on PyPI (#936)
+        run: python scripts/check_new_dependencies.py --base "$RUNNER_TEMP/base-pyproject.toml"
+
+  commit-identities:
+    # #1048: a squash merge turns every PR-commit author into a Co-authored-by
+    # trailer on develop, and GitHub credits whoever claimed that email. A
+    # placeholder like `x <x@x>` credited an unrelated account and could only be
+    # removed by rewriting develop, so it fails here, before the merge. The
+    # script is stdlib-only and needs no install.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Bind the SHAs to env vars so they are never interpolated into a run:
+      # body directly (injection hardening).
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so BASE_SHA..HEAD_SHA resolves.
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: no placeholder git identities in the PR's commits (#1048)
+        run: python scripts/check_commit_identities.py "$BASE_SHA..$HEAD_SHA"
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      # #761: one failing Python version must not cancel the others; the matrix
+      # exists to show which versions fail.
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+    env:
+      # Bind the matrix value to an env var so it is never interpolated into a
+      # run: body directly (injection hardening); also names this job's lock.
+      PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-${{ hashFiles(format('python/constraints/test-py{0}.txt', matrix.python-version)) }}
+          restore-keys: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-
       # [local] here (and only here) so the simulator's ASGI tests execute; the
       # base-only and typecheck jobs deliberately omit it (importorskip guards
       # skip the ASGI tests there, proving import donkey_kit.simulator stays
       # green without starlette/uvicorn). [otel] likewise: the GenAI-span
       # assertions (BG §1.6, #192) importorskip opentelemetry.sdk, so they only
-      # actually execute in this job — the typecheck job stays [dev,llm,cli] and
+      # actually execute in this job — the typecheck job stays [llm,cli] and
       # relies on the absence-only opentelemetry mypy override.
-      - run: pip install -e ".[dev,llm,cli,local,otel]"
+      # -c locks the resolve per Python version (ADR 0007 rule 3, #948);
+      # refresh with scripts/compile_constraints.py (combo "test").
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+      # Coverage (#751) is measured on ONE leg only (3.11, matching the other
+      # single-leg jobs' convention) — branch coverage on three Python
+      # versions would just triple the runtime for the same number, since the
+      # source under measurement doesn't change per interpreter. `coverage
+      # run -m pytest` instead of a bare `pytest` is the only difference on
+      # that leg; `[run] patch = ["subprocess"]` (pyproject.toml) makes it
+      # also measure the conformance plugin/report tests' own
+      # `pytester.runpytest_subprocess()` children, which a plain `pytest -q`
+      # run never did.
       - run: pytest -q
+        if: matrix.python-version != '3.11'
+      - run: coverage run -m pytest -q
+        if: matrix.python-version == '3.11'
       # The local gateway simulator's out-of-process boot (BG §1.4) is
       # local_gateway-marked and deselected from the default run above. It is
       # pure-Python (no docker), so run it explicitly here where [local] is
       # installed — the one marker path that is now safe in CI (sandbox stays
       # off, needing real Anypoint creds).
       - name: local gateway simulator boot (BG §1.4)
+        if: matrix.python-version != '3.11'
         run: pytest -q -m local_gateway
+      - name: local gateway simulator boot (BG §1.4), coverage leg (#751)
+        if: matrix.python-version == '3.11'
+        run: coverage run -m pytest -q -m local_gateway
       # #801: the offline seams (simulate(), the conformance harness) must stay
       # offline behind a corporate proxy. Every proxy variable points at a dead
       # port, so a request that escapes the swapped-in fixture fails the run.
@@ -129,14 +319,38 @@ jobs:
         run: >-
           pytest -q tests/unit/test_simulate.py tests/unit/test_conformance.py
           tests/unit/test_conformance_plugin.py tests/unit/test_transport_proxy_mounts.py
+      # #747: the default suite itself (not just the four offline-seam files
+      # above) must stay green with a dead corporate proxy and a dead OTLP
+      # collector ambient in the shell — that is exactly the hermetic-env
+      # autouse fixture in tests/conftest.py's job. Both point at a closed
+      # port, so a test that reads either var without going through the
+      # fixture (or that leaks a real socket past pytest-socket) fails loud
+      # instead of silently depending on the runner's own environment.
+      - name: default suite stays green under a dead proxy/collector (#747)
+        env:
+          HTTPS_PROXY: http://127.0.0.1:9
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:9
+        run: pytest -q
+      # Combine the parallel data files `coverage run` + the subprocess patch
+      # produced, then post the report to the PR job summary and enforce the
+      # floor (`fail_under` in `[tool.coverage.report]`, pyproject.toml) in the
+      # same step — `coverage report` prints the table before it raises on a
+      # floor miss, so the summary still shows the numbers that failed the job.
+      - name: coverage report + floor (#751)
+        if: matrix.python-version == '3.11'
+        run: |
+          coverage combine
+          { echo "### Coverage (branch, python 3.11 leg)"; echo; coverage report --format=markdown; } >> "$GITHUB_STEP_SUMMARY"
 
   anthropic-stacks:
     # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
     # so donkey.anthropic hands it a bridged httpx2 client instead, while
     # anthropic<1 still gets the shared client itself. No other job installs
     # anthropic, so its tests run on both majors here. The `<1` pin tests the
-    # older major only; the extra keeps its floor and no ceiling (§8.4).
+    # older major only; the extra keeps its floor and no ceiling (§8.4). The
+    # typed-refusal bridge case for the Anthropic client runs here too (#983).
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -146,12 +360,27 @@ jobs:
       # Bind the matrix value to an env var so it is never interpolated into a
       # run: body directly (injection hardening).
       ANTHROPIC_SPEC: ${{ matrix.anthropic }}
+      # #748: this job installs anthropic for real, so an
+      # unexpected `pytest.importorskip("anthropic")` elsewhere must fail here,
+      # not silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: anthropic
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,anthropic]" "$ANTHROPIC_SPEC"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
+          restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,anthropic]" --group dev "$ANTHROPIC_SPEC"
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - run: >-
           pytest -q
           tests/unit/test_anthropic_client_stacks.py
@@ -160,14 +389,17 @@ jobs:
           tests/unit/test_adapter_async_last_call.py
           tests/unit/test_default_runtime.py
           tests/unit/test_shared_client_views.py
+          tests/conformance/test_typed_refusal_bridge.py
 
   adk-stacks:
     # #735: below google-adk 2.4, Gemini silently drops client_kwargs and
     # donkey.adk.gemini() would bypass the gateway; it now refuses instead. No
     # other job installs google-adk, so the real-ADK round-trip and redirect
-    # tests run here, at the extra's floor and at the newest release. The `==`
-    # pin tests the floor only; the extra keeps no ceiling (§8.4).
+    # tests run here, at the extra's floor and at the newest release, with the
+    # typed-refusal bridge case for adk.gemini() (#955). The `==` pin tests the
+    # floor only; the extra keeps no ceiling (§8.4).
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -177,48 +409,207 @@ jobs:
       # Bind the matrix value to an env var so it is never interpolated into a
       # run: body directly (injection hardening).
       ADK_SPEC: ${{ matrix.adk }}
+      # #748: this job installs google-adk for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: adk
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,adk]" "$ADK_SPEC"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
+          restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,adk]" --group dev "$ADK_SPEC"
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - run: >-
           pytest -q
           tests/unit/test_adapter_ergonomics.py
           tests/unit/test_framework_redirects.py
           tests/unit/test_adapter_async_last_call.py
+          tests/unit/test_transport_injection.py
+          tests/conformance/test_typed_refusal_bridge.py
 
   agent-framework-middleware:
     # #739: policy_middleware() is only meaningful on a real Agent Framework
-    # Agent, which no other job installs. Run its tests with the extra present.
+    # Agent, which no other job installs. Run its tests with the extra present,
+    # with the shared-client correlation and last_call tests (#740) and the
+    # typed-refusal bridge case for an Agent Framework Agent run (#983).
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # #748: this job installs agent_framework for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: agent_framework
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,agent_framework]"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/agent-framework-middleware-py3.12.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,agent_framework]" --group dev -c constraints/agent-framework-middleware-py3.12.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - run: >-
           pytest -q
           tests/unit/test_agent_framework_policy_middleware.py
           tests/unit/test_adapter_ergonomics.py
+          tests/unit/test_transport_injection.py
+          tests/conformance/test_typed_refusal_bridge.py
 
-  agents-strands-last-call:
-    # #899: the OpenAI Agents SDK and Strands send through the shared client, but
-    # no other job installs them, so their donkey.last_call tests would only
-    # skip. Run them with both extras present.
+  llamaindex-transport:
+    # #740: LlamaIndex sends through the shared client, so its calls carry the
+    # run's correlation id, populate donkey.last_call and refuse as typed errors
+    # through typed_refusals(). No other job installs it, so run those tests here,
+    # with the typed-refusal bridge case for a FunctionAgent run (#955).
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # #748: this job installs llamaindex for real, so an
+      # unexpected `pytest.importorskip` on it elsewhere must fail here, not
+      # silently skip (see tests/conftest.py).
+      DONKEY_CONTRACT_EXTRA: llamaindex
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,llm,openai-agents,strands]"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/llamaindex-transport-py3.12.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,llamaindex]" --group dev -c constraints/llamaindex-transport-py3.12.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+      - run: >-
+          pytest -q
+          tests/unit/test_transport_injection.py
+          tests/unit/test_adapter_ergonomics.py
+          tests/conformance/test_typed_refusal_bridge.py
+
+  agents-strands-last-call:
+    # #899: the OpenAI Agents SDK and Strands send through the shared client, but
+    # no other job installs them, so their donkey.last_call tests would only
+    # skip. Run them with both extras present, with the typed-refusal bridge cases
+    # for an Agents SDK Runner run (#955) and a Strands Agent run (#983).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # #748: this job installs both frameworks for real, so an unexpected
+      # `pytest.importorskip` on either must fail here, not silently skip (see
+      # tests/conftest.py; a comma-separated list is how one job owns two).
+      DONKEY_CONTRACT_EXTRA: "openai-agents,strands"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/agents-strands-last-call-py3.12.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,openai-agents,strands]" --group dev -c constraints/agents-strands-last-call-py3.12.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - run: >-
           pytest -q
           tests/unit/test_adapter_async_last_call.py
           tests/unit/test_adapter_ergonomics.py
+          tests/conformance/test_typed_refusal_bridge.py
+
+  adapter-contract:
+    # #742: the adapter contract suite, one leg per ADAPTERS extra, each with its
+    # real framework installed. DONKEY_CONTRACT_EXTRA turns that framework's
+    # skips into failures, so a broken install cannot pass as a skip. The matrix
+    # must list exactly the registry's extras: test_integration_checklist.py
+    # asserts it. The example conformance check loads examples/<fw>/main.py by
+    # path, so it does not depend on `python -m pytest` putting python/ on
+    # sys.path (#1014: the nightly runs plain `pytest`).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        extra:
+          - langgraph
+          - adk
+          - strands
+          - agent_framework
+          - openai-agents
+          - anthropic
+          - crewai
+          - llamaindex
+    name: adapter-contract (${{ matrix.extra }})
+    env:
+      # Bind the matrix value to an env var so it is never interpolated into a
+      # run: body directly (injection hardening).
+      DONKEY_CONTRACT_EXTRA: ${{ matrix.extra }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles(format('python/constraints/adapter-contract-{0}-py3.12.txt', matrix.extra)) }}
+          restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
+      # Dev tooling is the `dev` dependency group (#943), not an extra.
+      # -c locks the resolve (ADR 0007 rule 3, #948), one file per matrix leg
+      # (combo "adapter-contract-<extra>"); refresh with scripts/compile_constraints.py.
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev
+          -c "constraints/adapter-contract-${DONKEY_CONTRACT_EXTRA}-py3.12.txt"
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+      # #748: the whole suite, not a file list, so every test that needs this
+      # leg's framework runs against the real install instead of skipping. For
+      # LangGraph, the one deep adapter (BG §1.8), that includes its refusal
+      # mapping, run correlation and conformance tests, so breaking them fails a
+      # required check. Other frameworks' tests skip, as they are not installed.
+      - run: python -m pytest -q
+      # #748: strict example smoke. Build the example's native object (non-zero
+      # on a missing framework or a drifted constructor, instead of printing
+      # install guidance and exiting 0) and drive it through the conformance kit
+      # in-process: no network, no credentials. ADAPTERS keys use underscores
+      # where extras use hyphens (openai-agents), hence the substitution.
+      - name: Strict example smoke
+        run: python scripts/smoke_example.py "${DONKEY_CONTRACT_EXTRA//-/_}"
 
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The
@@ -227,15 +618,65 @@ jobs:
     # instrumentation expensive fails the build. `[otel]` for the real SDK
     # TracerProvider it measures against; `-s` so the measured µs/call is visible
     # in the job log even on a pass.
+    #
+    # #753: the fixed 1ms budget has ~55x headroom over the ~18us/call
+    # measured, so it would not catch a 10x regression on its own. Every run
+    # writes the measured result to a JSON file; on a `main` push only (never
+    # a PR) it is uploaded as an artifact and compared against the most recent
+    # earlier successful `main` run's artifact by
+    # scripts/compare_benchmark_trend.py, which fails this job on a regression
+    # at or past `--alert-threshold`. No gh-pages branch, no new third-party
+    # action.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Read earlier runs' artifacts (compare_benchmark_trend.py).
+      actions: read
+    env:
+      # Job-level `env:` cannot use the `runner` context (an invalid-workflow
+      # error that would stop every job in this file), so the file sits in the
+      # workspace. `github.*` values are workflow-owned, not PR input.
+      DONKEY_BENCHMARK_JSON: ${{ github.workspace }}/benchmark-result.json
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,llm,cli,local,otel]"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/benchmark-py3.11.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.11-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/benchmark-py3.11.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - name: GenAI span overhead < 1ms/call (BG §1.6, #194)
         run: pytest -q -m benchmark -s
+      - name: Upload the benchmark result for trending (#753)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: ${{ env.DONKEY_BENCHMARK_JSON }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Alert on a relative regression vs. the previous main run (#753)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: >-
+          python scripts/compare_benchmark_trend.py
+          --current "$DONKEY_BENCHMARK_JSON"
+          --repo "$REPO" --workflow ci.yml --run-id "$RUN_ID"
+          --alert-threshold 2.0
 
   quickstart:
     # #203 / BG §1.4: the gateway-free 15-minute quickstart, executed on a clean
@@ -247,12 +688,25 @@ jobs:
     # is what stops the two from drifting. `timeout` bounds wall-clock so a hang
     # or a slow regression fails rather than blocking.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[llm,local,otel]"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/quickstart-py3.11.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.11-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: pip install -e ".[llm,local,otel]" -c constraints/quickstart-py3.11.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - name: run the gateway-free quickstart (must exit 0, no credentials)
         run: timeout 120 python examples/quickstart/main.py
 
@@ -265,27 +719,44 @@ jobs:
     # Timed on a clean runner (no credentials, no gateway) so the demo can never
     # silently rot, and the same build() factory is re-run through the
     # customer-facing conformance plugin — the exact `--donkey-conformance`
-    # invocation a team runs against its own agent. `[dev]` for pytest + the
+    # invocation a team runs against its own agent. The dev group for pytest + the
     # conformance plugin entry point.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,llm,langgraph,local,otel]"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/langgraph-demo-py3.11.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.11-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,langgraph,local,otel]" --group dev -c constraints/langgraph-demo-py3.11.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+      - name: mypy --strict over the LangGraph example, langgraph installed (#721)
+        run: mypy -p examples.langgraph
       - name: run the gateway-free Scenario-A demo (must exit 0, no credentials)
         run: timeout 120 python -m examples.langgraph.main
       - name: conformance passes against the demo's own agent factory
         # `python -m pytest` (not the bare `pytest` console script) so the
         # working directory (python/) lands on sys.path — that's what makes the
-        # `examples` namespace package importable for --agent=examples.langgraph.
+        # `examples` namespace package importable for --donkey-agent=examples.langgraph.
         # main:build. The bare script omits cwd from sys.path and fails to import.
-        run: python -m pytest -q --donkey-conformance --agent=examples.langgraph.main:build
+        run: python -m pytest -q --donkey-conformance --donkey-agent=examples.langgraph.main:build
 
-  # Nightly framework matrix (§8.4) — runs the conformance kit against the
-  # LATEST release of each framework and opens an issue on failure. Scheduled
-  # separately during Phase 1 and later.
+  # The nightly framework matrix (§8.4) is .github/workflows/nightly-matrix.yml.
+  # It resolves fresh against the newest upstream releases: `matrix` re-checks
+  # LangGraph, the one conformance-tested adapter, against §8 signatures, and
+  # `framework-legs` runs every ADAPTERS entry (#748). A red run opens or
+  # updates one `nightly-failure` tracking issue (#755).
 
   docs-llms-drift:
     # #205 / BG §1.10: llms.txt, llms-full.txt, and the per-page .md files are
@@ -295,6 +766,7 @@ jobs:
     # never drift from the pages. The generator uses only Node built-ins, so no
     # npm install is needed.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: website
@@ -315,3 +787,48 @@ jobs:
             exit 1
           fi
           echo "llms artifacts are up to date."
+
+  ci-ok:
+    # #755: the one required status check. Branch protection requires only this
+    # job, so renaming a job or changing a matrix never silently drops a
+    # required check. `needs:` lists EVERY other job in this file (a new job is
+    # added here in the same PR; tests/unit/test_ci_workflows.py asserts it).
+    # `if: always()` so it still reports when a dependency failed: a skipped
+    # required check would otherwise count as passing. `skipped` is a pass
+    # (`new-dependencies` only runs on PRs); `failure` and `cancelled` are not.
+    if: always()
+    needs:
+      - base-only
+      - all-extra-resolves
+      - typecheck-and-lint
+      - new-dependencies
+      - commit-identities
+      - test
+      - anthropic-stacks
+      - adk-stacks
+      - agent-framework-middleware
+      - llamaindex-transport
+      - agents-strands-last-call
+      - adapter-contract
+      - benchmark
+      - quickstart
+      - langgraph-demo
+      - docs-llms-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        # No checkout here, so python/ does not exist.
+        working-directory: .
+    steps:
+      - name: every CI job succeeded or was skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key): \(.value.result)"' <<<"$NEEDS")
+          if [ -n "$failed" ]; then
+            echo "::error::CI jobs did not succeed:"
+            echo "$failed"
+            exit 1
+          fi
+          echo "All CI jobs succeeded or were skipped."

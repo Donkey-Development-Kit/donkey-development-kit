@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from donkey_kit.provisioning.cli import app
+from donkey_kit.cli import app
 
 
 def test_root_help_does_not_market_provisioning_control_plane() -> None:

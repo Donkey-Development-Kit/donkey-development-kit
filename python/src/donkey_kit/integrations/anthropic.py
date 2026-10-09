@@ -12,9 +12,9 @@ HTTP STACK (#701, docs/verified-apis.md §8.1): ``anthropic<1`` is built on
 the ``AsyncAnthropic`` leaves the shared client open. ``anthropic>=1.0``
 is built on ``httpx2`` and rejects any ``httpx`` client, so it is handed an
 ``httpx2.AsyncClient`` whose transport forwards every request through the same
-shared client (``_httpx2_bridge``). Both stacks get the same governed headers,
-retries, span, budget and ``donkey.last_call``; the installed release decides
-which one ``connection_kwargs()`` returns.
+shared client (the core bridge, ``core/transport/httpx2``, #728). Both stacks
+get the same governed headers, retries, span, budget and ``donkey.last_call``;
+the installed release decides which one ``connection_kwargs()`` returns.
 
 ASYNC ONLY (#736): there is no governed sync ``anthropic.Anthropic``. The
 ``http_client`` in ``connection_kwargs()`` is the async client (or its async
@@ -45,18 +45,21 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8 (#34).
 from __future__ import annotations
 
 from collections.abc import Callable
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
-
-import httpx
 
 from ..core.config import DonkeyConfig
 from ..core.masking import masked
 from ..core.transport import DonkeyAsyncClient, DonkeyAsyncClientView, DonkeyClient
+from ..core.transport.views import built_on_httpx2
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     import httpx2
     from anthropic import AsyncAnthropic
+
+__all__ = ["AnthropicAdapter", "client"]
 
 
 def _anthropic_uses_httpx2() -> bool:
@@ -69,12 +72,40 @@ def _anthropic_uses_httpx2() -> bool:
         import anthropic
     except ImportError:
         return False
-    default = getattr(anthropic, "DefaultAsyncHttpxClient", None)
-    return isinstance(default, type) and not issubclass(default, httpx.AsyncClient)
+    return built_on_httpx2(getattr(anthropic, "DefaultAsyncHttpxClient", None))
 
 
 class AnthropicAdapter(Adapter):
-    extra = "anthropic"
+    """Governed Anthropic SDK objects, reached as ``donkey.anthropic``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``client()`` builds an
+    ``AsyncAnthropic``. ``connection_kwargs()`` returns the same settings for
+    building it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.anthropic`` was read without the ``anthropic`` extra
+            installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/anthropic
+    """
+
+    # AsyncAnthropic on the shared client, through the httpx2 bridge on anthropic>=1 (#726).
+    factories = MappingProxyType(
+        {
+            "client": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
 
     def __init__(
         self,
@@ -95,7 +126,7 @@ class AnthropicAdapter(Adapter):
             return self.http_client()
         if self._bridged is None or self._bridged.is_closed:
             with self._native_import():  # the bridge imports httpx2
-                from ._httpx2_bridge import bridged_client
+                from ..core.transport.httpx2 import bridged_client
 
             self._bridged = bridged_client(self._http)
         return self._bridged
@@ -108,7 +139,7 @@ class AnthropicAdapter(Adapter):
         ``anthropic<1`` and a bridged ``httpx2`` client on ``anthropic>=1.0`` (see
         the module docstring). The proxy's Anthropic-native route requires a
         ``Format=Anthropic`` proxy (docs/verified-apis.md §2)."""
-        conn = self._openai_connection()  # base_url, api_key, default_headers
+        conn = self._connection()  # base_url, api_key, default_headers
         return masked(
             {
                 "base_url": conn["base_url"],

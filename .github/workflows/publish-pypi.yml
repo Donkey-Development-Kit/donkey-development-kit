@@ -23,6 +23,7 @@ jobs:
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -34,6 +35,9 @@ jobs:
           python -m build
       - name: twine check (PyPI long description renders cleanly)
         run: twine check dist/*
+      - name: no tenant identifiers or live platform hosts in the built dists (#821)
+        # PyPI releases are immutable: this is the last chance to catch one.
+        run: python scripts/scrub_fixtures.py --check dist/*
       - name: Floors, never ceilings (§8.4) — no upper pins in the built metadata
         # A release is the last place an accidental upper pin could slip into what
         # consumers resolve. Read the actual wheel metadata (not the source
@@ -65,6 +69,7 @@ jobs:
     # workflow has no workflow_dispatch trigger at all, so that can't happen.
     if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: pypi
     permissions:
       id-token: write # OIDC token for Trusted Publishing; no stored secret.

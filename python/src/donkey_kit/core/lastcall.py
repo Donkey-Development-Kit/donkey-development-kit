@@ -69,10 +69,53 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from ._response import ResponseLike
 from ._verify import SEMANTIC_CACHE_SCORE_HEADER, SEMANTIC_CACHE_STATUS_HEADER
+from ._wire import (
+    AMZN_REQUEST_ID_HEADER,
+    ANTHROPIC_REQUEST_ID_HEADER,
+    APIM_REQUEST_ID_HEADER,
+    DECORATOR_OPERATION_HEADER,
+    LLM_MODEL_HEADER,
+    LLM_PROVIDER_HEADER,
+    REQUEST_ID_HEADER,
+    ROUTING_FALLBACK_HEADER,
+    ROUTING_TYPE_HEADER,
+    SEMANTIC_ROUTING_SUCCESS_HEADER,
+)
 
 if TYPE_CHECKING:
     import httpx
+
+__all__ = [
+    "DECORATOR_OPERATION_HEADER",
+    "LLM_MODEL_HEADER",
+    "LLM_PROVIDER_HEADER",
+    "REQUEST_ID_HEADER",
+    "REQUEST_ID_HEADERS",
+    "ROUTING_FALLBACK_HEADER",
+    "ROUTING_TYPE_HEADER",
+    "SEMANTIC_ROUTING_SUCCESS_HEADER",
+    "UNOBSERVED",
+    "LastCall",
+    "LastCallBridge",
+    "LastCallStatus",
+    "current_last_call",
+    "is_cache_hit",
+    "is_fallback",
+    "is_substitution",
+    "observe_last_call",
+    "observe_usage",
+    "open_last_call_bridge",
+    "parse_usage",
+    "request_id",
+    "routing_fallback",
+    "semantic_cache",
+    "semantic_routing",
+    "unavailable",
+    "usage_from_response",
+    "usage_mapping",
+]
 
 # docs/verified-apis.md §3. The request
 # id is the UPSTREAM PROVIDER's own id, passed through by the gateway unchanged —
@@ -91,14 +134,12 @@ if TYPE_CHECKING:
 # success and refusal paths report it on identical terms.
 # ``x-envoy-decorator-operation`` encodes the API-instance id and environment id
 # as ``api-instance-<instanceId>.<environmentId>.svc``.
-REQUEST_ID_HEADER = "x-request-id"
 REQUEST_ID_HEADERS: tuple[str, ...] = (
     REQUEST_ID_HEADER,
-    "x-amzn-requestid",
-    "apim-request-id",
-    "request-id",
+    AMZN_REQUEST_ID_HEADER,
+    APIM_REQUEST_ID_HEADER,
+    ANTHROPIC_REQUEST_ID_HEADER,
 )
-DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 
 # docs/verified-apis.md §3 "Gateway identity on response"
 # (``responses.success.headers.txt``). The gateway states what it did
@@ -107,14 +148,10 @@ DECORATOR_OPERATION_HEADER = "x-envoy-decorator-operation"
 # and the routing strategy. All four are consumed here on the success path
 # (#309) — a substitution the developer did not choose is otherwise invisible.
 # ``LLM_PROVIDER_HEADER`` is also the SOLE source of ``gen_ai.system`` on the
-# span, so ``core/transport.py`` imports it from here (one definition, verification discipline).
-ROUTING_TYPE_HEADER = "x-llm-proxy-routing-type"
-ROUTING_FALLBACK_HEADER = "x-llm-proxy-routing-fallback"
-LLM_PROVIDER_HEADER = "x-llm-proxy-llm-provider"
-LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
+# span. The names are defined in ``core/_wire``.
 
 # docs/verified-apis.md §3 semantic-routing row
-# (``python/tests/fixtures/anypoint/semantic_routing/``, #589/#590). A
+# (``python/src/donkey_kit/simulator/_fixtures/anypoint/semantic_routing/``, #589/#590). A
 # SEMANTIC-routing proxy (``routing_type == "Semantic"``) additionally states
 # WHICH topic the prompt matched and how confident the match was, in a single
 # prose header. The four routing headers above are emitted identically to
@@ -126,7 +163,7 @@ LLM_MODEL_HEADER = "x-llm-proxy-llm-model"
 # (#590). Parsed for :attr:`LastCall.matched_topic` / :attr:`LastCall.routing_score`;
 # the prose is tolerated with two independent patterns so a drift in the
 # provider/model portion never loses the topic or the score (verification discipline).
-SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
+# The name (``SEMANTIC_ROUTING_SUCCESS_HEADER``) is defined in ``core/_wire``.
 
 # docs/verified-apis.md §2 "Semantic caching"
 # (``python/tests/fixtures/anypoint/semantic_cache/``, #587/#588). A proxy fronted
@@ -141,8 +178,8 @@ SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
 # open to ``None`` on an absent/garbage value (verification discipline).
 _CACHE_STATUSES = frozenset({"hit", "miss", "bypass", "no-store"})
 
-# ``api-instance-21133858.3e6ce455-e3e8-4402-b830-9fcf07d9207b.svc`` → instance
-# ``21133858`` + environment ``3e6ce455-…`` (a UUID; it carries dashes but no
+# ``api-instance-21133858.00000000-0000-4000-8000-9be3001e93bf.svc`` → instance
+# ``21133858`` + environment ``00000000-…`` (a UUID; it carries dashes but no
 # dots, so a plain three-way split on ``.`` is unambiguous). An unrecognised
 # shape matches nothing and yields ``(None, None)`` — never a guess (verification discipline).
 _DECORATOR_RE = re.compile(r"^api-instance-(?P<instance>[^.]+)\.(?P<env>[^.]+)\.svc$")
@@ -277,7 +314,7 @@ def is_substitution(
     return requested_model != served_model
 
 
-def request_id(response: httpx.Response) -> str | None:
+def request_id(response: ResponseLike) -> str | None:
     """The upstream provider's request id for a response, resolved from the first
     present of :data:`REQUEST_ID_HEADERS` (``x-request-id``, then
     ``x-amzn-requestid``, then ``apim-request-id``, then Anthropic's
@@ -290,8 +327,7 @@ def request_id(response: httpx.Response) -> str | None:
     :func:`donkey_kit.core.errors.classify` so the success and refusal paths agree.
     Never raises (verification discipline)."""
     for name in REQUEST_ID_HEADERS:
-        value: str | None = response.headers.get(name)
-        if value is not None:
+        if (value := response.headers.get(name)) is not None:
             return value
     return None
 
@@ -310,7 +346,7 @@ def semantic_routing(response: httpx.Response) -> tuple[str | None, float | None
     this response (``x-llm-proxy-semantic-routing-success``), or ``(None, None)``
     on a model-based / non-proxy / simulated response. These are the values that
     land on :attr:`LastCall.matched_topic` / :attr:`LastCall.routing_score` and the
-    span. Shared by :meth:`LastCall.from_response` and ``core/transport.py`` so the
+    span. Shared by :meth:`LastCall.from_response` and ``core/transport/`` so the
     record and the span read the header identically (one definition, #590)."""
     return _parse_semantic_routing(response.headers.get(SEMANTIC_ROUTING_SUCCESS_HEADER))
 
@@ -320,7 +356,7 @@ def semantic_cache(response: httpx.Response) -> tuple[str | None, float | None]:
     response (``x-semantic-cache-status`` / ``x-semantic-cache-score``), or
     ``(None, None)`` on a non-cached / non-proxy / simulated response. These are
     the values that land on :attr:`LastCall.cache_status` / :attr:`LastCall.cache_score`
-    and the span. Shared by :meth:`LastCall.from_response` and ``core/transport.py``
+    and the span. Shared by :meth:`LastCall.from_response` and ``core/transport/``
     so the record and the span read the headers identically (one definition, #587)."""
     return (
         _parse_cache_status(response.headers.get(SEMANTIC_CACHE_STATUS_HEADER)),
@@ -733,7 +769,8 @@ def _record(record: LastCall) -> None:
     bridge, write through it, so a later usage merge in the same task reaches the
     caller too. A closed bridge is replaced by the plain record."""
     current = _last_call.get()
-    if isinstance(current, LastCallBridge) and current._open:
+    # Same-module collaborator: the bridge's open flag is this module's own state.
+    if isinstance(current, LastCallBridge) and current._open:  # noqa: SLF001
         current.record = record
     else:
         _last_call.set(record)

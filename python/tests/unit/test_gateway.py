@@ -1,7 +1,7 @@
 """Base-only tests for the out-of-process ``gateway`` fixture's machinery (#278).
 
 These exercise the request spy and the missing-extra guard **without** booting a
-real server, so they run under the base ``[dev]`` install (no ``[local]`` extra):
+real server, so they run under the base install plus the ``dev`` group (no ``[local]`` extra):
 
 - ``_record`` redacts the consumer-auth secret and any bearer, and keeps method,
   path and every other header.

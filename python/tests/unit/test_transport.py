@@ -16,9 +16,16 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
-from donkey_kit.core.errors import ConfigError, GatewayUnavailable, PIIDetected, classify
+from donkey_kit.core.errors import (
+    ConfigError,
+    GatewayUnavailable,
+    PIIDetected,
+    PolicyViolation,
+    TokenBudgetExceeded,
+    classify,
+)
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call
-from donkey_kit.core.telemetry import current_correlation_id, run_context, run_scope
+from donkey_kit.core.telemetry import current_correlation_id, run_scope
 from donkey_kit.core.transport import (
     CALL_ID_HEADER,
     CORRELATION_HEADER,
@@ -41,31 +48,31 @@ def _sync_client(handler, cfg=None) -> DonkeyClient:
 
 
 class _RecordingAsync(DonkeyAsyncClient):
-    """Overrides the logical hooks with counters, to assert call-once semantics."""
+    """Overrides the logical hooks with recorders, to assert call-once semantics."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.requests = 0
         self.responses: list[int] = []
-
-    async def _on_request(self, request: httpx.Request) -> None:
-        self.requests += 1
+        self.refusals: list[PolicyViolation] = []
 
     async def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         self.responses.append(response.status_code)
+
+    async def _on_refusal(self, violation: PolicyViolation) -> None:
+        self.refusals.append(violation)
 
 
 class _RecordingSync(DonkeyClient):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.requests = 0
         self.responses: list[int] = []
-
-    def _on_request(self, request: httpx.Request) -> None:
-        self.requests += 1
+        self.refusals: list[PolicyViolation] = []
 
     def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         self.responses.append(response.status_code)
+
+    def _on_refusal(self, violation: PolicyViolation) -> None:
+        self.refusals.append(violation)
 
 
 async def test_correlation_and_attribution_headers_injected() -> None:
@@ -81,7 +88,7 @@ async def test_correlation_and_attribution_headers_injected() -> None:
         # comes from the still-UNVERIFIED application/business-group attribution
         # placeholder names (verification discipline).
         with pytest.warns(UnverifiedValueWarning):
-            with run_context("run-1"):
+            with run_scope("run-1"):
                 await client.get("https://x/thing")
 
     assert seen[CORRELATION_HEADER.lower()] == "run-1"
@@ -291,7 +298,7 @@ def test_sync_correlation_and_attribution_headers_injected() -> None:
     # No pytest.warns here: _verify warns once per key per process, so the async
     # case above has already consumed it. That contract is asserted there.
     with _sync_client(handler, cfg) as client:
-        with run_context("run-1"):
+        with run_scope("run-1"):
             client.get("https://x/thing")
 
     assert seen[CORRELATION_HEADER.lower()] == "run-1"
@@ -300,7 +307,7 @@ def test_sync_correlation_and_attribution_headers_injected() -> None:
 
 
 def test_sync_requests_do_not_pin_a_correlation_id_to_the_process() -> None:
-    """A blocking call outside run_context() must not bind its ID to the ambient
+    """A blocking call outside run_scope() must not bind its ID to the ambient
     context: doing so would make every later unrelated call report the same run."""
     seen: list[str] = []
 
@@ -389,14 +396,14 @@ def test_sync_unbound_correlation_id_is_stable_across_retries() -> None:
     assert current_correlation_id() is None
 
 
-def test_sync_requests_share_one_id_inside_a_run_context() -> None:
+def test_sync_requests_share_one_id_inside_a_run_scope() -> None:
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.headers[CORRELATION_HEADER])
         return httpx.Response(200)
 
-    with _sync_client(handler) as client, run_context("run-7"):
+    with _sync_client(handler) as client, run_scope("run-7"):
         client.get("https://x")
         client.get("https://x")
 
@@ -418,7 +425,7 @@ async def test_call_id_is_unique_per_call_and_distinct_from_run_id() -> None:
         return httpx.Response(200)
 
     async with _client(handler) as client:
-        with run_context("run-42"):
+        with run_scope("run-42"):
             await client.get("https://x/a")
             await client.get("https://x/b")
 
@@ -443,7 +450,7 @@ async def test_call_id_is_stable_across_retries() -> None:
         return httpx.Response(503) if calls["n"] < 3 else httpx.Response(200)
 
     async with _client(handler, DonkeyConfig(max_retries=3)) as client:
-        with run_context("run-r"):
+        with run_scope("run-r"):
             await client.get("https://x")
 
     assert calls["n"] == 3  # two retries then success
@@ -462,7 +469,7 @@ async def test_config_overrides_correlation_and_call_id_header_names() -> None:
 
     cfg = DonkeyConfig(correlation_header="X-Trace-Id", call_id_header="X-Req-Seq")
     async with _client(handler, cfg) as client:
-        with run_context("run-ovr"):
+        with run_scope("run-ovr"):
             await client.get("https://x")
 
     assert seen["x-trace-id"] == "run-ovr"
@@ -494,7 +501,7 @@ async def test_overridden_header_names_survive_classify_round_trip() -> None:
 
     cfg = DonkeyConfig(correlation_header="X-Trace-Id", call_id_header="X-Req-Seq")
     async with _client(handler, cfg) as client:
-        with run_context("run-42"):
+        with run_scope("run-42"):
             await client.get("https://x")
 
     request = captured["req"]
@@ -515,7 +522,7 @@ async def test_default_header_names_survive_classify_round_trip() -> None:
         return httpx.Response(200)
 
     async with _client(handler) as client:  # no override
-        with run_context("run-def"):
+        with run_scope("run-def"):
             await client.get("https://x")
 
     request = captured["req"]
@@ -536,7 +543,7 @@ async def test_classify_round_trip_emits_no_unverified_warning() -> None:
         return httpx.Response(200)
 
     async with _client(handler) as client:
-        with run_context("run-w"):
+        with run_scope("run-w"):
             await client.get("https://x")
 
     request = captured["req"]
@@ -560,7 +567,7 @@ def test_sync_overridden_header_names_survive_classify_round_trip() -> None:
 
     cfg = DonkeyConfig(correlation_header="X-Trace-Id", call_id_header="X-Req-Seq")
     with _sync_client(handler, cfg) as client:
-        with run_context("run-sync"):
+        with run_scope("run-sync"):
             client.get("https://x")
 
     request = captured["req"]
@@ -585,7 +592,7 @@ async def test_concurrent_runs_do_not_leak_correlation_ids() -> None:
 
         async def one_run(run_id: str) -> set[str]:
             seen: set[str] = set()
-            with run_context(run_id):
+            with run_scope(run_id):
                 for _ in range(4):
                     resp = await client.get("https://x")
                     seen.add(resp.headers["x-echo"])
@@ -610,7 +617,7 @@ async def test_run_id_reaches_a_request_fired_from_a_child_task() -> None:
         return httpx.Response(200)
 
     async with _client(handler) as client:
-        with run_context("run-child"):
+        with run_scope("run-child"):
             await asyncio.create_task(client.get("https://x"))
 
     assert seen == ["run-child"]
@@ -754,23 +761,87 @@ async def test_openai_sdk_with_its_own_retries_sends_a_refusal_once() -> None:
         assert len(sends) == expected, f"{status}: {len(sends)} sends"
 
 
+@pytest.mark.parametrize("status", [502, 504])
+async def test_openai_default_retries_do_not_resend_unsafe_model_post(status: int) -> None:
+    openai = pytest.importorskip("openai")
+    from typing import Any, cast
+
+    from donkey_kit.llm.client import openai_http_client
+
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(status)
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as http:
+        client = openai.AsyncOpenAI(
+            base_url="https://x/", api_key="k", http_client=cast(Any, openai_http_client(http))
+        )
+        with pytest.raises(openai.APIStatusError) as exc:
+            await client.chat.completions.create(
+                model="m", messages=[{"role": "user", "content": "hi"}]
+            )
+
+    assert exc.value.response.headers["x-should-retry"] == "false"
+    assert len(sent) == 1
+
+
 # --- lifecycle hooks (BG §1.1, #179) --------------------------------------
-# The four seams every Phase 1 feature attaches to: _on_request / _on_response
-# fire exactly once per logical send(); _on_refusal is defined but has no caller
-# until classify() (#181); _transport is swappable on a live client.
+# The seams every Phase 1 feature attaches to: _inject_headers stamps each
+# logical send, _on_response fires exactly once per logical send(), _on_refusal
+# fires once with the classified PolicyViolation (#208), and the inner transport
+# is swappable on a live client through GovernedTransport.replace_inner() (#728).
+# The unused _on_request seam was deleted (#728).
 
 
 async def test_default_hooks_are_noop_seams() -> None:
-    """All four seams exist and the defaults are no-ops (byte-identical
-    behaviour to a hookless client — the rest of this module asserts that)."""
+    """The seams exist and the defaults are no-ops (byte-identical behaviour to
+    a hookless client — the rest of this module asserts that)."""
     async with _client(lambda r: httpx.Response(200)) as client:
         req = httpx.Request("GET", "https://x")
-        assert await client._on_request(req) is None
+        assert not hasattr(client, "_on_request")
         assert await client._on_response(req, httpx.Response(200)) is None
-        assert await client._on_refusal(None) is None
+        assert await client._on_refusal(TokenBudgetExceeded("over")) is None
 
 
-async def test_on_request_called_once_across_retries() -> None:
+@pytest.mark.parametrize("status", [200, 503, 500])
+async def test_on_refusal_is_not_called_without_a_refusal(status: int) -> None:
+    client = _RecordingAsync(
+        DonkeyConfig(max_retries=0),
+        None,
+        transport=httpx.MockTransport(lambda r: httpx.Response(status)),
+    )
+    async with client:
+        await client.get("https://x")
+    assert client.refusals == []
+
+
+async def test_on_refusal_called_once_with_the_classified_violation() -> None:
+    client = _RecordingAsync(
+        DonkeyConfig(max_retries=3),
+        None,
+        transport=httpx.MockTransport(lambda r: httpx.Response(429)),
+    )
+    async with client:
+        resp = await client.get("https://x")
+    assert resp.status_code == 429  # returned, not raised: the hook only observes
+    assert [type(v) for v in client.refusals] == [TokenBudgetExceeded]
+    assert client.refusals[0].response is resp
+    assert client.responses == [429]
+
+
+def test_sync_on_refusal_called_once_with_the_classified_violation() -> None:
+    client = _RecordingSync(
+        DonkeyConfig(max_retries=3), transport=httpx.MockTransport(lambda r: httpx.Response(429))
+    )
+    with client:
+        resp = client.get("https://x")
+    assert resp.status_code == 429
+    assert [type(v) for v in client.refusals] == [TokenBudgetExceeded]
+
+
+async def test_on_response_called_once_across_retries() -> None:
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -783,7 +854,6 @@ async def test_on_request_called_once_across_retries() -> None:
     async with client:
         resp = await client.get("https://x")
     assert resp.status_code == 200
-    assert client.requests == 1  # logical request hook fires once, not per wire retry
     assert client.responses == [200]  # response hook sees only the final response
 
 
@@ -804,7 +874,6 @@ async def test_hooks_fire_once_across_the_401_refresh_path() -> None:
         resp = await client.get("https://x")
     assert resp.status_code == 200
     assert calls["n"] == 2  # refreshed + retried once
-    assert client.requests == 1  # request hook still fires once for the logical send
     assert client.responses == [200]  # never sees the intermediate 401
 
 
@@ -838,18 +907,17 @@ async def test_on_response_not_called_when_transport_errors() -> None:
         with pytest.raises(GatewayUnavailable) as ei:  # typed, wrapping the transport error (#379)
             await client.get("https://x")
     assert isinstance(ei.value.__cause__, httpx.ConnectError)  # original preserved
-    assert client.requests == 1  # request hook ran before the send
     assert client.responses == []  # transport error is never masked by a response hook
 
 
 async def test_swap_transport_takes_effect_on_the_next_request() -> None:
     async with _client(lambda r: httpx.Response(500)) as client:
         assert (await client.get("https://x")).status_code == 500  # 500 is non-retryable
-        client._swap_transport(httpx.MockTransport(lambda r: httpx.Response(200)))
+        client.governed_transport.replace_inner(httpx.MockTransport(lambda r: httpx.Response(200)))
         assert (await client.get("https://x")).status_code == 200
 
 
-def test_sync_on_request_called_once_across_retries() -> None:
+def test_sync_on_response_called_once_across_retries() -> None:
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -860,7 +928,6 @@ def test_sync_on_request_called_once_across_retries() -> None:
     with client:
         resp = client.get("https://x")
     assert resp.status_code == 200
-    assert client.requests == 1
     assert client.responses == [200]
 
 
@@ -873,14 +940,13 @@ def test_sync_on_response_not_called_when_transport_errors() -> None:
         with pytest.raises(GatewayUnavailable) as ei:  # typed, wrapping the transport error (#379)
             client.get("https://x")
     assert isinstance(ei.value.__cause__, httpx.ConnectError)
-    assert client.requests == 1
     assert client.responses == []
 
 
 def test_sync_swap_transport_takes_effect_on_the_next_request() -> None:
     with _sync_client(lambda r: httpx.Response(500)) as client:
         assert client.get("https://x").status_code == 500
-        client._swap_transport(httpx.MockTransport(lambda r: httpx.Response(200)))
+        client.governed_transport.replace_inner(httpx.MockTransport(lambda r: httpx.Response(200)))
         assert client.get("https://x").status_code == 200
 
 
@@ -903,6 +969,25 @@ async def test_does_not_retry_429_budget_refusal() -> None:
         resp = await client.get("https://x")
     assert resp.status_code == 429
     assert calls["n"] == 1  # terminal on the first hit — never retried (BG §1.2, #183)
+
+
+async def test_does_not_retry_429_request_rate_limit_refusal() -> None:
+    """#974: the request-window 429 is terminal too."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            429,
+            headers={"x-ratelimit-limit": "3", "x-ratelimit-remaining": "0",
+                     "x-ratelimit-reset": "40000"},
+            content=b'{"error":"Too Many Requests"}',
+        )
+
+    async with _client(handler, DonkeyConfig(max_retries=3)) as client:
+        resp = await client.get("https://x")
+    assert resp.status_code == 429
+    assert calls["n"] == 1
 
 
 async def test_does_not_retry_403_policy_rejection() -> None:
@@ -1046,7 +1131,11 @@ async def test_langgraph_adapter_does_not_retry_429_end_to_end() -> None:
     # shared client, so the transport is what governs the retry policy.
     kw = adapter.connection_kwargs()
     assert kw["max_retries"] == 0
-    assert kw["http_async_client"] is shared.view()
+    # The view on openai<3, the reusable httpx2 bridge onto ``shared`` on openai>=3 (#728).
+    assert kw["http_async_client"] is adapter._openai_kwarg_http_client()
+    assert kw["http_async_client"] is shared.view() or (
+        kw["http_async_client"]._transport._client is shared
+    )
     async with shared:
         model = adapter.chat_model("gpt-4o")
         with pytest.raises(openai.APIStatusError):
@@ -1104,9 +1193,9 @@ async def test_llm_post_emits_one_span_with_both_namespaces(monkeypatch) -> None
     client = DonkeyAsyncClient(
         _LLM_CFG, None, budget=budget, transport=httpx.MockTransport(handler)
     )
-    # run_context is a sync CM (it binds a contextvar); nest it outside the async
-    # client so the correlation ID is bound for the duration of the post().
-    with run_context("run-7f3a"):
+    # Bind the run scope outside the async client so the correlation ID is bound
+    # for the duration of the post().
+    with run_scope("run-7f3a"):
         async with client:
             resp = await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
     assert resp.status_code == 200
@@ -1185,7 +1274,7 @@ async def test_every_span_in_a_run_shares_the_run_id(monkeypatch) -> None:
         return httpx.Response(200, headers={_PROVIDER_HEADER: "openai"}, json=_SUCCESS_BODY)
 
     client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
-    with run_context("run-multi"):
+    with run_scope("run-multi"):
         async with client:
             await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "a"})
             await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "b"})
@@ -1306,7 +1395,7 @@ def test_sync_llm_post_emits_one_span_with_both_namespaces(monkeypatch) -> None:
 
     budget = Budget()
     client = DonkeyClient(_LLM_CFG, budget=budget, transport=httpx.MockTransport(handler))
-    with client, run_context("run-sync"):
+    with client, run_scope("run-sync"):
         resp = client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
     assert resp.status_code == 200
 
@@ -1710,7 +1799,7 @@ async def test_streaming_error_body_over_cap_is_replayed_unread(monkeypatch) -> 
     # Past the read cap the body is handed back intact and unread — the caller
     # gets every byte, and the span falls back to the status-only classification
     # rather than a type read from a body it never parsed (#805).
-    monkeypatch.setattr("donkey_kit.core.transport._ERROR_BODY_CAP", 8)
+    monkeypatch.setattr("donkey_kit.core.transport.streaming._ERROR_BODY_CAP", 8)
     exporter = _use_tracer(monkeypatch)
     chunks = [b'{"error":', b' {"type": "pii_detected",', b' "message": "x"}}']
     body = _AsyncSSE(chunks)
@@ -1941,7 +2030,7 @@ async def test_default_run_with_cost_tags_emits_no_unverified_warning() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         async with _client(handler, cfg) as client:
-            with run_context("run-522"):
+            with run_scope("run-522"):
                 await client.get("https://x/thing")
 
     assert seen[CORRELATION_HEADER.lower()] == "run-522"
@@ -2047,8 +2136,10 @@ def _spy_capture_content(monkeypatch) -> list[bool]:
             seen.append(capture_content)
         return telemetry.GenAiSpan(None)
 
-    monkeypatch.setattr("donkey_kit.core.transport.genai_span", fake_genai_span)
-    monkeypatch.setattr("donkey_kit.core.transport.start_genai_span", fake_start_genai_span)
+    for client_module in ("async_client", "sync_client"):
+        module = f"donkey_kit.core.transport.{client_module}"
+        monkeypatch.setattr(f"{module}.genai_span", fake_genai_span)
+        monkeypatch.setattr(f"{module}.start_genai_span", fake_start_genai_span)
     return seen
 
 
@@ -2363,7 +2454,7 @@ async def test_gateway_unavailable_carries_the_sent_ids() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UnverifiedValueWarning)
         async with client:
-            with run_context("run-boom"):
+            with run_scope("run-boom"):
                 with pytest.raises(GatewayUnavailable) as ei:
                     await client.post("https://gw.example/chat", json={"model": "m", "input": "x"})
     assert ei.value.correlation_id == "run-boom"

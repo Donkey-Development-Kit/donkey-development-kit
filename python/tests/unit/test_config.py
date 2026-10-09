@@ -8,7 +8,6 @@ from typing import get_type_hints
 
 import pytest
 
-from donkey_kit.core import _verify
 from donkey_kit.core._verify import UnverifiedValueWarning
 from donkey_kit.core.config import ConfigOverrides, DonkeyConfig, Region
 from donkey_kit.core.cost import CostTags
@@ -49,7 +48,6 @@ def test_validated_llm_requires_client_id_and_secret_not_bearer() -> None:
     assert "llm_proxy_client_secret" in msg
 
 
-@pytest.mark.usefixtures("fresh_unverified_warnings")
 def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANYPOINT_CLIENT_ID", "cid")
     monkeypatch.setenv("ANYPOINT_REGION", "eu")
@@ -62,13 +60,6 @@ def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
         assert cfg.control_plane_url.startswith("https://eu1")
 
 
-@pytest.fixture
-def fresh_unverified_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reset the one-time ``Unverified`` dedup so each test sees the first read."""
-    monkeypatch.setattr(_verify, "_warned", set())
-
-
-@pytest.mark.usefixtures("fresh_unverified_warnings")
 @pytest.mark.parametrize("region", ["eu", "ca", "jp"])
 def test_unconfirmed_region_host_warns_once(region: Region) -> None:
     # docs/verified-apis.md §1: only the US host is confirmed.
@@ -80,7 +71,6 @@ def test_unconfirmed_region_host_warns_once(region: Region) -> None:
         assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
 
 
-@pytest.mark.usefixtures("fresh_unverified_warnings")
 def test_us_region_and_base_url_override_are_quiet() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
@@ -117,6 +107,26 @@ def test_capture_content_env_overrides_toml(tmp_path, monkeypatch: pytest.Monkey
     assert DonkeyConfig.from_env().telemetry_capture_content is False  # toml layer
     monkeypatch.setenv("DONKEY_TELEMETRY_CAPTURE_CONTENT", "true")
     assert DonkeyConfig.from_env().telemetry_capture_content is True  # env wins
+
+
+# --- telemetry_install_global resolution (#732, BG §1.6) -------------------
+# No hidden global side effect: DDK takes the process-global OTel provider only
+# when the developer opts in, through the normal precedence.
+
+
+def test_install_global_defaults_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.delenv("DONKEY_TELEMETRY_INSTALL_GLOBAL", raising=False)
+    assert DonkeyConfig().telemetry_install_global is False  # dataclass default
+    assert DonkeyConfig.from_env().telemetry_install_global is False  # resolved default
+
+
+def test_install_global_env_overrides_toml(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch, "[donkey]\ntelemetry_install_global = true\n")
+    monkeypatch.delenv("DONKEY_TELEMETRY_INSTALL_GLOBAL", raising=False)
+    assert DonkeyConfig.from_env().telemetry_install_global is True  # toml layer
+    monkeypatch.setenv("DONKEY_TELEMETRY_INSTALL_GLOBAL", "false")
+    assert DonkeyConfig.from_env().telemetry_install_global is False  # env wins
 
 
 # --- on_model_substitution resolution + validation (BG §1.1, #309) ---------------

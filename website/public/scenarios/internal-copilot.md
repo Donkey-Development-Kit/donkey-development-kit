@@ -64,12 +64,12 @@ async def ask(donkey, question, *, run_id):
 asyncio.run(...)   # DONKEY_LLM_PROXY_URL=http://localhost:8080, throwaway creds
 ```
 
-  **The raw client raises `openai.APIStatusError`, not a `DonkeyError`.**
-  `donkey.llm.client()` is the real OpenAI SDK, so you bridge into the taxonomy
-  with `classify(e.response)` — see [Bridging from the raw
-  client](https://docs.donkey-kit.dev/errors.md#bridging-from-the-raw-client). An adapter that wraps calls in
-  `typed_refusals()` (as the [support-triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) demo
-  does) surfaces the typed refusal directly instead.
+  **Outside a run, the raw client raises `openai.APIStatusError`, not a `DonkeyError`.**
+  `donkey.llm.client()` is the real OpenAI SDK, so the code above bridges into
+  the taxonomy with `classify(e.response)`. Inside `donkey.run()`, or wrapped in
+  `typed_refusals()`, the typed refusal surfaces directly instead — see [Typed
+  refusals at the framework
+  boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary).
 
 ## What a full internal copilot also needs — and what's blocked
 

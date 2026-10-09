@@ -156,7 +156,7 @@ What is typed from docs, and what is still unnamed
   is specified, not because a capture has landed yet.
 
   content-moderation     PolicyViolation
-  remediation            This refusal matched no documented rejection shape, so its contract is unconfirmed (#184, #253). It is terminal and was NOT retried. Please file an issue on the donkey-development-kit repo with the response status, headers and body (all carried on this exception's .response) so the shape can be typed.
+  remediation            This refusal matched no documented rejection shape, so its contract is unconfirmed (#184). It is terminal and was NOT retried. Please file an issue on the donkey-development-kit repo with the response status, headers and body (all carried on this exception's .response) so the shape can be typed.
 
   An undiscriminated content-moderation 4xx still falls through to a generic
   PolicyViolation. That leftover shape has never been captured from a live gateway, so
@@ -252,7 +252,26 @@ written next to the `classify()` clause would never run. The bridge has two
 arms because the OpenAI client reports failures two ways: a gateway refusal is
 an `openai.APIStatusError` carrying the response, and an error the transport
 raises itself (`GatewayUnavailable`, `ModelSubstituted`) arrives as an
-`openai.APIConnectionError` with the typed error on `__cause__`.
+`openai.APIConnectionError` with the typed error on `__cause__` under `openai`
+before 3, and as the typed error itself under `openai` 3 and later.
+
+Inside a `donkey.run()` block, a `@donkey.governed` function or
+`typed_refusals()`, the SDK does that bridging for you, and the inner `try`
+goes away. The typed handlers catch the refusal directly, whichever client or
+framework raised it
+([Typed refusals at the framework boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary)):
+
+```python
+from donkey_kit import typed_refusals
+
+try:
+    with typed_refusals():   # or: with donkey.run(id=...):
+        response = client.responses.create(model="gpt-4o", input=prompt)
+except PIIDetected as e:
+    ...
+except GatewayUnavailable as e:
+    ...
+```
 
 A live refusal on a blocking client (OpenAI script 04):
 

@@ -19,7 +19,8 @@ import httpx
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import UpstreamRequestError, classify
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call
-from donkey_kit.core.transport import DonkeyAsyncClient, _request_model
+from donkey_kit.core.transport import DonkeyAsyncClient
+from donkey_kit.core.transport.policy import _request_model
 from donkey_kit.simulator.fixtures import parse_headers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "gemini_inbound"

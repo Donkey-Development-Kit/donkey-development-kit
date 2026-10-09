@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Iterator, Sequence
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import httpx
 
+from .._testing import SwappableClient, swap_transport, transport_of
 from ..core.errors import (
     AgentKilled,
     AuthError,
@@ -33,6 +34,7 @@ from ..core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -41,9 +43,11 @@ from ..core.errors import (
 from .app import SIMULATOR_HEADER
 from .fixtures import Fixture, load, replay_headers
 
+__all__ = ["resolve_fixture", "simulate"]
+
 # Exception type -> the fixture shape whose captured bytes classify() maps back
 # to that exception. The inverse of the simulator's model-id sentinel table; the
-# classify() round-trip asserted in :func:`_resolve` proves the mapping still
+# classify() round-trip asserted in :func:`resolve_fixture` proves the mapping still
 # holds. Keys are matched by EXACT type (a base and its subclass map to different
 # shapes), so ``PolicyViolation`` selects the generic content-moderation shape
 # while its subclasses select their specific captures.
@@ -55,6 +59,7 @@ from .fixtures import Fixture, load, replay_headers
 # generic ``PolicyViolation`` (the "content-moderation" shape).
 _EXC_TO_SHAPE: dict[type[DonkeyError], str] = {
     TokenBudgetExceeded: "token-rate-limit",
+    RequestRateLimitExceeded: "request-rate-limit",
     PIIDetected: "pii-detected",
     PromptInjectionBlocked: "injection-protection",
     ContentSafetyBlocked: "content-safety",
@@ -65,16 +70,6 @@ _EXC_TO_SHAPE: dict[type[DonkeyError], str] = {
     AuthError: "client-id-missing",
     PolicyViolation: "content-moderation",
 }
-
-
-class _SwappableClient(Protocol):
-    """The transport-swap seam both Donkey HTTP clients expose (BG §1.1).
-    Typed loosely on purpose — the sync and async clients carry different
-    ``httpx`` transport types, and :class:`_FixtureTransport` satisfies both."""
-
-    _transport: Any
-
-    def _swap_transport(self, transport: Any) -> None: ...
 
 
 class _Countdown:
@@ -106,7 +101,7 @@ class _FixtureTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
     consumes exactly one count.
     """
 
-    def __init__(self, inner: Any, fixture: Fixture, countdown: _Countdown) -> None:
+    def __init__(self, inner: Any, fixture: Fixture, countdown: _Countdown) -> None:  # noqa: ANN401
         self._inner = inner
         self._fixture = fixture
         self._countdown = countdown
@@ -149,7 +144,7 @@ class _FixtureTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
         return cast(httpx.Response, await self._inner.handle_async_request(request))
 
 
-def _resolve(error: type[DonkeyError]) -> Fixture:
+def resolve_fixture(error: type[DonkeyError]) -> Fixture:
     """Resolve the requested exception type to the fixture that classify() maps
     back to it, asserting that round-trip. Raises ``TypeError`` for a non-error
     type and ``ValueError`` for an unmapped one (verification discipline: no silent miss)."""
@@ -187,7 +182,7 @@ def _resolve(error: type[DonkeyError]) -> Fixture:
 
 @contextlib.contextmanager
 def simulate(
-    clients: Sequence[_SwappableClient],
+    clients: Sequence[SwappableClient],
     error: type[DonkeyError],
     *,
     times: int = 1,
@@ -201,16 +196,16 @@ def simulate(
     """
     if times < 1:
         raise ValueError(f"times must be >= 1, got {times}")
-    fixture = _resolve(error)
+    fixture = resolve_fixture(error)
     countdown = _Countdown(times)
-    restore: list[tuple[_SwappableClient, Any]] = []
+    restore: list[tuple[SwappableClient, Any]] = []
     try:
         for client in clients:
-            previous = client._transport
-            client._swap_transport(_FixtureTransport(previous, fixture, countdown))
+            previous = transport_of(client)
+            swap_transport(client, _FixtureTransport(previous, fixture, countdown))
             restore.append((client, previous))
         yield
     finally:
         # Restore in reverse so composed swaps unwind cleanly.
         for client, previous in reversed(restore):
-            client._swap_transport(previous)
+            swap_transport(client, previous)

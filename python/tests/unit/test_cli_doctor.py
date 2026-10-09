@@ -3,7 +3,7 @@ non-zero (CI-preflight, AC4), ``--json`` is machine-readable, and a missing
 ``[llm]`` extra is an install prompt (exit 1), not a stack trace.
 
 The probe is monkeypatched (``_live_probe``) so no gateway and no ``[llm]``
-extra are needed; runs under ``[dev]`` alone.
+extra are needed; runs under the ``dev`` group alone.
 """
 
 from __future__ import annotations
@@ -18,11 +18,10 @@ import httpx
 import pytest
 from typer.testing import CliRunner
 
+from donkey_kit.cli import app, doctor
+from donkey_kit.cli.doctor import ProbeResult
 from donkey_kit.core.budget import Budget
 from donkey_kit.core.errors import AuthError, UpstreamRequestError
-from donkey_kit.provisioning import doctor
-from donkey_kit.provisioning.cli import app
-from donkey_kit.provisioning.doctor import ProbeResult
 
 runner = CliRunner()
 
@@ -46,7 +45,7 @@ def llm_env(monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
 
 def _patch_probe(monkeypatch: pytest.MonkeyPatch, result: ProbeResult) -> None:
     monkeypatch.setattr(
-        "donkey_kit.provisioning.doctor._live_probe", lambda _c, _m: result
+        "donkey_kit.cli.doctor._live_probe", lambda _c, _m: result
     )
 
 
@@ -214,7 +213,7 @@ def test_missing_llm_extra_prints_pip_install_and_exits_1(
     def _raise(_model: str, **_: object) -> object:
         raise ImportError("No module named 'openai'")
 
-    monkeypatch.setattr("donkey_kit.provisioning.doctor.run_diagnostics", _raise)
+    monkeypatch.setattr("donkey_kit.cli.doctor.run_diagnostics", _raise)
     result = runner.invoke(app, ["doctor"])
 
     assert result.exit_code == 1

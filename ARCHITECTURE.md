@@ -12,6 +12,12 @@ their stable historical name; every other citation is a `BG §N.N`, a named
 invariant, or a `Phase N`. When a rule here feels arbitrary, read the cited
 section — the constraints are deliberate.
 
+Why each design decision was taken, and what was rejected, is recorded in the
+architecture decision records in [`docs/adr/`](docs/adr/README.md). Changing
+an invariant this document states, an import-linter contract, the API
+stability tiers or the dependency policy needs an ADR in the same PR
+([`CONTRIBUTING.md`](CONTRIBUTING.md#architecture-decision-records)).
+
 For *using* the SDK, see the consumer docs site (`website/`). For *working in*
 the repo — branch/PR flow, testing surfaces, coding conventions — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
@@ -52,22 +58,33 @@ registry/       Exchange discovery, typed governed-state assets
       ↓
 llm/            framework-free OpenAI-compatible client factory + model catalog
       ↓
-core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but core imports none)
+core/           config · auth · transport · errors · budget · telemetry · cache · _verify  — ZERO framework deps (httpx only; the build plan also allows pydantic, but nothing imports it — value objects are frozen dataclasses, ADR 0001)
 ```
 
-**Not in the stack — `provisioning/`.** The package holds two different things:
+**Not in the stack — `cli/` and `experimental`.** Two siblings sit outside the
+linear stack:
 
-- **The refused declarative control plane** (specs · plan/diff/apply · drift ·
-  governance lint · publish). It is on the build plan's *Do not build* list —
-  it must not compete with API Manager/Terraform — and its CLI commands
-  (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`, `status`,
-  `publish`, `verify`) are hidden and `_verify.blocked`. Treat this half as
-  legacy scaffolding: reachable, but do not deepen it (see "Still blocked",
-  below).
-- **The supported `donkey` CLI.** The console script points at
-  `donkey_kit.provisioning.cli:app`, and its visible commands — `init`, `test`,
-  `mock`, `doctor` — are live. Moving them to their own `donkey_kit/cli`
-  package and quarantining the legacy half is #730.
+- **The `donkey` CLI** lives in `donkey_kit/cli/` (console script
+  `donkey = "donkey_kit.cli:main"`), one module per command: `init`, `doctor`,
+  `mock`, `test`. It is a front end over the library: it may import any layer,
+  and an import-linter contract forbids every library module from importing it
+  back, so typer (the `[cli]` extra) never reaches the base `import donkey_kit`
+  path. Three hidden commands, `status`, `publish` and `verify` (BG §2.5), are
+  `_verify.blocked` and exit 3.
+- **`donkey_kit.experimental`** re-exports the types that exist only for a
+  verification-blocked surface (`AssetRef`, `Publication`, `GovernanceCriteria`,
+  `STRICT`, `RegistryError`, …). They are importable, but they are not in
+  `donkey_kit.__all__` and carry no stability promise until their surface is
+  verified.
+
+The refused declarative control plane (the old `provisioning/` package:
+specs, plan/diff/apply, drift, governance lint, and `governance.py`) is on the
+build plan's *Do not build* list, because it must not compete with API
+Manager/Terraform. It was deleted, not parked, along with its hidden CLI
+commands (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`) and its
+errors (`ProvisioningError`, `GovernanceDrift`, `PlatformTeamOnly`). The
+reasoning is ADR 0008 in [`docs/adr/`](docs/adr/) (legacy quarantine and the
+CLI's home, #730).
 
 **The hard rule (the layered architecture):** `core/` has no dependency on any agent framework.
 Each `integrations/*` adapter may depend on exactly one framework, and nothing
@@ -81,18 +98,109 @@ since every adapter importing it downward is expected. The `base-only` CI job
 additionally installs *only* the base package and imports `donkey_kit` to catch
 an accidental top-level framework import leaking into a lower layer.
 
+**The whole package is layered, not just the stack above** (#729). The
+`layered architecture (§1.1)` contract orders every top-level module, top to
+bottom:
+
+```
+cli                                 the `donkey` console script (#730)
+conformance → simulator → _testing  dev-only siblings
+donkey | experimental               experimental: non-first-class names (ADR 0008)
+integrations → tools → registry → llm → core
+```
+
+It is `exhaustive`, so a new top-level module fails `lint-imports` until it is
+placed. Its one ignored import is `Donkey.simulate()`'s lazy import of
+`simulator.inject`: public API whose implementation lives in the simulator.
+Beside it:
+
+- **Nothing imports the CLI.** `cli` sits on top, so no library module imports
+  it back and typer (the `[cli]` extra) stays off the base install.
+- **`import donkey_kit` loads only the production layers.** The root `__init__`
+  never reaches the dev-only siblings or the CLI. The contract has
+  to ignore `Donkey.simulate()`'s import, so it can't tell a lazy import from an
+  eager one; `test_import_donkey_kit_loads_only_the_production_layers` imports
+  the package in a fresh interpreter and checks `sys.modules`.
+- **core depends on httpx only.** A forbidden contract, with third-party
+  packages in the graph, bars the LLM SDKs, `httpx2`, `pydantic`, every
+  adapter's framework, the MCP SDK and the dev-only and CLI dependencies from `core`,
+  including imports inside functions, which the `base-only` job can't see. Its
+  allowlist twin is `test_core_depends_only_on_httpx_and_the_stdlib`
+  (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
+  level, plus the optional `opentelemetry` lazily.
+- **core is layered too:** `runtime` → `transport` → `budget | cache |
+  cachecontrol | telemetry | toolspec` → `auth | correlation` → `config` →
+  `cost | endpoints | header_names | refusals` → `errors` → `_refusal_body |
+  lastcall | masking` → `_verify` → `_wire`.
+  `lastcall` sits below `errors` because a `DonkeyError` reads its request id
+  through it. `_refusal_body` holds the refusal-body parsers (`errors`' JSON
+  envelope and PII-span helpers), split out to keep `errors` under its size
+  ceiling. This contract is exhaustive too.
+
+Two rules the import graph can't express are tests in
+`tests/unit/test_architecture.py`:
+
+- **No cross-package private import**
+  (`test_no_private_import_across_top_level_packages`). No top-level package
+  imports another's `_name`, or any private module other than the four named
+  seams (`core._verify`, `core._wire`, `_testing`, `integrations._base`).
+- **A module size budget for `core/`**
+  (`test_core_modules_stay_within_the_size_budget`) of 500 lines. The four
+  modules already past it (`config`, `errors`, `lastcall`, `telemetry`) are
+  held at their current size by a ratchet
+  (`test_oversized_core_modules_only_shrink`). A ceiling only comes down, and
+  an entry goes once its module is back within budget, as `transport.py`'s did
+  when the transport split into a package (#728).
+
 Because of that rule, adapters import their framework **lazily, inside methods** —
 never at module top level — so importing the base package never drags in a
 framework that may not be installed.
 
+**Value objects are frozen dataclasses** ([ADR 0001](docs/adr/0001-value-objects.md)).
+Config, catalog entries, registry assets and results are `@dataclass(frozen=True)`
+and change by building a new instance (`dataclasses.replace(...)`,
+`DonkeyConfig.with_overrides(...)`). pydantic is used only at an external-schema
+boundary, and no module has one today: its only user was the deleted
+`provisioning/spec.py`, so `pydantic` is not a base dependency (#730). The
+`base-only` CI job checks that a plain install neither installs nor imports it.
+
 ### How the pieces connect
+
+```mermaid
+flowchart LR
+  donkey["Donkey"] --> runtime
+  factories["module-level factories<br/>integrations.&lt;framework&gt;.&lt;factory&gt;()"] -->|"runtime.default()"| runtime
+  runtime["Runtime · core/runtime.py<br/>config · OTLP bootstrap · auth providers · Budget<br/>the only place shared clients are built"]
+
+  runtime --> dp["data-plane DonkeyAsyncClient<br/>(+ blocking DonkeyClient twin)<br/>credential: client_id/client_secret pair,<br/>or the model-wallet JWT in jwt mode"]
+  runtime --> cp["control-plane DonkeyAsyncClient<br/>credential: connected-app token"]
+
+  dp --> view["view() = Donkey.http_client()<br/>non-owning: close() is a no-op"]
+  dp --> bridge["httpx2 bridge · core/transport/httpx2.py<br/>forwards every request through the data-plane client"]
+  dp --> icpt["interceptor"]
+
+  view --> fwView["frameworks that take an httpx client<br/>(http_client-kwarg frameworks on openai 2.x)"]
+  bridge --> fwBridge["anthropic 1.x · every OpenAI client the SDK builds on openai 3+<br/>· LangGraph, Strands, LlamaIndex on openai 3+ (reusable variant)"]
+  icpt --> crewai["CrewAI (its provider builds its own client)"]
+
+  cp --> registry["registry/ and other Anypoint platform calls"]
+
+  dp -.-> gate{"_CheckedEndpoints<br/>request origin checked?<br/>(scheme, host, port)"}
+  cp -.-> gate
+  gate -->|"yes: plane URL or an allow_endpoint override"| withCreds["sent with that plane's credentials"]
+  gate -->|"no: any other origin, every redirect hop"| stripped["sent with credential headers removed"]
+```
+
+Solid arrows are what builds or consumes what; the dotted arrows show that every
+request either plane sends passes the same origin check.
 
 - **`Donkey`** is the public surface and orchestrator. It owns one shared
   **`DonkeyAsyncClient`** (an `httpx.AsyncClient` subclass that injects the
   governance/attribution headers) **per credential plane**, so each credential
   only ever rides its own plane's requests (`BG §1.1`):
   - the **data-plane** client goes to the LLM client and every adapter, so there
-    is exactly one transport and one header-injection point for model calls. It
+    is exactly one transport and one header-injection point for model calls
+    (`test_one_shared_client_per_credential_plane`). It
     carries only the LLM-proxy credential: the `client_id`/`client_secret` header
     pair in the default client-id mode (no token provider), or the model-wallet
     JWT from `Donkey(llm_auth=…)` in `jwt` mode. Frameworks never get this
@@ -108,9 +216,20 @@ framework that may not be installed.
     (opt-in) cost-tag headers; only the credentials differ.
 
   A framework built on `httpx2` that rejects `httpx` clients (`anthropic>=1.0`,
-  #701) gets an `httpx2.AsyncClient` from `integrations/_httpx2_bridge.py`
-  instead, whose transport forwards every request through the same data-plane
-  client, so it is still one transport.
+  #701), and every `OpenAI`/`AsyncOpenAI` the SDK builds itself on `openai>=3`
+  (`donkey.llm.client()` and `_proxy_openai_client`, #728), gets an `httpx2`
+  client from the core bridge `core/transport/httpx2.py` instead, whose
+  transport forwards every request through the same data-plane client, so it
+  is still one transport. A framework that builds its OpenAI client from an
+  `http_client` kwarg (LangGraph, Strands, LlamaIndex) gets the same bridge on
+  `openai>=3` (#728), in a *reusable* variant whose close is a no-op like the
+  view's, because Strands closes its client after every request; on `openai<3`
+  it still gets the view. One helper, `llm.client.openai_http_client` /
+  `openai_sync_http_client`, makes that choice for every OpenAI client the SDK
+  wires. The bridge has an async and a blocking twin. The blocking twin sends
+  through the blocking shared client, so it refuses in a token mode just as
+  that client does. Both are imported lazily, because `httpx2` is not a base
+  dependency.
 
   `Donkey` builds these through a **`Runtime`** (`core/runtime.py`), which owns
   the config, the OTLP bootstrap, the auth providers, the `Budget`, both clients
@@ -119,10 +238,18 @@ framework that may not be installed.
   on the process-default runtime from `runtime.default()`: built lazily under a
   lock from the environment, exactly as `Donkey.from_env()` would be, shared by
   every factory, and closed at interpreter exit. It lives in `core` because
-  `integrations` may not import the top package (#725).
+  `integrations` may not import the top package (#725,
+  [ADR 0003](docs/adr/0003-core-runtime.md)).
+
+  The OTLP bootstrap has no hidden global side effect: it builds a
+  **DDK-scoped** `TracerProvider` for DDK's own spans and never sets the
+  process-global OpenTelemetry provider unless `telemetry_install_global`
+  opts in. `_tracer()` in `core/telemetry.py` prefers any global provider the
+  host sets, even after `Donkey()`, so OTel's set-once rule never locks the
+  host out (#732, `docs/adr/0010-no-hidden-global-side-effects.md`).
 
   Each client attaches credentials only to its **checked endpoints**
-  (`_CheckedEndpoints` in `core/transport.py`), compared by scheme, host and
+  (`_CheckedEndpoints` in `core/transport/headers.py`), compared by scheme, host and
   port: the plane's configured URL, plus any URL override a factory accepted
   after the same https check (`allow_endpoint`). A request to any other origin,
   every redirect hop included (httpx runs request hooks per hop), goes out with
@@ -137,17 +264,42 @@ framework that may not be installed.
   never a bare `ModuleNotFoundError`. The registry probes every module an
   adapter needs, not just the framework's own, and each factory wraps its lazy
   import in `Adapter._native_import()`, so the adapter method and the
-  module-level factory raise the same error. Each adapter returns the framework's own
-  object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
+  module-level factory raise the same error
+  (`test_donkey_form_raises_curated_error` and its siblings in
+  `tests/unit/test_missing_framework_error.py`). Each adapter returns the
+  framework's own object (e.g. a real `langchain_openai.ChatOpenAI`), so there is nothing to
   unlearn and a three-line escape hatch (`connection_kwargs()`) out of the SDK.
-- **Configuration** resolves per key: values set in code → env vars →
-  `./.donkey-kit.local.toml` (merged recursively into) `./.donkey-kit.toml` →
-  (only when neither exists) `$XDG_CONFIG_HOME/.donkey-kit.toml`, or
-  `~/.config/.donkey-kit.toml` when that variable is unset or empty → default.
-  `DonkeyConfig(...)` built directly reads neither env nor files. It reports
-  every missing field at once rather than one failure per run.
-  `Donkey.from_env()` is the entry point. This is what the code does today;
-  the precedence the build plan specifies (§2.1) is #727. Each field records its source
+- **One adapter contract, one roster (#726, ADR 0004).** Every adapter meets
+  `AdapterProtocol` (`integrations/__init__.py`): `connection_kwargs()` plus
+  `capabilities(factory)`, which returns a frozen `AdapterCapabilities`
+  (`transport`, `sync`, `streaming`, `typed_refusals`, `observes_last_call`).
+  Capabilities are declared per factory in the adapter's `factories` mapping
+  and never change at runtime, so ADK's `model()` and `gemini()` report
+  separately. Every `connection_kwargs()` builds on `Adapter._connection()`,
+  which runs the guards once: a `transport="framework"` factory (CrewAI) is
+  refused in a token auth mode, and core's `checked_llm_config()` validates the
+  proxy config and refuses a token mode with no `AuthProvider`.
+  `donkey.llm.client()` uses the same core guard. `ADAPTERS` is the only
+  roster. The pip extra and the curated ImportError are derived from it, and
+  `tests/unit/test_adapter_roster.py` checks every list that cannot be
+  generated from it: the pyproject extras, the import-linter independence
+  contract, the mypy overrides, the static `Donkey` annotations, the
+  `KNOWN_LIMITATIONS` exemptions, the nightly matrix, `examples/` and
+  `scripts/verify_frameworks.py`.
+- **Configuration** resolves per key (§2.1, `DonkeyConfig.resolve`): values
+  set in code (`resolve()` / `Donkey.from_env()` keyword arguments,
+  `with_overrides`) → env vars → `./.donkey-kit.local.toml` →
+  `./.donkey-kit.toml` → `$XDG_CONFIG_HOME/.donkey-kit.toml` (or
+  `~/.config/.donkey-kit.toml` when that variable is unset, empty or relative) → default.
+  The three files merge key by key, nested tables recursively, so a lower file
+  fills what a higher one leaves unset; `resolve(path=...)` reads a named file
+  in place of `./.donkey-kit.toml`. One declarative field table (`_FIELDS` in
+  `core/config.py`) names each field's env var, TOML key, parser and value
+  check; the loader, the error messages and the configuration docs (pinned by a
+  unit test) all follow it. `DonkeyConfig(...)` built directly reads neither env
+  nor files. It reports every missing field, and every invalid value, at once
+  rather than one failure per run. `Donkey.from_env()` is the entry point.
+  `test_config_precedence_code_env_files_default` pins it. Each field records its source
   (`DonkeyConfig.source_of`); a value that differs from the loaded one counts as
   set in code, however it was changed. So `llm_proxy_url` or `base_url` read
   from the working directory's files only receives credentials from those files
@@ -156,7 +308,7 @@ framework that may not be installed.
   is set in the environment. The check runs before a credential leaves on
   either plane: in `validated()` for model calls and the registry, before each
   control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
-  requested. Governance `[targets.*].base_url` is not covered yet (#832).
+  requested.
   Provenance stores a keyed digest of each loaded value (the key is random per
   process), so `asdict()` copies no secret and a config rebuilt in another
   process keeps its URL sources but treats its credentials as set in code. A
@@ -173,7 +325,7 @@ framework that may not be installed.
   error is raised `from None`, with the original on `framework_error`. Framework
   objects built from the kwargs keep their own `repr`, and some of them print
   credentials.
-- **The transport is the attachment point.** `DonkeyAsyncClient` exposes four
+- **The transport is the attachment point.** `DonkeyAsyncClient` exposes
   internal lifecycle hooks — no-op by default, **not** public API, mirrored on the
   sync twin `DonkeyClient` — so the six-piece minimum *attaches* rather than
   re-wiring `send()` (`BG §1.1`, #179/#287). This is what makes the skeleton one
@@ -181,46 +333,69 @@ framework that may not be installed.
 
   | Hook | When it fires | What attaches |
   | --- | --- | --- |
-  | `_on_request` | once, before the retry loop | no-op seam today; see the note below the table |
-  | `_on_response` | once, on the final response (via `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
-  | `_on_refusal` | never — no caller today; `classify()` raises the typed error directly, and the LangGraph bridge maps it without the hook | typed-refusal reaction handlers (`BG §1.2`, #208); the framework-agnostic typed-refusal bridge is #724 |
-  | `_swap_transport` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in (`BG §1.4`/`BG §1.5`); the constructors fold httpx's proxy mounts into the base transport, so a swap covers every route and fails closed if a mount appears later (#801) |
+  | `_inject_headers` | every attempt (an httpx request event hook, so every retry and redirect hop) | correlation, call-id, attribution, cache-control and opt-in cost-tag headers (`BG §1.7`); the plane's credentials, on checked endpoints only |
+  | `_on_response` | once, on the final response (in `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
+  | `_on_refusal` | once, when the final response is a policy refusal, with the `PolicyViolation` `classify()` made of it, after the span is recorded | typed-refusal reaction handlers (`BG §1.2`, #208); the default does nothing and the refusal is still returned. The typed-refusal bridge (`core/refusals.py`, #724) maps refusals at the framework boundary without it |
+  | `governed_transport.replace_inner()` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`). Each client's transport is a `GovernedTransport` (`GovernedSyncTransport` on the sync twin) that owns the inner transport; the constructors fold httpx's proxy mounts into it, so a swap covers every route and fails closed if a mount appears later (#801, #728) |
 
-  Correlation, attribution, cache-control and opt-in cost-tag headers
-  (`BG §1.7`) are set on every attempt by the `_inject_headers` request event
-  hook, not by `_on_request`. The OTel span (`BG §1.6`) opens in `send()` and
-  closes there, or in the stream wrapper for a streamed response. Its response
-  attributes, including the `classify()`-derived policy decision, are recorded
-  by `_record_response`, which `_finish()` calls right after `_on_response`.
+  There is no per-`send()` request hook: the old no-op `_on_request` was
+  removed (#728), since the header hook covers every attempt. The OTel span
+  (`BG §1.6`) opens in `send()` and closes there, or in the stream wrapper for
+  a streamed response. Its response attributes, including the
+  `classify()`-derived policy decision, are recorded by `_record_response`,
+  which `_finish()` calls right after `_on_response`.
+
+  The two clients share one pipeline and differ only in IO. The package
+  `core/transport/` splits it by concern (#728):
+
+  | Module | Holds |
+  | --- | --- |
+  | `headers.py` | header policy: correlation/call ids, attribution, cost tags, credentials, checked endpoints |
+  | `policy.py` | the sans-IO decisions: `decide_retry()` (`Refresh` / `Retry` / `Finish`), the refusal (`classify()` of a final 4xx) and the substitution check |
+  | `pipeline.py` | `_GovernedPipeline`, the IO-free halves of a send both clients run |
+  | `observe.py` | budget and `last_call` observation, span recording, retry/finish logs |
+  | `streaming.py` | the bounded error-body read, the SSE usage scanner, the span-closing streams |
+  | `governed.py` | `GovernedTransport` / `GovernedSyncTransport`, the mount routers, the per-event-loop pool |
+  | `async_client.py`, `sync_client.py` | `DonkeyAsyncClient` / `DonkeyClient`: only the send loop's IO |
+  | `failures.py` | the typed errors a send raises instead of an httpx failure (`GatewayUnavailable`, the lifecycle `ConfigError`s, `sync_token_auth_error`) |
+  | `views.py` | the non-owning views (#733) and `built_on_httpx2()` |
+  | `httpx2.py` | the `httpx2` bridge (lazy, never imported at package import) |
+
+  A `502` or `504` on a model `POST` (a `POST` whose body, or native Gemini path, names a model) is
+  not re-sent by default: the upstream call may have completed and billed, and
+  no gateway idempotency key is verified (docs/verified-apis.md). Set
+  `retry_model_calls_on_gateway_errors` to retry it; a `503`, and every other
+  request, still retries (docs/adr/0009-*.md, #728).
 
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
   tracking silently breaks; and because a transport-level error escapes before
-  `_finish` runs, anything opened in `_on_request` has **no paired
-  `_on_response`** on that path — such a consumer must close in a `finally`,
-  never relying on the response hook (the OTel span avoids this by living in
-  `send()`).
+  `_finish` runs, `_on_response` **does not fire** on that path — anything
+  opened for a send must close in a `finally`, never relying on the response
+  hook (the OTel span does this by living in `send()`).
   A hookless client behaves exactly as it did before the hooks were added. The
-  full contracts live in the `core/transport.py` docstrings.
-- **`Governance`** (`governance.py`) is legacy scaffolding outside the linear
-  import stack — it depends only on `core` and remains reachable from its module,
-  but it is not exported as first-class `donkey_kit` API. It is ONE object behind
-  three verbs: `simulate()` (an ephemeral local
-  gateway harness), `export()` (emit the governed-state manifest), and `resolve()`
-  (reconcile a running `Donkey` against it, raising `GovernanceDrift` on
-  mismatch); a separate platform-team-only `apply()` is the deliberate escape
-  hatch. **All of these are currently `_verify.blocked`** — the `simulate()`
-  harness included — pending the Verification milestone, so today the object is the
-  shape, not yet the behaviour. Do not confuse it with `registry/governance.py`,
-  which types governed-state *assets* one layer down.
+  full contracts live in the `core/transport/` docstrings.
+  `test_transport_hook_table_matches_both_clients` keeps this table and both
+  clients in step. The firing contracts are pinned in
+  `tests/unit/test_transport.py` (`test_default_hooks_are_noop_seams`,
+  `test_on_refusal_called_once_with_the_classified_violation`,
+  `test_hooks_fire_once_across_the_401_refresh_path`).
+- **Governed-state criteria** (`GovernanceCriteria`, `STRICT`, `evaluate`) live
+  in `registry/criteria.py` (renamed from `registry/governance.py` in #719; the
+  old path is a deprecated alias). The top-level `Governance` object
+  (`simulate()`/`export()`/`resolve()`/`apply()`) was deleted with the
+  provisioning control plane in #730.
 
 Every governed surface ships in three ergonomic forms that must stay in lockstep:
 the `donkey.<framework>` factory, a `connection_kwargs()` accessor, and a
-module-level factory. Nothing checks this structurally yet: the lockstep is held
-by hand-written tests in `tests/unit/test_adapter_ergonomics.py`
+module-level factory. The adapter contract and its roster are checked
+structurally (#726, ADR 0004): `tests/unit/test_adapter_capabilities.py` holds
+every `ADAPTERS` entry to `AdapterProtocol`, and `tests/unit/test_adapter_roster.py`
+checks the lists derived from the roster (see *One adapter contract, one
+roster* above). The three forms themselves are compared by
+`tests/unit/test_adapter_ergonomics.py`
 (`test_factory_and_connection_kwargs_do_not_drift` and its per-adapter
-siblings), whose `_FACTORIES` table a new adapter must be added to by hand.
-Formalising the adapter contract and its roster is #726.
+siblings), whose `_FACTORIES` table a new adapter is still added to by hand.
 
 ---
 
@@ -237,7 +412,7 @@ Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
   It is used where there is no defensible placeholder at all — e.g. the MCP-bridge
-  tool-discovery and the provisioning control-plane endpoints. The SDK raises
+  tool-discovery and the Exchange publication endpoints. The SDK raises
   rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
 - **`Unverified(...)`** placeholder constants hold a documented best-guess that is
   fully overridable via config/env, and emit a one-time `UnverifiedValueWarning`
@@ -258,7 +433,7 @@ What is verified today: the LLM-proxy data plane (its base-URL shape — note th
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
-discovery and the provisioning control plane. The framework adapters are not
+discovery and Exchange publication (BG §2.5). The framework adapters are not
 blocked. They build their native object directly, and their constructor rows in
 §8 of the ledger read **signature-confirmed offline**, except ADK's `gemini()`,
 which is **live-verified**. An adapter refuses with `blocked(...)` only when the
@@ -273,45 +448,132 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 `core/errors.py`:
 
 1. **A policy refusal is never retried.** `PolicyViolation` (and its subclasses —
-   `TokenBudgetExceeded`, `PIIDetected`, `PromptInjectionBlocked`,
-   `ContentSafetyBlocked`) must be distinguishable from a transient error at the
+   `TokenBudgetExceeded`, `RequestRateLimitExceeded`, `PIIDetected`,
+   `PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`) must be distinguishable from a transient error at the
    framework boundary, so a host framework never silently retries a governance
-   refusal. The transport treats these as terminal.
+   refusal. The transport treats these as terminal
+   (`test_429_is_terminal_but_5xx_still_retries` and
+   `test_terminal_4xx_is_stamped_should_retry_false` in
+   `tests/unit/test_transport.py`; per framework,
+   `test_framework_sends_a_refusal_once`).
 2. **Every error carries a `remediation`.** On `PolicyViolation` the human-readable
    next step is a *required* field — the concrete action to take (e.g. "the budget
    window resets in 42m; request an increase in API Manager") is worth more than a
    stack trace. `AuthError` uses its class-level LLM-proxy guidance by default and
    canonical class-level overrides for connected-app and provider-chain failures,
    so its message and remediation always name the same credential plane and auth
-   provider.
+   provider. `tests/unit/test_error_taxonomy.py` holds every error to it
+   (`test_every_error_ships_its_own_nonempty_default`).
 
 **`classify()` is fixture-driven, not guessed.** The HTTP-response → exception
 mapping in `classify()` is populated from real rejection captures taken against a
 live governed proxy (BG §1.5), not hand-written assumptions. The authoritative
 discriminator is the error **`type`** plus specific headers — **not the status
-code alone.** The captures established, for example, that:
+code alone.** `classify()` tries its matchers in a fixed order (`_MATCHERS` in
+`core/errors.py`) and returns the first hit. The policy signals in the body and
+headers come before any status rule:
+
+```mermaid
+flowchart TD
+  start(["final error response"]) --> sig{"policy signal in the<br/>body or headers?<br/>(checked before any status rule)"}
+  sig -->|"nested error type<br/>pii_detected"| PIIDetected
+  sig -->|"nested error code<br/>agent_killed"| AgentKilled
+  sig -->|"x-llm-proxy-*-action:<br/>reject"| ContentSafetyBlocked
+  sig -->|"top-level matched_patterns,<br/>or x-injection-protection: blocked"| PromptInjectionBlocked
+  sig -->|none| status{"status?"}
+
+  status -->|"401, or 403 with<br/>www-authenticate"| AuthError
+  status -->|429| r429{"x-ratelimit-limit and -remaining,<br/>no x-token-limit?"}
+  r429 -->|yes| RequestRateLimitExceeded
+  r429 -->|"no (empty body, x-token-* headers)"| TokenBudgetExceeded
+  status -->|"any other 4xx"| c4xx{"body?"}
+  c4xx -->|"nested provider error object"| UpstreamRequestError
+  c4xx -->|"flat error: not in the known<br/>unique model map"| ModelNotRoutable
+  c4xx -->|"anything else, incl. a 403<br/>without www-authenticate"| PV["PolicyViolation<br/>(policy=unknown, shape unconfirmed)"]
+  status -->|5xx| UpstreamModelError["UpstreamModelError<br/>(retryable)"]
+  status -->|"anything else"| DonkeyError["DonkeyError<br/>(unexpected response)"]
+
+  classDef refusal fill:#fde2e2,stroke:#c0392b,color:#000
+  classDef other fill:#e8f0fe,stroke:#3367d6,color:#000
+  class PIIDetected,AgentKilled,ContentSafetyBlocked,PromptInjectionBlocked,RequestRateLimitExceeded,TokenBudgetExceeded,PV refusal
+  class AuthError,UpstreamRequestError,ModelNotRoutable,UpstreamModelError,DonkeyError other
+```
+
+Red marks a policy refusal (a `PolicyViolation`, never retried); blue is
+everything else. The captures established, for example, that:
 
 - A **PII** block is a **403** with a *nested* error object whose `type` is
   `"pii_detected"` and **no** `www-authenticate` header — so it is decided *before*
   the generic 401/403→auth rule (`AuthError`). A 403 is not automatically an auth
   error.
+- An **Agent Kill Switch** block is a **403** whose nested error carries
+  `code: "agent_killed"` (no `type`, no `www-authenticate`) → `AgentKilled`
+  (#694). It is keyed on the body `code`, ahead of the auth and generic-4xx rules.
+- A **content-safety / guardrail** block (Azure Content Safety, Amazon Bedrock
+  Guardrails) is a **403** with a vendor `x-llm-proxy-<vendor>-…-action: reject`
+  header → `ContentSafetyBlocked`, its flagged categories parsed from the sibling
+  `…-reason` header (#253, #568).
+- A **Regex Prompt Guard** block is a **403** with a flat-string `error` and a
+  top-level `matched_patterns` list → `PromptInjectionBlocked`
+  (`policy="regex-prompt-guard"`), also ahead of the auth rule (#253).
 - A **token-budget** rejection is a **429** with an *empty body*; the budget state
   lives entirely in headers (`x-token-reset` in ms), with no standard `retry-after`
   → `TokenBudgetExceeded`.
+- A **request-rate-limit** rejection is also a **429**, from the stock
+  `rate-limiting` policy, but it carries the unsuffixed `x-ratelimit-limit` /
+  `-remaining` / `-reset` trio and no `x-token-*` → `RequestRateLimitExceeded`
+  (#974). Without those headers it cannot be told apart, so it stays
+  `TokenBudgetExceeded`.
 - An **upstream provider** rejection (e.g. OpenAI `model_not_found`) is a non-429
   4xx carrying the provider's nested `code`/`type`/`param`, passed through
   verbatim → `UpstreamRequestError` (terminal, but distinct from a policy refusal).
+- A **bare model name on a multi-provider proxy** is a **400** with a flat-string
+  `error` saying the model "is not in the known unique model map" →
+  `ModelNotRoutable`: a client mistake, not a policy refusal (#825).
 - A **5xx** is a retryable provider outage → `UpstreamModelError`.
 
 A **prompt-injection** block is typed on its own signal: the
 `x-injection-protection: blocked` response header decides `PromptInjectionBlocked`
 *before* the generic 4xx / nested-error branch; its rejection *body* is now
-LIVE-VERIFIED, a real 79-byte capture (#669). Only **content-moderation /
-federated-guardrail** shapes remain under-documented, and those deliberately fall
-through to a generic `PolicyViolation` whose message *says so* rather than
-pretending to a precision the captures don't yet support — the same verification-discipline honesty
-as the verification ledger. All errors subclass `DonkeyError`, which carries the
+LIVE-VERIFIED, a real 79-byte capture (#669). Any other non-429 4xx, including a
+403 with no `www-authenticate` header, matches no documented contract
+(federated-guardrail verdicts among them, #305). It deliberately falls through to
+a generic `PolicyViolation` (`policy="unknown"`) whose message *says so* rather
+than pretending to a precision the captures don't yet support — the same
+verification-discipline honesty as the verification ledger. All errors subclass `DonkeyError`, which carries the
 correlation/request IDs and the raw response for inspection.
+
+**Typed refusals cross the framework boundary in one place (#724, ADR 0002).**
+A framework's client re-wraps what the transport raised: the OpenAI and
+Anthropic SDKs report a refusal as their own status error carrying the
+response, and an error the transport raised itself (`GatewayUnavailable`,
+`ModelSubstituted`) as a connection error with the typed error on `__cause__`
+(openai 3 lets that one through as it is);
+LangChain, Strands and Agent Framework wrap once more. `core/refusals.py`
+recovers the typed error by duck type, without importing any framework.
+`translate()` walks the exception chain, and at each link it does three things:
+
+- returns a `DonkeyError` it finds as is;
+- classifies a status error's response with `classify()`, but only if our
+  transport sent the request (it reads the provenance marker the transport
+  stamps on `request.extensions`, so a stock client's 403 is never typed);
+- stops at a link that carries no HTTP request or response, such as the
+  user's own re-wrap or a bug in a handler, and leaves the error alone.
+
+A framework wrapper that carries no HTTP shape is seen through by an optional
+per-adapter translator, named by `AdapterSpec.refusal_translator` in
+`integrations/__init__.py`. It is loaded only once that framework has been
+imported, and it only unwraps: no adapter module calls `classify()`.
+`donkey_kit.typed_refusals()` is the bridge as a sync or async context manager
+or a decorator; `donkey.run()` and `@donkey.governed` apply it on exit unless
+`typed_refusals=False`, while the bare `core.telemetry.run_scope` stays opt-in.
+A classified refusal is raised `from None` with the framework error on
+`.framework_error`, because that error's message can repeat the blocked
+values. A transport-raised typed error keeps its own `__cause__`.
+An exception group from a task group is looked inside (#950, ADR 0002
+amendment): it collapses to the typed error when every leaf is the same
+`DonkeyError` class, and is otherwise rebuilt with its refusal leaves typed so
+`except*` matches them.
 
 ---
 
@@ -349,10 +611,18 @@ propagate a per-run correlation ID or populate `donkey.last_call`, because its
 native OpenAI provider builds its own HTTP client; the adapter only hands it an
 `interceptor` that keeps credentials to checked endpoints. ADK's `gemini()` (a
 `Format=Gemini` proxy, #691) injects the shared client, so it records no
-exemption. LlamaIndex, Microsoft Agent Framework and ADK's `model()` now send
-through the shared client too (`http_client` / `async_http_client`, an
-`async_client`, and a pre-built OpenAI `client` for LiteLLM), but still carry
-their exemptions and `observes_last_call = False`; removing them is #740.
+exemption. LlamaIndex, Microsoft Agent Framework and ADK's `model()` also send
+through the shared client (`http_client` / `async_http_client`, an
+`async_client`, and a pre-built OpenAI `client` for LiteLLM), so their
+exemptions are gone (#740). Only CrewAI remains: its native OpenAI provider
+builds the sync `OpenAI` and the `AsyncOpenAI` from one `client_params` dict,
+and with an interceptor set it replaces `http_client` with its own `httpx`
+client, so the SDK's async client cannot be injected. ADK's `model()` keeps one
+exemption, `typed_refusal_bridged` (#724). `tests/unit/test_adapter_roster.py`
+keeps the table and each adapter's `AdapterCapabilities` equal:
+`gateway_identity_observed` is exempt exactly when `observes_last_call` is false,
+`typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
+when `transport` is `"framework"`.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
@@ -368,6 +638,9 @@ pytest plugin** users run against their own agent (#191).
   feature-by-feature scope and acceptance bars; cited as `BG §N.N`.
 - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
+- [`docs/adr/`](docs/adr/README.md) — the architecture decision records: why
+  each decision here was taken, the alternatives rejected, and the process for
+  changing one.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch/PR/release flow, testing surfaces,
   coding conventions, and the docs-sync map. It is the canonical contributor
   guide; maintainers' optional AI-agent tooling is not part of this repository

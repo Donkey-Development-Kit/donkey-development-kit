@@ -3,30 +3,45 @@
 OpenTelemetry is an optional dependency (the ``[otel]`` extra). Telemetry is
 **on by default** (``DonkeyConfig.telemetry``), but the export pipeline is
 **inert unless an OTLP endpoint is configured**: :func:`configure_otlp_export`
-installs a real exporter only when ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the
+builds a real exporter only when ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the
 traces-specific variant) is set — so a process with no endpoint produces no
 spans, connects to nothing, and prints nothing (BG §1.6 "inert and silent",
-#194). This is what makes the zero-config promise hold: set the standard OTel
+#194). That exporter rides a **DDK-scoped** ``TracerProvider``; the
+process-global provider is never set unless the caller opts in with
+``telemetry_install_global`` (#732), so a host that configures its own provider
+later still gets DDK's spans. This is what makes the zero-config promise hold: set the standard OTel
 endpoint env var and spans flow to your sink with **no SDK-specific env var**.
 Opt out of telemetry entirely with the single flag ``DONKEY_TELEMETRY=false``.
 
 The correlation ID lives in a ``contextvar`` so a single agent run's fan-out of
 model calls and tool calls shares one trace ID end to end — letting a developer
 correlate their local trace with what the platform team sees in Omni Gateway's
-observability view (a headline feature, BG §1.6).
+observability view (a headline feature, BG §1.6). That state is defined in
+:mod:`donkey_kit.core.correlation`, which the transport's header policy reads
+directly, and is re-exported here so these import paths are unchanged (#728).
 """
 
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
-import uuid
 import warnings
 from collections.abc import Iterator
-from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
-from .cost import CostTags
+# The run-scoped correlation state lives in ``core.correlation`` (#728); these
+# names are re-exported so ``donkey_kit.core.telemetry.<name>`` keeps working.
+from .correlation import (
+    RunScope,
+    current_correlation_id,
+    current_cost_tags,
+    new_call_id,
+    new_correlation_id,
+    request_correlation_id,
+    run_context,
+    run_scope,
+)
 
 if TYPE_CHECKING:
     from .config import DonkeyConfig
@@ -37,21 +52,61 @@ from .errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
 )
 
-_correlation_id: ContextVar[str | None] = ContextVar("donkey_correlation_id", default=None)
-# Per-run cost-tag overrides bound by ``donkey.run(team=..., ...)`` (#196). Like
-# the correlation id it is contextvar-bound, so a run's overrides reach every
-# model call in the block — including calls on framework-spawned asyncio tasks,
-# which copy the current context — with no threading through framework state.
-_cost_tags: ContextVar[CostTags | None] = ContextVar("donkey_cost_tags", default=None)
+__all__ = [
+    "DONKEY_BUDGET_REMAINING",
+    "DONKEY_CACHE_SCORE",
+    "DONKEY_CACHE_STATUS",
+    "DONKEY_CORRELATION_ID",
+    "DONKEY_COST_ENDUSER",
+    "DONKEY_COST_ENV",
+    "DONKEY_COST_PROJECT",
+    "DONKEY_COST_TEAM",
+    "DONKEY_POLICY_DECISION",
+    "DONKEY_POLICY_TYPE",
+    "DONKEY_ROUTING_FALLBACK",
+    "DONKEY_ROUTING_MATCHED_TOPIC",
+    "DONKEY_ROUTING_SCORE",
+    "DONKEY_ROUTING_TYPE",
+    "DONKEY_USAGE_CACHED_TOKENS",
+    "DONKEY_USAGE_CACHE_WRITE_TOKENS",
+    "DONKEY_USAGE_REASONING_TOKENS",
+    "GEN_AI_COMPLETION",
+    "GEN_AI_PROMPT",
+    "GEN_AI_REQUEST_MODEL",
+    "GEN_AI_RESPONSE_MODEL",
+    "GEN_AI_SEMCONV_VERSION",
+    "GEN_AI_SYSTEM",
+    "GEN_AI_USAGE_INPUT_TOKENS",
+    "GEN_AI_USAGE_OUTPUT_TOKENS",
+    "POLICY_DECISION_ALLOW",
+    "POLICY_DECISION_REFUSE",
+    "SPAN_LLM_CHAT",
+    "GenAiSpan",
+    "RunScope",
+    "TelemetryExportWarning",
+    "build_genai_attributes",
+    "configure_otlp_export",
+    "current_correlation_id",
+    "current_cost_tags",
+    "genai_span",
+    "new_call_id",
+    "new_correlation_id",
+    "policy_type_slug",
+    "request_correlation_id",
+    "run_context",
+    "run_scope",
+    "start_genai_span",
+]
+
+_log = logging.getLogger(__name__)
+
 
 # Span name constants (BG §1.6).
 SPAN_LLM_CHAT = "donkey.llm.chat"
-SPAN_REGISTRY_RESOLVE = "donkey.registry.resolve"
-SPAN_TOOL_CALL = "donkey.tool.call"
-SPAN_PROVISION_APPLY = "donkey.provision.apply"
 
 # --- GenAI span attribute contract (#192, BG §1.6) --------------------------
 # Two namespaces on one span (see :func:`genai_span`):
@@ -93,9 +148,7 @@ GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
 # These are the ONLY attributes gated behind ``telemetry_capture_content`` (#306):
 # the semconv defines them as opt-in, and emitting them by default would
 # re-export prompts/completions upstream of the gateway's PII masking. They are
-# deliberately kept OUT of :data:`_ALLOWED_SPAN_ATTRIBUTES` so the generic
-# :func:`span` can never carry them, and are dropped by :meth:`GenAiSpan.record`
-# unless the caller opted in.
+# dropped by :meth:`GenAiSpan.record` unless the caller opted in.
 GEN_AI_PROMPT = "gen_ai.prompt"
 GEN_AI_COMPLETION = "gen_ai.completion"
 
@@ -106,25 +159,23 @@ DONKEY_POLICY_TYPE = "donkey.policy.type"
 DONKEY_BUDGET_REMAINING = "donkey.budget.remaining"
 # Cost-attribution dimensions (docs/verified-apis.md §3, BG §1.7, #196). One
 # donkey.cost.* attribute per fixed dimension; ``enduser.id`` keeps its dotted
-# external name. These carry the full value on the span even while the
-# request-header names are UNVERIFIED (docs/verified-apis.md §3), so
-# per-dimension spend attribution works end to end.
+# external name. These carry the full value even while the request-header
+# names are UNVERIFIED (docs/verified-apis.md §3), for end-to-end attribution.
 DONKEY_COST_TEAM = "donkey.cost.team"
 DONKEY_COST_PROJECT = "donkey.cost.project"
 DONKEY_COST_ENV = "donkey.cost.env"
 DONKEY_COST_ENDUSER = "donkey.cost.enduser.id"
 # Gateway routing & resilience (docs/verified-apis.md §3, #309). The served
-# provider already lands on
-# ``gen_ai.system`` and the served model on ``gen_ai.response.model``; these two
-# carry the gateway-specific routing facts the semconv has no key for. Emitted
-# even when ``fallback`` is ``False`` — "we routed normally" is a signal an
-# operator wants on every span, not just the failover ones.
+# provider already lands on ``gen_ai.system`` and the served model on
+# ``gen_ai.response.model``; these two carry the gateway-specific routing facts
+# the semconv has no key for. Emitted even when ``fallback`` is ``False`` — "we
+# routed normally" is a signal an operator wants on every span, not just the
+# failover ones.
 DONKEY_ROUTING_TYPE = "donkey.routing.type"
 DONKEY_ROUTING_FALLBACK = "donkey.routing.fallback"
 # Semantic-routing match detail (docs/verified-apis.md §3, #590). Populated only
-# on a semantic-routing proxy (``routing_type == "Semantic"``); absent —and so
-# dropped from the span— on model-based routing. The topic and score explain the
-# routing decision the bare ``donkey.routing.type`` leaves opaque.
+# on a semantic-routing proxy (``routing_type == "Semantic"``), absent on
+# model-based routing — the topic/score explain what ``donkey.routing.type`` leaves opaque.
 DONKEY_ROUTING_MATCHED_TOPIC = "donkey.routing.matched_topic"
 DONKEY_ROUTING_SCORE = "donkey.routing.score"
 # Semantic-cache outcome (docs/verified-apis.md §2, #587). Populated only when the
@@ -148,195 +199,57 @@ POLICY_DECISION_REFUSE = "refuse"
 # --- Content redaction boundary (#306, BG §1.6) -----------------------------
 # The attributes that carry message TEXT. Emitting any of these requires an
 # explicit ``telemetry_capture_content=True`` opt-in — see :data:`GEN_AI_PROMPT`.
-# Adding a new content-bearing attribute (e.g. tool-call arguments/results, when
-# that span grows one) means adding it HERE, so the single switch keeps covering
-# it and it stays out of the allowlist below.
+# Add a new content-bearing attribute (e.g. tool-call args/results) HERE, so
+# the single switch keeps covering it.
 _CONTENT_ATTRIBUTES = frozenset({GEN_AI_PROMPT, GEN_AI_COMPLETION})
-
-# The allowlist for the generic :func:`span` emitter: every non-content span
-# attribute the SDK is permitted to set. The mechanism is an allowlist, not a
-# denylist, so a content attribute (or any future key) cannot reach a span by
-# accident from any call site — only a key added here is ever emitted, and
-# content keys are deliberately excluded. Kept in sync by construction: it is
-# the union of the metadata constants, with :data:`_CONTENT_ATTRIBUTES` removed.
-_ALLOWED_SPAN_ATTRIBUTES = frozenset(
-    {
-        GEN_AI_SYSTEM,
-        GEN_AI_REQUEST_MODEL,
-        GEN_AI_RESPONSE_MODEL,
-        GEN_AI_USAGE_INPUT_TOKENS,
-        GEN_AI_USAGE_OUTPUT_TOKENS,
-        DONKEY_USAGE_CACHED_TOKENS,
-        DONKEY_USAGE_CACHE_WRITE_TOKENS,
-        DONKEY_USAGE_REASONING_TOKENS,
-        DONKEY_CORRELATION_ID,
-        DONKEY_POLICY_DECISION,
-        DONKEY_POLICY_TYPE,
-        DONKEY_BUDGET_REMAINING,
-        DONKEY_COST_TEAM,
-        DONKEY_COST_PROJECT,
-        DONKEY_COST_ENV,
-        DONKEY_COST_ENDUSER,
-        DONKEY_ROUTING_TYPE,
-        DONKEY_ROUTING_FALLBACK,
-        DONKEY_ROUTING_MATCHED_TOPIC,
-        DONKEY_ROUTING_SCORE,
-        DONKEY_CACHE_STATUS,
-        DONKEY_CACHE_SCORE,
-    }
-)
-
-
-def new_correlation_id() -> str:
-    return uuid.uuid4().hex
-
-
-def new_call_id() -> str:
-    """A fresh per-request **call id** (BG §1.1, #195).
-
-    Unlike the run/correlation id — which is contextvar-bound and shared across
-    every request in a :func:`run_context` / ``donkey.run()`` block — this is
-    generated anew for each logical request, so one call can be pinpointed within
-    a run. It is client-generated, so it exists even when a request fails before
-    any response (a transport error carries no gateway ``x-request-id``)."""
-    return uuid.uuid4().hex
-
-
-def current_correlation_id() -> str | None:
-    return _correlation_id.get()
-
-
-def current_cost_tags() -> CostTags | None:
-    """The cost-tag overrides bound by the enclosing ``donkey.run(...)`` block,
-    or ``None`` outside one (#196). The transport and span recorder merge these
-    over the configured tags, per field, so a run-scope dimension wins for its
-    block and the rest fall back to config."""
-    return _cost_tags.get()
-
-
-@contextlib.contextmanager
-def run_context(run_id: str | None = None) -> Iterator[str]:
-    """Bind a correlation ID for the duration of a logical agent run.
-
-    ``with donkey.run_context(run_id=...)`` lets callers supply their own ID;
-    otherwise one is generated. Nested calls restore the previous value on exit.
-    """
-
-    rid = run_id or new_correlation_id()
-    token = _correlation_id.set(rid)
-    try:
-        yield rid
-    finally:
-        _correlation_id.reset(token)
-
-
-class RunScope:
-    """A **dual sync/async** context manager that binds the run correlation id
-    to :data:`_correlation_id` for the block (BG §1.1, #195).
-
-    This is what ``donkey.run(id=...)`` returns, so the same object works under
-    both ``with donkey.run(...)`` and ``async with donkey.run(...)`` — binding a
-    contextvar needs no ``await``, so both entry paths share one implementation.
-    The bound id reaches every model call made inside the block (including calls
-    on framework-spawned ``asyncio`` tasks, which copy the current context at
-    creation), so a run id set here propagates without threading it through any
-    framework state.
-
-    Nested scopes rebind and restore via the contextvar token, so an inner run
-    id shadows an outer one for its block and the outer id is restored on exit.
-    Enter and exit happen in the same task/context for both protocols, so the
-    ``reset(token)`` is always valid.
-
-    Cost-attribution overrides (#196) layer on as additional bound state:
-    ``donkey.run(team=..., project=..., env=..., enduser_id=...)`` binds a
-    :class:`~donkey_kit.core.cost.CostTags` for the block, merged over the
-    configured tags per field. They ride the same enter/exit token discipline as
-    the correlation id, so a nested run's overrides shadow and restore cleanly,
-    and the correlation binding is unaffected when no cost fields are given.
-    """
-
-    __slots__ = ("_run_id", "_cost", "_token", "_cost_token")
-
-    def __init__(self, run_id: str | None = None, cost: CostTags | None = None) -> None:
-        self._run_id = run_id
-        # Store only a non-empty override, so a plain ``donkey.run(id=...)`` binds
-        # nothing on the cost contextvar and leaves any outer run's tags in place.
-        self._cost = cost if (cost is not None and not cost.is_empty) else None
-        self._token: Any = None
-        self._cost_token: Any = None
-
-    def _bind(self) -> str:
-        rid = self._run_id or new_correlation_id()
-        self._token = _correlation_id.set(rid)
-        if self._cost is not None:
-            self._cost_token = _cost_tags.set(self._cost)
-        return rid
-
-    def _unbind(self) -> None:
-        if self._cost_token is not None:
-            _cost_tags.reset(self._cost_token)
-            self._cost_token = None
-        if self._token is not None:
-            _correlation_id.reset(self._token)
-            self._token = None
-
-    def __enter__(self) -> str:
-        return self._bind()
-
-    def __exit__(self, *exc: Any) -> None:
-        self._unbind()
-
-    async def __aenter__(self) -> str:
-        return self._bind()
-
-    async def __aexit__(self, *exc: Any) -> None:
-        self._unbind()
-
-
-def run_scope(run_id: str | None = None, cost: CostTags | None = None) -> RunScope:
-    """Build a :class:`RunScope` — the dual sync/async run correlation binding
-    behind ``donkey.run(id=...)`` (BG §1.1, #195), optionally carrying per-run
-    cost-tag overrides (#196)."""
-    return RunScope(run_id, cost)
-
-
-def request_correlation_id() -> str:
-    """The bound run's correlation ID, or a fresh one that is deliberately *not*
-    bound (#803).
-
-    Only a ``donkey.run()`` / :func:`run_context` block binds a correlation ID; a
-    call outside one is its own run. Binding on first use would pin the very
-    first request's ID to the ambient context for its whole lifetime — the rest
-    of a blocking process, or the rest of a long-lived ``asyncio.run(main())``
-    (a queue consumer, a bot), including every task spawned after it — so
-    unrelated calls would all report the same run. Grouping is opt-in.
-    """
-    return _correlation_id.get() or new_correlation_id()
 
 
 # --- Optional OpenTelemetry span helper -------------------------------------
 def _tracer() -> Any | None:
+    """DDK's tracer, resolved per span (#732).
+
+    A global provider the host has set always wins, even one set after
+    ``Donkey()``: OTel's default proxy provider forwards to it. Only while no
+    global provider is set do spans go to the DDK-scoped provider that
+    :func:`configure_otlp_export` built from an OTLP endpoint. With neither, the
+    default proxy tracer records nothing."""
     try:
         from opentelemetry import trace
     except ImportError:
         return None
+    if _scoped_tracer is not None and not _host_provider_set():
+        return _scoped_tracer
     return trace.get_tracer("donkey_kit")
 
 
+def _host_provider_set() -> bool:
+    """True once anything has set the process-global ``TracerProvider``.
+
+    Until then OTel hands out its placeholder ``ProxyTracerProvider``; any other
+    provider (an SDK one, ``opentelemetry-instrument``'s, or a deliberate
+    ``NoOpTracerProvider``) is the host's choice and DDK defers to it."""
+    from opentelemetry import trace
+
+    return not isinstance(trace.get_tracer_provider(), trace.ProxyTracerProvider)
+
+
 # --- Zero-config OTLP export bootstrap (BG §1.6, #194) -----------------------
-# The span helpers above only ever call ``trace.get_tracer(...)`` — they ride
-# whatever global TracerProvider the host process installed. On their own they
-# export nothing: OpenTelemetry's default is a no-op provider. This section is
-# what turns "we build spans" into "spans reach the customer's sink", with the
-# zero-config contract of BG §1.6:
-#
+# The span helpers above get their tracer from ``_tracer()``, which rides
+# whatever global TracerProvider the host process installed, or the DDK-scoped
+# provider built below. Without either they export nothing: OpenTelemetry's
+# default is a no-op provider. This is what turns "we build spans" into "spans
+# reach the customer's sink", with the zero-config contract of BG §1.6:
 #   set OTEL_EXPORTER_OTLP_ENDPOINT (the *standard* OTel env var) → spans export.
 #   no SDK-specific env var, and no endpoint set → inert and silent.
-#
-# Export I/O runs on the BatchSpanProcessor's background thread, off the request
-# hot path — which is exactly why per-call overhead stays under the 1ms bar
-# (benchmarked in CI, #194): the call site only creates the span, sets attributes
-# and enqueues; the network flush is somebody else's thread.
+# The provider it builds is DDK-scoped: it carries DDK's own spans and is never
+# made the process-global provider unless ``telemetry_install_global`` is set.
+# OTel lets the global provider be set only once, so taking it implicitly would
+# silently lock out a host that configures its own afterwards (#732,
+# docs/adr/0010-no-hidden-global-side-effects.md). Export I/O runs on the
+# BatchSpanProcessor's background thread, off the request hot path — which is
+# exactly why per-call overhead stays under the 1ms bar (benchmarked in CI,
+# #194): the call site only creates the span, sets attributes and enqueues;
+# the network flush is somebody else's thread.
 
 
 class TelemetryExportWarning(UserWarning):
@@ -346,12 +259,22 @@ class TelemetryExportWarning(UserWarning):
     """
 
 
-# Guards ``configure_otlp_export`` so multiple ``Donkey()`` constructions install
-# at most one provider per process (an OTel provider is a process-global; a second
-# install is refused by OTel with a warning anyway). Reset only by tests.
+# Guards ``configure_otlp_export`` to build at most one provider per process
+# (one exporter, one batch thread). Reset by `_reset_for_tests` below.
 _otlp_export_configured = False
+# The DDK-scoped provider's tracer, set when an endpoint is configured and the
+# global provider was neither set by the host nor installed by opt-in.
+_scoped_tracer: Any | None = None
 # One-time de-dupe for the missing-exporter warning, keyed by protocol.
 _warned_missing_exporter: set[str] = set()
+
+
+def _reset_for_tests() -> None:
+    """Drop the three flags above so no test's export config outlives it (#750)."""
+    global _otlp_export_configured, _scoped_tracer
+    _otlp_export_configured = False
+    _scoped_tracer = None
+    _warned_missing_exporter.clear()
 
 
 def _otlp_endpoint_configured() -> bool:
@@ -450,87 +373,73 @@ def _build_tracer_provider(config: DonkeyConfig) -> Any | None:
 
 
 def configure_otlp_export(config: DonkeyConfig) -> None:
-    """Install a zero-config OTLP exporter for this process, once (BG §1.6, #194).
+    """Wire a zero-config OTLP exporter for this process, once (BG §1.6, #194).
 
-    Called from ``Donkey.__init__``. Inert and silent (AC #4) when telemetry is
+    Called from ``Runtime.__init__``. Inert and silent (AC #4) when telemetry is
     off, when no OTLP endpoint env var is set, or when ``[otel]`` is not
-    installed. When an endpoint *is* set, installs a ``TracerProvider`` + OTLP
-    ``BatchSpanProcessor`` as the global provider — **unless a host already
-    installed an SDK provider** (``opentelemetry-instrument``, a manual setup),
-    in which case that one is left untouched and our spans simply ride it.
+    installed. When an endpoint *is* set, builds a ``TracerProvider`` + OTLP
+    ``BatchSpanProcessor`` and:
 
-    Idempotent: guarded so repeated ``Donkey()`` construction installs at most
+    - if a host already set the global provider (``opentelemetry-instrument``, a
+      manual setup), drops it and lets DDK's spans ride the host's;
+    - else, with ``telemetry_install_global`` on, installs it as the global
+      provider (the pre-#732 behaviour, now opt-in);
+    - else keeps it DDK-scoped: DDK's spans export through it and
+      ``trace.get_tracer_provider()`` is left unchanged, so a host provider set
+      later still wins and receives DDK's spans (#732).
+
+    Idempotent: guarded so repeated ``Donkey()`` construction builds at most
     one provider per process."""
-    global _otlp_export_configured
+    global _otlp_export_configured, _scoped_tracer
     if _otlp_export_configured:
         return
     provider = _build_tracer_provider(config)
     if provider is None:
-        return  # inert: opt-out, no endpoint, or [otel]/exporter absent.
+        # inert: opt-out, no endpoint, or [otel]/exporter absent. DEBUG only, and
+        # silent behind the package NullHandler, so "inert and silent" holds.
+        _log.debug(
+            "OTLP export not installed (telemetry=%s, endpoint configured=%s)",
+            config.telemetry,
+            _otlp_endpoint_configured(),
+        )
+        return
     from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
 
-    if isinstance(trace.get_tracer_provider(), TracerProvider):
+    _otlp_export_configured = True
+    if _host_provider_set():
         # A host already owns the global provider — never clobber it. Drop the
         # one we just built so its batch thread does not linger unused.
         provider.shutdown()
-        _otlp_export_configured = True
+        _log.debug("OTLP export: keeping the host's TracerProvider; spans ride it")
         return
-    trace.set_tracer_provider(provider)
-    _otlp_export_configured = True
-
-
-@contextlib.contextmanager
-def span(name: str, *, enabled: bool, **attributes: Any) -> Iterator[None]:
-    """Start an OTel span if telemetry is enabled and OTel is installed.
-
-    Always attaches the correlation ID. A no-op (and never an error) when
-    telemetry is off or OTel is not installed — telemetry must never be a hard
-    dependency of the library.
-
-    Only attributes in :data:`_ALLOWED_SPAN_ATTRIBUTES` are set: the emitter is
-    allowlist-driven, so a content attribute (or any unrecognised key) handed in
-    from any call site is dropped rather than exported (#306). Message content
-    has no path through this function at all — it is carried only by the GenAI
-    span, and only under an explicit opt-in (see :meth:`GenAiSpan.record`).
-    """
-
-    if not enabled:
-        yield
+    if config.telemetry_install_global:
+        trace.set_tracer_provider(provider)
+        _log.debug("OTLP export installed as the global provider (protocol %s)", _otlp_protocol())
         return
-    tracer = _tracer()
-    if tracer is None:
-        yield
-        return
-    with tracer.start_as_current_span(name) as sp:  # pragma: no cover - needs otel
-        sp.set_attribute(DONKEY_CORRELATION_ID, request_correlation_id())
-        for key, value in attributes.items():
-            if value is not None and key in _ALLOWED_SPAN_ATTRIBUTES:
-                sp.set_attribute(key, value)
-        yield
+    _scoped_tracer = provider.get_tracer("donkey_kit")
+    _log.debug("OTLP export installed on a DDK-scoped provider (protocol %s)", _otlp_protocol())
 
 
 # --- GenAI chat span (#192, BG §1.6) ----------------------------------------
+# Most-specific subclass first: a PIIDetected is also a PolicyViolation.
+_POLICY_SLUGS: tuple[tuple[type[DonkeyError], str], ...] = (
+    (TokenBudgetExceeded, "token_budget"),
+    (RequestRateLimitExceeded, "request_rate_limit"),
+    (PIIDetected, "pii_detected"),
+    (PromptInjectionBlocked, "injection"),
+    (ContentSafetyBlocked, "content_safety"),
+    (AgentKilled, "agent_killed"),
+    (PolicyViolation, "policy_violation"),
+)
+
+
 def policy_type_slug(error: DonkeyError) -> str | None:
     """The :data:`DONKEY_POLICY_TYPE` value for a classified refusal, or ``None``
     for a non-policy error (auth / upstream / transport) that carries no
-    governance allow-or-refuse decision.
-
-    Ordered most-specific-subclass first so a :class:`PIIDetected` (which *is* a
-    :class:`PolicyViolation`) reports ``"pii_detected"``, not the generic slug.
-    """
-    if isinstance(error, TokenBudgetExceeded):
-        return "token_budget"
-    if isinstance(error, PIIDetected):
-        return "pii_detected"
-    if isinstance(error, PromptInjectionBlocked):
-        return "injection"
-    if isinstance(error, ContentSafetyBlocked):
-        return "content_safety"
-    if isinstance(error, AgentKilled):
-        return "agent_killed"
-    if isinstance(error, PolicyViolation):
-        return "policy_violation"
+    governance allow-or-refuse decision."""
+    for kind, slug in _POLICY_SLUGS:
+        if isinstance(error, kind):
+            return slug
     return None
 
 

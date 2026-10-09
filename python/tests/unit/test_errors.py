@@ -15,6 +15,7 @@ from donkey_kit.core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -22,6 +23,7 @@ from donkey_kit.core.errors import (
     gateway_unavailable,
 )
 from donkey_kit.core.transport import CALL_ID_HEADER, CORRELATION_HEADER
+from donkey_kit.simulator import fixtures as fx
 
 
 def _resp(status: int, headers: dict[str, str] | None = None) -> httpx.Response:
@@ -66,6 +68,83 @@ def test_negative_retry_after_is_floored_at_zero(headers: dict[str, str]) -> Non
     err = classify(_resp(429, headers))
     assert isinstance(err, TokenBudgetExceeded)
     assert err.retry_after == 0.0
+
+
+def _fixture_response(shape: str) -> httpx.Response:
+    f = fx.load(shape)
+    return httpx.Response(
+        f.status, headers=f.headers, content=f.body, request=httpx.Request("POST", "https://x")
+    )
+
+
+def test_live_request_rate_limit_429_is_its_own_type() -> None:
+    """#974: the stock rate-limiting policy's 429 (captured live) is a
+    RequestRateLimitExceeded, with retry_after from the ms x-ratelimit-reset."""
+    err = classify(_fixture_response("request-rate-limit"))
+    assert isinstance(err, RequestRateLimitExceeded)
+    assert not isinstance(err, TokenBudgetExceeded)
+    assert err.policy == "request-rate-limit"
+    reset_ms = int(fx.load("request-rate-limit").headers["x-ratelimit-reset"])
+    assert err.retry_after == pytest.approx(reset_ms / 1000)
+
+
+def test_live_token_rate_limit_429_is_still_token_budget() -> None:
+    assert isinstance(classify(_fixture_response("token-rate-limit")), TokenBudgetExceeded)
+
+
+def test_a_429_with_both_trios_is_token_budget() -> None:
+    """The token trio is the token policy's signature: when both policies'
+    headers are present, the token rule wins (it is the existing contract)."""
+    err = classify(
+        _resp(
+            429,
+            {
+                "x-token-limit": "1000",
+                "x-token-remaining": "0",
+                "x-ratelimit-limit": "3",
+                "x-ratelimit-remaining": "2",
+            },
+        )
+    )
+    assert isinstance(err, TokenBudgetExceeded)
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"x-ratelimit-limit": "3"},
+        {"x-ratelimit-limit-requests": "250", "x-ratelimit-remaining-requests": "0"},
+    ],
+    ids=["limit-only", "upstream-suffixed"],
+)
+def test_a_429_without_the_gateway_request_pair_stays_token_budget(
+    headers: dict[str, str],
+) -> None:
+    assert isinstance(classify(_resp(429, headers)), TokenBudgetExceeded)
+
+
+def test_request_rate_limit_retry_after_prefers_retry_after_header() -> None:
+    err = classify(
+        _resp(
+            429,
+            {"retry-after": "7", "x-ratelimit-limit": "3", "x-ratelimit-remaining": "0",
+             "x-ratelimit-reset": "40000"},
+        )
+    )
+    assert isinstance(err, RequestRateLimitExceeded)
+    assert err.retry_after == 7.0
+
+
+def test_request_rate_limit_without_reset_has_no_retry_after() -> None:
+    err = classify(_resp(429, {"x-ratelimit-limit": "3", "x-ratelimit-remaining": "0"}))
+    assert isinstance(err, RequestRateLimitExceeded)
+    assert err.retry_after is None
+
+
+def test_request_rate_limit_is_terminal() -> None:
+    err = classify(_fixture_response("request-rate-limit"))
+    assert isinstance(err, PolicyViolation)
+    assert err.remediation.strip()
 
 
 def test_injection_protection_header_is_prompt_injection_blocked() -> None:
@@ -200,7 +279,7 @@ def test_unrecognised_403_falls_through_to_honest_policy_violation() -> None:
 def test_unrecognised_403_names_the_observed_policy_headers() -> None:
     """The message names the observable discriminators — status plus any
     ``x-llm-proxy-*`` policy headers present — so the unconfirmed shape can be
-    typed from the report alone (#184, #253)."""
+    typed from the report alone (#184)."""
     err = classify(
         _resp(403, {"x-llm-proxy-mystery-verdict": "deny", "content-type": "application/json"})
     )
@@ -368,6 +447,7 @@ def test_every_policy_violation_type_ships_its_own_nonempty_default() -> None:
         PolicyViolation,
         PIIDetected,
         TokenBudgetExceeded,
+        RequestRateLimitExceeded,
         PromptInjectionBlocked,
         ContentSafetyBlocked,
         AgentKilled,
@@ -552,3 +632,37 @@ def test_bare_list_body_still_falls_through_to_policy_violation() -> None:
         assert isinstance(err, PolicyViolation), body
         assert not isinstance(err, UpstreamRequestError), body
         assert "shape unconfirmed" in str(err)
+
+
+# --- the httpx2 stack (openai>=3, anthropic>=1), #933 ---------------------------
+
+
+def test_classify_types_an_httpx2_response_and_reads_its_ids() -> None:
+    """``APIStatusError.response`` is an ``httpx2.Response`` on openai>=3 and
+    anthropic>=1; classify() reads it like an httpx one (#738, #933)."""
+    httpx2 = pytest.importorskip("httpx2")
+    request = httpx2.Request(
+        "POST",
+        "https://proxy.example.com/v1/chat/completions",
+        headers={CORRELATION_HEADER: "run-abc", CALL_ID_HEADER: "call-xyz"},
+    )
+    response = httpx2.Response(401, headers={"x-request-id": "gw-1"}, request=request)
+    err = classify(response)
+    assert isinstance(err, AuthError)
+    assert (err.correlation_id, err.call_id, err.request_id) == ("run-abc", "call-xyz", "gw-1")
+    assert err.response is response
+
+
+def test_classify_treats_an_unread_httpx2_body_as_absent() -> None:
+    """An unread streamed body raises httpx2's own ``ResponseNotRead``, which
+    ``httpx.ResponseNotRead`` does not catch; classify() must not raise (#933)."""
+    httpx2 = pytest.importorskip("httpx2")
+
+    class _Unread(httpx2.SyncByteStream):  # type: ignore[misc]
+        def __iter__(self):  # type: ignore[no-untyped-def]
+            yield b'{"error": {"type": "pii_detected"}}'
+
+    response = httpx2.Response(403, stream=_Unread())
+    err = classify(response)
+    assert isinstance(err, PolicyViolation)
+    assert "shape unconfirmed" in str(err)

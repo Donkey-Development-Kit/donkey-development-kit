@@ -8,20 +8,15 @@ To make that literally one read path, ``tests/unit/test_rejection_contract.py``
 and ``tests/unit/test_llm_proxy_contract.py`` import :func:`parse_headers` from
 here instead of keeping their own copies.
 
-Resolution order for every fixture (:func:`fixture_bytes`):
-
-1. Packaged ``donkey_kit/simulator/_fixtures/…`` — present in a built wheel via
-   the ``[tool.hatch.build.targets.wheel.force-include]`` mapping in
-   ``pyproject.toml`` (so a ``pip install``-ed ``donkey mock`` finds them).
-2. Source-checkout fallback ``python/tests/fixtures/…`` — where the classify()
-   tests read from, so in a source tree the simulator and the tests read the
-   byte-identical files.
-
-The fixture-integrity lock follows the same resolution order, so the public
-lock helpers work from both a source checkout and an installed wheel.
+Every fixture (:func:`fixture_bytes`) is package data under
+``donkey_kit/simulator/_fixtures/…`` (#746). That one directory is what a built
+wheel ships, what a ``pip install``-ed ``donkey mock`` replays, and what the
+classify() contract tests read in a source checkout, so the simulator and the
+tests always read byte-identical files and nothing depends on the repo's
+``tests/`` tree. The fixture-integrity lock lives beside them.
 
 Nothing here imports a web framework: this module is safe under the base-only
-CI job (``[dev]`` only, no ``[local]`` extra). It imports only the framework-free
+CI job (the ``dev`` group only, no ``[local]`` extra). It imports only the framework-free
 ``core`` layer for the verified header names (an allowed upward import).
 """
 
@@ -37,10 +32,14 @@ from pathlib import Path
 # and the client parse the identical strings (upward import, allowed under the layered
 # architecture).
 # RATELIMIT_HEADER is the prose budget header the live 200/403 carries (#352/#353).
+from ..core import _wire
 from ..core.budget import (
     LIMIT_HEADER,
     RATELIMIT_HEADER,
     REMAINING_HEADER,
+    REQUEST_LIMIT_HEADER,
+    REQUEST_REMAINING_HEADER,
+    REQUEST_RESET_HEADER,
     RESET_HEADER,
 )
 
@@ -49,18 +48,25 @@ __all__ = [
     "LOCK_PATH",
     "RATELIMIT_HEADER",
     "REMAINING_HEADER",
+    "REQUEST_LIMIT_HEADER",
+    "REQUEST_REMAINING_HEADER",
+    "REQUEST_RESET_HEADER",
     "RESET_HEADER",
-    "Fixture",
     "SHAPES",
+    "TEST_LOCK_PATH",
+    "Fixture",
     "compute_manifest",
+    "compute_test_manifest",
     "fixture_bytes",
     "load",
     "parse_headers",
     "parse_status",
     "read_lock",
+    "read_test_lock",
     "render_ratelimit_prose",
     "replay_headers",
     "write_lock",
+    "write_test_lock",
 ]
 
 
@@ -92,17 +98,21 @@ def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
 # API-instance/environment ids (#362) — so replaying them is what makes
 # simulate()/`donkey mock` populate the record from the committed fixtures. The
 # honesty marker stays the injected `x-donkey-simulator: true`, not the absence
-# of identity headers.
+# of identity headers. The unsuffixed request-window trio is kept (#974); the
+# upstream's suffixed ``x-ratelimit-*-requests`` / ``-tokens`` passthrough is not.
 _KEEP_EXACT = frozenset(
     {
-        "www-authenticate",
-        "x-injection-protection",
-        "x-correlation-id",
-        "x-request-id",
-        "x-envoy-decorator-operation",
+        _wire.REQUEST_LIMIT_HEADER,
+        _wire.REQUEST_REMAINING_HEADER,
+        _wire.REQUEST_RESET_HEADER,
+        _wire.WWW_AUTHENTICATE_HEADER,
+        _wire.INJECTION_PROTECTION_HEADER,
+        _wire.CORRELATION_ID_HEADER.lower(),
+        _wire.REQUEST_ID_HEADER,
+        _wire.DECORATOR_OPERATION_HEADER,
     }
 )
-_KEEP_PREFIX = ("x-token-", "x-llm-proxy-")
+_KEEP_PREFIX = (_wire.TOKEN_HEADER_PREFIX, _wire.LLM_PROXY_HEADER_PREFIX)
 
 
 def parse_headers(text: str) -> dict[str, str]:
@@ -154,14 +164,22 @@ class _Spec:
 
 
 # The full shape table. Keys are the canonical shape names the simulator and the
-# tests share. The eight policy-rejection rows classify() is tested against, plus
+# tests share. The policy-rejection rows classify() is tested against, plus
 # the consumer-auth 401, the gateway's bare-model-name 400, the happy path, the
-# SSE stream, and the /models 404.
+# SSE stream, the /models 404, and the /chat/completions happy path and stream.
 SHAPES: dict[str, _Spec] = {
     # --- the documented rejection shapes (#181, +#289 regex-prompt-guard /
     #     content-safety) ---
     "token-rate-limit": _Spec(
         "anypoint/llm_proxy", "reject.token-rate-limit.headers.txt", None, 429
+    ),
+    # The stock rate-limiting policy's request-count 429 (docs/verified-apis.md
+    # §4, #974): a flat-string body and the x-ratelimit-* trio.
+    "request-rate-limit": _Spec(
+        "anypoint/request_rate_limit",
+        "reject.request-rate-limit.headers.txt",
+        "reject.request-rate-limit.body.json",
+        429,
     ),
     "pii-detected": _Spec(
         "anypoint/llm_proxy",
@@ -250,52 +268,47 @@ SHAPES: dict[str, _Spec] = {
     "models-notfound": _Spec(
         "anypoint/llm_proxy", "models.notfound.headers.txt", None, 404
     ),
+    # --- the /chat/completions happy path (#895) ---
+    # The non-streaming 200 is a live capture (docs/verified-apis.md §2, Chat
+    # Completions row): the Azure OpenAI model-based route, #896.
+    "chat-success": _Spec(
+        "anypoint/azure_openai_routing",
+        "responses.chat-completions.success.headers.txt",
+        "responses.chat-completions.success.body.json",
+        200,
+    ),
+    # The stream is NOT a capture: no streamed OpenAI-route /chat/completions
+    # response has been kept (§2), so it is OpenAI's public chunk shape, in its
+    # own directory with a README that says so, until #894 captures it.
+    "chat-stream": _Spec(
+        "openai_public",
+        "chat-completions.stream.headers.txt",
+        "chat-completions.stream.sse",
+        200,
+    ),
 }
 
-# The two source directories rows resolve to in a checkout. Rows 3/4/6 live in
-# tests/fixtures/rejections/; the rest alias tests/fixtures/anypoint/llm_proxy/.
-# Derived from this module's location: fixtures.py is at
-# python/src/donkey_kit/simulator/fixtures.py, so parents[3] is python/.
-_SOURCE_ROOT = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
+# The package-data directory every row resolves to. Rows 3/4/6 live in
+# _fixtures/rejections/; the rest alias _fixtures/anypoint/llm_proxy/.
 _PACKAGED_ROOT = importlib.resources.files("donkey_kit.simulator") / "_fixtures"
 
 
-def _packaged_bytes(directory: str, name: str) -> bytes | None:
-    """Read ``_fixtures/<directory>/<name>`` from the installed package, or
-    ``None`` if it is not present (e.g. an editable/source checkout that never
-    ran the wheel force-include)."""
+def fixture_bytes(directory: str, name: str) -> bytes:
+    """Return the raw bytes of one packaged fixture file. Raises a clear,
+    actionable error if it is missing rather than serving a fabricated body
+    (verification discipline)."""
     res = _PACKAGED_ROOT
     # Chain single-segment ``/`` joins for 3.10 compatibility (multi-arg
     # joinpath() only landed in 3.11).
     for part in (directory, name):
         res = res / part
-    if res.is_file():
-        return res.read_bytes()
-    return None
-
-
-def _source_bytes(directory: str, name: str) -> bytes | None:
-    path = _SOURCE_ROOT / directory / name
-    if path.is_file():
-        return path.read_bytes()
-    return None
-
-
-def fixture_bytes(directory: str, name: str) -> bytes:
-    """Return the raw bytes of one fixture file, packaged copy first then the
-    source-checkout fallback. Raises a clear, actionable error if neither is
-    found rather than serving a fabricated body (verification discipline)."""
-    data = _packaged_bytes(directory, name)
-    if data is not None:
-        return data
-    data = _source_bytes(directory, name)
-    if data is not None:
-        return data
-    raise FileNotFoundError(
-        f"Simulator fixture {directory}/{name!r} is neither packaged under "
-        f"donkey_kit/simulator/_fixtures/ nor present at {_SOURCE_ROOT}. "
-        "A wheel build must force-include tests/fixtures/ (see pyproject.toml)."
-    )
+    if not res.is_file():
+        raise FileNotFoundError(
+            f"Simulator fixture {directory}/{name!r} is not packaged under "
+            "donkey_kit/simulator/_fixtures/. The installed donkey-kit is "
+            "incomplete; reinstall it."
+        )
+    return res.read_bytes()
 
 
 @dataclass(frozen=True)
@@ -372,15 +385,18 @@ def replay_headers(fixture: Fixture) -> dict[str, str]:
 # ``python -m donkey_kit.simulator.fixtures --relock`` — the deliberate,
 # reviewable "I re-captured this, I meant it" step. This is an integrity
 # assertion, not fixture-capture tooling (which #189 puts out of scope).
-_SOURCE_LOCK_PATH = _SOURCE_ROOT / "fixtures.lock"
-_PACKAGED_LOCK = _PACKAGED_ROOT / "fixtures.lock"
+#
 # ``LOCK_PATH`` is public and writable, so it must remain a concrete ``Path``.
-# Normal wheel installs are unpacked to a pathlib.Path. Zip-imported packages
-# can still read fixture bytes through Traversable, but cannot expose or rewrite
-# the lock through this Path-based public API.
-LOCK_PATH = _SOURCE_LOCK_PATH
-if not LOCK_PATH.is_file() and isinstance(_PACKAGED_LOCK, Path):
-    LOCK_PATH = _PACKAGED_LOCK
+# Normal wheel installs and editable checkouts are both on disk. Zip-imported
+# packages can still read fixture bytes through Traversable, but cannot expose
+# or rewrite the lock through this Path-based public API.
+LOCK_PATH = Path(__file__).resolve().parent / "_fixtures" / "fixtures.lock"
+# A source checkout is the one layout where a relock produces a file to commit:
+# fixtures.py sits at python/src/donkey_kit/simulator/, so parents[3] is python/.
+_CHECKOUT_PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
+# tests/fixtures/ lives one level below python/ (parents[3] above), alongside
+# pyproject.toml. Only meaningful in a source checkout — see TEST_LOCK_PATH below.
+_CHECKOUT_TESTS_FIXTURES = _CHECKOUT_PYPROJECT.parent / "tests" / "fixtures"
 
 
 def _served_files() -> list[tuple[str, str]]:
@@ -407,7 +423,7 @@ def compute_manifest() -> dict[str, str]:
 
 
 def read_lock() -> dict[str, str]:
-    """The committed manifest at :data:`LOCK_PATH`, from either package layout."""
+    """The committed manifest at :data:`LOCK_PATH`."""
     data: dict[str, str] = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
     return data
 
@@ -416,13 +432,88 @@ def write_lock() -> None:
     """Regenerate :data:`LOCK_PATH` from the current fixture bytes. Called by
     ``python -m donkey_kit.simulator.fixtures --relock`` after a re-capture.
 
-    A source checkout always wins when present, keeping the committed lock
-    canonical. From an installed wheel this updates that environment's packaged
-    lock; the ``--relock`` command rejects that layout because it cannot produce
-    a file to commit.
+    From an installed wheel this updates that environment's packaged lock; the
+    ``--relock`` command rejects that layout because it cannot produce a file
+    to commit.
     """
     LOCK_PATH.write_text(
         json.dumps(compute_manifest(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+# --- test-only fixture integrity lock (#752) ----------------------------------
+#
+# The lock above closes the honesty gap only for the files the simulator serves
+# (``SHAPES``, packaged under src/donkey_kit/simulator/_fixtures/). The
+# much larger ``tests/fixtures/`` tree (model_wallet/, gemini_inbound/,
+# semantic_cache/, anthropic_inbound/, a2d/, openai_gemini_stream/, …) is test-only
+# captures: real traffic the error-classification and transport tests are pinned
+# to, but never read by the simulator and never packaged (#746's "one directory
+# a wheel ships" rule is about ``_fixtures/``, not ``tests/``). Those files had no
+# lock at all, so a hand-edit there went undetected — the exact gap TEST-07
+# (code review, commit 11b806b) flagged.
+#
+# This is a second, independent lock over a disjoint file set, deliberately kept
+# as its own manifest rather than folded into ``compute_manifest()``/``LOCK_PATH``:
+# the two lock files have different shipping rules (``LOCK_PATH`` is package data
+# a wheel ships; ``TEST_LOCK_PATH`` is a tests/-tree file a wheel must NEVER ship,
+# since #746 forbids force-including anything from tests/ into the build — see
+# test_wheel_build_takes_nothing_from_the_test_tree). Mixing them into one
+# manifest would make that boundary one `if` away from being crossed by accident.
+# Same discipline otherwise: committed sha256 per file, checked in
+# tests/unit/test_fixture_integrity.py, regenerated only by
+# ``python -m donkey_kit.simulator.fixtures --relock`` (same command, same
+# "I re-captured this, I meant it" step — it rewrites both locks that exist in
+# the checkout it is run from).
+TEST_LOCK_PATH = _CHECKOUT_TESTS_FIXTURES / "fixtures.lock"
+# Local litter git already ignores (.gitignore) and no test reads. Locking it
+# would make a macOS relock commit a ``.DS_Store`` row that every clean CI
+# checkout then reports as a removed fixture.
+_UNLOCKED_NAMES = frozenset({".DS_Store", "__pycache__"})
+
+
+def _test_fixture_files() -> list[Path]:
+    """Every file under ``tests/fixtures/`` (recursively), sorted, excluding the
+    lock itself and git-ignored OS/bytecode litter. Dev-only: raises if not run
+    from a source checkout — a wheel install has no ``tests/`` tree to walk."""
+    if not _CHECKOUT_TESTS_FIXTURES.is_dir():
+        raise FileNotFoundError(
+            f"{_CHECKOUT_TESTS_FIXTURES} does not exist; the test-fixture lock "
+            "only applies to a source checkout, not an installed wheel"
+        )
+    return sorted(
+        path
+        for path in _CHECKOUT_TESTS_FIXTURES.rglob("*")
+        if path.is_file()
+        and path != TEST_LOCK_PATH
+        and _UNLOCKED_NAMES.isdisjoint(path.relative_to(_CHECKOUT_TESTS_FIXTURES).parts)
+    )
+
+
+def compute_test_manifest() -> dict[str, str]:
+    """A ``{"<relative/path>": "sha256:<hex>"}`` map over every file under
+    ``tests/fixtures/``, computed from the bytes on disk right now. Keys use
+    POSIX-style separators so the manifest is stable across platforms."""
+    return {
+        path.relative_to(_CHECKOUT_TESTS_FIXTURES).as_posix(): "sha256:"
+        + hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in _test_fixture_files()
+    }
+
+
+def read_test_lock() -> dict[str, str]:
+    """The committed manifest at :data:`TEST_LOCK_PATH`."""
+    data: dict[str, str] = json.loads(TEST_LOCK_PATH.read_text(encoding="utf-8"))
+    return data
+
+
+def write_test_lock() -> None:
+    """Regenerate :data:`TEST_LOCK_PATH` from the current ``tests/fixtures/``
+    bytes. Called by ``python -m donkey_kit.simulator.fixtures --relock``
+    alongside :func:`write_lock`, after a re-capture under ``tests/fixtures/``."""
+    TEST_LOCK_PATH.write_text(
+        json.dumps(compute_test_manifest(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
@@ -435,17 +526,20 @@ def _main() -> None:
     parser.add_argument(
         "--relock",
         action="store_true",
-        help="regenerate fixtures.lock from the current fixture bytes",
+        help="regenerate fixtures.lock and tests/fixtures/fixtures.lock from the current bytes",
     )
     args = parser.parse_args()
     if args.relock:
-        if not _SOURCE_LOCK_PATH.is_file():
+        if not _CHECKOUT_PYPROJECT.is_file():
             parser.error(
                 "--relock must run from an editable source checkout so it updates "
-                "tests/fixtures/fixtures.lock"
+                "src/donkey_kit/simulator/_fixtures/fixtures.lock"
             )
         write_lock()
-        print(f"wrote {_SOURCE_LOCK_PATH} ({len(compute_manifest())} fixtures)")
+        print(f"wrote {LOCK_PATH} ({len(compute_manifest())} fixtures)")
+        if _CHECKOUT_TESTS_FIXTURES.is_dir():
+            write_test_lock()
+            print(f"wrote {TEST_LOCK_PATH} ({len(compute_test_manifest())} fixtures)")
     else:
         parser.error("nothing to do; pass --relock to regenerate the lock")
 

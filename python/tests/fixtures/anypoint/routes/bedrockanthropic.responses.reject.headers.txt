@@ -1,0 +1,17 @@
+HTTP/1.1 400 Bad Request
+date: Thu, 08 Oct 2026 09:05:24 GMT
+content-type: application/json
+x-amzn-requestid: 00000000-0000-4000-8000-604e808f2ac4
+x-amzn-errortype: ValidationException:http://internal.amazon.com/coral/com.amazon.bedrock/
+content-length: 98
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: bedrockanthropic
+x-llm-proxy-llm-model: us.anthropic.claude-sonnet-5
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: bedrockanthropic, Model: us.anthropic.claude-sonnet-5.
+server: Anypoint Flex Gateway
+x-envoy-decorator-operation: api-instance-21192625.00000000-0000-4000-8000-5c4fd1a49fc3.svc
+x-correlation-id: ddk-894-bedrockanthropic-responses-reject
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive
+

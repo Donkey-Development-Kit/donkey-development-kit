@@ -19,7 +19,7 @@ onto every pytest run.
 Framework isolation (the layered architecture): ``uvicorn`` is imported lazily
 inside :func:`start_gateway`, and ``starlette`` only inside the simulator's own
 ``build_app`` — so ``import donkey_kit.conformance.gateway`` stays green under the
-base-only CI job (``[dev]`` only, no ``[local]`` extra). Taking the fixture
+base-only CI job (the ``dev`` group only, no ``[local]`` extra). Taking the fixture
 without that extra raises an :class:`ImportError` naming the exact
 ``pip install`` — never a bare ``ModuleNotFoundError`` and never a silent skip.
 """
@@ -32,8 +32,9 @@ from collections.abc import Awaitable, Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
+from ..core import _wire
 from ..simulator.app import ASGIApp, SimulatorConfig, build_app
-from ..simulator.scenarios import Scenario, parse_scenario
+from ..simulator.scenarios import FaultScenario, parse_scenario
 
 __all__ = ["Gateway", "RecordedRequest", "start_gateway"]
 
@@ -49,7 +50,9 @@ _LOCAL_EXTRA_HINT = (
 # Request headers whose values are redacted in the spy: the consumer-auth secret
 # (BG §1.1 — the `client_secret` request header the transport sends) and any
 # bearer token. Matched case-insensitively; ASGI already lowercases header names.
-_REDACTED_HEADERS = frozenset({"client_secret", "authorization"})
+_REDACTED_HEADERS = frozenset(
+    {_wire.LLM_PROXY_CLIENT_SECRET_HEADER, _wire.LLM_PROXY_WALLET_JWT_HEADER.lower()}
+)
 _REDACTED = "***"
 
 # How long to wait for uvicorn to report `started` before giving up.
@@ -138,10 +141,10 @@ class Gateway:
         """A snapshot of the recorded requests, oldest first (secret redacted)."""
         return list(self._recorder.requests)
 
-    def set_scenarios(self, *scenarios: str | Scenario) -> None:
+    def set_scenarios(self, *scenarios: str | FaultScenario) -> None:
         """Reconfigure the simulator's #188 fault-injection scenarios for this
         test, live (no restart). Each argument is either a parsed
-        :class:`~donkey_kit.simulator.scenarios.Scenario` or a ``--scenario`` spec
+        :class:`~donkey_kit.simulator.scenarios.FaultScenario` or a ``--scenario`` spec
         string (e.g. ``"pii_block:every=1"``). Scenarios are stateful and
         single-use, so this builds a fresh simulator each call; the request log is
         left untouched (use :meth:`reset` to clear it)."""

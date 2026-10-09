@@ -1,0 +1,20 @@
+HTTP/1.1 404 Not Found
+content-type: application/json
+date: Thu, 08 Oct 2026 09:05:13 GMT
+content-length: 56
+apim-request-id: 00000000-0000-4000-8000-ebcb4d3241b2
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+x-content-type-options: nosniff
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: azureopenai
+x-llm-proxy-llm-model: gpt-5-mini
+x-llm-proxy-input-tokens-cost-per-1m: 0.25
+x-llm-proxy-output-tokens-cost-per-1m: 2
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: azureopenai, Model: gpt-5-mini.
+server: Anypoint Flex Gateway
+x-envoy-decorator-operation: api-instance-21188199.00000000-0000-4000-8000-5c4fd1a49fc3.svc
+x-correlation-id: ddk-894-azureopenai-responses-stream
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive
+

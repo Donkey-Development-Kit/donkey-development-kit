@@ -4,17 +4,24 @@ Symmetric with governed-only discovery: one declarative object, three verbs, "de
 in CI, verify at runtime". The symmetry breaks at runtime (BG §2.5): there is NO
 runtime ``publish()`` — it would be actively harmful (immutable versions, catalog
 reflecting process starts, privilege escalation, no review). The runtime verb is
-:meth:`verify` (read-only drift check), the genuine mirror of ``resolve()``.
+:meth:`verify` (read-only drift check).
 
 Verbs (BG §2.5):
   * ``preview()`` — laptop. Renders the entry as it would appear. Writes nothing.
-  * ``export()``  — laptop. Compiles into donkey.yaml (provisioning-as-code). CI publishes on merge.
+  * ``export()``  — laptop. Compiles to a CI-publishable artifact (format unresolved,
+    blocked). CI publishes on merge.
   * ``verify()``  — runtime, READ-ONLY. Fetches the published descriptor,
     introspects the live server, compares. Raises PublicationDrift on mismatch.
+
+The CI side of ``donkey publish --if-changed`` is here too: :func:`content_digest`
+(pure, implemented) and :func:`publish_if_changed` (blocked). They moved from the
+removed ``provisioning/`` package (#730).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -22,6 +29,17 @@ from pathlib import Path
 from typing import Any
 
 from ..core import _verify
+
+__all__ = [
+    "Contact",
+    "DescriptionIssue",
+    "Publication",
+    "PublicationAssetType",
+    "VersionStrategy",
+    "check_description_quality",
+    "content_digest",
+    "publish_if_changed",
+]
 
 
 class PublicationAssetType(Enum):
@@ -34,6 +52,8 @@ class PublicationAssetType(Enum):
 
 
 class VersionStrategy(Enum):
+    """How a :class:`Publication` picks its version; ``PINNED`` (the default) never bumps."""
+
     PINNED = "pinned"            # default — no implicit bumps in a shared catalog
     FROM_PACKAGE = "from-package"
     SEMANTIC_AUTO = "semantic-auto"
@@ -41,12 +61,16 @@ class VersionStrategy(Enum):
 
 @dataclass(frozen=True)
 class Contact:
+    """The owning team and contact email shown on a published Exchange entry."""
+
     team: str
     email: str
 
 
 @dataclass(frozen=True)
 class DescriptionIssue:
+    """A tool description that is missing, tautological or too short."""
+
     tool: str
     kind: str  # "missing" | "tautological" | "too-short"
     detail: str
@@ -54,6 +78,15 @@ class DescriptionIssue:
 
 @dataclass(frozen=True)
 class Publication:
+    """A code-first asset to register in Exchange (BG §2.5).
+
+    There is no runtime ``publish()``: :meth:`preview` and :meth:`export` run on
+    a laptop, CI publishes the exported spec, and :meth:`verify` is the read-only
+    runtime drift check. See the module docstring.
+
+    Docs: https://docs.donkey-kit.dev/publishing
+    """
+
     asset_type: PublicationAssetType
     group_id: str
     asset_id: str
@@ -70,7 +103,7 @@ class Publication:
     version_strategy: VersionStrategy = VersionStrategy.PINNED
 
     # ---- verb: preview (laptop) -------------------------------------------
-    async def preview(self, donkey: Any) -> str:
+    async def preview(self, donkey: Any) -> str:  # noqa: ANN401 - Donkey is a higher layer
         """Render the Exchange entry as it would appear (BG §2.5). Blocked until
         descriptor derivation + Exchange render shape are verified (BG §2.5)."""
         raise _verify.blocked(
@@ -81,10 +114,11 @@ class Publication:
 
     # ---- verb: export (laptop) --------------------------------------------
     def export(self, path: str | Path | None = None) -> str:
-        """Compile to a ``donkey.yaml`` fragment (provisioning-as-code)."""
+        """Compile to a CI-publishable artifact (blocked: the format is unresolved)."""
         raise _verify.blocked(
-            "Publication.export() emits the shared donkey.yaml spec format; keep it identical "
-            "to donkey_kit.provisioning.spec and do not diverge it. The export mapping remains "
+            "Publication.export() would emit a donkey.yaml fragment, but the SDK no longer "
+            "defines that spec format: it went with the refused provisioning control plane "
+            "(#730). The export mapping remains "
             "unresolved: docs/verified-apis.md §5 confirms an Agent Network Maven-project + CLI "
             "flow but not whether export() wraps that toolchain or emits its project layout "
             "(the Verification milestone). This surface does not add a provisioning control "
@@ -92,7 +126,7 @@ class Publication:
         )
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------
-    async def verify(self, donkey: Any, *, raise_on_drift: bool = False) -> None:
+    async def verify(self, donkey: Any, *, raise_on_drift: bool = False) -> None:  # noqa: ANN401
         """Compare the live server against the published descriptor; raise
         :class:`~donkey_kit.core.errors.PublicationDrift` on mismatch (BG §2.5).
         Defaults to warn-and-continue — a drifted catalog must be loud but must
@@ -132,3 +166,30 @@ def check_description_quality(
                 DescriptionIssue(name, "too-short", f"description under {min_len} chars")
             )
     return issues
+
+
+def content_digest(descriptor: dict[str, Any], metadata: dict[str, Any]) -> str:
+    """Stable hash over the canonical descriptor + metadata (BG §2.5).
+
+    Canonicalised with sorted keys so semantically-identical inputs hash equal,
+    which is what makes ``--if-changed`` reliable: it prevents catalog spam (a
+    new version on every merge).
+    """
+
+    canonical = json.dumps(
+        {"descriptor": descriptor, "metadata": metadata},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+
+
+async def publish_if_changed(publication: Publication, donkey: object) -> str:
+    """CI default (BG §2.5): compare digest against the latest published version;
+    if identical, skip and exit zero. Blocked on the verified publication
+    mechanism + digest-metadata support (BG §2.5)."""
+    raise _verify.blocked(
+        "Exchange publication mechanism (REST/CLI/Maven) + digest metadata support "
+        "(BG §2.5). content_digest() is implemented; wire publish once the "
+        "mechanism is confirmed. Never delete/overwrite; deprecate via metadata (BG §2.5)."
+    )

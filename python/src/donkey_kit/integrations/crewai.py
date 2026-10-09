@@ -22,7 +22,11 @@ against ``crewai.BaseLLM``, the actual common return type, rather than the
 Header injection: via ``extra_headers``, which ``OpenAICompletion`` has no named
 field for — CrewAI collects it into ``additional_params`` and merges that into
 its request parameters (docs/verified-apis.md §8). Our httpx client is not
-injected: the provider builds its own OpenAI client. Consequence: transport retries and
+injected: the provider builds its own OpenAI client, and no supported extension
+point can change that (#958, docs/verified-apis.md §8.2). Its one
+``client_params`` dict feeds both its sync and async clients, which type-check
+``http_client`` against different classes, and the ``interceptor`` hooks can
+edit a request but not reroute the send. Consequence: transport retries and
 correlation-ID-per-run degrade to per-client, a documented, asserted conformance
 exemption (the conformance kit's ``correlation_id_propagated``). The provider does
 take an ``interceptor``, which :meth:`CrewAIAdapter.connection_kwargs` supplies:
@@ -40,7 +44,7 @@ Retries (#734): ``max_retries=0`` turns the provider's OpenAI client retries
 off, so a 5xx is not retried at all (the transport is not in the path). CrewAI
 itself wraps every ``BaseLLM.call``/``acall`` in a rate-limit retry (3
 attempts) that takes any 429 for a throttle and has no setting to turn it off,
-so a budget refusal is sent 3 times: an asserted exemption in
+so a budget or request-rate-limit refusal is sent 3 times: an asserted exemption in
 ``tests/unit/test_framework_retries.py``.
 
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
@@ -49,25 +53,60 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 from __future__ import annotations
 
 import functools
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from ..core.config import TOKEN_AUTH_MODES
+from ..core.config import LlmProxyAuth
 from ..core.errors import ConfigError
 from ..core.masking import masked
 from ..core.transport import Origin, origin_of, strip_credential_headers
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from crewai import BaseLLM
 
+__all__ = ["CrewAIAdapter", "llm"]
+
 
 class CrewAIAdapter(Adapter):
-    extra = "crewai"
-    # CrewAI's provider owns the transport, so no response reaches donkey.last_call
-    # (#362, the same reason as the conformance kit's correlation_id_propagated exemption).
-    observes_last_call = False
+    """Governed CrewAI objects, reached as ``donkey.crewai``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``llm(model)`` builds a
+    ``crewai.LLM``. ``connection_kwargs()`` returns the same settings for building
+    it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    CrewAI's native provider owns its transport, so the ``jwt`` auth mode is refused
+    with :class:`~donkey_kit.core.errors.ConfigError`; use client-id auth.
+
+    Raises:
+        ImportError: ``donkey.crewai`` was read without the ``crewai`` extra
+            installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/crewai
+    """
+
+    # CrewAI's provider builds its own clients and owns the transport, so no
+    # response reaches donkey.last_call or the typed-refusal bridge, and the
+    # token modes are refused (#362, #828, #726).
+    factories = MappingProxyType(
+        {
+            "llm": AdapterCapabilities(
+                transport="framework",
+                sync=False,
+                streaming=True,
+                typed_refusals=False,
+                observes_last_call=False,
+            ),
+        }
+    )
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``crewai.LLM(model="openai/<id>", **kwargs)`` you
@@ -84,8 +123,7 @@ class CrewAIAdapter(Adapter):
 
         Raises ``ConfigError`` in a token auth mode (jwt or bearer; see the
         module docstring)."""
-        self._refuse_token_modes()
-        conn = self._openai_connection()
+        conn = self._connection()
         return masked(
             {
                 "base_url": conn["base_url"],
@@ -96,19 +134,17 @@ class CrewAIAdapter(Adapter):
             }
         )
 
-    def _refuse_token_modes(self) -> None:
-        mode = self._cfg.llm_proxy_auth
-        if mode in TOKEN_AUTH_MODES:
-            token = "model-wallet JWT" if mode == "jwt" else "bearer token"
-            raise ConfigError(
-                f"CrewAI does not support llm_proxy_auth={mode!r}: its native OpenAI "
-                f"provider builds its own HTTP clients, so the rotating {token} "
-                "never reaches the request and the proxy refuses every call. "
-                "Use client-id auth with CrewAI, or a token-capable surface from an "
-                "async caller: donkey.llm.client(), donkey.langgraph(), "
-                "donkey.strands, donkey.openai_agents, donkey.anthropic, "
-                "donkey.llamaindex, donkey.agent_framework or donkey.adk."
-            )
+    def _token_mode_error(self, mode: LlmProxyAuth) -> ConfigError:
+        token = "model-wallet JWT" if mode == "jwt" else "bearer token"
+        return ConfigError(
+            f"CrewAI does not support llm_proxy_auth={mode!r}: its native OpenAI "
+            f"provider builds its own HTTP clients, so the rotating {token} "
+            "never reaches the request and the proxy refuses every call. "
+            "Use client-id auth with CrewAI, or a token-capable surface from an "
+            "async caller: donkey.llm.client(), donkey.langgraph(), "
+            "donkey.strands, donkey.openai_agents, donkey.anthropic, "
+            "donkey.llamaindex, donkey.agent_framework or donkey.adk."
+        )
 
     def _interceptor_kwarg(self) -> dict[str, Any]:
         try:
@@ -125,7 +161,7 @@ class CrewAIAdapter(Adapter):
         §8, #640/#684). A ``base_url``/``api_base`` override must pass the https
         check. Raises ``ConfigError`` in a token auth mode (jwt or bearer)."""
         self._allow_endpoints(kw, "base_url", "api_base")
-        self._refuse_token_modes()
+        self._connection()
         with self._native_import():
             from crewai import LLM  # VERIFY name/path: docs/verified-apis.md §8
 

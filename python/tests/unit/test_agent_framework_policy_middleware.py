@@ -8,7 +8,7 @@ rejected at ``Agent(...)`` construction and that only re-raised a
 shared client to an ``httpx.MockTransport``, so the refusal takes the same path
 it takes against the proxy: openai raises ``PermissionDeniedError`` and MAF
 wraps it in a ``ChatClientException``. Each test runs on both chat clients
-(``api="responses"``, the default, and ``api="chat_completions"``, #826).
+(``api="chat_completions"``, the default since #1043, and ``api="responses"``).
 
 Skipped where ``agent_framework`` is not installed; the
 ``agent-framework-middleware`` CI job installs it.
@@ -20,7 +20,8 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
-from donkey_kit.core.errors import PIIDetected
+from donkey_kit._testing import swap_transport
+from donkey_kit.core.errors import DonkeyError, GatewayUnavailable, PIIDetected
 
 af = pytest.importorskip("agent_framework")
 from agent_framework.exceptions import ChatClientException  # noqa: E402
@@ -36,7 +37,7 @@ def _cfg() -> DonkeyConfig:
 
 def _pii_proxy(sent: list[httpx.Request]) -> httpx.MockTransport:
     """A proxy that refuses every request with the captured PII 403 shape
-    (``tests/fixtures/rejections``) and records each send."""
+    (``src/donkey_kit/simulator/_fixtures/rejections``) and records each send."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         sent.append(request)
@@ -129,7 +130,7 @@ def test_policy_middleware_registers_on_a_real_agent(api: str) -> None:
 async def test_pii_refusal_ends_the_run_typed_after_one_send(api: str) -> None:
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_pii_proxy(sent))
+    fab._http.governed_transport.replace_inner(_pii_proxy(sent))
     agent = _agent(fab, api)
 
     try:
@@ -155,7 +156,7 @@ async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send(api: str) 
     middleware has returned; the hook on the response stream still types it."""
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_pii_proxy(sent))
+    fab._http.governed_transport.replace_inner(_pii_proxy(sent))
     agent = _agent(fab, api)
 
     try:
@@ -172,7 +173,7 @@ async def test_streamed_pii_refusal_ends_the_run_typed_after_one_send(api: str) 
 
 async def test_allowed_call_passes_through_unchanged(api: str) -> None:
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_ok_proxy())
+    fab._http.governed_transport.replace_inner(_ok_proxy())
     agent = _agent(fab, api)
 
     try:
@@ -183,35 +184,56 @@ async def test_allowed_call_passes_through_unchanged(api: str) -> None:
     assert response.text == "hello"
 
 
-async def test_error_without_a_proxy_response_propagates_untouched(api: str) -> None:
+async def test_unreachable_gateway_surfaces_as_gateway_unavailable(api: str) -> None:
     """A failure with no HTTP response behind it (here, the transport cannot
-    connect) is not a gateway refusal and must not be masked as one."""
+    connect) is not a gateway refusal, but it is the transport's own typed
+    ``GatewayUnavailable``: the bridge sees through ``ChatClientException`` and
+    openai's ``APIConnectionError`` to it (#724), never masking it as a refusal."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route", request=request)
 
     fab = Donkey(_cfg())
-    fab._http._swap_transport(httpx.MockTransport(handler))
+    fab._http.governed_transport.replace_inner(httpx.MockTransport(handler))
     agent = _agent(fab, api)
 
     try:
-        with pytest.raises(ChatClientException):
+        with pytest.raises(GatewayUnavailable) as excinfo:
             await agent.run("hi")  # type: ignore[attr-defined]
     finally:
         await fab.aclose()
+    assert isinstance(excinfo.value.framework_error, ChatClientException)
+
+
+async def test_a_non_refusal_error_propagates_untouched(api: str) -> None:
+    """An error with no transport behind it is not masked as a DonkeyError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise ValueError("a bug in the handler")
+
+    fab = Donkey(_cfg())
+    swap_transport(fab._http, httpx.MockTransport(handler))
+    agent = _agent(fab, api)
+
+    try:
+        with pytest.raises(Exception) as excinfo:
+            await agent.run("hi")  # type: ignore[attr-defined]
+    finally:
+        await fab.aclose()
+    assert not isinstance(excinfo.value, DonkeyError)
 
 
 @pytest.mark.parametrize(
     ("kwargs", "path"),
-    [({}, "/responses"), ({"api": "chat_completions"}, "/chat/completions")],
+    [({}, "/chat/completions"), ({"api": "responses"}, "/responses")],
 )
 async def test_chat_client_sends_to_the_chosen_api(kwargs: dict[str, str], path: str) -> None:
-    """The default client posts to ``/responses``, the verified data-plane
-    route; ``api="chat_completions"`` posts to ``/chat/completions`` for a
-    route, such as Azure OpenAI, that 404s ``/responses`` (#826)."""
+    """The default client posts to ``/chat/completions``, the route every
+    upstream serves (docs/verified-apis.md §2, #1043); ``api="responses"``
+    posts to ``/responses``, which Azure OpenAI 404s (#826)."""
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
-    fab._http._swap_transport(_ok_proxy(sent))
+    fab._http.governed_transport.replace_inner(_ok_proxy(sent))
     agent = af.Agent(client=fab.agent_framework.chat_client("gpt-4o", **kwargs))
 
     try:
@@ -221,3 +243,54 @@ async def test_chat_client_sends_to_the_chosen_api(kwargs: dict[str, str], path:
 
     assert response.text == "hello"
     assert [r.url.path for r in sent] == [path]
+
+
+def _simulated(fab: Donkey) -> None:
+    """Point ``fab`` at the local gateway simulator, in process (BG §1.4)."""
+    pytest.importorskip("starlette")
+    from donkey_kit.simulator import build_app
+
+    fab._http.governed_transport.replace_inner(httpx.ASGITransport(app=build_app()))
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_chat_completions_agent_runs_against_the_simulator(stream: bool) -> None:
+    """An ``api="chat_completions"`` agent runs end to end against the simulator,
+    which serves ``/chat/completions`` (#895): the captured 200 without
+    streaming, OpenAI's public chunk shape with it."""
+    fab = Donkey(_cfg())
+    _simulated(fab)
+    agent = _agent(fab, "chat_completions")
+
+    try:
+        if stream:
+            updates = [u async for u in agent.run("ping", stream=True)]  # type: ignore[attr-defined]
+            text = "".join(u.text for u in updates)
+        else:
+            text = (await agent.run("ping")).text  # type: ignore[attr-defined]
+    finally:
+        await fab.aclose()
+
+    assert text == "pong — how can I help?"
+    assert fab.last_call is not None
+    # The captured 200 carries the gateway's routing headers; the public-shape
+    # stream carries none, so it names no provider.
+    assert fab.last_call.served_provider == (None if stream else "azureopenai")
+
+
+async def test_chat_completions_agent_under_simulate_refuses_then_recovers() -> None:
+    """``simulate()`` injects the refusal into a ``/chat/completions`` call the
+    same way it does on ``/responses``; the next call reaches the simulator."""
+    fab = Donkey(_cfg())
+    _simulated(fab)
+    agent = _agent(fab, "chat_completions")
+
+    try:
+        with fab.simulate(PIIDetected):
+            with pytest.raises(PIIDetected):
+                await agent.run("my email is a@b.example")  # type: ignore[attr-defined]
+        response = await agent.run("ping")  # type: ignore[attr-defined]
+    finally:
+        await fab.aclose()
+
+    assert response.text == "pong — how can I help?"

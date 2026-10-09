@@ -38,7 +38,11 @@ from donkey_kit import Donkey, DonkeyConfig
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.simulator.fixtures import parse_headers
 
-_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "llm_proxy"
+_FIXTURES = (
+    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    / "anypoint"
+    / "llm_proxy"
+)
 _BUDGET_HEADERS = {
     name: value
     for name, value in parse_headers(
@@ -130,9 +134,9 @@ async def _strands_stream(model: Any) -> None:
 async def _strands_agent(model: Any) -> None:
     from strands import Agent
 
-    # The documented contract: the transport owns retries, so the agent's own
-    # throttle retry (which takes every 429 for a throttle) is turned off.
-    await Agent(model=model, retry_strategy=None, callback_handler=None).invoke_async("hi")
+    # The agent's default throttle retry stays on: the model raises a budget 429
+    # as the typed refusal, which it does not retry (#951).
+    await Agent(model=model, callback_handler=None).invoke_async("hi")
 
 
 @dataclass(frozen=True)
@@ -151,8 +155,9 @@ class _Case:
 _CREWAI_RATE_LIMIT_EXEMPTION = (
     "crewai>=1.15.23 wraps every BaseLLM.call/acall in its own rate-limit retry "
     "(crewai.llms.retry, 3 attempts, 1s/2s backoff) and takes any 429 for a "
-    "throttle. It has no setting to turn it off, so a budget refusal is sent 3 "
-    "times. The provider SDK's own retries are off (max_retries=0)."
+    "throttle. It has no public setting to turn it off (only a private context "
+    "variable, #958), so a budget refusal is sent 3 times. The provider SDK's own "
+    "retries are off (max_retries=0)."
 )
 
 

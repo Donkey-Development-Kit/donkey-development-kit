@@ -4,7 +4,7 @@ This is the deliverable the milestone's centre of gravity moved to: not our
 internal adapter matrix, but a suite a **customer runs against their own agent**::
 
     pip install "donkey-kit[test]"
-    pytest --donkey-conformance --agent=my_app.agent:build
+    pytest --donkey-conformance --donkey-agent=my_app.agent:build
 
 It registers via a ``pytest11`` entry point, so it auto-loads on *every* pytest
 run in an environment where ``donkey-kit[test]`` is installed — including this
@@ -13,9 +13,11 @@ follows without exception:
 
 1. **It is inert unless asked.** With no ``--donkey-conformance`` flag,
    :func:`pytest_collection` returns ``None`` and default collection runs
-   untouched; the only footprint is three CLI options and one unused fixture.
+   untouched; the only footprint is its ``--donkey-*`` CLI options and two
+   unused fixtures.
 2. **Its module top is import-light.** It imports only stdlib, ``pytest``, and
-   the framework-free :mod:`~.suite`/:mod:`~.report` siblings. The heavy
+   the framework-free :mod:`~.suite`/:mod:`~.report` siblings, and the root
+   ``donkey_kit`` package resolves its names lazily (#746). The heavy
    harness (which imports :class:`~donkey_kit.donkey.Donkey`) and ``asyncio``
    are imported lazily, inside the functions that need them, so merely loading
    the plugin never drags the full SDK — or a framework — onto the import path.
@@ -27,6 +29,7 @@ pytest item and printing the scenario→status table in the terminal summary.
 
 from __future__ import annotations
 
+import argparse
 import importlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -38,6 +41,8 @@ from .suite import SCENARIOS, Result, Scenario, validate_known_limitations
 
 if TYPE_CHECKING:  # keep the heavy import out of the auto-loaded module body
     from .harness import AgentFactory
+
+__all__ = ["donkey", "gateway", "pytest_addoption", "pytest_collection", "pytest_terminal_summary"]
 
 # Stash keys carry collection-time state to the run/summary phases without
 # module globals (pytest recommends config.stash over ad-hoc attributes).
@@ -52,6 +57,15 @@ class _ConformanceFailure(AssertionError):
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register the ``--donkey-conformance`` and ``--donkey-agent`` pytest options.
+
+    Every option is ``--donkey-``-prefixed: pytest refuses to start when two
+    plugins register the same option, and this plugin loads on every run.
+    ``--agent`` survives as a deprecated alias only while no other plugin owns
+    it (#746).
+
+    Docs: https://docs.donkey-kit.dev/testing
+    """
     group = parser.getgroup("donkey", "Donkey conformance")
     group.addoption(
         "--donkey-conformance",
@@ -59,10 +73,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         dest="donkey_conformance",
         help="Run the Donkey conformance suite against your agent "
-        "(requires --agent). Replaces normal test collection.",
+        "(requires --donkey-agent). Replaces normal test collection.",
     )
     group.addoption(
-        "--agent",
+        "--donkey-agent",
         action="store",
         default=None,
         dest="donkey_agent",
@@ -77,8 +91,33 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest="donkey_known_limitations",
         metavar="MODULE:NAME",
         help="Import path to a KNOWN_LIMITATIONS dict of {scenario: reason}. "
-        "Defaults to a KNOWN_LIMITATIONS attribute in the --agent module if present.",
+        "Defaults to a KNOWN_LIMITATIONS attribute in the --donkey-agent module "
+        "if present.",
     )
+    if "--agent" in _registered_options(parser):
+        return  # another plugin owns --agent; --donkey-agent still works
+    try:
+        group.addoption(
+            "--agent",
+            action="store",
+            default=None,
+            dest="donkey_agent_deprecated",
+            metavar="MODULE:FACTORY",
+            help="Deprecated alias for --donkey-agent.",
+        )
+    except (ValueError, argparse.ArgumentError):
+        pass  # registered under a name this pytest version hides from the scan
+
+
+def _registered_options(parser: pytest.Parser) -> set[str]:
+    """Option names other plugins have registered so far. pytest 8 builds its
+    argparse parser lazily, so a cross-group clash would only surface at parse
+    time — too late to catch — hence the scan before adding the alias."""
+    groups = [*getattr(parser, "_groups", ()), getattr(parser, "_anonymous", None)]
+    return {
+        name for group in groups if group is not None
+        for option in group.options for name in option.names()
+    }
 
 
 def _import_target(spec: str, *, what: str) -> tuple[Any, Any]:
@@ -107,18 +146,25 @@ def _import_target(spec: str, *, what: str) -> tuple[Any, Any]:
 
 
 def _resolve_agent(config: pytest.Config) -> tuple[AgentFactory, dict[str, str]]:
-    """Resolve the ``--agent`` factory and its known-limitations mapping, and
+    """Resolve the ``--donkey-agent`` factory and its known-limitations mapping, and
     validate the exemptions **now** (collection time) so a bad key or an empty
     reason fails loudly before any scenario runs (the conformance kit: asserted, never silent)."""
     agent_spec = config.getoption("donkey_agent")
+    deprecated_spec = config.getoption("donkey_agent_deprecated", None)
+    if not agent_spec and deprecated_spec:
+        config.issue_config_time_warning(
+            DeprecationWarning("--agent is deprecated; use --donkey-agent (#746)"),
+            stacklevel=2,
+        )
+        agent_spec = deprecated_spec
     if not agent_spec:
         raise pytest.UsageError(
-            "--donkey-conformance requires --agent=module:factory "
+            "--donkey-conformance requires --donkey-agent=module:factory "
             "(the import path to your agent factory)"
         )
-    module, factory = _import_target(agent_spec, what="the agent factory (--agent)")
+    module, factory = _import_target(agent_spec, what="the agent factory (--donkey-agent)")
     if not callable(factory):
-        raise pytest.UsageError(f"--agent target {agent_spec!r} is not callable")
+        raise pytest.UsageError(f"--donkey-agent target {agent_spec!r} is not callable")
 
     known_spec = config.getoption("donkey_known_limitations")
     if known_spec:
@@ -155,7 +201,7 @@ class _ScenarioItem(pytest.Item):
         if result.status == "exempt":
             self.add_report_section("call", "exempt", result.detail)
 
-    def repr_failure(self, excinfo: Any, style: Any = None) -> Any:
+    def repr_failure(self, excinfo: Any, style: Any = None) -> Any:  # noqa: ARG002 - pytest API
         if isinstance(excinfo.value, _ConformanceFailure):
             return str(excinfo.value)
         return super().repr_failure(excinfo)
@@ -211,9 +257,7 @@ def _result_for(config: pytest.Config, scenario_name: str) -> Result:
     raise KeyError(f"no conformance result for scenario {scenario_name!r}")
 
 
-def pytest_terminal_summary(
-    terminalreporter: Any, exitstatus: int, config: pytest.Config
-) -> None:
+def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> None:
     """Print the scenario→status table once, after the run. Only fires when the
     conformance suite actually ran (results are cached on the stash)."""
     results = config.stash.get(_RESULTS_KEY, None)
@@ -235,9 +279,9 @@ def donkey() -> Any:
     is preserved. Torn down synchronously; the async transport opens no
     connection unless a real request is made (which ``simulate()`` intercepts)."""
     from ..donkey import Donkey
-    from .harness import _offline_config
+    from .harness import offline_config
 
-    fab = Donkey(_offline_config())
+    fab = Donkey(offline_config())
     try:
         yield fab
     finally:

@@ -26,7 +26,6 @@ from typing import Any
 
 import httpx
 import pytest
-from pydantic import BaseModel
 
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import DonkeyAsyncClient, proxy_auth_headers
@@ -232,14 +231,17 @@ def test_explicit_dict_conversion_is_the_plain_view() -> None:
 # --- the real values reach the framework ------------------------------------------------
 
 
-class _HeaderModel(BaseModel):
-    """Stands in for pydantic-validated framework kwargs (LangChain, google-genai)."""
-
-    default_headers: dict[str, str]
-    api_key: str
-
-
 def test_pydantic_coercion_keeps_the_real_values() -> None:
+    # pydantic is not a base dependency (#730); it arrives with the framework
+    # extras, so the base-only job skips this.
+    pydantic = pytest.importorskip("pydantic")
+
+    class _HeaderModel(pydantic.BaseModel):
+        """Stands in for pydantic-validated framework kwargs (LangChain, google-genai)."""
+
+        default_headers: dict[str, str]
+        api_key: str
+
     kw = _SURFACES["agent_framework.connection_kwargs"]()
     model = _HeaderModel(**kw)
     assert model.default_headers["client_secret"] == _PROXY_SECRET

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+__all__ = ["ModelCapabilities", "ModelHandle", "heuristic_capabilities"]
+
 
 @dataclass(frozen=True)
 class ModelCapabilities:
@@ -27,6 +29,8 @@ class ModelCapabilities:
 
 @dataclass(frozen=True)
 class ModelHandle:
+    """One logical model the proxy exposes, with its capability flags (BG §1.1)."""
+
     id: str
     provider: str | None = None
     display_name: str | None = None

@@ -51,8 +51,8 @@ def test_connection_kwargs_carry_governed_values() -> None:
     assert "client_secret" in kw["default_headers"]
     assert kw["max_retries"] == 0  # we retry in transport, not the framework
     assert kw["http_async_client"] is not None  # our shared, hooked client
-    # verified /responses endpoint (docs/verified-apis.md §2)
-    assert kw["use_responses_api"] is True
+    # /chat/completions, the route every upstream serves (docs/verified-apis.md §2, #1043)
+    assert kw["use_responses_api"] is False
     # No model id — the caller supplies that: ChatOpenAI(model=…, **kw)
     assert "model" not in kw
 
@@ -313,10 +313,10 @@ def test_agent_framework_chat_client_blocks_unverified_import(
 
 def test_agent_framework_chat_client_constructs_with_package_present() -> None:
     """The mirror of the blocks-on-import test (#520): with agent-framework
-    actually installed, the factory returns a real ``OpenAIChatClient`` built
-    with the VERIFIED ``model=`` kwarg — the path the acceptance harness hit
-    that the package-absent test never exercised. ``api="chat_completions"``
-    returns the Chat Completions client instead (#826). VERIFIED: agent-framework
+    actually installed, the factory returns a real ``OpenAIChatCompletionClient``
+    built with the VERIFIED ``model=`` kwarg — the path the acceptance harness
+    hit that the package-absent test never exercised. ``api="responses"``
+    returns the Responses client instead (#826, #1043). VERIFIED: agent-framework
     1.19.0 (docs/verified-apis.md §8)."""
     pytest.importorskip("agent_framework")
     from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
@@ -324,10 +324,8 @@ def test_agent_framework_chat_client_constructs_with_package_present() -> None:
     from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 
     adapter = AgentFrameworkAdapter(_cfg(), _http())
-    assert isinstance(adapter.chat_client("gpt-4o"), OpenAIChatClient)
-    assert isinstance(
-        adapter.chat_client("gpt-4o", api="chat_completions"), OpenAIChatCompletionClient
-    )
+    assert isinstance(adapter.chat_client("gpt-4o"), OpenAIChatCompletionClient)
+    assert isinstance(adapter.chat_client("gpt-4o", api="responses"), OpenAIChatClient)
 
 
 def test_agent_framework_chat_client_rejects_an_unknown_api() -> None:
@@ -438,7 +436,7 @@ _FACTORIES = [
         "chat_client",
         "AgentFrameworkAdapter",
         "agent_framework.openai",
-        "OpenAIChatClient",
+        "OpenAIChatCompletionClient",
         ("gpt-4o",),
         "base_url",
         "https://override",
@@ -548,6 +546,16 @@ def test_factory_and_connection_kwargs_do_not_drift(
     }
 
 
+def _shared_client(client: Any) -> Any:
+    """The client a pre-built OpenAI client sends through: its ``http_client``
+    itself, or, for the per-call ``httpx2`` bridge openai>=3 gets (#728), the
+    shared client the bridge forwards to."""
+    transport = getattr(client, "_transport", None)
+    if type(transport).__name__ == "DonkeyForwardingTransport":
+        return transport._client
+    return client
+
+
 def _comparable(value: Any) -> Any:
     if type(value).__name__ == "AsyncOpenAI":
         return (
@@ -556,7 +564,7 @@ def _comparable(value: Any) -> Any:
             value.default_headers["client_id"],
             value.default_headers["client_secret"],
             value.max_retries,
-            id(value._client),
+            id(_shared_client(value._client)),
         )
     return value
 
@@ -684,27 +692,10 @@ def test_adk_gemini_caller_kwargs_override_connection_defaults(
     assert captured["client_kwargs"] is caller
 
 
-def test_adk_gemini_records_the_factory_without_changing_the_flag(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # model() (LiteLLM) cannot observe; gemini() routes through our transport.
-    # That is per-factory class data: building a Gemini records the use and never
-    # writes a capability flag onto the instance (#741).
-    _install_gemini_stub(monkeypatch)
-    from donkey_kit.integrations.adk import ADKAdapter
-
-    adapter = ADKAdapter(_cfg(), _http())
-    assert adapter.observing_last_call() is False
-    adapter.gemini("gemini-2.5-flash")
-    assert adapter.observing_last_call() is True
-    assert "observes_last_call" not in vars(adapter)
-    assert adapter.observes_last_call is ADKAdapter.observes_last_call is False
-
-
 @pytest.mark.parametrize(
     ("factories", "status"),
     [
-        (("model",), "UNAVAILABLE"),
+        (("model",), "UNOBSERVED"),
         (("gemini",), "UNOBSERVED"),
         (("model", "gemini"), "UNOBSERVED"),
         (("gemini", "model"), "UNOBSERVED"),
@@ -713,18 +704,23 @@ def test_adk_gemini_records_the_factory_without_changing_the_flag(
 def test_adk_last_call_status_does_not_depend_on_factory_order(
     monkeypatch: pytest.MonkeyPatch, factories: tuple[str, ...], status: str
 ) -> None:
-    # A cold read is UNAVAILABLE only when nothing built on this Donkey can be
-    # observed; which ADK factory ran first must not change the answer (#741).
+    # Both ADK factories send through the shared client (#691, #740), so a cold
+    # read is UNOBSERVED whichever factory ran, in any order (#741).
     from donkey_kit import Donkey
+    from donkey_kit.core import lastcall
     from donkey_kit.core.lastcall import LastCallStatus
 
     _install_gemini_stub(monkeypatch)
     _install_native_stub(monkeypatch, "google.adk.models.lite_llm", "LiteLlm")
     monkeypatch.setattr("donkey_kit.donkey._missing_module", lambda _probe: None)
-    with Donkey(_cfg()) as donkey:
-        for factory in factories:
-            getattr(donkey.adk, factory)("gemini-2.5-flash")
-        assert donkey.last_call.status is LastCallStatus[status]
+    token = lastcall._last_call.set(None)
+    try:
+        with Donkey(_cfg()) as donkey:
+            for factory in factories:
+                getattr(donkey.adk, factory)("gemini-2.5-flash")
+            assert donkey.last_call.status is LastCallStatus[status]
+    finally:
+        lastcall._last_call.reset(token)
 
 
 @pytest.mark.parametrize(
@@ -749,7 +745,6 @@ def test_adk_gemini_refuses_a_gemini_that_would_drop_the_governed_client(
     assert f"lacks {missing}" in str(exc_info.value)
     assert "google-adk>=2.4" in str(exc_info.value)
     assert captured == {}  # never constructed
-    assert adapter.observing_last_call() is False
 
 
 async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None:
@@ -765,7 +760,7 @@ async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None
 
     from donkey_kit.core.errors import UpstreamRequestError, classify
     from donkey_kit.core.lastcall import LastCallStatus, current_last_call
-    from donkey_kit.core.telemetry import run_context
+    from donkey_kit.core.telemetry import run_scope
     from donkey_kit.integrations.adk import ADKAdapter
 
     seen: list[httpx.Request] = []
@@ -799,7 +794,7 @@ async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None
         )
 
     async with http:
-        with run_context("run-691"):
+        with run_scope("run-691"):
             m = adapter.gemini("gemini-2.5-flash", base_url="https://gw/ddk-gemini-inbound/")
             async for _ in m.generate_content_async(_request("gemini-2.5-flash")):
                 pass

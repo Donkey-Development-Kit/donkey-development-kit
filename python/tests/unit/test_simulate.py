@@ -4,7 +4,7 @@ The in-process sibling of the donkey mock server (BG §1.4): instead of a TCP
 port, it swaps a fixture-returning transport onto the live Donkey client for the
 next N calls, so the refusal branch of an agent runs with no network and no
 server. Framework-free — driven straight through the shared ``httpx`` client,
-exactly as ``donkey.openai()`` would, so these run under ``[dev]`` alone (no
+exactly as ``donkey.openai()`` would, so these run under the ``dev`` group alone (no
 ``[local]`` extra, no ``importorskip``).
 
 Acceptance bar (issue #190):
@@ -30,6 +30,7 @@ from donkey_kit.core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -61,6 +62,7 @@ def _sentinel(status: int = 299) -> httpx.MockTransport:
 # spec; test_mapping_table_matches_documented_set pins the implementation to it.
 _ROUND_TRIP = [
     (TokenBudgetExceeded, "token-rate-limit"),
+    (RequestRateLimitExceeded, "request-rate-limit"),
     (PIIDetected, "pii-detected"),
     (PromptInjectionBlocked, "injection-protection"),
     (ContentSafetyBlocked, "content-safety"),
@@ -121,7 +123,7 @@ async def test_times_is_honoured_exactly_then_passes_through() -> None:
     # AC (2): the first ``times`` calls get the fixture; call times+1 proceeds
     # normally (to the wrapped transport).
     donkey = _donkey()
-    donkey._http._swap_transport(_sentinel())
+    donkey._http.governed_transport.replace_inner(_sentinel())
     async with donkey:
         with donkey.simulate(PIIDetected, times=2):
             r1 = await _post(donkey)
@@ -135,7 +137,7 @@ async def test_times_is_honoured_exactly_then_passes_through() -> None:
 
 async def test_default_times_is_one() -> None:
     donkey = _donkey()
-    donkey._http._swap_transport(_sentinel())
+    donkey._http.governed_transport.replace_inner(_sentinel())
     async with donkey:
         with donkey.simulate(PIIDetected):
             first = await _post(donkey)
@@ -150,7 +152,7 @@ async def test_retryable_5xx_consumes_one_count_across_retries() -> None:
     # dedup means the whole retry sequence of one logical call consumes exactly
     # one count, so a second logical call still passes through.
     donkey = _donkey(DonkeyConfig(max_retries=2))
-    donkey._http._swap_transport(_sentinel())
+    donkey._http.governed_transport.replace_inner(_sentinel())
     async with donkey:
         with donkey.simulate(UpstreamModelError, times=1):
             r1 = await _post(donkey)  # 503 through every retry — one logical call
@@ -163,27 +165,27 @@ async def test_nesting_and_exception_restore_previous_transport() -> None:
     # AC (3): nested simulate() composes, and each block restores the transport
     # it captured — even when the body raises.
     donkey = _donkey()
-    original = donkey._http._transport
+    original = donkey._http.governed_transport.inner
     async with donkey:
         with donkey.simulate(PIIDetected):
-            after_outer = donkey._http._transport
+            after_outer = donkey._http.governed_transport.inner
             assert after_outer is not original
             with pytest.raises(RuntimeError):
                 with donkey.simulate(AuthError):
                     assert (await _post(donkey)).status_code == 401  # inner wins
                     raise RuntimeError("boom")
             # inner block restored the PII transport despite the exception
-            assert donkey._http._transport is after_outer
+            assert donkey._http.governed_transport.inner is after_outer
             assert (await _post(donkey)).status_code == 403
         # outer block restored the original transport
-        assert donkey._http._transport is original
+        assert donkey._http.governed_transport.inner is original
 
 
 async def test_sync_client_swapped_when_already_built() -> None:
     # Sync coverage: a blocking client built BEFORE the block is a target.
     donkey = _donkey()
     sync = donkey._sync_http_client()  # build first
-    sync._swap_transport(_sentinel())
+    sync.governed_transport.replace_inner(_sentinel())
     async with donkey:
         with donkey.simulate(PIIDetected):
             assert sync.post(_URL, json={}).status_code == 403

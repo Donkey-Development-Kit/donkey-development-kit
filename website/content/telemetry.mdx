@@ -11,7 +11,9 @@ import { Badge } from '../components'
 
 DDK answers two questions about every governed call: *what happened?* and *who
 pays for it?* It does so with OpenTelemetry GenAI spans, per-run correlation
-IDs, cost-attribution tags, and routing and resilience signals.
+IDs, cost-attribution tags, and routing and resilience signals. For what the
+SDK itself does along the way, such as retries and token refreshes, see
+[Debug logging](#debug-logging).
 
 ## OpenTelemetry GenAI spans
 
@@ -22,7 +24,7 @@ for the governance layer that generic instrumentation cannot know about:
 
 ```
 donkey.policy.decision      = allow | refuse
-donkey.policy.type          = pii_detected | token_budget | injection | agent_killed | …
+donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | …
 donkey.budget.remaining     = 18450
 donkey.correlation_id       = …
 donkey.cost.team            = support
@@ -69,18 +71,50 @@ python -m my_app                              # spans flow, refused calls includ
 ```
 
 `Donkey.from_env()` reads `OTEL_EXPORTER_OTLP_ENDPOINT` (or the traces-specific
-`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, installs an OTLP
-exporter behind a batch processor. The network flush runs on that background
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) and, when one is set, sets up an OTLP
+exporter behind a batch processor for DDK's own spans. The network flush runs on that background
 thread, off your request path, keeping instrumentation overhead under
 1&nbsp;ms per call. The `[otel]` extra ships the **http/protobuf** exporter;
 `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` is honoured only if you also install
 `opentelemetry-exporter-otlp-proto-grpc`.
 
 **With no endpoint set, the export path is inert and silent** — no exporter is
-built, nothing connects, nothing is printed. If your process already configures
-its own OpenTelemetry provider (say via `opentelemetry-instrument`), DDK rides it
-rather than replacing it, so your spans flow through the pipeline you already
-set up.
+built, nothing connects, nothing is printed.
+
+### DDK leaves the global provider to you
+
+OpenTelemetry lets a process set its global `TracerProvider` only once. So
+constructing a `Donkey` **never changes `trace.get_tracer_provider()`** by
+default. The exporter above sits on a provider that only DDK's spans use, and
+your other instrumentation is unaffected.
+
+- **Your process sets its own provider**, before *or after* `Donkey()` (say via
+  `opentelemetry-instrument`, or a `trace.set_tracer_provider(...)` call during
+  startup). DDK's spans go to that provider from then on, through the pipeline
+  you already set up, and DDK's own exporter goes unused.
+- **You want DDK's provider to be the global one**, so other libraries' spans
+  use the same exporter. Opt in:
+
+```bash
+export DONKEY_TELEMETRY_INSTALL_GLOBAL=true   # or telemetry_install_global = true in .donkey-kit.toml
+```
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.core.config import DonkeyConfig
+
+donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_install_global=True))
+```
+
+With the flag on and an endpoint set, the first `Donkey()` installs its provider
+as the global one, unless your process already set one. The flag does nothing
+without an endpoint.
+
+DDK's own provider flushes its pending spans when the interpreter exits. If you
+need to flush earlier with `trace.get_tracer_provider().force_flush()`, for
+example in a serverless handler or a script that checks its collector before it
+exits, that call only reaches DDK's spans when they go through the global
+provider. Turn the flag on, or set your own provider.
 
 Opt out of telemetry entirely with a single flag:
 
@@ -331,13 +365,13 @@ export DONKEY_TELEMETRY_CAPTURE_CONTENT=true
 # or: telemetry_capture_content = true under [donkey] in .donkey-kit.toml
 ```
 
-In code, layer it over the resolved config. It isn't a `Donkey.from_env()`
-kwarg:
+In code, pass it to `Donkey.from_env()`, which takes any `DonkeyConfig` field as
+a keyword argument:
 
 ```python
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import Donkey
 
-donkey = Donkey(DonkeyConfig.from_env().with_overrides(telemetry_capture_content=True))
+donkey = Donkey.from_env(telemetry_capture_content=True)
 ```
 
 `telemetry_capture_content` resolves along the standard
@@ -408,13 +442,12 @@ so no response reaches the record and the run's correlation ID isn't sent.
 
 LlamaIndex, Microsoft Agent Framework and ADK's `model()` send through the
 shared client, so a call populates the record in its own context and carries
-the run's correlation ID. They are still listed as not observing calls, so a
-cold read on a `Donkey` that resolved only these adapters or CrewAI reports
-`UNAVAILABLE` rather than `UNOBSERVED`. Aligning that is tracked in
-[#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740).
-ADK's `gemini()` uses the shared client and observes calls once it has been
-called (see [Native Gemini](/frameworks/adk#native-gemini) for reading
-`last_call` inside an ADK run).
+the run's correlation ID. A cold read on a `Donkey` that resolved only these
+adapters reports `UNOBSERVED`, and `OBSERVED` after a call
+([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
+ADK's `gemini()` uses the shared client too (see
+[Native Gemini](/frameworks/adk#native-gemini) for reading `last_call` inside
+an ADK run).
 
 For a `Donkey` that resolved only CrewAI:
 
@@ -445,7 +478,8 @@ method) records in the caller's context.
 ### Two behaviours worth knowing
 
 **The SDK never double-retries a fallback.** DDK retries `502/503/504` with
-backoff, but if the gateway already failed over internally, a `503` it marked as
+backoff (a `502`/`504` on a model call only with
+`retry_model_calls_on_gateway_errors`), but if the gateway already failed over internally, a `503` it marked as
 a fallback is **not** retried again — a second recovery layer stacked on a
 working first one just multiplies latency against an outage the gateway already
 handled.
@@ -529,6 +563,12 @@ LangGraph node, for instance) without threading an argument through every
 function, and concurrent runs never leak into each other. It works with or
 without OpenTelemetry installed. `donkey.run(...)` is a **dual sync/async**
 context manager (plain `with` works too); nested blocks rebind then restore.
+
+A refusal leaving the block is re-raised as its typed `DonkeyError`, whichever
+framework wrapped it on the way out, so `except PIIDetected` works the same
+around every framework. See
+[Typed refusals at the framework boundary](/errors#typed-refusals-at-the-framework-boundary);
+`donkey.run(typed_refusals=False)` turns it off.
 
 ### The decorator form
 
@@ -614,3 +654,54 @@ For compliance — *"prove the HR bot's answer to user X on date Y went through
 the content-safety policy"* — the correlation ID on the log line joins to the
 gateway record, and the span carries `donkey.cost.enduser.id` and `donkey.policy.type`. An
 EU AI Act Article 12 log request becomes one query, not an investigation.
+
+## Debug logging
+
+Spans tell you what a call did. When you need to see what the SDK did *for*
+you along the way, such as a retry, a token refresh or a fallback, turn on its
+DEBUG logging. It uses the standard library `logging` module, with one logger
+per module under the `donkey_kit` package logger:
+
+```python
+import logging
+
+logging.basicConfig()                                   # or your own handlers
+logging.getLogger("donkey_kit").setLevel(logging.DEBUG)
+```
+
+A retried 503 then reads:
+
+```text
+DEBUG:donkey_kit.core.transport.observe:GET https://proxy.example/v1/chat/completions returned 503; retry 1 of 3 in 0.48s
+```
+
+The SDK attaches only a `NullHandler` to `donkey_kit` and never configures a
+handler, level or format of its own, so nothing prints until your application
+does. That also means you can narrow it. Set the level on one module logger,
+such as `donkey_kit.core.auth`, instead of the package.
+
+| What is logged at DEBUG | Logger |
+| --- | --- |
+| Each retry: the status, which retry it is, and the delay | `donkey_kit.core.transport.observe` |
+| A retryable status that is not retried: after a gateway routing fallback, a 502/504 on a model call (see [Retry behaviour](/errors#retry-behaviour)), or once retries run out | `donkey_kit.core.transport.observe` |
+| A 401 on the async client, followed by one token refresh and re-send | `donkey_kit.core.transport.async_client` |
+| A connected-app token fetch (the token URL only) and token invalidation | `donkey_kit.core.auth` |
+| An auth provider in a `ChainedAuth` failing over to the next one (type names only) | `donkey_kit.core.auth` |
+| The OTLP export bootstrap: inert, kept your `TracerProvider`, or installed (global or DDK-scoped) | `donkey_kit.core.telemetry` |
+| How many tool descriptors a `ToolSet` exposes after its filter, out of the total | `donkey_kit.tools.session` |
+| A best-effort step that failed and was skipped (with the traceback), e.g. a refusal translator or recording usage on a span | the module that skipped it |
+
+<Callout type="info">
+  **A log record never carries a credential.** Records name a request by
+  method, scheme, host and path only. They never include a header value,
+  token, client secret, query string or request body, and an auth failure is
+  logged by exception type, not message. A unit test pins this against every
+  credential the SDK sends: the bearer token, client id and client secret.
+</Callout>
+
+The SDK does not use WARNING log records for configuration problems. A one-time
+problem you have to fix is a Python warning instead, raised through
+`warnings.warn` with its own category, so you can filter it or make it an
+error with the `warnings` module. For example, an OTLP endpoint set without its
+exporter installed raises `donkey_kit.core.telemetry.TelemetryExportWarning`
+(see [Zero-config export](#zero-config-export)).

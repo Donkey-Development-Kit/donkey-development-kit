@@ -33,6 +33,7 @@ from donkey_kit.core.errors import (
     PIIDetected,
     PolicyViolation,
     PromptInjectionBlocked,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     UpstreamModelError,
     UpstreamRequestError,
@@ -87,13 +88,6 @@ def test_routing_keys_are_the_pinned_and_stable_literal_strings() -> None:
     assert telemetry.GEN_AI_RESPONSE_MODEL == "gen_ai.response.model"
     assert telemetry.DONKEY_ROUTING_TYPE == "donkey.routing.type"
     assert telemetry.DONKEY_ROUTING_FALLBACK == "donkey.routing.fallback"
-
-
-def test_routing_keys_are_allowlisted_for_the_generic_emitter() -> None:
-    # They must be emittable — an allowlist-driven span drops anything not here.
-    assert telemetry.GEN_AI_RESPONSE_MODEL in telemetry._ALLOWED_SPAN_ATTRIBUTES
-    assert telemetry.DONKEY_ROUTING_TYPE in telemetry._ALLOWED_SPAN_ATTRIBUTES
-    assert telemetry.DONKEY_ROUTING_FALLBACK in telemetry._ALLOWED_SPAN_ATTRIBUTES
 
 
 # --- build_genai_attributes: the pure dual-namespace assembler --------------
@@ -176,13 +170,11 @@ def test_build_genai_attributes_emits_fallback_false_but_drops_none() -> None:
     assert telemetry.build_genai_attributes(fallback=None) == {}
 
 
-def test_semantic_routing_keys_are_pinned_and_allowlisted() -> None:
+def test_semantic_routing_keys_are_pinned() -> None:
     # #590: the matched topic + similarity score live under the stable donkey.*
-    # namespace (semconv has no key for them) and must be emittable.
+    # namespace (semconv has no key for them).
     assert telemetry.DONKEY_ROUTING_MATCHED_TOPIC == "donkey.routing.matched_topic"
     assert telemetry.DONKEY_ROUTING_SCORE == "donkey.routing.score"
-    assert telemetry.DONKEY_ROUTING_MATCHED_TOPIC in telemetry._ALLOWED_SPAN_ATTRIBUTES
-    assert telemetry.DONKEY_ROUTING_SCORE in telemetry._ALLOWED_SPAN_ATTRIBUTES
 
 
 def test_build_genai_attributes_emits_the_semantic_match() -> None:
@@ -210,17 +202,6 @@ def test_build_genai_attributes_omits_none_usage_details_keeps_zero() -> None:
     assert "donkey.usage.cache_write_tokens" not in attrs  # None → omitted
 
 
-def test_usage_detail_keys_are_in_the_span_allowlist() -> None:
-    # The generic span emitter allowlists only permitted keys; the new usage keys
-    # must be present or a span would silently drop them.
-    for key in (
-        telemetry.DONKEY_USAGE_CACHED_TOKENS,
-        telemetry.DONKEY_USAGE_CACHE_WRITE_TOKENS,
-        telemetry.DONKEY_USAGE_REASONING_TOKENS,
-    ):
-        assert key in telemetry._ALLOWED_SPAN_ATTRIBUTES
-
-
 # --- policy_type_slug: classified refusal -> donkey.policy.type -------------
 
 
@@ -228,6 +209,7 @@ def test_usage_detail_keys_are_in_the_span_allowlist() -> None:
     ("error", "expected"),
     [
         (TokenBudgetExceeded("x", remediation="r"), "token_budget"),
+        (RequestRateLimitExceeded("x", remediation="r"), "request_rate_limit"),
         (PIIDetected("x", remediation="r"), "pii_detected"),
         (PromptInjectionBlocked("x", remediation="r"), "injection"),
         (ContentSafetyBlocked("x", remediation="r"), "content_safety"),
@@ -410,9 +392,8 @@ def test_start_genai_span_is_detached_and_ends_only_when_told(
 # --- Content redaction boundary (#306, BG §1.6) -----------------------------
 # Message content (prompt/completion) is emitted ONLY behind an explicit
 # telemetry_capture_content opt-in, because spans are exported upstream of the
-# gateway's PII masking. Two enforcement points: the generic span() allowlist
-# (nothing content-shaped reaches a span by accident) and GenAiSpan.record's
-# gate (content dropped unless the span was opened with capture_content=True).
+# gateway's PII masking. GenAiSpan.record enforces it: content is dropped
+# unless the span was opened with capture_content=True.
 
 
 def test_content_attribute_keys_are_the_pinned_literals() -> None:
@@ -421,14 +402,11 @@ def test_content_attribute_keys_are_the_pinned_literals() -> None:
     assert telemetry.GEN_AI_COMPLETION == "gen_ai.completion"
 
 
-def test_content_attributes_are_gated_and_never_allowlisted() -> None:
-    # The two content keys are the members of _CONTENT_ATTRIBUTES (the opt-in
-    # set) and are deliberately absent from the generic-span allowlist, so no
-    # call site can leak them through span().
+def test_content_attributes_are_the_gated_set() -> None:
+    # The two content keys are the members of _CONTENT_ATTRIBUTES (the opt-in set).
     assert telemetry._CONTENT_ATTRIBUTES == frozenset(
         {telemetry.GEN_AI_PROMPT, telemetry.GEN_AI_COMPLETION}
     )
-    assert not (telemetry._CONTENT_ATTRIBUTES & telemetry._ALLOWED_SPAN_ATTRIBUTES)
 
 
 def test_build_genai_attributes_maps_prompt_and_completion_to_pinned_keys() -> None:
@@ -493,50 +471,3 @@ def test_start_genai_span_honours_the_content_gate(monkeypatch: pytest.MonkeyPat
     off_span, on_span = exporter.get_finished_spans()
     assert "gen_ai.prompt" not in dict(off_span.attributes)
     assert dict(on_span.attributes)["gen_ai.prompt"] == "visible"
-
-
-def test_generic_span_allowlist_drops_content_and_unknown_keys(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    tracer, exporter = _in_memory_tracer()
-    monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
-
-    # A rogue content attribute AND an unrecognised key handed to the generic
-    # span() are both dropped by the allowlist; an allowlisted key survives.
-    # run_context supplies the correlation ID the span attaches.
-    with telemetry.run_context("run-allowlist"), telemetry.span(
-        telemetry.SPAN_TOOL_CALL,
-        enabled=True,
-        **{
-            telemetry.GEN_AI_PROMPT: "leak me",
-            "some.unknown.key": "also dropped",
-            telemetry.GEN_AI_REQUEST_MODEL: "gpt-4o",
-        },
-    ):
-        pass
-
-    (span,) = exporter.get_finished_spans()
-    attrs = dict(span.attributes)
-    assert "gen_ai.prompt" not in attrs
-    assert "some.unknown.key" not in attrs
-    assert attrs["gen_ai.request.model"] == "gpt-4o"
-    assert "donkey.correlation_id" in attrs  # always attached
-
-
-def test_generic_span_outside_a_run_does_not_bind_a_correlation_id(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # #803: span() attaches a correlation ID but must not bind it, or every later
-    # call in the same context would report this span's run.
-    tracer, exporter = _in_memory_tracer()
-    monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
-
-    with telemetry.span(telemetry.SPAN_TOOL_CALL, enabled=True):
-        pass
-    with telemetry.span(telemetry.SPAN_TOOL_CALL, enabled=True):
-        pass
-
-    first, second = exporter.get_finished_spans()
-    ids = {dict(s.attributes)["donkey.correlation_id"] for s in (first, second)}
-    assert len(ids) == 2
-    assert telemetry.current_correlation_id() is None

@@ -114,8 +114,11 @@ A `base_url` / `api_base` passed to `llm()` must pass the
 - **No run correlation ID.** CrewAI sends requests through its native OpenAI
   provider's own HTTP client rather than the SDK's shared one, so the
   correlation ID bound by `donkey.run()` doesn't reach the request. The auth
-  and attribution headers are still sent on every request. The conformance
-  suite checks this as a documented behaviour.
+  and attribution headers are still sent on every request. CrewAI has no
+  supported way to hand its provider an HTTP client: one setting feeds both its
+  sync and async clients, and its `interceptor` hook can edit a request but not
+  send it somewhere else. The conformance suite checks this as a documented
+  behaviour.
 - **`jwt` mode isn't supported.** The JWT is added only by the SDK's shared
   client, which CrewAI's provider doesn't use, so `donkey.crewai.llm()` and
   `connection_kwargs()` raise `ConfigError` in `jwt` mode. Use client-id auth
@@ -124,8 +127,9 @@ A `base_url` / `api_base` passed to `llm()` must pass the
 - **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
   rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as
   a rate limit. On the proxy a `429` is a budget refusal, so CrewAI re-sends it
-  twice before raising. CrewAI has no setting to turn this retry off. The
-  OpenAI client underneath has `max_retries=0`, and transient `5xx` errors are
+  twice before raising. CrewAI has no setting to turn this retry off. This also
+  applies to `RequestRateLimitExceeded`, the `429` of the request
+  `rate-limiting` policy. The OpenAI client underneath has `max_retries=0`, and transient `5xx` errors are
   not retried at all, because the SDK's transport isn't used.
 - **Printing the model shows the API key.** `OpenAICompletion`'s own `repr()` /
   `str()` include `api_key`. Don't print or log it.

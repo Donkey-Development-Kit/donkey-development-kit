@@ -69,6 +69,8 @@ Run context
   ContentSafetyBlocked   revised ['severity_hate', 'severity_violence'] and did not retry
   PASS  The documented content-safety fixture classifies and injects.
 
+    from donkey_kit.experimental import ToolInvocationError
+
     with donkey.simulate(ToolInvocationError):
         ...
 
@@ -81,7 +83,7 @@ Run context
   PASS  ValueError — a transport failure has no captured body to inject
   message                simulate() cannot inject GatewayUnavailable: no captured fixture maps back to it via classify(). Supported: AgentKilled, AuthError, ContentSafetyBlocked, ModelNotRoutable, PIIDetected, PolicyViolation, PromptInjectionBlocked, TokenBudgetExceeded, UpstreamModelError, UpstreamRequestError.
 
-  Tool invocation, registry, and provisioning errors are not gateway refusals, and they
+  Tool invocation and registry errors are not gateway refusals, and they
   have no captured wire shape. GatewayUnavailable is the same kind of gap for a
   different reason: there is no HTTP response at all, so there is nothing to replay.
   Injecting a plausible body would let you write a handler against a body that does not
@@ -177,11 +179,14 @@ donkey mock --scenario pii_block:every=2 \
 
 `pii_block` fails every Nth call, `injection` matches request text, and
 `budget` is a real wall-clock window that serves the token-rate-limit 429 on
-exhaustion until the window rolls over.
+exhaustion until the window rolls over. `--scenario request_limit:limit=3,window=60s`
+adds the request-counting equivalent for the `rate-limiting` policy, and
+`donkey.simulate(RequestRateLimitExceeded)` or the model sentinel
+`donkey-sim/request-rate-limit` injects that `429` directly.
 
   `simulate()` only injects shapes that have a captured wire body.
-  `simulate(ToolInvocationError)` and `simulate(GatewayUnavailable)` raise
-  `ValueError` instead of inventing one — a transport failure has no HTTP
+  `simulate(ToolInvocationError)` (imported from `donkey_kit.experimental`) and
+  `simulate(GatewayUnavailable)` raise `ValueError` instead of inventing one — a transport failure has no HTTP
   response to replay. To provoke `GatewayUnavailable`, point at a dead origin
   (see [Typed refusals](https://docs.donkey-kit.dev/examples/general/typed-refusals.md)).
 

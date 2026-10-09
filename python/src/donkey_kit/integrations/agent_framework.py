@@ -10,11 +10,11 @@ agent-framework 1.19.0 (docs/verified-apis.md §8):
 ``POST /chat/completions``) and ``agent_framework.openai.OpenAIChatClient``
 (Responses API, ``POST /responses``). Both take ``model``, ``base_url``,
 ``api_key``, ``default_headers`` and ``async_client``. :meth:`chat_client`
-builds the Responses client by default: ``/responses`` is the data-plane route
-in docs/verified-apis.md §2, the same one ``donkey.llm`` and the LangGraph
-adapter use. Not every upstream serves it (an Azure OpenAI route answers with a
-404), so ``api="chat_completions"`` builds the Chat Completions client for such
-routes (#826). Both the
+builds the Chat Completions client by default: ``/chat/completions`` is the
+only route every upstream behind an OpenAI-format proxy serves
+(docs/verified-apis.md §2, per-upstream route matrix, #894). ``/responses``
+404s on Azure OpenAI (#826) and streams only partially on transcoded upstreams,
+so ``api="responses"`` is an opt-in for OpenAI-routed proxies (#1043). Both the
 import and the construction stay guarded so a future upstream rename surfaces
 as a ``_verify.blocked(...)`` refusal, never a raw ``ImportError``/``TypeError``
 reaching the caller; a missing package raises the curated install hint every
@@ -29,18 +29,23 @@ refusal instead of a generic ``ChatClientException`` (BG §1.2).
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
-from types import TracebackType
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from ..core import _verify
 from ..core.masking import masked
+from ..core.refusals import translate
+from . import AdapterCapabilities, typed_refusals
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
+
+    from ..core.errors import DonkeyError
+
+__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client", "refusal_translator"]
 
 ChatAPI = Literal["responses", "chat_completions"]
 # The agent-framework.openai class each ``api=`` value builds (docs/verified-apis.md §8).
@@ -51,10 +56,40 @@ _CHAT_CLIENT_CLASSES: dict[str, str] = {
 
 
 class AgentFrameworkAdapter(Adapter):
-    extra = "agent_framework"
-    # Kept False while the conformance exemption table lists Agent Framework; its
-    # calls now go through the shared client (async_client).
-    observes_last_call = False
+    """Governed Microsoft Agent Framework objects, reached as ``donkey.agent_framework``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``chat_client(model)`` builds an
+    ``OpenAIChatClient``. ``connection_kwargs()`` returns the same settings for
+    building it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    The chat clients send through the SDK's shared client, so a call carries the
+    run's correlation id and populates ``donkey.last_call`` (#740).
+
+    Raises:
+        ImportError: ``donkey.agent_framework`` was read without the
+            ``agent_framework`` extra installed; the message carries the install
+            command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/agent-framework
+    """
+
+    # The shared client, as async_client (#740, #946).
+    factories = MappingProxyType(
+        {
+            "chat_client": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatClient(model=…, **kwargs)`` (or
@@ -66,37 +101,37 @@ class AgentFrameworkAdapter(Adapter):
         the constructor uses it as given."""
         return masked(
             {
-                **self._openai_connection(),  # base_url, api_key, default_headers
+                **self._connection(),  # base_url, api_key, default_headers
                 **self._proxy_openai_client_kwarg("async_client"),
             }
         )
 
     @overload
     def chat_client(
-        self, model: str, *, api: Literal["responses"] = ..., **kw: Any
-    ) -> OpenAIChatClient: ...
+        self, model: str, *, api: Literal["chat_completions"] = ..., **kw: Any
+    ) -> OpenAIChatCompletionClient: ...
 
     @overload
     def chat_client(
-        self, model: str, *, api: Literal["chat_completions"], **kw: Any
-    ) -> OpenAIChatCompletionClient: ...
+        self, model: str, *, api: Literal["responses"], **kw: Any
+    ) -> OpenAIChatClient: ...
 
     def chat_client(
-        self, model: str, *, api: ChatAPI = "responses", **kw: Any
+        self, model: str, *, api: ChatAPI = "chat_completions", **kw: Any
     ) -> OpenAIChatClient | OpenAIChatCompletionClient:
         """Return a native Agent Framework chat client at the proxy.
 
-        ``api="responses"`` (the default) returns an ``OpenAIChatClient``, which
-        sends ``POST /responses`` (docs/verified-apis.md §2). An Azure OpenAI
-        route answers that with a 404 (#826); for such a route pass
-        ``api="chat_completions"`` to get an ``OpenAIChatCompletionClient``,
-        which sends ``POST /chat/completions``. A ``base_url`` override must
-        pass the https check."""
+        ``api="chat_completions"`` (the default) returns an
+        ``OpenAIChatCompletionClient``, which sends ``POST /chat/completions``,
+        the route every upstream serves (docs/verified-apis.md §2, #894).
+        ``api="responses"`` returns an ``OpenAIChatClient``, which sends
+        ``POST /responses``; an Azure OpenAI route answers that with a 404
+        (#826). A ``base_url`` override must pass the https check."""
         if api not in _CHAT_CLIENT_CLASSES:
-            raise ValueError(f"api must be 'responses' or 'chat_completions', not {api!r}")
+            raise ValueError(f"api must be 'chat_completions' or 'responses', not {api!r}")
         cls_name = _CHAT_CLIENT_CLASSES[api]
         self._allow_endpoints(kw, "base_url")
-        self._require_proxy()
+        self._connection()
         # A missing module (the package or a dependency of it) is the curated
         # install hint; a missing name in a module that imports is a rename.
         with self._native_import():
@@ -151,8 +186,9 @@ class AgentFrameworkAdapter(Adapter):
 
         Both chat clients wrap every openai error in a ``ChatClientException``
         (``OpenAIContentFilterException`` for a content-filter 400).
-        This middleware finds the ``openai.APIStatusError`` behind it and raises
-        :func:`~donkey_kit.core.errors.classify` of its response instead, so a
+        This middleware applies the SDK's typed-refusal bridge
+        (:func:`donkey_kit.typed_refusals`, #724), which sees through the wrapper
+        to the openai error and raises the typed refusal instead, so a
         PII block ends ``agent.run()`` as
         :class:`~donkey_kit.core.errors.PIIDetected` with the correlation and
         call ids that were sent. The original is kept on ``.framework_error``.
@@ -178,64 +214,48 @@ class AgentFrameworkAdapter(Adapter):
         async def donkey_policy_middleware(
             context: Any, call_next: Callable[[], Awaitable[None]]
         ) -> None:
-            with _TypedRefusals():
+            with typed_refusals():
                 await call_next()
             if context.stream and context.result is not None:
                 # A streamed refusal surfaces when the caller pulls the stream,
                 # after this middleware has returned.
-                context.result.with_pull_context_manager(_TypedRefusals)
+                context.result.with_pull_context_manager(typed_refusals)
 
         # Called, not applied with @: the decorator is untyped without the package.
         return cast("Callable[..., Any]", chat_middleware(donkey_policy_middleware))
 
 
-class _TypedRefusals(AbstractContextManager[None]):
-    """Re-raise an error caused by an ``openai.APIStatusError`` as the typed
-    refusal :func:`~donkey_kit.core.errors.classify` maps its response to.
+def refusal_translator(exc: BaseException) -> DonkeyError | None:
+    """See through Agent Framework's exception wrappers for the typed-refusal
+    bridge (#724).
 
-    A class, not ``@contextmanager``, for the reason given on LangGraph's
-    ``_TypedRefusals``: a generator frame would keep the framework error, whose
-    message repeats the gateway text, in the typed error's traceback.
+    Both chat clients raise the openai error ``from`` inside an
+    ``AgentFrameworkException`` subclass (``ChatClientException``, or
+    ``ChatClientContentFilterException`` for a content-filter 400), which carries
+    no ``request`` or ``response``. This hands the wrapped error back to
+    :func:`~donkey_kit.core.refusals.translate`; the classification itself stays
+    in core. Registered as the adapter's ``AdapterSpec.refusal_translator`` and
+    only consulted once ``agent_framework`` is imported.
     """
+    from agent_framework.exceptions import AgentFrameworkException
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        if exc is None:
-            return None
-        import openai  # lazy: only reached once the framework has raised
-
-        from ..core.errors import classify
-
-        # Agent Framework chains the openai error as __cause__ of its own
-        # ChatClientException; walk the chain rather than one level.
-        cause: BaseException | None = exc
-        while cause is not None and not isinstance(cause, openai.APIStatusError):
-            cause = cause.__cause__
-        if cause is None:
-            return None
-        # openai>=3 vendors its own httpx; cast for the reason in langgraph.py.
-        typed = classify(cast(Any, cause.response))
-        typed.framework_error = exc
-        del exc, exc_type, tb, cause
-        raise typed from None
-
-
-@overload
-def chat_client(model: str, *, api: Literal["responses"] = ..., **kw: Any) -> OpenAIChatClient: ...
+    if isinstance(exc, AgentFrameworkException) and exc.__cause__ is not None:
+        return translate(exc.__cause__, (refusal_translator,))
+    return None
 
 
 @overload
 def chat_client(
-    model: str, *, api: Literal["chat_completions"], **kw: Any
+    model: str, *, api: Literal["chat_completions"] = ..., **kw: Any
 ) -> OpenAIChatCompletionClient: ...
 
 
+@overload
+def chat_client(model: str, *, api: Literal["responses"], **kw: Any) -> OpenAIChatClient: ...
+
+
 def chat_client(
-    model: str, *, api: ChatAPI = "responses", **kw: Any
+    model: str, *, api: ChatAPI = "chat_completions", **kw: Any
 ) -> OpenAIChatClient | OpenAIChatCompletionClient:
     """Module-level convenience: an Agent Framework chat client at the proxy
     using a cached default env-configured Donkey. Equivalent to

@@ -74,8 +74,8 @@ the caller's scope. On a direct call it is populated (see
 in [#613](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/613).
 
 The adapter targets the
-`/responses` route (`use_responses_api=True`), the same one `donkey.openai()`
-uses. `DEMO_MODEL` defaults to `gpt-4o-mini` in this example; set it to a model
+`/chat/completions` route (`use_responses_api=False`), the one every upstream
+serves. `DEMO_MODEL` defaults to `gpt-4o-mini` in this example; set it to a model
 your proxy routes.
 
 If the gateway is unavailable, [Framework objects](https://docs.donkey-kit.dev/examples/general/framework-objects.md)

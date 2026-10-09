@@ -9,9 +9,8 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   speaks ``/chat/completions``. Header injection is via LiteLLM's
   ``extra_headers``. LiteLLM takes a pre-built OpenAI client (``client``), so
   we pass an ``AsyncOpenAI`` that sends through the shared client: redirects
-  are not followed and credentials go only to checked endpoints. The
-  conformance kit still lists ``model()`` under ``correlation_id_propagated`` /
-  ``gateway_identity_observed`` and ``donkey.last_call`` stays unpopulated.
+  are not followed, credentials go only to checked endpoints, and each call
+  carries the run's correlation id and populates ``donkey.last_call`` (#740).
   ADK requires ``litellm>=1.84`` (floor, not ceiling). LiteLLM sets the
   client's ``max_retries`` on every call (default 2), so the kwarg goes to
   LiteLLM itself (#734).
@@ -22,7 +21,7 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   ``google-genai`` accepts ``HttpOptions.httpx_async_client``, so we hand it the
   shared :class:`~donkey_kit.core.transport.DonkeyAsyncClient`: full injection —
   per-run correlation, SDK retries, rotating JWTs and ``donkey.last_call`` all
-  work, and none of ``model()``'s exemptions apply. The default DDK proxies are
+  work. The default DDK proxies are
   ``Format=OpenAI``, so point ``base_url`` at a ``Format=Gemini`` proxy.
 
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
@@ -35,21 +34,57 @@ from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
 from ..core.masking import masked
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from google.adk.models import Gemini
     from google.adk.models.lite_llm import LiteLlm
 
+__all__ = ["ADKAdapter", "gemini", "model"]
+
 
 class ADKAdapter(Adapter):
-    extra = "adk"
-    # Kept False for ``model()`` while the conformance kit lists its
-    # correlation_id_propagated exemption (#362), although its calls now go
-    # through the shared client. ``gemini()`` observes (#691), recorded per
-    # factory rather than set on the instance (#741).
-    observes_last_call = False
-    factory_observes_last_call = MappingProxyType({"gemini": True})
+    """Governed Google ADK objects, reached as ``donkey.adk``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``model(model)`` builds a
+    ``LiteLlm`` and ``gemini(model)`` a ``Gemini``. ``connection_kwargs()`` returns
+    the same settings for building it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.adk`` was read without the ``adk`` extra installed;
+            the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/adk
+    """
+
+    # Both send through the shared client and observe donkey.last_call (#691,
+    # #946). model() has no typed refusals: LiteLLM re-raises a refusal around a
+    # response it rebuilt, which the bridge leaves alone (#724). Each factory has
+    # its own capabilities (#741, #726).
+    factories = MappingProxyType(
+        {
+            "model": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=False,
+                observes_last_call=True,
+            ),
+            "gemini": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for a ``LiteLlm(model="openai/<id>", **kwargs)`` you
@@ -58,7 +93,7 @@ class ADKAdapter(Adapter):
         sends through the SDK's shared client, which does not follow redirects
         and sends credentials only to checked endpoints; LiteLLM's OpenAI route
         uses it in place of the client it would build."""
-        conn = self._openai_connection()
+        conn = self._connection()
         return masked(
             {
                 "api_base": conn["base_url"],
@@ -83,7 +118,7 @@ class ADKAdapter(Adapter):
         client's. ``api_version=""`` because the proxy route has no
         ``/v1beta`` segment. A ``base_url`` passed here must pass the https check."""
         self._allow_endpoints({"base_url": base_url}, "base_url")
-        conn = self._openai_connection()
+        conn = self._connection("gemini")
         url = base_url or conn["base_url"]
         return masked(
             {
@@ -141,9 +176,7 @@ class ADKAdapter(Adapter):
                 "older versions ADK drops the governed client without an error. "
                 "Upgrade with: pip install -U 'donkey-kit[adk]'"
             )
-        native = Gemini(model=model, **{**conn, **kw})
-        self._record_factory("gemini")
-        return native
+        return Gemini(model=model, **{**conn, **kw})
 
 
 def model(model: str, **kw: Any) -> LiteLlm:

@@ -3,11 +3,12 @@ collision resolution, description quality, digest, governance evaluation."""
 
 from __future__ import annotations
 
+import pytest
+
 from donkey_kit.core.cache import TTLCache
-from donkey_kit.provisioning.publish import content_digest
-from donkey_kit.registry.governance import Check, GovernanceCriteria, evaluate
+from donkey_kit.registry.criteria import Check, GovernanceCriteria, evaluate
 from donkey_kit.registry.models import AssetRef, McpServerHandle
-from donkey_kit.registry.publication import check_description_quality
+from donkey_kit.registry.publication import check_description_quality, content_digest
 from donkey_kit.tools.filter import ToolDescriptor, ToolFilter, resolve_collisions
 from donkey_kit.tools.session import ToolSet
 
@@ -19,6 +20,54 @@ def test_ttl_cache_expires() -> None:
     assert cache.get("k") == "v"
     now[0] = 11
     assert cache.get("k") is None
+
+
+def test_ttl_cache_misses_on_an_absent_key() -> None:
+    cache: TTLCache[str] = TTLCache(ttl_s=10, clock=lambda: 0.0)
+    assert cache.get("never-set") is None
+
+
+@pytest.mark.parametrize("flag", ["1", "true", "yes", " true "])
+def test_ttl_cache_honours_the_no_cache_escape_hatch(
+    flag: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # BG §2.7: DONKEY_NO_CACHE makes every get() miss, even for a live entry.
+    monkeypatch.setenv("DONKEY_NO_CACHE", flag)
+    cache: TTLCache[str] = TTLCache(ttl_s=10, clock=lambda: 0.0)
+    cache.set("k", "v")
+    assert cache.get("k") is None
+
+
+def test_ttl_cache_no_cache_flag_off_is_a_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DONKEY_NO_CACHE", raising=False)
+    cache: TTLCache[str] = TTLCache(ttl_s=10, clock=lambda: 0.0)
+    cache.set("k", "v")
+    assert cache.get("k") == "v"
+
+
+def test_ttl_cache_invalidate_drops_a_single_key() -> None:
+    cache: TTLCache[str] = TTLCache(ttl_s=10, clock=lambda: 0.0)
+    cache.set("a", "1")
+    cache.set("b", "2")
+    cache.invalidate("a")
+    assert cache.get("a") is None
+    assert cache.get("b") == "2"
+
+
+def test_ttl_cache_invalidate_with_no_key_clears_everything() -> None:
+    cache: TTLCache[str] = TTLCache(ttl_s=10, clock=lambda: 0.0)
+    cache.set("a", "1")
+    cache.set("b", "2")
+    cache.invalidate()
+    assert cache.get("a") is None
+    assert cache.get("b") is None
+
+
+def test_ttl_cache_invalidate_absent_key_is_a_no_op() -> None:
+    cache: TTLCache[str] = TTLCache(ttl_s=10, clock=lambda: 0.0)
+    cache.set("a", "1")
+    cache.invalidate("never-set")
+    assert cache.get("a") == "1"
 
 
 def test_collision_prefixes_only_on_clash() -> None:

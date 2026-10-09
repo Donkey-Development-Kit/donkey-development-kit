@@ -91,7 +91,7 @@ llm = OpenAIModel(
         "base_url": ...,          # from DONKEY_LLM_PROXY_URL, no /v1 suffix
         "api_key": ...,
         "default_headers": ...,   # client_id / client_secret header pair
-        "http_client": ...,       # a non-owning view of the SDK's shared client
+        "http_client": ...,       # sends through the SDK's shared client; closing it is a no-op
         "max_retries": 0,         # the SDK retries in its own transport layer
     },
     stream=False,                 # see Notes
@@ -103,26 +103,37 @@ Strands forwards to its internal OpenAI client.
 
 ## Notes
 
-- **Build the agent with `retry_strategy=None`.** A Strands `Agent` retries a
-  throttled model call by default (up to 6 attempts), and Strands treats every
-  `429` as throttling. On the proxy a `429` is a budget refusal, so turn the
-  agent's retry off and let the SDK's transport handle the transient `5xx`:
+- **A budget refusal is sent once.** A Strands `Agent` retries a throttled
+  model call by default (up to 6 attempts), and Strands treats every `429` as
+  throttling. On the proxy a `429` is a budget refusal, so the model
+  `donkey.strands.model()` builds raises it as the typed `TokenBudgetExceeded`
+  instead. The same holds for `RequestRateLimitExceeded`, the `429` of the
+  request `rate-limiting` policy. The agent's retry strategy doesn't retry that
+  error, and it reaches your code as it is, after one request:
 
   ```python
   from strands import Agent
+  from donkey_kit import TokenBudgetExceeded
 
-  agent = Agent(model=donkey.strands.model("gpt-4o"), retry_strategy=None)
+  agent = Agent(model=donkey.strands.model("gpt-4o"))
+  try:
+      await agent.invoke_async("hello")
+  except TokenBudgetExceeded as err:
+      print(err.retry_after)
   ```
 
   The model itself has `max_retries=0`, so the OpenAI client under it doesn't
-  retry either.
+  retry either, and the SDK's transport handles the transient `5xx`. An
+  `OpenAIModel` you build yourself from `connection_kwargs()` doesn't get this:
+  build its agent with `Agent(model=..., retry_strategy=None)`.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
 - **The client stays open.** Strands opens and closes an OpenAI client for
-  every request (`async with AsyncOpenAI(**client_args)`). The `http_client` it
-  gets is a view whose close is a no-op, so the SDK's shared client survives
-  every call. Only `donkey.aclose()` ends the connection pool.
+  every request (`async with AsyncOpenAI(**client_args)`). Closing the
+  `http_client` it gets is a no-op, so the SDK's shared client survives every
+  call. On `openai` 3.x that client is an `httpx2` bridge onto the shared
+  client, and on earlier releases a view of it. Only `donkey.aclose()` ends the connection pool.
 - **Streaming is off by default.** The governed model sets `stream=False`. A
   proxy routing to a Gemini upstream answers a streamed request with one whole
   `chat.completion` and no chunk deltas, and Strands fails on it. Pass

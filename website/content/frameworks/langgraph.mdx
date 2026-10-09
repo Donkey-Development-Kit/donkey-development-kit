@@ -101,17 +101,18 @@ llm = ChatOpenAI(
     http_async_client=...,    # the SDK's shared httpx async client (ainvoke)
     http_client=...,          # the SDK's shared blocking client (invoke)
     max_retries=0,            # the SDK retries in its own transport layer
-    use_responses_api=True,   # /responses, the route the raw client and the simulator use
+    use_responses_api=False,  # /chat/completions, the route every upstream serves
 )
 ```
 
 `connection_kwargs()` returns exactly these keys, so you can drop the factory
 and construct `ChatOpenAI` by hand at any time. An OpenAI-format proxy serves
-both the Responses API (`/responses`) and `/chat/completions`. The adapter uses
-`/responses` because the raw `donkey.llm` client does, and because the local
-simulator, which the conformance suite runs against, serves only that route.
-Pass `use_responses_api=False` to `chat_model(...)` to call
-`/chat/completions` instead. A `base_url` / `openai_api_base` passed to
+both `/chat/completions` and the Responses API (`/responses`). The adapter
+uses `/chat/completions`, because it is the only route every upstream serves.
+Azure OpenAI answers `/responses` with a 404, and Bedrock and Gemini stream it
+only partially. The local simulator serves both routes.
+Pass `use_responses_api=True` to `chat_model(...)` to call `/responses` on a
+proxy that routes to OpenAI. A `base_url` / `openai_api_base` passed to
 `chat_model(...)` must pass the
 [`https://` rule](/reference/configuration#endpoints-must-use-https).
 
@@ -138,9 +139,13 @@ async with donkey.run(id=ticket.id):
 ### Typed refusals inside a node
 
 On a proxy refusal, LangChain raises its own wrapped
-`OpenAIPermissionDeniedError`, not the SDK's typed exception. Wrap the model
-call in `typed_refusals()` and a gateway refusal comes back through the
-[error taxonomy](/errors) instead:
+`OpenAIPermissionDeniedError`, not the SDK's typed exception. A
+`donkey.run()` block or a `@donkey.governed` function around
+`graph.ainvoke(...)` types it on the way out
+([Typed refusals at the framework boundary](/errors#typed-refusals-at-the-framework-boundary)).
+To type it inside the node, so the graph itself sees the typed error, wrap the
+model call in `typed_refusals()`. A gateway refusal then comes back through
+the [error taxonomy](/errors):
 
 ```python
 from donkey_kit.integrations.langgraph import typed_refusals
@@ -153,8 +158,10 @@ async def call_model(state):
 
 A PII block now propagates out of `graph.ainvoke(...)` as `PIIDetected`, a
 budget block as `TokenBudgetExceeded`, and so on — each carrying the
-correlation and call IDs the client sent. Transport-level errors with no HTTP
-response (connection failures, timeouts) pass through unchanged.
+correlation and call IDs the client sent. A gateway that cannot be reached
+(connection refused, DNS, timeout) surfaces as `GatewayUnavailable`, which the
+transport raised and LangChain wrapped. Errors that did not come from the
+gateway pass through unchanged.
 
 The typed error is raised without a chained cause, because LangChain's error
 message repeats the gateway's rejection text, which for a PII block includes
@@ -182,7 +189,7 @@ The suite that tests this adapter is also a pytest plugin you can point at
 your own agent:
 
 ```bash
-pytest --donkey-conformance --agent=my_app:build
+pytest --donkey-conformance --donkey-agent=my_app:build
 ```
 
 `build` returns an object with an awaitable `run(text)`. The suite checks that

@@ -8,7 +8,7 @@ branch on the governance outcome instead of parsing bodies.
 
 ## The rejection shapes `classify()` types
 
-`classify()` types nine rejection shapes. **Neither the status code nor the
+`classify()` types ten rejection shapes. **Neither the status code nor the
 shape of the `error` value alone is a sufficient discriminator** — a `403` can be
 PII, a killed agent, a regex-guard block, a content-safety block (all policy
 blocks) *or* auth,
@@ -25,6 +25,7 @@ specific headers.
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
 | Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
+| Request rate limit | `429` | body `{"error":"Too Many Requests"}`; `x-ratelimit-limit`/`-remaining`/`-reset` headers (ms), **no** `x-token-*`, **no** `retry-after` | `RequestRateLimitExceeded` (`retry_after` derived) |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
@@ -38,7 +39,48 @@ an upstream request mistake, when the upstream was never called. Likewise the in
 `x-injection-protection` header, so an ordinary malformed `400` stays an
 ordinary refusal.
 
-Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the nine
+`classify()` checks the policy discriminators first, whatever the status, and
+only then falls back to the status code. Within each step the first match wins,
+top to bottom:
+
+```mermaid
+flowchart TD
+    R(["Error response"]) --> D{"1 · Policy discriminator<br/>in the body or headers?"}
+    D -->|"nested error type = pii_detected"| X1["PIIDetected"]
+    D -->|"nested error code = agent_killed"| X2["AgentKilled"]
+    D -->|"x-llm-proxy-*-action: reject"| X3["ContentSafetyBlocked"]
+    D -->|"top-level matched_patterns"| X4["PromptInjectionBlocked<br/>regex-prompt-guard"]
+    D -->|"x-injection-protection: blocked"| X5["PromptInjectionBlocked"]
+    D -->|none| S{"2 · Status"}
+    S -->|"401, or 403 + www-authenticate"| X6["AuthError"]
+    S -->|429| Q{"x-ratelimit-limit and -remaining,<br/>no x-token-limit?"}
+    Q -->|yes| X7["RequestRateLimitExceeded"]
+    Q -->|no| X8["TokenBudgetExceeded"]
+    S -->|"other 4xx"| F{"Body"}
+    F -->|"nested error object"| X9["UpstreamRequestError"]
+    F -->|"flat error: not in the<br/>known unique model map"| X10["ModelNotRoutable"]
+    F -->|anything else| X11["PolicyViolation<br/>unconfirmed shape"]
+    S -->|5xx| X12["UpstreamModelError<br/>retryable"]
+    S -->|"anything else"| X13["DonkeyError"]
+```
+
+`GatewayUnavailable` never reaches `classify()`: it is raised when there is no
+response to classify.
+
+`RequestRateLimitExceeded` is the `429` of the gateway's stock `rate-limiting`
+policy, which counts requests rather than tokens. It is a subclass of
+`PolicyViolation` and a sibling of `TokenBudgetExceeded`, not a subclass of it.
+A `429` carrying `x-ratelimit-limit` and `x-ratelimit-remaining` and no
+`x-token-limit` is a `RequestRateLimitExceeded`; any other `429` stays
+`TokenBudgetExceeded`. The headers appear only when the policy has
+`exposeHeaders: true`, the only configuration verified. With
+`exposeHeaders: false` there is nothing to key on: that shape is `UNVERIFIED`
+and is classified as `TokenBudgetExceeded`. `retry_after` comes from
+`retry-after` if present, else from `x-ratelimit-reset` (milliseconds). The
+upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens` headers are
+a different window and are not read.
+
+Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the ten
 policy-rejection rows.
 
 The Injection Protection shape is live-verified against a deployed proxy
@@ -47,7 +89,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`, along with `classify`:
+All importable from `donkey_kit`, along with `classify`, except the three Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -57,17 +99,18 @@ DonkeyError                     # base of the whole tree
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
+│  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 ├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
-├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at
+├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at/.window
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
-├─ PlatformTeamOnly             # Governance.apply() without the platform-team opt-in; also a PermissionError
-└─ ToolInvocationError, RegistryError, PublicationDrift, ProvisioningError, GovernanceDrift
-                                # tool access, registry, publishing and provisioning (Roadmap surfaces)
+└─ ToolInvocationError, RegistryError, PublicationDrift
+                                # tool access, registry and publishing (Roadmap surfaces;
+                                # import them from donkey_kit.experimental)
 ```
 
 `GatewayUnavailable` is deliberately **not** under `PolicyViolation`: it is the one
@@ -90,12 +133,13 @@ never burn an exhausted budget or replay a blocked prompt.
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
+| `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
-| `UpstreamModelError` | `5xx` | **Yes** — the transport already retries `502` / `503` / `504`; a persistent `5xx` is safe for you to retry too. | Transient provider failure — retry, then escalate if it persists. |
+| `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli.md). |
 
 Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
@@ -119,9 +163,12 @@ closed the client it was given), and a call whose pooled connections belong to
 an event loop that has closed. The SDK's own connection pools are per event
 loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
 transport you passed in and reused across `asyncio.run()` calls. Its
-`.remediation` names the fix for each. Through the OpenAI SDK it arrives
-wrapped, like `GatewayUnavailable`: catch `openai.APIConnectionError` and read
-the `ConfigError` from `e.__cause__`.
+`.remediation` names the fix for each. Outside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids)
+block, `typed_refusals()` or `@donkey.governed`, it reaches you the way
+`GatewayUnavailable` does: `openai` before 3 and `anthropic` wrap it in an
+`APIConnectionError` (read the `ConfigError` from `e.__cause__`), and `openai`
+3 and later raises it as it is. Inside those blocks it is the typed
+`ConfigError` either way.
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
@@ -141,7 +188,14 @@ queue, shed load, or fall back to a non-AI path — instead of pattern-matching 
 raw `httpx` exception.
 
 `DonkeyAsyncClient` and its blocking twin both raise it, so the async and sync
-surfaces behave identically. It is terminal and **not retried**. It carries:
+surfaces behave identically. What reaches your code depends on the SDK on top.
+`openai` before 3 and `anthropic` re-wrap it as an `APIConnectionError` with the
+`GatewayUnavailable` on `__cause__`; `openai` 3 and later lets it through as
+`GatewayUnavailable`. Inside `donkey.run()` or `@donkey.governed` it reaches you
+as `GatewayUnavailable` in every case, unless you opt out with
+`typed_refusals=False` (see
+[Typed refusals at the framework boundary](#typed-refusals-at-the-framework-boundary)).
+It is terminal and **not retried**. It carries:
 
 - `.base_url` — the origin that failed, on the exception, not only in the message.
 - `.cause` — the underlying `httpx` exception (also chained via `raise … from`).
@@ -167,6 +221,8 @@ a canonical default. For the refusals:
   Governance > Security.
 - `TokenBudgetExceeded` → wait for the window to reset (see `retry_after`) or
   request an increase.
+- `RequestRateLimitExceeded` → wait for the window to reset (see
+  `retry_after`) or request an increase.
 - `PromptInjectionBlocked` → review and sanitise the untrusted input, or adjust
   the policy's sensitivity.
 - `ContentSafetyBlocked` → revise the flagged content, or adjust the policy's
@@ -197,9 +253,9 @@ headers, category names and policy pattern names, never from the request.
 
 A traceback also prints every chained exception, and a framework's own error
 usually repeats the gateway's text. So when the SDK maps a framework error to
-a typed one, as LangGraph's
-[`typed_refusals()`](https://docs.donkey-kit.dev/frameworks/langgraph.md#typed-refusals-inside-a-node) does,
-it raises it without a chained cause: `exc.__cause__` is `None`, and the
+a typed one, as `donkey.run()` and
+[`typed_refusals()`](#typed-refusals-at-the-framework-boundary) do, it raises
+it without a chained cause: `exc.__cause__` is `None`, and the
 framework error is on `exc.framework_error` (`None` when there was none). No
 frame in the traceback holds the framework error as a local variable, so error
 reporters that print frame locals (Sentry, `pytest -l`) don't show it either.
@@ -223,19 +279,123 @@ logs and to the gateway's own record:
 | `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
 `classify(response)` fills `.correlation_id` and `.call_id` from the response's
-own request, so bridging an `openai` error (below) needs no extra wiring — the
+own request, so a refusal typed at the framework boundary (below) needs no extra wiring — the
 correlation id on the exception equals the header that was actually sent. (If you
 overrode the header names in config, pass the ids to `classify()` explicitly.)
 
-## Bridging from the raw client
+## Typed refusals at the framework boundary
 
-  `donkey.llm.client()` is the **OpenAI SDK**, so on an HTTP failure it raises
-  `openai.APIStatusError`, **not** a `DonkeyError`. Bridge into the taxonomy by
-  applying `classify()` to the error's `.response`.
+Every framework between your code and the gateway raises its own errors. The
+OpenAI and Anthropic SDKs turn a refusal into a `PermissionDeniedError`.
+A lost gateway becomes an `APIConnectionError` with the `GatewayUnavailable`
+hidden on its `__cause__` under `openai` before 3 and under `anthropic`, while
+`openai` 3 and later raises `GatewayUnavailable` as it is. LangChain re-wraps
+these again, and Strands and Agent Framework wrap them in their own types. Inside a
+[`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block or a
+[`@donkey.governed`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) function, none of that reaches
+you: a refusal or a lost gateway leaves the block as its typed `DonkeyError`,
+so one `except` covers every framework.
+
+```python
+from donkey_kit import GatewayUnavailable, PIIDetected, TokenBudgetExceeded
+
+client = donkey.openai()
+
+try:
+    async with donkey.run(id=ticket.id):
+        resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
+except PIIDetected as e:
+    print("blocked, entities:", e.entities)
+except TokenBudgetExceeded as e:
+    print("slow down; retry after", e.retry_after, "s")
+except GatewayUnavailable as e:
+    print("could not reach the proxy:", e.base_url)
+```
+
+The same block around a LangGraph `graph.ainvoke(...)`, an Anthropic
+`messages.create(...)` or a Strands agent raises the same classes. The
+blocking forms behave the same: `with donkey.run():` and a sync
+`@donkey.governed` function.
+
+Outside a run, `typed_refusals()` is the same bridge on its own. It works as a
+sync or async context manager and as a decorator for sync and async functions,
+and every adapter exposes it as `donkey.<framework>.typed_refusals()`:
+
+```python
+from donkey_kit import typed_refusals
+
+with typed_refusals():
+    reply = client.chat.completions.create(model="gpt-4o", messages=msgs)
+
+@typed_refusals()
+async def answer(question: str) -> str: ...
+```
+
+What the bridge types, and what it leaves alone:
+
+- **A typed error the SDK raised**, such as `GatewayUnavailable` or
+  `ModelSubstituted`, is found on the framework error's cause chain and
+  re-raised as it is.
+- **A gateway rejection** is classified from the response the framework
+  error carries, with the correlation and call ids that were sent, exactly as
+  `classify()` would. Only a response the SDK's own transport sent is
+  classified. A `403` from some other HTTP call in the block is not a governed
+  refusal and passes through.
+- **Anything else** propagates unchanged: your own bugs, your own
+  `raise HTTPException(...) from exc`, a `KeyboardInterrupt`, a task
+  cancellation.
+
+The bridge is on by default in both forms. The framework's own error stays on
+`exc.framework_error` (it is `None` when the SDK raised the typed error itself,
+as `openai` 3 and later does for `GatewayUnavailable`). To get the framework's
+errors instead, pass `typed_refusals=False` to `donkey.run()` or
+`@donkey.governed`.
+
+### Refusals inside a task group
+
+A refusal raised in an `asyncio.TaskGroup` (or an anyio task group) reaches the
+bridge wrapped in an `ExceptionGroup`. The bridge looks at each leaf:
+
+- **Every leaf is the same refusal class:** the typed error is raised in the
+  group's place, so a plain `except PIIDetected` still works. When several
+  tasks were refused alike, you get the first one.
+- **The leaves are mixed** (two refusal classes, or a refusal next to your own
+  bug): the group is kept, with the same shape, and each refusal leaf is
+  replaced by its typed error. Catch it with `except*`.
+- **No leaf is a refusal:** the group propagates unchanged.
+
+```python
+import asyncio
+
+from donkey_kit import PIIDetected
+
+try:
+    async with donkey.run(id=ticket.id):
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(summarise(ticket))
+            tg.create_task(classify_intent(ticket))
+except* PIIDetected as eg:
+    print("blocked:", [e.entities for e in eg.exceptions])
+```
+
+`except*` also catches the collapsed case, because it wraps a lone exception
+in a group before matching. On Python 3.10, which has no builtin
+`ExceptionGroup`, the bridge recognises the `exceptiongroup` backport's groups
+that anyio raises.
+
+  The bridge only sees calls that went through the SDK's transport. ADK's
+  `model()` (LiteLLM) and CrewAI own their transport, so their errors pass
+  through untyped. These are the same
+  [conformance exemptions](https://docs.donkey-kit.dev/testing.md#exemptions) as their correlation ids.
+
+### Classifying a response yourself
+
+`classify()` is the building block underneath. Apply it to any
+`openai.APIStatusError` (or Anthropic status error) you caught yourself:
 
 ```python
 import openai
-from donkey_kit import PIIDetected, TokenBudgetExceeded, AuthError, classify
+from donkey_kit import PIIDetected, classify
 
 try:
     resp = await client.chat.completions.create(model="gpt-4o", messages=msgs)
@@ -243,25 +403,20 @@ except openai.APIStatusError as e:
     governed = classify(e.response)          # -> a DonkeyError subclass
     if isinstance(governed, PIIDetected):
         print("blocked, entities:", governed.entities)
-    elif isinstance(governed, TokenBudgetExceeded):
-        print("slow down; retry after", governed.retry_after, "s")
-    elif isinstance(governed, AuthError):
-        print("bad credentials:", governed)
-    else:
-        print(f"{type(governed).__name__}: {governed}")
-except openai.APIConnectionError as e:
-    print("could not reach the proxy:", e)
 ```
 
-The blocking client from `donkey.llm.client(sync=True)` behaves identically here
-— drop the `await`. It is the same OpenAI SDK raising the same
+The blocking client from `donkey.llm.client(sync=True)` behaves identically here.
+Drop the `await`: it is the same OpenAI SDK raising the same
 `openai.APIStatusError`, and `classify()` reads the response the same way.
 
 ## Retry behaviour
 
-Both clients retry only transient upstream/gateway failures (502/503/504) and
-treat every 4xx as terminal — **including a 429**: on this proxy a 429 is a
-token-budget refusal (`TokenBudgetExceeded`), so retrying it would only burn the
+Both clients retry only transient upstream/gateway failures (502/503/504).
+A 502 or 504 on a model call is not re-sent unless you set
+`retry_model_calls_on_gateway_errors`, because the provider may already have
+billed it. Every 4xx is terminal — **including a 429**: on this proxy a 429 is a
+token-budget refusal (`TokenBudgetExceeded`) or a request-rate-limit refusal
+(`RequestRateLimitExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
 against, but the transport never silently retries it.
 
@@ -271,6 +426,11 @@ holds no token, so a 401 is terminal, as it is on the blocking client, and
 surfaces immediately as `AuthError`. The Anypoint control-plane credential
 lives on a separate client: model calls never fetch, send or refresh it. See
 [What the SDK sends where](https://docs.donkey-kit.dev/reference/configuration.md#what-the-sdk-sends-where).
+
+To watch the retries and the token refresh happen, turn on the SDK's
+[debug logging](https://docs.donkey-kit.dev/telemetry.md#debug-logging). It records each retry with its
+status and delay, the 401 refresh, a routing fallback that is not retried, and
+an auth provider falling through to the next one.
 
 ## Unrecognised shapes
 

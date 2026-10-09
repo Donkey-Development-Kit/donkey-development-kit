@@ -49,8 +49,12 @@ explicit `--allow-duplicate`, which logs at `WARNING`.
 
 ## The `Publication` object
 
+The publication types are in `donkey_kit.experimental`, not `donkey_kit`, until
+the Exchange publication API is verified. They may change in any release until
+then.
+
 ```python
-from donkey_kit import Contact, Publication, PublicationAssetType
+from donkey_kit.experimental import Contact, Publication, PublicationAssetType
 
 pub = Publication(
     asset_type=PublicationAssetType.MCP_SERVER,  # MCP_SERVER | A2A_AGENT | AGENT | API

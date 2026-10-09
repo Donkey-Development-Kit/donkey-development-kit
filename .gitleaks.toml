@@ -1,0 +1,17 @@
+# Secret-scanning config (#819), shared by the pre-commit hook
+# (.pre-commit-config.yaml) and the `secret-scan` CI workflow.
+#
+# Extends the upstream default rule set. Allowlist a synthetic value by its
+# exact text, never by path: a path allowlist would also hide a real secret
+# that later lands in the same file.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic test values that match generic rules"
+regexTarget = "match"
+regexes = [
+  # website/lib/analytics.test.mjs: fake Cloudflare beacon site token
+  '''0123456789abcdef0123456789abcdef''',
+]

@@ -50,7 +50,7 @@ client_secret_env = "DDK_SANDBOX_INJECTION_GUARD_CLIENT_SECRET"
 # client_secret_env = "DDK_SANDBOX_SEMANTIC_CLIENT_SECRET"
 #
 # [[proxy]]
-# key = "azure-content-safety"        # content-moderation fall-through body (#253)
+# key = "azure-content-safety"        # content-safety reject shape (#253, LIVE 2026-09-22)
 # base_url = "https://REPLACE-ME-private-space-omni-gateway-host/REPLACE-ME-base-path"
 # model = "gpt-5-mini"
 # client_id_env = "DDK_SANDBOX_CONTENT_SAFETY_CLIENT_ID"

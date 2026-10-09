@@ -2,7 +2,7 @@
 
 This module defines the ONE scenario set the pytest plugin
 (:mod:`donkey_kit.conformance.plugin`) runs against a *customer's own* agent
-via ``pytest --donkey-conformance --agent=my_app:build``. It is the public,
+via ``pytest --donkey-conformance --donkey-agent=my_app:build``. It is the public,
 run-it-against-your-agent sibling of the SDK's internal adapter matrix
 (``tests/conformance/suite.py``) — that one is ours, this one is theirs.
 
@@ -35,9 +35,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from ..core.errors import DonkeyError, PIIDetected, TokenBudgetExceeded
+# The pytest plugin imports this module on every pytest run, so the errors
+# module (and httpx behind it) loads only when a scenario actually runs (#746).
+if TYPE_CHECKING:
+    from ..core.errors import DonkeyError
 
 __all__ = [
     "NO_MODEL_CALL",
@@ -54,7 +57,7 @@ __all__ = [
 ]
 
 # A distinctive, deterministic id the correlation scenario binds via
-# ``run_context`` and then greps for in the agent's logs. Fixed rather than
+# ``donkey.run()`` and then greps for in the agent's logs. Fixed rather than
 # random so the check never flakes and the value is easy to spot in output.
 PROBE_CORRELATION_ID = "donkey-conformance-correlation-probe"
 
@@ -180,6 +183,8 @@ def _no_model_call(obs: Observation) -> Outcome | None:
 
 
 async def _retries_token_budget(ctx: ScenarioContext) -> Outcome:
+    from ..core.errors import TokenBudgetExceeded
+
     ctx.serve_refusal(TokenBudgetExceeded)
     obs = await ctx.run()
     if (no_call := _no_model_call(obs)) is not None:
@@ -194,6 +199,8 @@ async def _retries_token_budget(ctx: ScenarioContext) -> Outcome:
 
 
 async def _swallows_pii_as_generic(ctx: ScenarioContext) -> Outcome:
+    from ..core.errors import DonkeyError, PIIDetected
+
     ctx.serve_refusal(PIIDetected)
     obs = await ctx.run()
     if (no_call := _no_model_call(obs)) is not None:
@@ -213,7 +220,7 @@ async def _swallows_pii_as_generic(ctx: ScenarioContext) -> Outcome:
     return Outcome(
         False,
         f"raised a bare {type(obs.raised).__name__} — the PII refusal was "
-        f"swallowed as a generic error (bridge it with classify())",
+        f"swallowed as a generic error (run it inside donkey.run() or typed_refusals())",
     )
 
 

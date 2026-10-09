@@ -1,25 +1,25 @@
 {
   "servers": [
     {
-      "id": "00a87cda-f938-46ba-a263-84cdbbc9416e",
+      "id": "00000000-0000-4000-8000-18e7645e623e",
       "name": "Account Management",
       "type": "openapi",
       "description": "A comprehensive MCP Server for managing customer accounts, contacts, opportunities, and interactions in a CRM system.\nThis MCP Server provides full CRUD operations and relationship management capabilities.",
       "status": "published",
       "enabled": true,
-      "organization_id": "9da26e74-80da-4a71-a58f-bd0482bc72b9",
+      "organization_id": "00000000-0000-4000-8000-57192a9e7efa",
       "protocol_version": "2025-06-18",
       "created_at": "2026-02-10T06:35:38.267109+00:00",
       "updated_at": "2026-08-27T04:05:17.835799+00:00"
     },
     {
-      "id": "35f64739-3c47-4667-8d69-f137e6cc6802",
+      "id": "00000000-0000-4000-8000-91f93b8963a6",
       "name": "aig-ai-inventory-mcp-tenable",
       "type": "mock",
       "description": "AI/LLM asset and agent inventory.",
       "status": "draft",
       "enabled": true,
-      "organization_id": "9da26e74-80da-4a71-a58f-bd0482bc72b9",
+      "organization_id": "00000000-0000-4000-8000-57192a9e7efa",
       "protocol_version": "2025-06-18",
       "created_at": "2026-08-10T18:54:36.442657+00:00",
       "updated_at": "2026-08-10T18:54:36.442657+00:00"

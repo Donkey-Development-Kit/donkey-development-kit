@@ -3,12 +3,13 @@
 HARD RULE (the layered architecture): nothing in this package may import from
 ``donkey_kit.integrations``. Enforced by import-linter in CI.
 """
+from __future__ import annotations
 
 from .auth import AnypointConnectedApp, AuthProvider, ChainedAuth, StaticToken
-from .budget import Budget
+from .budget import Budget, RequestWindow
 from .cache import TTLCache
 from .cachecontrol import CacheControls, CacheScope, cache_scope, current_cache_controls
-from .config import DonkeyConfig, Region
+from .config import ConfigOverrides, DonkeyConfig, Region
 from .cost import CostTags
 from .errors import (
     AgentKilled,
@@ -18,23 +19,23 @@ from .errors import (
     ContentSafetyBlocked,
     DonkeyError,
     GatewayUnavailable,
-    GovernanceDrift,
     ModelNotRoutable,
     ModelSubstituted,
     PIIDetected,
-    PlatformTeamOnly,
     PolicyViolation,
     PromptInjectionBlocked,
-    ProvisioningError,
     PublicationDrift,
     RegistryError,
+    RequestRateLimitExceeded,
     TokenBudgetExceeded,
     ToolInvocationError,
     UpstreamModelError,
     UpstreamRequestError,
     classify,
 )
+from .lastcall import LastCall, LastCallStatus
 from .telemetry import (
+    RunScope,
     current_correlation_id,
     current_cost_tags,
     new_correlation_id,
@@ -62,6 +63,7 @@ __all__ = [
     "CacheScope",
     "ChainedAuth",
     "ConfigError",
+    "ConfigOverrides",
     "ContentSafetyBlocked",
     "CostTags",
     "DonkeyAsyncClient",
@@ -71,17 +73,19 @@ __all__ = [
     "DonkeyConfig",
     "DonkeyError",
     "GatewayUnavailable",
-    "GovernanceDrift",
+    "LastCall",
+    "LastCallStatus",
     "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
-    "PlatformTeamOnly",
     "PolicyViolation",
     "PromptInjectionBlocked",
-    "ProvisioningError",
     "PublicationDrift",
     "Region",
     "RegistryError",
+    "RequestRateLimitExceeded",
+    "RequestWindow",
+    "RunScope",
     "StaticToken",
     "TTLCache",
     "TokenBudgetExceeded",

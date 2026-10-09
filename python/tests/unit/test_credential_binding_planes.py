@@ -26,13 +26,13 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey
+from donkey_kit.cli import doctor
+from donkey_kit.cli.doctor import ProbeResult, run_diagnostics
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.integrations import ADAPTERS
-from donkey_kit.provisioning import doctor
-from donkey_kit.provisioning.doctor import ProbeResult, run_diagnostics
 
 _TOML = ".donkey-kit.toml"
 _LOCAL_TOML = ".donkey-kit.local.toml"
@@ -124,8 +124,8 @@ async def test_control_plane_call_sends_neither_secret_nor_token_to_a_project_ba
     async with Donkey.from_env() as donkey:
         assert donkey._owned_auth_http is not None
         assert donkey._owned_auth_http._control_plane
-        donkey._owned_auth_http._swap_transport(httpx.MockTransport(token_endpoint))
-        donkey.registry._http._swap_transport(httpx.MockTransport(platform))
+        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         with pytest.raises(ConfigError, match="cp.example.test"):
             await donkey.registry._http.get(f"{_PROJECT_CP}/exchange/api/v2/assets")
 
@@ -142,8 +142,8 @@ async def test_control_plane_call_with_file_credentials_reaches_a_project_base_u
 
     async with Donkey.from_env() as donkey:
         assert donkey._owned_auth_http is not None
-        donkey._owned_auth_http._swap_transport(httpx.MockTransport(token_endpoint))
-        donkey.registry._http._swap_transport(httpx.MockTransport(platform))
+        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         await donkey.registry._http.get(f"{_PROJECT_CP}/exchange/api/v2/assets")
 
     assert len(token_endpoint.requests) == 1
@@ -162,7 +162,7 @@ async def test_code_auth_provider_token_is_not_sent_to_a_project_base_url(
     provider = _CountingToken(_CODE_TOKEN)
 
     async with Donkey(DonkeyConfig.from_env(), auth=provider) as donkey:
-        donkey.registry._http._swap_transport(httpx.MockTransport(platform))
+        donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         with pytest.raises(ConfigError, match="cp.example.test") as exc:
             await donkey.registry._http.get(f"{_PROJECT_CP}/exchange/api/v2/assets")
 
@@ -179,7 +179,7 @@ async def test_code_auth_provider_token_reaches_an_env_base_url(
     platform = _Recorder()
 
     async with Donkey(DonkeyConfig.from_env(), auth=StaticToken(_CODE_TOKEN)) as donkey:
-        donkey.registry._http._swap_transport(httpx.MockTransport(platform))
+        donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         await donkey.registry._http.get(f"{_PROJECT_CP}/exchange/api/v2/assets")
 
     (request,) = platform.requests
@@ -193,7 +193,7 @@ async def test_code_auth_provider_token_reaches_a_standard_anypoint_host(
     platform = _Recorder()
 
     async with Donkey(DonkeyConfig.from_env(), auth=StaticToken(_CODE_TOKEN)) as donkey:
-        donkey.registry._http._swap_transport(httpx.MockTransport(platform))
+        donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         await donkey.registry._http.get("https://anypoint.mulesoft.com/exchange/api/v2/assets")
 
     (request,) = platform.requests

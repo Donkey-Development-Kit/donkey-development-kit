@@ -1,0 +1,8 @@
+data: {"id":"chatcmpl-donkey-simulator","object":"chat.completion.chunk","created":0,"model":"gpt-5-mini-2025-08-07","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-donkey-simulator","object":"chat.completion.chunk","created":0,"model":"gpt-5-mini-2025-08-07","system_fingerprint":null,"choices":[{"index":0,"delta":{"content":"pong — how can I help?"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-donkey-simulator","object":"chat.completion.chunk","created":0,"model":"gpt-5-mini-2025-08-07","system_fingerprint":null,"choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}]}
+
+data: [DONE]
+

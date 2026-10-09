@@ -40,7 +40,6 @@ tools = await donkey.tools.discover(
 | `domain` | `str \| None` | Catalog domain. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
 | `governed` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered (the default). |
-| `governance` | `Any \| None` | Reserved in the signature; no behaviour is defined for it yet. |
 | `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Default `False`. |
 
 ## Registry search
@@ -68,10 +67,11 @@ Publication to Exchange says nothing about whether an asset is fronted by a
 gateway, has policies applied, or passes the org's rulesets — there is no single
 boolean to query. "Governed" is **computed** by joining state across systems,
 and it is **environment-scoped**: an asset governed in Production may be
-ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit:
+ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit. It
+and `STRICT` are in `donkey_kit.experimental` until discovery is verified:
 
 ```python
-from donkey_kit.registry.governance import GovernanceCriteria, STRICT
+from donkey_kit.experimental import STRICT, GovernanceCriteria
 
 @dataclass(frozen=True)
 class GovernanceCriteria:

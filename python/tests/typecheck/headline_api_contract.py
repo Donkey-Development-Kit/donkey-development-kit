@@ -9,16 +9,24 @@ failing, so a loosened annotation cannot pass silently.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from openai import AsyncOpenAI, OpenAI
 from typing_extensions import assert_type
 
-from donkey_kit import CostTags, Donkey, DonkeyConfig
-from donkey_kit.core.cachecontrol import CacheScope
-from donkey_kit.core.lastcall import LastCall
-from donkey_kit.core.telemetry import RunScope
+# Every type a Donkey member returns comes from the package root (#719).
+from donkey_kit import (
+    CacheScope,
+    CostTags,
+    Donkey,
+    DonkeyConfig,
+    LastCall,
+    LastCallStatus,
+    RunScope,
+    ToolsFacade,
+)
+from donkey_kit.integrations import AdapterCapabilities, AdapterProtocol, AdapterTransport
 from donkey_kit.integrations._base import Adapter
 from donkey_kit.integrations.agent_framework import AgentFrameworkAdapter
 from donkey_kit.integrations.langgraph import LangGraphAdapter
@@ -73,6 +81,8 @@ async def check_scopes(donkey: Donkey) -> None:
 
     assert_type(donkey.last_call, LastCall)
     assert_type(donkey.last_call.total_tokens, int | None)
+    assert_type(donkey.last_call.status, LastCallStatus)
+    assert_type(donkey.tools, ToolsFacade)
 
     assert_type(donkey.openai(), AsyncOpenAI)
     assert_type(donkey.openai(sync=True), OpenAI)
@@ -86,6 +96,14 @@ def generic_connection_kwargs(adapter: Adapter) -> dict[str, Any]:
     # Code written against the base sees the contract every adapter shares.
     assert_type(adapter.extra, str)
     assert_type(adapter.observes_last_call, bool)
+    assert_type(adapter.capabilities(), AdapterCapabilities)
+    assert_type(adapter.capabilities("model").transport, AdapterTransport)
+    return adapter.connection_kwargs()
+
+
+def protocol_connection_kwargs(adapter: AdapterProtocol) -> Mapping[str, Any]:
+    # Code typed against the Protocol accepts every adapter (#726).
+    assert_type(adapter.capabilities().streaming, bool)
     return adapter.connection_kwargs()
 
 
@@ -94,6 +112,8 @@ def check_adapters(donkey: Donkey, cfg: DonkeyConfig) -> None:
     assert_type(donkey.agent_framework, AgentFrameworkAdapter)
     generic_connection_kwargs(donkey.langgraph)
     generic_connection_kwargs(donkey.agent_framework)
+    protocol_connection_kwargs(donkey.langgraph)
+    protocol_connection_kwargs(donkey.crewai)
     # An adapter name the lazy registry resolves at runtime still types as Adapter.
     assert_type(donkey.some_future_framework, Adapter)
     assert_type(donkey.some_future_framework.connection_kwargs(), dict[str, Any])

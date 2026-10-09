@@ -19,12 +19,16 @@ from donkey_kit.simulator.fixtures import (
     LIMIT_HEADER,
     RATELIMIT_HEADER,
     REMAINING_HEADER,
+    REQUEST_LIMIT_HEADER,
+    REQUEST_REMAINING_HEADER,
+    REQUEST_RESET_HEADER,
     RESET_HEADER,
 )
 from donkey_kit.simulator.scenarios import (
     BudgetScenario,
     InjectionScenario,
     PiiBlockScenario,
+    RequestLimitScenario,
     ScenarioError,
     parse_scenario,
     parse_scenarios,
@@ -49,8 +53,8 @@ def test_parse_injection() -> None:
 def test_parse_budget_with_duration_units() -> None:
     s = parse_scenario("budget:limit=20000,window=60s")
     assert isinstance(s, BudgetScenario)
-    assert s._window_ms == 60_000  # noqa: SLF001 — asserting the parse result
-    assert s._limit == 20_000  # noqa: SLF001
+    assert s._window_ms == 60_000
+    assert s._limit == 20_000
 
 
 @pytest.mark.parametrize(
@@ -60,7 +64,7 @@ def test_parse_budget_with_duration_units() -> None:
 def test_parse_budget_durations(raw: str, expected_ms: int) -> None:
     s = parse_scenario(f"budget:limit=100,window={raw}")
     assert isinstance(s, BudgetScenario)
-    assert s._window_ms == expected_ms  # noqa: SLF001
+    assert s._window_ms == expected_ms
 
 
 @pytest.mark.parametrize(
@@ -76,11 +80,28 @@ def test_parse_budget_durations(raw: str, expected_ms: int) -> None:
         "budget:window=60s",  # missing limit
         "budget:limit=100,window=xyz",  # bad duration
         "budget:limit=100,window=60s,cost=0",  # cost < 1
+        "request_limit:limit=3",  # missing window
+        "request_limit:window=60s",  # missing limit
+        "request_limit:limit=0,window=60s",  # limit < 1
+        "request_limit:limit=3,window=xyz",  # bad duration
     ],
 )
 def test_parse_errors(spec: str) -> None:
     with pytest.raises(ScenarioError):
         parse_scenario(spec)
+
+
+def test_parse_request_limit() -> None:
+    s = parse_scenario("request_limit:limit=3,window=2m")
+    assert isinstance(s, RequestLimitScenario)
+    assert s.name == "request_limit"
+
+
+def test_bad_duration_error_names_the_scenario() -> None:
+    with pytest.raises(ScenarioError, match="^request_limit: invalid duration"):
+        parse_scenario("request_limit:limit=3,window=xyz")
+    with pytest.raises(ScenarioError, match="^budget: invalid duration"):
+        parse_scenario("budget:limit=3,window=xyz")
 
 
 def test_parse_scenarios_returns_fresh_instances() -> None:
@@ -161,3 +182,38 @@ def test_budget_default_cost_is_fixture_usage() -> None:
     s = BudgetScenario(limit=1000, window_ms=60_000)
     s.on_call("hi")
     assert "932 tokens remaining of 1000 limit" in s.happy_path_headers()[RATELIMIT_HEADER]
+
+
+def test_request_limit_counts_down_then_429_then_resets() -> None:
+    s = RequestLimitScenario(limit=2, window_ms=50)
+    assert s.on_call("hi") is None
+    assert s.happy_path_headers()[REQUEST_REMAINING_HEADER] == "1"
+    assert s.on_call("hi") is None
+    assert s.happy_path_headers()[REQUEST_REMAINING_HEADER] == "0"
+    hit = s.on_call("hi")
+    assert hit is not None
+    assert hit.shape == "request-rate-limit"
+    assert hit.extra_headers[REQUEST_LIMIT_HEADER] == "2"
+    assert hit.extra_headers[REQUEST_REMAINING_HEADER] == "0"
+    assert 0 <= int(hit.extra_headers[REQUEST_RESET_HEADER]) <= 50
+    time.sleep(0.06)
+    assert s.on_call("hi") is None
+    assert s.happy_path_headers()[REQUEST_REMAINING_HEADER] == "1"
+
+
+def test_request_limit_window_is_fixed_not_started_by_the_first_call() -> None:
+    """Live, the window does not start on the first request (docs/verified-apis.md
+    §4): a call made late in the window sees only the time that is left."""
+    s = RequestLimitScenario(limit=3, window_ms=200)
+    time.sleep(0.12)
+    assert s.on_call("hi") is None
+    assert int(s.happy_path_headers()[REQUEST_RESET_HEADER]) < 100
+
+
+def test_request_limit_rolls_over_by_whole_windows_after_idle() -> None:
+    s = RequestLimitScenario(limit=1, window_ms=40)
+    assert s.on_call("hi") is None
+    assert s.on_call("hi") is not None
+    time.sleep(0.1)  # 2+ windows idle
+    assert s.on_call("hi") is None
+    assert 0 <= int(s.happy_path_headers()[REQUEST_RESET_HEADER]) <= 40

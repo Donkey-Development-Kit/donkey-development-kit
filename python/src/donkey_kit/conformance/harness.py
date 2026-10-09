@@ -9,7 +9,7 @@ the scenario's check.
 
 It is the in-process sibling of the local gateway simulator, and it reuses the
 simulator's machinery so the injected refusal is the *same captured bytes*
-``classify()`` is tested against (:func:`donkey_kit.simulator.inject._resolve`
+``classify()`` is tested against (:func:`donkey_kit.simulator.inject.resolve_fixture`
 gives us that fixture and asserts the classify() round-trip). The one deliberate
 difference from ``simulate()``'s transport: this one counts *every* wire send
 rather than deduping retries, because counting re-sends is exactly how the retry
@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import json
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
@@ -34,6 +35,8 @@ from typing import Any
 
 import httpx
 
+from .._testing import http_clients, resolved_adapters, swap_transport
+from ..core import _wire
 from ..core.config import DonkeyConfig
 from ..core.errors import DonkeyError
 from ..donkey import Donkey
@@ -43,13 +46,14 @@ from ..simulator.fixtures import Fixture, load, replay_headers
 # Reuse the simulator's single exception->fixture mapping (and its classify()
 # round-trip assertion) rather than duplicating the table: if the mapping ever
 # drifts, simulate() and this harness fail together — the "same files" rule.
-from ..simulator.inject import _resolve as _refusal_fixture
+from ..simulator.inject import resolve_fixture as _refusal_fixture
 from .suite import SCENARIOS, Observation, Outcome, Result, Scenario, validate_known_limitations
 
 __all__ = [
     "DEFAULT_RUN_INPUT",
     "ConformanceHarness",
     "ConformanceUsageError",
+    "offline_config",
     "run_conformance",
 ]
 
@@ -74,7 +78,7 @@ class ConformanceUsageError(Exception):
     as a hard error, never a fail verdict."""
 
 
-def _offline_config() -> DonkeyConfig:
+def offline_config() -> DonkeyConfig:
     """The customer's own config with every endpoint credential replaced (#737).
 
     Non-secret settings (model catalog, attribution, header names) are kept so
@@ -100,6 +104,51 @@ def _offline_config() -> DonkeyConfig:
     )
 
 
+_CHAT_COMPLETIONS_ROUTE = "/chat/completions"
+
+
+def _as_chat_completion(body: bytes) -> bytes:
+    """Re-shape the captured ``/responses`` success body as a Chat Completions one.
+
+    The captured success is a Responses-API body. A framework that calls
+    ``/chat/completions`` (LiteLLM, Strands' ``OpenAIModel``, the Agents SDK's chat
+    model, LlamaIndex's ``OpenAILike``) cannot parse that shape, so the same
+    captured model, text and token counts are served in the shape that route
+    returns. Anything that is not the expected shape is served as captured."""
+    try:
+        captured = json.loads(body)
+        text = "".join(
+            part["text"]
+            for item in captured["output"]
+            if item.get("type") == "message"
+            for part in item["content"]
+            if part.get("type") == "output_text"
+        )
+        usage = captured["usage"]
+        return json.dumps(
+            {
+                "id": captured["id"],
+                "object": "chat.completion",
+                "created": captured["created_at"],
+                "model": captured["model"],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": text},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": usage["input_tokens"],
+                    "completion_tokens": usage["output_tokens"],
+                    "total_tokens": usage["total_tokens"],
+                },
+            }
+        ).encode()
+    except (KeyError, TypeError, ValueError):
+        return body
+
+
 def _fixture_responder(
     fixture: Fixture, *, strip_budget: bool = False
 ) -> Callable[[httpx.Request], httpx.Response]:
@@ -114,14 +163,19 @@ def _fixture_responder(
     def respond(request: httpx.Request) -> httpx.Response:
         headers = replay_headers(fixture)
         if strip_budget:
-            headers = {k: v for k, v in headers.items() if not k.startswith("x-token-")}
+            headers = {
+                k: v for k, v in headers.items() if not k.startswith(_wire.TOKEN_HEADER_PREFIX)
+            }
         if fixture.content_type is not None:
             headers["content-type"] = fixture.content_type
         headers[SIMULATOR_HEADER] = "true"
+        content = fixture.body
+        if fixture.status == 200 and request.url.path.endswith(_CHAT_COMPLETIONS_ROUTE):
+            content = _as_chat_completion(content)
         return httpx.Response(
             status_code=fixture.status,
             headers=headers,
-            content=fixture.body,
+            content=content,
             request=request,
         )
 
@@ -193,10 +247,10 @@ def _block_real_transports(attempts: list[str]) -> Iterator[None]:
             )
             return error
 
-        def blocked_sync(self: Any, request: Any) -> Any:
+        def blocked_sync(_self: Any, request: Any) -> Any:
             raise refuse(request)
 
-        async def blocked_async(self: Any, request: Any) -> Any:
+        async def blocked_async(_self: Any, request: Any) -> Any:
             raise refuse(request)
 
         for cls, method, blocked in (
@@ -288,7 +342,7 @@ class ConformanceHarness:
         this harness, and tear the ``Donkey`` down — so no transport swap, budget
         state, or agent state leaks between scenarios. Real network transports
         are blocked from before the agent is built until it is torn down."""
-        self._donkey = Donkey(_offline_config())
+        self._donkey = Donkey(offline_config())
         self._probe = None
         self._bypass_attempts = []
         try:
@@ -306,15 +360,26 @@ class ConformanceHarness:
     # --- ScenarioContext surface -------------------------------------------
     @property
     def agent(self) -> Any:
+        """The agent the factory built for the current scenario."""
         return self._agent
 
     def serve_refusal(self, error: type[DonkeyError]) -> None:
+        """Arm the gateway to answer the next model call with the captured refusal for ``error``."""
         self._arm(_fixture_responder(_refusal_fixture(error)))
 
     def serve_success(self, *, budget_headers: bool = True) -> None:
+        """Arm the gateway to answer with the captured success response.
+
+        ``budget_headers=False`` strips its ``x-token-*`` budget headers.
+        """
         self._arm(_fixture_responder(load("success"), strip_budget=not budget_headers))
 
     async def run(self, *, correlation_id: str | None = None) -> Observation:
+        """Drive ``agent.run(<input>)`` once and return what the harness observed.
+
+        Raises:
+            ConformanceUsageError: The agent has no callable ``run`` method.
+        """
         agent = self._agent
         run = getattr(agent, "run", None)
         if not callable(run):
@@ -332,7 +397,7 @@ class ConformanceHarness:
         raised: BaseException | None = None
         returned: Any = None
         bind = (
-            self._donkey.run_context(correlation_id)
+            self._donkey.run(correlation_id)
             if correlation_id is not None and self._donkey is not None
             else nullcontext()
         )
@@ -366,7 +431,7 @@ class ConformanceHarness:
         return tuple(
             sorted(
                 name
-                for name, adapter in donkey._adapter_cache.items()
+                for name, adapter in resolved_adapters(donkey).items()
                 if not adapter.observes_last_call
             )
         )
@@ -379,8 +444,8 @@ class ConformanceHarness:
         donkey = self._donkey
         assert donkey is not None  # set by run_scenario before any check runs
         self._probe = _ProbeTransport(responder)
-        donkey._http._swap_transport(self._probe)
-        donkey._sync_http_client()._swap_transport(self._probe)
+        for client in http_clients(donkey):
+            swap_transport(client, self._probe)
 
 
 async def run_conformance(

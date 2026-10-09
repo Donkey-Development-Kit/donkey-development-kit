@@ -43,6 +43,13 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 > Licensed under [Apache-2.0](LICENSE). See
 > [`docs/unsupported-boundary.md`](docs/unsupported-boundary.md) for exactly
 > which platform APIs this SDK calls and their support classification.
+>
+> **Security.** Report vulnerabilities privately, never in a public issue. See
+> [`SECURITY.md`](SECURITY.md) for supported versions and how to report.
+>
+> **Python versions.** CPython 3.10–3.12, each tested in CI; a version is
+> dropped in the first minor release after its end of life. See
+> [`docs/python-support.md`](docs/python-support.md).
 
 ## Documentation
 
@@ -73,24 +80,24 @@ Two audiences, two doc sets:
 pip install "donkey-kit[llm,langgraph]"   # base + raw client + one framework
 ```
 
-To work on the SDK itself, install from source instead:
+To work on the SDK itself, install from source with the contributor tooling
+(the `dev` dependency group needs pip 25.1 or later):
 
 ```bash
 git clone https://github.com/Donkey-Development-Kit/donkey-development-kit.git
 cd donkey-development-kit/python
-pip install -e ".[llm,langgraph]"
+pip install -e ".[llm,cli]" --group dev
 ```
 
 Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
-`openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `mcp`, `a2a`, `otel`, `cli`,
-`local`, `test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
-`pytest --donkey-conformance --agent=my_app.agent:build`), and `all`. `mcp` and `a2a`
-are placeholders for **Roadmap** features (governed tool access, A2A agents): today they
-only install the upstream `mcp` / `a2a-sdk` packages, and nothing in `donkey_kit` uses
-them yet. `all` is
-everything that installs together — `llm`, `langgraph`, `mcp`, `otel`, `cli`, `local`,
-`test` — and leaves out the seven other framework extras, whose current upstream releases
-cannot all be installed together. Add the one framework you use: `donkey-kit[all,crewai]`.
+`openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `otel`, `cli`, `local`,
+`test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
+`pytest --donkey-conformance --donkey-agent=my_app.agent:build`), and `all`. `all` is
+everything a user runs that installs together — `llm`, `langgraph`, `otel`, `cli`,
+`local` — with no test runner, so add `test` for the conformance plugin:
+`donkey-kit[all,test]`. It leaves out the seven other framework extras, whose current
+upstream releases cannot all be installed together. Add the one framework you use:
+`donkey-kit[all,crewai]`.
 Configuration and first-agent walkthroughs live on the
 [documentation site](https://docs.donkey-kit.dev/).
 
@@ -122,8 +129,9 @@ adapter constructor is signature-confirmed offline (see
 [Framework support](#framework-support)).
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
 rather than guessing at an unverified endpoint, header, or class name — that
-currently includes Exchange→MCP tool discovery and the provisioning
-control-plane. The adapters build their framework's native object directly; they
+currently includes Exchange→MCP tool discovery and Exchange publication; their
+types live in `donkey_kit.experimental`, outside the stable namespace. The SDK
+does not ship a provisioning control plane (ADR 0008 in `docs/adr/`). The adapters build their framework's native object directly; they
 refuse only when the installed framework version lacks the class or field the
 adapter depends on.
 
@@ -141,9 +149,10 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 
 | Framework | Scenario | Why it's exempt |
 | --- | --- | --- |
-| ADK `model()`, CrewAI | correlation ID propagated | The framework owns the transport — LiteLLM for ADK's `model()`, CrewAI's native OpenAI provider for CrewAI — so the SDK's `httpx` client cannot be injected and the correlation ID ends up per-client, not per-run. For ADK, a LiteLLM logger callback may recover trace correlation later. ADK's `gemini()` (`Format=Gemini` proxy) injects the shared client and records no exemption (#691). |
-| LlamaIndex, Microsoft Agent Framework | correlation ID propagated | These adapters receive a static `default_headers` snapshot, which deliberately excludes the per-run correlation ID. Without the SDK's `httpx` client, `donkey.run(id=...)` cannot update their request headers. |
-| ADK `model()`, CrewAI | gateway identity observed | The framework owns the transport (LiteLLM for ADK's `model()`, CrewAI's native OpenAI provider for CrewAI), so no response reaches the SDK's `_on_response` hook. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
-| LlamaIndex, Microsoft Agent Framework | gateway identity observed | These adapters receive `default_headers`, not the SDK's `httpx` client, so no response reaches `_on_response`. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
+| CrewAI | correlation ID propagated | CrewAI's native OpenAI provider builds both its sync `OpenAI` and its `AsyncOpenAI` from one `client_params` dict, and with an interceptor set it replaces `http_client` with its own `httpx` client, so the SDK's async client cannot be injected and the correlation ID ends up per-client, not per-run. ADK (`model()` and `gemini()`), LlamaIndex and Microsoft Agent Framework send through the SDK's shared client and record no exemption (#691, #740). |
+| CrewAI | gateway identity observed | For the same reason, no response reaches the SDK's `_on_response` hook. When every resolved adapter is non-observing, `donkey.last_call` reports `UNAVAILABLE` and names them in `surface`. |
 | CrewAI | JWT refreshed per send | CrewAI's native OpenAI provider owns the transport and builds its own clients, so the rotating JWT the SDK adds per send never reaches its requests. `donkey.crewai.llm()` and `connection_kwargs()` raise `ConfigError` in `jwt` mode; use client-id auth with CrewAI. ADK's `model()` and `gemini()`, LlamaIndex and Microsoft Agent Framework send through the SDK's client and carry the rotating JWT on async calls ([`jwt` mode](https://docs.donkey-kit.dev/reference/configuration#jwt--model-wallet-auth-mode)). |
-| CrewAI | budget refusal not retried | CrewAI wraps every LLM call in its own rate-limit retry (3 attempts) and treats any `429` as a rate limit, so a `TokenBudgetExceeded` refusal is sent 3 times. CrewAI has no setting to turn it off; the OpenAI client underneath has `max_retries=0`. Every other adapter sends a budget refusal once (#734). |
+| CrewAI | budget refusal not retried | CrewAI wraps every LLM call in its own rate-limit retry (3 attempts) and treats any `429` as a rate limit, so a `TokenBudgetExceeded` or `RequestRateLimitExceeded` refusal is sent 3 times. CrewAI has no setting to turn it off; the OpenAI client underneath has `max_retries=0`. Every other adapter sends a budget refusal once (#734). |
+| ADK `model()`, CrewAI | typed refusal bridged | Each raises its own error for a refusal, for a different reason, so `donkey.run()` and `typed_refusals()` cannot tell a gateway refusal from any other failure there and pass those errors through (#724). For ADK's `model()`, LiteLLM sends through the SDK's transport (#946) but re-raises a refusal as its own exception around a response it rebuilt, which carries no sign the SDK sent it. For CrewAI, the native OpenAI provider owns the transport, so its errors come from a client the SDK never saw. ADK's `gemini()` is handed the SDK's httpx client and is bridged (conformance-tested in #955). |
+
+Each exemption matches what the adapter reports in `donkey.<framework>.capabilities()` (a frozen `AdapterCapabilities` per factory), and a unit test keeps the two in step (#726).

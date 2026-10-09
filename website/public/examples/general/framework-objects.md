@@ -143,16 +143,15 @@ Run context
     http_async_client              <donkey_kit.core.transport.DonkeyAsyncClient object at 0x10aac2a50>
     http_client                    <donkey_kit.core.transport.DonkeyClient object at 0x10aac2c10>
     max_retries                    0
-    use_responses_api              True
+    use_responses_api              False
 
   Same base URL, same verified client_id / client_secret pair, handed to the framework's
   own constructor. Bringing a framework up to the deep bar is demand-driven and happens
   one at a time, so this is not a stepping stone that everything is queued behind — it
   is the supported surface.
   LangGraph is the only adapter held to the conformance bar. It sets
-  use_responses_api=True so ChatOpenAI calls /responses rather than its
-  /chat/completions default: /responses is the raw client's route and the only one the
-  local simulator serves.
+  use_responses_api=False so ChatOpenAI calls /chat/completions, the one route every
+  upstream behind an OpenAI-format proxy serves.
 
 What is and is not verified here
 ────────────────────────────────
@@ -203,6 +202,11 @@ kwargs = donkey.strands.connection_kwargs()
 SomeFrameworkModel(model="gpt-4o", **kwargs)
 ```
 
+An adapter or `LLMClient` you construct directly owns any blocking transport it
+builds on demand. Call its `close()` (or `await aclose()`) when finished; neither
+method closes the async client you passed in. Adapters obtained from `Donkey`
+use the `Donkey` runtime's blocking client instead, so close the `Donkey` handle.
+
 Model handles and the missing catalog (narrative demo 07):
 
 ```python
@@ -221,7 +225,7 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 
   `donkey.openai_agents` is the OpenAI Agents SDK adapter; `donkey.openai()` is
   the raw OpenAI client factory. The LangGraph adapter sets
-  `use_responses_api=True`, so `ChatOpenAI` calls the `/responses` route. The
+  `use_responses_api=False`, so `ChatOpenAI` calls the `/chat/completions` route. The
   adapters build the native object directly. They refuse with "blocked on
   verification" only when the installed framework version lacks the class or
   field the adapter depends on (for example, `gemini()` on google-adk older than

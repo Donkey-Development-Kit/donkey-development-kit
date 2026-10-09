@@ -182,7 +182,8 @@ def test_module_level_factory_raises_curated_error(
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://proxy")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "csecret")
-    monkeypatch.setattr(_base, "_DEFAULT_ADAPTERS", {})
+    # The autouse `_reset_module_state` fixture (tests/conftest.py, #750) already
+    # clears `_DEFAULT_ADAPTERS` before this test runs.
     reported = missing(module)
     adapter_module = importlib.import_module(f"donkey_kit.integrations{ADAPTERS[attr].module}")
     with pytest.raises(ImportError) as exc:
@@ -211,3 +212,24 @@ def test_access_fails_when_a_probed_dependency_is_missing(
         getattr(donkey, attr)
     _assert_curated(exc, attr)
     assert f"(no module named {dependency!r})" in str(exc.value)
+
+
+@pytest.mark.parametrize("attr", sorted(ADAPTERS))
+def test_adapter_extra_is_read_from_the_roster(attr: str) -> None:
+    # The pip extra is declared once, on ADAPTERS; the adapter reads it (#720).
+    spec = ADAPTERS[attr]
+    cls = getattr(importlib.import_module(spec.module, "donkey_kit.integrations"), spec.cls)
+    assert "extra" not in vars(cls)
+    assert object.__new__(cls).extra == spec.extra
+
+
+def test_an_adapter_off_the_roster_has_no_extra() -> None:
+    from donkey_kit.integrations.langgraph import LangGraphAdapter
+
+    class Unlisted(_base.Adapter):
+        factories = LangGraphAdapter.factories  # a concrete adapter must declare some
+
+        def connection_kwargs(self) -> dict[str, Any]:
+            return {}
+
+    assert object.__new__(Unlisted).extra == ""

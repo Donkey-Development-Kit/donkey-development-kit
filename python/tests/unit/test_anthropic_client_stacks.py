@@ -39,7 +39,7 @@ from donkey_kit.core.errors import (  # noqa: E402
     classify,
 )
 from donkey_kit.core.lastcall import LastCallStatus, current_last_call  # noqa: E402
-from donkey_kit.core.telemetry import run_context  # noqa: E402
+from donkey_kit.core.telemetry import run_scope  # noqa: E402
 from donkey_kit.integrations.anthropic import AnthropicAdapter  # noqa: E402
 
 _ON_HTTPX2 = not issubclass(anthropic.DefaultAsyncHttpxClient, httpx.AsyncClient)
@@ -79,6 +79,25 @@ async def test_a_governed_call_reaches_the_wire_and_last_call() -> None:
     # Anthropic's id rides `request-id`; its cache counts are flat on `usage` (#827).
     assert record.request_id == "req_011CfMnBEhyZATzuKEENjEo6"
     assert (record.cached_tokens, record.cache_write_tokens) == (0, 0)
+
+
+@pytest.mark.parametrize("status", [502, 504])
+async def test_anthropic_default_retries_do_not_resend_unsafe_model_post(status: int) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(status)
+
+    async with shared_client(handler) as shared:
+        kwargs = AnthropicAdapter(CFG, shared).connection_kwargs()
+        kwargs.pop("max_retries")  # Leave the provider SDK's retry default enabled.
+        llm = anthropic.AsyncAnthropic(**kwargs)
+        with pytest.raises(anthropic.APIStatusError) as exc:
+            await llm.messages.create(**BODY)
+
+    assert exc.value.response.headers["x-should-retry"] == "false"
+    assert len(seen) == 1
 
 
 async def test_anthropic_cache_counts_reach_last_call() -> None:
@@ -157,7 +176,7 @@ async def test_a_refusal_classifies_with_the_ids_that_were_sent(
 
     async with shared_client(handler) as shared:
         llm = AnthropicAdapter(CFG, shared).client(max_retries=0)
-        with run_context("run-42"), pytest.raises(framework_error) as info:
+        with run_scope("run-42"), pytest.raises(framework_error) as info:
             await llm.messages.create(**BODY)
 
     err = classify(info.value.response)  # type: ignore[attr-defined]

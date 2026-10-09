@@ -3,7 +3,7 @@
 The public, run-it-against-*your*-agent sibling of the SDK's internal adapter
 matrix (``tests/conformance/``). Install ``donkey-kit[test]`` and run::
 
-    pytest --donkey-conformance --agent=my_app.agent:build
+    pytest --donkey-conformance --donkey-agent=my_app.agent:build
 
 - :mod:`~donkey_kit.conformance.suite` — the four scenarios and their types.
 - :mod:`~donkey_kit.conformance.harness` — the observable ``Donkey`` the

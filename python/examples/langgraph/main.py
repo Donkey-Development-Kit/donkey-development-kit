@@ -9,7 +9,7 @@ you. Two things live here:
   wires a small two-node graph (``prepare`` → ``call_model``) and returns an
   object with an awaitable ``run(text)``. This is exactly the shape the
   customer-facing conformance plugin drives
-  (``pytest --donkey-conformance --agent=examples.langgraph.main:build``), and
+  (``pytest --donkey-conformance --donkey-agent=examples.langgraph.main:build``), and
   the SDK's own ``tests/conformance/test_langgraph_conformance.py`` runs the
   four scenarios against it.
 * :func:`main` — the runnable Scenario-A demo (see below). Timed in CI (the
@@ -58,14 +58,19 @@ import socket
 import threading
 import time
 from collections.abc import Callable
-from typing import Annotated, Any, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
+from langchain_core.messages import AnyMessage, HumanMessage
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.graph.state import CompiledStateGraph
 
 from donkey_kit import Donkey, PIIDetected
 from donkey_kit.core.telemetry import current_correlation_id
 from donkey_kit.integrations.langgraph import typed_refusals
+
+if TYPE_CHECKING:
+    from .collector import LocalOTLPCollector
 
 logger = logging.getLogger("examples.langgraph")
 
@@ -87,21 +92,21 @@ class State(TypedDict):
     conversation — untyped ``dict`` state would only carry the last node's
     return."""
 
-    messages: Annotated[list, add_messages]
+    messages: Annotated[list[AnyMessage], add_messages]
 
 
 class TriageAgent:
     """Minimal agent surface the conformance harness drives: an awaitable
     ``run(text)`` that pushes one turn through the compiled graph."""
 
-    def __init__(self, graph: Any) -> None:
+    def __init__(self, graph: CompiledStateGraph[State]) -> None:
         self._graph = graph
 
-    async def run(self, text: str) -> Any:
-        return await self._graph.ainvoke({"messages": [("user", text)]})
+    async def run(self, text: str) -> dict[str, Any]:
+        return await self._graph.ainvoke({"messages": [HumanMessage(text)]})
 
 
-async def _prepare(_state: State) -> dict:
+async def _prepare(state: State) -> dict[str, Any]:  # noqa: ARG001 - node protocol
     """First node: emit the run's correlation id into our own logs (AC2). The id
     is read from the contextvar, never from graph state — proving it propagated
     into the node on its own."""
@@ -117,7 +122,7 @@ def build(donkey: Donkey) -> TriageAgent:
     it."""
     model = donkey.langgraph.chat_model(os.environ.get("DEMO_MODEL", "gpt-4o"))
 
-    async def _call_model(state: State) -> dict:
+    async def _call_model(state: State) -> dict[str, Any]:
         # A proxy refusal raised here comes back typed, not framework-wrapped (AC3).
         with typed_refusals():
             reply = await model.ainvoke(state["messages"])
@@ -183,7 +188,7 @@ def _flush_spans() -> None:
         flush()
 
 
-def _draft_text(reply: Any) -> str:
+def _draft_text(reply: object) -> str:
     """Pull the human-readable text out of a LangChain reply, whose ``content``
     is a plain string (Chat Completions) or a list of ``{type, text}`` segments
     (the responses API). Truncated so the demo output stays one line per ticket."""
@@ -213,7 +218,7 @@ async def _triage(donkey: Donkey) -> int:
     return blocked
 
 
-def _collector_cls() -> type:
+def _collector_cls() -> type[LocalOTLPCollector]:
     """Import the bundled collector. Relative import when run as a package module
     (``python -m examples.langgraph.main``); a by-path fallback when this file is
     run directly as a script, so both entry points work. ``build()`` never needs
@@ -231,7 +236,8 @@ def _collector_cls() -> type:
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return module.LocalOTLPCollector  # type: ignore[no-any-return]
+        loaded: type[LocalOTLPCollector] = module.LocalOTLPCollector
+        return loaded
     return LocalOTLPCollector
 
 
@@ -241,8 +247,12 @@ def main() -> int:
 
     with _collector_cls()() as collector:
         # Zero-config export (#194): setting the standard endpoint is all it
-        # takes — Donkey.from_env() installs the OTLP exporter for us.
+        # takes — Donkey.from_env() builds the OTLP exporter for us. By default
+        # that exporter stays DDK-scoped and the global provider is left alone
+        # (#732); this demo opts in to the global install only because it
+        # flushes through trace.get_tracer_provider() before reading the tally.
         os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = collector.endpoint
+        os.environ["DONKEY_TELEMETRY_INSTALL_GLOBAL"] = "true"
 
         base_url, shutdown = _boot_simulator(["pii_block:every=5"])
         # The simulator ignores auth; these are throwaway placeholders, never

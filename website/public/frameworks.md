@@ -93,7 +93,8 @@ carries the SDK's HTTP client in the form that framework takes: `http_client`
 and `http_async_client` (LangGraph), `http_client` and `async_http_client`
 (LlamaIndex), `async_client` (MS Agent Framework), `client` (ADK's `model()`),
 or an `interceptor` (CrewAI). Pass them through with the rest of the kwargs.
-Each HTTP client is a non-owning view of the SDK's shared client: it sends
+Each HTTP client is a non-owning view of the SDK's shared client (on `openai`
+3.x, the OpenAI kwargs carry an `httpx2` bridge onto it instead): it sends
 through the shared client, and closing it (as Strands does after every call, or
 `async with` on an OpenAI client) leaves the shared client open. Only
 `donkey.aclose()` / `donkey.close()` end the connection pool. `donkey.http_client()`
@@ -104,6 +105,35 @@ kwargs = donkey.llamaindex.connection_kwargs()
 print(kwargs["default_headers"])      # {'client_id': 'my-client-id', 'client_secret': '***'}
 OpenAILike(model="gpt-4o", **kwargs)  # receives the real secret
 ```
+
+### What each factory gets: `capabilities()`
+
+Every adapter reports what its factories get from the SDK.
+`donkey.<framework>.capabilities("<factory>")` returns a frozen
+`AdapterCapabilities`. With no argument, it returns the default factory's, the
+one `connection_kwargs()` configures. Each factory reports its own, so ADK's
+`model()` and `gemini()` answer separately.
+
+| Field | Means |
+|---|---|
+| `transport` | `"shared"`: requests go through the SDK's shared client. `"framework"`: the framework builds its own clients (CrewAI), so `jwt` and `bearer` auth are refused with `ConfigError`. |
+| `sync` | The native object's blocking calls (`invoke()`, `complete()`) also go through the SDK. In `jwt` and `bearer` mode, each blocking call raises `ConfigError`, because the token is async-only. |
+| `streaming` | `False` where the governed connection turns streaming off (Strands, `stream=False`). |
+| `typed_refusals` | A gateway refusal reaches you as a typed exception through `donkey.run()` or `typed_refusals()`. |
+| `observes_last_call` | A call through this object populates `donkey.last_call`. |
+
+```python
+caps = donkey.adk.capabilities("gemini")
+print(caps.transport, caps.observes_last_call)   # shared True
+```
+
+The conformance exemptions are checked against these values, so the
+`capabilities()` an adapter reports and the exemptions it records always
+agree.
+
+In `jwt` or `bearer` mode, every adapter's `connection_kwargs()` raises
+`ConfigError` when the `Donkey` has no `llm_auth` provider. The token is added
+only through that provider, so without one every call would fail with a 401.
 
 ## Match the adapter to your proxy's wire format
 
@@ -165,7 +195,9 @@ HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 ## Retries happen once, in the SDK
 
 The SDK's transport retries `502`, `503` and `504` with backoff, up to
-`max_retries` times, and never retries a `4xx`. On the proxy a `429` is a
+`max_retries` times, and never retries a `4xx`. A `502` or `504` on a model
+call is retried only with `retry_model_calls_on_gateway_errors`, since the
+provider may already have billed it. On the proxy a `429` is a
 token-budget refusal (`TokenBudgetExceeded`), so sending it again would only
 spend more of a budget that is already gone. Every adapter therefore turns off
 the provider SDK's own retries (`max_retries=0`). The transport also marks every
@@ -178,7 +210,7 @@ Some frameworks retry above the provider SDK, where the SDK can't reach:
 | Framework | A budget `429` is sent | A persistent `503` is sent | What to do |
 |---|---|---|---|
 | LangGraph, OpenAI Agents SDK, Anthropic SDK, LlamaIndex, MS Agent Framework, Google ADK | once | `max_retries + 1` times | Nothing. |
-| Strands | once from the model; up to 6 times from a default `Agent` | `max_retries + 1` times | Build the agent with `Agent(retry_strategy=None)`. |
+| Strands | once | `max_retries + 1` times | Nothing with `donkey.strands.model()`. A model built from `connection_kwargs()` needs `Agent(retry_strategy=None)`. See the [Strands page](https://docs.donkey-kit.dev/frameworks/strands.md#notes). |
 | CrewAI | 3 times | once | No setting turns it off. See the [CrewAI page](https://docs.donkey-kit.dev/frameworks/crewai.md#notes). |
 
 Transport injection also decides whether `jwt` mode works: the rotating JWT is

@@ -20,6 +20,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
+__all__ = ["TOOL_MARKER", "ToolSpec", "register_tool", "registered_tools", "tool_spec"]
+
 # The attribute ``@donkey.tool`` attaches to a marked callable. Reading
 # ``getattr(fn, TOOL_MARKER, None)`` (or :func:`tool_spec`) is how a scanner or
 # card generator recognises a governed tool without importing this module's
@@ -97,7 +99,7 @@ def tool_spec(func: Callable[..., Any]) -> ToolSpec | None:
     return marker if isinstance(marker, ToolSpec) else None
 
 
-def _clear_registry() -> None:
-    """Reset the process-global registry. For tests only — production code never
-    unregisters a tool."""
+def _reset_for_tests() -> None:
+    """Reset the process-global registry (#750). Called only from the autouse
+    fixture in ``tests/conftest.py`` — production code never unregisters a tool."""
     _REGISTRY.clear()

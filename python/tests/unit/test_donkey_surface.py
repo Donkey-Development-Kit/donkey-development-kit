@@ -18,18 +18,30 @@ def _cfg() -> DonkeyConfig:
     )
 
 
-def test_legacy_governance_scaffolding_is_not_top_level_public_api() -> None:
-    """The refused provisioning control plane remains importable from its module,
-    but its structural types are not promoted as first-class package exports."""
-    from donkey_kit.governance import Governance
+@pytest.mark.parametrize(
+    "module",
+    [
+        "donkey_kit.governance",
+        "donkey_kit.provisioning",
+        "donkey_kit.provisioning.cli",
+        "donkey_kit.provisioning.spec",
+    ],
+)
+def test_refused_control_plane_modules_are_gone(module: str) -> None:
+    """The refused provisioning control plane was deleted, not parked (#730,
+    ADR 0008 in docs/adr/). Its old import paths must fail, not half-work."""
+    import importlib
 
-    assert Governance.__module__ == "donkey_kit.governance"
-    assert {
-        "GatewayTarget",
-        "Governance",
-        "PolicyBinding",
-        "PolicyPortability",
-    }.isdisjoint(donkey_kit.__all__)
+    try:
+        imported = importlib.import_module(module)
+    except ModuleNotFoundError:
+        pass
+    else:
+        # A checkout that switched branches can keep the deleted package's
+        # git-ignored __pycache__/, which Python imports as an empty namespace
+        # package. That ships nothing; any real module would have a __file__.
+        assert getattr(imported, "__file__", None) is None, imported
+        assert not [n for n in dir(imported) if not n.startswith("__")], imported
     assert not hasattr(donkey_kit, "Governance")
 
 
@@ -87,11 +99,25 @@ def test_openai_never_probes_the_agents_sdk(monkeypatch: pytest.MonkeyPatch) -> 
         assert isinstance(fab.openai(), openai.AsyncOpenAI)
 
 
-def test_run_context_binds_correlation_id() -> None:
+def test_run_context_is_a_deprecated_alias_for_run() -> None:
     from donkey_kit.core.telemetry import current_correlation_id
 
     fab = Donkey(_cfg())
-    with fab.run_context("abc123") as rid:
+    with pytest.warns(DeprecationWarning, match=r"donkey\.run\(id=\.\.\.\)"):
+        scope = fab.run_context("abc123")
+    with scope as rid:
+        assert rid == "abc123"
+        assert current_correlation_id() == "abc123"
+    assert current_correlation_id() is None
+
+
+def test_core_run_context_is_a_deprecated_alias_for_run_scope() -> None:
+    from donkey_kit.core import run_context
+    from donkey_kit.core.telemetry import current_correlation_id
+
+    with pytest.warns(DeprecationWarning, match="run_scope"):
+        scope = run_context("abc123")
+    with scope as rid:
         assert rid == "abc123"
         assert current_correlation_id() == "abc123"
     assert current_correlation_id() is None

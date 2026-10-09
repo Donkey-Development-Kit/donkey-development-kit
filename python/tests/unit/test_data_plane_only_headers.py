@@ -13,20 +13,10 @@ Driven with ``httpx.MockTransport``, so no network is touched.
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from donkey_kit import Donkey
-from donkey_kit.core import _verify
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.cost import CostTags
-
-
-@pytest.fixture(autouse=True)
-def _isolate_unverified_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The attribution header names are UNVERIFIED and warn once per process;
-    keep this module from using up that warning for later tests."""
-    monkeypatch.setattr(_verify, "_warned", set())
-
 
 _PROXY = "https://gw.example.internal/openai-sdk/"
 _CONTROL_PLANE = "https://anypoint.example.internal"
@@ -84,9 +74,9 @@ async def _send_all() -> tuple[httpx.Request, httpx.Request, httpx.Request]:
     token_endpoint, platform, proxy = _Recorder(), _Recorder(), _Recorder()
     async with Donkey(_cfg()) as donkey:
         assert donkey._owned_auth_http is not None
-        donkey._owned_auth_http._swap_transport(httpx.MockTransport(token_endpoint))
-        donkey.registry._http._swap_transport(httpx.MockTransport(platform))
-        donkey._http._swap_transport(httpx.MockTransport(proxy))
+        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
+        donkey._http.governed_transport.replace_inner(httpx.MockTransport(proxy))
         async with donkey.run(team=_RUN_TEAM, enduser_id=_ENDUSER):
             with donkey.cache(skip=True, principal_id=_PRINCIPAL):
                 await donkey._http.post(f"{_PROXY}chat/completions", json={"model": "gpt-4o"})
@@ -127,7 +117,7 @@ async def test_sync_data_plane_client_carries_every_proxy_only_header() -> None:
     proxy = _Recorder()
     async with Donkey(_cfg()) as donkey:
         client = donkey._sync_http_client()
-        client._swap_transport(httpx.MockTransport(proxy))
+        client.governed_transport.replace_inner(httpx.MockTransport(proxy))
         async with donkey.run(team=_RUN_TEAM, enduser_id=_ENDUSER):
             with donkey.cache(principal_id=_PRINCIPAL):
                 client.post(f"{_PROXY}chat/completions", json={"model": "gpt-4o"})

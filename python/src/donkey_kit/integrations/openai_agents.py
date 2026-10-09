@@ -16,17 +16,50 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core.masking import masked
+from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from agents import OpenAIChatCompletionsModel
 
+__all__ = ["OpenAIAgentsAdapter", "model"]
+
 
 class OpenAIAgentsAdapter(Adapter):
-    extra = "openai-agents"
+    """Governed OpenAI Agents SDK objects, reached as ``donkey.openai_agents``.
+
+    Each factory returns the framework's own native object, pointed at the governed
+    LLM proxy with the SDK's headers and transport: ``model(model)`` builds an
+    ``OpenAIChatCompletionsModel``. ``connection_kwargs()`` returns the same
+    settings for building it yourself.
+
+    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
+    supported surface, and the factories are conveniences over it.
+
+    Raises:
+        ImportError: ``donkey.openai_agents`` was read without the ``openai-agents``
+            extra installed; the message carries the install command.
+        ConfigError: The LLM-proxy settings are missing or incomplete.
+
+    Docs: https://docs.donkey-kit.dev/frameworks/openai
+    """
+
+    # An AsyncOpenAI on the shared client (#726).
+    factories = MappingProxyType(
+        {
+            "model": AdapterCapabilities(
+                transport="shared",
+                sync=False,
+                streaming=True,
+                typed_refusals=True,
+                observes_last_call=True,
+            ),
+        }
+    )
 
     def connection_kwargs(self) -> dict[str, Any]:
         """Governed kwargs for an ``OpenAIChatCompletionsModel(model=…, **kwargs)``

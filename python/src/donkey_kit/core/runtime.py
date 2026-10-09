@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import contextlib
 import functools
+import logging
 import threading
 from contextlib import AsyncExitStack
 
@@ -31,6 +31,10 @@ from .transport import (
     build_http_client,
     build_sync_http_client,
 )
+
+__all__ = ["Runtime", "close_default", "default"]
+
+_log = logging.getLogger(__name__)
 
 
 class Runtime:
@@ -50,10 +54,12 @@ class Runtime:
         llm_auth: AuthProvider | None = None,
     ) -> None:
         self._cfg = config or DonkeyConfig.from_env()
-        # Zero-config OTLP export (BG §1.6, #194): installs an exporter when an
+        # Zero-config OTLP export (BG §1.6, #194): builds an exporter when an
         # OTEL_EXPORTER_OTLP_ENDPOINT is set and telemetry is on; a no-op (and
-        # never an error) otherwise. This is the single funnel — every Donkey and
-        # the default runtime pass through here — and it is idempotent.
+        # never an error) otherwise. It leaves the global TracerProvider alone
+        # unless telemetry_install_global opts in (#732). This is the single
+        # funnel — every Donkey and the default runtime pass through here — and
+        # it is idempotent.
         configure_otlp_export(self._cfg)
         self._owned_auth_http: DonkeyAsyncClient | None = None
         if auth is None:
@@ -103,6 +109,7 @@ class Runtime:
 
     @property
     def config(self) -> DonkeyConfig:
+        """The resolved configuration."""
         return self._cfg
 
     @property
@@ -112,10 +119,12 @@ class Runtime:
 
     @property
     def llm_auth(self) -> AuthProvider | None:
+        """The data-plane provider, used only in the ``jwt`` and ``bearer`` modes."""
         return self._llm_auth
 
     @property
     def budget(self) -> Budget:
+        """The token-budget window both data-plane transports update (BG §1.3)."""
         return self._budget
 
     @property
@@ -232,5 +241,7 @@ def close_default() -> None:
     except RuntimeError:
         # Best effort at exit: a pool left over from an earlier, already-closed
         # loop may refuse to close cleanly, and that must not mask the exit.
-        with contextlib.suppress(Exception):
+        try:
             asyncio.run(rt.aclose())
+        except Exception:  # noqa: BLE001 — best effort at exit; never mask the exit
+            _log.debug("closing the default runtime's async transports failed", exc_info=True)

@@ -1,28 +1,42 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]  # PEP 639 license metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "donkey-kit"
-version = "0.1.1"
+version = "0.1.2"
 description = "An SDK for consuming Agent Fabric capabilities (governed model and tool access) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-authors = [{ name = "See README for maintainer + support statement" }]
+license = "Apache-2.0"
+# A copy of the repo-root LICENSE: hatch cannot read files above python/.
+# tests/unit/test_house_style_config.py keeps the two identical.
+license-files = ["LICENSE"]
+# Community-maintained (see the README support statement); report issues and
+# contact the maintainers through the Issues URL below.
+authors = [{ name = "Donkey Development Kit maintainers" }]
+maintainers = [{ name = "Donkey Development Kit maintainers" }]
 keywords = ["donkey-kit", "mulesoft", "anypoint", "agent", "llm", "mcp", "gateway"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    # One per CI `test` matrix leg (docs/python-support.md).
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
 ]
 
 # core/ has ZERO agent-framework dependencies. httpx only. (the layered architecture hard rule)
+# No pydantic: nothing in the base install imports it (#730, tested by
+# tests/unit/test_base_install_deps.py).
 dependencies = [
     "httpx>=0.27",
-    "pydantic>=2.6",
     "typing-extensions>=4.10; python_version < '3.12'",
-    # stdlib tomllib is 3.11+; backfill for the 3.10 floor (config.py, governance.py).
+    # stdlib tomllib is 3.11+; backfill for the 3.10 floor (core/config.py).
     "tomli>=2.0; python_version < '3.11'",
 ]
 
@@ -69,10 +83,6 @@ llamaindex = ["llama-index-llms-openai-like>=0.8"]
 # The OpenAIModel the adapter builds needs strands' own `openai` extra.
 strands = ["strands-agents[openai]>=1.57.1"]
 
-# --- Tool binding (MCP) ---
-mcp = ["mcp>=1.2"]
-a2a = ["a2a-sdk>=0.1"]
-
 # --- Local gateway simulator (BG §1.4): `donkey mock` ---
 # Pure-Python ASGI (starlette) served by uvicorn. Plain `uvicorn`, NOT
 # `uvicorn[standard]`: uvloop/httptools are C extensions and would break BG §1.4's
@@ -94,14 +104,14 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.24",
 ]
 
-# --- CLI + provisioning ---
+# --- CLI: `donkey init|doctor|mock|test` (donkey_kit/cli) ---
 # typer 0.15.4 is the first that runs the CLI against a fresh click (8.2+);
 # below 0.13 it also rejects `Path | None` options.
-cli = ["typer>=0.15.4", "pyyaml>=6.0", "rich>=13.0"]
+cli = ["typer>=0.15.4", "rich>=13.0"]
 
 # --- Conformance pytest plugin (BG §1.5): `donkey-kit[test]` ---
 # The public, run-it-against-your-own-agent plugin
-# (`pytest --donkey-conformance --agent=my_app:build`), registered via the
+# (`pytest --donkey-conformance --donkey-agent=my_app:build`), registered via the
 # pytest11 entry point below. pytest-asyncio so a customer's own async agent
 # tests — and the `donkey` fixture used with `simulate()` — run under the
 # repo-standard asyncio_mode="auto". The plugin itself needs no framework and no
@@ -110,36 +120,66 @@ cli = ["typer>=0.15.4", "pyyaml>=6.0", "rich>=13.0"]
 # module-level `importorskip`; 0.23.1 is the lowest that runs the suite.
 test = ["pytest>=8.0", "pytest-asyncio>=0.23.1"]
 
-# --- Everything that installs together, for convenience ---
-# The framework-free extras plus the one deep adapter (BG §1.8). The seven
-# connection_kwargs()-only framework extras are deliberately NOT here: at their
-# current releases they are not co-installable upstream, and with floors-only
-# extras (§8.4) no floor makes them so — pip fails with resolution-too-deep.
-# Install those one at a time. See docs/verified-apis.md §8.1 (#697).
+# --- Everything a user runs, together ---
+# The framework-free extras plus the one deep adapter (BG §1.8). No test runner
+# or linter (#744): add `donkey-kit[all,test]` for the conformance plugin. The
+# seven connection_kwargs()-only framework extras are deliberately NOT here: at
+# their current releases they are not co-installable upstream, and with
+# floors-only extras (§8.4) no floor makes them so — pip fails with
+# resolution-too-deep. Install those one at a time. See docs/verified-apis.md
+# §8.1 (#697).
 all = [
-    "donkey-kit[llm,langgraph,mcp,otel,cli,local,test]",
+    "donkey-kit[llm,langgraph,otel,cli,local]",
 ]
 
+# Contributor tooling is a PEP 735 dependency group, not an extra, so it stays
+# out of the published metadata (#744): `pip install -e . --group dev` (pip
+# 25.1+) or `uv sync --group dev`. pytest + pytest-asyncio repeat the [test]
+# extra's floors because a group cannot include an extra; typer repeats [cli]'s
+# because the base-only CI job installs the group alone and still runs the CLI
+# unit tests. pyyaml is test-only: no SDK module imports it (#730), but
+# tests/unit/test_integration_checklist.py parses .github/workflows/ci.yml.
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.1",
+    # Randomises test order every run and prints the seed by default (#750), so
+    # a leaked module-level cache or warning de-dupe set surfaces as a flaky
+    # failure instead of hiding behind one fixed collection order. CI reruns a
+    # failure's exact order with `--randomly-seed=<printed seed>`.
+    "pytest-randomly>=3.15",
     "respx>=0.21",
     "mypy>=1.10",
     "ruff>=0.5",
-    "import-linter>=2.0",
-    # stubs so mypy --strict typechecks the CLI/provisioning yaml handling.
-    "types-PyYAML>=6.0",
+    # 2.3+: the whole-package layers contract (#729) fails on 2.0-2.2 with
+    # "Modules have shared descendants".
+    "import-linter>=2.3",
+    # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
+    "vulture>=2.11",
     "typer>=0.15.4",
     "pyyaml>=6.0",
+    # Coverage floor (#751): 7.10 is the first release documenting `[run]
+    # patch = ["subprocess"]`, which this repo relies on to measure the
+    # conformance plugin/report through pytester's runpytest_subprocess()
+    # children (see [tool.coverage.run] below).
+    "coverage[toml]>=7.10",
+    # Hermetic test suite (#747): fails fast on any non-loopback socket the
+    # default/local_gateway suites open, instead of a real network call
+    # succeeding, hanging, or silently depending on the shell's proxy.
+    "pytest-socket>=0.7",
+    # Hermetic test suite (#747): caps every test at timeout (below), so a test
+    # that stalls on a dead proxy or an unreachable collector fails fast
+    # instead of hanging CI.
+    "pytest-timeout>=2.3",
 ]
 
 [project.scripts]
-donkey = "donkey_kit.provisioning.cli:main"
+donkey = "donkey_kit.cli:main"
 
 [project.entry-points.pytest11]
 # Registers the conformance plugin (BG §1.5). Entry points are package metadata,
 # so this loads on EVERY pytest run once donkey-kit is installed — even under
-# `[dev]` alone with no `[test]` extra. That is why plugin.py and its module-top
+# the dev group alone with no `[test]` extra. That is why plugin.py and its module-top
 # imports stay framework-free and openai-free (only stdlib + pytest + the
 # framework-free suite/report siblings); the harness that pulls in Donkey is
 # imported lazily. The plugin is inert unless `--donkey-conformance` is passed.
@@ -148,15 +188,25 @@ donkey_kit_conformance = "donkey_kit.conformance.plugin"
 [tool.hatch.build.targets.wheel]
 packages = ["src/donkey_kit"]
 
-[tool.hatch.build.targets.wheel.force-include]
-# Package the captured fixtures the local gateway simulator (BG §1.4) replays
-# INTO the wheel, so `pip install "donkey-kit[local]" && donkey mock`
-# finds them. The loader (donkey_kit/simulator/fixtures.py) resolves this
-# packaged copy first, falling back to the source-checkout tests/fixtures/ tree.
-"tests/fixtures/rejections" = "donkey_kit/simulator/_fixtures/rejections"
-"tests/fixtures/anypoint/llm_proxy" = "donkey_kit/simulator/_fixtures/anypoint/llm_proxy"
-"tests/fixtures/anypoint/semantic_routing" = "donkey_kit/simulator/_fixtures/anypoint/semantic_routing"
-"tests/fixtures/fixtures.lock" = "donkey_kit/simulator/_fixtures/fixtures.lock"
+# The captured fixtures the local gateway simulator (BG §1.4) replays are package
+# data under src/donkey_kit/simulator/_fixtures/ (#746), so the wheel ships them
+# with no force-include and `pip install "donkey-kit[local]" && donkey mock`
+# finds them. Their READMEs are capture provenance for reviewers, not runtime
+# data, and stay out of the published (immutable) wheel (#821).
+exclude = ["src/donkey_kit/simulator/_fixtures/**/README.md"]
+
+# An explicit sdist file list, so local caches and scratch files never ship (#746).
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/examples",
+    "/scripts",
+    "/README.md",
+    "/dependency_allowlist.toml",
+    "/vulture_whitelist.py",
+]
+exclude = ["__pycache__", "*.py[cod]"]
 
 [tool.mypy]
 # Working instruction #8: mypy --strict, blocking in CI. Typecheck fixtures pin
@@ -164,14 +214,13 @@ packages = ["src/donkey_kit"]
 strict = true
 python_version = "3.10"
 files = ["src/donkey_kit", "tests/typecheck"]
-plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-# Optional deps may be absent (CI installs only [dev,llm,cli]) or ship no stubs;
+# Optional deps may be absent (CI installs only [llm,cli] + the dev group) or ship no stubs;
 # neither should fail the base typecheck. opentelemetry IS typed when the [otel]
 # extra is present, so it is listed here for absence only — telemetry.py must not
 # carry an inline ignore that goes stale the moment someone installs it.
-# tomli is the <3.11 tomllib backfill (config.py, governance.py): mypy targets
+# tomli is the <3.11 tomllib backfill (core/config.py): mypy targets
 # py3.10 so it analyzes the `import tomli` branch, but CI runs on 3.11 where tomli
 # is not installed — absence only, same rationale as the framework extras above.
 module = [
@@ -180,6 +229,7 @@ module = [
     "langchain_core.*",
     "opentelemetry.*",
     "google.adk.*",
+    "google.genai.*",
     "agent_framework.*",
     "agents.*",
     "anthropic.*",
@@ -187,8 +237,7 @@ module = [
     "llama_index.*",
     "strands.*",
     "litellm.*",
-    "mcp.*",
-    # [local] simulator deps — absent under the typecheck job's [dev,llm,cli]
+    # [local] simulator deps — absent under the typecheck job's [llm,cli]
     # install; build_app()/serve() confine their use to function bodies and the
     # public return type is a framework-free Protocol, so no Any leaks out.
     "starlette.*",
@@ -205,10 +254,12 @@ ignore_missing_imports = true
 # fail the base typecheck; an inline ignore would go stale whenever it is present.
 # The CrewAI adapter's interceptor subclasses crewai's BaseInterceptor, likewise,
 # and the LangGraph adapter's last_call handler langchain_core's BaseCallbackHandler.
+# The Strands adapter's model subclasses the OpenAIModel class it is handed (#951).
 module = [
-    "donkey_kit.integrations._httpx2_bridge",
+    "donkey_kit.core.transport.httpx2",
     "donkey_kit.integrations.crewai",
     "donkey_kit.integrations.langgraph",
+    "donkey_kit.integrations.strands",
 ]
 disallow_subclassing_any = false
 
@@ -218,27 +269,148 @@ testpaths = ["tests"]
 # The two live rungs are off by default (a command-line -m overrides this, so
 # `pytest -m local_gateway` still opts in). Aligns collection with the "off by
 # default" statement in CLAUDE.md, which was previously unenforced.
-addopts = "-m 'not local_gateway and not sandbox and not benchmark'"
+#
+# --strict-markers/--strict-config (#747): an unregistered `@pytest.mark.*` or
+# an invalid ini option is a hard collection error, not a silent typo. -ra
+# prints a short summary of every non-passed test (skips included), so a clean
+# skip is visible in CI output instead of hiding in the dot-progress line.
+# --allow-hosts/--allow-unix-socket (pytest-socket, #747): the default and
+# local_gateway suites talk only to loopback/unix sockets (DonkeyAsyncClient's
+# swapped-in fixture transport, the local gateway simulator's real TCP bind);
+# any other outbound socket is the exact "offline suite makes a real network
+# call" bug this issue is closing, so it now fails fast with a clear error
+# instead of hanging or racing a live host.
+addopts = """
+    -m 'not local_gateway and not sandbox and not benchmark'
+    --strict-markers --strict-config -ra
+    --allow-hosts=127.0.0.1,::1,localhost
+    --allow-unix-socket
+"""
 markers = [
     "local_gateway: boots the pure-Python local gateway simulator (BG §1.4) on a real TCP port; off by default",
     "sandbox: requires a real Anypoint sandbox (DONKEY_SANDBOX_TESTS=1); off by default",
     "benchmark: measures per-call span overhead against the <1ms bar (BG §1.6, #194); off by default, run with `pytest -m benchmark` in its own CI job",
 ]
+# Every test is capped at 60s (#747): a test that stalls on a dead proxy or an
+# unreachable OTLP collector fails fast with a traceback instead of hanging CI
+# past the job's own timeout. A test that legitimately needs longer sets its
+# own `@pytest.mark.timeout(...)` override.
+timeout = 60
+# A test marked `xfail` that unexpectedly passes is now a failure, not a
+# silent pass-through (#747) — an `xfail` whose bug got fixed should fail loud
+# so the marker gets removed, not keep reporting green forever.
+xfail_strict = true
+
+# --- coverage (#751): measured in ONE CI `test` leg, not every matrix leg ---
+[tool.coverage.run]
+branch = true
+source = ["donkey_kit"]
+# `patch = ["subprocess"]` installs the env var + startup hook coverage.py
+# needs to measure a *subprocess* interpreter — specifically the ones
+# `pytester.runpytest_subprocess()` spawns for the conformance plugin/report
+# tests (BG §1.5), which previously ran with no coverage attached at all. It
+# implies `parallel = true` on its own; the explicit setting below just makes
+# the "many data files, one combine step" intent visible without relying on
+# that side effect.
+patch = ["subprocess"]
+parallel = true
+relative_files = true
+
+[tool.coverage.report]
+# Today's measured baseline (python -m coverage report, #751), rounded down to
+# an integer so a one-line fluctuation doesn't flap CI. Raise it when tests
+# lift the measured total past the next integer; never lower it to make a PR
+# pass.
+fail_under = 94
+show_missing = true
+skip_covered = false
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# SLF001: no reaching into another object's private members (#719); RUF022:
+# every __all__ is sorted (#719).
+# BLE/LOG/G: no blind except without a reason, and logging-call hygiene (#717).
+# D101-D103: every public class, method and function in src/ has a docstring
+# (#722). Only these three D rules are on; tests/examples/scripts are exempt below.
+# #721, "the style guide is the config": each CONTRIBUTING §3 rule maps to an
+# enforcing rule. I002 (with isort.required-imports below) makes
+# `from __future__ import annotations` mandatory; FA backs it for PEP 604/585
+# syntax; RUF100 drops stale noqa; TRY203 forbids bare re-raise handlers; ARG
+# flags unused arguments; ANN401 forbids `Any` in signatures outside the
+# pass-through seams listed in per-file-ignores.
+select = [
+    "E", "F", "I", "UP", "B", "BLE", "LOG", "G", "SLF001", "RUF022",
+    "D101", "D102", "D103",
+    "I002", "FA", "RUF100", "TRY203", "ARG", "ANN401",
+]
+
+[tool.ruff.lint.pydocstyle]
+# Google-style "Args:" / "Raises:" sections; the prose-only docstrings fit it too.
+convention = "google"
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.lint.flake8-annotations]
+# `*args: Any` / `**kwargs: Any` that pass straight through to a framework or
+# httpx constructor are the sanctioned use of Any (ANN401); everything else is
+# either typed or listed per-file below with its reason.
+allow-star-arg-any = true
+
+[tool.ruff.lint.flake8-unused-arguments]
+# Same pass-through rule for ARG: a `**kwargs` accepted to honour an upstream
+# callback signature is not an unused argument.
+ignore-variadic-names = true
 
 [tool.ruff.lint.per-file-ignores]
 # typer's API requires calling typer.Option(...) in argument defaults (B008).
-"src/donkey_kit/provisioning/cli.py" = ["B008"]
+# The blocked CLI commands also keep their final options (ARG001, see below).
+"src/donkey_kit/cli/**" = ["B008", "ARG001"]
+# Verification-blocked stubs (§0.3): each raises `_verify.blocked(...)` but keeps
+# its final, documented signature, so its arguments are unused until the API is
+# verified. Remove the entry when the module's stubs are implemented.
+"src/donkey_kit/donkey.py" = ["ARG002"]
+"src/donkey_kit/registry/exchange.py" = ["ARG002"]
+"src/donkey_kit/registry/introspect.py" = ["ARG001"]
+"src/donkey_kit/registry/publication.py" = ["ARG001", "ARG002"]
+# The one sanctioned seam module: the dev-only simulator and conformance siblings
+# reach Donkey's and its clients' private members only through it (#719). Its
+# transport arguments stay `Any` (ANN401): the sync and async clients take
+# different httpx transport types, and a union would break the Protocol match.
+"src/donkey_kit/_testing.py" = ["SLF001", "ANN401"]
+# ANN401 seams: these modules bind objects from optional dependencies that are
+# imported lazily (framework extras, §1.1; opentelemetry; starlette) or from the
+# user's own agent and pytest, so `Any` is the honest annotation there.
+"src/donkey_kit/integrations/**" = ["ANN401"]
+"src/donkey_kit/conformance/**" = ["ANN401"]
+"src/donkey_kit/simulator/app.py" = ["ANN401"]
+"src/donkey_kit/core/telemetry.py" = ["ANN401"]
+# White-box tests inspect and swap private state by design (#719); docstring
+# rules apply to the shipped package only (#722). Tests also request fixtures for
+# their side effects and write doubles that mirror third-party signatures, so
+# unused and `Any`-typed arguments are expected there.
+"tests/**" = ["SLF001", "D101", "D102", "D103", "ARG", "ANN401"]
+"examples/**" = ["D101", "D102", "D103"]
+"scripts/**" = ["D101", "D102", "D103"]
+
+# --- vulture: dead-code check in CI (#720) ---
+# Reads src/ only, so code that only the tests use is reported as dead; names
+# used from outside src/ are listed in vulture_whitelist.py.
+[tool.vulture]
+paths = ["src", "vulture_whitelist.py"]
+min_confidence = 60
 
 # --- import-linter: enforce the layered architecture rule in CI, from day one ---
 [tool.importlinter]
 root_package = "donkey_kit"
+# Third-party packages are nodes in the graph too, so a contract can forbid one
+# (core's dependencies, below, #729). grimp records an external import by its
+# top-level name; the package does not need to be installed. Imports inside
+# functions and under TYPE_CHECKING count, which the base-only job can't see.
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "core is framework-free (nothing in integrations may be imported by lower layers)"
@@ -252,17 +424,132 @@ source_modules = [
 forbidden_modules = ["donkey_kit.integrations"]
 
 [[tool.importlinter.contracts]]
-name = "layered architecture"
+name = "layered architecture (§1.1)"
 type = "layers"
-# integrations (top) may use everything below; tools resolves registry handles;
-# registry/llm sit above the framework-free core (bottom). Lower never imports
-# higher.
+# The whole package, top to bottom; a lower layer never imports a higher one,
+# directly or indirectly (#729). The production stack is donkey → integrations →
+# tools → registry → llm → core, with experimental (#730) beside donkey: it
+# re-exports registry and core names that are not first-class API (ADR 0008,
+# docs/adr/0008-*.md), and neither of the two imports the other. Above it:
+# - cli: the `donkey` console script (#730). It may import any layer, and being
+#   on top means no library module imports it back (typer stays off the base
+#   install).
+# - conformance > simulator > _testing: the dev-only siblings (BG §1.4/§1.5). The
+#   harness reuses the simulator, both reach Donkey's private state only through
+#   the _testing seam (#719), and _testing names Donkey's types.
+# `exhaustive` makes a new top-level module fail until it is placed here.
+containers = ["donkey_kit"]
+exhaustive = true
 layers = [
-    "donkey_kit.integrations",
-    "donkey_kit.tools",
-    "donkey_kit.registry",
-    "donkey_kit.llm",
-    "donkey_kit.core",
+    "cli",
+    "conformance",
+    "simulator",
+    "_testing",
+    "donkey | experimental",
+    "integrations",
+    "tools",
+    "registry",
+    "llm",
+    "core",
+]
+ignore_imports = [
+    # Donkey.simulate() (BG §1.4) is public API on the orchestrator, and its
+    # implementation is the simulator's base-path-safe inject module (httpx
+    # only). The import is lazy, inside the method, so `import donkey_kit` never
+    # loads the simulator.
+    "donkey_kit.donkey -> donkey_kit.simulator.inject",
+]
+
+[[tool.importlinter.contracts]]
+name = "the top-level package exports only the production layers"
+type = "forbidden"
+# `import donkey_kit` (the root __init__ on its own, as_packages = false) must
+# never load the dev-only siblings or the CLI, directly or through Donkey
+# (#729). The deprecated aliases load experimental lazily, which is allowed. With as_packages off, each package is named twice: the package
+# module and its children.
+as_packages = false
+source_modules = ["donkey_kit"]
+forbidden_modules = [
+    "donkey_kit._testing",
+    "donkey_kit.cli",
+    "donkey_kit.cli.**",
+    "donkey_kit.conformance",
+    "donkey_kit.conformance.**",
+    "donkey_kit.simulator",
+    "donkey_kit.simulator.**",
+]
+ignore_imports = [
+    # The lazy Donkey.simulate() import, as in the layers contract above.
+    "donkey_kit.donkey -> donkey_kit.simulator.inject",
+]
+
+[[tool.importlinter.contracts]]
+name = "core depends on httpx only: no framework, LLM SDK or schema library (§1.1)"
+type = "forbidden"
+# core's third-party imports may be httpx, the stdlib backfills (tomli,
+# typing_extensions) and opentelemetry (the optional [otel] extra, imported
+# lazily). This contract forbids the packages that have drifted, or could drift,
+# into a lower layer: the LLM SDKs, the httpx2 bridge, pydantic (ADR 0001), every
+# agent framework the adapters wrap, the MCP SDK (no extra installs it yet), and the
+# dev-only and CLI dependencies (#729). A listed package nothing imports yet
+# (respx, rich) is still enforced: it fails the moment core imports it.
+# tests/unit/test_architecture.py checks the same rule as an allowlist.
+# The one exception is core's own httpx2 bridge (#728), which nothing imports at
+# package import (pinned by test_import_donkey_kit_loads_only_the_production_layers).
+source_modules = ["donkey_kit.core"]
+forbidden_modules = [
+    "agent_framework",
+    "agents",
+    "anthropic",
+    "crewai",
+    "google",
+    "httpx2",
+    "langchain",
+    "langchain_core",
+    "langchain_openai",
+    "langgraph",
+    "litellm",
+    "llama_index",
+    "mcp",
+    "openai",
+    "pydantic",
+    "pytest",
+    "respx",
+    "rich",
+    "starlette",
+    "strands",
+    "typer",
+    "uvicorn",
+    "yaml",
+]
+ignore_imports = ["donkey_kit.core.transport.httpx2 -> httpx2"]
+
+[[tool.importlinter.contracts]]
+name = "layers inside core"
+type = "layers"
+# Top to bottom (#729). The order is the real import graph: runtime builds the
+# transports; transport attaches budget, telemetry and cache control; auth and
+# those features read config; config reads cost, endpoints and header names;
+# everything reports through errors. Two deviations from the order sketched in
+# #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
+# through lastcall.request_id; and _wire sits below _verify, because the
+# verification placeholders name wire headers. A sibling group with `|` is
+# independent: its members never import each other. `exhaustive` makes a new
+# core module fail until it is placed. _response (the structural response
+# Protocols, #933) imports nothing from core, so it sits at the bottom.
+containers = ["donkey_kit.core"]
+exhaustive = true
+layers = [
+    "runtime",
+    "transport",
+    "budget | cache | cachecontrol | telemetry | toolspec",
+    "auth | correlation",
+    "config",
+    "cost | endpoints | header_names | refusals",
+    "errors",
+    "_refusal_body | lastcall | masking",
+    "_verify",
+    "_wire | _response",
 ]
 
 [[tool.importlinter.contracts]]
@@ -317,3 +604,22 @@ source_modules = [
     "donkey_kit.integrations",
 ]
 forbidden_modules = ["donkey_kit.conformance"]
+
+[[tool.importlinter.contracts]]
+name = "the CLI is a front end: no library module imports donkey_kit.cli (#730)"
+type = "forbidden"
+# donkey_kit.cli is the console script's home (ADR 0008 in docs/adr/). It may
+# import any layer below it; nothing in the library may import it back, so typer
+# (the [cli] extra) never drifts onto the base `import donkey_kit` path.
+source_modules = [
+    "donkey_kit.core",
+    "donkey_kit.llm",
+    "donkey_kit.registry",
+    "donkey_kit.tools",
+    "donkey_kit.integrations",
+    "donkey_kit.simulator",
+    "donkey_kit.conformance",
+    "donkey_kit.donkey",
+    "donkey_kit.experimental",
+]
+forbidden_modules = ["donkey_kit.cli"]
