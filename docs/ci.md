@@ -19,6 +19,7 @@ policy behind the locks and the nightly run, see
 - [The signals](#the-signals)
   - [ci.yml: the PR gate](#ciyml-the-pr-gate)
   - [nightly-matrix.yml: the canary](#nightly-matrixyml-the-canary)
+  - [lock-refresh.yml: the lock bump](#lock-refreshyml-the-lock-bump)
   - [live-contract-check.yml: the gateway contract](#live-contract-checkyml-the-gateway-contract)
 - [Scenario maps](#scenario-maps)
   - [Feature or fix (normal path)](#feature-or-fix-normal-path)
@@ -48,6 +49,7 @@ should be split.
 | --- | --- | --- |
 | Did this change break something? | `ci.yml` (PR-gating jobs, resolving from the committed lock) | Every PR; pushes to `main` and `develop` |
 | Did an upstream release break us? | `nightly-matrix.yml`, plus the fresh-resolve jobs in `ci.yml` (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`) | Daily 06:00 UTC; every PR for the `ci.yml` jobs |
+| Can the lock move to the newest releases? | `lock-refresh.yml` (opens one bump PR; its CI answers) | After each green nightly on `develop`; manual |
 | Did the live gateway's contract drift? | `live-contract-check.yml` (the `openai-model-routing` proxy only) | Mondays 07:00 UTC |
 | Did a secret get committed? | `secret-scan.yml` (gitleaks over the full history) | Every PR; pushes to `main` and `develop` |
 | Is the published site current? | `docs.yml` (build and deploy to GitHub Pages) | Pushes to `main` under `website/**`; every 6 hours; manual |
@@ -92,6 +94,36 @@ it by adapting the code or by moving the lock, never by adding a ceiling
 (`§8.4`). Any failed run, scheduled or manual, opens one issue labelled
 `nightly-failure`, or comments on it if it is already open (#755). Close that
 issue once the nightly is green again.
+
+### `lock-refresh.yml`: the lock bump
+
+After every green nightly on `develop`, and on manual dispatch, this workflow
+reruns `python scripts/compile_constraints.py` on `develop` (#763,
+[ADR 0011](adr/0011-nightly-lock-refresh-pr.md)). When any file under
+`python/constraints/` changed, it force-pushes the result to
+`bot/lock-refresh` and opens one PR to `develop`, or updates the body of the
+one already open. Merge it once its CI is green. A red bump PR is an upstream
+change the lock can't take yet: fix the code, or leave the PR open until the
+next refresh replaces it. Never add a ceiling (`§8.4`). The branch belongs to
+the workflow, so don't push to it by hand. A failed run opens or updates one
+issue labelled `lock-refresh-failure`.
+
+**One-time setup.** A PR opened with the default `github.token` doesn't start
+`pull_request` workflows, so its CI never runs on its own. A maintainer with
+admin rights on the repository picks one:
+
+1. Add a `LOCK_REFRESH_TOKEN` repository secret: a fine-grained token, or a
+   GitHub App installation token, with **Contents** and **Pull requests**
+   write access to this repository only. The workflow uses it when it
+   exists, and CI runs on the bump PR like on any other.
+2. Or, with no secret, allow the default token to open PRs: **Settings →
+   Actions → General → Workflow permissions → Allow GitHub Actions to create
+   and approve pull requests**. Then close and reopen each bump PR to start
+   its CI.
+
+Without either, the PR step fails and the run files the
+`lock-refresh-failure` issue. Check the setup with
+`gh workflow run lock-refresh.yml --ref develop`.
 
 ### `live-contract-check.yml`: the gateway contract
 
@@ -278,8 +310,15 @@ extras, dev group and Python combination, never merged across combinations
 `python scripts/compile_constraints.py`, and keep its `_COMBOS` in sync with the
 install lines in `ci.yml`.
 
-Still open under #763: pinning the build backend and the release tools,
-Dependabot-driven lock bumps, and making `mypy` independent of which extras are
+The lock also covers tools (#763). The `release` dependency group (`build`,
+`twine`, `hatchling`) and the `lock` group (`uv`) compile to
+`constraints/release-py3.11.txt` and `constraints/lock-py3.11.txt`. Every
+`python -m build` step installs from the release file and builds with
+`--no-isolation`, so a published dist is built by the locked `hatchling`.
+`lock-refresh.yml` opens the PR that moves the lock after each green nightly
+([ADR 0011](adr/0011-nightly-lock-refresh-pr.md); Dependabot would raise the
+floors and bump pins one at a time). `mypy` never follows an optional extra
+(`follow_imports = "skip"`), so its result doesn't depend on which extras are
 installed. Still open under #769: a lowest-direct job that keeps the declared
 floors honest, an `openai<2` leg, and Python 3.13/3.14 in the matrix.
 
@@ -304,8 +343,9 @@ promotion. `secret-scan.yml` covers `develop` too. There is no merge queue, so
 Each cron workflow ends with an `if: failure()` job or step that opens or
 updates one labelled tracking issue (never one issue per run), using
 `issues: write` on that job only. `live-contract-check.yml` does this with the
-`live-contract-drift` label (#753), and `nightly-matrix.yml` with the
-`nightly-failure` label (#755). `docs.yml`'s cron still needs the same step.
+`live-contract-drift` label (#753), `nightly-matrix.yml` with the
+`nightly-failure` label (#755), and `lock-refresh.yml`, which follows the
+nightly, with the `lock-refresh-failure` label (#763). `docs.yml`'s cron still needs the same step.
 
 ### 5. One task runner mirrors CI. **Target** (#765)
 

@@ -82,3 +82,4 @@ is not rewritten.
 | [0008](0008-legacy-quarantine-and-cli-home.md) | Quarantine the legacy provisioning code and give the CLI its own package | Accepted | #730 |
 | [0009](0009-sans-io-transport.md) | A sans-IO transport policy, and no default retry of model POSTs on 502/504 | Accepted | #728 |
 | [0010](0010-no-hidden-global-side-effects.md) | No hidden global side effects: the OTel provider | Accepted | #732 |
+| [0011](0011-nightly-lock-refresh-pr.md) | A green nightly opens the lock-refresh PR, and the release toolchain is locked too | Accepted | #763 |

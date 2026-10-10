@@ -4,6 +4,8 @@
 - **Date:** 2026-10-03 (rule 3 implemented 2026-10-05, #948)
 - **Issue:** #731 (part of #707). The lowest-direct floor job is #769; locking
   PR CI was #948 (see Consequences).
+- **Amended by:** [ADR 0011](0011-nightly-lock-refresh-pr.md) (2026-10-10,
+  #763), a nightly job now opens the lock-refresh PR.
 
 ## Context
 
@@ -116,3 +118,12 @@ encoded as pins. What the repo does today:
   conformance-tested (`BG §1.8`, ADR 0004's roster-consistency test).
 - `CONTRIBUTING.md` §3 (the "Extras are floors, never ceilings" rule) cites
   this ADR.
+
+## Amendment (2026-10-10, ADR 0011, #763)
+
+Rule 3's refresh clause no longer holds: `.github/workflows/lock-refresh.yml`
+reruns `python scripts/compile_constraints.py` after every green nightly on
+`develop` and opens or updates one PR with the result
+([ADR 0011](0011-nightly-lock-refresh-pr.md)). A maintainer can still refresh
+by hand. The lock now also covers the release toolchain (`build`, `twine`,
+`hatchling`) and `uv`, as tool-only combos.

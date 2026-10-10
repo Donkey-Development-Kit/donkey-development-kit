@@ -10,7 +10,8 @@
 # IS a fresh resolve (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`,
 # and everything in nightly-matrix.yml) deliberately keep resolving fresh —
 # they are the canary ADR 0007 rule 4 relies on. Refresh the lock with
-# `python scripts/compile_constraints.py` (see CONTRIBUTING.md); keep
+# `python scripts/compile_constraints.py` (see CONTRIBUTING.md), or merge the
+# PR lock-refresh.yml opens after each green nightly (ADR 0011, #763); keep
 # `scripts/compile_constraints.py`'s `_COMBOS` in sync with the jobs below —
 # each entry's `extras`/`dev_group` must match that job's install line exactly.
 name: CI

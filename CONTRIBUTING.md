@@ -689,11 +689,16 @@ build plan has the rationale behind each rule:
   merging to "simplify" the file count). The jobs that are deliberately a
   fresh resolve (`all-extra-resolves`, `adk-stacks`, `anthropic-stacks`, and
   everything in `.github/workflows/nightly-matrix.yml`, the canary ADR 0007
-  rule 4 relies on) have no `-c` flag and must keep none. **Refresh the lock**
-  after changing a dependency, or on whatever cadence a maintainer judges
-  useful — there is no scheduled job that does this automatically (opening a
-  PR from a scheduled workflow needs write-access credentials this repo
-  doesn't grant one, so it stays a manual step):
+  rule 4 relies on) have no `-c` flag and must keep none. The lock also pins
+  the release toolchain (`build`, `twine`, `hatchling`, the `release` group)
+  and `uv` (the `lock` group) as tool-only combos; every `python -m build`
+  step installs from `constraints/release-py3.11.txt` and builds with
+  `--no-isolation` (#763). After each green nightly on `develop`,
+  `.github/workflows/lock-refresh.yml` recompiles every file and opens or
+  updates one `chore(deps): refresh the PR CI lock` PR
+  ([ADR 0011](docs/adr/0011-nightly-lock-refresh-pr.md),
+  [`docs/ci.md`](docs/ci.md#lock-refreshyml-the-lock-bump)). **Refresh the
+  lock by hand** in the PR that changes a dependency:
   ```bash
   cd python
   python scripts/compile_constraints.py   # needs `uv` on PATH (dev-time only; CI still uses plain pip)

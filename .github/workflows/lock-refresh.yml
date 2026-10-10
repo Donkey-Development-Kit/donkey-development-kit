@@ -1,0 +1,145 @@
+# Nightly lock refresh (#763, ADR 0011).
+#
+# PR CI resolves from the committed lock, python/constraints/*.txt (ADR 0007
+# rule 3), so tool and dependency upgrades must arrive as a PR that moves the
+# lock, never overnight on their own. This workflow is that PR's author: after
+# a green `Nightly matrix` run on `develop` (the fresh-resolve canary, ADR 0007
+# rule 4), it reruns scripts/compile_constraints.py and, when any file changed,
+# force-pushes the result to the `bot/lock-refresh` branch and opens (or
+# updates) ONE PR to `develop`. The bump PR's own CI is the gate: the nightly
+# proves the newest releases work, the PR proves the exact pins do.
+#
+# Why not Dependabot or Renovate: either would also bump the `>=` floors in
+# pyproject.toml (§8.4 keeps those at the lowest verified versions), and each
+# bumps one pin at a time, while every constraints file must stay one
+# `uv pip compile` resolution of its combo (see compile_constraints.py).
+#
+# Token: `secrets.LOCK_REFRESH_TOKEN` when the repository has one (a token
+# with contents and pull-requests write on this repo), else `github.token`.
+# A PR opened with `github.token` does not trigger `pull_request` workflows,
+# so with the fallback a maintainer closes and reopens the PR to run CI. The
+# fallback also needs the repository setting that lets GitHub Actions create
+# pull requests; without it the PR step fails and the `alert` job files the
+# tracking issue. See docs/ci.md, "lock-refresh.yml".
+#
+# `bot/lock-refresh` belongs to this workflow: it is rebuilt from `develop`
+# on every run, so commits pushed to it by hand are overwritten.
+#
+# Alerting (docs/ci.md convention 4): a failed run opens or updates ONE open
+# issue labelled `lock-refresh-failure`, from the `alert` job.
+#
+# Security: no PR code runs here. `workflow_run` fires only for `Nightly
+# matrix`, which has no pull_request trigger, and the job checks out `develop`
+# itself. Event values reach `run:` bodies through env:, never interpolated.
+
+name: Lock refresh
+
+on:
+  workflow_run:
+    workflows: ["Nightly matrix"]
+    types: [completed]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lock-refresh
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: python
+
+jobs:
+  refresh:
+    # A manual run, or a green nightly on this repository's develop branch.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'develop' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: bot/lock-refresh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          token: ${{ secrets.LOCK_REFRESH_TOKEN || github.token }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      # The refresh tool comes from its own lock (combo "lock").
+      - run: python -m pip install --upgrade pip && pip install -c constraints/lock-py3.11.txt uv
+      - name: Recompile every constraints file
+        run: python scripts/compile_constraints.py
+      - name: Commit, push and open or update the lock-refresh PR
+        env:
+          GH_TOKEN: ${{ secrets.LOCK_REFRESH_TOKEN || github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- constraints)" ]; then
+            echo "The lock is current; nothing to refresh."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add constraints
+          git commit -q -m "chore(deps): refresh the PR CI lock" \
+            -m "Recompiled by lock-refresh.yml after a green nightly: ${RUN_URL}"
+          git push --force origin "$BRANCH"
+          body="Recompiled \`python/constraints/\` with \`python scripts/compile_constraints.py\` after a green nightly (#763, ADR 0011): ${RUN_URL}
+
+          Merge when CI is green. A red run here is an upstream change the lock cannot take yet: fix the code or wait, never add a ceiling (§8.4). If CI did not start, close and reopen this PR (docs/ci.md, \`lock-refresh.yml\`)."
+          existing=$(gh pr list --repo "$REPO" --head "$BRANCH" --base develop --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --repo "$REPO" --body "$body"
+          else
+            gh pr create --repo "$REPO" --base develop --head "$BRANCH" \
+              --title "chore(deps): refresh the PR CI lock" --body "$body"
+          fi
+
+  alert:
+    # docs/ci.md convention 4: a failed refresh must reach a human. Same
+    # open-or-update pattern as nightly-matrix.yml's alert job (#755).
+    if: failure()
+    needs: [refresh]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    defaults:
+      run:
+        # No checkout here, so python/ does not exist.
+        working-directory: .
+    steps:
+      - name: Open or update the lock-refresh-failure tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # `gh issue create --label` fails when the label does not exist.
+          gh label create lock-refresh-failure --repo "$REPO" --force \
+            --color B60205 --description "The nightly lock refresh failed (#763)"
+          existing=$(gh issue list --repo "$REPO" --label lock-refresh-failure --state open \
+            --json number --jq '.[0].number // empty')
+          body="The nightly lock refresh failed: ${RUN_URL}
+
+          PR CI keeps resolving from the last committed lock until this is fixed (docs/ci.md, \`lock-refresh.yml\`)."
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "Nightly lock refresh failing" \
+              --label lock-refresh-failure --body "$body"
+          fi

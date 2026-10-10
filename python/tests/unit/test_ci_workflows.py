@@ -33,7 +33,7 @@ def _needs(job: dict[str, Any]) -> set[str]:
 
 @pytest.mark.parametrize(
     ("workflow", "aggregate"),
-    [("ci.yml", "ci-ok"), ("nightly-matrix.yml", "alert")],
+    [("ci.yml", "ci-ok"), ("nightly-matrix.yml", "alert"), ("lock-refresh.yml", "alert")],
 )
 def test_aggregate_job_needs_every_other_job(workflow: str, aggregate: str) -> None:
     jobs = _workflow(workflow)["jobs"]
@@ -60,3 +60,31 @@ def test_nightly_alert_is_the_only_job_that_writes_issues() -> None:
     assert alert["permissions"] == {"issues": "write"}
     others = {k: v for k, v in workflow["jobs"].items() if k != "alert"}
     assert not [k for k, v in others.items() if "permissions" in v]
+
+
+def test_lock_refresh_follows_the_nightly_by_its_display_name() -> None:
+    # workflow_run matches on the display name, so renaming `Nightly matrix`
+    # would stop the lock refresh silently (#763).
+    nightly = _workflow("nightly-matrix.yml")["name"]
+    triggers = _workflow("lock-refresh.yml")[True]
+    assert triggers["workflow_run"] == {"workflows": [nightly], "types": ["completed"]}
+    assert "workflow_dispatch" in triggers
+
+
+def test_lock_refresh_runs_only_after_a_green_nightly_on_develop() -> None:
+    condition = _workflow("lock-refresh.yml")["jobs"]["refresh"]["if"]
+    for clause in (
+        "github.event.workflow_run.conclusion == 'success'",
+        "github.event.workflow_run.head_branch == 'develop'",
+    ):
+        assert clause in condition
+
+
+def test_lock_refresh_write_scopes_stay_on_their_own_jobs() -> None:
+    workflow = _workflow("lock-refresh.yml")
+    assert workflow["permissions"] == {"contents": "read"}
+    jobs = workflow["jobs"]
+    assert jobs["refresh"]["permissions"] == {"contents": "write", "pull-requests": "write"}
+    assert jobs["alert"]["if"] == "failure()"
+    assert jobs["alert"]["permissions"] == {"issues": "write"}
+    assert set(jobs) == {"refresh", "alert"}
