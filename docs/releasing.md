@@ -157,8 +157,9 @@ flowchart TD
   the Releases page is reserved for real releases. To dry-run: bump the
   `.devN` counter (see [Versioning & naming](#versioning--naming)) in
   `__version__` (`scripts/bump-version.sh`), land it on `develop`, then
-  **Actions → Publish to TestPyPI → Run workflow** on `develop`. The publish job is guarded to
-  `refs/heads/develop` — a dispatch from any other ref is skipped. It
+  **Actions → Publish to TestPyPI → Run workflow** on `develop`. The publish
+  job is guarded to `refs/heads/develop` — a dispatch from any other ref is
+  skipped. It
   publishes to `https://test.pypi.org/legacy/` via OIDC — the same
   trusted-publishing path prod uses. Each dry-run needs a fresh `.devN`: a
   filename, once uploaded to TestPyPI, can never be reused, even after
@@ -231,26 +232,17 @@ workflows; the last two are human.
 Every gate above tests the source tree or a freshly built wheel. The
 maintainers' acceptance suite, kept in a separate private repository, is the
 only one that installs the **published** artifact from an index and exercises
-it against live gateway proxies. It catches the release where all of CI is
+it against a live gateway. It catches the release where all of CI is
 green and consumers still can't use the package.
 
 Run it against the `.devN` version you just published to TestPyPI, before you
-open the promotion PR:
-
-```bash
-./run.sh --version <the TestPyPI version> --index testpypi
-./run.sh --check-coverage
-```
+open the promotion PR. How to run it, and how to tell a run that tested
+something from one that skipped everything, is documented in that repository.
 
 Record the result in the promotion PR body: the version tested, the index, and
 whether it passed. A promotion with no recorded acceptance run is a promotion
-nobody checked.
-
-Read the run's header, not just its exit code. A live group whose proxy isn't
-configured skips cleanly, so a run with no credentials exits 0 having tested
-nothing live; the header lists which proxies were configured and which were
-skipped. If the run fails, don't promote until you know which side is wrong,
-and assume the package is at fault until you have shown otherwise.
+nobody checked. If the run fails, don't promote until you know which side is
+wrong, and assume the package is at fault until you have shown otherwise.
 
 ## Hotfix releases
 
@@ -280,8 +272,9 @@ its PR.
 
 A hotfix that touches only `website/**` and/or `.github/workflows/docs.yml`
 changes no published artifact. It gets **no version bump, no tag, no GitHub
-Release and no PyPI publish**: leave `__version__` alone. It is done when the `docs.yml` run for the merge commit on `main` is
-green and the live site serves the fix. A manual redeploy must run with
+Release and no PyPI publish**: leave `__version__` alone. It is done when
+the `docs.yml` run for the merge commit on `main` is green and the live site
+serves the fix. A manual redeploy must run with
 `--ref main`, because the `github-pages` environment rejects any other ref.
 
 ### Package hotfix: next patch, milestones shift
