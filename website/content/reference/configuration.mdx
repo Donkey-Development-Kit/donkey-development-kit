@@ -61,7 +61,7 @@ This table is generated from the field table in `core/config.py`.
 | `ANYPOINT_ORG_ID` | `org_id` | `org_id` | unset |
 | `ANYPOINT_ENV` | `environment` | `environment` | `Sandbox` |
 | `ANYPOINT_REGION` | `region` | `region` | `us` |
-| `ANYPOINT_BASE_URL` | `base_url` | `base_url` | unset |
+| `ANYPOINT_BASE_URL` | `base_url` | `base_url` | from `region` |
 | `DONKEY_LLM_PROXY_URL` | `llm_proxy_url` | `llm_proxy_url` | unset |
 | `DONKEY_LLM_PROXY_CLIENT_ID` | `llm_proxy_client_id` | `llm_proxy_client_id` | unset |
 | `DONKEY_LLM_PROXY_CLIENT_SECRET` | `llm_proxy_client_secret` | `llm_proxy_client_secret` | unset |
@@ -70,12 +70,12 @@ This table is generated from the field table in `core/config.py`.
 | `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` | `llm_proxy_wallet_client_id` | `llm_proxy_wallet_client_id` | unset |
 | `DONKEY_APP_NAME` | `application_name` | `application_name` | unset |
 | `DONKEY_BUSINESS_GROUP` | `business_group` | `business_group` | unset |
-| `DONKEY_CORRELATION_HEADER` | `correlation_header` | `correlation_header` | unset |
-| `DONKEY_CALL_ID_HEADER` | `call_id_header` | `call_id_header` | unset |
-| `DONKEY_COST_TEAM_HEADER` | `cost_team_header` | `cost_team_header` | unset |
-| `DONKEY_COST_PROJECT_HEADER` | `cost_project_header` | `cost_project_header` | unset |
-| `DONKEY_COST_ENV_HEADER` | `cost_env_header` | `cost_env_header` | unset |
-| `DONKEY_COST_ENDUSER_HEADER` | `cost_enduser_header` | `cost_enduser_header` | unset |
+| `DONKEY_CORRELATION_HEADER` | `correlation_header` | `correlation_header` | `X-Correlation-Id` |
+| `DONKEY_CALL_ID_HEADER` | `call_id_header` | `call_id_header` | `X-Donkey-Request-Id` |
+| `DONKEY_COST_TEAM_HEADER` | `cost_team_header` | `cost_team_header` | `X-Anypoint-Cost-Team` |
+| `DONKEY_COST_PROJECT_HEADER` | `cost_project_header` | `cost_project_header` | `X-Anypoint-Cost-Project` |
+| `DONKEY_COST_ENV_HEADER` | `cost_env_header` | `cost_env_header` | `X-Anypoint-Cost-Env` |
+| `DONKEY_COST_ENDUSER_HEADER` | `cost_enduser_header` | `cost_enduser_header` | `X-Anypoint-Cost-Enduser-Id` |
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `timeout_s` | `60.0` |
 | `DONKEY_MAX_RETRIES` | `max_retries` | `max_retries` | `3` |
 | `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `registry_cache_ttl_s` | `300` |

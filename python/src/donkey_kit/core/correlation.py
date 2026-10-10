@@ -73,8 +73,10 @@ def current_cost_tags() -> CostTags | None:
 
 
 class RunScope:
-    """A **dual sync/async** context manager that binds the run correlation id
-    to :data:`_correlation_id` for the block (BG §1.1, #195).
+    """A **dual sync/async** context manager that sets the run correlation id
+    for the governed calls made in its block (BG §1.1, #195).
+
+    It binds the id to the :data:`_correlation_id` contextvar.
 
     This is what ``donkey.run(id=...)`` returns, so the same object works under
     both ``with donkey.run(...)`` and ``async with donkey.run(...)`` — binding a

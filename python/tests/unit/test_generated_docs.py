@@ -95,3 +95,60 @@ def test_signatures_print_string_annotations_and_mask_sentinels() -> None:
         gen.format_signature("x.f", f, bound=True)
         == "x.f(a: int, *, b: str | None = None, c: object = ...) -> bool"
     )
+
+
+def test_signatures_mark_coroutines_and_context_managers() -> None:
+    import contextlib
+    from collections.abc import AsyncIterator, Iterator
+
+    class C:
+        async def close(self) -> None: ...
+
+        @contextlib.asynccontextmanager
+        async def pace(self, *, reserve: float = 0.0) -> AsyncIterator[None]:
+            yield
+
+        @contextlib.contextmanager
+        def scope(self) -> Iterator[int]:
+            yield 1
+
+    assert gen.format_signature("c.close", C.close, bound=True) == "async c.close() -> None"
+    assert gen.format_signature("c.pace", C.pace, bound=True) == (
+        "c.pace(*, reserve: float = 0.0) -> AbstractAsyncContextManager[None]"
+    )
+    assert gen.format_signature("c.scope", C.scope, bound=True) == (
+        "c.scope() -> AbstractContextManager[int]"
+    )
+
+
+def test_api_reference_shows_async_members() -> None:
+    page = gen.api_reference()
+    assert "async donkey.aclose() -> None" in page
+    assert "async donkey.llm.list_models(" in page
+    assert "AbstractAsyncContextManager[None]" in page
+    assert "AsyncIterator" not in page
+
+
+def test_signatures_show_private_type_variables_without_the_underscore() -> None:
+    page = gen.api_reference()
+    assert "Callable[P, R]" in page
+    assert "_Callable" not in page and "_P," not in page
+
+
+def test_settings_index_shows_built_in_header_names() -> None:
+    rows = {
+        line.split("|")[1].strip(): line.split("|")[4].strip()
+        for line in gen.settings_index().splitlines()
+        if line.startswith("| `")
+    }
+    assert rows["`DONKEY_CORRELATION_HEADER`"] == "`X-Correlation-Id`"
+    assert rows["`ANYPOINT_BASE_URL`"] == "from `region`"
+    assert "unset" not in {rows[f"`DONKEY_COST_{d}_HEADER`"] for d in ("TEAM", "ENDUSER")}
+
+
+def test_api_reference_does_not_restate_the_version() -> None:
+    import donkey_kit
+
+    # The version has two owners (pyproject.toml, __init__.py) and the site
+    # banner shows it; a third copy here would go stale on every bump.
+    assert f"`donkey-kit` {donkey_kit.__version__}" not in gen.api_reference()

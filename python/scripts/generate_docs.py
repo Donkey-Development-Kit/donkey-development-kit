@@ -236,13 +236,16 @@ def settings_index() -> str:
     """Every ``DonkeyConfig`` field from the field table, in its order."""
     from donkey_kit.core import config
 
-    defaults = {f.name: f.default for f in dataclasses.fields(config.DonkeyConfig)}
+    defaults = {f.name: _default_text(f.default) for f in dataclasses.fields(config.DonkeyConfig)}
+    # ``None`` on a header field means "send the built-in name", not "unset".
+    defaults.update((key, f"`{name}`") for key, name in config._HEADER_KEYS)  # noqa: SLF001
+    defaults["base_url"] = "from `region`"
     rows = [
         (
             f"`{spec.env}`",
             f"`{spec.name}`",
             f"`{spec.toml_key}`",
-            _default_text(defaults[spec.name]),
+            defaults[spec.name],
         )
         for spec in config._FIELDS  # noqa: SLF001  (the one config table, as its test reads it)
     ]
@@ -389,6 +392,9 @@ def _param(param: inspect.Parameter) -> str:
 def format_signature(call: str, func: Callable[..., Any], *, bound: bool) -> str:
     """``call(params) -> return``, one parameter per line when it runs long.
 
+    A coroutine function is shown as ``async call(...)``, and a function
+    wrapped by ``@contextmanager``/``@asynccontextmanager`` with the context
+    manager it returns rather than its generator's annotation.
     ``bound`` drops the first parameter (``self`` or ``cls``). Annotations are
     printed as written in the source, so the output does not depend on which
     optional packages are installed.
@@ -409,12 +415,53 @@ def format_signature(call: str, func: Callable[..., Any], *, bound: bool) -> str
         ):
             parts.append("/")
     returns = _annotation(signature.return_annotation)
+    namespace = getattr(inspect.unwrap(func), "__globals__", {})
+    parts = [_public_type_vars(part, namespace) for part in parts]
+    returns = _public_type_vars(returns, namespace)
+    wrapped = getattr(func, "__wrapped__", None)
+    if inspect.isasyncgenfunction(wrapped):
+        returns = _context_manager("AbstractAsyncContextManager", returns)
+    elif inspect.isgeneratorfunction(wrapped):
+        returns = _context_manager("AbstractContextManager", returns)
+    if inspect.iscoroutinefunction(func):
+        call = f"async {call}"
     tail = f" -> {returns}" if returns else ""
     one_line = f"{call}({', '.join(parts)}){tail}"
     if len(one_line) <= 88:
         return one_line
     inner = "".join(f"    {part},\n" for part in parts)
     return f"{call}(\n{inner}){tail}"
+
+
+_PRIVATE_NAME = re.compile(r"\b_[A-Za-z]\w*")
+
+
+def _public_type_vars(text: str, namespace: dict[str, Any]) -> str:
+    """``text`` with private type-variable names shown without the underscore.
+
+    ``Callable[_P, _R]`` reads as ``Callable[P, R]``; a private name that is not
+    a ``TypeVar`` or ``ParamSpec`` in the function's module is left alone.
+    """
+
+    def public(match: re.Match[str]) -> str:
+        name = match.group(0)
+        is_var = isinstance(namespace.get(name), (typing.TypeVar, typing.ParamSpec))
+        return name[1:] if is_var else name
+
+    return _PRIVATE_NAME.sub(public, text)
+
+
+_YIELDS = re.compile(r"^(?:[\w.]+\.)?(?:Async)?(?:Iterator|Generator)\[([^,\]]+)")
+
+
+def _context_manager(kind: str, returns: str) -> str:
+    """The type a ``@contextmanager`` function returns, from its generator annotation.
+
+    ``inspect.signature`` follows ``__wrapped__`` to the generator, whose
+    annotation (``AsyncIterator[None]``) is not what a caller gets back.
+    """
+    match = _YIELDS.match(returns)
+    return f"{kind}[{match.group(1).strip() if match else 'Any'}]"
 
 
 @dataclass(frozen=True)
@@ -555,7 +602,7 @@ def api_reference() -> str:
         "",
         "# Python API reference",
         "",
-        f"The public API of `donkey-kit` {donkey_kit.__version__}, generated from its",
+        "The public API of `donkey-kit`, generated from its",
         "signatures and docstrings. Each entry shows the first paragraph of the",
         "docstring; `help()` on the object prints the rest. Everything listed here is",
         "importable from `donkey_kit`.",

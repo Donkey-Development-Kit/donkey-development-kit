@@ -160,8 +160,10 @@ def current_cache_controls() -> CacheControls | None:
 
 
 class CacheScope:
-    """A **dual sync/async** context manager that binds :class:`CacheControls` to
-    :data:`_cache_controls` for the block (BG §1.1, #587).
+    """A **dual sync/async** context manager that applies :class:`CacheControls`
+    to the governed calls made in its block (BG §1.1, #587).
+
+    It binds them to the :data:`_cache_controls` contextvar.
 
     This is what ``donkey.cache(...)`` returns, so the same object works under both
     ``with donkey.cache(...)`` and ``async with donkey.cache(...)`` — binding a

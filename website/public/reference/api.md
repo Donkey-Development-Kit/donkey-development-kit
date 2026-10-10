@@ -1,6 +1,6 @@
 # Python API reference
 
-The public API of `donkey-kit` 0.1.2, generated from its
+The public API of `donkey-kit`, generated from its
 signatures and docstrings. Each entry shows the first paragraph of the
 docstring; `help()` on the object prints the rest. Everything listed here is
 importable from `donkey_kit`.
@@ -154,14 +154,14 @@ Steer the gateway's **semantic cache** for every governed model call in the bloc
 
 ```python
 donkey.governed(
-    func: Callable[_P, _R] | None = None,
+    func: Callable[P, R] | None = None,
     *,
     team: str | None = None,
     project: str | None = None,
     env: str | None = None,
     enduser_id: str | None = None,
     typed_refusals: bool = True,
-) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]
 ```
 
 Wrap a callable so its body runs inside a `donkey.run()` scope.
@@ -169,7 +169,7 @@ Wrap a callable so its body runs inside a `donkey.run()` scope.
 ### `donkey.tool()`
 
 ```python
-donkey.tool(func: _Callable) -> _Callable
+donkey.tool(func: Callable) -> Callable
 ```
 
 Mark a callable as a governed tool **without changing call behaviour**, recording its name, signature and docstring in an introspectable registry.
@@ -189,7 +189,7 @@ Inject a real gateway refusal in-process, no server.
 ### `donkey.aclose()`
 
 ```python
-donkey.aclose() -> None
+async donkey.aclose() -> None
 ```
 
 Close every transport this Donkey owns: the data-plane and control-plane clients, the connected-app token-fetch client it built (a caller-supplied `auth` provider stays caller-owned), and the blocking client. Each one is closed even if an earlier close raises.
@@ -293,7 +293,7 @@ Close the blocking client built by this standalone factory, if any.
 ### `donkey.llm.aclose()`
 
 ```python
-donkey.llm.aclose() -> None
+async donkey.llm.aclose() -> None
 ```
 
 Close this factory's owned blocking client in an async scope.
@@ -309,7 +309,7 @@ An OpenAI client pointed at the LLM proxy, using our shared http client so heade
 ### `donkey.llm.list_models()`
 
 ```python
-donkey.llm.list_models(*, live: bool = False) -> list[ModelHandle]
+async donkey.llm.list_models(*, live: bool = False) -> list[ModelHandle]
 ```
 
 List logical models the proxy exposes.
@@ -341,7 +341,7 @@ donkey.budget.pace(
     *,
     reserve: float = 0.0,
     now: datetime | None = None,
-) -> AsyncIterator[None]
+) -> AbstractAsyncContextManager[None]
 ```
 
 Guard a request so it is refused *before* it crosses your reserve, not after a 429 comes back.
@@ -349,7 +349,7 @@ Guard a request so it is refused *before* it crosses your reserve, not after a 4
 ### `donkey.budget.wait_for_reset()`
 
 ```python
-donkey.budget.wait_for_reset(
+async donkey.budget.wait_for_reset(
     *,
     window: str | None = None,
     now: datetime | None = None,
@@ -456,8 +456,8 @@ is raised.
 |---|---|---|
 | `Budget` | class | The token-budget window for one `Donkey`, updated in-band from each response's budget headers (numeric `x-token-*` or the prose `x-llm-proxy-ratelimit` fallback). Its request-count sibling is `requests`. |
 | `CacheControls` | class | The per-request semantic-cache steering controls. |
-| `CacheScope` | class | A **dual sync/async** context manager that binds `CacheControls` to `_cache_controls` for the block. |
-| `ConfigOverrides` | class | The public `DonkeyConfig` fields, each optional, as keyword arguments: what `DonkeyConfig.resolve`, `DonkeyConfig.with_overrides` and `Donkey.from_env` accept, so a misspelt field fails type checking. Must list exactly the dataclass's public fields; a unit test pins that. |
+| `CacheScope` | class | A **dual sync/async** context manager that applies `CacheControls` to the governed calls made in its block. |
+| `ConfigOverrides` | class | The public `DonkeyConfig` fields, each optional, as keyword arguments: what `DonkeyConfig.resolve`, `DonkeyConfig.with_overrides` and `Donkey.from_env` accept, so a misspelt field fails type checking. |
 | `CostTags` | class | The fixed four-dimension cost-attribution set. |
 | `Donkey` | class | The SDK entry point: one governed handle on Agent Fabric. |
 | `DonkeyAsyncClientView` | class | A non-owning `httpx.AsyncClient` over a shared `DonkeyAsyncClient`. |
@@ -469,7 +469,7 @@ is raised.
 | `LastCallStatus` | class | Why `LastCall` fields are (or are not) populated — so a `None` is never ambiguous between "the gateway said nothing" and "the SDK never saw the response". `str`-valued so it prints and logs cleanly. |
 | `Region` | type alias | One of `us`, `eu`, `ca`, `jp`. |
 | `RequestWindow` | class | The gateway's request-count window, `donkey.budget.requests`. |
-| `RunScope` | class | A **dual sync/async** context manager that binds the run correlation id to `_correlation_id` for the block. |
+| `RunScope` | class | A **dual sync/async** context manager that sets the run correlation id for the governed calls made in its block. |
 | `ToolSpec` | class | An introspectable record of a `@donkey.tool`-marked callable. |
 | `ToolsFacade` | class | `donkey.tools` — discovery + lock. |
 | `TypedRefusals` | class | Re-raise a refusal from the block as its typed `DonkeyError`. |

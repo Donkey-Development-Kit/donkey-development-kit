@@ -1,6 +1,6 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-10-10T20:48:54.292Z",
+  "generatedAt": "2026-10-09T08:26:36.609Z",
   "milestones": [
     {
       "number": 11,
@@ -1551,10 +1551,10 @@
     {
       "number": 20,
       "title": "Phase 1.2 — Stabilize the MVP (0.1.2)",
-      "state": "closed",
+      "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/20",
-      "open": 0,
-      "closed": 77,
+      "open": 1,
+      "closed": 75,
       "issues": [
         {
           "number": 706,
@@ -2084,15 +2084,8 @@
         {
           "number": 1057,
           "title": "Update release docs and version references for the 0.1.2 release",
-          "state": "closed",
+          "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1057",
-          "epic": false
-        },
-        {
-          "number": 1060,
-          "title": "ci: benchmark job fails on main pushes because the hermetic env strips DONKEY_BENCHMARK_JSON",
-          "state": "closed",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1060",
           "epic": false
         }
       ]
@@ -2102,8 +2095,8 @@
       "title": "Phase 1.3 — Stabilize the MVP (0.1.3)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/21",
-      "open": 17,
-      "closed": 8,
+      "open": 13,
+      "closed": 7,
       "issues": [
         {
           "number": 711,
@@ -2243,41 +2236,6 @@
           "title": "docs(site): add mermaid diagrams for classify() order and credential checks",
           "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1053",
-          "epic": false
-        },
-        {
-          "number": 1063,
-          "title": "docs: add a table of contents to the root and docs/ markdown files",
-          "state": "closed",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1063",
-          "epic": false
-        },
-        {
-          "number": 1065,
-          "title": "epic(ci): watch supported-framework releases, assess their impact, and publish supported versions",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1065",
-          "epic": true
-        },
-        {
-          "number": 1066,
-          "title": "ci: detect new framework releases and test each one in isolation against the PR lock",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1066",
-          "epic": false
-        },
-        {
-          "number": 1067,
-          "title": "ci: add an AI changelog impact review to the framework release watch",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1067",
-          "epic": false
-        },
-        {
-          "number": 1068,
-          "title": "docs: publish a generated framework version-compatibility page",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1068",
           "epic": false
         }
       ]
