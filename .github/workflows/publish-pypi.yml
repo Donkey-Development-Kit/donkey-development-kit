@@ -20,6 +20,23 @@ defaults:
     working-directory: python
 
 jobs:
+  test:
+    name: Test suite at the release commit
+    # #767: a Release can be published on a commit whose CI never went green,
+    # so the suite runs again here, on the exact commit being uploaded, before
+    # any upload. Same install and command as ci.yml's `test` job (3.11 leg).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/test-py3.11.txt
+      - run: pytest -q
+
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
@@ -35,6 +52,17 @@ jobs:
           python -m build
       - name: twine check (PyPI long description renders cleanly)
         run: twine check dist/*
+      - name: the tag is v<version> and every dist carries that version (#767)
+        # The version is declared once, in src/donkey_kit/__init__.py. A final
+        # (non-pre-release) Release must also carry a final X.Y.Z version: only
+        # those reach production PyPI. Event values go through env, never
+        # straight into the script (injection hardening).
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          if [ "$PRERELEASE" = "false" ]; then set -- --final; fi
+          python scripts/check_release_version.py --tag "$TAG" "$@" dist/*
       - name: no tenant identifiers or live platform hosts in the built dists (#821)
         # PyPI releases are immutable: this is the last chance to catch one.
         run: python scripts/scrub_fixtures.py --check dist/*
@@ -56,6 +84,8 @@ jobs:
             exit 1
           fi
           echo "Requires-Dist carries only >= floors."
+      - name: the built wheel installs and imports in a clean virtualenv (#767)
+        run: python scripts/smoke_test_wheel.py dist/*.whl
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -63,7 +93,9 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI (final release)
-    needs: build
+    # Every gate passes first: the suite at this commit, and the build job's
+    # tag/version check and clean-install smoke test (#767).
+    needs: [test, build]
     # Prod requires a *published, non-pre-release* GitHub Release. The explicit
     # event_name check means a manual dispatch can never reach prod — but this
     # workflow has no workflow_dispatch trigger at all, so that can't happen.
@@ -81,3 +113,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          # PEP 740 attestations, signed with this job's OIDC identity and
+          # uploaded with each file (#767). The action's default today; set
+          # explicitly so a default change can't drop them silently.
+          attestations: true

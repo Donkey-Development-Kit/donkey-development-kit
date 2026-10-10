@@ -19,6 +19,23 @@ defaults:
     working-directory: python
 
 jobs:
+  test:
+    name: Test suite at the release commit
+    # #767: a dispatch does not wait for develop's CI, so the suite runs again
+    # here, on the exact commit being uploaded, before any upload. Same install
+    # and command as ci.yml's `test` job (3.11 leg).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/test-py3.11.txt
+      - run: pytest -q
+
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
@@ -34,6 +51,10 @@ jobs:
           python -m build
       - name: twine check (PyPI long description renders cleanly)
         run: twine check dist/*
+      - name: every dist carries the declared version (#767)
+        # No tag here (dev snapshots are not GitHub Releases), but a stale or
+        # mis-spelled version must still fail before the unreusable upload.
+        run: python scripts/check_release_version.py dist/*
       - name: no tenant identifiers or live platform hosts in the built dists (#821)
         run: python scripts/scrub_fixtures.py --check dist/*
       - name: Floors, never ceilings (§8.4) — no upper pins in the built metadata
@@ -54,6 +75,8 @@ jobs:
             exit 1
           fi
           echo "Requires-Dist carries only >= floors."
+      - name: the built wheel installs and imports in a clean virtualenv (#767)
+        run: python scripts/smoke_test_wheel.py dist/*.whl
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -61,7 +84,9 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI (dev dry-run)
-    needs: build
+    # Every gate passes first: the suite at this commit, and the build job's
+    # version check and clean-install smoke test (#767).
+    needs: [test, build]
     # develop-scoped: a dispatch from any other ref is skipped — a dev snapshot
     # only ever ships from develop, matching the branch model.
     if: ${{ github.ref == 'refs/heads/develop' }}
@@ -79,3 +104,5 @@ jobs:
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist/
+          # PEP 740 attestations, as on production (#767).
+          attestations: true
