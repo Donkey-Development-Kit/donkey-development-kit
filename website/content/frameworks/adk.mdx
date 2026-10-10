@@ -26,7 +26,8 @@ of two ways, depending on the proxy's ingress **Format**:
   automatically. Supported at `connection_kwargs()`. LiteLLM gets a pre-built
   OpenAI `client` that sends through the SDK's shared HTTP client, so per-run
   correlation, retries, spans, `donkey.last_call` and the `jwt`-mode JWT apply
-  (see [Notes](#notes)).
+  (see [Notes](#notes)). Inside `donkey.run()` or `@donkey.governed`, a
+  refusal reaches your code as its typed Donkey error, such as `PIIDetected`.
 - For `gemini()`: the shared client injected through
   `HttpOptions.httpx_async_client`, round-trip verified live against a
   `Format=Gemini` proxy.
@@ -118,6 +119,11 @@ call, and its default is 2. An `api_base` /
 `base_url` passed to `model()` must pass the
 [`https://` rule](/reference/configuration#endpoints-must-use-https), and the
 adapter builds `client` on that URL.
+
+`model()` also sets ADK's `llm_client` to a `LiteLLMClient` subclass, which is
+what lets a refusal arrive typed (see [Notes](#notes)). `connection_kwargs()`
+leaves it out, so a `LiteLlm` you build yourself raises LiteLLM's own errors
+for a refusal. An `llm_client` you pass to `model()` replaces the SDK's.
 
 ## Native Gemini
 
@@ -248,9 +254,15 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   `after_model_callback` (see [Native Gemini](#native-gemini)). A cold read on
   a `Donkey` that resolved only ADK reports `UNOBSERVED`, and `OBSERVED` after
   a call, for `model()` as well as `gemini()`.
-- **Refusals on the `model()` path aren't converted to a typed error by the
-  SDK.** A refusal surfaces as a LiteLLM error whose `__cause__` chain
-  contains the `openai` `APIStatusError`; see the
+- **Refusals on the `model()` path are typed inside `donkey.run()` and
+  `@donkey.governed`.** LiteLLM re-raises a gateway refusal as its own error,
+  such as `litellm.exceptions.APIError`, without the gateway's response
+  headers. The `llm_client` that `model()` sets marks that error with the
+  refusal the SDK's transport received for the same call, and the
+  [typed-refusal bridge](/errors#typed-refusals-at-the-framework-boundary)
+  raises `PIIDetected`, `ModelSubstituted` or `GatewayUnavailable` in its
+  place, with LiteLLM's error on `framework_error`. Outside those scopes, and
+  without `typed_refusals()`, you get LiteLLM's error unchanged; see the
   [ADK examples](/examples/adk).
 - **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
   accepts `client_kwargs`; the `adk` extra declares that floor. On an older

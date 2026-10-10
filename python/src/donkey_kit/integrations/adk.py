@@ -13,7 +13,11 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   carries the run's correlation id and populates ``donkey.last_call`` (#740).
   ADK requires ``litellm>=1.84`` (floor, not ceiling). LiteLLM sets the
   client's ``max_retries`` on every call (default 2), so the kwarg goes to
-  LiteLLM itself (#734).
+  LiteLLM itself (#734). LiteLLM re-raises a gateway refusal around a response
+  it rebuilt, so ``model()`` also passes ADK's ``llm_client`` hook: a
+  ``LiteLLMClient`` subclass that tags the error with the typed refusal the
+  transport recorded for that call, which the typed-refusal bridge then raises
+  (#969). A ``LiteLlm`` built from ``connection_kwargs()`` does not get it.
 * ``gemini()`` — ADK's native ``google.adk.models.Gemini`` for a
   ``Format=Gemini`` proxy (#691). The native route is
   ``POST <proxy>/models/<model>:generateContent`` (#540); the model travels in
@@ -29,17 +33,19 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+import functools
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
 from ..core.masking import masked
+from ..core.refusals import capture_refusals
 from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
     from google.adk.models import Gemini
-    from google.adk.models.lite_llm import LiteLlm
+    from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
 
 __all__ = ["ADKAdapter", "gemini", "model"]
 
@@ -64,16 +70,16 @@ class ADKAdapter(Adapter):
     """
 
     # Both send through the shared client and observe donkey.last_call (#691,
-    # #946). model() has no typed refusals: LiteLLM re-raises a refusal around a
-    # response it rebuilt, which the bridge leaves alone (#724). Each factory has
-    # its own capabilities (#741, #726).
+    # #946). model()'s typed refusals come from its llm_client, which tags
+    # LiteLLM's error with the refusal the transport recorded for the call
+    # (#969). Each factory has its own capabilities (#741, #726).
     factories = MappingProxyType(
         {
             "model": AdapterCapabilities(
                 transport="shared",
                 sync=False,
                 streaming=True,
-                typed_refusals=False,
+                typed_refusals=True,
                 observes_last_call=True,
             ),
             "gemini": AdapterCapabilities(
@@ -138,11 +144,17 @@ class ADKAdapter(Adapter):
 
     def model(self, model: str, **kw: Any) -> LiteLlm:
         """Return ADK's ``LiteLlm`` at the proxy. An ``api_base``/``base_url``
-        override must pass the https check."""
+        override must pass the https check.
+
+        Its ``llm_client`` is a ``LiteLLMClient`` subclass that lets a gateway
+        refusal reach ``donkey.run()`` as its typed class (#969, see the module
+        docstring). An ``llm_client`` you pass replaces it, and the refusal
+        then stays LiteLLM's error."""
         self._allow_endpoints(kw, "api_base", "base_url")
         with self._native_import():
-            from google.adk.models.lite_llm import (
-                LiteLlm,  # VERIFY name/path: docs/verified-apis.md §8
+            from google.adk.models.lite_llm import (  # VERIFY name/path: docs/verified-apis.md §8
+                LiteLlm,
+                LiteLLMClient,
             )
 
         conn = self.connection_kwargs()
@@ -150,6 +162,7 @@ class ADKAdapter(Adapter):
         if override is not None and "client" in conn:
             # LiteLLM sends to the client's own base URL, so rebuild it there.
             conn["client"] = self._proxy_openai_client(str(override))
+        conn["llm_client"] = _governed_llm_client_class(LiteLLMClient)()
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
         return LiteLlm(model=f"openai/{model}", **{**conn, **kw})
 
@@ -177,6 +190,35 @@ class ADKAdapter(Adapter):
                 "Upgrade with: pip install -U 'donkey-kit[adk]'"
             )
         return Gemini(model=model, **{**conn, **kw})
+
+
+@functools.cache
+def _governed_llm_client_class(base: Any) -> type[LiteLLMClient]:
+    """The subclass of ADK's ``LiteLLMClient`` (``base``) that
+    :meth:`ADKAdapter.model` passes as ``llm_client``, defined on first use so
+    ``google.adk`` is imported lazily (§1.1).
+
+    ``LiteLlm`` awaits ``llm_client.acompletion`` for every model request,
+    streamed or not (docs/verified-apis.md §8). LiteLLM raises a gateway refusal
+    as its own error around a response it rebuilt (no gateway headers, no
+    cause), so the override opens a refusal capture around the call and tags
+    the error it raised with the typed error the transport recorded. The error
+    itself is re-raised unchanged; ``donkey.run()`` and ``typed_refusals()``
+    raise the tagged refusal in its place."""
+
+    class GovernedLiteLLMClient(base):
+        """ADK's ``LiteLLMClient``, with LiteLLM's errors tagged with the typed
+        refusal behind them (#969)."""
+
+        async def acompletion(self, *args: Any, **kwargs: Any) -> Any:
+            with capture_refusals() as capture:
+                try:
+                    return await super().acompletion(*args, **kwargs)
+                except Exception as exc:
+                    capture.tag(exc)
+                    raise
+
+    return GovernedLiteLLMClient
 
 
 def model(model: str, **kw: Any) -> LiteLlm:

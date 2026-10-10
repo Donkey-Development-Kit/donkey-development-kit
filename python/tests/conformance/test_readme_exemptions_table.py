@@ -38,7 +38,6 @@ _PUBLIC_ONLY = {"retries_token_budget"}
 # Table label -> the ADAPTERS keys the row names.
 _FRAMEWORKS = {
     "CrewAI": ("crewai",),
-    "ADK `model()`, CrewAI": ("adk", "crewai"),
 }
 
 

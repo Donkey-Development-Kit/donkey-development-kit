@@ -84,7 +84,7 @@
 - [Strands](https://docs.donkey-kit.dev/examples/strands.md): Four Strands Agents scripts — OpenAIModel on a pre-built governed client, the run id reaching a tool, typed refusals simulated and live.
 - [CrewAI](https://docs.donkey-kit.dev/examples/crewai.md): Two CrewAI scripts — donkey.crewai.llm() for a direct call and a one-agent crew, and typed refusals from CrewAI's native OpenAI provider.
 - [LlamaIndex](https://docs.donkey-kit.dev/examples/llamaindex.md): Two LlamaIndex scripts — an OpenAILike from donkey.llamaindex.llm() for complete() and chat(), and typed refusals from its unchanged openai errors.
-- [Google ADK](https://docs.donkey-kit.dev/examples/adk.md): Two Google ADK scripts — a LiteLlm model from donkey.adk.model() in an InMemoryRunner, and why a PII refusal is not typed on the LiteLLM path.
+- [Google ADK](https://docs.donkey-kit.dev/examples/adk.md): Two Google ADK scripts — a LiteLlm model from donkey.adk.model() in an InMemoryRunner, and a PII refusal raised outside donkey.run(), where it stays LiteLLM's error.
 - [Anthropic](https://docs.donkey-kit.dev/examples/anthropic.md): Two scripts for the native anthropic client from donkey.anthropic.client() — /v1/messages on a Format=Anthropic proxy with last_call, and typed refusals simulated in-process.
 - [Gemini](https://docs.donkey-kit.dev/examples/gemini.md): Two plain-httpx scripts against a Format=Gemini proxy — native generateContent, and an OpenAI-shaped request classified as UpstreamRequestError.
 

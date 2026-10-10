@@ -10,22 +10,23 @@ raises its own generic error: ``openai`` and ``anthropic`` an
 ``OpenAIPermissionDeniedError`` subclasses, and google-genai (under ADK's
 ``Gemini``) a ``ClientError``. The OpenAI Agents SDK, LlamaIndex and Strands
 sit on the ``openai`` client and raise its errors; Agent Framework wraps them in
-a ``ChatClientException``.
+a ``ChatClientException``. LiteLLM (under ADK's ``LiteLlm``) raises its own
+``APIError`` or ``InternalServerError`` around a response it rebuilt.
 
-Eight surfaces (the raw OpenAI client, the Anthropic client, a LangGraph graph,
+Ten surfaces (the raw OpenAI client, the Anthropic client, a LangGraph graph,
 an OpenAI Agents SDK ``Runner`` run, a LlamaIndex ``FunctionAgent`` run, an ADK
-``LlmAgent`` on ``adk.gemini()`` (#955), a Strands ``Agent`` and an Agent
-Framework ``Agent`` (#983)) times three errors, each raised by the real
-transport:
+``LlmAgent`` on ``adk.gemini()`` (#955) and on ``adk.model()``, buffered and
+streamed (#969), a Strands ``Agent`` and an Agent Framework ``Agent`` (#983))
+times three errors, each raised by the real transport:
 
 * ``PIIDetected`` — ``donkey.simulate(PIIDetected)`` serves the captured 403.
 * ``ModelSubstituted`` — with ``on_model_substitution="raise"``, a 200 whose
   served-model header names another model.
 * ``GatewayUnavailable`` — the transport cannot connect.
 
-Each runs in both scopes. ``importorskip``-guarded per framework. ``adk.model()``
-and CrewAI are exempt (``KNOWN_LIMITATIONS``), as their
-``capabilities().typed_refusals`` says (#726).
+Each runs in both scopes. ``importorskip``-guarded per framework. CrewAI is
+exempt (``KNOWN_LIMITATIONS``), as its ``capabilities().typed_refusals`` says
+(#726).
 """
 
 from __future__ import annotations
@@ -66,7 +67,7 @@ def _cfg() -> DonkeyConfig:
     )
 
 
-# --- the six surfaces -------------------------------------------------------
+# --- the surfaces ------------------------------------------------------------
 
 
 async def _openai(donkey: Donkey) -> None:
@@ -115,16 +116,38 @@ async def _llamaindex(donkey: Donkey) -> None:
     await agent.run(user_msg="hi")
 
 
-async def _adk_gemini(donkey: Donkey) -> None:
+async def _adk_run(model: Any, *, streaming: bool = False) -> None:
+    """One ``LlmAgent`` turn on ``model`` through ADK's ``InMemoryRunner``."""
     adk_agents = pytest.importorskip("google.adk.agents")
+    run_config = pytest.importorskip("google.adk.agents.run_config")
     runners = pytest.importorskip("google.adk.runners")
     types = pytest.importorskip("google.genai.types")
-    agent = adk_agents.LlmAgent(name="bridge", model=donkey.adk.gemini("gemini-2.5-flash"))
+    agent = adk_agents.LlmAgent(name="bridge", model=model)
     runner = runners.InMemoryRunner(agent=agent, app_name="bridge")
     session = await runner.session_service.create_session(app_name="bridge", user_id="u")
     message = types.Content(role="user", parts=[types.Part(text="hi")])
-    async for _ in runner.run_async(user_id="u", session_id=session.id, new_message=message):
+    mode = run_config.StreamingMode.SSE if streaming else run_config.StreamingMode.NONE
+    config = run_config.RunConfig(streaming_mode=mode)
+    async for _ in runner.run_async(
+        user_id="u", session_id=session.id, new_message=message, run_config=config
+    ):
         pass
+
+
+async def _adk_gemini(donkey: Donkey) -> None:
+    pytest.importorskip("google.adk.models")
+    await _adk_run(donkey.adk.gemini("gemini-2.5-flash"))
+
+
+async def _adk_model(donkey: Donkey) -> None:
+    pytest.importorskip("google.adk.models.lite_llm")
+    await _adk_run(donkey.adk.model("gpt-4o"))
+
+
+async def _adk_model_streamed(donkey: Donkey) -> None:
+    # LiteLlm awaits the same llm_client.acompletion for a streamed turn (#969).
+    pytest.importorskip("google.adk.models.lite_llm")
+    await _adk_run(donkey.adk.model("gpt-4o"), streaming=True)
 
 
 async def _strands(donkey: Donkey) -> None:
@@ -150,6 +173,8 @@ SURFACES: dict[str, Call] = {
     "openai_agents": _openai_agents,
     "llamaindex": _llamaindex,
     "adk.gemini": _adk_gemini,
+    "adk.model": _adk_model,
+    "adk.model.streamed": _adk_model_streamed,
     "strands": _strands,
     "agent_framework": _agent_framework,
 }
@@ -200,10 +225,10 @@ SCOPES = {"run": _in_run, "governed": _in_governed}
 
 def test_scenario_is_registered() -> None:
     assert "typed_refusal_bridged" in CONFORMANCE_SCENARIOS
-    # Only the adapters whose framework owns the transport are exempt: no
-    # response or transport error of theirs ever passes through the SDK.
+    # Only the adapter whose framework owns the transport is exempt: no
+    # response or transport error of its ever passes through the SDK.
     exempt = {a for a, limits in KNOWN_LIMITATIONS.items() if "typed_refusal_bridged" in limits}
-    assert exempt == {"adk", "crewai"}
+    assert exempt == {"crewai"}
 
 
 #: The adapter factory behind each surface; the raw OpenAI client is no adapter.
@@ -213,6 +238,8 @@ _FACTORIES = {
     "openai_agents": ("openai_agents", "model"),
     "llamaindex": ("llamaindex", "llm"),
     "adk.gemini": ("adk", "gemini"),
+    "adk.model": ("adk", "model"),
+    "adk.model.streamed": ("adk", "model"),
     "strands": ("strands", "model"),
     "agent_framework": ("agent_framework", "chat_client"),
 }
@@ -220,8 +247,8 @@ _FACTORIES = {
 
 def test_bridged_surfaces_declare_typed_refusals() -> None:
     # The factories that declare typed_refusals=True are exactly the surfaces
-    # proven below, and only the exempt adk.model() and CrewAI declare False
-    # (#726, #983), so the claim and the test cannot drift.
+    # proven below, and only the exempt CrewAI declares False (#726, #983,
+    # #969), so the claim and the test cannot drift.
     assert set(_FACTORIES) == set(SURFACES) - {"openai"}
     declared: dict[tuple[str, str], bool] = {}
     for attr, spec in ADAPTERS.items():
@@ -229,10 +256,7 @@ def test_bridged_surfaces_declare_typed_refusals() -> None:
         for factory, caps in getattr(module, spec.cls).factories.items():
             declared[(attr, factory)] = caps.typed_refusals
     assert {key for key, typed in declared.items() if typed} == set(_FACTORIES.values())
-    assert {key for key, typed in declared.items() if not typed} == {
-        ("adk", "model"),
-        ("crewai", "llm"),
-    }
+    assert {key for key, typed in declared.items() if not typed} == {("crewai", "llm")}
 
 
 @pytest.mark.parametrize("scope", SCOPES)
@@ -262,7 +286,8 @@ async def test_refusal_reaches_user_code_typed(
     # through as it is, so there is no wrapper to keep; under openai<3 the same
     # case arrives as an APIConnectionError and the bridge unwraps it.
     # google-genai (adk.gemini()) lets a transport-raised typed error through on
-    # every version.
+    # every version. LiteLLM (adk.model()) never does: every case arrives as its
+    # own error, kept on framework_error.
     assert type(excinfo.value) is error
     framework_error = excinfo.value.framework_error
     if error is PIIDetected:

@@ -33,6 +33,15 @@ importing any framework:
    rebuilds the group with the same shape and each translatable leaf replaced
    by its typed error, so ``except* PIIDetected`` works; a group with no
    translatable leaf propagates as it is.
+5. A link tagged by a :class:`RefusalCapture` stands for the typed error the
+   transport recorded for that call (#969). Some frameworks re-raise a refusal
+   around a response they rebuilt, so neither the chain nor the response leads
+   back to the governed one (LiteLLM, under ``donkey.adk.model()``). An adapter
+   opens :func:`capture_refusals` around one framework call; the transport
+   records each final outcome of a send in it (:func:`record_outcome`), and the
+   adapter tags the error the call raised with the last one before re-raising
+   it unchanged. Outside the bridge, the framework's error is what the caller
+   sees, as before.
 
 :class:`TypedRefusals` applies :func:`translate` on exit, as a sync or async
 context manager or a decorator. ``donkey.run()`` and ``@donkey.governed`` apply
@@ -43,17 +52,27 @@ form.
 from __future__ import annotations
 
 import builtins
+import contextlib
 import functools
 import inspect
 import logging
 import sys
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Iterator
+from contextvars import ContextVar
 from types import TracebackType
 from typing import Any, ParamSpec, TypeVar, cast
 
 from .errors import DonkeyError, ResponseLike, classify
 
-__all__ = ["Translator", "TypedRefusals", "translate"]
+__all__ = [
+    "RefusalCapture",
+    "Translator",
+    "TypedRefusals",
+    "capture_refusals",
+    "capturing",
+    "record_outcome",
+    "translate",
+]
 
 _log = logging.getLogger(__name__)
 
@@ -124,6 +143,9 @@ def _translate_one(exc: BaseException, hooks: tuple[Translator, ...]) -> DonkeyE
         seen.add(id(link))
         if isinstance(link, DonkeyError):
             return link
+        tagged = getattr(link, _TAG, None)
+        if isinstance(tagged, DonkeyError):
+            return tagged
         for hook in hooks:
             try:
                 typed = hook(link)
@@ -233,6 +255,81 @@ def _carries_http(exc: BaseException) -> bool:
     """Whether ``exc`` has the shape of an HTTP SDK's error: a ``request`` or a
     ``response`` attribute. Only such links are walked through."""
     return _attr(exc, "request") is not None or _attr(exc, "response") is not None
+
+
+# The attribute :meth:`RefusalCapture.tag` sets on a framework error. An
+# attribute rather than a weak map: the typed error later holds the framework
+# error on ``framework_error``, and a weak map's value must not refer to its key.
+_TAG = "__donkey_refusal__"
+
+_capture: ContextVar[RefusalCapture | None] = ContextVar("donkey_refusal_capture", default=None)
+
+
+class RefusalCapture:
+    """The typed outcome of the governed sends made during one framework call
+    (#969), opened by :func:`capture_refusals`.
+
+    ``error`` is the typed error of the last final response or failed send the
+    transport recorded, or ``None`` when the last one succeeded (or none was
+    sent). A send that started in the call and settles after it closed is not
+    recorded.
+    """
+
+    __slots__ = ("_open", "error")
+
+    def __init__(self) -> None:
+        self.error: DonkeyError | None = None
+        self._open = True
+
+    def close(self) -> None:
+        """Stop recording: the framework call is over."""
+        self._open = False
+
+    def record(self, error: DonkeyError | None) -> None:
+        """Keep ``error`` as the call's outcome, unless the capture is closed."""
+        if self._open:
+            self.error = error
+
+    def tag(self, exc: BaseException) -> None:
+        """Mark ``exc``, the error the framework call raised, as standing for the
+        recorded typed error, so :func:`translate` returns it. Does nothing when
+        no error was recorded, and never raises."""
+        if self.error is None or exc is self.error:
+            return
+        try:
+            setattr(exc, _TAG, self.error)
+        except (AttributeError, TypeError):  # an exception type without a __dict__
+            _log.debug("cannot tag %r with its refusal", type(exc), exc_info=True)
+
+
+@contextlib.contextmanager
+def capture_refusals() -> Iterator[RefusalCapture]:
+    """Record the typed outcome of every governed send in the block (#969).
+
+    For an adapter whose framework drops the governed response from the error
+    it raises: wrap one framework call, then :meth:`RefusalCapture.tag` the
+    error it raised. Captures nest; the innermost one records."""
+    capture = RefusalCapture()
+    token = _capture.set(capture)
+    try:
+        yield capture
+    finally:
+        capture.close()
+        _capture.reset(token)
+
+
+def capturing() -> bool:
+    """Whether a :func:`capture_refusals` block is open in this context."""
+    return _capture.get() is not None
+
+
+def record_outcome(error: DonkeyError | None) -> None:
+    """Record a governed send's final outcome in the open capture: its typed
+    error, or ``None`` for a success. Called by the transport; a no-op outside
+    :func:`capture_refusals`."""
+    capture = _capture.get()
+    if capture is not None:
+        capture.record(error)
 
 
 class TypedRefusals:

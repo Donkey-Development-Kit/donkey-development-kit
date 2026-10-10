@@ -560,6 +560,17 @@ recovers the typed error by duck type, without importing any framework.
 - stops at a link that carries no HTTP request or response, such as the
   user's own re-wrap or a bug in a handler, and leaves the error alone.
 
+Right after the `DonkeyError` check, a link tagged by a refusal capture returns its tag (#969). LiteLLM
+re-raises a refusal around a response it rebuilt, with no cause and no gateway
+headers, so nothing on the error leads back to our transport. For such a
+framework the adapter opens `capture_refusals()` around one framework call (ADK's
+`model()` does it in the `LiteLLMClient` it passes as `llm_client`). The governed
+pipeline records each send's typed outcome there: the classified error of a
+non-2xx final response, the `ModelSubstituted` it raises, the
+`GatewayUnavailable` or lifecycle `ConfigError` of a failed send, and `None` for
+a success. The adapter tags the error the call raised with the last outcome and
+re-raises it unchanged, so the tag only ever holds what our transport saw.
+
 A framework wrapper that carries no HTTP shape is seen through by an optional
 per-adapter translator, named by `AdapterSpec.refusal_translator` in
 `integrations/__init__.py`. It is loaded only once that framework has been
@@ -617,8 +628,9 @@ through the shared client (`http_client` / `async_http_client`, an
 exemptions are gone (#740). Only CrewAI remains: its native OpenAI provider
 builds the sync `OpenAI` and the `AsyncOpenAI` from one `client_params` dict,
 and with an interceptor set it replaces `http_client` with its own `httpx`
-client, so the SDK's async client cannot be injected. ADK's `model()` keeps one
-exemption, `typed_refusal_bridged` (#724). `tests/unit/test_adapter_roster.py`
+client, so the SDK's async client cannot be injected. ADK's `model()` had one
+more exemption, `typed_refusal_bridged` (#724), until its refusal capture
+bridged it (#969). `tests/unit/test_adapter_roster.py`
 keeps the table and each adapter's `AdapterCapabilities` equal:
 `gateway_identity_observed` is exempt exactly when `observes_last_call` is false,
 `typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
