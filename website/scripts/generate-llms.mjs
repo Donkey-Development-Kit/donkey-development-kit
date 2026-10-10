@@ -8,7 +8,8 @@
 // `_meta.js` tree, content + description from each `.mdx` and its frontmatter.
 // The frontmatter `status:` (lib/status.mjs, #797) is shown in each llms.txt
 // entry and under the H1 of each per-page .md, as the rendered badge is on the
-// site; a page with a missing or unknown status fails the run.
+// site (and, like the badge, left out for `statusBadge: false` pages); a page
+// with a missing or unknown status fails the run.
 // This script owns NO copy of the content — it only transforms what already
 // ships on the site, so it can never invent an endpoint/header/class name the
 // pages don't already document (verification discipline). CI regenerates and fails on any diff
@@ -250,7 +251,11 @@ async function main() {
       section = page.section
       indexLines.push('', `## ${section}`, '')
     }
-    const desc = `: (status: ${page.status.status})${page.description ? ` ${page.description}` : ''}`
+    // `statusBadge: false` pages document no SDK surface, so they carry no
+    // status here either, as withStatusLine leaves their .md alone.
+    const parts = [page.status.badge && `(status: ${page.status.status})`, page.description]
+    const text = parts.filter(Boolean).join(' ')
+    const desc = text ? `: ${text}` : ''
     indexLines.push(`- [${page.title}](${page.mdUrl})${desc}`)
   }
   indexLines.push('')

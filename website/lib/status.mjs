@@ -35,9 +35,9 @@ export const STATUSES = {
   },
 }
 
-// `statusBadge: false` in a page's frontmatter keeps its status (for llms.txt)
-// but renders no badge. It is for pages that document no SDK surface: the
-// landing page, the roadmap and the community pages.
+// `statusBadge: false` in a page's frontmatter renders no badge, and the page's
+// llms.txt entry and .md carry no status either. It is for pages that document
+// no SDK surface: the landing page, the roadmap and the community pages.
 /**
  * @param {Record<string, unknown> | undefined} frontmatter
  * @param {string} [where]

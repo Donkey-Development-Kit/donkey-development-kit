@@ -152,8 +152,12 @@ The page-level badge is rendered from that value (see
 `llms.txt` and under the H1 of each per-page `.md`, so don't hand-write a
 `<Badge>` under the H1. `statusBadge: false` hides the badge on pages that
 document no SDK surface (the landing page, the roadmap, the community pages).
-Inline badges in tables, cards and legends are still written by hand. A
-missing or unknown status fails `npm test`, `node scripts/generate-llms.mjs`
+Inline badges in tables, cards and legends are still written by hand. A page
+is rated by the surface its main code uses (a scenario built on
+`donkey.langgraph.chat_model(...)` is `offline-verified`, like the framework
+pages); when one section of a page stands on a weaker ledger row than the rest,
+that section carries its own inline badge, as the framework card on the
+Feature overview does. A missing or unknown status fails `npm test`, `node scripts/generate-llms.mjs`
 and `npm run build`.
 
 The status is also what the Python snippet check reads

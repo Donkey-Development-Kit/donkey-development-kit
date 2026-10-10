@@ -4,7 +4,7 @@
 
 ## Get started
 
-- [Introduction](https://docs.donkey-kit.dev/index.md): (status: live) Governed by the gateway, understood by your code. DDK brings Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
+- [Introduction](https://docs.donkey-kit.dev/index.md): Governed by the gateway, understood by your code. DDK brings Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
 - [Quickstart](https://docs.donkey-kit.dev/quickstart.md): (status: live) From pip install to a governed model call, a typed refusal, a budget and an OpenTelemetry span — locally, with no gateway and no credentials.
 - [Feature overview](https://docs.donkey-kit.dev/feature-overview.md): (status: live) Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by pillar.
 
@@ -55,7 +55,7 @@
 ## Scenarios
 
 - [Overview](https://docs.donkey-kit.dev/scenarios.md): (status: live) Three end-to-end walkthroughs — support triage, an overnight batch job, and an internal copilot — each showing the governance layer a bare base_url cannot give you.
-- [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md): (status: live) Draft replies to a queue of support tickets, one carrying PII, with typed refusals, correlation IDs, and OTel spans — the shipped LangGraph demo, end to end, no gateway.
+- [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md): (status: offline-verified) Draft replies to a queue of support tickets, one carrying PII, with typed refusals, correlation IDs, and OTel spans — the shipped LangGraph demo, end to end, no gateway.
 - [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md): (status: live) Enrich tens of thousands of records overnight against a windowed token budget, unattended — pacing before the wall and resuming after the window resets, tested end to end against the simulator.
 - [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md): (status: live) An internal assistant whose output must clear a content-safety guardrail — the ContentSafetyBlocked branch driven by the simulator, with per-run correlation joining the refusal to your logs.
 
@@ -90,12 +90,12 @@
 
 ## Roadmap
 
-- [Roadmap](https://docs.donkey-kit.dev/roadmap.md): (status: live) Where DDK is going — five phases in order, each with its goal, live progress and the issues in its milestone.
+- [Roadmap](https://docs.donkey-kit.dev/roadmap.md): Where DDK is going — five phases in order, each with its goal, live progress and the issues in its milestone.
 
 ## Community
 
-- [Team](https://docs.donkey-kit.dev/community/team.md): (status: live) The people behind the Donkey Development Kit — its creators and contributors.
-- [Contribute](https://docs.donkey-kit.dev/community/contribute.md): (status: live) How to contribute to DDK — issues, docs, examples and code — from filing an issue to a merged pull request.
+- [Team](https://docs.donkey-kit.dev/community/team.md): The people behind the Donkey Development Kit — its creators and contributors.
+- [Contribute](https://docs.donkey-kit.dev/community/contribute.md): How to contribute to DDK — issues, docs, examples and code — from filing an issue to a merged pull request.
 
 ## Reference
 
