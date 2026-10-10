@@ -1,8 +1,9 @@
 """Remind a PR that changes an SDK surface to update its mapped docs page (#797).
 
 ``CONTRIBUTING.md`` §4 (the docs-sync rule) maps each code surface under
-``python/src/donkey_kit/`` to the ``website/content/`` page(s) that describe
-it. This script is that map as data. Given the files a PR changed, it lists
+``python/src/donkey_kit/`` (plus the verification ledger and the root
+``README.md``) to the ``website/content/`` page(s) that describe it. This
+script is that map as data. Given the files a PR changed, it lists
 every surface whose code changed while none of its mapped pages did: the PR
 then either updates the page or links a ``documentation`` follow-up issue.
 
@@ -33,13 +34,20 @@ _PAGES = "website/content/"
 
 @dataclass(frozen=True)
 class Surface:
-    """A set of code paths and the docs pages that must move with them."""
+    """A set of code paths and the docs pages that must move with them.
+
+    ``code`` patterns are relative to ``python/src/donkey_kit/``; ``files`` are
+    repo-root paths outside the package (the ledger, the root README).
+    """
 
     code: tuple[str, ...]
     pages: tuple[str, ...]
+    files: tuple[str, ...] = ()
 
     def matches(self, path: str) -> bool:
-        return any(fnmatch.fnmatchcase(path, _SRC + pattern) for pattern in self.code)
+        return path in self.files or any(
+            fnmatch.fnmatchcase(path, _SRC + pattern) for pattern in self.code
+        )
 
     @property
     def page_paths(self) -> tuple[str, ...]:
@@ -50,9 +58,10 @@ def _framework(module: str, *pages: str) -> Surface:
     return Surface((f"integrations/{module}.py",), pages)
 
 
-#: CONTRIBUTING.md §4's surface -> page map. Patterns are relative to
-#: python/src/donkey_kit/, pages to website/content/; any one listed page
-#: changing satisfies the surface. Keep the two in step.
+#: CONTRIBUTING.md §4's surface -> page map, every row of it. Code patterns are
+#: relative to python/src/donkey_kit/, ``files`` to the repo root, pages to
+#: website/content/; any one listed page changing satisfies the surface. Keep
+#: the two in step, and keep the workflow's ``paths:`` covering ``files``.
 SURFACES: tuple[Surface, ...] = (
     Surface(("core/errors.py",), ("errors.mdx",)),
     Surface(
@@ -62,6 +71,7 @@ SURFACES: tuple[Surface, ...] = (
     Surface(
         ("core/_verify.py",),
         ("reference/unsupported-boundary.mdx", "roadmap.mdx", "frameworks/index.mdx"),
+        files=("docs/verified-apis.md", "docs/unsupported-boundary.md"),
     ),
     Surface(("core/budget.py",), ("budget.mdx",)),
     Surface(("core/telemetry.py", "core/cost.py"), ("telemetry.mdx",)),
@@ -69,6 +79,7 @@ SURFACES: tuple[Surface, ...] = (
     Surface(("llm/*.py",), ("quickstart.mdx", "feature-overview.mdx")),
     Surface(("simulator/*.py",), ("simulator.mdx",)),
     Surface(("conformance/*.py",), ("testing.mdx",)),
+    Surface(("donkey.py",), ("quickstart.mdx", "testing.mdx", "reference/configuration.mdx")),
     Surface(("integrations/__init__.py", "integrations/_base.py"), ("frameworks/index.mdx",)),
     _framework("adk", "frameworks/adk.mdx", "examples/adk.mdx"),
     _framework("agent_framework", "frameworks/agent-framework.mdx", "examples/agent-framework.mdx"),
@@ -91,6 +102,7 @@ SURFACES: tuple[Surface, ...] = (
     Surface(("tools/session.py",), ("tool-access/binding.mdx",)),
     Surface(("cli/*.py",), ("cli.mdx",)),
     Surface(("experimental.py",), ("reference/unsupported-boundary.mdx",)),
+    Surface((), ("quickstart.mdx", "index.mdx"), files=("README.md",)),
 )
 
 

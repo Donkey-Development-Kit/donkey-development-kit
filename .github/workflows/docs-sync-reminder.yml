@@ -9,6 +9,9 @@ on:
   pull_request:
     paths:
       - python/src/donkey_kit/**
+      - docs/verified-apis.md
+      - docs/unsupported-boundary.md
+      - README.md
 
 permissions:
   contents: read

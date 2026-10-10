@@ -46,6 +46,9 @@ _SRC = "python/src/donkey_kit/"
         (f"{_SRC}integrations/_base.py", "website/content/frameworks/index.mdx"),
         (f"{_SRC}core/config.py", "website/content/reference/configuration.mdx"),
         (f"{_SRC}cli/doctor.py", "website/content/cli.mdx"),
+        (f"{_SRC}donkey.py", "website/content/testing.mdx"),
+        ("docs/verified-apis.md", "website/content/reference/unsupported-boundary.mdx"),
+        ("README.md", "website/content/quickstart.mdx"),
     ],
 )
 def test_code_only_change_to_a_mapped_surface_fires(changed: str, page: str) -> None:
@@ -65,7 +68,8 @@ def test_any_one_listed_page_satisfies_the_surface() -> None:
 
 
 def test_unmapped_changes_are_silent() -> None:
-    assert sync.reminders(["python/tests/unit/test_x.py", "README.md", f"{_SRC}py.typed"]) == []
+    changed = ["python/tests/unit/test_x.py", "CHANGELOG.md", "docs/adr/x.md", f"{_SRC}py.typed"]
+    assert sync.reminders(changed) == []
 
 
 def test_several_files_of_one_surface_give_one_reminder() -> None:
@@ -93,7 +97,21 @@ def test_every_code_pattern_matches_a_real_file() -> None:
         for pattern in surface.code
         if not any(sync.Surface((pattern,), ()).matches(path) for path in files)
     ]
+    missing = [
+        path for surface in sync.SURFACES for path in surface.files if not (_ROOT / path).is_file()
+    ]
     assert dead == []
+    assert missing == []
+
+
+@_needs_tree
+def test_workflow_paths_cover_every_repo_root_file() -> None:
+    # A `files` entry the workflow's `paths:` filter leaves out could never fire.
+    workflow = (_ROOT / ".github" / "workflows" / "docs-sync-reminder.yml").read_text("utf-8")
+    uncovered = [
+        path for surface in sync.SURFACES for path in surface.files if f"- {path}\n" not in workflow
+    ]
+    assert uncovered == []
 
 
 @_needs_tree
