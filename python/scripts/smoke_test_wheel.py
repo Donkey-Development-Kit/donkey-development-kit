@@ -13,11 +13,14 @@ workflows run this on the exact wheel they are about to upload. It:
   site-packages and that ``__version__`` equals the installed distribution's
   version and the expected one.
 
-    python scripts/smoke_test_wheel.py WHEEL [--expect-version VERSION]
+    python scripts/smoke_test_wheel.py dist/*.whl [--expect-version VERSION]
 
-``--expect-version`` defaults to the version in the wheel's filename. Extra
-arguments after ``--`` go to ``pip install`` (the unit test passes
-``--no-index`` to stay offline). Exits non-zero on any failure.
+The workflows pass a glob, so it must expand to exactly one wheel: a second
+one (a stale file, or a platform wheel nobody planned for) is an error rather
+than something to install alongside and leave unchecked.
+``--expect-version`` defaults to the version in the wheel's filename. Each
+``--pip-arg=ARG`` is passed through to ``pip install`` (the unit test passes
+``--pip-arg=--no-index`` to stay offline). Exits non-zero on any failure.
 """
 
 from __future__ import annotations
@@ -87,14 +90,27 @@ def smoke_test(wheel: Path, expected: str, pip_args: Sequence[str] = ()) -> None
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("wheel", type=Path, help="the built .whl to install")
+    parser.add_argument("wheels", type=Path, nargs="+", help="the built .whl (exactly one)")
     parser.add_argument("--expect-version", help="defaults to the wheel filename's version")
-    parser.add_argument("pip_args", nargs="*", help="extra `pip install` arguments, after --")
+    parser.add_argument(
+        "--pip-arg",
+        action="append",
+        default=[],
+        dest="pip_args",
+        metavar="ARG",
+        help="extra `pip install` argument; repeatable (write --pip-arg=--flag)",
+    )
     args = parser.parse_args(argv)
 
-    expected = args.expect_version or wheel_version(args.wheel)
+    if len(args.wheels) != 1:
+        names = ", ".join(w.name for w in args.wheels)
+        count = len(args.wheels)
+        print(f"error: expected exactly one wheel, got {count}: {names}", file=sys.stderr)
+        return 1
+    (wheel,) = args.wheels
+    expected = args.expect_version or wheel_version(wheel)
     try:
-        smoke_test(args.wheel, expected, args.pip_args)
+        smoke_test(wheel, expected, args.pip_args)
     except subprocess.CalledProcessError as exc:
         print(f"error: wheel smoke test failed ({exc})", file=sys.stderr)
         return 1

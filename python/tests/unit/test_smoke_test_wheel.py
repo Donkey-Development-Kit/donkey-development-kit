@@ -74,7 +74,7 @@ def test_a_good_wheel_installs_and_imports(
     tmp_path: Path, capfd: pytest.CaptureFixture[str]
 ) -> None:
     wheel = _wheel(tmp_path, version="9.8.7", declared="9.8.7")
-    assert smoke.main([str(wheel), "--", "--no-index"]) == 0
+    assert smoke.main([str(wheel), "--pip-arg=--no-index"]) == 0
     assert "donkey-kit 9.8.7 installs and imports from" in capfd.readouterr().out
 
 
@@ -85,12 +85,21 @@ def test_a_wheel_whose_version_disagrees_fails(
     # The wheel metadata says 9.8.7, but the code inside reports 9.8.6: the
     # exact drift a two-file version allowed.
     wheel = _wheel(tmp_path, version="9.8.7", declared="9.8.6")
-    assert smoke.main([str(wheel), "--", "--no-index"]) == 1
+    assert smoke.main([str(wheel), "--pip-arg=--no-index"]) == 1
     assert "__version__ '9.8.6', installed '9.8.7'" in capfd.readouterr().err
 
 
 @pytest.mark.timeout(180)
 def test_an_unexpected_version_fails(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
     wheel = _wheel(tmp_path, version="9.8.7", declared="9.8.7")
-    assert smoke.main([str(wheel), "--expect-version", "9.8.8", "--", "--no-index"]) == 1
+    assert smoke.main([str(wheel), "--expect-version", "9.8.8", "--pip-arg=--no-index"]) == 1
     assert "expected '9.8.8'" in capfd.readouterr().err
+
+
+def test_more_than_one_wheel_is_refused(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
+    # ``dist/*.whl`` matching a stale second wheel must fail loudly, not
+    # install both and check only the first.
+    first = _wheel(tmp_path, version="9.8.7", declared="9.8.7")
+    stale = _wheel(tmp_path, version="9.8.6", declared="9.8.6")
+    assert smoke.main([str(first), str(stale), "--pip-arg=--no-index"]) == 1
+    assert "expected exactly one wheel, got 2" in capfd.readouterr().err
