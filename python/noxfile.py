@@ -101,6 +101,9 @@ CI_INSTALLS: dict[str, str | None] = {
 }
 
 # The matrices of ci.yml's matrix jobs, in its order (test_noxfile.py checks).
+# The ids are the matrix values, so CI names a leg as "<job>($VAR)". Both
+# anthropic legs map to one venv directory (.nox/anthropic-stacks-anthropic-1);
+# installs rerun per leg, so only -R (no reinstall) across the two is unsafe.
 TEST_PYTHONS = ["3.10", "3.11", "3.12"]
 ANTHROPIC_SPECS = ["anthropic>=1", "anthropic<1"]
 ADK_SPECS = ["google-adk>=2.4", "google-adk==2.4.0"]
