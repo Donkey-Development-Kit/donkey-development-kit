@@ -44,6 +44,17 @@ owns. The gateway — not the SDK — enforces policy.
 
 ---
 
+<!-- toc -->
+**Contents**
+
+- [Layered architecture](#layered-architecture)
+  - [How the pieces connect](#how-the-pieces-connect)
+- [Verification discipline](#verification-discipline)
+- [Error-taxonomy design (BG §1.2)](#error-taxonomy-design-bg-12)
+- [Adapter support depth (BG §1.8)](#adapter-support-depth-bg-18)
+- [Related documents](#related-documents)
+<!-- tocstop -->
+
 ## Layered architecture
 
 The package is a strict stack. Higher layers depend on lower layers; **no lower
