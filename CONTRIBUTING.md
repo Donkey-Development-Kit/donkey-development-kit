@@ -181,7 +181,10 @@ find yourself on `main` about to start work, `git checkout develop` first.
 **Use a worktree when there's any chance of a parallel session** (another editor
 window, a running dev server, a `pytest --looponfail` holding files): one issue =
 one branch = one worktree. A fresh worktree has no installed venv/extras — run
-`pip install -e ".[llm,cli]" --group dev` in its `python/` before testing.
+`pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt`
+in its `python/` before testing. On Python 3.11 that installs the same pinned
+versions as the `typecheck-and-lint` job, so `mypy`, `ruff` and `lint-imports`
+give CI's result (#763).
 
 **No workarounds for prerequisites.** If work on issue #N turns out to need an
 out-of-scope change first (a missing `core/` primitive, a verification unblock),
@@ -606,7 +609,8 @@ failure — don't "fix" the script to make a genuinely-blocked adapter pass.
 
 ```bash
 # from python/
-pip install -e ".[llm,cli]" --group dev   # what CI installs (pip 25.1+)
+pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt
+                                     # the typecheck-and-lint job's install (Python 3.11, pip 25.1+)
 pytest -q                            # full suite
 pytest -q tests/unit                 # unit only (the base-only CI job)
 pytest -q -m local_gateway           # opt-in local-gateway tests
@@ -629,8 +633,13 @@ build plan has the rationale behind each rule:
   `X | None` over `Optional[X]` (ruff `UP` rewrites the old form), and put
   `from __future__ import annotations` at the top of every module (ruff `I002`).
   Don't silence a real signature mismatch with an unexplained `# type: ignore`
-  — the single `[[tool.mypy.overrides]]` block already handles optional/absent
-  framework deps.
+  — the `follow_imports = "skip"` override in `pyproject.toml` already makes
+  every optional framework extra `Any`, whether or not it is installed, so
+  `mypy` gives the same result in a `.[llm,cli]` venv and in one with every
+  extra (#763). The adapters' real framework signatures are checked by the
+  `adapter-contract` jobs and `scripts/verify_frameworks.py`, not by mypy.
+  A new extra's import module joins that override in the same PR
+  (`tests/unit/test_house_style_config.py` checks it).
 - **Framework-free core & lazy imports.** `core/` depends on **httpx only** (the
   build plan allows pydantic too, but core imports none) — no agent framework,
   ever. Adapters import their framework **lazily,

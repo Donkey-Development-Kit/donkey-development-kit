@@ -166,10 +166,11 @@ jobs:
       - name: mypy --strict (blocking, working instruction #8)
         run: mypy
       # #721: the examples are user-facing code, so they get the same --strict
-      # config, one directory per invocation (each is its own program). The
-      # framework extras are absent here, so their imports resolve through the
-      # absence-only overrides in pyproject.toml. LangGraph is the exception: it
-      # is not in those overrides and is checked against the real package in the
+      # config, one directory per invocation (each is its own program). mypy
+      # never follows a framework extra (the follow_imports = "skip" override
+      # in pyproject.toml, #763), installed or not, so this gives the same
+      # result in a venv with every extra. LangGraph is the exception: it is
+      # not in that override and is checked against the real package in the
       # langgraph-demo job below.
       - name: mypy --strict over python/examples (#721)
         run: |

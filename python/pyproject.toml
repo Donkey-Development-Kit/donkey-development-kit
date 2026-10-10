@@ -216,15 +216,21 @@ python_version = "3.10"
 files = ["src/donkey_kit", "tests/typecheck"]
 
 [[tool.mypy.overrides]]
-# Optional deps may be absent (CI installs only [llm,cli] + the dev group) or ship no stubs;
-# neither should fail the base typecheck. opentelemetry IS typed when the [otel]
-# extra is present, so it is listed here for absence only — telemetry.py must not
-# carry an inline ignore that goes stale the moment someone installs it.
-# tomli is the <3.11 tomllib backfill (core/config.py): mypy targets
-# py3.10 so it analyzes the `import tomli` branch, but CI runs on 3.11 where tomli
-# is not installed — absence only, same rationale as the framework extras above.
+# Optional extras are never followed, installed or not (#763), so `mypy` gives the
+# same result in the typecheck job's [llm,cli] + dev venv and in a venv with
+# every extra. Before this, mypy followed whatever happened to be installed: a
+# venv with a framework extra type-checked the adapters against that release's
+# own annotations (and once reached numpy's 3.12-only `type` statements through
+# a framework, failing at the 3.10 target), while CI checked them against Any.
+# `skip` makes the CI behaviour the only behaviour: each package below is Any
+# whether or not it is present, and the adapters' real signatures are checked
+# by the adapter-contract jobs and scripts/verify_frameworks.py (§8), not here.
+# `follow_imports_for_stubs` extends the skip to packages that ship .pyi files
+# (numpy, opentelemetry). tests/unit/test_house_style_config.py keeps every
+# optional extra outside [llm,cli] in this list. langgraph itself is NOT listed:
+# src/ never imports it, and the langgraph-demo job checks examples/langgraph
+# against the real package.
 module = [
-    "tomli",
     "langchain_openai.*",
     "langchain_core.*",
     "opentelemetry.*",
@@ -242,8 +248,22 @@ module = [
     # public return type is a framework-free Protocol, so no Any leaks out.
     "starlette.*",
     "uvicorn.*",
-    # httpx2 is typed, and arrives with openai>=3 or anthropic>=1.0; listed for
-    # absence only, under an older openai with no anthropic (#701).
+    # Never imported by src/, but reachable through a framework's own imports.
+    "numpy.*",
+]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Absence only: these are part of the typecheck environment and typed, so mypy
+# follows them when present. tomli is the <3.11 tomllib backfill (core/config.py):
+# mypy targets py3.10 so it analyzes the `import tomli` branch, but it may be
+# absent on 3.11+. httpx2 arrives with openai>=3 or anthropic>=1.0 and
+# tests/typecheck/ checks against its real types; it is absent under an older
+# openai with no anthropic (#701).
+module = [
+    "tomli",
     "httpx2.*",
 ]
 ignore_missing_imports = true

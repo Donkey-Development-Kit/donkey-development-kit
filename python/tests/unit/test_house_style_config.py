@@ -130,6 +130,36 @@ def test_every_published_extra_is_imported_by_src() -> None:
     assert unused == [], f"extras no module in src/ imports: {unused}"
 
 
+# The extras the typecheck-and-lint job installs ([llm,cli] + the dev group,
+# which carries pytest): mypy checks src/ against their real types.
+_TYPECHECKED_EXTRAS = frozenset({"llm", "cli", "test"})
+
+
+def test_mypy_never_follows_an_optional_extra() -> None:
+    """mypy gives one result whichever extras are installed (#763).
+
+    Every extra the typecheck job does not install has its import module in
+    the `follow_imports = "skip"` override, so a venv with `.[all]` checks
+    src/ exactly as CI's `.[llm,cli]` venv does. Without it, mypy follows an
+    installed framework into numpy's stubs and fails at the 3.10 target.
+    """
+    overrides = _pyproject()["tool"]["mypy"]["overrides"]
+    skipped = [o for o in overrides if o.get("follow_imports") == "skip"]
+    assert len(skipped) == 1, "keep one follow_imports = 'skip' override"
+    (override,) = skipped
+    # Without this, packages that ship .pyi stubs (numpy, opentelemetry) are
+    # still followed.
+    assert override.get("follow_imports_for_stubs") is True
+    modules = set(override["module"])
+    missing = sorted(
+        f"{module}.*"
+        for extra, module in _EXTRA_IMPORTS.items()
+        if extra not in _TYPECHECKED_EXTRAS and f"{module}.*" not in modules
+    )
+    assert missing == [], f"add to the follow_imports = 'skip' override: {missing}"
+    assert "numpy.*" in modules, "numpy is reached through the frameworks' own imports"
+
+
 def test_all_extra_installs_no_test_runner_or_linter() -> None:
     """`[all]` is everything a user runs, not contributor tooling (#744)."""
     extras = _pyproject()["project"]["optional-dependencies"]
