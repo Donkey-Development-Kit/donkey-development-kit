@@ -3,7 +3,8 @@
 A snippet with a misspelt field raises ``TypeError`` for whoever copies it.
 ``Donkey.from_env`` takes the cost-tag shorthands, ``path`` and any
 ``DonkeyConfig`` field (#727); ``DonkeyConfig.resolve`` takes ``path`` and any
-field; ``DonkeyConfig.from_env`` takes nothing.
+field; ``DonkeyConfig.from_env`` takes nothing. Annotated parameters in a
+signature block are not calls, so they are not checked.
 """
 
 from __future__ import annotations
@@ -26,7 +27,13 @@ _DOC_GLOBS = (
     "website/content/**/*.mdx",
 )
 _CALL = re.compile(r"\b(Donkey\.from_env|DonkeyConfig\.from_env|DonkeyConfig\.resolve)\(([^()]*)\)")
-_KWARG = re.compile(r"\b(\w+)\s*=")
+_KWARG = re.compile(r"^\s*(\w+)\s*=(?!=)")
+
+
+def _kwargs(args: str) -> set[str]:
+    # A signature block (the generated API page, #795) annotates its parameters,
+    # ``team: str | None = None``; only a bare ``name=`` is a keyword argument.
+    return {m.group(1) for part in args.split(",") if (m := _KWARG.match(part))}
 
 
 def _doc_files() -> list[Path]:
@@ -55,7 +62,7 @@ def test_docs_from_env_calls_use_real_kwargs() -> None:
     for path in _doc_files():
         for match in _CALL.finditer(path.read_text(encoding="utf-8")):
             owner, args = match.groups()
-            unknown = set(_KWARG.findall(args)) - accepted[owner]
+            unknown = _kwargs(args) - accepted[owner]
             if unknown:
                 bad.append(f"{path.relative_to(_REPO)}: {match.group(0)} → {sorted(unknown)}")
     assert not bad, "from_env() called with kwargs it doesn't accept:\n" + "\n".join(bad)

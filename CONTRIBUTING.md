@@ -899,15 +899,25 @@ Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .
 `website/` (Nextra) describes how the SDK behaves from a consumer's
 perspective. When code changes what the SDK does — or which platform facts it
 depends on — the docs must change *with it*, or the drift is discovered by a
-confused adopter instead of at review time. There is no automated drift detector;
-this is a PR-time discipline. The surface→page map (code paths under
+confused adopter instead of at review time.
+
+Some facts are generated, so they can't drift: `python scripts/generate_docs.py`
+(from `python/`) writes the PyPI README (`python/README.md`, from the root
+`README.md`), the settings index in `reference/configuration.mdx`, the CLI
+command reference in `cli.mdx`, the adapter capabilities table in
+`frameworks/index.mdx`, and the whole Python API page (`reference/api.mdx`).
+Edit the code, the docstring or the root README, run the script, and commit the
+result; never edit a `BEGIN GENERATED` region by hand.
+`tests/unit/test_generated_docs.py` fails when a committed copy is stale, and
+`--check` reports the same without writing. Everything else is a PR-time
+discipline. The surface→page map (code paths under
 `python/src/donkey_kit/`, pages under `website/content/`):
 
 | Code surface | Docs page(s) |
 | --- | --- |
 | `core/errors.py` | `errors.mdx` |
 | `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
-| `core/_verify.py`, `docs/verified-apis.md`, `docs/unsupported-boundary.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
+| `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
 | `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx` |
@@ -930,7 +940,8 @@ shape, so one surface never says "live" while another still says "planned" or
 
 - `classify()` and the related docstrings in `python/src/donkey_kit/core/`
   (notably `core/errors.py`);
-- `docs/unsupported-boundary.md`;
+- `website/content/reference/unsupported-boundary.mdx` (the one boundary list;
+  `docs/unsupported-boundary.md` is only a pointer to it);
 - `website/content/**` **and** the generated `website/public/**` copies
   (regenerate with `npm run generate:llms`);
 - the fixture index (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`);

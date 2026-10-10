@@ -122,6 +122,21 @@ one `connection_kwargs()` configures. Each factory reports its own, so ADK's
 | `typed_refusals` | A gateway refusal reaches you as a typed exception through `donkey.run()` or `typed_refusals()`. |
 | `observes_last_call` | A call through this object populates `donkey.last_call`. |
 
+What each factory reports, generated from the adapter roster and each
+adapter's declared `factories`:
+
+| Factory | Extra | `transport` | `sync` | `streaming` | `typed_refusals` | `observes_last_call` |
+|---|---|---|---|---|---|---|
+| `donkey.langgraph.chat_model()` | `[langgraph]` | `shared` | ✅ | ✅ | ✅ | ✅ |
+| `donkey.adk.model()` | `[adk]` | `shared` | ❌ | ✅ | ❌ | ✅ |
+| `donkey.adk.gemini()` | `[adk]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.strands.model()` | `[strands]` | `shared` | ❌ | ❌ | ✅ | ✅ |
+| `donkey.agent_framework.chat_client()` | `[agent_framework]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.openai_agents.model()` | `[openai-agents]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.anthropic.client()` | `[anthropic]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.crewai.llm()` | `[crewai]` | `framework` | ❌ | ✅ | ❌ | ❌ |
+| `donkey.llamaindex.llm()` | `[llamaindex]` | `shared` | ✅ | ✅ | ✅ | ✅ |
+
 ```python
 caps = donkey.adk.capabilities("gemini")
 print(caps.transport, caps.observes_last_call)   # shared True

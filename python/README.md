@@ -41,7 +41,7 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 > as a first-party, official-status SDK.
 >
 > Licensed under [Apache-2.0](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/LICENSE). See
-> [`docs/unsupported-boundary.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/unsupported-boundary.md) for exactly
+> the [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary) for exactly
 > which platform APIs this SDK calls and their support classification.
 >
 > **Security.** Report vulnerabilities privately, never in a public issue. See
@@ -50,6 +50,16 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 > **Python versions.** CPython 3.10–3.12, each tested in CI; a version is
 > dropped in the first minor release after its end of life. See
 > [`docs/python-support.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/python-support.md).
+
+<!-- toc -->
+**Contents**
+
+- [Documentation](#documentation)
+- [Install](#install)
+- [Framework support](#framework-support)
+- [What's verified (verification discipline)](#whats-verified-verification-discipline)
+- [Conformance exemptions](#conformance-exemptions)
+<!-- tocstop -->
 
 ## Documentation
 
@@ -108,10 +118,10 @@ held to the full conformance bar, the rest supported through the three-line
 `connection_kwargs()` escape hatch. Every framework below returns its framework's
 **own native object** — never a wrapper.
 
-| Tier | Frameworks | What it means |
+| Tier | Frameworks | Status ([`docs/verified-apis.md` §8](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)) |
 | --- | --- | --- |
-| **Conformance-tested** | The raw client (`donkey.llm.client()`) and **LangGraph** | Held to the conformance suite in CI — the governed contract is proven end to end. |
-| **Supported via `connection_kwargs()`** | Google ADK, Strands, Microsoft Agent Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex | Governed kwargs verified at the `connection_kwargs()` level, not conformance-tested. |
+| **Deep** | The raw client (`donkey.llm.client()`) and **LangGraph** | **Conformance-tested against the simulator** in CI. LangGraph's `ChatOpenAI` constructor is signature-confirmed offline; it has had no live round-trip. |
+| **Supported via `connection_kwargs()`** | Google ADK, Strands, Microsoft Agent Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex | **Signature-confirmed offline**: each factory builds its native object against the installed framework (`scripts/verify_frameworks.py`), with no live round-trip and no conformance run. The exception is ADK's `gemini()`, which is **live-verified** through a `Format=Gemini` proxy. |
 
 `connection_kwargs()` works for all eight; a second deep adapter is promoted from
 demand evidence, one at a time (#223/#244) — never guessed up front. See the
@@ -121,15 +131,19 @@ for each.
 ## What's verified (verification discipline)
 
 The **LLM data plane** — governed model access through the Omni Gateway proxy —
-is live-verified against a real Anypoint sandbox, and both the framework-free
-client and the framework adapters are wired to that verified contract — LangGraph
-is held to the conformance suite, the other seven are supported at the
-`connection_kwargs()` level (see [Framework support](#framework-support)).
+is live-verified against a real Anypoint sandbox. The framework-free client and
+the framework adapters are wired to that contract, but the adapters themselves
+are not live-verified: the raw client and LangGraph are conformance-tested
+against the simulator, ADK's `gemini()` is live-verified, and every other
+adapter constructor is signature-confirmed offline (see
+[Framework support](#framework-support)).
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
 rather than guessing at an unverified endpoint, header, or class name — that
-currently includes Exchange→MCP tool discovery, Exchange publication, and the
-exact framework adapter class names/kwargs. The types those blocked surfaces
-use live in `donkey_kit.experimental`, outside the stable namespace.
+currently includes Exchange→MCP tool discovery and Exchange publication; their
+types live in `donkey_kit.experimental`, outside the stable namespace. The SDK
+does not ship a provisioning control plane (ADR 0008 in `docs/adr/`). The adapters build their framework's native object directly; they
+refuse only when the installed framework version lacks the class or field the
+adapter depends on.
 
 The discipline behind this is documented in
 [`ARCHITECTURE.md` → Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline);
@@ -150,3 +164,7 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 | CrewAI | JWT refreshed per send | CrewAI's native OpenAI provider owns the transport and builds its own clients, so the rotating JWT the SDK adds per send never reaches its requests. `donkey.crewai.llm()` and `connection_kwargs()` raise `ConfigError` in `jwt` mode; use client-id auth with CrewAI. ADK's `model()` and `gemini()`, LlamaIndex and Microsoft Agent Framework send through the SDK's client and carry the rotating JWT on async calls ([`jwt` mode](https://docs.donkey-kit.dev/reference/configuration#jwt--model-wallet-auth-mode)). |
 | CrewAI | budget refusal not retried | CrewAI wraps every LLM call in its own rate-limit retry (3 attempts) and treats any `429` as a rate limit, so a `TokenBudgetExceeded` or `RequestRateLimitExceeded` refusal is sent 3 times. CrewAI has no setting to turn it off; the OpenAI client underneath has `max_retries=0`. Every other adapter sends a budget refusal once (#734). |
 | ADK `model()`, CrewAI | typed refusal bridged | Each raises its own error for a refusal, for a different reason, so `donkey.run()` and `typed_refusals()` cannot tell a gateway refusal from any other failure there and pass those errors through (#724). For ADK's `model()`, LiteLLM sends through the SDK's transport (#946) but re-raises a refusal as its own exception around a response it rebuilt, which carries no sign the SDK sent it. For CrewAI, the native OpenAI provider owns the transport, so its errors come from a client the SDK never saw. ADK's `gemini()` is handed the SDK's httpx client and is bridged (conformance-tested in #955). |
+
+Each exemption matches what the adapter reports in `donkey.<framework>.capabilities()` (a frozen `AdapterCapabilities` per factory), and a unit test keeps the two in step (#726).
+
+<!-- Generated from the repository README.md by python/scripts/generate_docs.py; edit that file, then run the script. -->

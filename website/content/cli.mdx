@@ -100,6 +100,47 @@ hidden provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
 `generate`); they were removed with the refused provisioning control plane, and
 typer now rejects them as unknown commands (exit `2`).
 
+### Command reference
+
+{/* BEGIN GENERATED: cli-reference (edit python/scripts/generate_docs.py, then run it) */}
+Generated from the CLI itself; `donkey <command> --help` prints the same.
+
+Global options go before the command (`donkey --json init`):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--config` | none | Where `init` writes .donkey-kit.toml, or the project config file `doctor` reads. |
+| `--env` | none | Anypoint environment `init` writes (e.g. Sandbox). init only. |
+| `--json` | off | Emit machine-readable JSON where the command supports it. |
+
+`donkey doctor`: Diagnose governed access: config, credentials, gateway, model, budget.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--model` | `gpt-4o` | Model id to test against the proxy allow-list. |
+| `--json` | off | Emit machine-readable JSON. |
+
+`donkey init`: Bootstrap a commented `.donkey-kit.toml` from the resolved config.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--force` | off | Regenerate even if the file already exists. |
+
+`donkey mock`: Run the local gateway simulator.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--port` | `8080` | TCP port to bind. |
+| `--host` | `127.0.0.1` | Host/interface to bind. |
+| `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+
+`donkey test`: Run the conformance suite against your agent.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--agent` | none | Import path to your agent factory, e.g. my.pkg:make_agent. |
+{/* END GENERATED: cli-reference */}
+
 ### `donkey init`
 
 Resolves your current configuration (env vars → config files → defaults; see
@@ -217,11 +258,8 @@ donkey mock --port 8080 --host 127.0.0.1 \
   --scenario request_limit:limit=3,window=60s
 ```
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `--port` | `8080` | TCP port to bind. |
-| `--host` | `127.0.0.1` | Host/interface to bind. |
-| `--scenario` | none | Fault-injection rule, repeatable. See [Scenario scripting](/simulator#scenario-scripting). |
+The flags are listed in the [command reference](#command-reference). The
+`--scenario` rule syntax is in [Scenario scripting](/simulator#scenario-scripting).
 
 The port isn't read from an environment variable or `.donkey-kit.toml`; these
 flags (or the `serve()` keyword arguments) are the only way to change it. See

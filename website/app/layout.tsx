@@ -1,11 +1,13 @@
 import type { Metadata } from 'next'
 import { Play } from 'next/font/google'
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
-import { Head } from 'nextra/components'
+import Link from 'next/link'
+import { Banner, Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
 import { cloudflareBeacon } from '../lib/analytics.mjs'
 import { EDIT_REF, REPO_URL } from '../lib/repo.mjs'
+import { documentedVersion, latestPypiVersion, versionBanner } from '../lib/version.mjs'
 import '../styles/globals.css'
 
 const SITE_NAME = 'Donkey Development Kit'
@@ -124,6 +126,13 @@ export default async function RootLayout({
   children: React.ReactNode
 }) {
   const pageMap = await getPageMap()
+  // Read once at build time: the static export ships the result (#795).
+  const version = versionBanner(await documentedVersion(), await latestPypiVersion())
+  const banner = version && (
+    <Banner storageKey={version.storageKey}>
+      {version.text} <Link href="/release-notes">Release notes</Link>
+    </Banner>
+  )
   return (
     <html
       lang="en"
@@ -135,6 +144,7 @@ export default async function RootLayout({
       <Head color={{ hue: 198, saturation: 100, lightness: { light: 50, dark: 50 } }} />
       <body>
         <Layout
+          banner={banner}
           navbar={navbar}
           footer={footer}
           pageMap={pageMap}

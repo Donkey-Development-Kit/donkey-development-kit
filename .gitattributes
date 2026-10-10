@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Generated docs (#795): collapsed in diffs; regenerate rather than edit.
+# python/scripts/generate_docs.py writes these two:
+python/README.md linguist-generated=true
+website/content/reference/api.mdx linguist-generated=true
+# website/scripts/generate-llms.mjs writes these:
+website/public/llms.txt linguist-generated=true
+website/public/llms-full.txt linguist-generated=true
+website/public/**/*.md linguist-generated=true

@@ -659,7 +659,7 @@ rejected as missing extensions, and the gateway will not accept configuration
 without control-plane registration. The pure-Python local gateway simulator
 (`donkey mock` / `simulate()`, BG §1.4, the `local_gateway` pytest marker) is
 DDK's supported local dev loop; real-gateway behavior is exercised against a
-hosted (Connected Mode) proxy. See `docs/unsupported-boundary.md` for the
+hosted (Connected Mode) proxy. See the site's `reference/unsupported-boundary` page for the
 consumer-facing statement of this same decision, and #65 for the verification
 questions this decision resolves as out of scope rather than answered.
 

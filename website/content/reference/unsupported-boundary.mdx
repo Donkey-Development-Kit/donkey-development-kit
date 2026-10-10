@@ -10,9 +10,8 @@ import { Badge } from '../../components'
 Which platform APIs does the SDK call, and are they supported for third-party
 use? This page answers that question for security and procurement reviews.
 
-The maintained list lives in the repository at
-[`docs/unsupported-boundary.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/unsupported-boundary.md).
-It is separate from the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md): the
+This page is the maintained list. It is separate from the
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md): the
 ledger records how a fact was established, while this page records whether
 MuleSoft publishes the contract for third-party use.
 
@@ -21,8 +20,8 @@ Every platform API the SDK calls is classified:
 | Classification | Meaning |
 |---|---|
 | **Documented and public** | Safe to depend on. |
-| **Documented, no SLA for third-party use** | May break; we'll fix. |
-| **Undocumented** | Should be empty. Anything here needs a written justification and an owner. |
+| **Documented, no SLA for third-party use** | Observed on a real gateway but not promised to third parties. The SDK reads it fail-open, and the maintainers update the SDK if it changes. |
+| **Undocumented** | Must stay empty. Anything here needs a written justification and an owner. |
 
 ## Current boundary
 
@@ -36,14 +35,21 @@ only if your own code calls `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
 before making a network request.
 
-| Destination / contract | Classification | SDK use |
-|---|---|---|
-| Anypoint connected-app token endpoint | **Documented and public** | Retrieves an OAuth bearer token with client credentials. |
-| Model Proxy OpenAI-format `/responses` endpoint | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. The raw client can also call documented OpenAI-native routes such as `/chat/completions`; `/responses` is the route tested against a deployed proxy. A streamed `/chat/completions` request that the proxy routes to a Gemini upstream does not stream OpenAI chunks; see the warning below. |
-| Model Proxy policy refusals (observed) | **Documented and public** | Classifies Client ID Enforcement, token-rate-limit, PII, Injection Protection, Regex Prompt Guard, Azure Content Safety, and Amazon Bedrock Guardrails responses captured from a deployed proxy. |
-| Upstream provider error pass-through | **Documented, no SLA for third-party use** | Classifies the nested non-`429` `4xx` provider envelope as `UpstreamRequestError`; generic `5xx` responses become `UpstreamModelError` by status only. The envelope schema belongs to the upstream provider, and MuleSoft's public Model Proxy page states no pass-through compatibility contract. |
-| `x-llm-proxy-ratelimit` success-budget sentence | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored. |
-| Gateway identity and routing extension headers | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`. |
+| Destination / contract | Module | Classification | SDK use and official docs |
+|---|---|---|---|
+| Anypoint connected-app token endpoint: `POST /accounts/api/v2/oauth2/token` | `core.auth.AnypointConnectedApp` | **Documented and public** | Retrieves an OAuth bearer token with client credentials. MuleSoft documents the request and response in [Getting the Bearer Token for a Connected App](https://docs.mulesoft.com/access-management/connected-app-bearer-token-example). |
+| Model Proxy OpenAI-format `/responses` endpoint, including streaming and the OpenAI `usage` object | `llm.client.LLMClient`, `core.lastcall.LastCall` | **Documented and public** | Sends buffered or streaming model requests with the documented `client_id` / `client_secret` headers and reads OpenAI-format usage. Documented in [Sending Requests to Model Proxies](https://docs.mulesoft.com/general/model-proxy-request). The raw client can also call documented OpenAI-native routes such as `/chat/completions`; `/responses` is the route tested against a deployed proxy. A streamed `/chat/completions` request that the proxy routes to a Gemini upstream does not stream OpenAI chunks; see the warning below. |
+| Client ID Enforcement request headers and `401` rejection | `core.transport`, `core.errors.classify` | **Documented and public** | Sends the consumer credentials and types the `401`. The [Client ID Enforcement policy](https://docs.mulesoft.com/gateway/latest/policies-included-client-id-enforcement) documents the header expressions and `WWW-Authenticate: Client-ID-Enforcement`. |
+| LLM Token Based Rate Limit `429`: `x-token-limit`, `x-token-remaining`, `x-token-reset` | `core.budget.Budget`, `core.errors.classify` | **Documented and public** | Updates `donkey.budget` and types `TokenBudgetExceeded`. Documented in the [LLM Token Based Rate Limit policy](https://docs.mulesoft.com/gateway/latest/policies-included-llm-token-rate-limit). |
+| LLM PII Detection `403` body (`error.type = "pii_detected"`) | `core.errors.classify` | **Documented and public** | Types `PIIDetected`. Documented in the [LLM PII Detection policy](https://docs.mulesoft.com/gateway/latest/policies-included-llm-pii-detection). |
+| Regex Prompt Guard body and Injection Protection response header | `core.errors.classify` | **Documented and public** | Types `PromptInjectionBlocked`. MuleSoft documents `matched_patterns` in [Regex Prompt Guard](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) and `x-injection-protection: blocked` in [Injection Protection](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection). |
+| Azure Content Safety and Amazon Bedrock Guardrails rejection headers and bodies | `core.errors.classify` | **Documented and public** | Types `ContentSafetyBlocked`. Documented in the [Azure Content Safety](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) and [Amazon Bedrock Guardrails](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) policy pages. |
+| Upstream provider error pass-through: the nested non-`429` `4xx` envelope, and the generic `5xx` status family | `core.errors.classify` | **Documented, no SLA for third-party use** | Classifies the nested envelope as `UpstreamRequestError`; a generic `5xx` becomes `UpstreamModelError` by status only, with no assumed body. The envelope schema belongs to the upstream provider, and MuleSoft's public Model Proxy page states no pass-through compatibility contract. |
+| Successful-response budget window in the `x-llm-proxy-ratelimit` sentence | `core.budget.Budget` | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored, never fatal. |
+| Gateway identity and routing headers: `x-request-id`, `x-envoy-decorator-operation`, `x-llm-proxy-{routing-type,routing-fallback,llm-provider,llm-model}` | `core.lastcall.LastCall`, `core.transport` | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`, and only an explicit `routing-fallback: true` changes retry behaviour. |
+
+How each row was established (live capture, plugin test, and so on) is in the
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md), sections 1 to 4.
 
 <Callout type="warning">
   **Streaming chat completions to a Gemini upstream.** On an OpenAI-format
@@ -60,18 +66,30 @@ before making a network request.
   `streamGenerateContent` route streams correctly.
 </Callout>
 
-<Callout type="info">
-  Exchange search and resolution, API Manager governed-state reads, MCP
-  discovery and binding, and Exchange publication are
-  <Badge tone="roadmap">Roadmap</Badge> — not hidden dependencies. Today they
-  raise `NotImplementedError` before making any network request. The SDK also
-  never calls a Model Proxy `/models` endpoint, because the proxy has no model
-  catalog endpoint.
-</Callout>
+## Deliberately outside the boundary
 
-The full ledger links each contract to its official documentation, SDK
-consumer, evidence, and maintenance owner. Its **Undocumented surfaces**
-section is empty.
+- Exchange search and resolution, API Manager governed-state reads, MCP
+  discovery and binding, and Exchange publication are
+  <Badge tone="roadmap">Roadmap</Badge>, not hidden dependencies. Today they
+  raise `NotImplementedError("blocked on verification: …")` before making any
+  network request, so they are not classified above.
+- `LLMClient.list_models(live=True)` does not call `GET /models`: the Model
+  Proxy has no model-catalog endpoint.
+- The application and business-group attribution header names are
+  placeholders that still emit a warning (see the ledger, section 3). They have
+  no config key, so they cannot be overridden; leave `application_name` and
+  `business_group` unset to send neither header. The gateway reads and echoes
+  the correlation header. The per-call and cost-tag header names are SDK
+  conventions you can override, which the gateway does not read; cost tags are
+  carried on spans. The SDK does not depend on the gateway reading any of
+  these, so they are not platform contracts.
+
+## Undocumented surfaces
+
+This section must stay empty. A surface listed here needs a written
+justification and an owner, and is re-evaluated at every milestone.
+
+_(none)_
 
 ## Local Mode is not supported
 
