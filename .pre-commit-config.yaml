@@ -42,8 +42,8 @@ repos:
           sys.exit(subprocess.call(['lint-imports'], env=dict(os.environ, PYTHONPATH='src')))"
         language: python
         additional_dependencies: [import-linter==2.15]
-        files: ^python/src/
-        types: [python]
+        # The source tree, and pyproject.toml where the contracts live.
+        files: ^python/(src/.*\.py|pyproject\.toml)$
         pass_filenames: false
       - id: generate-llms
         name: regenerate the website's llms artifacts (BG §1.10)
