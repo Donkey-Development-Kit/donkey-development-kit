@@ -1,10 +1,55 @@
-# Local commit hooks (#819). Install once per clone:
+# Local commit hooks (#819, #765). Install once per clone:
 #   pipx install pre-commit   # or: pip install pre-commit
 #   pre-commit install
-# CI runs the same scanner over the full history (.github/workflows/secret-scan.yml),
-# so the hook is an early warning, not the gate.
+# Every hook is also a CI check, so a hook is an early warning, not the gate:
+# ruff, ruff format and lint-imports run in the typecheck-and-lint job, the llms
+# regeneration in docs-llms-drift (python/noxfile.py has both), and CI runs the
+# secret scanner over the full history (.github/workflows/secret-scan.yml).
+#
+# The captured fixtures are byte-exact, so no hook that rewrites files touches
+# them: python/pyproject.toml's [tool.ruff.format] exclude covers ruff format,
+# and the `exclude:` below covers both ruff hooks.
+# tests/unit/test_noxfile.py keeps the ruff and import-linter versions below
+# equal to the typecheck-and-lint job's lock.
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
       - id: gitleaks
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      # ruff reads python/pyproject.toml, the closest config to each file.
+      - id: ruff-check
+        files: ^python/
+        exclude: ^python/(src/donkey_kit/simulator/_fixtures|tests/fixtures)/
+      - id: ruff-format
+        # Markdown too: ruff 0.16 formats the code blocks in python/**/*.md.
+        types_or: [python, pyi, markdown]
+        files: ^python/
+        exclude: ^python/(src/donkey_kit/simulator/_fixtures|tests/fixtures)/
+
+  - repo: local
+    hooks:
+      - id: lint-imports
+        name: import-linter (layered architecture, §1.1)
+        # The contracts in python/pyproject.toml, over the source tree: grimp
+        # builds the graph from python/src without installing donkey-kit.
+        entry: >-
+          python -c "import os, subprocess, sys;
+          os.chdir('python');
+          sys.exit(subprocess.call(['lint-imports'], env=dict(os.environ, PYTHONPATH='src')))"
+        language: python
+        additional_dependencies: [import-linter==2.15]
+        files: ^python/src/
+        types: [python]
+        pass_filenames: false
+      - id: generate-llms
+        name: regenerate the website's llms artifacts (BG §1.10)
+        # Node built-ins only, so no npm install. It rewrites website/public/;
+        # stage the result and commit again.
+        entry: node website/scripts/generate-llms.mjs
+        language: system
+        files: ^website/(content/|scripts/generate-llms\.mjs$)
+        pass_filenames: false

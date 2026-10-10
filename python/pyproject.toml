@@ -329,6 +329,13 @@ skip_covered = false
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.format]
+# #765: `ruff format --check .` runs in the typecheck-and-lint job and as a
+# pre-commit hook. The captured fixtures are byte-exact (their manifest hashes
+# them, scripts/scrub_fixtures.py reads them as captured), so the formatter
+# never rewrites them, including their README.md files.
+exclude = ["src/donkey_kit/simulator/_fixtures/**", "tests/fixtures/**"]
+
 [tool.ruff.lint]
 # SLF001: no reaching into another object's private members (#719); RUF022:
 # every __all__ is sorted (#719).
