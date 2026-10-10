@@ -6,8 +6,10 @@ name: PR labels
 #
 # pull_request_target so fork PRs get a write token too. Safe because this
 # job never checks out or runs PR code: it only reads issue metadata via gh.
+# That is also why zizmor's dangerous-triggers audit is waived on the trigger
+# below (#757): the risk it flags is running untrusted PR code with this token.
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, edited, reopened, ready_for_review, closed]
 
 permissions:
@@ -28,6 +30,8 @@ jobs:
     steps:
       - name: copy linked-issue type labels onto the PR
         run: |
+          # The GraphQL $variables are meant literally, not shell-expanded.
+          # shellcheck disable=SC2016
           labels="$(gh api graphql \
             -F owner="${REPO%/*}" -F name="${REPO#*/}" -F pr="$PR" \
             -f query='query($owner: String!, $name: String!, $pr: Int!) {

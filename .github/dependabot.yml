@@ -1,0 +1,57 @@
+# Dependabot version updates (#757). Security updates are a repository setting
+# and stay on for every ecosystem regardless of this file.
+#
+# Every entry targets develop (the integration branch; main moves only by
+# promotion), runs weekly, and groups its updates into one PR. `cooldown` holds
+# a new release back for a week before proposing it, so a compromised release
+# that is yanked within days never reaches a PR.
+version: 2
+updates:
+  # Every `uses:` in .github/workflows is pinned to a full commit SHA with a
+  # `# vX.Y.Z` comment; Dependabot moves both together.
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci(deps)
+    labels: [dependencies]
+
+  # The docs site (website/). Minor and patch updates are grouped; a major
+  # (Next.js, Nextra, React) arrives as its own PR, since it usually needs code
+  # changes alongside the bump.
+  - package-ecosystem: npm
+    directory: /website
+    target-branch: develop
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      website-npm:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies]
+
+  # Python: version updates are OFF (open-pull-requests-limit: 0). The runtime
+  # requirements in python/pyproject.toml are floors, never ceilings (§8.4,
+  # ADR 0007): raising a floor on a schedule would narrow what consumers can
+  # install for no reason. Version updates are meant to target only the
+  # dev/release toolchain lock that #763 adds; switch this entry to that lock's
+  # directory and lift the limit when it lands. Security updates are not
+  # affected by the limit.
+  - package-ecosystem: pip
+    directory: /python
+    target-branch: develop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    labels: [dependencies]

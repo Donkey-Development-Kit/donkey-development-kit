@@ -1,6 +1,6 @@
 # Nightly framework matrix (§8.4, BG §1.8).
 #
-# Purpose: two different nightly checks, in two different jobs below.
+# Purpose: three different nightly checks, in three different jobs below.
 #
 #   `matrix`         — catches upstream framework churn for the
 #                       CONFORMANCE-TESTED adapter(s) (today: LangGraph only).
@@ -8,6 +8,8 @@
 #                       fresh, unconstrained resolve (#748; see that job's own
 #                       comment for why it exists alongside ci.yml's
 #                       constraint-locked `adapter-contract` legs).
+#   `pip-audit`       — known vulnerabilities in a fresh base / `[all]` resolve
+#                       (#757).
 #
 # `matrix` scope (#197): the roster is "one deep, seven shallow" — only
 # LangGraph is conformance-tested, so it is the only framework in `matrix`
@@ -71,8 +73,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install (dev + llm, no framework)
@@ -93,8 +97,10 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
@@ -131,8 +137,10 @@ jobs:
       FRAMEWORK: ${{ matrix.framework }}
       RUN_LIVE: ${{ inputs.live }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
@@ -237,8 +245,10 @@ jobs:
       # key) to decide which importorskip calls must fail instead of skip.
       DONKEY_CONTRACT_EXTRA: ${{ matrix.extra }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
@@ -258,6 +268,46 @@ jobs:
       - name: Strict example smoke (non-zero on a missing framework; governed calls via the conformance kit)
         run: timeout 120 python scripts/smoke_example.py "$FRAMEWORK"
 
+  # Known vulnerabilities in a fresh `donkey-kit` / `donkey-kit[all]` resolve
+  # (#757). Floors, never ceilings (§8.4) means a vulnerable upstream release
+  # reaches consumers without a PR here, so it shows up here first; a finding
+  # fails this job, and the `alert` job then opens or updates the one
+  # nightly-failure tracking issue. Same steps as ci.yml's pip-audit job.
+  pip-audit:
+    name: pip-audit (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: base
+            spec: "."
+          - target: all
+            spec: ".[all]"
+    env:
+      SPEC: ${{ matrix.spec }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: resolve the install into an exact pin list
+        run: |
+          python -m pip install --upgrade pip
+          timeout 300 pip install --dry-run --ignore-installed --quiet \
+            --report "$RUNNER_TEMP/resolve.json" "$SPEC"
+          jq -r '.install[] | select(.metadata.name != "donkey-kit")
+            | "\(.metadata.name)==\(.metadata.version)"' \
+            "$RUNNER_TEMP/resolve.json" > "$RUNNER_TEMP/pip-audit-requirements.txt"
+          cat "$RUNNER_TEMP/pip-audit-requirements.txt"
+      - uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: ${{ runner.temp }}/pip-audit-requirements.txt
+          no-deps: true
+
   alert:
     # #755: the dependency policy (floors, never ceilings, §8.4) relies on this
     # run to catch upstream breakage, so a red run must reach a human. `needs:`
@@ -265,7 +315,7 @@ jobs:
     # asserts it); `failure()` is true when any of them failed. Open-or-update
     # one tracking issue, the same pattern as live-contract-check.yml (#753).
     if: failure()
-    needs: [gates, all-extra-resolves, matrix, framework-legs]
+    needs: [gates, all-extra-resolves, matrix, framework-legs, pip-audit]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
