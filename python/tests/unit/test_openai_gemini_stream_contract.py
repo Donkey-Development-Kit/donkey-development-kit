@@ -25,9 +25,7 @@ from donkey_kit.core.lastcall import current_last_call
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.simulator.fixtures import parse_headers
 
-FIXTURES = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "openai_gemini_stream"
-)
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "openai_gemini_stream"
 _CFG = DonkeyConfig(llm_proxy_url="https://proxy")
 _CHAT = "https://proxy/ddk-model-wallet/chat/completions"
 _BODY = {

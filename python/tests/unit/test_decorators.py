@@ -188,7 +188,7 @@ def test_tool_with_blank_docstring_is_flagged() -> None:
 
         @Donkey.tool
         def lookup_crm() -> None:
-            """   """
+            """ """
 
 
 def test_registered_tools_reflects_decoration_order() -> None:

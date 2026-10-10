@@ -54,7 +54,7 @@ class PublicationAssetType(Enum):
 class VersionStrategy(Enum):
     """How a :class:`Publication` picks its version; ``PINNED`` (the default) never bumps."""
 
-    PINNED = "pinned"            # default — no implicit bumps in a shared catalog
+    PINNED = "pinned"  # default — no implicit bumps in a shared catalog
     FROM_PACKAGE = "from-package"
     SEMANTIC_AUTO = "semantic-auto"
 
@@ -162,9 +162,7 @@ def check_description_quality(
                 DescriptionIssue(name, "tautological", f"description equals identifier {name!r}")
             )
         elif len(desc.strip()) < min_len:
-            issues.append(
-                DescriptionIssue(name, "too-short", f"description under {min_len} chars")
-            )
+            issues.append(DescriptionIssue(name, "too-short", f"description under {min_len} chars"))
     return issues
 
 

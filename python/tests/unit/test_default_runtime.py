@@ -75,9 +75,7 @@ def test_standalone_owner_closes_only_its_blocking_client(owner: str) -> None:
     cfg = DonkeyConfig(llm_proxy_url="https://proxy")
     shared = DonkeyAsyncClient(cfg, None)
     instance = (
-        _adapter_cls("langgraph")(cfg, shared)
-        if owner == "adapter"
-        else LLMClient(cfg, shared)
+        _adapter_cls("langgraph")(cfg, shared) if owner == "adapter" else LLMClient(cfg, shared)
     )
     blocking = instance._sync_http()
 
@@ -93,9 +91,7 @@ def test_closing_standalone_owner_without_a_blocking_client_is_safe(owner: str) 
     cfg = DonkeyConfig(llm_proxy_url="https://proxy")
     shared = DonkeyAsyncClient(cfg, None)
     instance = (
-        _adapter_cls("langgraph")(cfg, shared)
-        if owner == "adapter"
-        else LLMClient(cfg, shared)
+        _adapter_cls("langgraph")(cfg, shared) if owner == "adapter" else LLMClient(cfg, shared)
     )
 
     instance.close()
@@ -125,9 +121,7 @@ async def test_standalone_async_close_closes_owned_blocking_client(owner: str) -
     cfg = DonkeyConfig(llm_proxy_url="https://proxy")
     shared = DonkeyAsyncClient(cfg, None)
     instance = (
-        _adapter_cls("langgraph")(cfg, shared)
-        if owner == "adapter"
-        else LLMClient(cfg, shared)
+        _adapter_cls("langgraph")(cfg, shared) if owner == "adapter" else LLMClient(cfg, shared)
     )
     blocking = instance._sync_http()
 

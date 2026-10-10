@@ -115,7 +115,7 @@ def test_description_quality_flags_tautological_and_missing() -> None:
     issues = check_description_quality(
         [
             ("search_employees", "search employees"),  # tautological after normalise
-            ("get_leave", None),                        # missing
+            ("get_leave", None),  # missing
             ("ok_tool", "Fetch a well documented thing."),
         ]
     )

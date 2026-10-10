@@ -326,8 +326,8 @@ _CORE_MODULE_BUDGET = 500  # lines
 # shrinks the file, and drop the entry once the file is within budget. The
 # transport split (#728) left no transport module past it.
 _OVERSIZED_CORE_MODULES = {
-    "config.py": 1108,
-    "errors.py": 1095,
+    "config.py": 1104,
+    "errors.py": 1087,
     "lastcall.py": 828,
     "telemetry.py": 657,
 }

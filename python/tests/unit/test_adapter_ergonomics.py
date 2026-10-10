@@ -514,9 +514,7 @@ def _set_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)
-def test_factory_and_connection_kwargs_do_not_drift(
-    f: _F, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_factory_and_connection_kwargs_do_not_drift(f: _F, monkeypatch: pytest.MonkeyPatch) -> None:
     _set_proxy_env(monkeypatch)
     mod = importlib.import_module(f"donkey_kit.integrations.{f.module}")
     factory = getattr(mod, f.factory)

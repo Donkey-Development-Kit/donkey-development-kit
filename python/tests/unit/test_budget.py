@@ -21,7 +21,11 @@ from donkey_kit.simulator.fixtures import parse_headers
 _FIXED_NOW = datetime(2026, 9, 8, 14, 0, 0, tzinfo=timezone.utc)
 
 _FIXTURES = (
-    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
     / "anypoint"
     / "llm_proxy"
 )

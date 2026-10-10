@@ -97,6 +97,7 @@ _HAPPY_SHAPES = frozenset({"success-semantic"})
 # Every shape the model-id sentinel can force to a specific captured fixture.
 _SENTINEL_SHAPES = _REJECTION_SHAPES | _HAPPY_SHAPES
 
+
 @dataclass(frozen=True)
 class _Route:
     """The happy-path fixture shapes one model-call route serves."""
@@ -263,9 +264,7 @@ class _Simulator:
             window_headers.update(await self._synth_ratelimit_header())
         return self._happy(payload, route, window_headers)
 
-    def _happy(
-        self, payload: Any, route: _Route, ratelimit_header: dict[str, str]
-    ) -> Any:
+    def _happy(self, payload: Any, route: _Route, ratelimit_header: dict[str, str]) -> Any:
         """Serve the route's happy-path 200 (or its stream), carrying the given
         window headers (the token prose header, and the request trio when a
         request-limit scenario is on)."""

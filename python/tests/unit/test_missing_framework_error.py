@@ -95,9 +95,9 @@ class _BrokenFramework(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
 
 @pytest.fixture(params=["framework", "dependency"])
-def missing(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[
-    Callable[[str], str]
-]:
+def missing(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Callable[[str], str]]:
     """Make a factory's lazy import fail: ``missing(module)`` blocks the module
     itself, or serves it with a dependency that is not installed. Returns the
     name the curated error should report as missing."""

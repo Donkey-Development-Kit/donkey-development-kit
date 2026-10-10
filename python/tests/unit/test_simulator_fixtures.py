@@ -41,12 +41,7 @@ _CONTRACT_STATUS = {
 
 
 def test_parse_headers_matches_the_documented_rule() -> None:
-    text = (
-        "HTTP/1.1 403 Forbidden\n"
-        "content-type: application/json\n"
-        "X-Foo: Bar\n"
-        "garbage-no-colon\n"
-    )
+    text = "HTTP/1.1 403 Forbidden\ncontent-type: application/json\nX-Foo: Bar\ngarbage-no-colon\n"
     # HTTP line + colon-less line skipped; key lowercased; value stripped.
     assert fx.parse_headers(text) == {"content-type": "application/json", "x-foo": "Bar"}
 
@@ -95,8 +90,7 @@ def test_injection_protection_loads_the_live_captured_body() -> None:
     # capture against ddk-injection-protection (instance 21200898).
     f = fx.load("injection-protection")
     assert f.body == (
-        b'{"message":"Injection attack detected - '
-        b"Rule: 'SQL Injection', Location: Body\"}"
+        b'{"message":"Injection attack detected - Rule: \'SQL Injection\', Location: Body"}'
     )
     assert len(f.body) == 79
     assert f.content_type == "application/json; charset=UTF-8"

@@ -17,9 +17,11 @@ _REPOSITORY_README = _PYTHON_ROOT.parent / "README.md"
 
 
 def _opening_description(readme: Path) -> str:
-    return readme.read_text().split("# Donkey Development Kit", maxsplit=1)[1].split(
-        "> **Project status", maxsplit=1
-    )[0]
+    return (
+        readme.read_text()
+        .split("# Donkey Development Kit", maxsplit=1)[1]
+        .split("> **Project status", maxsplit=1)[0]
+    )
 
 
 @pytest.mark.parametrize(

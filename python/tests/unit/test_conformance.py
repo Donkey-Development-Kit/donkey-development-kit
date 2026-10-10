@@ -303,6 +303,7 @@ def test_build_agent_passes_donkey_keyword_only() -> None:
 def test_build_agent_calls_zero_arg_factory_without_donkey() -> None:
     fab = _fresh_donkey()
     try:
+
         def factory() -> str:
             return "agent"
 
@@ -428,13 +429,11 @@ async def test_harness_restores_real_transports_after_the_run(
 ) -> None:
     stacks = harness_module._installed_http_stacks()
     before = [
-        (s.HTTPTransport.handle_request, s.AsyncHTTPTransport.handle_async_request)
-        for s in stacks
+        (s.HTTPTransport.handle_request, s.AsyncHTTPTransport.handle_async_request) for s in stacks
     ]
     await run_conformance(OwnHttpxAgent)
     after = [
-        (s.HTTPTransport.handle_request, s.AsyncHTTPTransport.handle_async_request)
-        for s in stacks
+        (s.HTTPTransport.handle_request, s.AsyncHTTPTransport.handle_async_request) for s in stacks
     ]
     assert after == before
 

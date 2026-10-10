@@ -115,8 +115,11 @@ def _registered_options(parser: pytest.Parser) -> set[str]:
     time — too late to catch — hence the scan before adding the alias."""
     groups = [*getattr(parser, "_groups", ()), getattr(parser, "_anonymous", None)]
     return {
-        name for group in groups if group is not None
-        for option in group.options for name in option.names()
+        name
+        for group in groups
+        if group is not None
+        for option in group.options
+        for name in option.names()
     }
 
 
@@ -125,14 +128,10 @@ def _import_target(spec: str, *, what: str) -> tuple[Any, Any]:
     (a clean CLI error, no traceback) for a malformed spec, an unimportable
     module, or a missing attribute."""
     if ":" not in spec:
-        raise pytest.UsageError(
-            f"{what} must be given as 'module:attribute', got {spec!r}"
-        )
+        raise pytest.UsageError(f"{what} must be given as 'module:attribute', got {spec!r}")
     mod_name, _, attr = spec.partition(":")
     if not mod_name or not attr:
-        raise pytest.UsageError(
-            f"{what} must be given as 'module:attribute', got {spec!r}"
-        )
+        raise pytest.UsageError(f"{what} must be given as 'module:attribute', got {spec!r}")
     try:
         module = importlib.import_module(mod_name)
     except ImportError as exc:

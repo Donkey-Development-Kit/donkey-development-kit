@@ -74,7 +74,9 @@ async def _send_all() -> tuple[httpx.Request, httpx.Request, httpx.Request]:
     token_endpoint, platform, proxy = _Recorder(), _Recorder(), _Recorder()
     async with Donkey(_cfg()) as donkey:
         assert donkey._owned_auth_http is not None
-        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey._owned_auth_http.governed_transport.replace_inner(
+            httpx.MockTransport(token_endpoint)
+        )
         donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         donkey._http.governed_transport.replace_inner(httpx.MockTransport(proxy))
         async with donkey.run(team=_RUN_TEAM, enduser_id=_ENDUSER):

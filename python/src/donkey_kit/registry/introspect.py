@@ -30,9 +30,7 @@ __all__ = ["DerivationMode", "derive_descriptor"]
 DerivationMode = str  # "auto" | "auto:live" | "auto:static" | "auto:check"
 
 
-async def derive_descriptor(
-    entrypoint: str, *, mode: DerivationMode = "auto"
-) -> dict[str, object]:
+async def derive_descriptor(entrypoint: str, *, mode: DerivationMode = "auto") -> dict[str, object]:
     """Derive an asset descriptor from code. Blocked until the per-framework
     attribute contracts are verified (BG §2.5 / docs/verified-apis.md §10)."""
     raise _verify.blocked(

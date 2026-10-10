@@ -344,8 +344,13 @@ def test_a_translator_is_consulted_only_once_its_framework_is_imported(
     monkeypatch.setitem(sys.modules, module.__name__, module)
     spec = ADAPTERS["strands"]
     fake = type(spec)(
-        "fake", "._fake_framework_adapter", "Fake", "fake",
-        conformance_tested=False, probe=("_fake_framework",), refusal_translator="unwrap",
+        "fake",
+        "._fake_framework_adapter",
+        "Fake",
+        "fake",
+        conformance_tested=False,
+        probe=("_fake_framework",),
+        refusal_translator="unwrap",
     )
     monkeypatch.setitem(ADAPTERS, "fake", fake)
 

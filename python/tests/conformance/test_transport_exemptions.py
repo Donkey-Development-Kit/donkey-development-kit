@@ -64,9 +64,7 @@ def _exempted(scenario: str) -> set[str]:
 
 
 def test_scenario_is_registered() -> None:
-    assert {_GATEWAY_SCENARIO, _CORRELATION_SCENARIO, _JWT_SCENARIO} <= set(
-        CONFORMANCE_SCENARIOS
-    )
+    assert {_GATEWAY_SCENARIO, _CORRELATION_SCENARIO, _JWT_SCENARIO} <= set(CONFORMANCE_SCENARIOS)
 
 
 def _test_functions(path: Path) -> set[str]:

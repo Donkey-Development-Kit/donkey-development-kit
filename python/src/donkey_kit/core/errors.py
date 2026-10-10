@@ -807,9 +807,7 @@ def _match_agent_killed(s: _Shape) -> DonkeyError | None:
     if s.error_obj is None or s.error_obj.get("code") != "agent_killed":
         return None
     message = str_or_none(s.error_obj.get("message"))
-    return AgentKilled(
-        message or f"Agent blocked by an active kill switch ({s.status}).", **s.kw
-    )
+    return AgentKilled(message or f"Agent blocked by an active kill switch ({s.status}).", **s.kw)
 
 
 def _match_content_safety(s: _Shape) -> DonkeyError | None:
@@ -1014,14 +1012,8 @@ def _sent_ids(response: ResponseLike) -> tuple[str | None, str | None]:
     except RuntimeError:
         return None, None
     headers = request.headers
-    corr_name = (
-        request.extensions.get("donkey_correlation_header")
-        or _verify.CORRELATION_ID_HEADER
-    )
-    call_name = (
-        request.extensions.get("donkey_call_id_header")
-        or _verify.CALL_ID_HEADER
-    )
+    corr_name = request.extensions.get("donkey_correlation_header") or _verify.CORRELATION_ID_HEADER
+    call_name = request.extensions.get("donkey_call_id_header") or _verify.CALL_ID_HEADER
     return headers.get(corr_name), headers.get(call_name)
 
 

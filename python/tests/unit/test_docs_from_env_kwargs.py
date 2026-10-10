@@ -63,6 +63,4 @@ def test_docs_from_env_calls_use_real_kwargs() -> None:
 
 def test_the_guard_sees_the_docs() -> None:
     # The cost-tag snippet on the telemetry page must be found, or the glob broke.
-    assert any(
-        "Donkey.from_env(team=" in p.read_text(encoding="utf-8") for p in _doc_files()
-    )
+    assert any("Donkey.from_env(team=" in p.read_text(encoding="utf-8") for p in _doc_files())

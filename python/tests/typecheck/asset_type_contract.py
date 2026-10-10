@@ -7,9 +7,7 @@ from donkey_kit.registry import ExchangeRegistry
 
 discovery_type: AssetType = "mcp"
 publication_type: AssetType = PublicationAssetType.MCP_SERVER.value
-asset_ref = AssetRef(
-    group_id="com.acme", asset_id="tools", version="1.0.0", type=discovery_type
-)
+asset_ref = AssetRef(group_id="com.acme", asset_id="tools", version="1.0.0", type=discovery_type)
 
 publication = Publication(
     asset_type=PublicationAssetType.MCP_SERVER,

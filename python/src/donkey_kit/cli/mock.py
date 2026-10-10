@@ -61,7 +61,7 @@ def mock(
         server.serve(host=host, port=port, config=config)
     except ImportError as exc:
         typer.secho(
-            'The local gateway simulator needs the [local] extra. Install it with:\n'
+            "The local gateway simulator needs the [local] extra. Install it with:\n"
             '    pip install "donkey-kit[local]"',
             fg="yellow",
             err=True,

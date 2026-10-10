@@ -68,32 +68,82 @@ from dataclasses import asdict, dataclass, field
 # in the nightly matrix (BG §1.8, #197); the other seven are supported at
 # connection_kwargs() only. `--only <fw>` targets one framework.
 FRAMEWORKS: list[tuple[str, str, str, str, str]] = [
-    ("langgraph", "donkey_kit.integrations.langgraph", "chat_model",
-     "langchain_openai.ChatOpenAI", "langchain-openai"),
-    ("adk", "donkey_kit.integrations.adk", "model",
-     "google.adk.models.lite_llm.LiteLlm", "google-adk"),
+    (
+        "langgraph",
+        "donkey_kit.integrations.langgraph",
+        "chat_model",
+        "langchain_openai.ChatOpenAI",
+        "langchain-openai",
+    ),
+    (
+        "adk",
+        "donkey_kit.integrations.adk",
+        "model",
+        "google.adk.models.lite_llm.LiteLlm",
+        "google-adk",
+    ),
     # ADK's native Gemini on a Format=Gemini proxy (#691). A dotted key is a second
     # factory of the same framework: `--only adk` selects both, and its extra is
     # the part before the dot.
-    ("adk.gemini", "donkey_kit.integrations.adk", "gemini",
-     "google.adk.models.Gemini", "google-adk"),
-    ("strands", "donkey_kit.integrations.strands", "model",
-     "strands.models.openai.OpenAIModel", "strands-agents"),
-    ("agent_framework", "donkey_kit.integrations.agent_framework", "chat_client",
-     "agent_framework.openai.OpenAIChatClient", "agent-framework"),
+    (
+        "adk.gemini",
+        "donkey_kit.integrations.adk",
+        "gemini",
+        "google.adk.models.Gemini",
+        "google-adk",
+    ),
+    (
+        "strands",
+        "donkey_kit.integrations.strands",
+        "model",
+        "strands.models.openai.OpenAIModel",
+        "strands-agents",
+    ),
+    (
+        "agent_framework",
+        "donkey_kit.integrations.agent_framework",
+        "chat_client",
+        "agent_framework.openai.OpenAIChatClient",
+        "agent-framework",
+    ),
     # The same factory with api="chat_completions" (#826).
-    ("agent_framework.chat_completions", "donkey_kit.integrations.agent_framework",
-     "chat_client", "agent_framework.openai.OpenAIChatCompletionClient", "agent-framework"),
-    ("openai_agents", "donkey_kit.integrations.openai_agents", "model",
-     "agents.OpenAIChatCompletionsModel", "openai-agents"),
-    ("anthropic", "donkey_kit.integrations.anthropic", "client",
-     "anthropic.AsyncAnthropic", "anthropic"),
+    (
+        "agent_framework.chat_completions",
+        "donkey_kit.integrations.agent_framework",
+        "chat_client",
+        "agent_framework.openai.OpenAIChatCompletionClient",
+        "agent-framework",
+    ),
+    (
+        "openai_agents",
+        "donkey_kit.integrations.openai_agents",
+        "model",
+        "agents.OpenAIChatCompletionsModel",
+        "openai-agents",
+    ),
+    (
+        "anthropic",
+        "donkey_kit.integrations.anthropic",
+        "client",
+        "anthropic.AsyncAnthropic",
+        "anthropic",
+    ),
     # crewai.LLM is a factory: openai/ + base_url returns this native provider.
     # Pin the concrete class — every other provider is a crewai.BaseLLM too.
-    ("crewai", "donkey_kit.integrations.crewai", "llm",
-     "crewai.llms.providers.openai.completion.OpenAICompletion", "crewai"),
-    ("llamaindex", "donkey_kit.integrations.llamaindex", "llm",
-     "llama_index.llms.openai_like.OpenAILike", "llama-index-llms-openai-like"),
+    (
+        "crewai",
+        "donkey_kit.integrations.crewai",
+        "llm",
+        "crewai.llms.providers.openai.completion.OpenAICompletion",
+        "crewai",
+    ),
+    (
+        "llamaindex",
+        "donkey_kit.integrations.llamaindex",
+        "llm",
+        "llama_index.llms.openai_like.OpenAILike",
+        "llama-index-llms-openai-like",
+    ),
 ]
 
 PROXY_ENV = (
@@ -311,9 +361,7 @@ async def run(only: list[str] | None, live: bool) -> list[Result]:
         obj = check_signature(res, import_path, factory, distribution)
         if live and obj is not None and res.class_matches:
             if not have_real:
-                res.live = (
-                    "skipped: set the 3 DONKEY_LLM_PROXY_* env vars for a live round-trip"
-                )
+                res.live = "skipped: set the 3 DONKEY_LLM_PROXY_* env vars for a live round-trip"
             else:
                 await check_live(res, obj)
         results.append(res)
@@ -371,7 +419,8 @@ def main() -> int:
     ap.add_argument("--only", nargs="+", metavar="FW", help="restrict to these framework keys")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a table")
     ap.add_argument(
-        "--require-installed", action="store_true",
+        "--require-installed",
+        action="store_true",
         help=(
             "fail if a framework named by --only is NOT INSTALLED, instead of "
             "exiting 0 (a CI leg that installed a specific extra wants this; see "
@@ -379,7 +428,8 @@ def main() -> int:
         ),
     )
     ap.add_argument(
-        "--emit-verified", action="store_true",
+        "--emit-verified",
+        action="store_true",
         help="print docs/verified-apis.md §8 markdown rows for confirmed frameworks",
     )
     args = ap.parse_args()
@@ -399,12 +449,16 @@ def main() -> int:
 
     # Fail CI only when an INSTALLED framework fails its signature check.
     failed = [
-        r for r in results
+        r
+        for r in results
         if r.installed and not r.blocked and not (r.signature_ok and r.class_matches)
     ]
     if failed:
-        print(f"\n{len(failed)} installed framework(s) failed signature verification: "
-              f"{', '.join(r.framework for r in failed)}", file=sys.stderr)
+        print(
+            f"\n{len(failed)} installed framework(s) failed signature verification: "
+            f"{', '.join(r.framework for r in failed)}",
+            file=sys.stderr,
+        )
         return 1
 
     # #748: a CI leg naming a framework via --only expects it to actually be

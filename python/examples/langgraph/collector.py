@@ -80,11 +80,7 @@ class LocalOTLPCollector:
                 body = self.rfile.read(length) if length else b""
                 if self.path.rstrip("/").endswith("/v1/traces"):
                     sink.record(body)
-                    payload = (
-                        ExportTraceServiceResponse().SerializeToString()
-                        if _PROTO_OK
-                        else b""
-                    )
+                    payload = ExportTraceServiceResponse().SerializeToString() if _PROTO_OK else b""
                     self.send_response(200)
                     self.send_header("Content-Type", "application/x-protobuf")
                     self.send_header("Content-Length", str(len(payload)))

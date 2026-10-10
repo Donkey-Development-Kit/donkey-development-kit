@@ -130,9 +130,7 @@ async def test_request_limit_and_budget_scenarios_compose() -> None:
 
 async def test_request_rate_limit_sentinel_serves_the_captured_shape() -> None:
     async with _client() as client:
-        resp = await client.post(
-            "/v1/responses", json={"model": "donkey-sim/request-rate-limit"}
-        )
+        resp = await client.post("/v1/responses", json={"model": "donkey-sim/request-rate-limit"})
     assert resp.status_code == 429
     assert isinstance(classify(resp), RequestRateLimitExceeded)
 
@@ -144,9 +142,7 @@ async def test_injection_wins_over_pii_and_budget_precedence() -> None:
         "budget:limit=1,window=60s,cost=1",
         "injection:on-pattern=inject",
     ) as client:
-        resp = await client.post(
-            "/v1/responses", json={"model": "gpt-5.1", "input": "inject this"}
-        )
+        resp = await client.post("/v1/responses", json={"model": "gpt-5.1", "input": "inject this"})
     assert resp.status_code == 400
     assert resp.headers["x-injection-protection"] == "blocked"
 
@@ -155,9 +151,7 @@ async def test_sentinel_shape_overrides_scenarios() -> None:
     # The donkey-sim/ model-id sentinel is an explicit force-this-shape override
     # and wins over ambient scenarios.
     async with _client("pii_block:every=1") as client:
-        resp = await client.post(
-            "/v1/responses", json={"model": "donkey-sim/upstream-5xx"}
-        )
+        resp = await client.post("/v1/responses", json={"model": "donkey-sim/upstream-5xx"})
     assert resp.status_code == 503  # the sentinel shape, not the pii 403
 
 

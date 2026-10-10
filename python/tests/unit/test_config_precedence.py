@@ -142,9 +142,7 @@ def test_cost_tables_merge_across_all_three_files(layers: dict[str, Path]) -> No
 # --- path= ---------------------------------------------------------------------------------------
 
 
-def test_path_replaces_the_working_directory_files(
-    layers: dict[str, Path], tmp_path: Path
-) -> None:
+def test_path_replaces_the_working_directory_files(layers: dict[str, Path], tmp_path: Path) -> None:
     _write(layers["project"], environment="from-cwd", org_id="cwd-org")
     _write(layers["user"], org_id="user-org")
     other = tmp_path / "elsewhere"

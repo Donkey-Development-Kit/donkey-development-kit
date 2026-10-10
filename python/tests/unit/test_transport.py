@@ -419,9 +419,7 @@ async def test_call_id_is_unique_per_call_and_distinct_from_run_id() -> None:
     seen: list[tuple[str, str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(
-            (request.headers[CORRELATION_HEADER], request.headers[CALL_ID_HEADER])
-        )
+        seen.append((request.headers[CORRELATION_HEADER], request.headers[CALL_ID_HEADER]))
         return httpx.Response(200)
 
     async with _client(handler) as client:
@@ -444,9 +442,7 @@ async def test_call_id_is_stable_across_retries() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
-        seen.append(
-            (request.headers[CORRELATION_HEADER], request.headers[CALL_ID_HEADER])
-        )
+        seen.append((request.headers[CORRELATION_HEADER], request.headers[CALL_ID_HEADER]))
         return httpx.Response(503) if calls["n"] < 3 else httpx.Response(200)
 
     async with _client(handler, DonkeyConfig(max_retries=3)) as client:
@@ -979,8 +975,11 @@ async def test_does_not_retry_429_request_rate_limit_refusal() -> None:
         calls["n"] += 1
         return httpx.Response(
             429,
-            headers={"x-ratelimit-limit": "3", "x-ratelimit-remaining": "0",
-                     "x-ratelimit-reset": "40000"},
+            headers={
+                "x-ratelimit-limit": "3",
+                "x-ratelimit-remaining": "0",
+                "x-ratelimit-reset": "40000",
+            },
             content=b'{"error":"Too Many Requests"}',
         )
 
@@ -1896,9 +1895,7 @@ async def test_config_cost_tags_injected_as_request_headers() -> None:
     cfg = _COST_CFG.with_overrides(
         cost=CostTags(team="support", project="triage-v2", env="prod", enduser_id="u-42")
     )
-    async with DonkeyAsyncClient(
-        cfg, None, transport=httpx.MockTransport(handler)
-    ) as client:
+    async with DonkeyAsyncClient(cfg, None, transport=httpx.MockTransport(handler)) as client:
         await client.get("https://proxy/thing")
 
     assert seen["x-cost-team"] == "support"
@@ -1915,9 +1912,7 @@ async def test_unset_cost_dimensions_emit_no_header() -> None:
         return httpx.Response(200)
 
     cfg = _COST_CFG.with_overrides(cost=CostTags(team="support"))
-    async with DonkeyAsyncClient(
-        cfg, None, transport=httpx.MockTransport(handler)
-    ) as client:
+    async with DonkeyAsyncClient(cfg, None, transport=httpx.MockTransport(handler)) as client:
         await client.get("https://proxy/thing")
 
     assert seen["x-cost-team"] == "support"
@@ -1936,9 +1931,7 @@ async def test_run_scope_cost_override_wins_per_field_over_config() -> None:
         return httpx.Response(200)
 
     cfg = _COST_CFG.with_overrides(cost=CostTags(team="support", env="prod"))
-    async with DonkeyAsyncClient(
-        cfg, None, transport=httpx.MockTransport(handler)
-    ) as client:
+    async with DonkeyAsyncClient(cfg, None, transport=httpx.MockTransport(handler)) as client:
         # A run overrides team + adds project; env falls back to the config tag.
         with run_scope("run-1", CostTags(team="triage-team", project="triage-v2")):
             await client.get("https://proxy/thing")
@@ -2160,9 +2153,7 @@ async def test_async_send_forwards_capture_content_flag(monkeypatch, capture: bo
 def test_sync_send_forwards_capture_content_flag(monkeypatch, capture: bool) -> None:
     seen = _spy_capture_content(monkeypatch)
     cfg = DonkeyConfig(llm_proxy_url="https://proxy", telemetry_capture_content=capture)
-    client = DonkeyClient(
-        cfg, transport=httpx.MockTransport(lambda r: httpx.Response(200))
-    )
+    client = DonkeyClient(cfg, transport=httpx.MockTransport(lambda r: httpx.Response(200)))
     with client:
         client.post("https://proxy/chat", json={"model": "gpt-4o"})  # buffered
         client.post("https://proxy/chat", json={"model": "gpt-4o", "stream": True})

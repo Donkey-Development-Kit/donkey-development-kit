@@ -39,7 +39,11 @@ from donkey_kit.integrations import ADAPTERS
 from donkey_kit.simulator.fixtures import parse_headers
 
 _FIXTURES = (
-    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
     / "anypoint"
     / "llm_proxy"
 )

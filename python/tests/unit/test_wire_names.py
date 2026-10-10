@@ -83,6 +83,4 @@ def test_verify_binds_the_wire_strings() -> None:
     # _verify keeps the verification status; the strings themselves are _wire's.
     assert _verify.CORRELATION_ID_HEADER is _wire.CORRELATION_ID_HEADER
     assert _verify.LLM_PROXY_CLIENT_SECRET_HEADER is _wire.LLM_PROXY_CLIENT_SECRET_HEADER
-    assert (
-        _verify.ATTRIBUTION_APP_HEADER.placeholder == _wire.ATTRIBUTION_APP_HEADER_PLACEHOLDER
-    )
+    assert _verify.ATTRIBUTION_APP_HEADER.placeholder == _wire.ATTRIBUTION_APP_HEADER_PLACEHOLDER

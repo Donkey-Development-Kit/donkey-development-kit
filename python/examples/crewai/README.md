@@ -54,9 +54,9 @@ governed connection values (BG §1.8):
 from crewai import LLM
 
 model = LLM(
-    model="openai/gpt-4o",          # routes to CrewAI's native OpenAI provider
+    model="openai/gpt-4o",  # routes to CrewAI's native OpenAI provider
     base_url=DONKEY_LLM_PROXY_URL,
-    api_key="unused",               # proxy enforces client_id/client_secret headers
+    api_key="unused",  # proxy enforces client_id/client_secret headers
     extra_headers={
         "client_id": DONKEY_LLM_PROXY_CLIENT_ID,
         "client_secret": DONKEY_LLM_PROXY_CLIENT_SECRET,

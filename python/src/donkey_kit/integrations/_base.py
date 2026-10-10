@@ -139,9 +139,7 @@ class Adapter(ABC):
 
     def _own_sync_client(self) -> DonkeyClient:
         if self._owned_sync is None:
-            self._owned_sync = build_sync_http_client(
-                self._cfg, origins=self._http.checked_origins
-            )
+            self._owned_sync = build_sync_http_client(self._cfg, origins=self._http.checked_origins)
         return self._owned_sync
 
     def close(self) -> None:

@@ -88,9 +88,7 @@ async def test_stock_openai_client_sees_the_honesty_header_on_the_happy_path() -
     the captured success body byte-for-byte."""
     client = _stock_client()
     async with client:
-        raw = await client.responses.with_raw_response.create(
-            model="gpt-5.1", input="ping"
-        )
+        raw = await client.responses.with_raw_response.create(model="gpt-5.1", input="ping")
     http_response = raw.http_response
     assert http_response.status_code == 200
     assert http_response.headers.get(SIMULATOR_HEADER) == "true"

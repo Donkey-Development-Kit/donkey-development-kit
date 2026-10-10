@@ -54,6 +54,7 @@ _RUN_ID = "run-contract"
 _CORRELATION_HEADER = "x-correlation-id"
 _EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
+
 @pytest.fixture(scope="module")
 def gateway() -> Iterator[Gateway]:
     gw = Gateway()
@@ -254,4 +255,3 @@ async def test_example_build_passes_the_conformance_kit(
     failed = [r for r in results if r.status == "fail"]
     assert failed == [], failed
     assert {r.scenario for r in results if r.status == "exempt"} == set(known or {})
-

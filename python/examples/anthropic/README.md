@@ -61,8 +61,8 @@ import httpx2  # anthropic 0.x is built on httpx: use httpx.AsyncClient there
 from anthropic import AsyncAnthropic
 
 c = AsyncAnthropic(
-    base_url=DONKEY_LLM_PROXY_URL,   # a Format=Anthropic proxy: the native /v1/messages route (docs/verified-apis.md §2)
-    api_key="unused",                  # proxy enforces client_id/client_secret headers
+    base_url=DONKEY_LLM_PROXY_URL,  # a Format=Anthropic proxy: the native /v1/messages route (docs/verified-apis.md §2)
+    api_key="unused",  # proxy enforces client_id/client_secret headers
     default_headers={
         "client_id": DONKEY_LLM_PROXY_CLIENT_ID,
         "client_secret": DONKEY_LLM_PROXY_CLIENT_SECRET,

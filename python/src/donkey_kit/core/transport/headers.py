@@ -76,9 +76,7 @@ def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
     sends these only when ``DonkeyConfig.send_cost_headers`` is enabled; this
     builder itself does not check the flag. Values are pre-validated by
     :class:`CostTags`, so they are always header-safe."""
-    override = {
-        field: getattr(cfg, attr) for field, attr, _default in _COST_HEADER_SOURCES
-    }
+    override = {field: getattr(cfg, attr) for field, attr, _default in _COST_HEADER_SOURCES}
     default = {field: name for field, _attr, name in _COST_HEADER_SOURCES}
     headers: dict[str, str] = {}
     for field, value in tags.items():

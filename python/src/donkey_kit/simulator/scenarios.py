@@ -268,9 +268,7 @@ class BudgetScenario:
         """The prose ``x-llm-proxy-ratelimit`` header for a passing call, rendered
         from the live counter. Call only after :meth:`on_call` returned ``None``."""
         return {
-            RATELIMIT_HEADER: render_ratelimit_prose(
-                self._remaining, self._limit, self._reset_ms
-            )
+            RATELIMIT_HEADER: render_ratelimit_prose(self._remaining, self._limit, self._reset_ms)
         }
 
 
@@ -389,9 +387,7 @@ def parse_scenario(spec: str) -> FaultScenario:
     name, sep, rest = spec.partition(":")
     name = name.strip()
     if not sep:
-        raise ScenarioError(
-            f"scenario {spec!r} has no ':' — expected '<name>:<k=v,...>'"
-        )
+        raise ScenarioError(f"scenario {spec!r} has no ':' — expected '<name>:<k=v,...>'")
     if name == "injection":
         params = _parse_params(rest)
         pattern = params.get("on-pattern")

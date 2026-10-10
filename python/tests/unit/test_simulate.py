@@ -76,9 +76,7 @@ _ROUND_TRIP = [
 
 
 @pytest.mark.parametrize("exc,shape", _ROUND_TRIP, ids=[e.__name__ for e, _ in _ROUND_TRIP])
-async def test_injected_refusal_replays_fixture_and_classifies_back(
-    exc: type, shape: str
-) -> None:
+async def test_injected_refusal_replays_fixture_and_classifies_back(exc: type, shape: str) -> None:
     # AC (4): the injected body is byte-identical to the fixture classify() is
     # tested against, so it lights up as exactly the requested typed refusal.
     donkey = _donkey()

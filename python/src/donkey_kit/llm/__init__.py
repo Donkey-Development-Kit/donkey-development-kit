@@ -1,4 +1,5 @@
 """llm/ — governed model access, framework-free surface (BG §1.8, BG §1.1)."""
+
 from __future__ import annotations
 
 from .catalog import ModelCapabilities, ModelHandle, heuristic_capabilities

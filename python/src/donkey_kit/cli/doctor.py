@@ -270,8 +270,11 @@ def _probe_checks(result: ProbeResult) -> list[DoctorCheck]:
         where = err.base_url or "the configured URL"
         gateway = DoctorCheck("gateway", Level.FAIL, f"unreachable — {where}", err.remediation)
         not_checked = "not checked — gateway unreachable"
-        return [gateway, DoctorCheck("credentials", Level.SKIP, not_checked),
-                DoctorCheck("model", Level.SKIP, not_checked)]
+        return [
+            gateway,
+            DoctorCheck("credentials", Level.SKIP, not_checked),
+            DoctorCheck("model", Level.SKIP, not_checked),
+        ]
 
     if isinstance(err, AuthError):
         creds = DoctorCheck("credentials", Level.FAIL, "rejected by the gateway", err.remediation)
@@ -285,34 +288,44 @@ def _probe_checks(result: ProbeResult) -> list[DoctorCheck]:
     if isinstance(err, UpstreamRequestError) and (
         err.code == "model_not_found" or err.param == "model"
     ):
-        model = DoctorCheck("model", Level.FAIL, str(err).split(": ", 1)[-1] or "rejected",
-                      _model_remediation(err))
+        model = DoctorCheck(
+            "model", Level.FAIL, str(err).split(": ", 1)[-1] or "rejected", _model_remediation(err)
+        )
         return [gateway, creds, model]
 
     if _unserved_base_path(err):
-        gateway = DoctorCheck("gateway", Level.FAIL,
-                              "reachable, but no proxy on this base path (empty 404)",
-                              _UNSERVED_REMEDIATION)
+        gateway = DoctorCheck(
+            "gateway",
+            Level.FAIL,
+            "reachable, but no proxy on this base path (empty 404)",
+            _UNSERVED_REMEDIATION,
+        )
         not_checked = "not checked — no proxy on this base path"
-        return [gateway, DoctorCheck("credentials", Level.SKIP, not_checked),
-                DoctorCheck("model", Level.SKIP, not_checked)]
+        return [
+            gateway,
+            DoctorCheck("credentials", Level.SKIP, not_checked),
+            DoctorCheck("model", Level.SKIP, not_checked),
+        ]
 
     not_served = _route_not_served(err)
     if not_served is not None:
         provider = not_served.headers.get(LLM_PROVIDER_HEADER) or "upstream"
         responses = DoctorCheck(
-            "responses", Level.INFO,
+            "responses",
+            Level.INFO,
             f"/responses not served on this route (404 from the {provider} upstream)",
             _RESPONSES_REMEDIATION,
         )
         chat = result.chat
         if chat is None:
-            model = DoctorCheck("model", Level.SKIP,
-                                "not checked — /responses not served on this route")
+            model = DoctorCheck(
+                "model", Level.SKIP, "not checked — /responses not served on this route"
+            )
             return [gateway, creds, model, responses]
         if _route_not_served(chat.error) is not None:
             model = DoctorCheck(
-                "model", Level.FAIL,
+                "model",
+                Level.FAIL,
                 "routed, but the upstream serves neither /responses nor /chat/completions",
                 _RESPONSES_REMEDIATION,
             )
@@ -328,8 +341,7 @@ def _probe_checks(result: ProbeResult) -> list[DoctorCheck]:
     # line so doctor stays honest about what it saw.
     if err is not None:
         detail = getattr(err, "remediation", None)
-        return [gateway, creds, model,
-                DoctorCheck("policy", Level.INFO, str(err), detail)]
+        return [gateway, creds, model, DoctorCheck("policy", Level.INFO, str(err), detail)]
 
     return [gateway, creds, model]
 
@@ -348,8 +360,9 @@ def _budget_check(budget: Budget | None) -> DoctorCheck:
     reading is. Never implies live data (AC3): the proxy has no budget endpoint,
     so ``observed_at`` is the only truth about freshness."""
     if budget is None or budget.observed_at is None:
-        return DoctorCheck("budget", Level.INFO,
-                     "not yet observed — no call has returned a budget window")
+        return DoctorCheck(
+            "budget", Level.INFO, "not yet observed — no call has returned a budget window"
+        )
     ago = _humanize((_utcnow() - budget.observed_at).total_seconds())
     remaining = f"{budget.remaining:,}" if budget.remaining is not None else "?"
     limit = f"{budget.limit:,}" if budget.limit is not None else "?"
@@ -492,7 +505,7 @@ def doctor(
         checks = run_diagnostics(model, path=config_path) if config_path else run_diagnostics(model)
     except ImportError as exc:  # openai (the [llm] extra) not installed
         typer.secho(
-            'donkey doctor needs the [llm] extra for the probe client. Install it with:\n'
+            "donkey doctor needs the [llm] extra for the probe client. Install it with:\n"
             '    pip install "donkey-kit[llm]"',
             fg="yellow",
             err=True,
@@ -508,8 +521,12 @@ def doctor(
         typer.echo(
             json.dumps(
                 [
-                    {"name": c.name, "level": c.level.value, "detail": c.detail,
-                     "remediation": c.remediation}
+                    {
+                        "name": c.name,
+                        "level": c.level.value,
+                        "detail": c.detail,
+                        "remediation": c.remediation,
+                    }
                     for c in checks
                 ],
                 indent=2,

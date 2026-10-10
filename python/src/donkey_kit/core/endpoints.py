@@ -98,8 +98,7 @@ def require_secure_url(url: str, *, name: str) -> None:
     remedy = "Change it to the https:// address of the service"
     if scheme == "http" and parts is not None and parts.hostname:
         remedy += (
-            f", or set {ALLOW_HTTP_ENV}=1 in the environment to allow plain http:// "
-            "to other hosts"
+            f", or set {ALLOW_HTTP_ENV}=1 in the environment to allow plain http:// to other hosts"
         )
     raise ConfigError(
         f"{name} must be an https:// URL (got {scheme} scheme, {host}). Plain http:// "

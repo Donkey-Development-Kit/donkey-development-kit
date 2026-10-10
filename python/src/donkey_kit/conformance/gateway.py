@@ -118,9 +118,7 @@ class Gateway:
     tested against, and every response carries ``x-donkey-simulator: true`` (#189).
     """
 
-    def __init__(
-        self, *, url: str, recorder: _RecordingApp, shutdown: Callable[[], None]
-    ) -> None:
+    def __init__(self, *, url: str, recorder: _RecordingApp, shutdown: Callable[[], None]) -> None:
         self._url = url
         self._recorder = recorder
         self._shutdown = shutdown
@@ -148,9 +146,7 @@ class Gateway:
         string (e.g. ``"pii_block:every=1"``). Scenarios are stateful and
         single-use, so this builds a fresh simulator each call; the request log is
         left untouched (use :meth:`reset` to clear it)."""
-        parsed = tuple(
-            parse_scenario(s) if isinstance(s, str) else s for s in scenarios
-        )
+        parsed = tuple(parse_scenario(s) if isinstance(s, str) else s for s in scenarios)
         self._recorder.app = build_app(SimulatorConfig(scenarios=parsed))
 
     def reset(self) -> None:
@@ -207,9 +203,7 @@ def start_gateway(
     if not server.started:
         server.should_exit = True
         thread.join(timeout=5.0)
-        raise RuntimeError(
-            f"local gateway simulator did not start within {startup_timeout}s"
-        )
+        raise RuntimeError(f"local gateway simulator did not start within {startup_timeout}s")
 
     port = _bound_port(server)
 

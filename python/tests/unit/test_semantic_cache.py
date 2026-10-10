@@ -304,6 +304,7 @@ def test_donkey_last_call_populated_via_transport() -> None:
     """The transport's _on_response lands the cache outcome on the context record."""
     token = lastcall._last_call.set(None)
     try:
+
         def handler(request: httpx.Request) -> httpx.Response:
             return _resp_from_fixture("responses.hit.headers.txt")
 

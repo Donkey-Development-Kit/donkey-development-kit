@@ -35,7 +35,7 @@ def test(
     """
     if importlib.util.find_spec("pytest") is None:
         typer.secho(
-            'donkey test needs the [test] extra. Install it with:\n'
+            "donkey test needs the [test] extra. Install it with:\n"
             '    pip install "donkey-kit[test]"',
             fg="yellow",
             err=True,

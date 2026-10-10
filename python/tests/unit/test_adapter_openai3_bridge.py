@@ -110,9 +110,7 @@ def _forwards_to(client: Any) -> Any:
 
 
 @pytest.mark.parametrize("name", sorted(_SLOTS))
-async def test_openai3_gets_the_reusable_bridge(
-    name: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_openai3_gets_the_reusable_bridge(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     httpx2 = pytest.importorskip("httpx2")
     monkeypatch.setattr(llm_client, "_openai_on_httpx2", lambda: True)
     donkey = _donkey([])
