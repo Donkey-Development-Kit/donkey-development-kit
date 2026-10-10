@@ -853,6 +853,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |
+| Hardened Actions supply chain (#757) | `tests/unit/test_workflow_supply_chain.py` (every `uses:` on a full SHA with a `# vX.Y.Z` comment, no checkout keeps the token, OIDC and Pages writes on the publish and deploy jobs only, Dependabot, CODEOWNERS and binary-image rules present); actionlint and zizmor over `.github/`; `pip-audit` on a fresh base and `.[all]` resolve; `dependency-review` (PRs) | `pytest`; `workflow-lint`, `pip-audit`, `dependency-review` |
 | No tenant identifiers in tracked files or built dists (#821) | `scripts/scrub_fixtures.py --check` (UUIDs outside `ALLOWED_UUIDS`, platform hosts, provider account headers) | `typecheck-and-lint`, `base-only` (wheel), publish workflows (wheel + sdist) |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
