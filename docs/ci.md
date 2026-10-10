@@ -29,7 +29,7 @@ policy behind the locks and the nightly run, see
   - [2. One required status check: ci-ok. In place (#755)](#2-one-required-status-check-ci-ok-in-place-755)
   - [3. CI runs on develop, not just on PRs. In place (#755)](#3-ci-runs-on-develop-not-just-on-prs-in-place-755)
   - [4. Every scheduled workflow alerts on failure. Partly in place](#4-every-scheduled-workflow-alerts-on-failure-partly-in-place)
-  - [5. One task runner mirrors CI. Target (#765)](#5-one-task-runner-mirrors-ci-target-765)
+  - [5. One task runner mirrors CI. In place (#765)](#5-one-task-runner-mirrors-ci-in-place-765)
   - [6. Jobs are bounded and superseded runs are cancelled. In place (#761)](#6-jobs-are-bounded-and-superseded-runs-are-cancelled-in-place-761)
   - [7. Least-privilege workflows. Partly in place (#757, #771)](#7-least-privilege-workflows-partly-in-place-757-771)
   - [8. The site is built on PRs, on a supported Node. Target (#759)](#8-the-site-is-built-on-prs-on-a-supported-node-target-759)
@@ -307,14 +307,20 @@ updates one labelled tracking issue (never one issue per run), using
 `live-contract-drift` label (#753), and `nightly-matrix.yml` with the
 `nightly-failure` label (#755). `docs.yml`'s cron still needs the same step.
 
-### 5. One task runner mirrors CI. **Target** (#765)
+### 5. One task runner mirrors CI. **In place** (#765)
 
-Workflows call `nox -s <session>`, one session per blocking CI job, and the
-CONTRIBUTING gate documents sessions instead of raw commands. One local command
-then reproduces every blocking job. Until this lands, the install and run lines
-in `ci.yml` are the source of truth, and CONTRIBUTING's gate is a subset of
-them. `.pre-commit-config.yaml` exists today with gitleaks only. #765 adds
-ruff, ruff-format, lint-imports and `llms.txt` regeneration.
+`python/noxfile.py` has one session per `ci.yml` job, named after the job
+(`ci-ok` aside), and the CONTRIBUTING gate documents sessions instead of raw
+commands, so `nox` from `python/` reproduces every blocking job. Each job keeps
+its install and cache steps (its lock lives there, convention 1) and then runs
+its session in place: `pipx run --spec "nox==$NOX_VERSION" nox --no-venv
+--no-install -s <job>`. Locally, the session installs the same line into its own
+virtualenv. `tests/unit/test_noxfile.py` checks that every job has a session,
+calls it, installs what the session's `CI_INSTALLS` entry says, and runs no
+check tool inline. `.pre-commit-config.yaml` runs gitleaks, ruff, ruff format,
+lint-imports and the `llms.txt` regeneration at commit time, with the
+byte-exact fixtures excluded from the formatter. The nightly matrix and the
+publish workflows are not sessions.
 
 ### 6. Jobs are bounded and superseded runs are cancelled. **In place** (#761)
 
@@ -401,7 +407,9 @@ The same rules apply in every Donkey-Development-Kit repo:
   exist).
 - A new PR-gating job installs from its own constraints file, gets a
   `_COMBOS` entry in `compile_constraints.py` and a place in `ci-ok`'s
-  `needs:`. A new job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
+  `needs:`. Its checks go in a `python/noxfile.py` session of the same name,
+  with its install line in `CI_INSTALLS`, and the job runs that session
+  (convention 5). Change a check in the session, not in the workflow. A new job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
 - A new scheduled workflow ships with its failure-alert step (convention 4).
 - A change to which tests run where updates the test-surface table in
   [`CONTRIBUTING.md` §2](../CONTRIBUTING.md#2-testing-strategy).
