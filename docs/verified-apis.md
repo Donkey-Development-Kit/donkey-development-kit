@@ -63,6 +63,36 @@ its status here flips to `VERIFIED`.
 
 ---
 
+<!-- toc -->
+**Contents**
+
+- [1. Anypoint control plane](#1-anypoint-control-plane)
+- [2. LLM Proxy (data plane) — LIVE-VERIFIED 2026-08-28](#2-llm-proxy-data-plane--live-verified-2026-08-28)
+  - [Per-upstream route matrix (#894) — LIVE-VERIFIED 2026-10-08](#per-upstream-route-matrix-894--live-verified-2026-10-08)
+- [3. Token attribution headers (highest-priority unknown, verification discipline)](#3-token-attribution-headers-highest-priority-unknown-verification-discipline)
+- [4. Policy rejection response shapes (capture as fixtures, BG §1.5)](#4-policy-rejection-response-shapes-capture-as-fixtures-bg-15)
+- [5. MCP Bridge / Agent Network provisioning — gates whether §5 is viable at all](#5-mcp-bridge--agent-network-provisioning--gates-whether-5-is-viable-at-all)
+- [6. Governance / local-mode (the Verification milestone)](#6-governance--local-mode-the-verification-milestone)
+- [7. Publication / Exchange (BG §2.5)](#7-publication--exchange-bg-25)
+- [8. Framework APIs (BG §1.8) — re-verify every constructor](#8-framework-apis-bg-18--re-verify-every-constructor)
+  - [8.1 Known upstream incompatibilities (floors, not ceilings)](#81-known-upstream-incompatibilities-floors-not-ceilings)
+  - [8.2 Known upstream runtime limitations](#82-known-upstream-runtime-limitations)
+  - [8.3 Extras floors (lowest verified versions)](#83-extras-floors-lowest-verified-versions)
+- [9. MCP tool binding classes (BG §2.7) — verify each name](#9-mcp-tool-binding-classes-bg-27--verify-each-name)
+- [10. Descriptor-derivation attributes (BG §2.5) — semi-public, put in nightly matrix](#10-descriptor-derivation-attributes-bg-25--semi-public-put-in-nightly-matrix)
+- [11. A2D platform MCP tools — shapes captured 2026-08-28 (NOT the direct Anypoint REST API)](#11-a2d-platform-mcp-tools--shapes-captured-2026-08-28-not-the-direct-anypoint-rest-api)
+  - [Open design questions surfaced by the probe (need a platform-team decision)](#open-design-questions-surfaced-by-the-probe-need-a-platform-team-decision)
+- [12. Agent-donkey CLI plugin — direct REST contract (static analysis, 2026-08-28)](#12-agent-donkey-cli-plugin--direct-rest-contract-static-analysis-2026-08-28)
+  - [12.1 Auth (transport dependency anypoint-cli-command/lib/)](#121-auth-transport-dependency-anypoint-cli-commandlib)
+  - [12.2 Control-plane attribution / correlation headers (CLI request headers)](#122-control-plane-attribution--correlation-headers-cli-request-headers)
+  - [12.3 Exchange publish / read (dist/utils/exchange.js, dist/utils/facets/asset-facet.js)](#123-exchange-publish--read-distutilsexchangejs-distutilsfacetsasset-facetjs)
+  - [12.4 Agent Network gateway setup + Private Space (dist/utils/uris.js, gateway.js)](#124-agent-network-gateway-setup--private-space-distutilsurisjs-gatewayjs)
+  - [12.5 API Manager governance + app deploy (dist/utils/facets/*)](#125-api-manager-governance--app-deploy-distutilsfacets)
+  - [12.6 LLM proxy — how governance is actually wired](#126-llm-proxy--how-governance-is-actually-wired)
+  - [12.7 Agent Network project format (dist/commands/agent-network/project/create.js, templates/)](#127-agent-network-project-format-distcommandsagent-networkprojectcreatejs-templates)
+  - [12.8 Unblocking guidance (verification discipline)](#128-unblocking-guidance-verification-discipline)
+<!-- tocstop -->
+
 ## 1. Anypoint control plane
 
 CLI-verified rows were confirmed against the real sandbox org

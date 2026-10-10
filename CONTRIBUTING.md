@@ -31,6 +31,34 @@ noted. There is no Makefile — every command runs directly.
 
 ---
 
+<!-- toc -->
+**Contents**
+
+- [1. Branch, PR & release workflow](#1-branch-pr--release-workflow)
+  - [Who can contribute: internal vs external](#who-can-contribute-internal-vs-external)
+  - [The issue is the plan](#the-issue-is-the-plan)
+  - [Branch model](#branch-model)
+  - [The lifecycle](#the-lifecycle)
+  - [The pre-PR gate](#the-pre-pr-gate)
+  - [The PR](#the-pr)
+  - [Architecture decision records](#architecture-decision-records)
+  - [Merging](#merging)
+- [2. Testing strategy](#2-testing-strategy)
+  - [tests/unit/ — the framework-free gate](#testsunit--the-framework-free-gate)
+  - [tests/typecheck/ — downstream static contracts](#teststypecheck--downstream-static-contracts)
+  - [The conformance kit — "never a silent skip"](#the-conformance-kit--never-a-silent-skip)
+  - [Adding a framework adapter: the integration checklist](#adding-a-framework-adapter-the-integration-checklist)
+  - [Fixture-driven tests — captures, not conveniences](#fixture-driven-tests--captures-not-conveniences)
+  - [local_gateway and sandbox — infra-gated, clean-skip by default](#local_gateway-and-sandbox--infra-gated-clean-skip-by-default)
+  - [scripts/verify_frameworks.py — signatures, outside pytest](#scriptsverify_frameworkspy--signatures-outside-pytest)
+  - [Commands](#commands)
+- [3. Coding conventions](#3-coding-conventions)
+  - [Rule-to-enforcement map](#rule-to-enforcement-map)
+  - [Logging](#logging)
+- [4. Docs-sync rule](#4-docs-sync-rule)
+  - [The one deliberate duplication — and its drift risk](#the-one-deliberate-duplication--and-its-drift-risk)
+<!-- tocstop -->
+
 ## 1. Branch, PR & release workflow
 
 ### Who can contribute: internal vs external

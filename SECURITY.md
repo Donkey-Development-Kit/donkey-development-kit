@@ -1,5 +1,15 @@
 # Security policy
 
+<!-- toc -->
+**Contents**
+
+- [Supported versions](#supported-versions)
+- [Reporting a vulnerability](#reporting-a-vulnerability)
+  - [What is in scope](#what-is-in-scope)
+- [What to expect](#what-to-expect)
+- [Disclosure process](#disclosure-process)
+<!-- tocstop -->
+
 ## Supported versions
 
 `donkey-kit` is pre-1.0. Security fixes land on `develop` and ship in the next

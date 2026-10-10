@@ -13,6 +13,22 @@ promotion, is covered under [Hotfix releases](#hotfix-releases).
 Everything below is self-contained — you should not need any other document to
 cut a release.
 
+<!-- toc -->
+**Contents**
+
+- [Versioning & naming](#versioning--naming)
+  - [The pre-release ladder](#the-pre-release-ladder)
+  - [Tags](#tags)
+  - [The version string lives in two files](#the-version-string-lives-in-two-files)
+- [How a release reaches PyPI](#how-a-release-reaches-pypi)
+- [Hotfix releases](#hotfix-releases)
+  - [Merge mechanics](#merge-mechanics)
+  - [Docs hotfix: no version](#docs-hotfix-no-version)
+  - [Package hotfix: next patch, milestones shift](#package-hotfix-next-patch-milestones-shift)
+- [The public API surface semver governs](#the-public-api-surface-semver-governs)
+- [One-time human setup: register the Trusted Publisher](#one-time-human-setup-register-the-trusted-publisher)
+<!-- tocstop -->
+
 ## Versioning & naming
 
 `donkey-kit` version strings are **PEP 440** (not raw SemVer), so they normalise

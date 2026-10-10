@@ -51,6 +51,16 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 > dropped in the first minor release after its end of life. See
 > [`docs/python-support.md`](docs/python-support.md).
 
+<!-- toc -->
+**Contents**
+
+- [Documentation](#documentation)
+- [Install](#install)
+- [Framework support](#framework-support)
+- [What's verified (verification discipline)](#whats-verified-verification-discipline)
+- [Conformance exemptions](#conformance-exemptions)
+<!-- tocstop -->
+
 ## Documentation
 
 Two audiences, two doc sets:

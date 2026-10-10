@@ -13,6 +13,31 @@ a release reaches PyPI, see [`releasing.md`](releasing.md). For the dependency
 policy behind the locks and the nightly run, see
 [ADR 0007](adr/0007-dependency-policy.md).
 
+<!-- toc -->
+**Contents**
+
+- [The signals](#the-signals)
+  - [ci.yml: the PR gate](#ciyml-the-pr-gate)
+  - [nightly-matrix.yml: the canary](#nightly-matrixyml-the-canary)
+  - [live-contract-check.yml: the gateway contract](#live-contract-checkyml-the-gateway-contract)
+- [Scenario maps](#scenario-maps)
+  - [Feature or fix (normal path)](#feature-or-fix-normal-path)
+  - [Hotfix (into main, then back to develop)](#hotfix-into-main-then-back-to-develop)
+  - [Error scenarios and recovery](#error-scenarios-and-recovery)
+- [Conventions](#conventions)
+  - [1. PR CI resolves from a lock; the nightly run resolves fresh. In place (#982)](#1-pr-ci-resolves-from-a-lock-the-nightly-run-resolves-fresh-in-place-982)
+  - [2. One required status check: ci-ok. In place (#755)](#2-one-required-status-check-ci-ok-in-place-755)
+  - [3. CI runs on develop, not just on PRs. In place (#755)](#3-ci-runs-on-develop-not-just-on-prs-in-place-755)
+  - [4. Every scheduled workflow alerts on failure. Partly in place](#4-every-scheduled-workflow-alerts-on-failure-partly-in-place)
+  - [5. One task runner mirrors CI. Target (#765)](#5-one-task-runner-mirrors-ci-target-765)
+  - [6. Jobs are bounded and superseded runs are cancelled. In place (#761)](#6-jobs-are-bounded-and-superseded-runs-are-cancelled-in-place-761)
+  - [7. Least-privilege workflows. Partly in place (#757, #771)](#7-least-privilege-workflows-partly-in-place-757-771)
+  - [8. The site is built on PRs, on a supported Node. Target (#759)](#8-the-site-is-built-on-prs-on-a-supported-node-target-759)
+  - [9. Release gates are code, not prose. Target (#767)](#9-release-gates-are-code-not-prose-target-767)
+  - [10. Workflow names follow one style. In place (#1009)](#10-workflow-names-follow-one-style-in-place-1009)
+- [Changing a workflow](#changing-a-workflow)
+<!-- tocstop -->
+
 ## The signals
 
 Each workflow answers exactly one question. Mixing two signals in one job makes
