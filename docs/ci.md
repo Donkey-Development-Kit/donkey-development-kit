@@ -279,8 +279,9 @@ extras, dev group and Python combination, never merged across combinations
 install lines in `ci.yml`.
 
 Still open under #763: pinning the build backend and the release tools,
-Dependabot-driven lock bumps, and making `mypy` independent of which extras are
-installed. Still open under #769: a lowest-direct job that keeps the declared
+locking the nox tool's own dependencies (`NOX_VERSION` pins nox, but every job's
+`pipx run` resolves its dependencies fresh, convention 5), Dependabot-driven
+lock bumps, and making `mypy` independent of which extras are installed. Still open under #769: a lowest-direct job that keeps the declared
 floors honest, an `openai<2` leg, and Python 3.13/3.14 in the matrix.
 
 ### 2. One required status check: `ci-ok`. **In place** (#755)
@@ -317,10 +318,11 @@ its session in place: `pipx run --spec "nox==$NOX_VERSION" nox --no-venv
 --no-install -s <job>`. Locally, the session installs the same line into its own
 virtualenv. `tests/unit/test_noxfile.py` checks that every job has a session,
 calls it, installs what the session's `CI_INSTALLS` entry says, and runs no
-check tool inline. `.pre-commit-config.yaml` runs gitleaks, ruff, ruff format,
-lint-imports and the `llms.txt` regeneration at commit time, with the
-byte-exact fixtures excluded from the formatter. The nightly matrix and the
-publish workflows are not sessions.
+check inline (a check tool, a repo script, npm, node or `timeout`; the
+benchmark's trend alert is the one named CI-only step). `.pre-commit-config.yaml`
+runs gitleaks, ruff, ruff format, lint-imports and the `llms.txt` regeneration
+at commit time, with the byte-exact fixtures excluded from the formatter. The
+nightly matrix and the publish workflows are not sessions.
 
 ### 6. Jobs are bounded and superseded runs are cancelled. **In place** (#761)
 
@@ -409,7 +411,8 @@ The same rules apply in every Donkey-Development-Kit repo:
   `_COMBOS` entry in `compile_constraints.py` and a place in `ci-ok`'s
   `needs:`. Its checks go in a `python/noxfile.py` session of the same name,
   with its install line in `CI_INSTALLS`, and the job runs that session
-  (convention 5). Change a check in the session, not in the workflow. A new job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
+  (convention 5). Change a check in the session, not in the workflow. A new
+  job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
 - A new scheduled workflow ships with its failure-alert step (convention 4).
 - A change to which tests run where updates the test-surface table in
   [`CONTRIBUTING.md` §2](../CONTRIBUTING.md#2-testing-strategy).

@@ -203,13 +203,16 @@ pipx install nox pre-commit     # or: pip install nox pre-commit
 pre-commit install              # once per clone, from the repository root (hooks below)
 cd python
 nox                             # every session: the whole blocking CI gate
-nox -s typecheck-and-lint test  # the quick loop while you work
+nox -s typecheck-and-lint test-3.11   # the quick loop: lint, types, one test leg
 nox -l                          # list the sessions
 ```
 
-Each session builds its own virtualenv and installs exactly what its job
-installs, with the job's `-c constraints/...` lock, so its result is the job's
-result. `nox -R -s <session>` reruns one in its existing virtualenv without
+Each session that installs something builds its own virtualenv and installs
+exactly what its job installs, with the job's `-c constraints/...` lock, so its
+result is the job's result. The three that install nothing (`new-dependencies`,
+`commit-identities`, `docs-llms-drift`) run on your current interpreter and
+`PATH`. `nox -s test` runs all three test legs, each in a fresh virtualenv, so
+it is slow; `nox -R -s <session>` reruns one in its existing virtualenv without
 reinstalling. CI installs into the runner's Python and runs the same session
 with `nox --no-venv --no-install`; `tests/unit/test_noxfile.py` fails when a job
 and its session drift apart.
@@ -895,9 +898,9 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported from `donkey_kit` or `donkey_kit.experimental`, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
 | One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |
 
-Self-review before pushing = the pre-PR gate in Section 1 (`nox -s
-typecheck-and-lint test`, or `nox` for every job), plus `verify_frameworks.py` if
-you touched adapters.
+Self-review before pushing = the pre-PR gate in Section 1 (`nox`, every job;
+`nox -s typecheck-and-lint test-3.11` while you work), plus `verify_frameworks.py`
+if you touched adapters.
 
 ### Logging
 
