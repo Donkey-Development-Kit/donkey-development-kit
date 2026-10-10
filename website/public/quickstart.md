@@ -1,5 +1,7 @@
 # Quickstart
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Make your first governed model call, then see what a plain `base_url` can't
 give you — a **typed refusal**, a **budget** and a **span** — in a few
 minutes, on your laptop. You start against DDK's **local gateway simulator**,

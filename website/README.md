@@ -131,10 +131,37 @@ content/
   reference/                          Configuration, unsupported boundary
 ```
 
-Capability status uses one vocabulary: `<Badge tone="live">Live</Badge>` for
-what is available now and `<Badge tone="roadmap">Roadmap</Badge>` for what is
-planned. Delivery detail (phases, milestones, issues) belongs on the Roadmap
-page only.
+Every page declares its status in frontmatter, in one vocabulary that follows
+the verification ledger (`docs/verified-apis.md`, §0.3):
+
+```yaml
+---
+description: …
+status: live            # or offline-verified, or roadmap
+---
+```
+
+| `status` | Means | Badge |
+| --- | --- | --- |
+| `live` | Shipped, and the gateway contract it rests on is `VERIFIED (LIVE)` / `VERIFIED (CLI)` in the ledger. | Live |
+| `offline-verified` | Shipped and proven offline (conformance against the simulator, `verify_frameworks.py` signature checks), with no live round-trip yet: the ledger row reads UNVERIFIED (signature confirmed). | Offline-verified |
+| `roadmap` | Planned design, or an API that raises `_verify.blocked(...)` until its ledger row is confirmed. | Roadmap |
+
+The page-level badge is rendered from that value (see
+[`lib/status.mjs`](lib/status.mjs)), and the same value is shown in
+`llms.txt` and under the H1 of each per-page `.md`, so don't hand-write a
+`<Badge>` under the H1. `statusBadge: false` hides the badge on pages that
+document no SDK surface (the landing page, the roadmap, the community pages).
+Inline badges in tables, cards and legends are still written by hand. A
+missing or unknown status fails `npm test`, `node scripts/generate-llms.mjs`
+and `npm run build`.
+
+The status is also what the Python snippet check reads
+(`python/scripts/check_doc_snippets.py`, run by the unit suite in CI): every
+Python fence must import, resolve and bind against the real SDK, `roadmap`
+pages are exempt, and a `live` page may not call an API that raises
+`_verify.blocked(...)`. Delivery detail (phases, milestones, issues) belongs on
+the Roadmap page only.
 
 ## Roadmap data
 

@@ -1,5 +1,7 @@
 # Simulating refusals
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Every agent has an `except PIIDetected:` branch that has never executed.
 Getting a real gateway to refuse on demand means finding a prompt that trips a
 live policy — slow, flaky, and not something you can put in CI.

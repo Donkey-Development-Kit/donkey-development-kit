@@ -1,5 +1,7 @@
 # Framework objects & model handles
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 No adapter returns a wrapper. `donkey.langgraph.chat_model(...)` hands back a
 real `langchain_openai.ChatOpenAI`, so everything your framework can do with a
 model still works and nothing new appears in your stack traces. LangGraph is

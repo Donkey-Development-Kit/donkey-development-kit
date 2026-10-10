@@ -1,5 +1,7 @@
 # Unsupported boundary
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Which platform APIs does the SDK call, and are they supported for third-party
 use? This page answers that question for security and procurement reviews.
 

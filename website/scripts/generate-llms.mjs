@@ -6,6 +6,9 @@
 //
 // Source of truth is the pages themselves: ordering + titles come from the
 // `_meta.js` tree, content + description from each `.mdx` and its frontmatter.
+// The frontmatter `status:` (lib/status.mjs, #797) is shown in each llms.txt
+// entry and under the H1 of each per-page .md, as the rendered badge is on the
+// site; a page with a missing or unknown status fails the run.
 // This script owns NO copy of the content — it only transforms what already
 // ships on the site, so it can never invent an endpoint/header/class name the
 // pages don't already document (verification discipline). CI regenerates and fails on any diff
@@ -16,6 +19,8 @@
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname, join, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { statusOf } from '../lib/status.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WEBSITE = resolve(HERE, '..')
@@ -188,6 +193,15 @@ async function transformFile(file, pageSet, seen = new Set()) {
   return `${rendered.replace(/\n{3,}/g, '\n\n').trim()}\n`
 }
 
+// The .md twin of the badge page.tsx renders: a status line right under the H1.
+function withStatusLine(markdown, status) {
+  if (!status.badge) return markdown
+  const line = `Status: ${status.label}. ${status.summary}`
+  return /^# [^\n]*\n/.test(markdown)
+    ? markdown.replace(/^(# [^\n]*\n)/, `$1\n${line}\n`)
+    : `${line}\n\n${markdown}`
+}
+
 function firstParagraph(markdown) {
   for (const block of markdown.split('\n\n')) {
     const t = block.trim()
@@ -213,7 +227,8 @@ async function main() {
       throw new Error(`_meta.js references a missing page: ${relative(WEBSITE, page.file)}`)
     }
     const { frontmatter } = stripFrontmatter(await readFile(page.file, 'utf8'))
-    page.markdown = await transformFile(page.file, pageSet)
+    page.status = statusOf(frontmatter, relative(WEBSITE, page.file))
+    page.markdown = withStatusLine(await transformFile(page.file, pageSet), page.status)
     page.description = frontmatter.description || truncate(firstParagraph(page.markdown), 200)
     page.url = `${SITE}/${page.urlPath || 'index'}`
     page.mdUrl = `${page.url}.md`
@@ -235,7 +250,7 @@ async function main() {
       section = page.section
       indexLines.push('', `## ${section}`, '')
     }
-    const desc = page.description ? `: ${page.description}` : ''
+    const desc = `: (status: ${page.status.status})${page.description ? ` ${page.description}` : ''}`
     indexLines.push(`- [${page.title}](${page.mdUrl})${desc}`)
   }
   indexLines.push('')

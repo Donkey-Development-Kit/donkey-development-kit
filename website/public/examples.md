@@ -1,5 +1,7 @@
 # Examples
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The [DDK demos repo](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos)
 holds runnable examples for every piece of the SDK: the governed client, typed
 refusals, budget pacing, simulation, the conformance suite, telemetry,

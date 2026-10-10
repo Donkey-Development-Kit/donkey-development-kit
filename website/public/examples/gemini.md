@@ -1,5 +1,7 @@
 # Gemini
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 These scripts show the wire: plain `httpx` against a proxy provisioned
 **`Format=Gemini`** (for example `ddk-gemini-inbound`) with the same
 `client_id` / `client_secret` pair. For an agent, ADK's native `Gemini` model is

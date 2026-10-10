@@ -270,6 +270,8 @@ Source: https://docs.donkey-kit.dev/quickstart.md
 
 # Quickstart
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Make your first governed model call, then see what a plain `base_url` can't
 give you — a **typed refusal**, a **budget** and a **span** — in a few
 minutes, on your laptop. You start against DDK's **local gateway simulator**,
@@ -571,6 +573,8 @@ Source: https://docs.donkey-kit.dev/feature-overview.md
 
 # Feature overview
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 DDK is **gateway-aware**: control stays at the proxy, efficiency moves into the
 agent. The gateway enforces policy; DDK makes each decision visible and
 actionable in your code, so the agent reacts to a refusal, paces its budget and
@@ -722,6 +726,8 @@ Source: https://docs.donkey-kit.dev/frameworks.md
 
 # Model access
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
@@ -791,7 +797,8 @@ export DONKEY_LLM_PROXY_URL=…  DONKEY_LLM_PROXY_CLIENT_ID=…  DONKEY_LLM_PROX
 ```python
 from donkey_kit import Donkey
 async with Donkey.from_env() as donkey:
-    model = donkey.<framework>.<factory>("gpt-4o")   # native object at the proxy
+    # donkey.<framework>.<factory>(...), here LangGraph's chat_model:
+    model = donkey.langgraph.chat_model("gpt-4o")   # native object at the proxy
 ```
 
 Each framework page shows the factory name, the native class you get back, the
@@ -956,6 +963,8 @@ signature the adapters depend on is checked.
 Source: https://docs.donkey-kit.dev/frameworks/langgraph.md
 
 # LangGraph
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 LangGraph (and LangChain more broadly) gets a governed `ChatOpenAI` pointed at
 your Agent Fabric LLM proxy. LangGraph is the **deep adapter**: every proxy
@@ -1254,6 +1263,8 @@ Source: https://docs.donkey-kit.dev/frameworks/adk.md
 
 # Google ADK
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 Google's Agent Development Kit (ADK) reaches the Agent Fabric LLM proxy in one
 of two ways, depending on the proxy's ingress **Format**:
 
@@ -1524,6 +1535,8 @@ Source: https://docs.donkey-kit.dev/frameworks/strands.md
 
 # Strands Agents
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 Strands Agents gets a governed `OpenAIModel` pointed at the Agent Fabric LLM
 proxy. The connection details travel in Strands' `client_args`, which Strands
 passes straight through to its underlying OpenAI client.
@@ -1672,6 +1685,8 @@ the current status of every constructor signature this adapter depends on.
 Source: https://docs.donkey-kit.dev/frameworks/agent-framework.md
 
 # Microsoft Agent Framework
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 Microsoft Agent Framework gets a governed chat client pointed at the Omni
 Gateway LLM proxy, plus policy middleware that ends a run on a governance
@@ -1873,6 +1888,8 @@ Source: https://docs.donkey-kit.dev/frameworks/openai.md
 
 # OpenAI Agents SDK
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
 `OpenAIChatCompletionsModel` backed by a pre-built `AsyncOpenAI` client. The
 adapter builds that client itself, with the SDK's shared HTTP client and proxy
@@ -2021,6 +2038,8 @@ the current status of every constructor signature this adapter depends on.
 Source: https://docs.donkey-kit.dev/frameworks/anthropic.md
 
 # Anthropic SDK
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 The Anthropic SDK gets a governed `AsyncAnthropic` client pointed at the Omni
 Gateway LLM proxy, with the SDK's shared transport and proxy headers passed
@@ -2194,6 +2213,8 @@ Source: https://docs.donkey-kit.dev/frameworks/crewai.md
 
 # CrewAI
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 CrewAI gets a governed native LLM object pointed at the Agent Fabric LLM
 proxy. The adapter translates the governed connection into CrewAI's own
 model-string and kwarg conventions for you.
@@ -2343,6 +2364,8 @@ CrewAI.
 Source: https://docs.donkey-kit.dev/frameworks/llamaindex.md
 
 # LlamaIndex
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM
 proxy, with the chat-model flag a chat-only gateway requires already set.
@@ -2519,7 +2542,7 @@ Source: https://docs.donkey-kit.dev/errors.md
 
 # Governed error taxonomy
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 The proxy doesn't just pass model calls through — it enforces policy. When it
 rejects a call, DDK turns the response into a **typed exception** so you
@@ -2969,7 +2992,7 @@ Source: https://docs.donkey-kit.dev/budget.md
 
 # Budget & pacing
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Once a token-rate-limit policy is applied, the governed proxy reports your
 token budget on its responses, in **two shapes** depending on the response:
@@ -3174,7 +3197,7 @@ Source: https://docs.donkey-kit.dev/identity.md
 
 # Identity
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design.
@@ -3226,7 +3249,7 @@ Source: https://docs.donkey-kit.dev/hitl.md
 
 # Human-in-the-loop
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design.
@@ -3290,7 +3313,7 @@ Source: https://docs.donkey-kit.dev/policies.md
 
 # Policy handshake
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned
 design. It depends on a policy-discovery endpoint on the gateway, which does not
@@ -3344,7 +3367,7 @@ Source: https://docs.donkey-kit.dev/telemetry.md
 
 # Telemetry & cost
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 DDK answers two questions about every governed call: *what happened?* and *who
 pays for it?* It does so with OpenTelemetry GenAI spans, per-run correlation
@@ -4009,7 +4032,7 @@ Source: https://docs.donkey-kit.dev/simulator.md
 
 # Local simulator
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Nobody can make the production gateway emit a PII block on cue, so the branch
 of your agent that handles `PIIDetected` usually runs for the first time on a
@@ -4270,7 +4293,7 @@ Source: https://docs.donkey-kit.dev/testing.md
 
 # Testing & conformance
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Three test-time tools, all serving the same captured gateway rejections:
 
@@ -4430,7 +4453,7 @@ Source: https://docs.donkey-kit.dev/cli.md
 
 # CLI & decorators
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Two on-ramps to the SDK: decorators that govern a function in one line, and a
 four-command CLI for setup, diagnosis, local simulation, and conformance
@@ -4680,7 +4703,7 @@ Source: https://docs.donkey-kit.dev/use-with-your-agent.md
 
 # Use these docs with your agent
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 You probably ask your coding assistant before you open a docs site. These docs
 are published in the [llms.txt convention](https://llmstxt.org) so an assistant
@@ -4750,7 +4773,7 @@ Source: https://docs.donkey-kit.dev/tool-access.md
 
 # Tool access
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
@@ -4810,7 +4833,7 @@ Source: https://docs.donkey-kit.dev/tool-access/discovery.md
 
 # Discovery, search & filter
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
@@ -4954,7 +4977,7 @@ Source: https://docs.donkey-kit.dev/tool-access/binding.md
 
 # Framework binding
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
@@ -5043,7 +5066,7 @@ Source: https://docs.donkey-kit.dev/tool-access/lockfile.md
 
 # Pinning & lockfile
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
@@ -5127,7 +5150,7 @@ Source: https://docs.donkey-kit.dev/tool-access/a2a.md
 
 # A2A agent tools
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
@@ -5168,7 +5191,7 @@ Source: https://docs.donkey-kit.dev/a2a.md
 
 # A2A agents
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
@@ -5250,7 +5273,7 @@ Source: https://docs.donkey-kit.dev/publishing.md
 
 # Scan & publish
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
@@ -5399,6 +5422,8 @@ Source: https://docs.donkey-kit.dev/scenarios.md
 
 # Scenarios
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The feature pages tell you what each piece *is*. These pages show three of them
 working together on a real job, start to finish — the same three scenarios the
 build guide uses to justify the skeleton (`BG §1.8`). Each one is runnable
@@ -5434,6 +5459,8 @@ note here means *known, deliberate, and tracked*, never *guessed*.
 Source: https://docs.donkey-kit.dev/scenarios/support-triage.md
 
 # Support triage
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 A support agent drafts a one-line reply to each ticket in a queue. Most are
 routine; one contains a customer's SSN. On a bare `base_url` that PII-laden call
@@ -5549,6 +5576,8 @@ is the framework's own runtime.
 Source: https://docs.donkey-kit.dev/scenarios/nightly-batch.md
 
 # Nightly batch
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 50,000 product records, enriched overnight against a governed model, budget
 window resetting every hour, no human awake. Without a budget object the script
@@ -5677,6 +5706,8 @@ Source: https://docs.donkey-kit.dev/scenarios/internal-copilot.md
 
 # Internal copilot
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 An internal copilot answers employee questions against company systems. Its
 output has to clear a **content-safety guardrail** before it reaches a person,
 and when the guardrail fires you need the refusal to (a) surface as something
@@ -5794,6 +5825,8 @@ and framework-agnostic.
 Source: https://docs.donkey-kit.dev/examples.md
 
 # Examples
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 The [DDK demos repo](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos)
 holds runnable examples for every piece of the SDK: the governed client, typed
@@ -6026,6 +6059,8 @@ headers go on the wire.
 Source: https://docs.donkey-kit.dev/examples/general/governed-client.md
 
 # Governed client
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 You do not need the SDK to reach the gateway — a stock OpenAI client with a
 `base_url` and two headers gets there. These examples show that first, then
@@ -6271,6 +6306,8 @@ correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
 Source: https://docs.donkey-kit.dev/examples/general/typed-refusals.md
 
 # Typed refusals
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Governance outcomes should be something you branch on, not something you
 parse. These examples run the gateway's rejection shapes through `classify()`
@@ -6607,6 +6644,8 @@ Source: https://docs.donkey-kit.dev/examples/general/budget-and-pacing.md
 
 # Budget & pacing
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The gateway reports your token budget only in-band, on response headers —
 there is no endpoint to ask how much is left. `donkey.budget` reads those
 headers for you, so the window is an object rather than a header you parse.
@@ -6794,6 +6833,8 @@ The refusal itself is `RequestRateLimitExceeded`, terminal like
 Source: https://docs.donkey-kit.dev/examples/general/simulating-refusals.md
 
 # Simulating refusals
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Every agent has an `except PIIDetected:` branch that has never executed.
 Getting a real gateway to refuse on demand means finding a prompt that trips a
@@ -7000,6 +7041,8 @@ through `simulate(PIIDetected)` and gets the same taxonomy back.
 Source: https://docs.donkey-kit.dev/examples/general/conformance.md
 
 # Conformance suite
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Four questions a team usually cannot answer about its own agent: does it retry
 a budget refusal (it must not)? Does a typed refusal survive its error
@@ -7229,6 +7272,8 @@ The naive agent in the same file retries three times and re-raises a bare
 Source: https://docs.donkey-kit.dev/examples/general/telemetry.md
 
 # Telemetry
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Platform teams ask for two things agent teams rarely deliver: a trace that
 follows one logical run across every model call it fans out into, and spans in
@@ -7509,6 +7554,8 @@ Source: https://docs.donkey-kit.dev/examples/general/framework-objects.md
 
 # Framework objects & model handles
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 No adapter returns a wrapper. `donkey.langgraph.chat_model(...)` hands back a
 real `langchain_openai.ChatOpenAI`, so everything your framework can do with a
 model still works and nothing new appears in your stack traces. LangGraph is
@@ -7759,6 +7806,8 @@ Source: https://docs.donkey-kit.dev/examples/general/langgraph-agent.md
 
 # LangGraph agent
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 A real multi-step agent: the model decides to call two tools, the tools
 return, and the model composes an answer. Every model call in that loop goes
 through the governed proxy, and the object driving it is LangChain's own
@@ -7850,6 +7899,8 @@ constructs the same real framework objects with no network.
 Source: https://docs.donkey-kit.dev/examples/general/gateway-identity.md
 
 # Gateway identity (last_call)
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 A refusal already tells you which gateway said no. `donkey.last_call` is the
 success-path counterpart: after every governed call it records which gateway
@@ -8114,6 +8165,8 @@ print("routing_score", last.routing_score)  # 0.62
 Source: https://docs.donkey-kit.dev/examples/openai.md
 
 # OpenAI
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 `donkey.openai()` returns the stock `openai.AsyncOpenAI` (or `OpenAI` with
 `sync=True`) on the SDK's governed transport. Because the SDK owns every
@@ -8613,6 +8666,8 @@ Source: https://docs.donkey-kit.dev/examples/langgraph.md
 
 # LangGraph
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 `donkey.langgraph("…")` returns a real `langchain_openai.ChatOpenAI` with
 `use_responses_api=False`, so calls go to `/chat/completions`, the route every
 upstream serves, on the governed transport. It is the one deep, conformance-gated adapter:
@@ -8860,6 +8915,8 @@ Source: https://docs.donkey-kit.dev/examples/openai-agents.md
 
 # OpenAI Agents SDK
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 The agent is given `OpenAIResponsesModel(model=…,
 **donkey.openai_agents.connection_kwargs())`. `connection_kwargs()` is one
 key, `openai_client`, a governed `AsyncOpenAI`, so the agent stays on the
@@ -9002,6 +9059,8 @@ Source: https://docs.donkey-kit.dev/examples/agent-framework.md
 
 # Microsoft Agent Framework
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 `donkey.agent_framework.chat_client("…")` builds an `OpenAIChatCompletionClient`
 (verified against 1.19.0, where the keyword is `model=`) that calls
 `/chat/completions`. It sends through the SDK's shared HTTP client, so the run id
@@ -9117,6 +9176,8 @@ requests 2
 Source: https://docs.donkey-kit.dev/examples/strands.md
 
 # Strands
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
 the governed client is passed in, the SDK owns the transport: run id,
@@ -9252,6 +9313,8 @@ Source: https://docs.donkey-kit.dev/examples/crewai.md
 
 # CrewAI
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 CrewAI 1.x with `donkey.crewai.llm("…")`. `openai/` models go through CrewAI's
 native OpenAI provider to the proxy's `/chat/completions` route. CrewAI owns the transport: the
 credentials go on the wire, but there is **no run id and no `last_call`**.
@@ -9340,6 +9403,8 @@ Source: https://docs.donkey-kit.dev/examples/llamaindex.md
 
 # LlamaIndex
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 LlamaIndex with `donkey.llamaindex.llm("…")`, an `OpenAILike`. The adapter sets
 `is_chat_model=True` — the `OpenAILike` default of `False` hits
 `/completions` — so calls go to the proxy's `/chat/completions` route. Sync
@@ -9419,6 +9484,8 @@ first case. **You should see:** `<case> ->  <entities>` per case, or
 Source: https://docs.donkey-kit.dev/examples/adk.md
 
 # Google ADK
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
 the proxy's `/chat/completions` route. It sends through the SDK's shared HTTP client, so the credentials and the run id
@@ -9507,6 +9574,8 @@ should see:** `APIError 403` and the first line of the proxy's message — **not
 Source: https://docs.donkey-kit.dev/examples/anthropic.md
 
 # Anthropic
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 The native `anthropic` client from `donkey.anthropic.client()`, on the
 governed transport. It sends `/v1/messages`, so it needs a proxy provisioned
@@ -9617,6 +9686,8 @@ is what the gateway actually decided.
 Source: https://docs.donkey-kit.dev/examples/gemini.md
 
 # Gemini
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 These scripts show the wire: plain `httpx` against a proxy provisioned
 **`Format=Gemini`** (for example `ddk-gemini-inbound`) with the same
@@ -10007,6 +10078,8 @@ npm run generate:llms
 Source: https://docs.donkey-kit.dev/reference/configuration.md
 
 # Configuration
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 `Donkey.from_env(...)` builds its configuration from the values you pass,
 then environment variables, then the config files, then defaults.
@@ -10833,6 +10906,8 @@ Source: https://docs.donkey-kit.dev/reference/last-call.md
 
 # `last_call` field reference
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 `donkey.last_call` is what the gateway said about the **most recent governed
 model call** in the current context. It is an immutable snapshot: every governed
 response replaces the record wholesale rather than mutating it, so a reader
@@ -10962,6 +11037,8 @@ counts. A field that is `None` is omitted from the span entirely. See
 Source: https://docs.donkey-kit.dev/reference/unsupported-boundary.md
 
 # Unsupported boundary
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Which platform APIs does the SDK call, and are they supported for third-party
 use? This page answers that question for security and procurement reviews.

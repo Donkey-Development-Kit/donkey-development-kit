@@ -1,5 +1,7 @@
 # CrewAI
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 CrewAI 1.x with `donkey.crewai.llm("…")`. `openai/` models go through CrewAI's
 native OpenAI provider to the proxy's `/chat/completions` route. CrewAI owns the transport: the
 credentials go on the wire, but there is **no run id and no `last_call`**.

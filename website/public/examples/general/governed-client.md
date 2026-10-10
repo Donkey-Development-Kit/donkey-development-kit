@@ -1,5 +1,7 @@
 # Governed client
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 You do not need the SDK to reach the gateway — a stock OpenAI client with a
 `base_url` and two headers gets there. These examples show that first, then
 show what the stock client leaves you holding. Both clients hit the same

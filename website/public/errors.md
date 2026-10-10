@@ -1,6 +1,6 @@
 # Governed error taxonomy
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 The proxy doesn't just pass model calls through — it enforces policy. When it
 rejects a call, DDK turns the response into a **typed exception** so you

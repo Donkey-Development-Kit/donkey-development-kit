@@ -1,6 +1,6 @@
 # Testing & conformance
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Three test-time tools, all serving the same captured gateway rejections:
 

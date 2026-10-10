@@ -1,5 +1,7 @@
 # Strands
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 Strands Agents with `OpenAIModel(client=donkey.openai(), model_id=…)`. Because
 the governed client is passed in, the SDK owns the transport: run id,
 `last_call` and typed refusals all work. The calls go to the proxy's

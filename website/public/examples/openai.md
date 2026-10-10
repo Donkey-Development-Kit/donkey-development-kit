@@ -1,5 +1,7 @@
 # OpenAI
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 `donkey.openai()` returns the stock `openai.AsyncOpenAI` (or `OpenAI` with
 `sync=True`) on the SDK's governed transport. Because the SDK owns every
 request, everything works here: `last_call`, the budget, spans, correlation

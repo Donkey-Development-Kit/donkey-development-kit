@@ -1,5 +1,7 @@
 # Google ADK
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
 the proxy's `/chat/completions` route. It sends through the SDK's shared HTTP client, so the credentials and the run id
 go on the wire, but LiteLLM raises its own errors, so the SDK does not convert

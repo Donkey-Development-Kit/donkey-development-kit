@@ -1,5 +1,7 @@
 # Scenarios
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The feature pages tell you what each piece *is*. These pages show three of them
 working together on a real job, start to finish — the same three scenarios the
 build guide uses to justify the skeleton (`BG §1.8`). Each one is runnable

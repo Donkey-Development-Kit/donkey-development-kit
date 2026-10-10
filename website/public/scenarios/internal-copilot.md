@@ -1,5 +1,7 @@
 # Internal copilot
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 An internal copilot answers employee questions against company systems. Its
 output has to clear a **content-safety guardrail** before it reaches a person,
 and when the guardrail fires you need the refusal to (a) surface as something

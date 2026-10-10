@@ -1,5 +1,7 @@
 # Support triage
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 A support agent drafts a one-line reply to each ticket in a queue. Most are
 routine; one contains a customer's SSN. On a bare `base_url` that PII-laden call
 sails straight through to the model. Through a governed proxy it comes back as a

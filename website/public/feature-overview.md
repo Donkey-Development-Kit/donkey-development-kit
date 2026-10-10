@@ -1,5 +1,7 @@
 # Feature overview
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 DDK is **gateway-aware**: control stays at the proxy, efficiency moves into the
 agent. The gateway enforces policy; DDK makes each decision visible and
 actionable in your code, so the agent reacts to a refusal, paces its budget and

@@ -1,5 +1,7 @@
 # LangGraph agent
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 A real multi-step agent: the model decides to call two tools, the tools
 return, and the model composes an answer. Every model call in that loop goes
 through the governed proxy, and the object driving it is LangChain's own

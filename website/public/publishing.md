@@ -1,6 +1,6 @@
 # Scan & publish
 
-Roadmap
+Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 

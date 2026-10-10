@@ -1,5 +1,7 @@
 # LangGraph
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 `donkey.langgraph("…")` returns a real `langchain_openai.ChatOpenAI` with
 `use_responses_api=False`, so calls go to `/chat/completions`, the route every
 upstream serves, on the governed transport. It is the one deep, conformance-gated adapter:

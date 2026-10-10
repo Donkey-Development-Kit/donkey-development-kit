@@ -1,5 +1,7 @@
 # LlamaIndex
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 LlamaIndex with `donkey.llamaindex.llm("…")`, an `OpenAILike`. The adapter sets
 `is_chat_model=True` — the `OpenAILike` default of `False` hits
 `/completions` — so calls go to the proxy's `/chat/completions` route. Sync

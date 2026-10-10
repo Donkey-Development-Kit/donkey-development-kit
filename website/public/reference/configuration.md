@@ -1,5 +1,7 @@
 # Configuration
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 `Donkey.from_env(...)` builds its configuration from the values you pass,
 then environment variables, then the config files, then defaults.
 `Donkey(DonkeyConfig(...))` uses only what you pass. See [Building a config](#building-a-config) for both paths,

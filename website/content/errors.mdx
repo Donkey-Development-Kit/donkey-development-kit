@@ -1,13 +1,11 @@
 ---
 description: Typed exceptions for every governance refusal, each with a discriminator, a retry rule, and a next step.
+status: live
 ---
 
 import { Callout } from 'nextra/components'
-import { Badge } from '../components'
 
 # Governed error taxonomy
-
-<Badge tone="live">Live</Badge>
 
 The proxy doesn't just pass model calls through — it enforces policy. When it
 rejects a call, DDK turns the response into a **typed exception** so you
