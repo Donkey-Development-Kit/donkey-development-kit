@@ -337,16 +337,20 @@ job on PRs is `docs-llms-drift`, so the site is first built after promotion to
 `main`. Both workflows still use Node 20, which reached end of life on
 2026-04-30.
 
-### 9. Release gates are code, not prose. **Target** (#767)
+### 9. Release gates are code, not prose. **Partly in place** (#767)
 
-Before any upload: the version is read from one source file, the tag equals
-`v<version>`, the unit suite passes, and the built wheel installs and imports
-in a clean environment. The `pypi` environment requires reviewers, and the
-upload generates attestations. The acceptance run against the published
-pre-release is listed in `releasing.md`, and its status is attached to the
-promotion PR. Today the version lives in both `python/pyproject.toml` and
-`python/src/donkey_kit/__init__.py`, kept in sync by `scripts/bump-version.sh`,
-and the publish build runs `twine check` and the upper-pin grep only.
+The version is declared once, as `__version__` in
+`python/src/donkey_kit/__init__.py`; `pyproject.toml` reads it from there.
+Before either publish workflow uploads anything, its `test` job runs the suite
+at that commit, and its `build` job checks that every built dist carries the
+declared version (and, on `publish-pypi.yml`, that the tag equals
+`v<version>` and a final Release carries a final `X.Y.Z`), then installs the
+built wheel into a clean virtualenv and imports it. The upload generates PEP
+740 attestations. The acceptance run against the TestPyPI build is a listed
+gate in [`releasing.md`](releasing.md#release-gates). Still by hand: required
+reviewers on the `pypi` environment are a repository setting, so no workflow
+can enforce them, and the acceptance result is recorded on the promotion PR
+by the maintainer rather than reported by CI.
 
 ### 10. Workflow names follow one style. **In place** (#1009)
 

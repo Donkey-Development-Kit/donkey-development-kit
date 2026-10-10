@@ -96,16 +96,22 @@ A release is an **annotated, `v`-prefixed git tag on `main`'s tip** (e.g.
 final version is flagged **pre-release** on its GitHub Release; only a final
 `X.Y.Z` drops that flag.
 
-### The version string lives in two files
+### The version string lives in one file
 
-The version is declared in **both** of these, which MUST always agree:
+The version is declared **once**, as `__version__` in
+`python/src/donkey_kit/__init__.py`. `python/pyproject.toml` declares the
+version `dynamic` and hatch reads it from that line (`[tool.hatch.version]`), so
+the built wheel, the sdist and `donkey_kit.__version__` cannot disagree.
+`tests/unit/test_release_version.py` fails if `pyproject.toml` declares a
+version of its own again.
 
-- `python/pyproject.toml` → `version`
-- `python/src/donkey_kit/__init__.py` → `__version__`
-
-Bump **both** on `develop`, in the PR that finishes a version's work, **before**
-the promotion PR — so the code on `main` already reads the version its tag will
-carry. A tag whose version disagrees with `__version__` at that commit is a bug.
+Bump it on `develop`, in the PR that finishes a version's work, **before** the
+promotion PR — so the code on `main` already reads the version its tag will
+carry. `scripts/bump-version.sh` does the bump: it asks for the issue that
+tracks it (`--issue N`), names the branch `chore/<issue#>-bump-version-<version>`
+per the branch convention, edits `__version__`, and opens the PR that closes
+that issue. A tag whose version disagrees with `__version__` at that commit
+fails the publish before any upload (see [Release gates](#release-gates)).
 
 ## How a release reaches PyPI
 
@@ -121,26 +127,27 @@ overlap:
 flowchart TD
   start{What are you shipping?}
 
-  start -->|dev snapshot| bump["Bump .devN in pyproject.toml<br/>and __init__.py, push to develop"]
+  start -->|dev snapshot| bump["Bump .devN in __version__<br/>and land it on develop"]
   bump --> dispatch["Actions → Publish to TestPyPI<br/>→ Run workflow"]
   dispatch --> ref{Dispatched from develop?}
   ref -->|no| skipped["publish job skipped"]
-  ref -->|yes| tbuild["publish-testpypi.yml<br/>build job"]
+  ref -->|yes| tbuild["publish-testpypi.yml<br/>test + build gates"]
   tbuild --> testpypi[("TestPyPI<br/>env: testpypi")]
+  testpypi --> accept["Acceptance run against<br/>the TestPyPI version"]
 
   start -->|final X.Y.Z| finish["Bump X.Y.Z on develop<br/>milestone at 0 open issues"]
   finish --> promote["Promotion PR develop → main<br/>no-fast-forward merge"]
   promote --> tag["Annotated vX.Y.Z tag on main's tip<br/>+ GitHub Release"]
   tag --> pre{Release flagged<br/>pre-release?}
   pre -->|yes| nowhere["Publishes nowhere<br/>prerelease == false guard"]
-  pre -->|no| pbuild["publish-pypi.yml<br/>build job"]
+  pre -->|no| pbuild["publish-pypi.yml<br/>test + build gates"]
   pbuild --> approve["pypi environment<br/>required-reviewer approval"]
   approve --> pypi[("PyPI<br/>env: pypi")]
 
   classDef gate fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
   classDef publish fill:#fef3c7,stroke:#d97706,color:#78350f
   classDef dead fill:#f3f4f6,stroke:#9ca3af,color:#374151,stroke-dasharray: 4 3
-  class tbuild,pbuild,approve gate
+  class tbuild,pbuild,approve,accept gate
   class testpypi,pypi publish
   class skipped,nowhere dead
 ```
@@ -148,10 +155,9 @@ flowchart TD
 - **Dev snapshots → TestPyPI, via `publish-testpypi.yml`'s manual
   `workflow_dispatch`.** Dev builds are deliberately **not** GitHub Releases —
   the Releases page is reserved for real releases. To dry-run: bump the
-  `.devN` counter (see [Versioning & naming](#versioning--naming)) in **both**
-  `python/pyproject.toml` and `python/src/donkey_kit/__init__.py` (they must
-  agree), push to `develop`, then **Actions → Publish to TestPyPI → Run
-  workflow** on `develop`. The publish job is guarded to
+  `.devN` counter (see [Versioning & naming](#versioning--naming)) in
+  `__version__` (`scripts/bump-version.sh`), land it on `develop`, then
+  **Actions → Publish to TestPyPI → Run workflow** on `develop`. The publish job is guarded to
   `refs/heads/develop` — a dispatch from any other ref is skipped. It
   publishes to `https://test.pypi.org/legacy/` via OIDC — the same
   trusted-publishing path prod uses. Each dry-run needs a fresh `.devN`: a
@@ -183,25 +189,68 @@ sequenceDiagram
   actor R as pypi reviewer
   participant P as PyPI
 
-  M->>D: PR bumping version in pyproject.toml + __init__.py
-  M->>Main: Promotion PR, no-fast-forward merge
+  M->>D: PR bumping __version__ (scripts/bump-version.sh)
+  M->>Main: Promotion PR, no-fast-forward merge (records the acceptance run)
   M->>Main: Annotated tag vX.Y.Z on main's tip
   M->>GH: Publish non-pre-release Release (notes incl. Breaking changes)
   GH-->>W: release: published
-  W->>W: build: sdist + wheel, twine check,<br/>scrub check, floors-never-ceilings
+  W->>W: test: the suite at the tagged commit
+  W->>W: build: sdist + wheel, twine check, tag = v<version>,<br/>scrub check, floors-never-ceilings, clean-install smoke test
   W->>R: publish-pypi job waits on pypi environment
   R-->>W: Approve
-  W->>P: Upload via OIDC trusted publishing
+  W->>P: Upload via OIDC trusted publishing, with attestations
 ```
 
-Each workflow runs its own `build` job first — sdist + wheel, `twine check`,
-and the assertion that the built metadata carries only `>=` floors
-(floors-never-ceilings) — then uploads via `pypa/gh-action-pypi-publish`.
+Each workflow runs its own `test` and `build` jobs first, and uploads via
+`pypa/gh-action-pypi-publish` only when both pass. The gates are listed in
+[Release gates](#release-gates).
 Each is **structurally incapable** of reaching the other's destination:
 `publish-pypi.yml` has no `workflow_dispatch` trigger, so a manual run can
 never fire it; `publish-testpypi.yml` has no `release:` trigger, so a
 published Release can never fire it. Neither workflow creates tags or
 releases — they only react to them.
+
+## Release gates
+
+A PyPI upload cannot be undone (a release can only be yanked), so every check
+that can run before the upload does. The automated ones run in both publish
+workflows; the last two are human.
+
+| Gate | Where | Fails when |
+| --- | --- | --- |
+| Test suite at the release commit | `test` job | `pytest -q` fails on the exact commit being uploaded (same install as `ci.yml`'s `test` job, 3.11). |
+| One version, matching tag | `build` job, `scripts/check_release_version.py` | A built dist's metadata carries a version other than `__version__`, or the version isn't a normalised ladder version. On `publish-pypi.yml`, also when the tag isn't exactly `v<version>`, or a non-pre-release Release carries a pre-release version. |
+| `twine check`, no tenant identifiers, floors never ceilings | `build` job | The long description doesn't render, a dist carries a tenant identifier or live platform host, or the built metadata has an upper pin. |
+| Clean-install smoke test | `build` job, `scripts/smoke_test_wheel.py` | The built wheel doesn't install into a fresh virtualenv, or `import donkey_kit` there fails, imports from anywhere but that virtualenv, or reports a `__version__` other than the installed version. |
+| Attestations | publish job | Not a check: the upload carries [PEP 740](https://peps.python.org/pep-0740/) attestations signed with the workflow's OIDC identity (`attestations: true`). |
+| Required reviewer | `pypi` environment | A maintainer doesn't approve the production deployment. This is a repository setting (see [One-time human setup](#one-time-human-setup-register-the-trusted-publisher)); the workflow can't enforce it. |
+| Acceptance run | By hand, before the promotion PR | See below. |
+
+### The acceptance run
+
+Every gate above tests the source tree or a freshly built wheel. The
+maintainers' acceptance suite, kept in a separate private repository, is the
+only one that installs the **published** artifact from an index and exercises
+it against live gateway proxies. It catches the release where all of CI is
+green and consumers still can't use the package.
+
+Run it against the `.devN` version you just published to TestPyPI, before you
+open the promotion PR:
+
+```bash
+./run.sh --version <the TestPyPI version> --index testpypi
+./run.sh --check-coverage
+```
+
+Record the result in the promotion PR body: the version tested, the index, and
+whether it passed. A promotion with no recorded acceptance run is a promotion
+nobody checked.
+
+Read the run's header, not just its exit code. A live group whose proxy isn't
+configured skips cleanly, so a run with no credentials exits 0 having tested
+nothing live; the header lists which proxies were configured and which were
+skipped. If the run fails, don't promote until you know which side is wrong,
+and assume the package is at fault until you have shown otherwise.
 
 ## Hotfix releases
 
@@ -231,8 +280,7 @@ its PR.
 
 A hotfix that touches only `website/**` and/or `.github/workflows/docs.yml`
 changes no published artifact. It gets **no version bump, no tag, no GitHub
-Release and no PyPI publish**: leave `pyproject.toml` and `__version__`
-alone. It is done when the `docs.yml` run for the merge commit on `main` is
+Release and no PyPI publish**: leave `__version__` alone. It is done when the `docs.yml` run for the merge commit on `main` is
 green and the live site serves the fix. A manual redeploy must run with
 `--ref main`, because the `github-pages` environment rejects any other ref.
 
@@ -247,14 +295,14 @@ version is the milestone's, so the milestones move to make room:
   `X.Y` line move up one patch. Only the version in parentheses changes in
   each title, and their issues stay where they are. Update the
   [milestone table](#versioning--naming) to match in the same change.
-- The hotfix PR bumps **both** version files to `X.Y.(Z+1)`, so `main`
-  already reads the version its tag will carry.
+- The hotfix PR bumps `__version__` to `X.Y.(Z+1)`, so `main` already reads
+  the version its tag will carry.
 - After the rebase-merge, tag `main`'s tip `vX.Y.(Z+1)` and cut a GitHub
   Release as usual. A hotfix on a final release is itself final, so it is a
   non-pre-release Release and `publish-pypi.yml` publishes it to PyPI. A
   hotfix on a pre-release (`main` at `X.Y.Za1`, say) keeps climbing the
   ladder (`X.Y.Za2`) instead, takes no milestone version and shifts nothing.
-- The cherry-pick PR to `develop` conflicts on the version files. Resolve it
+- The cherry-pick PR to `develop` conflicts on the `__version__` line. Resolve it
   by setting `develop` to `X.Y.(Z+2).dev0`, the next unshipped version, so
   `develop` always sorts above `main`.
 
@@ -276,7 +324,7 @@ flowchart TD
   docsMerge --> docsYml["docs.yml rebuilds the live site"]
   docsMerge --> noRelease["No bump, no tag,<br/>no Release, no PyPI"]
 
-  kind -->|no: package hotfix| bump["Bump both version files<br/>to the next patch"]
+  kind -->|no: package hotfix| bump["Bump __version__<br/>to the next patch"]
   bump --> milestones["Shift later open patch<br/>milestones up one patch"]
   milestones --> pkgPr["PR → main"]
   pkgPr --> pkgCi["ci.yml + secret-scan.yml"]
@@ -365,9 +413,10 @@ fallback for an index where the project does not exist yet. Enter, on the
 These must match the workflow exactly or PyPI rejects the OIDC token.
 
 Then, in the GitHub repo (Settings → Environments), create the `pypi` and
-`testpypi` **Environments**. Adding **required reviewers** to `pypi` is
-recommended: the publish job then pauses for a human approval before the
-irreversible production upload — the go-ahead gate #339 requires.
+`testpypi` **Environments**. Add **required reviewers** to `pypi`: the publish
+job then pauses for a human approval before the irreversible production
+upload — the go-ahead gate #339 requires, and one of the
+[release gates](#release-gates).
 
 > A public PyPI publish is effectively irreversible (names can be squatted;
 > releases can only be *yanked*, never deleted). Do not change the
