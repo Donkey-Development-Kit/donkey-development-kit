@@ -7,14 +7,18 @@ sessions, so the checks a PR runs and the checks you run locally are one list.
 Locally, from ``python/`` (``pipx install nox``)::
 
     nox -l                          # list the sessions
-    nox -s typecheck-and-lint test  # the quick loop: lint, types, the test matrix
+    nox -s typecheck-and-lint test-3.11  # the quick loop: lint, types, one test leg
+    nox -s typecheck-and-lint test  # the same, with the whole 3.10-3.12 test matrix
     nox                             # every session: the whole blocking CI gate
     nox -s "adapter-contract(crewai)"   # one leg of a matrix job
     nox -R -s test-3.11             # rerun in the existing venv, skipping installs
 
-Each session builds its own virtualenv and installs exactly what its CI job
-installs (``CI_INSTALLS`` below, with the job's ``-c constraints/...`` lock), so
-a session's result is the job's result. A Python that is not on your machine is
+Each session that installs something builds its own virtualenv and installs
+exactly what its CI job installs (``CI_INSTALLS`` below, with the job's
+``-c constraints/...`` lock), so a session's result is the job's result. The
+three that install nothing (new-dependencies, commit-identities,
+docs-llms-drift) run git, npm, node and stdlib-only scripts on the current
+interpreter and PATH instead. A Python that is not on your machine is
 skipped, not failed, unless you pass ``--error-on-missing-interpreters``.
 
 In CI the job installs into the runner's Python itself (that is where its cache
@@ -24,9 +28,11 @@ same commands, in the job's environment, with every ``session.install`` a no-op.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shlex
 import string
+import sys
 import tempfile
 from pathlib import Path
 
@@ -35,6 +41,29 @@ import nox
 # The pinned version CI runs (ci.yml `NOX_VERSION`); tests/unit/test_noxfile.py
 # keeps the two equal.
 nox.needs_version = ">=2026.8.17"
+
+
+def _drop_nox_tool_env_from_path() -> None:
+    """Keep nox's own environment off ``PATH`` when it is a separate tool env.
+
+    ``pipx run`` (with its uv backend) and ``uvx`` put the environment nox runs
+    in first on ``PATH``. Under ``--no-venv`` a session's ``python`` would then
+    be nox's interpreter, not the job's, and every ``python -m pytest`` would run
+    without the job's install. When nox was installed into the project's own
+    environment (``donkey_kit`` imports here), that environment is the one the
+    sessions want, so ``PATH`` stays as it is.
+    """
+    if importlib.util.find_spec("donkey_kit") is not None:
+        return
+    scripts = "Scripts" if os.name == "nt" else "bin"
+    own = {Path(sys.executable).parent.resolve(), (Path(sys.prefix) / scripts).resolve()}
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(
+        entry for entry in entries if not entry or Path(entry).resolve() not in own
+    )
+
+
+_drop_nox_tool_env_from_path()
 
 _PYTHON_DIR = Path(__file__).resolve().parent
 _WEBSITE_DIR = _PYTHON_DIR.parent / "website"
@@ -180,10 +209,20 @@ def _python_version(session: nox.Session) -> str:
     """
     if isinstance(session.python, str):
         return session.python
+    # stderr=None: nox merges stderr into the captured output by default, so an
+    # interpreter warning would turn "3.11" into something else and the 3.11
+    # leg would skip coverage while staying green (#751).
     out = session.run(
-        "python", "-c", "import sys; print('%d.%d' % sys.version_info[:2])", silent=True
+        "python",
+        "-c",
+        "import sys; print('%d.%d' % sys.version_info[:2])",
+        silent=True,
+        stderr=None,
     )
-    return str(out).strip()
+    version = str(out).strip()
+    if version not in TEST_PYTHONS:
+        session.error(f"unexpected interpreter {version!r}, expected one of {TEST_PYTHONS}")
+    return version
 
 
 def _bounded(session: nox.Session, seconds: int, *args: str) -> None:
@@ -259,8 +298,14 @@ def new_dependencies(session: nox.Session) -> None:
         return
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp) / "base-pyproject.toml"
+        # stderr=None keeps git's messages out of the captured file content.
         text = session.run(
-            "git", "show", "origin/develop:python/pyproject.toml", silent=True, external=True
+            "git",
+            "show",
+            "origin/develop:python/pyproject.toml",
+            silent=True,
+            stderr=None,
+            external=True,
         )
         if text is None:
             return  # --install-only
@@ -450,7 +495,9 @@ def docs_llms_drift(session: nox.Session) -> None:
     session.chdir(_WEBSITE_DIR)
     session.run("npm", "test", external=True)
     session.run("node", "scripts/generate-llms.mjs", external=True)
-    stale = session.run("git", "status", "--porcelain", "public", silent=True, external=True)
+    stale = session.run(
+        "git", "status", "--porcelain", "public", silent=True, stderr=None, external=True
+    )
     if stale is None:
         return  # --install-only
     if str(stale).strip():
