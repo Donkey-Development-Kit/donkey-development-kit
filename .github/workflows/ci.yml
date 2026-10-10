@@ -774,7 +774,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: Unit-test the analytics beacon gate and the reader-facing link ref
         run: npm test
       - run: node scripts/generate-llms.mjs
@@ -787,6 +787,65 @@ jobs:
             exit 1
           fi
           echo "llms artifacts are up to date."
+
+  docs-site:
+    # #759: build, type-check and link-check the Nextra site on PRs, so broken
+    # MDX, a bad import or a dead internal link fails here instead of in the
+    # release deploy (docs.yml builds only from main). Job-level path filter:
+    # a workflow-level `paths:` would skip the required `ci-ok` aggregate, so
+    # the job always starts and its steps no-op when the PR leaves the site
+    # alone. On pushes to main/develop it always runs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Two commits, so HEAD^1 (the base tip of a PR merge commit) exists.
+          fetch-depth: 2
+      - name: does this change touch the site?
+        id: scope
+        working-directory: .
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(website/|\.github/workflows/(ci|docs)\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No website/** or docs workflow changes; skipping the site checks."
+          fi
+      - uses: actions/setup-node@v7
+        if: steps.scope.outputs.run == 'true'
+        with:
+          # No `cache: npm`: setup-* built-in caching saves from PRs too, which
+          # #1005 rules out for ci.yml. The install is a few seconds.
+          node-version: 24
+      - if: steps.scope.outputs.run == 'true'
+        run: npm ci
+      - name: Type-check
+        if: steps.scope.outputs.run == 'true'
+        run: npm run typecheck
+      - name: Lint
+        if: steps.scope.outputs.run == 'true'
+        run: npm run lint
+      - name: Build the static export (project-prefix base path, as preview:pages does)
+        if: steps.scope.outputs.run == 'true'
+        # prebuild refreshes data/roadmap.json from the GitHub API and keeps
+        # the committed snapshot if the API is unreachable.
+        run: npm run build
+        env:
+          DOCS_BASE_PATH: /donkey-development-kit
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Check internal links and anchors in out/
+        if: steps.scope.outputs.run == 'true'
+        run: npm run check:links
+        env:
+          DOCS_BASE_PATH: /donkey-development-kit
 
   ci-ok:
     # #755: the one required status check. Branch protection requires only this
@@ -814,6 +873,7 @@ jobs:
       - quickstart
       - langgraph-demo
       - docs-llms-drift
+      - docs-site
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

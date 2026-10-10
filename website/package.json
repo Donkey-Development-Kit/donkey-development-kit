@@ -12,7 +12,9 @@
     "postbuild": "pagefind --site out --output-subdir _pagefind",
     "preview:pages": "node scripts/preview-pages.mjs",
     "test": "node --test lib/analytics.test.mjs lib/repo.test.mjs",
-    "start": "next start -p ${PORT:-3000}"
+    "lint": "for f in scripts/*.mjs lib/*.mjs; do node --check \"$f\" || exit 1; done",
+    "typecheck": "tsc --noEmit",
+    "check:links": "node scripts/check-links.mjs"
   },
   "dependencies": {
     "next": "^16.3.8",
@@ -22,7 +24,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
+    "@types/node": "^22.20.5",
     "@types/react": "^19.0.0",
     "pagefind": "^1.5.2",
     "typescript": "^5.5.3"
@@ -30,5 +32,8 @@
   "overrides": {
     "zod": "4.3.6",
     "@xmldom/xmldom": "0.9.12"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

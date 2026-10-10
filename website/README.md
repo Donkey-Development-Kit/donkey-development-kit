@@ -107,6 +107,20 @@ errors.
 
 `npm test` runs the beacon gate's unit tests.
 
+## Checks (same as the `docs-site` CI job)
+
+Needs Node >= 22 (CI uses 24). Run after `npm ci`:
+
+```bash
+npm run typecheck                                  # tsc --noEmit
+npm run lint                                       # syntax-check the .mjs scripts
+DOCS_BASE_PATH=/donkey-development-kit npm run build
+DOCS_BASE_PATH=/donkey-development-kit npm run check:links   # internal links + #anchors in out/
+```
+
+There is no `start` script: the site is a static export (`output: 'export'`),
+so serve `out/` with `npm run preview:pages` instead of `next start`.
+
 ## Structure
 
 The sidebar is grouped into capability pillars by separators in
