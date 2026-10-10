@@ -12,7 +12,7 @@
     "postbuild": "pagefind --site out --output-subdir _pagefind",
     "preview:pages": "node scripts/preview-pages.mjs",
     "test": "node --test lib/analytics.test.mjs lib/repo.test.mjs",
-    "lint": "for f in scripts/*.mjs lib/*.mjs; do node --check \"$f\" || exit 1; done",
+    "lint": "node scripts/lint.mjs",
     "typecheck": "tsc --noEmit",
     "check:links": "node scripts/check-links.mjs"
   },

@@ -113,7 +113,7 @@ Needs Node >= 22 (CI uses 24). Run after `npm ci`:
 
 ```bash
 npm run typecheck                                  # tsc --noEmit
-npm run lint                                       # syntax-check the .mjs scripts
+npm run lint                                       # syntax-check the .mjs files (scripts/lint.mjs)
 DOCS_BASE_PATH=/donkey-development-kit npm run build
 DOCS_BASE_PATH=/donkey-development-kit npm run check:links   # internal links + #anchors in out/
 ```

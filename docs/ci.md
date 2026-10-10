@@ -32,7 +32,7 @@ policy behind the locks and the nightly run, see
   - [5. One task runner mirrors CI. Target (#765)](#5-one-task-runner-mirrors-ci-target-765)
   - [6. Jobs are bounded and superseded runs are cancelled. In place (#761)](#6-jobs-are-bounded-and-superseded-runs-are-cancelled-in-place-761)
   - [7. Least-privilege workflows. Partly in place (#757, #771)](#7-least-privilege-workflows-partly-in-place-757-771)
-  - [8. The site is built on PRs, on a supported Node. Target (#759)](#8-the-site-is-built-on-prs-on-a-supported-node-target-759)
+  - [8. The site is built on PRs, on a supported Node. In place (#759)](#8-the-site-is-built-on-prs-on-a-supported-node-in-place-759)
   - [9. Release gates are code, not prose. Target (#767)](#9-release-gates-are-code-not-prose-target-767)
   - [10. Workflow names follow one style. In place (#1009)](#10-workflow-names-follow-one-style-in-place-1009)
 - [Changing a workflow](#changing-a-workflow)
@@ -77,7 +77,8 @@ The jobs, grouped by what they protect:
 - **Promises made in the docs.** `benchmark` enforces the < 1 ms span overhead
   (BG §1.6) and trends it across runs. `quickstart` and `langgraph-demo` run
   the documented examples against the local simulator. `docs-llms-drift`
-  regenerates `llms.txt` and fails on any diff.
+  regenerates `llms.txt` and fails on any diff. `docs-site` builds the site
+  and checks its internal links and anchors (#759).
 - **The gate itself.** `ci-ok` needs every other job and fails unless each one
   succeeded or was skipped. It is the one required status check (convention 2).
 
@@ -354,13 +355,19 @@ quoted shell variables, never interpolated into a `run:` body. Still open:
   covering `.github/**` and the other sensitive paths, and workflow linting.
 - Pin manual docs deploys to `main` (#771).
 
-### 8. The site is built on PRs, on a supported Node. **Target** (#759)
+### 8. The site is built on PRs, on a supported Node. **In place** (#759)
 
-A PR job, filtered to `website/**`, runs `npm ci`, a production build, a link
-and anchor check over the export, and `tsc --noEmit`. Today the only website
-job on PRs is `docs-llms-drift`, so the site is first built after promotion to
-`main`. Both workflows still use Node 20, which reached end of life on
-2026-04-30.
+The `docs-site` job in `ci.yml` builds the site on every PR that touches it,
+so broken MDX, a bad import or a dead internal link fails there instead of in
+the release deploy. It runs `npm ci`, `npm run typecheck`, `npm run lint`, a
+production build with `DOCS_BASE_PATH=/donkey-development-kit` (the project
+prefix the Pages deploy uses), and `npm run check:links` over `out/`. The
+check is a job-level path test on `website/**` and the two docs workflows, not
+a workflow-level `paths:` filter: a skipped workflow would never report
+`ci-ok`, the required check (convention 2). The job always starts and its steps
+no-op when the PR leaves the site alone. Pushes to `main` and `develop` always
+run it. `ci.yml` and `docs.yml` both use Node 24, since Node 20 reached end of
+life on 2026-04-30.
 
 ### 9. Release gates are code, not prose. **Target** (#767)
 

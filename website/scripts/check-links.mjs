@@ -51,13 +51,16 @@ async function resolveFile(urlPath) {
 }
 
 const ATTR = /<(a|link|script|img|source|iframe)\b[^>]*?\s(href|src)\s*=\s*("([^"]*)"|'([^']*)')/gi
-const IDS = /\s(?:id|name)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi
+// `id=` on any element; `name=` only on <a> (not <meta name>, form fields).
+const IDS = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)')/gi
+const A_NAMES = /<a\b[^>]*?\sname\s*=\s*(?:"([^"]*)"|'([^']*)')/gi
 
 const idCache = new Map()
 async function idsOf(file) {
   if (!idCache.has(file)) {
     const html = await readFile(file, 'utf8')
-    idCache.set(file, new Set([...html.matchAll(IDS)].map((m) => decode(m[1] ?? m[2]))))
+    const found = [...html.matchAll(IDS), ...html.matchAll(A_NAMES)]
+    idCache.set(file, new Set(found.map((m) => decode(m[1] ?? m[2]))))
   }
   return idCache.get(file)
 }
@@ -78,7 +81,7 @@ let checked = 0
 for (const page of pages) {
   const html = await readFile(page, 'utf8')
   const pageUrl = '/' + relative(OUT, page).split(/[\\/]/).join('/')
-  const pageDir = posix.dirname(pageUrl.replace(/\/index\.html$/, '/index.html'))
+  const pageDir = posix.dirname(pageUrl)
   for (const m of html.matchAll(ATTR)) {
     const raw = (m[4] ?? m[5] ?? '').trim()
     if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//')) continue // external / mailto / data
