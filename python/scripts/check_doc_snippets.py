@@ -350,6 +350,9 @@ def _describe(value: _Val) -> str:
     return "it"
 
 
+_SEEDED_NAMES = frozenset({"Donkey", "DonkeyConfig"})
+
+
 @dataclass
 class _Checker:
     snippet: Snippet
@@ -374,6 +377,15 @@ class _Checker:
             from donkey_kit import Donkey
 
             return _Inst(Donkey)
+        if name in _SEEDED_NAMES:
+            # Docs pages import the facade once and reuse it in later fences
+            # (`donkey = Donkey.from_env()`), so resolve the two public
+            # constructors even when this fence has no import. Error classes
+            # and `classify` are not seeded on purpose: without the narrowing
+            # an `except` or `isinstance` gives, they cause false positives.
+            import donkey_kit
+
+            return _wrap(getattr(donkey_kit, name))
         return None
 
     def bind_target(self, target: ast.expr, value: _Val) -> None:

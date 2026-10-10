@@ -94,6 +94,24 @@ def test_unbound_donkey_defaults_to_a_donkey(tmp_path: Path) -> None:
     assert _messages(root) == ["`Donkey` has no attribute `not_an_adapter`"]
 
 
+def test_unimported_donkey_constructors_are_still_checked(tmp_path: Path) -> None:
+    # Pages import `Donkey` once and reuse it in later fences; a fence with no
+    # import of its own must still be checked, and must not rebind `donkey` to
+    # an unknown value that switches the checking off.
+    root = _page(
+        tmp_path,
+        "donkey = Donkey.from_env(bad=1)\n"
+        "config = DonkeyConfig.from_env(nope=2)\n"
+        "donkey.not_an_adapter.model('gpt-4o')",
+    )
+    first, second, third = _messages(root)
+    assert "Donkey.from_env" in first
+    assert "'bad'" in first
+    assert "DonkeyConfig.from_env" in second
+    assert "'nope'" in second
+    assert third == "`Donkey` has no attribute `not_an_adapter`"
+
+
 def test_too_many_positional_arguments_fail(tmp_path: Path) -> None:
     root = _page(tmp_path, "from donkey_kit import DonkeyConfig\nDonkeyConfig.from_env(1, 2, 3)")
     (message,) = _messages(root)
