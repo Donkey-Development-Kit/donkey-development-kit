@@ -160,6 +160,9 @@ def __dir__() -> list[str]:
 # records stay silent until the application configures logging (#717).
 _logging.getLogger(__name__).addHandler(_logging.NullHandler())
 
+# The package's one version source (#767): pyproject.toml declares the version
+# dynamic and hatch reads this line, so bump it here and nowhere else. The
+# release workflows fail when a tag disagrees with it (docs/releasing.md).
 __version__ = "0.1.2"
 
 __all__ = [

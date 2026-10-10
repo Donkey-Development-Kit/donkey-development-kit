@@ -4,7 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "donkey-kit"
-version = "0.1.2"
+# The version is declared once, as `__version__` in src/donkey_kit/__init__.py,
+# and hatch reads it from there ([tool.hatch.version] below, #767). Bump only
+# that file (scripts/bump-version.sh does it); test_release_version.py checks
+# nothing here re-declares it.
+dynamic = ["version"]
 description = "An SDK for consuming Agent Fabric capabilities (governed model and tool access) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -184,6 +188,12 @@ donkey = "donkey_kit.cli:main"
 # framework-free suite/report siblings); the harness that pulls in Donkey is
 # imported lazily. The plugin is inert unless `--donkey-conformance` is passed.
 donkey_kit_conformance = "donkey_kit.conformance.plugin"
+
+# The one version source (#767): hatch's default pattern reads the
+# `__version__ = "..."` line, and the wheel, the sdist and `__version__` can no
+# longer disagree.
+[tool.hatch.version]
+path = "src/donkey_kit/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/donkey_kit"]
