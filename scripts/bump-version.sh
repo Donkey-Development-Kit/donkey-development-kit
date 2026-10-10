@@ -2,12 +2,17 @@
 #
 # Interactive version bump → PR into develop → auto-merge on CI green.
 #
-# Bumps the package version in lockstep across the two files that must always
-# agree (see [[ddk-release]] "Single source of version truth"):
-#   python/pyproject.toml            version = "…"
+# Bumps the package version in its one source file (#767):
 #   python/src/donkey_kit/__init__.py   __version__ = "…"
+# (python/pyproject.toml declares the version dynamic and hatch reads it from
+# there, so there is nothing to keep in lockstep; see docs/releasing.md.)
 #
-# then opens a squash PR into `develop` (branch → develop is always a squash
+# The bump is tracked by an issue like any other change: the branch is named
+# chore/<issue#>-bump-version-<version> per the <type>/<issue#>-<slug>
+# convention, and the PR body closes the issue. Pass it with --issue N, or the
+# script asks for it.
+#
+# It then opens a squash PR into `develop` (branch → develop is always a squash
 # merge, per [[ddk-merge-strategy]]) and enables GitHub auto-merge so it lands
 # the moment the blocking CI gates pass (base-only, typecheck-and-lint incl.
 # mypy --strict + lint-imports, and the test matrix). It then waits for the
@@ -28,30 +33,36 @@
 # behind your back. Nothing lands until CI is green.
 #
 # Usage:
-#   bash scripts/bump-version.sh              # interactive
-#   bash scripts/bump-version.sh --dry-run    # show every action, mutate nothing
-#   bash scripts/bump-version.sh --yes        # skip the final confirm prompt
+#   bash scripts/bump-version.sh                # interactive
+#   bash scripts/bump-version.sh --issue 1234   # the issue tracking this bump
+#   bash scripts/bump-version.sh --dry-run      # show every action, mutate nothing
+#   bash scripts/bump-version.sh --yes          # skip the final confirm prompt
 #
 set -uo pipefail
 
 REPO="Donkey-Development-Kit/donkey-development-kit"
 BASE_BRANCH="develop"
-PYPROJECT="python/pyproject.toml"
 INIT_PY="python/src/donkey_kit/__init__.py"
 MERGE_POLL_SECS="${MERGE_POLL_SECS:-15}"
 MERGE_TIMEOUT_SECS="${MERGE_TIMEOUT_SECS:-1800}"
 
 DRY_RUN=0
 ASSUME_YES=0
-for arg in "$@"; do
-  case "$arg" in
+ISSUE=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --dry-run) DRY_RUN=1 ;;
     --yes|-y)  ASSUME_YES=1 ;;
+    --issue)
+      [ "$#" -ge 2 ] || { printf 'error: --issue needs an issue number\n' >&2; exit 2; }
+      ISSUE="$2"; shift ;;
+    --issue=*) ISSUE="${1#--issue=}" ;;
     -h|--help)
       grep '^#' "$0" | sed -E 's/^# ?//' | sed -n '2,40p'
       exit 0 ;;
-    *) printf 'error: unknown argument: %s\n' "$arg" >&2; exit 2 ;;
+    *) printf 'error: unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
+  shift
 done
 
 BOLD=$'\033[1m'; RESET=$'\033[0m'
@@ -70,7 +81,7 @@ run() {
 # --- Locate the repo root and cd there so paths resolve regardless of cwd -----
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository"
 cd "$ROOT" || die "cannot cd to repo root: $ROOT"
-[ -f "$PYPROJECT" ] || die "$PYPROJECT not found — run this from the donkey-development-kit repo"
+[ -f "$INIT_PY" ] || die "$INIT_PY not found — run this from the donkey-development-kit repo"
 
 # --- Preconditions ------------------------------------------------------------
 command -v gh >/dev/null 2>&1 || die "the GitHub CLI (gh) is required; install it and 'gh auth login'"
@@ -85,15 +96,9 @@ if [ -n "$(git status --porcelain)" ]; then
   die "working tree is not clean — commit or stash first (this script edits tracked version files)"
 fi
 
-# --- Read + verify the current version (the two files MUST agree) -------------
-current_pyproject=$(sed -nE 's/^version = "([^"]+)"/\1/p' "$PYPROJECT" | head -1)
-current_init=$(sed -nE 's/^__version__ = "([^"]+)"/\1/p' "$INIT_PY" | head -1)
-[ -n "$current_pyproject" ] || die "could not read version from $PYPROJECT"
-[ -n "$current_init" ] || die "could not read __version__ from $INIT_PY"
-if [ "$current_pyproject" != "$current_init" ]; then
-  die "version mismatch: $PYPROJECT says '$current_pyproject' but $INIT_PY says '$current_init' — fix by hand first"
-fi
-CURRENT="$current_pyproject"
+# --- Read the current version from its one source ----------------------------
+CURRENT=$(sed -nE 's/^__version__ = "([^"]+)"/\1/p' "$INIT_PY" | head -1)
+[ -n "$CURRENT" ] || die "could not read __version__ from $INIT_PY"
 info "current version: ${BOLD}${CURRENT}${RESET}"
 
 # --- Parse the PEP 440 version ------------------------------------------------
@@ -186,12 +191,26 @@ PY
   esac
 fi
 
+# --- The issue this bump closes (branch naming: <type>/<issue#>-<slug>) -------
+if [ -z "$ISSUE" ]; then
+  read -r -p "Issue number tracking this bump: " ISSUE
+fi
+ISSUE="${ISSUE#\#}"
+[[ "$ISSUE" =~ ^[1-9][0-9]*$ ]] || die "not an issue number: '$ISSUE'"
+if [ "$DRY_RUN" -eq 0 ]; then
+  issue_state=$(gh issue view "$ISSUE" --repo "$REPO" --json state --jq .state 2>/dev/null) \
+    || die "issue #$ISSUE not found in $REPO"
+  [ "$issue_state" = "OPEN" ] || die "issue #$ISSUE is $issue_state; a bump closes an open issue"
+fi
+
 # --- Confirm ------------------------------------------------------------------
-BRANCH="release/bump-${NEW}"
+# The slug is kebab-case with no punctuation: 0.1.3.dev0 -> 0-1-3-dev0.
+BRANCH="chore/${ISSUE}-bump-version-${NEW//./-}"
 printf '\n'
 printf '  version:  \033[1m%s\033[0m  →  \033[1m%s\033[0m\n' "$CURRENT" "$NEW"
+printf '  issue:    #%s\n' "$ISSUE"
 printf '  branch:   %s  (off %s)\n' "$BRANCH" "$BASE_BRANCH"
-printf '  files:    %s, %s\n' "$PYPROJECT" "$INIT_PY"
+printf '  file:     %s\n' "$INIT_PY"
 printf '  merge:    squash into %s, auto-merge when CI is green\n' "$BASE_BRANCH"
 [ "$DRY_RUN" -eq 1 ] && printf '  \033[33mmode:     DRY RUN — nothing will be changed\033[0m\n'
 printf '\n'
@@ -215,30 +234,28 @@ if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
 fi
 run git switch -c "$BRANCH" "origin/${BASE_BRANCH}"
 
-# --- Edit the two files in lockstep (anchored, exact-match on current) --------
+# --- Edit the one version source (anchored, exact-match on current) ----------
 if [ "$DRY_RUN" -eq 1 ]; then
-  printf '\033[33m[dry-run]\033[0m would set version %s → %s in %s and %s\n' \
-    "$CURRENT" "$NEW" "$PYPROJECT" "$INIT_PY"
+  printf '\033[33m[dry-run]\033[0m would set __version__ %s → %s in %s\n' \
+    "$CURRENT" "$NEW" "$INIT_PY"
 else
-  perl -i -pe "s/^version = \"\Q$CURRENT\E\"/version = \"$NEW\"/"        "$PYPROJECT" || die "failed to edit $PYPROJECT"
-  perl -i -pe "s/^__version__ = \"\Q$CURRENT\E\"/__version__ = \"$NEW\"/" "$INIT_PY"   || die "failed to edit $INIT_PY"
-  # Verify both actually changed and now agree.
-  got_p=$(sed -nE 's/^version = "([^"]+)"/\1/p' "$PYPROJECT" | head -1)
+  perl -i -pe "s/^__version__ = \"\Q$CURRENT\E\"/__version__ = \"$NEW\"/" "$INIT_PY" || die "failed to edit $INIT_PY"
   got_i=$(sed -nE 's/^__version__ = "([^"]+)"/\1/p' "$INIT_PY" | head -1)
-  [ "$got_p" = "$NEW" ] || die "post-edit check failed: $PYPROJECT is '$got_p', expected '$NEW'"
   [ "$got_i" = "$NEW" ] || die "post-edit check failed: $INIT_PY is '$got_i', expected '$NEW'"
-  info "bumped both files to $NEW"
+  info "bumped $INIT_PY to $NEW"
 fi
 
 # --- Commit + push ------------------------------------------------------------
 COMMIT_MSG="chore: bump version to ${NEW}"
-run git add "$PYPROJECT" "$INIT_PY"
+run git add "$INIT_PY"
 run git commit -m "$COMMIT_MSG"
 run git push -u origin "$BRANCH"
 
 # --- Open the PR into develop -------------------------------------------------
 PR_TITLE="chore: bump version to ${NEW}"
-PR_BODY="Bumps the package version ${CURRENT} → ${NEW} in lockstep across \`${PYPROJECT}\` and \`${INIT_PY}\`.
+PR_BODY="Closes #${ISSUE}
+
+Bumps the package version ${CURRENT} → ${NEW} in \`${INIT_PY}\`, its one source (\`pyproject.toml\` reads it from there).
 
 Every promotion to \`main\` advances the version; this lands the bump on \`${BASE_BRANCH}\` ahead of the promotion PR (see the release conventions).
 
