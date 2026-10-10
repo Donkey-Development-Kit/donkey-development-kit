@@ -6,9 +6,9 @@ import { getPageMap } from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
 import { cloudflareBeacon } from '../lib/analytics.mjs'
 import { EDIT_REF, REPO_URL } from '../lib/repo.mjs'
+import { OG_IMAGE, SITE_NAME, siteBase } from '../lib/site.mjs'
 import '../styles/globals.css'
 
-const SITE_NAME = 'Donkey Development Kit'
 const SITE_DESCRIPTION =
   'Governed by the gateway, understood by your code. An open-source SDK that brings Agent Fabric and Omni Gateway awareness into your agent framework.'
 
@@ -34,15 +34,22 @@ const play = Play({
 // come from each page's frontmatter, resolved by generateMetadata in the
 // [[...mdxPath]] route.
 export const metadata: Metadata = {
+  // Resolves canonical / og:url / og:image to absolute URLs. The image itself
+  // comes from the app/opengraph-image.jpg and app/icon.png file conventions.
+  metadataBase: new URL(siteBase()),
   title: {
     default: SITE_NAME,
     template: `%s — ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
   openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
     title: SITE_NAME,
     description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
   },
+  twitter: { card: 'summary_large_image', images: [OG_IMAGE.url] },
 }
 
 const navbar = (
