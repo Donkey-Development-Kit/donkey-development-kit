@@ -87,8 +87,9 @@ jobs:
           wheel_dir="$(mktemp -d)"
           venv_dir="$(mktemp -d)"
           trap 'rm -rf "$wheel_dir" "$venv_dir"' EXIT
-          pip install build
-          python -m build --wheel --outdir "$wheel_dir"
+          # The locked release toolchain, as publish-*.yml uses it (#763).
+          pip install -c constraints/release-py3.11.txt build hatchling
+          python -m build --no-isolation --wheel --outdir "$wheel_dir"
           set -- "$wheel_dir"/*.whl
           test "$#" -eq 1
           # #821: the wheel ships fixtures; none may carry a tenant identifier.

@@ -172,6 +172,25 @@ dev = [
     # instead of hanging CI.
     "pytest-timeout>=2.3",
 ]
+# The release toolchain (#763). The publish workflows and ci.yml's base-only
+# wheel build install these from constraints/release-py3.11.txt and build with
+# `python -m build --no-isolation`, so the backend that builds a shipped dist is
+# the locked one, not whatever hatchling was newest that day. [build-system]
+# above keeps its floor (§8.4): it is what an sdist consumer's build resolves.
+release = [
+    "build>=1.2.1",
+    # 6.1 drops pkginfo for packaging's metadata parser, so `twine check`
+    # accepts the Metadata-Version 2.4 (PEP 639) dists hatchling>=1.27 writes
+    # whatever pkginfo is installed; 6.0.0 rejects them.
+    "twine>=6.1",
+    "hatchling>=1.27",
+]
+# The lock's own refresh tool (#763): scripts/compile_constraints.py drives
+# `uv pip compile`. lock-refresh.yml installs it from constraints/lock-py3.11.txt.
+lock = [
+    # 0.6.7: the first release whose `uv pip compile` takes `--group`.
+    "uv>=0.6.7",
+]
 
 [project.scripts]
 donkey = "donkey_kit.cli:main"

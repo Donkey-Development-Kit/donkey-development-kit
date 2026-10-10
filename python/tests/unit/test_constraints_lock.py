@@ -33,7 +33,9 @@ else:  # pragma: no cover - 3.10 backfill
 
 _PYTHON_ROOT = Path(__file__).resolve().parents[2]
 _CONSTRAINTS_DIR = _PYTHON_ROOT / "constraints"
-_CI_YAML = _PYTHON_ROOT.parent / ".github" / "workflows" / "ci.yml"
+_WORKFLOWS_DIR = _PYTHON_ROOT.parent / ".github" / "workflows"
+_CI_YAML = _WORKFLOWS_DIR / "ci.yml"
+_CONSTRAINT_REF_RE = re.compile(r"constraints/([A-Za-z0-9._-]+\.txt)")
 _PIN_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==")
 
 # requirement_name()/canonicalize() do the exact PEP 503 normalization the
@@ -53,8 +55,8 @@ def _extra_names(pyproject: dict[str, Any], extra: str) -> set[str]:
     return {requirement_name(r) for r in raw}
 
 
-def _dev_group_names(pyproject: dict[str, Any]) -> set[str]:
-    raw = [item for item in pyproject["dependency-groups"]["dev"] if isinstance(item, str)]
+def _group_names(pyproject: dict[str, Any], group: str) -> set[str]:
+    raw = [item for item in pyproject["dependency-groups"][group] if isinstance(item, str)]
     return {requirement_name(r) for r in raw}
 
 
@@ -64,7 +66,9 @@ def _combo_direct_names(combo: Combo, pyproject: dict[str, Any]) -> set[str]:
     for extra in combo.extras:
         names |= _extra_names(pyproject, extra)
     if combo.dev_group:
-        names |= _dev_group_names(pyproject)
+        names |= _group_names(pyproject, "dev")
+    for group in combo.groups:
+        names |= _group_names(pyproject, group)
     return names
 
 
@@ -174,3 +178,49 @@ def test_adapter_contract_matrix_extras_each_have_their_own_combo() -> None:
             f"ci.yml adapter-contract matrix has extra {extra!r} but "
             f"scripts/compile_constraints.py has no Combo named {expected_combo!r}"
         )
+
+
+def test_every_constraints_file_a_workflow_names_exists() -> None:
+    """A `constraints/<file>.txt` a workflow installs from is committed (#763).
+
+    Templated names (`test-py${PYTHON_VERSION}.txt`) are not matched by the
+    pattern; the per-combo tests above cover those.
+    """
+    for workflow in sorted(_WORKFLOWS_DIR.glob("*.yml")):
+        for name in _CONSTRAINT_REF_RE.findall(workflow.read_text(encoding="utf-8")):
+            assert (_CONSTRAINTS_DIR / name).is_file(), (
+                f"{workflow.name} installs from constraints/{name}, which is not "
+                "committed; add its Combo and run `python scripts/compile_constraints.py`"
+            )
+
+
+def test_every_dist_build_uses_the_locked_release_toolchain() -> None:
+    """Each `python -m build` step builds with the locked backend (#763).
+
+    `python -m build` alone builds in an isolated env with whatever hatchling
+    is newest that day. `--no-isolation` makes it use the hatchling the job
+    installed from constraints/release-py3.11.txt, and the same step must
+    install from that file.
+    """
+    seen = 0
+    for workflow in sorted(_WORKFLOWS_DIR.glob("*.yml")):
+        for step in re.split(r"\n\s*- ", workflow.read_text(encoding="utf-8")):
+            commands = [
+                line.strip()
+                for line in step.splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            ]
+            for build in (c for c in commands if "python -m build" in c):
+                seen += 1
+                assert "--no-isolation" in build, (
+                    f"{workflow.name}: `{build}` builds in an isolated env, so it "
+                    "ignores the locked hatchling; add --no-isolation"
+                )
+                assert any(
+                    "pip install" in c and "-c constraints/release-py3.11.txt" in c
+                    for c in commands
+                ), (
+                    f"{workflow.name}: the step running `{build}` does not install "
+                    "its toolchain with -c constraints/release-py3.11.txt"
+                )
+    assert seen >= 3, "expected the publish-pypi, publish-testpypi and base-only builds"

@@ -1,0 +1,6 @@
+# GENERATED FILE — do not edit by hand.
+# Refresh with: python scripts/compile_constraints.py  (combo='lock', python 3.11)
+# Covers workflow job(s): lock-refresh.yml
+# See scripts/compile_constraints.py and docs/adr/0007-dependency-policy.md rule 3.
+#
+uv==0.13.0

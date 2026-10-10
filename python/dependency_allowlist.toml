@@ -161,3 +161,21 @@ reviewed = 2026-10-05
 reason = "dev: caps every test at 60s, so a stalled proxy/collector call fails fast instead of hanging CI (#747)."
 reviewed = 2026-10-05
 
+
+# --- release and lock groups: the locked release toolchain (not published, #763) ---
+
+[packages.build]
+reason = "release: builds the sdist and wheel in publish-pypi.yml, publish-testpypi.yml and ci.yml's base-only job, with --no-isolation against the locked hatchling (#763)."
+reviewed = 2026-10-10
+
+[packages.twine]
+reason = "release: `twine check` on the built dists before upload in both publish workflows (#763)."
+reviewed = 2026-10-10
+
+[packages.hatchling]
+reason = "release: the build backend ([build-system]); listed in the release group so the publish builds use the locked version (#763)."
+reviewed = 2026-10-10
+
+[packages.uv]
+reason = "lock: `uv pip compile` behind scripts/compile_constraints.py, which lock-refresh.yml runs nightly to refresh constraints/ (#763)."
+reviewed = 2026-10-10

@@ -29,9 +29,12 @@ jobs:
         with:
           python-version: "3.11"
       - name: Build
+        # The release toolchain comes from the lock, and --no-isolation builds
+        # with that hatchling instead of the newest one on PyPI (#763). Refresh
+        # with scripts/compile_constraints.py (combo "release").
         run: |
-          pip install build twine
-          python -m build
+          pip install -c constraints/release-py3.11.txt build twine hatchling
+          python -m build --no-isolation
       - name: twine check (PyPI long description renders cleanly)
         run: twine check dist/*
       - name: no tenant identifiers or live platform hosts in the built dists (#821)
