@@ -1,7 +1,7 @@
 # ADR 0007: Floors are the lowest verified versions, PR CI resolves from a lock, and the nightly run is the canary
 
 - **Status:** Accepted
-- **Date:** 2026-10-03 (rule 3 implemented 2026-10-05, #948)
+- **Date:** 2026-10-03 (rule 3 implemented 2026-10-05, #948; rule 1's job 2026-10-10, #769)
 - **Issue:** #731 (part of #707). The lowest-direct floor job is #769; locking
   PR CI was #948 (see Consequences).
 
@@ -107,8 +107,14 @@ encoded as pins. What the repo does today:
   `adapter-contract` matrix leg with no matching `Combo`); it cannot re-run
   the resolver, so proving a file still *installs* needs the script's
   `--check` run against the network, or CI's own `pip install -c ...` step.
-- Rule 1's CI job is #769. Until it lands, `docs/verified-apis.md` §8.3 is
-  the record, as it says.
+- Rule 1's CI job is the nightly `lowest-direct` job in
+  `.github/workflows/nightly-matrix.yml` (#769). It installs with uv's
+  `--resolution lowest-direct`, which pip has no equivalent for, runs the unit
+  and adapter-contract suites, and then `python/scripts/check_floors.py`, which
+  fails when a declared floor is not the installed version. It is nightly, not
+  per PR, because a lowest-direct resolve is a fresh resolve against the index
+  (rule 3). `docs/verified-apis.md` §8.3 still records why each floor is
+  where it is.
 - The build plan's `§8.4` sentence that "a fresh resolve always takes the
   newest release" stays true for users and for the nightly run. This ADR
   narrows where CI does a fresh resolve; it doesn't change what users get.

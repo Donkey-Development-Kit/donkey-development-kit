@@ -43,8 +43,9 @@ The jobs, grouped by what they protect:
 - **Static checks.** `typecheck-and-lint` runs `mypy`, `ruff check`,
   `lint-imports`, the verification-claim and doc-link checkers, the fixture
   scrub check and `vulture`.
-- **Behaviour.** `test` is the Python 3.10–3.12 matrix and includes the
-  `local_gateway` suite. `adapter-contract` runs one leg per `ADAPTERS` extra
+- **Behaviour.** `test` is the Python 3.10–3.14 matrix and includes the
+  `local_gateway` suite. `openai-1x` runs the same suites with `openai<2`, the
+  1.x range the `llm` extra's floor allows (#769). `adapter-contract` runs one leg per `ADAPTERS` extra
   with its real framework installed (#742). The framework-specific jobs
   (`anthropic-stacks`, `adk-stacks`, `agent-framework-middleware`,
   `llamaindex-transport`, `agents-strands-last-call`) cover tests that only
@@ -61,7 +62,13 @@ The jobs, grouped by what they protect:
 The nightly run resolves fresh against the newest upstream releases, with no
 constraints (ADR 0007 rule 4). `matrix` re-verifies the conformance-tested
 adapter (LangGraph) against §8 signatures, and `framework-legs` runs every
-`ADAPTERS` entry (#748). A live proxy round-trip is available only through
+`ADAPTERS` entry (#748). `lowest-direct` installs base, the framework-free
+extras and each framework extra at their declared floors (`uv pip install
+--resolution lowest-direct`, Python 3.10), runs their suites, and fails a leg
+whose installed versions are not its declared floors
+(`scripts/check_floors.py`, ADR 0007 rule 1). `co-installability` re-resolves
+every framework extra pair and fails when `docs/co-installability.md` no longer
+matches (#769). A live proxy round-trip is available only through
 `workflow_dispatch` with `live: true`. A red nightly is an upstream signal: fix
 it by adapting the code or by moving the lock, never by adding a ceiling
 (`§8.4`). Any failed run, scheduled or manual, opens one issue labelled
@@ -255,8 +262,8 @@ install lines in `ci.yml`.
 
 Still open under #763: pinning the build backend and the release tools,
 Dependabot-driven lock bumps, and making `mypy` independent of which extras are
-installed. Still open under #769: a lowest-direct job that keeps the declared
-floors honest, an `openai<2` leg, and Python 3.13/3.14 in the matrix.
+installed. The declared floors are not locked: the nightly `lowest-direct` job
+installs them fresh (#769).
 
 ### 2. One required status check: `ci-ok`. **In place** (#755)
 

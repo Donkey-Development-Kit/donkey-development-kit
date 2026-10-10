@@ -27,6 +27,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 
@@ -74,7 +76,9 @@ adk = ["google-adk>=2.4", "litellm>=1.84"]
 # 1.13 is the first whose `OpenAIChatClient(model=...)` call reaches the proxy:
 # 1.12 builds it but sends elsewhere, and 1.11 and earlier lack the class path.
 agent_framework = ["agent-framework>=1.13"]
-openai-agents = ["openai-agents>=0.20", "openai>=1.66"]
+# openai-agents 0.20 itself requires openai>=2.45, so that is the real floor
+# (the nightly lowest-direct leg checks it, #769).
+openai-agents = ["openai-agents>=0.20", "openai>=2.45"]
 anthropic = ["anthropic>=0.116"]
 # 1.15.3 keeps `openai/<id>` + `base_url` on the native OpenAI provider for any
 # model id; earlier releases fall back to LiteLLM for non-OpenAI-looking ids.
@@ -123,11 +127,12 @@ test = ["pytest>=8.0", "pytest-asyncio>=0.23.1"]
 # --- Everything a user runs, together ---
 # The framework-free extras plus the one deep adapter (BG §1.8). No test runner
 # or linter (#744): add `donkey-kit[all,test]` for the conformance plugin. The
-# seven connection_kwargs()-only framework extras are deliberately NOT here: at
-# their current releases they are not co-installable upstream, and with
-# floors-only extras (§8.4) no floor makes them so — pip fails with
-# resolution-too-deep. Install those one at a time. See docs/verified-apis.md
-# §8.1 (#697).
+# seven connection_kwargs()-only framework extras are deliberately NOT here:
+# whether they co-install is an upstream property no floor can guarantee
+# (§8.4), and pip once failed `[all]` with resolution-too-deep when it bundled
+# them (#697). Which ones resolve together today is the generated
+# docs/co-installability.md table, re-checked nightly (#769). See
+# docs/verified-apis.md §8.1.
 all = [
     "donkey-kit[llm,langgraph,otel,cli,local]",
 ]
@@ -170,7 +175,8 @@ dev = [
     # Hermetic test suite (#747): caps every test at timeout (below), so a test
     # that stalls on a dead proxy or an unreachable collector fails fast
     # instead of hanging CI.
-    "pytest-timeout>=2.3",
+    # 2.3.0 was never published; 2.3.1 is the lowest 2.3 release (#769).
+    "pytest-timeout>=2.3.1",
 ]
 
 [project.scripts]

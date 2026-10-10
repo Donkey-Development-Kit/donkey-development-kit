@@ -25,6 +25,7 @@ is installed; the meta-tests at the bottom keep the table in step with
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import threading
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
@@ -147,9 +148,14 @@ class _Case:
     #: True when the framework sends through the shared transport, which retries
     #: a 503 itself; False when it builds its own client (retries turned off).
     shared_transport: bool = True
-    #: Sends for the budget 429. Anything but 1 needs an ``exemption``.
-    budget_sends: int = 1
+    #: Sends for the budget 429. Anything but 1 needs an ``exemption``. A
+    #: callable is read after the probe import, for a count that depends on
+    #: the installed release (the lowest-direct legs run the extra's floor, #769).
+    budget_sends: int | Callable[[], int] = 1
     exemption: str | None = None
+
+    def expected_budget_sends(self) -> int:
+        return self.budget_sends() if callable(self.budget_sends) else self.budget_sends
 
 
 _CREWAI_RATE_LIMIT_EXEMPTION = (
@@ -157,8 +163,14 @@ _CREWAI_RATE_LIMIT_EXEMPTION = (
     "(crewai.llms.retry, 3 attempts, 1s/2s backoff) and takes any 429 for a "
     "throttle. It has no public setting to turn it off (only a private context "
     "variable, #958), so a budget refusal is sent 3 times. The provider SDK's own "
-    "retries are off (max_retries=0)."
+    "retries are off (max_retries=0). Below 1.15.23, down to the extra's 1.15.3 "
+    "floor, crewai.llms.retry does not exist and the refusal is sent once (#769)."
 )
+
+
+def _crewai_budget_sends() -> int:
+    """3 sends where ``crewai.llms.retry`` exists (crewai>=1.15.23), else 1."""
+    return 3 if importlib.util.find_spec("crewai.llms.retry") is not None else 1
 
 
 _CASES: dict[str, _Case] = {
@@ -212,7 +224,7 @@ _CASES: dict[str, _Case] = {
         "crewai",
         lambda d: d.crewai.llm("m").call("hi"),
         shared_transport=False,
-        budget_sends=3,
+        budget_sends=_crewai_budget_sends,
         exemption=_CREWAI_RATE_LIMIT_EXEMPTION,
     ),
     "crewai-async": _Case(
@@ -220,7 +232,7 @@ _CASES: dict[str, _Case] = {
         "crewai",
         lambda d: d.crewai.llm("m").acall("hi"),
         shared_transport=False,
-        budget_sends=3,
+        budget_sends=_crewai_budget_sends,
         exemption=_CREWAI_RATE_LIMIT_EXEMPTION,
     ),
     "llamaindex-sync": _Case(
@@ -255,7 +267,7 @@ async def test_framework_sends_a_refusal_once(name: str, proxy: _Proxy) -> None:
         await donkey.aclose()
 
     if proxy.status == 429:
-        expected = case.budget_sends
+        expected = case.expected_budget_sends()
     else:
         expected = _MAX_RETRIES + 1 if case.shared_transport else 1
     assert proxy.sends == expected, (

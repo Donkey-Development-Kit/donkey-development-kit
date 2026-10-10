@@ -11,7 +11,8 @@ is added or dropped (#745).
 | 3.10 | Yes, until the first minor release after its end of life | October 2026 |
 | 3.11 | Yes | October 2027 |
 | 3.12 | Yes | October 2028 |
-| 3.13, 3.14 | Not yet tested | October 2029, October 2030 |
+| 3.13 | Yes | October 2029 |
+| 3.14 | Yes | October 2030 |
 
 The end-of-life dates are the ones in the CPython
 [status page](https://devguide.python.org/versions/).
@@ -49,6 +50,10 @@ When a version is dropped, these move together in one PR:
 - the version classifiers in `python/pyproject.toml`;
 - the `test` matrix in `.github/workflows/ci.yml` and
   `.github/workflows/nightly-matrix.yml`;
+- the `lowest-direct` job's Python in `.github/workflows/nightly-matrix.yml`,
+  which runs on the floor (`tests/unit/test_support_matrix.py` checks it);
+- the `test` combo's Python versions in `python/scripts/compile_constraints.py`
+  and its `python/constraints/test-py3.NN.txt` files;
 - ruff `target-version` and mypy `python_version`;
 - backfills only the dropped version needed (`tomli`, `typing-extensions`)
   and their `python/dependency_allowlist.toml` entries;

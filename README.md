@@ -47,7 +47,7 @@ access — from your own agent framework, in your own IDE, without adopting Mule
 > **Security.** Report vulnerabilities privately, never in a public issue. See
 > [`SECURITY.md`](SECURITY.md) for supported versions and how to report.
 >
-> **Python versions.** CPython 3.10–3.12, each tested in CI; a version is
+> **Python versions.** CPython 3.10–3.14, each tested in CI; a version is
 > dropped in the first minor release after its end of life. See
 > [`docs/python-support.md`](docs/python-support.md).
 
@@ -95,9 +95,10 @@ Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
 `pytest --donkey-conformance --donkey-agent=my_app.agent:build`), and `all`. `all` is
 everything a user runs that installs together — `llm`, `langgraph`, `otel`, `cli`,
 `local` — with no test runner, so add `test` for the conformance plugin:
-`donkey-kit[all,test]`. It leaves out the seven other framework extras, whose current
-upstream releases cannot all be installed together. Add the one framework you use:
-`donkey-kit[all,crewai]`.
+`donkey-kit[all,test]`. It leaves out the seven other framework extras, because
+whether they install together depends on their upstream releases. The generated
+[co-installability table](docs/co-installability.md) shows which combinations resolve, re-checked
+nightly. Add the one framework you use: `donkey-kit[all,crewai]`.
 Configuration and first-agent walkthroughs live on the
 [documentation site](https://docs.donkey-kit.dev/).
 

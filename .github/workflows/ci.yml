@@ -121,7 +121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -251,7 +251,7 @@ jobs:
       # exists to show which versions fail.
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     env:
       # Bind the matrix value to an env var so it is never interpolated into a
       # run: body directly (injection hardening); also names this job's lock.
@@ -341,6 +341,42 @@ jobs:
         run: |
           coverage combine
           { echo "### Coverage (branch, python 3.11 leg)"; echo; coverage report --format=markdown; } >> "$GITHUB_STEP_SUMMARY"
+
+  openai-1x:
+    # #769: the `llm` extra's floor is openai>=1.66, but every other job
+    # resolves the 2.x line, so nothing tested the 1.x releases the floor
+    # allows. This job adds `"openai<2"` to the `test` job's install line and
+    # runs the same default and local_gateway suites. The pin is this job's
+    # only: the extra keeps its floor and no ceiling (§8.4). Locked like the
+    # other PR jobs (combo "openai-1x"); the nightly `lowest-direct` job covers
+    # the floor itself.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - id: pip-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/openai-1x-py3.12.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev "openai<2" -c constraints/openai-1x-py3.12.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+      - name: openai is a 1.x release
+        run: python -c "import openai; assert openai.__version__.startswith('1.'), openai.__version__"
+      - run: pytest -q
+      - name: local gateway simulator boot (BG §1.4)
+        run: pytest -q -m local_gateway
 
   anthropic-stacks:
     # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
@@ -804,6 +840,7 @@ jobs:
       - new-dependencies
       - commit-identities
       - test
+      - openai-1x
       - anthropic-stacks
       - adk-stacks
       - agent-framework-middleware

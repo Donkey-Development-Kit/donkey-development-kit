@@ -8,6 +8,12 @@
 #                       fresh, unconstrained resolve (#748; see that job's own
 #                       comment for why it exists alongside ci.yml's
 #                       constraint-locked `adapter-contract` legs).
+#   `lowest-direct`   — installs base, the framework-free extras and each
+#                       framework extra at their declared floors and runs
+#                       their suites, so a floor nothing tests fails here
+#                       (ADR 0007 rule 1, #769).
+#   `co-installability` — re-resolves every framework extra pair and fails
+#                       when docs/co-installability.md no longer matches (#769).
 #
 # `matrix` scope (#197): the roster is "one deep, seven shallow" — only
 # LangGraph is conformance-tested, so it is the only framework in `matrix`
@@ -91,7 +97,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -258,6 +264,131 @@ jobs:
       - name: Strict example smoke (non-zero on a missing framework; governed calls via the conformance kit)
         run: timeout 120 python scripts/smoke_example.py "$FRAMEWORK"
 
+  lowest-direct:
+    # #769, ADR 0007 rule 1: a floor is the lowest release the SDK is verified
+    # against, so the nightly run installs every declared floor and runs the
+    # suites against it. `uv pip install --resolution lowest-direct` picks the
+    # lowest version each DIRECT requirement allows (pip has no equivalent),
+    # on the oldest supported Python. Then scripts/check_floors.py fails the
+    # leg if any floor this leg declares is not the installed version: a floor
+    # the resolver could not reach is a floor nothing tested.
+    #
+    # Legs:
+    #   base            `.` + dev group: the base dependencies and the dev
+    #                   group's own floors, over tests/unit.
+    #   framework-free  `[llm,cli,local,otel,test]`: the whole default suite and
+    #                   the local_gateway suite.
+    #   <extra>         `[local,<extra>]`, one per ADAPTERS extra: the unit and
+    #                   adapter-contract suites, DONKEY_CONTRACT_EXTRA armed.
+    #                   No `llm`: a framework that needs a newer openai than
+    #                   `llm`'s floor would push its own resolve above the
+    #                   framework's floor. Only the leg's own extra is checked,
+    #                   since a framework may need a newer starlette than `local`'s.
+    # `test_nightly_lowest_direct_legs_match_adapters`
+    # (tests/unit/test_support_matrix.py) keeps the legs in step with ADAPTERS.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: base
+            install: ""
+            floors: ""
+            contract: ""
+          - leg: framework-free
+            install: llm,cli,local,otel,test
+            floors: llm,cli,local,otel,test
+            contract: ""
+          - leg: langgraph
+            install: local,langgraph
+            floors: langgraph
+            contract: langgraph
+          - leg: adk
+            install: local,adk
+            floors: adk
+            contract: adk
+          - leg: strands
+            install: local,strands
+            floors: strands
+            contract: strands
+          - leg: agent_framework
+            install: local,agent_framework
+            floors: agent_framework
+            contract: agent_framework
+          - leg: openai-agents
+            install: local,openai-agents
+            floors: openai-agents
+            contract: openai-agents
+          - leg: anthropic
+            install: local,anthropic
+            floors: anthropic
+            contract: anthropic
+          - leg: crewai
+            install: local,crewai
+            floors: crewai
+            contract: crewai
+          - leg: llamaindex
+            install: local,llamaindex
+            floors: llamaindex
+            contract: llamaindex
+    name: lowest-direct (${{ matrix.leg }})
+    env:
+      # Bind matrix values to env vars so they are never interpolated directly
+      # into a run: body (injection hardening).
+      LEG: ${{ matrix.leg }}
+      INSTALL_EXTRAS: ${{ matrix.install }}
+      FLOOR_EXTRAS: ${{ matrix.floors }}
+      DONKEY_CONTRACT_EXTRA: ${{ matrix.contract }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+      - name: Install at the declared floors (uv --resolution lowest-direct)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip "uv>=0.12"
+          target="."
+          if [ -n "$INSTALL_EXTRAS" ]; then target=".[$INSTALL_EXTRAS]"; fi
+          uv pip install --system --resolution lowest-direct -e "$target" --group dev
+          uv pip list --system
+      - name: Suites at the floors
+        run: |
+          set -euo pipefail
+          case "$LEG" in
+            base) python -m pytest -q tests/unit ;;
+            framework-free) python -m pytest -q && python -m pytest -q -m local_gateway ;;
+            *) python -m pytest -q tests/unit tests/conformance/test_adapter_contract.py ;;
+          esac
+      - name: Declared floors equal the installed versions (ADR 0007 rule 1)
+        run: |
+          set -euo pipefail
+          if [ "$LEG" = base ]; then
+            python scripts/check_floors.py --base --dev-group | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            python scripts/check_floors.py --extras "$FLOOR_EXTRAS" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  co-installability:
+    # #769: which framework extras install together is an upstream property,
+    # so it is generated, not written as prose. scripts/coinstall_matrix.py runs
+    # one `uv pip compile` per framework extra, per pair, per extra next to
+    # `[all]` and for all of them together, and `--check` fails when the result
+    # differs from the committed docs/co-installability.md. A pair that does not
+    # resolve is recorded as `no` only on uv's explicit "No solution found"; any
+    # other resolver error fails the job. The table goes to the job summary.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip "uv>=0.12"
+      - name: Framework extras co-install as docs/co-installability.md says
+        run: python scripts/coinstall_matrix.py --check --summary "$GITHUB_STEP_SUMMARY"
+
   alert:
     # #755: the dependency policy (floors, never ceilings, §8.4) relies on this
     # run to catch upstream breakage, so a red run must reach a human. `needs:`
@@ -265,7 +396,7 @@ jobs:
     # asserts it); `failure()` is true when any of them failed. Open-or-update
     # one tracking issue, the same pattern as live-contract-check.yml (#753).
     if: failure()
-    needs: [gates, all-extra-resolves, matrix, framework-legs]
+    needs: [gates, all-extra-resolves, matrix, framework-legs, lowest-direct, co-installability]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

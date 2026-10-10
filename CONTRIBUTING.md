@@ -167,7 +167,7 @@ non-zero exit means stop and fix before opening the PR:
 
 ```bash
 cd python
-pytest -q          # the `test` matrix job (3.10/3.11/3.12 in CI)
+pytest -q          # the `test` matrix job (3.10 to 3.14 in CI)
 mypy               # mypy --strict, BLOCKING
 ruff check .       # rule families in pyproject.toml (see the §3 map); line-length 100
 lint-imports       # the layered, framework-free-core contract
@@ -633,7 +633,12 @@ build plan has the rationale behind each rule:
   `pyproject.toml` — add `foo>=X`, never `foo<Y`. Known incompatibilities are
   documented in `docs/verified-apis.md §8.1` as dev constraints, not encoded as
   pins; the nightly matrix exists to surface breakage from newest releases early.
-  Each floor is the lowest verified release (`docs/verified-apis.md §8.3`).
+  Each floor is the lowest verified release (`docs/verified-apis.md §8.3`),
+  and the nightly `lowest-direct` job installs it and runs the suites against
+  it (#769). Changing a floor means that job's leg must still pass at the new
+  floor: reproduce it with `uv pip install --resolution lowest-direct -e
+  ".[local,<extra>]" --group dev` on Python 3.10, then
+  `python scripts/check_floors.py --extras <extra>`.
   [ADR 0007](docs/adr/0007-dependency-policy.md) records the dependency
   policy. This does not apply to `python/constraints/*.txt` (below): those
   are exact, CI-only pins for reproducibility, not a `pyproject.toml` ceiling.
@@ -682,7 +687,7 @@ build plan has the rationale behind each rule:
   the same PR, and removing a package means removing its entry. On a PR that
   adds a name, CI also checks that the project exists on PyPI and warns when it
   is young, abandoned, or one or two characters off another allowlisted name.
-- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12,
+- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10 to 3.14,
   and the version classifiers match it. When the floor moves is set by
   [`docs/python-support.md`](docs/python-support.md).
   `tomllib` is stdlib only on 3.11+, so `tomli` is backfilled below 3.11;
@@ -813,6 +818,8 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
 | Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |
+| Declared floors are the tested floors (#769) | `scripts/check_floors.py` after a `--resolution lowest-direct` install, per extra; `tests/unit/test_support_matrix.py` keeps the legs in step with `ADAPTERS` | `lowest-direct` (nightly) |
+| Which framework extras co-install is generated, not prose (#769) | `scripts/coinstall_matrix.py --check` against `docs/co-installability.md` | `co-installability` (nightly) |
 | Every direct dependency is a reviewed decision (#936) | `tests/unit/test_house_style_config.py` (every declared name has a `dependency_allowlist.toml` entry with a reason and date, and no stale entry); `scripts/check_new_dependencies.py` (a new name exists on PyPI; age, staleness and lookalike warnings) | `pytest`; `new-dependencies` (PRs) |
 | No placeholder git identities in PR commits (#1048) | `scripts/check_commit_identities.py` (author, committer and `Co-authored-by` trailers; a squash merge turns each PR-commit author into a trailer on `develop`) | `commit-identities` (PRs) |
 | 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
