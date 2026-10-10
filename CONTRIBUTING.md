@@ -899,9 +899,29 @@ Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .
 `website/` (Nextra) describes how the SDK behaves from a consumer's
 perspective. When code changes what the SDK does — or which platform facts it
 depends on — the docs must change *with it*, or the drift is discovered by a
-confused adopter instead of at review time. There is no automated drift detector;
-this is a PR-time discipline. The surface→page map (code paths under
-`python/src/donkey_kit/`, pages under `website/content/`):
+confused adopter instead of at review time. This is a PR-time discipline with
+two automated backstops (#797):
+
+- **The docs-sync reminder.** [`python/scripts/check_docs_sync.py`](python/scripts/check_docs_sync.py)
+  holds the code rows of the table below as data, and the `Docs-sync reminder`
+  workflow runs it on every PR that touches `python/src/donkey_kit/`. A surface
+  whose code changed without any of its mapped pages gets a warning annotation
+  on the PR. It never fails the build; it is the prompt to do one of the two
+  things below. Run it locally with
+  `python scripts/check_docs_sync.py --base origin/develop`. When you change a
+  row here, change the script's `SURFACES` with it; its unit test fails if a
+  mapped page or code path does not exist.
+- **The snippet check.** [`python/scripts/check_doc_snippets.py`](python/scripts/check_doc_snippets.py)
+  (run by `tests/unit/test_check_doc_snippets.py`) checks every Python fence in
+  the READMEs, `MIGRATION.md` and `website/content/` against the installed SDK:
+  imports, `donkey.<attr>` chains and call kwargs, so a renamed parameter fails
+  CI on the page that still uses the old name. Pages marked `status: roadmap`
+  are exempt, and a `status: live` page may not call an API that raises
+  `_verify.blocked(...)`. The status vocabulary is in
+  [`website/README.md`](website/README.md).
+
+The surface→page map (code paths under `python/src/donkey_kit/`, pages under
+`website/content/`):
 
 | Code surface | Docs page(s) |
 | --- | --- |

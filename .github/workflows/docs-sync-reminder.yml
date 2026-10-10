@@ -1,0 +1,37 @@
+name: Docs-sync reminder
+
+# CONTRIBUTING.md §4: a PR that changes an SDK surface updates its mapped
+# website/content/ page, or links a `documentation` follow-up issue (#797).
+# python/scripts/check_docs_sync.py holds the surface -> page map; this job
+# annotates the PR with every surface whose code changed without its page.
+# It is a reminder, not a gate: it never fails, so it is not in ci.yml's ci-ok.
+on:
+  pull_request:
+    paths:
+      - python/src/donkey_kit/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-sync-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  docs-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The merge base must be in the clone for base...head.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: remind about docs pages the diff leaves untouched
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python python/scripts/check_docs_sync.py --base "$BASE_SHA" --head "$HEAD_SHA"
