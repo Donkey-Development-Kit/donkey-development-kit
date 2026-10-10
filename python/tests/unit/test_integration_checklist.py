@@ -52,8 +52,8 @@ _CI = yaml.safe_load((_REPO / ".github" / "workflows" / "ci.yml").read_text())
 #: Module-level names in an adapter's ``__all__`` that are helpers, not factories.
 _HELPERS = {"refusal_translator", "typed_refusals"}
 
-#: The ``adapter-contract`` CI leg runs the whole suite (#748): the contract
-#: files and every other test that needs the leg's framework run against it.
+#: The ``adapter-contract`` CI leg's nox session runs the whole suite (#748): the
+#: contract files and every other test that needs the leg's framework run against it.
 _WHOLE_SUITE = "python -m pytest -q"
 
 _ATTRS = list(ADAPTERS)
@@ -196,8 +196,21 @@ def test_contract_ci_matrix_is_exactly_the_registry() -> None:
     job = _contract_job()
     assert sorted(job["strategy"]["matrix"]["extra"]) == sorted(s.extra for s in ADAPTERS.values())
     assert job["env"]["DONKEY_CONTRACT_EXTRA"] == "${{ matrix.extra }}"
-    runs = [str(step.get("run", "")).strip() for step in job["steps"]]
-    assert _WHOLE_SUITE in runs, runs
+    # #765: the job runs its python/noxfile.py session, and the session runs
+    # the whole suite (test_noxfile.py checks the job calls the session).
+    runs = " ".join(str(step.get("run", "")) for step in job["steps"])
+    assert '-s "adapter-contract($DONKEY_CONTRACT_EXTRA)"' in runs, runs
+    session = next(
+        node
+        for node in ast.walk(ast.parse((_PYTHON / "noxfile.py").read_text()))
+        if isinstance(node, ast.FunctionDef) and node.name == "adapter_contract"
+    )
+    commands = [
+        " ".join(arg.value for arg in node.args if isinstance(arg, ast.Constant))
+        for node in ast.walk(session)
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == "session.run"
+    ]
+    assert _WHOLE_SUITE in commands, commands
 
 
 def test_contributing_states_the_checklist() -> None:
