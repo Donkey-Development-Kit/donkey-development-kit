@@ -32,6 +32,7 @@ export default {
   simulator: 'Local simulator',
   testing: 'Testing & conformance',
   cli: 'CLI & decorators',
+  troubleshooting: 'Troubleshooting',
   'use-with-your-agent': 'Use with your coding agent',
   '-- registry': {
     type: 'separator',
@@ -55,6 +56,7 @@ export default {
     title: 'Roadmap',
   },
   roadmap: 'Roadmap',
+  'release-notes': 'Release notes',
   '-- community': {
     type: 'separator',
     title: 'Community',

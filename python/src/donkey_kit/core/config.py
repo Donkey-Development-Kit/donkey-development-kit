@@ -112,11 +112,11 @@ Capability = Literal["control_plane", "llm"]
 
 
 class ConfigOverrides(TypedDict, total=False):
-    """The public :class:`DonkeyConfig` fields, each optional, as keyword
-    arguments: what :meth:`DonkeyConfig.resolve`, :meth:`DonkeyConfig.with_overrides`
-    and ``Donkey.from_env`` accept, so a misspelt field fails type checking
-    (#716, #727). Must list exactly the dataclass's public fields; a unit test
-    pins that."""
+    """The public :class:`DonkeyConfig` fields, each optional, as keyword arguments:
+    what :meth:`DonkeyConfig.resolve`, :meth:`DonkeyConfig.with_overrides` and
+    ``Donkey.from_env`` accept, so a misspelt field fails type checking (#716, #727).
+
+    Must list exactly the dataclass's public fields; a unit test pins that."""
 
     client_id: str | None
     client_secret: str | None
