@@ -39,9 +39,7 @@ _EXPECTED_SCENARIOS = {
 def _load_example_build() -> Any:
     """Import the shipped example's ``build`` factory by file path (examples are
     not an installed package), so conformance runs against the real example."""
-    example = (
-        Path(__file__).resolve().parents[2] / "examples" / "langgraph" / "main.py"
-    )
+    example = Path(__file__).resolve().parents[2] / "examples" / "langgraph" / "main.py"
     spec = importlib.util.spec_from_file_location("ddk_example_langgraph", example)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

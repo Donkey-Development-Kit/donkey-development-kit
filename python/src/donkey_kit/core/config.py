@@ -287,7 +287,7 @@ class DonkeyConfig:
     org_id: str | None = None
     environment: str = "Sandbox"
     region: Region = "us"
-    base_url: str | None = None           # override; else derived from region
+    base_url: str | None = None  # override; else derived from region
 
     # --- LLM proxy (data plane) — SEPARATE credential from the control plane ---
     # Auth is a client_id/client_secret REQUEST-header pair (client-id-enforcement),
@@ -380,9 +380,7 @@ class DonkeyConfig:
     # Where each field was resolved from and a keyed digest of the value it had
     # there, filled in by resolve(). A field with no entry, or whose value no
     # longer matches, was set in code and counts as explicit.
-    _sources: Mapping[str, _Loaded] = field(
-        default_factory=dict, repr=False, compare=False
-    )
+    _sources: Mapping[str, _Loaded] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         loaded = {name: _as_loaded(name, entry) for name, entry in self._sources.items()}
@@ -711,9 +709,7 @@ def _binding_error(
     if offer_local_file:
         local = origin.path.parent / LOCAL_TOML_NAME
         options.append(f"keep the credentials in {local}, next to the project file")
-    options.append(
-        f"trust the project config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
-    )
+    options.append(f"trust the project config files by setting {TRUST_PROJECT_CONFIG_ENV}=1")
     return ConfigError(
         f"Not sending {', '.join(credentials)} to {host_of(url)}: {key} is set in "
         f"{origin.path}, and credentials from outside the project config files "

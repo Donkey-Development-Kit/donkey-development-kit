@@ -56,7 +56,7 @@ def test_uninstalled_adapter_raises_curated_import_error(
     fab = Donkey(_cfg())
     with pytest.raises(ImportError) as exc:
         _ = fab.langgraph
-    assert 'donkey-kit[langgraph]' in str(exc.value)
+    assert "donkey-kit[langgraph]" in str(exc.value)
 
 
 def test_unknown_attribute_raises_attribute_error() -> None:
@@ -74,7 +74,7 @@ def test_openai_agents_adapter_import_error_names_the_new_extra(
     fab = Donkey(_cfg())
     with pytest.raises(ImportError) as exc:
         _ = fab.openai_agents
-    assert 'donkey-kit[openai-agents]' in str(exc.value)
+    assert "donkey-kit[openai-agents]" in str(exc.value)
 
 
 def test_openai_is_a_real_method_not_the_agents_adapter() -> None:
@@ -171,9 +171,7 @@ def test_run_without_id_generates_a_run_of_one() -> None:
 # --- cost-attribution tags on the public surface (docs/verified-apis.md §3, BG §1.7, #196) --------
 
 
-def test_from_env_sets_config_level_cost_tags(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_from_env_sets_config_level_cost_tags(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from donkey_kit.core.cost import CostTags
 
     # Isolate from any stray .donkey-kit.toml / DONKEY_COST_* in the environment.
@@ -191,9 +189,7 @@ def test_from_env_sets_config_level_cost_tags(
     assert fab.config.cost == CostTags(team="support", project="triage-v2", env="prod")
 
 
-def test_from_env_kwargs_merge_over_env_tags(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_from_env_kwargs_merge_over_env_tags(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from donkey_kit.core.cost import CostTags
 
     monkeypatch.chdir(tmp_path)
@@ -208,9 +204,7 @@ def test_from_env_kwargs_merge_over_env_tags(
 # --- on_model_substitution override on the public surface (BG §1.1, #309) --------
 
 
-def test_from_env_sets_on_model_substitution(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_from_env_sets_on_model_substitution(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     # The kwarg opts a Donkey into model determinism without an env var / toml —
     # it merges over the resolved config the same way the cost tags do.
     monkeypatch.chdir(tmp_path)

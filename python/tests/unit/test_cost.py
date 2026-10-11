@@ -81,10 +81,10 @@ def test_merge_prefers_the_other_set_fields_per_field() -> None:
     base = CostTags(team="support", project="triage-v2", env="prod")
     override = CostTags(project="triage-v3", enduser_id="u-9")
     merged = base.merge(override)
-    assert merged.team == "support"        # kept from base
-    assert merged.project == "triage-v3"   # overridden
-    assert merged.env == "prod"            # kept from base
-    assert merged.enduser_id == "u-9"      # added by override
+    assert merged.team == "support"  # kept from base
+    assert merged.project == "triage-v3"  # overridden
+    assert merged.env == "prod"  # kept from base
+    assert merged.enduser_id == "u-9"  # added by override
 
 
 def test_merge_with_empty_is_identity() -> None:
