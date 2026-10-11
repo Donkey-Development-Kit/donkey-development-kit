@@ -476,10 +476,13 @@ declared version (and, on `publish-pypi.yml`, that the tag equals
 `v<version>` and a final Release carries a final `X.Y.Z`), then installs the
 built wheel into a clean virtualenv and imports it. The upload generates PEP
 740 attestations. The acceptance run against the TestPyPI build is a listed
-gate in [`releasing.md`](releasing.md#release-gates). Still by hand: required
+gate in [`releasing.md`](releasing.md#release-gates): after the TestPyPI
+upload, `publish-testpypi.yml`'s `acceptance` job runs its offline groups
+against the published version and reports them as the `acceptance (published)`
+commit status, which the promotion PR shows (#1082). Still by hand: required
 reviewers on the `pypi` environment are a repository setting, so no workflow
-can enforce them, and the acceptance result is recorded on the promotion PR
-by the maintainer rather than reported by CI.
+can enforce them, and the live acceptance groups are run and recorded on the
+promotion PR by the maintainer.
 
 ### 10. Workflow names follow one style. **In place** (#1009)
 
