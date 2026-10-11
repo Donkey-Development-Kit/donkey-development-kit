@@ -142,8 +142,10 @@ jobs:
     # PR never shows a missing run as green.
     needs: [build, publish-testpypi]
     runs-on: ubuntu-latest
-    # The acceptance workflow's own limit is 75 minutes, plus the queue.
-    timeout-minutes: 90
+    # The acceptance workflow's own limit is 25 minutes (a cold run of the
+    # offline groups takes about 7); the wait below gives up at 26, before
+    # this bound, so a slow run still ends in a status.
+    timeout-minutes: 30
     permissions:
       statuses: write # the `acceptance (published)` status on this commit
     env:
@@ -193,7 +195,12 @@ jobs:
           fi
           run_url="$(gh run view "$run_id" -R "$ACCEPTANCE_REPO" --json url --jq .url)"
           status pending "Groups 3, 4, 5 running on $VERSION; live groups stay manual" "$run_url"
-          gh run watch "$run_id" -R "$ACCEPTANCE_REPO" --interval 60 > /dev/null || true
+          if ! timeout 26m gh run watch "$run_id" -R "$ACCEPTANCE_REPO" --interval 30 > /dev/null; then
+            if [ "$(gh run view "$run_id" -R "$ACCEPTANCE_REPO" --json status --jq .status)" != completed ]; then
+              status error "Acceptance run still going after 26 minutes; check it by hand" "$run_url"
+              exit 1
+            fi
+          fi
           conclusion="$(gh run view "$run_id" -R "$ACCEPTANCE_REPO" --json conclusion --jq .conclusion)"
           echo "Acceptance run $run_url: $conclusion"
           if [ "$conclusion" = success ]; then

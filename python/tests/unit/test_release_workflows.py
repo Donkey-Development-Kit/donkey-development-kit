@@ -49,11 +49,24 @@ def workflow(request: pytest.FixtureRequest) -> str:
     return name
 
 
+def _after(jobs: dict[str, dict[str, Any]], upload: str) -> set[str]:
+    """Jobs that run after the upload: they report on it and cannot gate it."""
+    return {name for name, job in jobs.items() if "needs" in job and upload in _needs(job)}
+
+
 def test_the_upload_waits_for_every_other_job(workflow: str) -> None:
     jobs = _jobs(workflow)
     upload = _PUBLISHERS[workflow]
-    assert _needs(jobs[upload]) == set(jobs) - {upload}
+    assert _needs(jobs[upload]) == set(jobs) - {upload} - _after(jobs, upload)
     assert {"test", "build"} <= set(jobs)
+
+
+def test_the_testpypi_upload_is_followed_by_the_acceptance_run() -> None:
+    # #1082: the published artifact goes through the acceptance suite's
+    # offline groups, and the result lands on the commit as a status.
+    jobs = _jobs("publish-testpypi.yml")
+    assert _after(jobs, "publish-testpypi") == {"acceptance"}
+    assert jobs["acceptance"]["permissions"] == {"statuses": "write"}
 
 
 def test_the_suite_runs_at_the_release_commit(workflow: str) -> None:
