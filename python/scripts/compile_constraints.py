@@ -73,6 +73,9 @@ class Combo:
     dev_group: bool
     python_versions: tuple[str, ...]
     covers: str  # which workflow job(s), for the comment header
+    #: Extra requirement specifiers the job's install line adds after the
+    #: extras, e.g. ``("openai<2",)`` for the `openai-1x` leg (#769).
+    requirements: tuple[str, ...] = ()
     # Further dependency groups, each passed as `--group <name>` (#763).
     groups: tuple[str, ...] = ()
     # False for a tool-only lock (the `release` and `lock` groups): the compile
@@ -105,8 +108,19 @@ _COMBOS: tuple[Combo, ...] = (
         "test",
         ("llm", "cli", "local", "otel"),
         True,
-        ("3.10", "3.11", "3.12"),
+        ("3.10", "3.11", "3.12", "3.13", "3.14"),
         "test (matrix)",
+    ),
+    # The openai 1.x leg (#769): the `llm` extra's floor is openai>=1.66 and
+    # every other combo resolves the 2.x line, so this one adds `"openai<2"`
+    # to its install line to keep the 1.x range tested.
+    Combo(
+        "openai-1x",
+        ("llm", "cli", "local", "otel"),
+        True,
+        ("3.12",),
+        "openai-1x",
+        requirements=("openai<2",),
     ),
     Combo("benchmark", ("llm", "cli", "local", "otel"), True, ("3.11",), "benchmark"),
     Combo("quickstart", ("llm", "local", "otel"), False, ("3.11",), "quickstart"),
@@ -242,6 +256,11 @@ def _compile_one(combo: Combo, python_version: str, out_file: Path) -> str:
         cmd.extend(["--extra", extra])
     if combo.dev_group:
         cmd.extend(["--group", "dev"])
+    if combo.requirements:
+        # uv takes extra requirements as another input file, after pyproject.
+        extra_in = out_file.with_suffix(".in")
+        extra_in.write_text("\n".join(combo.requirements) + "\n", encoding="utf-8")
+        cmd.insert(4 if combo.project else 3, str(extra_in))
     for group in combo.groups:
         # Without a SRC_FILE, uv reads the group from ./pyproject.toml (cwd below).
         cmd.extend(["--group", group])
