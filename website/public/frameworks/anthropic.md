@@ -1,5 +1,7 @@
 # Anthropic SDK
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 The Anthropic SDK gets a governed `AsyncAnthropic` client pointed at the Omni
 Gateway LLM proxy, with the SDK's shared transport and proxy headers passed
 straight into the client constructor.

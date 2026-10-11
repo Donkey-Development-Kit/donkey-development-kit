@@ -1,5 +1,7 @@
 # Python API reference
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The public API of `donkey-kit`, generated from its
 signatures and docstrings. Each entry shows the first paragraph of the
 docstring; `help()` on the object prints the rest. Everything listed here is
@@ -12,7 +14,7 @@ The SDK entry point: one governed handle on Agent Fabric.
 Each framework adapter is an attribute too, listed under
 [Framework adapters](#framework-adapters).
 
-```python
+```python nocheck
 Donkey(
     config: DonkeyConfig | None = None,
     *,
@@ -23,7 +25,7 @@ Donkey(
 
 ### `Donkey.from_env()`
 
-```python
+```python nocheck
 Donkey.from_env(
     *,
     team: str | None = None,
@@ -41,7 +43,7 @@ Guide: [`/reference/configuration#precedence`](https://docs.donkey-kit.dev/refer
 
 ### `donkey.config`
 
-```python
+```python nocheck
 donkey.config: DonkeyConfig
 ```
 
@@ -51,7 +53,7 @@ Guide: [`/reference/configuration`](https://docs.donkey-kit.dev/reference/config
 
 ### `donkey.llm`
 
-```python
+```python nocheck
 donkey.llm: LLMClient
 ```
 
@@ -61,7 +63,7 @@ Guide: [`/quickstart`](https://docs.donkey-kit.dev/quickstart.md)
 
 ### `donkey.budget`
 
-```python
+```python nocheck
 donkey.budget: Budget
 ```
 
@@ -69,7 +71,7 @@ The token-budget window for this Donkey, updated in-band from every response's `
 
 ### `donkey.last_call`
 
-```python
+```python nocheck
 donkey.last_call: LastCall
 ```
 
@@ -77,7 +79,7 @@ The gateway's own metadata about the most recent governed model call in this con
 
 ### `donkey.openai()`
 
-```python
+```python nocheck
 donkey.openai(*, sync: bool = False, **kw: Any) -> AsyncOpenAI | OpenAI
 ```
 
@@ -85,7 +87,7 @@ The headline two-line ergonomic: a native OpenAI client pointed at the governed 
 
 ### `donkey.http_client()`
 
-```python
+```python nocheck
 donkey.http_client(*, sync: bool = False) -> DonkeyAsyncClientView | DonkeyClientView
 ```
 
@@ -93,7 +95,7 @@ The governed data-plane `httpx` client, for a framework or SDK that takes one (`
 
 ### `donkey.registry`
 
-```python
+```python nocheck
 donkey.registry: ExchangeRegistry
 ```
 
@@ -103,7 +105,7 @@ Guide: [`/tool-access/discovery`](https://docs.donkey-kit.dev/tool-access/discov
 
 ### `donkey.tools`
 
-```python
+```python nocheck
 donkey.tools: ToolsFacade
 ```
 
@@ -113,7 +115,7 @@ Guide: [`/tool-access`](https://docs.donkey-kit.dev/tool-access.md)
 
 ### `donkey.run()`
 
-```python
+```python nocheck
 donkey.run(
     id: str | None = None,
     *,
@@ -129,7 +131,7 @@ Group one logical agent run under a shared correlation id.
 
 ### `donkey.run_context()`
 
-```python
+```python nocheck
 donkey.run_context(run_id: str | None = None) -> RunScope
 ```
 
@@ -137,7 +139,7 @@ Deprecated alias for `run`: use `donkey.run(id=…)`. Emits a `DeprecationWarnin
 
 ### `donkey.cache()`
 
-```python
+```python nocheck
 donkey.cache(
     *,
     skip: bool | None = None,
@@ -152,7 +154,7 @@ Steer the gateway's **semantic cache** for every governed model call in the bloc
 
 ### `donkey.governed()`
 
-```python
+```python nocheck
 donkey.governed(
     func: Callable[P, R] | None = None,
     *,
@@ -168,7 +170,7 @@ Wrap a callable so its body runs inside a `donkey.run()` scope.
 
 ### `donkey.tool()`
 
-```python
+```python nocheck
 donkey.tool(func: Callable) -> Callable
 ```
 
@@ -176,7 +178,7 @@ Mark a callable as a governed tool **without changing call behaviour**, recordin
 
 ### `donkey.simulate()`
 
-```python
+```python nocheck
 donkey.simulate(
     error: type[DonkeyError],
     *,
@@ -188,7 +190,7 @@ Inject a real gateway refusal in-process, no server.
 
 ### `donkey.aclose()`
 
-```python
+```python nocheck
 async donkey.aclose() -> None
 ```
 
@@ -196,7 +198,7 @@ Close every transport this Donkey owns: the data-plane and control-plane clients
 
 ### `donkey.close()`
 
-```python
+```python nocheck
 donkey.close() -> None
 ```
 
@@ -210,7 +212,7 @@ Its fields are listed in [Configuration](https://docs.donkey-kit.dev/reference/c
 
 ### `DonkeyConfig.resolve()`
 
-```python
+```python nocheck
 DonkeyConfig.resolve(
     *,
     path: str | os.PathLike[str] | None = None,
@@ -224,7 +226,7 @@ Guide: [`/reference/configuration#precedence`](https://docs.donkey-kit.dev/refer
 
 ### `DonkeyConfig.from_env()`
 
-```python
+```python nocheck
 DonkeyConfig.from_env() -> DonkeyConfig
 ```
 
@@ -232,7 +234,7 @@ Build from env + the optional config files: `resolve` with no arguments (see the
 
 ### `config.control_plane_url`
 
-```python
+```python nocheck
 config.control_plane_url: str
 ```
 
@@ -240,7 +242,7 @@ The Anypoint control-plane base URL — explicit override or region.
 
 ### `config.source_of()`
 
-```python
+```python nocheck
 config.source_of(name: str) -> ConfigSource
 ```
 
@@ -248,7 +250,7 @@ Where field `name` was resolved from. `explicit` (set in code) when `resolve` di
 
 ### `config.with_overrides()`
 
-```python
+```python nocheck
 config.with_overrides(**kw: Unpack[ConfigOverrides]) -> DonkeyConfig
 ```
 
@@ -256,7 +258,7 @@ Return a copy with the given fields replaced.
 
 ### `config.validated()`
 
-```python
+```python nocheck
 config.validated(*, need: Capability = 'control_plane') -> DonkeyConfig
 ```
 
@@ -264,7 +266,7 @@ Return self if valid for the requested capability, else raise a `ConfigError` li
 
 ### `config.missing_fields()`
 
-```python
+```python nocheck
 config.missing_fields(*, need: Capability) -> list[str]
 ```
 
@@ -272,7 +274,7 @@ Every required field for `need` that is unset, each with the env var that sets i
 
 ### `config.check_endpoints()`
 
-```python
+```python nocheck
 config.check_endpoints(*, need: Capability, code_credential: str | None = None) -> None
 ```
 
@@ -284,7 +286,7 @@ The framework-free proxy client factory.
 
 ### `donkey.llm.close()`
 
-```python
+```python nocheck
 donkey.llm.close() -> None
 ```
 
@@ -292,7 +294,7 @@ Close the blocking client built by this standalone factory, if any.
 
 ### `donkey.llm.aclose()`
 
-```python
+```python nocheck
 async donkey.llm.aclose() -> None
 ```
 
@@ -300,7 +302,7 @@ Close this factory's owned blocking client in an async scope.
 
 ### `donkey.llm.client()`
 
-```python
+```python nocheck
 donkey.llm.client(*, sync: bool = False, **kw: Any) -> AsyncOpenAI | OpenAI
 ```
 
@@ -308,7 +310,7 @@ An OpenAI client pointed at the LLM proxy, using our shared http client so heade
 
 ### `donkey.llm.list_models()`
 
-```python
+```python nocheck
 async donkey.llm.list_models(*, live: bool = False) -> list[ModelHandle]
 ```
 
@@ -316,7 +318,7 @@ List logical models the proxy exposes.
 
 ### `donkey.llm.resolve()`
 
-```python
+```python nocheck
 donkey.llm.resolve(model_id: str, *, provider: str | None = None) -> ModelHandle
 ```
 
@@ -328,7 +330,7 @@ The token-budget window for one `Donkey`, updated in-band from each response's b
 
 ### `donkey.budget.observe()`
 
-```python
+```python nocheck
 donkey.budget.observe(response: httpx.Response, *, now: datetime | None = None) -> None
 ```
 
@@ -336,7 +338,7 @@ Update from a response's budget headers.
 
 ### `donkey.budget.pace()`
 
-```python
+```python nocheck
 donkey.budget.pace(
     *,
     reserve: float = 0.0,
@@ -348,7 +350,7 @@ Guard a request so it is refused *before* it crosses your reserve, not after a 4
 
 ### `donkey.budget.wait_for_reset()`
 
-```python
+```python nocheck
 async donkey.budget.wait_for_reset(
     *,
     window: str | None = None,
@@ -366,7 +368,7 @@ Its fields are listed in [`last_call` fields](https://docs.donkey-kit.dev/refere
 
 ### `donkey.last_call.observed`
 
-```python
+```python nocheck
 donkey.last_call.observed: bool
 ```
 
@@ -374,7 +376,7 @@ True iff a governed response actually populated this record.
 
 ### `donkey.last_call.substituted`
 
-```python
+```python nocheck
 donkey.last_call.substituted: bool
 ```
 
@@ -382,7 +384,7 @@ True iff the gateway served a *different* model than the one requested — a sil
 
 ### `donkey.last_call.cache_hit`
 
-```python
+```python nocheck
 donkey.last_call.cache_hit: bool
 ```
 
@@ -390,7 +392,7 @@ True iff the gateway served this call from its semantic cache (`cache_status` ==
 
 ### `donkey.last_call.available`
 
-```python
+```python nocheck
 donkey.last_call.available: bool
 ```
 
@@ -398,7 +400,7 @@ False only when the current surface structurally cannot be observed (the framewo
 
 ### `LastCall.from_response()`
 
-```python
+```python nocheck
 LastCall.from_response(
     response: httpx.Response,
     *,

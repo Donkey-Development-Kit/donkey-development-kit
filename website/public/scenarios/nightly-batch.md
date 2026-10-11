@@ -1,5 +1,7 @@
 # Nightly batch
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 50,000 product records, enriched overnight against a governed model, budget
 window resetting every hour, no human awake. Without a budget object the script
 runs flat out, takes a `429` partway through, crashes, and someone re-runs it

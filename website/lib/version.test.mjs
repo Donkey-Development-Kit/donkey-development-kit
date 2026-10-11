@@ -8,37 +8,32 @@ import {
   PYPI_JSON_URL,
   documentedVersion,
   latestPypiVersion,
-  projectVersion,
+  packageVersion,
   versionBanner,
 } from './version.mjs'
 
 const PYTHON = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'python')
 
 test('the documented version is the package version', async () => {
-  const documented = await documentedVersion(resolve(PYTHON, 'pyproject.toml'))
-  const init = await readFile(resolve(PYTHON, 'src', 'donkey_kit', '__init__.py'), 'utf8')
-  const match = init.match(/^__version__\s*=\s*"([^"]+)"/m)
-  assert.ok(documented, 'pyproject.toml has no [project] version')
-  assert.ok(match, '__init__.py has no __version__')
-  assert.equal(documented, match[1])
+  const documented = await documentedVersion(resolve(PYTHON, 'src', 'donkey_kit', '__init__.py'))
+  const pyproject = await readFile(resolve(PYTHON, 'pyproject.toml'), 'utf8')
+  assert.ok(documented, '__init__.py has no __version__')
+  // #767: the version is declared once, in __init__.py; pyproject.toml reads it.
+  assert.match(pyproject, /^dynamic = \["version"\]$/m)
 })
 
-test('only the [project] table version is read', () => {
+test('only a module-level __version__ assignment is read', () => {
   const text = [
-    '[build-system]',
-    'version = "9.9.9"',
-    '[project]',
-    'name = "donkey-kit"',
-    'version = "0.1.2"',
-    '[tool.other]',
-    'version = "8.8.8"',
+    '"""donkey-kit."""',
+    '    __version__ = "9.9.9"',
+    '__version__ = "0.1.2"',
   ].join('\n')
-  assert.equal(projectVersion(text), '0.1.2')
-  assert.equal(projectVersion('[tool.x]\nversion = "1"\n'), null)
+  assert.equal(packageVersion(text), '0.1.2')
+  assert.equal(packageVersion('VERSION = "1"\n'), null)
 })
 
-test('a missing pyproject.toml means no documented version', async () => {
-  assert.equal(await documentedVersion('/nonexistent/pyproject.toml'), null)
+test('a missing __init__.py means no documented version', async () => {
+  assert.equal(await documentedVersion('/nonexistent/__init__.py'), null)
 })
 
 test('the latest PyPI version comes from info.version', async () => {

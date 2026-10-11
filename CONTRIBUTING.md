@@ -925,8 +925,30 @@ Edit the code, the docstring or the root README, run the script, and commit the
 result; never edit a `BEGIN GENERATED` region by hand.
 `tests/unit/test_generated_docs.py` fails when a committed copy is stale, and
 `--check` reports the same without writing. Everything else is a PR-time
-discipline. The surface→page map (code paths under
-`python/src/donkey_kit/`, pages under `website/content/`):
+discipline with two automated backstops (#797):
+
+- **The docs-sync reminder.** [`python/scripts/check_docs_sync.py`](python/scripts/check_docs_sync.py)
+  holds every row of the table below as data, and the `Docs-sync reminder`
+  workflow runs it on every PR that touches `python/src/donkey_kit/`,
+  `docs/verified-apis.md`, `docs/unsupported-boundary.md` or `README.md`. A surface
+  whose code changed without any of its mapped pages gets a warning annotation
+  on the PR. It never fails the build; it is the prompt to do one of the two
+  things below. Run it locally with
+  `python scripts/check_docs_sync.py --base origin/develop`. When you change a
+  row here, change the script's `SURFACES` with it; its unit test fails if a
+  mapped page or code path does not exist, or if the workflow's `paths:` filter
+  misses a mapped file outside the package.
+- **The snippet check.** [`python/scripts/check_doc_snippets.py`](python/scripts/check_doc_snippets.py)
+  (run by `tests/unit/test_check_doc_snippets.py`) checks every Python fence in
+  the READMEs, `MIGRATION.md` and `website/content/` against the installed SDK:
+  imports, `donkey.<attr>` chains and call kwargs, so a renamed parameter fails
+  CI on the page that still uses the old name. Pages marked `status: roadmap`
+  are exempt, and a `status: live` page may not call an API that raises
+  `_verify.blocked(...)`. The status vocabulary is in
+  [`website/README.md`](website/README.md).
+
+The surface→page map (code paths under `python/src/donkey_kit/` unless they
+start with `docs/` or are `README.md`, pages under `website/content/`):
 
 | Code surface | Docs page(s) |
 | --- | --- |
@@ -938,7 +960,8 @@ discipline. The surface→page map (code paths under
 | `core/lastcall.py` | `reference/last-call.mdx` |
 | `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
 | `simulator/*` | `simulator.mdx` |
-| `conformance/*`, `donkey.simulate()` | `testing.mdx` |
+| `conformance/*` | `testing.mdx` |
+| `donkey.py` (the `Donkey` facade: `from_env`, `run`, `simulate()`, `tools`) | `quickstart.mdx`, `testing.mdx`, `reference/configuration.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
 | `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |

@@ -1,5 +1,7 @@
 # Google ADK
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 Google's Agent Development Kit (ADK) reaches the Agent Fabric LLM proxy in one
 of two ways, depending on the proxy's ingress **Format**:
 

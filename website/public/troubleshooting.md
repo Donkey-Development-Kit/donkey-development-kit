@@ -1,5 +1,7 @@
 # Troubleshooting
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Start with `donkey doctor`. It makes one real governed call and tells apart the
 failures that look the same from your code. The sections below explain each
 line it prints, then cover the problems `doctor` can't see.
