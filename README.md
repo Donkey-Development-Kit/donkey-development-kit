@@ -144,7 +144,9 @@ client (`donkey.llm.client()`) is conformance-tested too.
 `connection_kwargs()` works for all eight; a second deep adapter is promoted from
 demand evidence, one at a time (#223/#244) — never guessed up front. See the
 [framework pages](https://docs.donkey-kit.dev/frameworks/)
-for each.
+for each. Which framework versions are supported and tested is on the site's
+[version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility)
+page and in [`docs/framework-support.md`](docs/framework-support.md).
 
 ## What's verified (verification discipline)
 

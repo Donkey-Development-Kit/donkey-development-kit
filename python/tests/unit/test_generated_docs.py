@@ -259,3 +259,101 @@ def test_frontmatter_status_is_rewritten_in_place() -> None:
     assert out == "---\ndescription: d\nstatus: offline-verified\n---\n\nstatus: body text\n"
     with pytest.raises(gen.GenerationError):
         gen._frontmatter_status("---\ndescription: d\n---\n", "live", "x")
+
+
+# --- framework version compatibility (#1068) ---------------------------------------
+
+_VERSION_TARGETS = [
+    t for t in gen.TARGETS if t.name in ("framework-support", "framework-compatibility")
+]
+_OPEN_ROW = "| `langgraph` × `langchain-core` |"
+
+
+def _copy_constraints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    copy = tmp_path / "constraints"
+    copy.mkdir()
+    for lock in gen.CONSTRAINTS.glob("adapter-contract-*.txt"):
+        (copy / lock.name).write_text(lock.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(gen, "CONSTRAINTS", copy)
+    return copy
+
+
+def test_both_version_pages_are_targets() -> None:
+    assert [t.path for t in _VERSION_TARGETS] == [gen.FRAMEWORK_SUPPORT, gen.COMPATIBILITY_PAGE]
+
+
+def test_moving_a_pin_without_regenerating_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = _copy_constraints(tmp_path, monkeypatch) / "adapter-contract-crewai-py3.12.txt"
+    text = lock.read_text(encoding="utf-8")
+    pinned = next(line for line in text.splitlines() if line.startswith("crewai=="))
+    lock.write_text(text.replace(pinned, "crewai==99.0.0"), encoding="utf-8")
+    assert gen.stale(_VERSION_TARGETS) == ["framework-support", "framework-compatibility"]
+    assert "| 99.0.0 |" in gen.framework_versions_table(mdx=True)
+
+
+def test_every_adapter_has_a_row_with_each_package_of_its_extra() -> None:
+    from donkey_kit import integrations
+
+    versions = gen.framework_versions()
+    assert [v.extra for v in versions] == [s.extra for s in integrations.ADAPTERS.values()]
+    langgraph = versions[0]
+    assert [p.name for p in langgraph.packages] == [
+        "langgraph",
+        "langchain-openai",
+        "langchain-core",
+    ]
+    assert all(p.minimum and p.tested for v in versions for p in v.packages)
+
+
+def test_only_open_incompatibilities_are_listed_against_the_packages_they_name() -> None:
+    by_extra = {v.extra: v.incompatible for v in gen.framework_versions()}
+    assert [row.status for row in by_extra["langgraph"]] == ["OPEN (upstream)"]
+    # The mitigated anthropic, openai and co-install rows are on record, not listed.
+    assert all(not rows for extra, rows in by_extra.items() if extra != "langgraph")
+    rows = gen.incompatibilities(_LEDGER)
+    assert any(row.status == "MITIGATED" and "anthropic" in row.packages for row in rows)
+
+    mitigated = _LEDGER.replace(_OPEN_ROW, _OPEN_ROW, 1)
+    lines = mitigated.splitlines(keepends=True)
+    hit = next(i for i, line in enumerate(lines) if line.startswith(_OPEN_ROW))
+    lines[hit] = lines[hit].replace("OPEN (upstream)", "MITIGATED")
+    assert not any(v.incompatible for v in gen.framework_versions("".join(lines)))
+
+
+def test_an_unknown_incompatibility_status_fails_generation() -> None:
+    lines = _LEDGER.splitlines(keepends=True)
+    hit = next(i for i, line in enumerate(lines) if line.startswith(_OPEN_ROW))
+    lines[hit] = lines[hit].replace("OPEN (upstream)", "WONTFIX")
+    with pytest.raises(gen.GenerationError, match="_INCOMPATIBILITY_STATUSES"):
+        gen.incompatibilities("".join(lines))
+
+
+def test_a_missing_lock_or_pin_fails_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    constraints = _copy_constraints(tmp_path, monkeypatch)
+    lock = constraints / "adapter-contract-adk-py3.12.txt"
+    text = lock.read_text(encoding="utf-8")
+    lock.write_text(
+        "\n".join(line for line in text.splitlines() if not line.startswith("litellm==")),
+        encoding="utf-8",
+    )
+    with pytest.raises(gen.GenerationError, match="pins no litellm"):
+        gen.framework_versions()
+    lock.unlink()
+    with pytest.raises(gen.GenerationError, match="compile_constraints.py"):
+        gen.framework_versions()
+
+
+def test_a_requirement_without_a_plain_floor_fails_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    text = gen.PYPROJECT.read_text(encoding="utf-8")
+    assert '"crewai>=1.15.3"' in text
+    pyproject.write_text(text.replace('"crewai>=1.15.3"', '"crewai~=1.15"'), encoding="utf-8")
+    monkeypatch.setattr(gen, "PYPROJECT", pyproject)
+    with pytest.raises(gen.GenerationError, match="not a plain floor"):
+        gen.framework_versions()

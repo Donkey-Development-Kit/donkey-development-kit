@@ -31,6 +31,12 @@ Targets:
   every ``frameworks/*.mdx`` page, the framework row of ``quickstart.mdx`` and
   the framework card badge of ``feature-overview.mdx``. A §8 status with no
   docs label, a factory with no roster row, or a page with no factory fails.
+* Framework version compatibility (#1068): ``docs/framework-support.md`` and
+  ``website/content/frameworks/compatibility.mdx``, written whole. Per adapter
+  package: the floor from its extra in ``pyproject.toml``, the version the PR
+  ``adapter-contract`` leg tests from its lock in ``python/constraints/``, and
+  the open ``docs/verified-apis.md`` §8.1 rows that name it. An unknown §8.1
+  status, a requirement with no ``>=`` floor, or a missing lock or pin fails.
 
 A region sits between two marker comments, ``BEGIN GENERATED: <name>`` and
 ``END GENERATED: <name>``; everything between them is replaced.
@@ -57,6 +63,11 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover - 3.10 backfill
+    import tomli as tomllib
 
 REPO = Path(__file__).resolve().parents[2]
 REPO_URL = "https://github.com/Donkey-Development-Kit/donkey-development-kit"
@@ -1073,6 +1084,384 @@ def api_reference() -> str:
     return "\n".join(lines) + "\n"
 
 
+# --- framework version compatibility (#1068) ---------------------------------------
+
+PYPROJECT = REPO / "python" / "pyproject.toml"
+CONSTRAINTS = REPO / "python" / "constraints"
+FRAMEWORK_SUPPORT = REPO / "docs" / "framework-support.md"
+COMPATIBILITY_PAGE = FRAMEWORK_PAGES / "compatibility.mdx"
+#: The Python the PR ``adapter-contract`` legs run on, so the lock they install.
+CONTRACT_PYTHON = "3.12"
+_NIGHTLY = f"{REPO_URL}/actions/workflows/nightly-matrix.yml"
+_NIGHTLY_ISSUES = f"{REPO_URL}/issues?q=is%3Aissue%20is%3Aopen%20label%3Anightly-failure"
+_SECTION_81 = "#81-known-upstream-incompatibilities-floors-not-ceilings"
+_FLOOR = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?>=([^\s,;]+)$")
+_PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==(\S+)$")
+_PACKAGE_SPAN = re.compile(r"`([A-Za-z][A-Za-z0-9._-]*)")
+
+#: The ledger's §8.1 Status values, by prefix, and whether a row with that status
+#: is a current incompatibility. Any other value is refused, as for §8 above.
+_INCOMPATIBILITY_STATUSES: tuple[tuple[str, bool], ...] = (("OPEN", True), ("MITIGATED", False))
+
+
+def _canonical(name: str) -> str:
+    """A distribution name in its PEP 503 normal form."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+@dataclass(frozen=True)
+class Incompatibility:
+    """One row of the ledger's §8.1 table."""
+
+    dependency: str
+    breaks_at: str
+    status: str
+    #: Normalised names of the packages its Dependency and Breaks-at cells name.
+    packages: frozenset[str]
+
+    @property
+    def current(self) -> bool:
+        """Whether the row still breaks the SDK (it is not mitigated)."""
+        for prefix, current in _INCOMPATIBILITY_STATUSES:
+            if self.status.startswith(prefix):
+                return current
+        raise GenerationError(
+            f"{_LEDGER_REF} §8.1: unknown status {self.status!r}; extend "
+            f"_INCOMPATIBILITY_STATUSES in {_SCRIPT}"
+        )
+
+
+def incompatibilities(ledger: str) -> list[Incompatibility]:
+    """The ledger's §8.1 rows, in order."""
+    lines = ledger.splitlines()
+    start = [i for i, line in enumerate(lines) if line.startswith("### 8.1 ")]
+    if len(start) != 1:
+        raise GenerationError(f"{_LEDGER_REF}: expected one '### 8.1 ' heading")
+    out: list[Incompatibility] = []
+    for cells in _table_rows(lines[start[0] + 1 :]):
+        if len(cells) != 5:
+            raise GenerationError(f"{_LEDGER_REF} §8.1: a row needs 5 cells: {cells[:2]}")
+        dependency, breaks_at, _, status, _ = cells
+        names = _PACKAGE_SPAN.findall(dependency + " " + breaks_at)
+        row = Incompatibility(dependency, breaks_at, status, frozenset(map(_canonical, names)))
+        row.current  # noqa: B018  (refuses an unknown status here, not at render time)
+        out.append(row)
+    return out
+
+
+def contract_lock(extra: str) -> dict[str, str]:
+    """The exact pins the PR ``adapter-contract`` leg for ``extra`` installs."""
+    path = CONSTRAINTS / f"adapter-contract-{extra}-py{CONTRACT_PYTHON}.txt"
+    if not path.is_file():
+        raise GenerationError(f"{path.name} is missing; run: python scripts/compile_constraints.py")
+    pins: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = _PIN.match(line.strip())
+        if match:
+            pins[_canonical(match.group(1))] = match.group(2)
+    return pins
+
+
+@dataclass(frozen=True)
+class PackageVersions:
+    """One package of a framework extra: its floor and the version PR CI tests."""
+
+    name: str
+    minimum: str
+    tested: str
+
+
+@dataclass(frozen=True)
+class FrameworkVersions:
+    """The versions of one adapter's framework that the SDK supports and tests."""
+
+    framework: str
+    route: str
+    extra: str
+    conformance_tested: bool
+    packages: tuple[PackageVersions, ...]
+    #: The current §8.1 rows that name one of ``packages``.
+    incompatible: tuple[Incompatibility, ...]
+
+
+def framework_versions(ledger: str | None = None) -> list[FrameworkVersions]:
+    """Every adapter's supported and tested versions, in roster order.
+
+    The minimum is the ``>=`` floor of each requirement in the adapter's extra
+    (``pyproject.toml``), the tested version is that package's pin in the
+    extra's ``adapter-contract`` lock, and the known incompatibilities are the
+    §8.1 rows that are not mitigated. The framework name, page and depth come
+    from :func:`framework_statuses`. Raises :class:`GenerationError` when an
+    extra, a lock or a pin is missing, or a requirement has no plain floor.
+    """
+    from donkey_kit import integrations
+
+    text = LEDGER.read_text(encoding="utf-8") if ledger is None else ledger
+    pages = {s.attr: (s.framework, s.route) for s in framework_statuses(text) if s.default}
+    current = [row for row in incompatibilities(text) if row.current]
+    extras = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"][
+        "optional-dependencies"
+    ]
+    out: list[FrameworkVersions] = []
+    for spec in integrations.ADAPTERS.values():
+        if spec.extra not in extras:
+            raise GenerationError(f"pyproject.toml has no extra {spec.extra!r}")
+        pins = contract_lock(spec.extra)
+        packages: list[PackageVersions] = []
+        for raw in extras[spec.extra]:
+            match = _FLOOR.match(raw.replace(" ", ""))
+            if match is None:
+                raise GenerationError(
+                    f"pyproject.toml [{spec.extra}]: {raw!r} is not a plain floor (name>=version)"
+                )
+            name, minimum = match.groups()
+            tested = pins.get(_canonical(name))
+            if tested is None:
+                raise GenerationError(
+                    f"adapter-contract-{spec.extra}-py{CONTRACT_PYTHON}.txt pins no {name}; "
+                    "run: python scripts/compile_constraints.py"
+                )
+            packages.append(PackageVersions(name, minimum, tested))
+        names = {_canonical(p.name) for p in packages}
+        framework, route = pages[spec.attr]
+        out.append(
+            FrameworkVersions(
+                framework=framework,
+                route=route,
+                extra=spec.extra,
+                conformance_tested=spec.conformance_tested,
+                packages=tuple(packages),
+                incompatible=tuple(row for row in current if row.packages & names),
+            )
+        )
+    return out
+
+
+def framework_versions_table(*, mdx: bool) -> str:
+    """One row per package of each framework extra: minimum, tested, known incompatible."""
+
+    def ledger_text(text: str) -> str:
+        return _outside_code(text, _escape_mdx) if mdx else text
+
+    rows: list[tuple[str, ...]] = []
+    for fw in framework_versions():
+        if fw.conformance_tested:
+            tier = _badge("conformance-tested") if mdx else "**Conformance-tested**"
+        else:
+            tier = "`connection_kwargs()`"
+        known = "; ".join(ledger_text(row.breaks_at) for row in fw.incompatible) or "None known"
+        for index, package in enumerate(fw.packages):
+            first = index == 0
+            rows.append(
+                (
+                    (f"[{fw.framework}]({fw.route})" if mdx else fw.framework) if first else "",
+                    tier if first else "",
+                    f"`[{fw.extra}]`" if first else "",
+                    f"`{package.name}`",
+                    package.minimum,
+                    package.tested,
+                    known if first else "",
+                )
+            )
+    header = (
+        "Framework",
+        "Tier",
+        "Extra",
+        "Package",
+        "Minimum supported",
+        "Tested on every PR",
+        "Known incompatible",
+    )
+    return _table(header, rows)
+
+
+def _support_policy(*, ledger_link: str) -> str:
+    return (
+        "**Supported** means any release at or above the minimum, except a version\n"
+        "listed as known incompatible. The extras set no upper bounds, so a fresh\n"
+        "install takes each framework's newest release.\n\n"
+        "- **Tested on every PR** is the exact version every pull request installs\n"
+        f"  and tests the adapter against, on Python {CONTRACT_PYTHON}.\n"
+        "- **Minimum supported** is tested every night: CI installs each extra at\n"
+        "  its minimum versions on the oldest supported Python and runs the tests.\n"
+        "- **Newer releases** are tested every night: CI installs each framework's\n"
+        "  newest release and runs the same tests. A failing night opens a public\n"
+        f"  [`nightly-failure` issue]({_NIGHTLY_ISSUES}).\n"
+        "- **Known incompatible** lists the open rows of the\n"
+        f"  {ledger_link}. A break is fixed in the SDK or recorded there, never\n"
+        "  pinned away.\n\n"
+        f"[![Nightly matrix]({_NIGHTLY}/badge.svg)]({_NIGHTLY})"
+    )
+
+
+def framework_support_md() -> str:
+    """``docs/framework-support.md``: the contributor reference, generated whole."""
+    policy = _support_policy(
+        ledger_link=f"[`verified-apis.md` §8.1](verified-apis.md{_SECTION_81})"
+    )
+    recorded = _table(
+        ("Dependency", "Breaks at", "Status"),
+        ((row.dependency, row.breaks_at, row.status) for row in incompatibilities(_ledger())),
+    )
+    lines = [
+        "# Framework support",
+        "",
+        "<!-- GENERATED FILE: do not edit by hand. Refresh with",
+        "     `python scripts/generate_docs.py` from python/ (#1068). -->",
+        "",
+        "Which versions of each agent framework `donkey-kit` supports, and how CI",
+        "tests them. The site's [version compatibility]"
+        f"({SITE}/frameworks/compatibility) page shows",
+        "the same table to SDK users. Both are written from the sources below by",
+        "`python/scripts/generate_docs.py`, and `tests/unit/test_generated_docs.py`",
+        "fails when either is stale.",
+        "",
+        "## Supported versions",
+        "",
+        policy,
+        "",
+        framework_versions_table(mdx=False),
+        "",
+        "## Where each column comes from",
+        "",
+        _table(
+            ("Column", "Source"),
+            (
+                ("Tier", "`conformance_tested` on the adapter's `ADAPTERS` entry"),
+                ("Extra, Package", "the adapter's extra in `python/pyproject.toml`"),
+                (
+                    "Minimum supported",
+                    "the `>=` floor of each requirement in that extra (ADR 0007 rule 1). "
+                    "[`verified-apis.md` §8.3](verified-apis.md#83-extras-floors-lowest-"
+                    "verified-versions) records why each floor is where it is.",
+                ),
+                (
+                    "Tested on every PR",
+                    "the package's pin in `python/constraints/adapter-contract-<extra>-"
+                    f"py{CONTRACT_PYTHON}.txt` (ADR 0007 rule 3)",
+                ),
+                (
+                    "Known incompatible",
+                    f"the [`verified-apis.md` §8.1](verified-apis.md{_SECTION_81}) rows "
+                    "that name one of the extra's packages and are not `MITIGATED`",
+                ),
+            ),
+        ),
+        "",
+        "## How CI tests each framework",
+        "",
+        _table(
+            ("Job", "Workflow", "When", "What it installs"),
+            (
+                (
+                    "`adapter-contract (<extra>)`",
+                    "`ci.yml`",
+                    "every PR",
+                    f"the extra at its lock, on Python {CONTRACT_PYTHON}: the *Tested* column",
+                ),
+                (
+                    "`framework-legs (<framework>)`",
+                    "`nightly-matrix.yml`",
+                    "daily",
+                    "the extra resolved fresh: each framework's newest release",
+                ),
+                (
+                    "`lowest-direct (<extra>)`",
+                    "`nightly-matrix.yml`",
+                    "daily",
+                    "the extra at its floors (`uv --resolution lowest-direct`), on the "
+                    "oldest supported Python: the *Minimum* column. "
+                    "`scripts/check_floors.py` fails a floor the resolver could not reach.",
+                ),
+                (
+                    "`co-installability`",
+                    "`nightly-matrix.yml`",
+                    "daily",
+                    "every pair of extras; see [`co-installability.md`](co-installability.md)",
+                ),
+            ),
+        ),
+        "",
+        "A red nightly opens or updates one issue labelled `nightly-failure`.",
+        "After a green nightly on `develop`, `lock-refresh.yml` recompiles the lock",
+        "and opens one PR that moves it, with these pages regenerated",
+        "([`ci.md`](ci.md#lock-refreshyml-the-lock-bump)).",
+        "",
+        "## Changing a version",
+        "",
+        "A PR that moves a lock, an extra's floor or a §8.1 row regenerates both",
+        "pages in the same commit. From `python/`:",
+        "",
+        "```bash",
+        "python scripts/compile_constraints.py   # only when the lock moves",
+        "python scripts/generate_docs.py         # this page and the site page",
+        "(cd ../website && npm run generate:llms)   # the site's llms outputs",
+        "```",
+        "",
+        "Never add an upper bound to make a version pass (`§8.4`): fix the",
+        "adapter, or record the break as a §8.1 row.",
+        "",
+        "## Upstream changes on record",
+        "",
+        f"Every [`verified-apis.md` §8.1](verified-apis.md{_SECTION_81}) row,",
+        "including the mitigated ones, which the SDK already handles:",
+        "",
+        recorded,
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def compatibility_page() -> str:
+    """``frameworks/compatibility.mdx``: the user-facing page, generated whole."""
+    status = page_statuses(framework_statuses())["/frameworks"]
+    ledger = f"{REPO_URL}/blob/{DOCS_REF}/{_LEDGER_REF}"
+    reference = f"{REPO_URL}/blob/{DOCS_REF}/{_rel(FRAMEWORK_SUPPORT)}"
+    coinstall = f"{REPO_URL}/blob/{DOCS_REF}/docs/co-installability.md"
+    lines = [
+        "---",
+        "description: Which versions of each agent framework donkey-kit supports — the "
+        "minimum, the version every PR tests, and known incompatibilities.",
+        f"status: {status}",
+        "---",
+        "",
+        "import { Badge } from '../../components'",
+        "",
+        "{/* Generated by python/scripts/generate_docs.py from pyproject.toml, the PR CI "
+        "lock and the",
+        "verification ledger. Do not edit by hand: change the source, then run the script. */}",
+        "",
+        "# Version compatibility",
+        "",
+        "Which versions of each framework `donkey-kit` supports. Install a framework",
+        'with its extra, for example `pip install "donkey-kit[langgraph]"`; the extra',
+        "declares the minimum versions below.",
+        "",
+        _support_policy(ledger_link=f"[known upstream incompatibilities]({ledger}{_SECTION_81})"),
+        "",
+        framework_versions_table(mdx=True),
+        "",
+        "## Installing several frameworks together",
+        "",
+        "Each extra installs on its own and next to `[all]`. Whether two framework",
+        "extras resolve in one environment is re-checked every night; see the",
+        f"[co-installability table]({coinstall}).",
+        "",
+        "## More detail",
+        "",
+        f"The [framework support reference]({reference}) in the repository has the",
+        "same table, where each column comes from, which CI job tests each version,",
+        "and the full list of recorded upstream changes, including those the SDK",
+        "already handles.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _ledger() -> str:
+    return LEDGER.read_text(encoding="utf-8")
+
+
 # --- targets ---------------------------------------------------------------------
 
 
@@ -1118,7 +1507,7 @@ def _framework_page_targets() -> tuple[Target, ...]:
             functools.partial(framework_page, path),
         )
         for path in sorted(FRAMEWORK_PAGES.glob("*.mdx"))
-        if path.stem != "index"
+        if path.stem not in ("index", COMPATIBILITY_PAGE.stem)
     )
 
 
@@ -1182,6 +1571,8 @@ TARGETS: tuple[Target, ...] = (
         None,
         feature_overview,
     ),
+    Target("framework-support", FRAMEWORK_SUPPORT, None, framework_support_md),
+    Target("framework-compatibility", COMPATIBILITY_PAGE, None, compatibility_page),
 )
 
 

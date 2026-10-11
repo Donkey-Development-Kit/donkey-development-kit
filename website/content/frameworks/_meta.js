@@ -1,5 +1,6 @@
 export default {
   index: 'Overview',
+  compatibility: 'Version compatibility',
   langgraph: 'LangGraph',
   adk: 'Google ADK',
   strands: 'Strands',

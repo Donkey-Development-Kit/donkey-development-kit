@@ -115,9 +115,11 @@ issue once the nightly is green again.
 After every green nightly on `develop`, and on manual dispatch, this workflow
 reruns `python scripts/compile_constraints.py` on `develop` (#763,
 [ADR 0011](adr/0011-nightly-lock-refresh-pr.md)). When any file under
-`python/constraints/` changed, it force-pushes the result to
-`bot/lock-refresh` and opens one PR to `develop`, or updates the body of the
-one already open. Merge it once its CI is green. A red bump PR is an upstream
+`python/constraints/` changed, it regenerates the docs that restate the lock
+(`python scripts/generate_docs.py`, which writes the
+[framework version pages](framework-support.md), #1068) and the site's llms
+outputs, force-pushes the result to `bot/lock-refresh` and opens one PR to
+`develop`, or updates the body of the one already open. Merge it once its CI is green. A red bump PR is an upstream
 change the lock can't take yet: fix the code, or leave the PR open until the
 next refresh replaces it. Never add a ceiling (`§8.4`). The branch belongs to
 the workflow, so don't push to it by hand. A failed run opens or updates one

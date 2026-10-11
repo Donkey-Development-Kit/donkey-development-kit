@@ -84,6 +84,22 @@ jobs:
       - run: python -m pip install --upgrade pip && pip install -c constraints/lock-py3.11.txt uv
       - name: Recompile every constraints file
         run: python scripts/compile_constraints.py
+      # The framework version pages restate the adapter-contract pins (#1068),
+      # so the bump PR carries them regenerated or its drift test fails. The
+      # generator imports the package: install it as the test job does, from
+      # the lock just written.
+      - name: Regenerate the docs that restate the lock
+        run: |
+          set -euo pipefail
+          pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/test-py3.11.txt
+          python scripts/generate_docs.py
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # Node built-ins only (docs-llms-drift), so no npm install.
+      - name: Regenerate the site's llms outputs
+        working-directory: website
+        run: node scripts/generate-llms.mjs
       - name: Commit, push and open or update the lock-refresh PR
         env:
           GH_TOKEN: ${{ secrets.LOCK_REFRESH_TOKEN || github.token }}
@@ -98,13 +114,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
-          git add constraints
+          # Only a moved lock opens a PR; the regenerated docs ride along with it.
+          git add constraints README.md ../README.md ../ARCHITECTURE.md ../docs ../website/content ../website/public
           git commit -q -m "chore(deps): refresh the PR CI lock" \
             -m "Recompiled by lock-refresh.yml after a green nightly: ${RUN_URL}"
           # The checkout persisted no credentials, so authenticate the push with
           # the token from env: (never interpolated into this script).
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$BRANCH"
-          body="Recompiled \`python/constraints/\` with \`python scripts/compile_constraints.py\` after a green nightly (#763, ADR 0011): ${RUN_URL}
+          body="Recompiled \`python/constraints/\` with \`python scripts/compile_constraints.py\` after a green nightly (#763, ADR 0011): ${RUN_URL}. The docs that restate the lock (\`python scripts/generate_docs.py\`, #1068) and the site's llms outputs are regenerated with it.
 
           Merge when CI is green. A red run here is an upstream change the lock cannot take yet: fix the code or wait, never add a ceiling (§8.4). If CI did not start, close and reopen this PR (docs/ci.md, \`lock-refresh.yml\`)."
           existing=$(gh pr list --repo "$REPO" --head "$BRANCH" --base develop --state open \
