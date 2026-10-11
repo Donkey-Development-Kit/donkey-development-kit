@@ -1273,7 +1273,8 @@ of two ways, depending on the proxy's ingress **Format**:
   automatically. Supported at `connection_kwargs()`. LiteLLM gets a pre-built
   OpenAI `client` that sends through the SDK's shared HTTP client, so per-run
   correlation, retries, spans, `donkey.last_call` and the `jwt`-mode JWT apply
-  (see [Notes](#notes)).
+  (see [Notes](#notes)). Inside `donkey.run()` or `@donkey.governed`, a
+  refusal reaches your code as its typed Donkey error, such as `PIIDetected`.
 - For `gemini()`: the shared client injected through
   `HttpOptions.httpx_async_client`, round-trip verified live against a
   `Format=Gemini` proxy.
@@ -1373,6 +1374,11 @@ call, and its default is 2. An `api_base` /
 `base_url` passed to `model()` must pass the
 [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https), and the
 adapter builds `client` on that URL.
+
+`model()` also sets ADK's `llm_client` to a `LiteLLMClient` subclass, which is
+what lets a refusal arrive typed (see [Notes](#notes)). `connection_kwargs()`
+leaves it out, so a `LiteLlm` you build yourself raises LiteLLM's own errors
+for a refusal. An `llm_client` you pass to `model()` replaces the SDK's.
 
 ## Native Gemini
 
@@ -1503,9 +1509,15 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   `after_model_callback` (see [Native Gemini](#native-gemini)). A cold read on
   a `Donkey` that resolved only ADK reports `UNOBSERVED`, and `OBSERVED` after
   a call, for `model()` as well as `gemini()`.
-- **Refusals on the `model()` path aren't converted to a typed error by the
-  SDK.** A refusal surfaces as a LiteLLM error whose `__cause__` chain
-  contains the `openai` `APIStatusError`; see the
+- **Refusals on the `model()` path are typed inside `donkey.run()` and
+  `@donkey.governed`.** LiteLLM re-raises a gateway refusal as its own error,
+  such as `litellm.exceptions.APIError`, without the gateway's response
+  headers. The `llm_client` that `model()` sets marks that error with the
+  refusal the SDK's transport received for the same call, and the
+  [typed-refusal bridge](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary)
+  raises `PIIDetected`, `ModelSubstituted` or `GatewayUnavailable` in its
+  place, with LiteLLM's error on `framework_error`. Outside those scopes, and
+  without `typed_refusals()`, you get LiteLLM's error unchanged; see the
   [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
 - **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
   accepts `client_kwargs`; the `adk` extra declares that floor. On an older
@@ -2902,10 +2914,9 @@ in a group before matching. On Python 3.10, which has no builtin
 `ExceptionGroup`, the bridge recognises the `exceptiongroup` backport's groups
 that anyio raises.
 
-  The bridge only sees calls that went through the SDK's transport. ADK's
-  `model()` (LiteLLM) and CrewAI own their transport, so their errors pass
-  through untyped. These are the same
-  [conformance exemptions](https://docs.donkey-kit.dev/testing.md#exemptions) as their correlation ids.
+  The bridge only sees calls that went through the SDK's transport. CrewAI
+  owns its transport, so its errors pass through untyped. This is the same
+  [conformance exemption](https://docs.donkey-kit.dev/testing.md#exemptions) as its correlation id.
 
 ### Classifying a response yourself
 
@@ -6013,7 +6024,7 @@ headers go on the wire.
     An `OpenAILike` for `complete()` and `chat()`; typed refusals.
   
   
-    A `LiteLlm` model in an `InMemoryRunner` — and why its refusals are not typed.
+    A `LiteLlm` model in an `InMemoryRunner`, and a refusal outside `donkey.run()`.
   
   
     The native client on `/v1/messages`, `last_call` and simulated refusals.
@@ -9422,9 +9433,9 @@ Source: https://docs.donkey-kit.dev/examples/adk.md
 
 Google ADK with `donkey.adk.model("…")`, a `LiteLlm` model. LiteLLM calls
 the proxy's `/chat/completions` route. It sends through the SDK's shared HTTP client, so the credentials and the run id
-go on the wire, but LiteLLM raises its own errors, so the SDK does not convert
-a refusal to a **typed error** here; the `openai` error is in the `__cause__`
-chain. Script 02 exists to show that gap.
+go on the wire. LiteLLM raises its own errors, so a refusal becomes a **typed
+error** only inside `donkey.run()` or `@donkey.governed`. Script 02 calls the
+agent outside them, so it shows LiteLLM's own error.
 
 Both scripts need a live gateway; there is no offline ADK script.
 
@@ -9467,7 +9478,7 @@ in an `after_model_callback` instead, as shown under
 [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). LiteLLM also logs a
 provider-list banner, which is harmless.
 
-## 02 — A refusal that is not typed
+## 02 — A refusal outside `donkey.run()`
 
 ```bash
 python "demos/human-made/adk/02 - refusal-live.py"
@@ -9475,7 +9486,8 @@ python "demos/human-made/adk/02 - refusal-live.py"
 
 A PII prompt against a proxy with the PII policy applied. LiteLLM keeps the
 status code and the message but drops the response headers, so `classify()`
-has nothing to read. The script therefore catches LiteLLM's own error:
+has nothing to read. The script makes the call outside `donkey.run()`, so it
+catches LiteLLM's own error:
 
 ```python
 try:
@@ -9490,12 +9502,24 @@ except litellm.exceptions.APIError as err:
 should see:** `APIError 403` and the first line of the proxy's message — **not**
 `PIIDetected`. Without the policy it prints `NO REFUSAL`.
 
-  If you need typed refusals with ADK, use
-  `donkey.adk.gemini("gemini-2.5-flash")` on a `Format=Gemini` proxy and
-  `classify()` its error (see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)).
-  Otherwise prefer a framework path where the SDK owns the transport, such as
-  [OpenAI](https://docs.donkey-kit.dev/examples/openai.md) or [LangGraph](https://docs.donkey-kit.dev/examples/langgraph.md). A `404`
-  here means the proxy's upstream has no `/chat/completions` route.
+Wrap the same call in `donkey.run()` and the refusal reaches your code as
+`PIIDetected`, with LiteLLM's `APIError` on `framework_error`:
+
+```python
+async def main():
+    async with donkey.run():
+        await InMemoryRunner(agent=agent).run_debug(PII_PROMPT, quiet=True)
+
+try:
+    asyncio.run(main())
+except PIIDetected as err:
+    print(type(err).__name__, type(err.framework_error).__name__)
+```
+
+  Typed refusals on `model()` need the `LiteLlm` that `donkey.adk.model()`
+  returns. One you build from `connection_kwargs()` raises LiteLLM's errors
+  even inside `donkey.run()` (see [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md#manual-equivalent)).
+  A `404` here means the proxy's upstream has no `/chat/completions` route.
 
 **Learn more:** [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md)
 

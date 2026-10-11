@@ -221,11 +221,15 @@ def test_adk_model_and_gemini_report_separately(http: DonkeyAsyncClient) -> None
     adk = _adapter_class("adk")(_client_id_cfg(), http)
     model = adk.capabilities("model")
     gemini = adk.capabilities("gemini")
-    assert model != gemini
+    # Each factory reports its own entry, and model() is the default one.
+    assert (model, gemini) == (adk.factories["model"], adk.factories["gemini"])
+    assert model is not gemini
     assert adk.capabilities() is model
-    # Both observe since #946; only model() lacks typed refusals (#724).
+    # Both observe since #946, and both bridge typed refusals since #969 (they
+    # differed on typed_refusals before it), so today the two entries agree.
     assert model.observes_last_call and gemini.observes_last_call
-    assert (model.typed_refusals, gemini.typed_refusals) == (False, True)
+    assert model.typed_refusals and gemini.typed_refusals
+    assert model == gemini
 
 
 def test_strands_reports_streaming_off() -> None:
