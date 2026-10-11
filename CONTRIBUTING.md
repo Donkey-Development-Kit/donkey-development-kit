@@ -921,21 +921,54 @@ Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .
 `website/` (Nextra) describes how the SDK behaves from a consumer's
 perspective. When code changes what the SDK does — or which platform facts it
 depends on — the docs must change *with it*, or the drift is discovered by a
-confused adopter instead of at review time. There is no automated drift detector;
-this is a PR-time discipline. The surface→page map (code paths under
-`python/src/donkey_kit/`, pages under `website/content/`):
+confused adopter instead of at review time.
+
+Some facts are generated, so they can't drift: `python scripts/generate_docs.py`
+(from `python/`) writes the PyPI README (`python/README.md`, from the root
+`README.md`), the settings index in `reference/configuration.mdx`, the CLI
+command reference in `cli.mdx`, the adapter capabilities table in
+`frameworks/index.mdx`, and the whole Python API page (`reference/api.mdx`).
+Edit the code, the docstring or the root README, run the script, and commit the
+result; never edit a `BEGIN GENERATED` region by hand.
+`tests/unit/test_generated_docs.py` fails when a committed copy is stale, and
+`--check` reports the same without writing. Everything else is a PR-time
+discipline with two automated backstops (#797):
+
+- **The docs-sync reminder.** [`python/scripts/check_docs_sync.py`](python/scripts/check_docs_sync.py)
+  holds every row of the table below as data, and the `Docs-sync reminder`
+  workflow runs it on every PR that touches `python/src/donkey_kit/`,
+  `docs/verified-apis.md`, `docs/unsupported-boundary.md` or `README.md`. A surface
+  whose code changed without any of its mapped pages gets a warning annotation
+  on the PR. It never fails the build; it is the prompt to do one of the two
+  things below. Run it locally with
+  `python scripts/check_docs_sync.py --base origin/develop`. When you change a
+  row here, change the script's `SURFACES` with it; its unit test fails if a
+  mapped page or code path does not exist, or if the workflow's `paths:` filter
+  misses a mapped file outside the package.
+- **The snippet check.** [`python/scripts/check_doc_snippets.py`](python/scripts/check_doc_snippets.py)
+  (run by `tests/unit/test_check_doc_snippets.py`) checks every Python fence in
+  the READMEs, `MIGRATION.md` and `website/content/` against the installed SDK:
+  imports, `donkey.<attr>` chains and call kwargs, so a renamed parameter fails
+  CI on the page that still uses the old name. Pages marked `status: roadmap`
+  are exempt, and a `status: live` page may not call an API that raises
+  `_verify.blocked(...)`. The status vocabulary is in
+  [`website/README.md`](website/README.md).
+
+The surface→page map (code paths under `python/src/donkey_kit/` unless they
+start with `docs/` or are `README.md`, pages under `website/content/`):
 
 | Code surface | Docs page(s) |
 | --- | --- |
 | `core/errors.py` | `errors.mdx` |
 | `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
-| `core/_verify.py`, `docs/verified-apis.md`, `docs/unsupported-boundary.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
+| `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
 | `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx` |
 | `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
 | `simulator/*` | `simulator.mdx` |
-| `conformance/*`, `donkey.simulate()` | `testing.mdx` |
+| `conformance/*` | `testing.mdx` |
+| `donkey.py` (the `Donkey` facade: `from_env`, `run`, `simulate()`, `tools`) | `quickstart.mdx`, `testing.mdx`, `reference/configuration.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
 | `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
@@ -952,7 +985,8 @@ shape, so one surface never says "live" while another still says "planned" or
 
 - `classify()` and the related docstrings in `python/src/donkey_kit/core/`
   (notably `core/errors.py`);
-- `docs/unsupported-boundary.md`;
+- `website/content/reference/unsupported-boundary.mdx` (the one boundary list;
+  `docs/unsupported-boundary.md` is only a pointer to it);
 - `website/content/**` **and** the generated `website/public/**` copies
   (regenerate with `npm run generate:llms`);
 - the fixture index (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`);

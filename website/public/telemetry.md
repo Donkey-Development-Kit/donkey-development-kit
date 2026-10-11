@@ -1,6 +1,6 @@
 # Telemetry & cost
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 DDK answers two questions about every governed call: *what happened?* and *who
 pays for it?* It does so with OpenTelemetry GenAI spans, per-run correlation

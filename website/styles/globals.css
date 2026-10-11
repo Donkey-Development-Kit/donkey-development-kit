@@ -629,6 +629,12 @@ a.af-card:hover .af-card-title::after {
   border-color: var(--af-accent-border);
 }
 
+/* The page-status badge (lib/status.mjs), rendered from frontmatter above the
+   H1 by app/[[...mdxPath]]/page.tsx. */
+.af-page-status {
+  margin: 0 0 0.5rem;
+}
+
 .af-card-badges {
   display: flex;
   flex-wrap: wrap;

@@ -1,5 +1,7 @@
 # Anthropic
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 The native `anthropic` client from `donkey.anthropic.client()`, on the
 governed transport. It sends `/v1/messages`, so it needs a proxy provisioned
 **`Format=Anthropic`** (for example `ddk-anthropic-inbound`). The default DDK

@@ -1,5 +1,7 @@
 # OpenAI Agents SDK
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 The agent is given `OpenAIResponsesModel(model=…,
 **donkey.openai_agents.connection_kwargs())`. `connection_kwargs()` is one
 key, `openai_client`, a governed `AsyncOpenAI`, so the agent stays on the

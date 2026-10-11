@@ -1,5 +1,7 @@
 # Microsoft Agent Framework
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 `donkey.agent_framework.chat_client("…")` builds an `OpenAIChatCompletionClient`
 (verified against 1.19.0, where the keyword is `model=`) that calls
 `/chat/completions`. It sends through the SDK's shared HTTP client, so the run id
