@@ -37,6 +37,18 @@ updates:
       website-npm:
         patterns: ["*"]
         update-types: [minor, patch]
+    # #1088: two majors the site can't take yet.
+    ignore:
+      # The typings must match the oldest Node the site runs on (engines.node,
+      # and node-version in ci.yml and docs.yml), not the newest Node release.
+      # Bump the major by hand when that floor moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 (the native port) has no ts.sys, which twoslash (Nextra's
+      # Shiki highlighting) reads files through, so `next build` fails. Lift
+      # this once twoslash supports TypeScript 7.
+      - dependency-name: typescript
+        versions: [">=7"]
     commit-message:
       prefix: chore(deps)
     labels: [dependencies]
