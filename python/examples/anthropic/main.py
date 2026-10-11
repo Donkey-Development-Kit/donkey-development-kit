@@ -1,7 +1,8 @@
 """Anthropic SDK adapter example (BG §1.8).
 
-Supported and conformance-tested (BG §1.8): ``build(donkey)`` makes one governed
-call through ``AsyncAnthropic.messages.create`` and passes the public conformance kit.
+Supported at ``connection_kwargs()`` (BG §1.8): ``build(donkey)`` makes one governed
+call through ``AsyncAnthropic.messages.create`` and runs the public conformance kit in CI
+(``adapter-contract``).
 
 Demonstrates constructing a native ``anthropic.AsyncAnthropic`` client pointed
 at the governed Agent Fabric LLM proxy with a single factory call:

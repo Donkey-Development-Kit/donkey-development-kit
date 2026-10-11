@@ -1,7 +1,8 @@
 """Strands Agents adapter example (BG §1.8).
 
-Supported and conformance-tested (BG §1.8): ``build(donkey)`` makes one governed
-call through ``strands.Agent.invoke_async`` and passes the public conformance kit.
+Supported at ``connection_kwargs()`` (BG §1.8): ``build(donkey)`` makes one governed
+call through ``strands.Agent.invoke_async`` and runs the public conformance kit in CI
+(``adapter-contract``).
 
 Demonstrates constructing a native ``strands.models.openai.OpenAIModel``
 pointed at the governed Agent Fabric LLM proxy with a single factory call:
