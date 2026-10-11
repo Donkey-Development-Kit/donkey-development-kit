@@ -1,7 +1,8 @@
 """Microsoft Agent Framework adapter example (BG §1.8).
 
-Supported and conformance-tested (BG §1.8): ``build(donkey)`` makes one governed
-call through ``agent_framework.Agent.run`` and passes the public conformance kit.
+Supported at ``connection_kwargs()`` (BG §1.8): ``build(donkey)`` makes one governed
+call through ``agent_framework.Agent.run`` and runs the public conformance kit in CI
+(``adapter-contract``).
 
 Demonstrates constructing a native Agent Framework OpenAI-compatible chat
 client pointed at the governed Agent Fabric LLM proxy with a single factory
