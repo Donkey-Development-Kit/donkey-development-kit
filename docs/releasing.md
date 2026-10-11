@@ -241,7 +241,7 @@ workflows; the last two are human.
 | Clean-install smoke test | `build` job, `scripts/smoke_test_wheel.py` | The built wheel doesn't install into a fresh virtualenv, or `import donkey_kit` there fails, imports from anywhere but that virtualenv, or reports a `__version__` other than the installed version. |
 | Attestations | publish job | Not a check: the upload carries [PEP 740](https://peps.python.org/pep-0740/) attestations signed with the workflow's OIDC identity (`attestations: true`). |
 | Required reviewer | `pypi` environment | A maintainer doesn't approve the production deployment. This is a repository setting (see [One-time human setup](#one-time-human-setup-register-the-trusted-publisher)); the workflow can't enforce it. |
-| Acceptance run | By hand, before the promotion PR | See below. |
+| Acceptance run | `publish-testpypi.yml`'s `acceptance` job for the offline groups; by hand for the live groups, before the promotion PR | The `acceptance (published)` status on the published commit isn't green, or the live run fails. See below. |
 
 ### The acceptance run
 
@@ -251,12 +251,23 @@ only one that installs the **published** artifact from an index and exercises
 it against a live gateway. It catches the release where all of CI is
 green and consumers still can't use the package.
 
-Run it against the `.devN` version you just published to TestPyPI, before you
-open the promotion PR. How to run it, and how to tell a run that tested
-something from one that skipped everything, is documented in that repository.
+Half of it runs itself (#1082). After the TestPyPI upload,
+`publish-testpypi.yml`'s `acceptance` job dispatches the suite's offline groups
+(public surface, packaging, verification-blocked surfaces: no credentials, no
+gateway) against the `.devN` it just published, waits for them, and posts the
+result as the `acceptance (published)` commit status on the published commit.
+That commit is the promotion PR's head, so the PR shows the result. A red,
+errored or missing status blocks the promotion the same way a failed run does.
+If `develop` moved after the publish, the status sits on the older commit:
+publish again from the new tip, or check the status on that commit.
 
-Record the result in the promotion PR body: the version tested, the index, and
-whether it passed. A promotion with no recorded acceptance run is a promotion
+The live groups stay manual, because they call a real gateway. Run them
+against the same `.devN` before you open the promotion PR. How to run them, and
+how to tell a run that tested something from one that skipped everything, is
+documented in that repository.
+
+Record the live result in the promotion PR body: the version tested, the
+index, and whether it passed. A promotion with no recorded acceptance run is a promotion
 nobody checked. If the run fails, don't promote until you know which side is
 wrong, and assume the package is at fault until you have shown otherwise.
 
@@ -426,6 +437,14 @@ Then, in the GitHub repo (Settings → Environments), create the `pypi` and
 job then pauses for a human approval before the irreversible production
 upload — the go-ahead gate #339 requires, and one of the
 [release gates](#release-gates).
+
+For the automated acceptance run (#1082), add the `ACCEPTANCE_REPO` repository
+variable (the acceptance repository, as `owner/name`) and the
+`ACCEPTANCE_DISPATCH_TOKEN` repository secret: a fine-grained token scoped to
+that one repository, with **Actions: read and write**. The dispatch targets its
+`published-gate.yml` workflow on `develop`, which GitHub only accepts once that
+file is also on the acceptance repository's default branch. Until both are set,
+the `acceptance` job posts an `error` status naming them instead of a run.
 
 > A public PyPI publish is effectively irreversible (names can be squatted;
 > releases can only be *yanked*, never deleted). Do not change the
