@@ -58,9 +58,7 @@ def test_mock_wires_host_and_port_through_to_serve(monkeypatch: pytest.MonkeyPat
 
 def test_mock_defaults_bind_localhost_8080(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
-    monkeypatch.setattr(
-        "donkey_kit.simulator.server.serve", lambda **kw: captured.update(kw)
-    )
+    monkeypatch.setattr("donkey_kit.simulator.server.serve", lambda **kw: captured.update(kw))
     result = runner.invoke(app, ["mock"])
 
     assert result.exit_code == 0
@@ -78,9 +76,7 @@ def test_mock_parses_scenarios_into_config(monkeypatch: pytest.MonkeyPatch) -> N
     )
 
     captured: dict[str, object] = {}
-    monkeypatch.setattr(
-        "donkey_kit.simulator.server.serve", lambda **kw: captured.update(kw)
-    )
+    monkeypatch.setattr("donkey_kit.simulator.server.serve", lambda **kw: captured.update(kw))
     result = runner.invoke(
         app,
         [
@@ -103,9 +99,7 @@ def test_mock_parses_scenarios_into_config(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_mock_invalid_scenario_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
     """A malformed --scenario is a usage error (exit 2), not a stack trace."""
-    monkeypatch.setattr(
-        "donkey_kit.simulator.server.serve", lambda **kw: None
-    )
+    monkeypatch.setattr("donkey_kit.simulator.server.serve", lambda **kw: None)
     result = runner.invoke(app, ["mock", "--scenario", "nonsense:foo=1"])
 
     assert result.exit_code == 2

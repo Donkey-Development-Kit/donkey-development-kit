@@ -124,7 +124,9 @@ async def test_control_plane_call_sends_neither_secret_nor_token_to_a_project_ba
     async with Donkey.from_env() as donkey:
         assert donkey._owned_auth_http is not None
         assert donkey._owned_auth_http._control_plane
-        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey._owned_auth_http.governed_transport.replace_inner(
+            httpx.MockTransport(token_endpoint)
+        )
         donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         with pytest.raises(ConfigError, match="cp.example.test"):
             await donkey.registry._http.get(f"{_PROJECT_CP}/exchange/api/v2/assets")
@@ -142,7 +144,9 @@ async def test_control_plane_call_with_file_credentials_reaches_a_project_base_u
 
     async with Donkey.from_env() as donkey:
         assert donkey._owned_auth_http is not None
-        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey._owned_auth_http.governed_transport.replace_inner(
+            httpx.MockTransport(token_endpoint)
+        )
         donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         await donkey.registry._http.get(f"{_PROJECT_CP}/exchange/api/v2/assets")
 

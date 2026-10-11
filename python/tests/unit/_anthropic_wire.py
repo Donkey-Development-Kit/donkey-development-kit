@@ -36,26 +36,51 @@ CFG = DonkeyConfig(
 )
 
 _SSE_EVENTS = [
-    ("message_start", {"type": "message_start", "message": {
-        "id": "msg_1", "type": "message", "role": "assistant", "model": MODEL,
-        "content": [], "stop_reason": None, "stop_sequence": None,
-        "usage": {"input_tokens": 16, "cache_creation_input_tokens": 100,
-                  "cache_read_input_tokens": 2000, "output_tokens": 1}}}),
-    ("content_block_start", {"type": "content_block_start", "index": 0,
-                             "content_block": {"type": "text", "text": ""}}),
-    ("content_block_delta", {"type": "content_block_delta", "index": 0,
-                             "delta": {"type": "text_delta", "text": "PO"}}),
-    ("content_block_delta", {"type": "content_block_delta", "index": 0,
-                             "delta": {"type": "text_delta", "text": "NG"}}),
+    (
+        "message_start",
+        {
+            "type": "message_start",
+            "message": {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "model": MODEL,
+                "content": [],
+                "stop_reason": None,
+                "stop_sequence": None,
+                "usage": {
+                    "input_tokens": 16,
+                    "cache_creation_input_tokens": 100,
+                    "cache_read_input_tokens": 2000,
+                    "output_tokens": 1,
+                },
+            },
+        },
+    ),
+    (
+        "content_block_start",
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+    ),
+    (
+        "content_block_delta",
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "PO"}},
+    ),
+    (
+        "content_block_delta",
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "NG"}},
+    ),
     ("content_block_stop", {"type": "content_block_stop", "index": 0}),
-    ("message_delta", {"type": "message_delta",
-                       "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-                       "usage": {"output_tokens": 6}}),
+    (
+        "message_delta",
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": 6},
+        },
+    ),
     ("message_stop", {"type": "message_stop"}),
 ]
-SSE_CHUNKS = [
-    f"event: {name}\ndata: {json.dumps(data)}\n\n".encode() for name, data in _SSE_EVENTS
-]
+SSE_CHUNKS = [f"event: {name}\ndata: {json.dumps(data)}\n\n".encode() for name, data in _SSE_EVENTS]
 
 
 def success_response() -> httpx.Response:
@@ -67,7 +92,11 @@ def success_response() -> httpx.Response:
 
 
 _LLM_PROXY = (
-    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
     / "anypoint"
     / "llm_proxy"
 )

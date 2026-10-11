@@ -285,7 +285,9 @@ async def test_control_plane_request_carries_the_connected_app_token_in_client_i
     token_endpoint, platform = _TokenEndpoint(), _Recorder()
     async with Donkey(_client_id_cfg()) as donkey:
         assert donkey._owned_auth_http is not None
-        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey._owned_auth_http.governed_transport.replace_inner(
+            httpx.MockTransport(token_endpoint)
+        )
         donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         await donkey.registry._http.get(f"{_CONTROL_PLANE}/exchange/api/v2/assets")
 
@@ -298,7 +300,9 @@ async def test_control_plane_request_carries_the_connected_app_token_in_jwt_mode
     token_endpoint, platform = _TokenEndpoint(), _Recorder()
     async with Donkey(_jwt_cfg(), llm_auth=StaticToken(_WALLET_JWT)) as donkey:
         assert donkey._owned_auth_http is not None
-        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey._owned_auth_http.governed_transport.replace_inner(
+            httpx.MockTransport(token_endpoint)
+        )
         donkey.registry._http.governed_transport.replace_inner(httpx.MockTransport(platform))
         await donkey.registry._http.get(f"{_CONTROL_PLANE}/exchange/api/v2/assets")
 
@@ -312,7 +316,9 @@ async def test_connected_app_token_request_carries_no_data_plane_credentials() -
     token_endpoint = _TokenEndpoint()
     async with Donkey(_jwt_cfg(), llm_auth=StaticToken(_WALLET_JWT)) as donkey:
         assert donkey._owned_auth_http is not None and donkey._auth is not None
-        donkey._owned_auth_http.governed_transport.replace_inner(httpx.MockTransport(token_endpoint))
+        donkey._owned_auth_http.governed_transport.replace_inner(
+            httpx.MockTransport(token_endpoint)
+        )
         assert await donkey._auth.token() == _CONTROL_PLANE_TOKEN
 
     (token_request,) = token_endpoint.requests

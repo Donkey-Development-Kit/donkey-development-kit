@@ -9,3 +9,13 @@ website/content/reference/api.mdx linguist-generated=true
 website/public/llms.txt linguist-generated=true
 website/public/llms-full.txt linguist-generated=true
 website/public/**/*.md linguist-generated=true
+
+# Images are binary (#757): never normalise line endings in them, never show a
+# textual diff, never attempt a textual merge. SVG stays text on purpose.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.avif binary
