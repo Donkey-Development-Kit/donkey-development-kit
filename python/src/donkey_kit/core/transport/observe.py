@@ -31,9 +31,7 @@ __all__: list[str] = []
 _log = logging.getLogger(__name__)
 
 
-def _observe_final(
-    request: httpx.Request, response: httpx.Response, budget: Budget | None
-) -> None:
+def _observe_final(request: httpx.Request, response: httpx.Response, budget: Budget | None) -> None:
     """Feed the final response to the attached :class:`Budget` from its
     ``x-token-*`` headers (#185), and record a governed model call's gateway
     identity into ``donkey.last_call`` (#362). Both are no-ops when not

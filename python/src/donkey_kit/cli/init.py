@@ -53,11 +53,7 @@ def _collect_missing(config: DonkeyConfig) -> list[str]:
     reusing ``DonkeyConfig.missing_fields`` (what ``validated`` reports) as the
     single source of truth for what is required (config resolution), rather than
     duplicating the field set here."""
-    return [
-        item
-        for need in ("control_plane", "llm")
-        for item in config.missing_fields(need=need)
-    ]
+    return [item for need in ("control_plane", "llm") for item in config.missing_fields(need=need)]
 
 
 def _render_toml(config: DonkeyConfig, missing: list[str]) -> str:

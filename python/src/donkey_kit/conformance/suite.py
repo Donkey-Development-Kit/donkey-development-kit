@@ -158,9 +158,7 @@ def _no_model_call(obs: Observation) -> Outcome | None:
     if obs.wire_sends:
         return None
     blocked = (
-        f" ({obs.bypass_attempts} request(s) blocked by the harness)"
-        if obs.bypass_attempts
-        else ""
+        f" ({obs.bypass_attempts} request(s) blocked by the harness)" if obs.bypass_attempts else ""
     )
     if obs.unobservable_adapters:
         # The adapter built the client, so "use the donkey" is not the fix: say
@@ -206,16 +204,13 @@ async def _swallows_pii_as_generic(ctx: ScenarioContext) -> Outcome:
     if (no_call := _no_model_call(obs)) is not None:
         return no_call
     if obs.raised is None:
-        return Outcome(
-            True, "handled the PII refusal without leaking a generic exception"
-        )
+        return Outcome(True, "handled the PII refusal without leaking a generic exception")
     if isinstance(obs.raised, PIIDetected):
         return Outcome(True, "surfaced the refusal as a typed PIIDetected")
     if isinstance(obs.raised, DonkeyError):
         return Outcome(
             False,
-            f"raised {type(obs.raised).__name__}, not PIIDetected — the refusal "
-            f"was misclassified",
+            f"raised {type(obs.raised).__name__}, not PIIDetected — the refusal was misclassified",
         )
     return Outcome(
         False,
@@ -244,9 +239,7 @@ async def _works_without_budget_headers(ctx: ScenarioContext) -> Outcome:
     if (no_call := _no_model_call(obs)) is not None:
         return no_call
     if obs.raised is None:
-        return Outcome(
-            True, "completed a run when the gateway returned no budget headers"
-        )
+        return Outcome(True, "completed a run when the gateway returned no budget headers")
     return Outcome(
         False,
         f"raised {type(obs.raised).__name__} when budget headers were absent — "
@@ -277,8 +270,7 @@ SCENARIOS: tuple[Scenario, ...] = (
     Scenario(
         name="works_without_budget_headers",
         title="Works without budget headers",
-        question="Does your agent still work when the gateway sends no "
-        "budget headers?",
+        question="Does your agent still work when the gateway sends no budget headers?",
         check=_works_without_budget_headers,
     ),
 )

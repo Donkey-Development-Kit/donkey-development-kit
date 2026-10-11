@@ -91,9 +91,7 @@ def _is_group(exc: BaseException) -> bool:
     return isinstance(exc, _group_types())
 
 
-def translate(
-    exc: BaseException, translators: Iterable[Translator] = ()
-) -> DonkeyError | None:
+def translate(exc: BaseException, translators: Iterable[Translator] = ()) -> DonkeyError | None:
     """The typed error ``exc`` stands for, or ``None`` when it is not a refusal.
 
     Returns ``exc`` itself when it already is a :class:`DonkeyError`. Otherwise

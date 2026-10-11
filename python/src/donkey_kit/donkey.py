@@ -635,9 +635,7 @@ class Donkey:
         """
         return register_tool(func)
 
-    def simulate(
-        self, error: type[DonkeyError], *, times: int = 1
-    ) -> AbstractContextManager[None]:
+    def simulate(self, error: type[DonkeyError], *, times: int = 1) -> AbstractContextManager[None]:
         """Inject a real gateway refusal in-process, no server (#190, BG §1.5).
 
         Swaps a fixture-returning transport onto this Donkey's data-plane HTTP client(s) for

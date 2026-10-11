@@ -79,9 +79,9 @@ def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
     scenario, #188) is what stops the two renderers from drifting apart.
     """
     return (
-        f"Token rate limit: {remaining} tokens remaining of "
-        f"{limit} limit. Reset in {reset_ms}ms."
+        f"Token rate limit: {remaining} tokens remaining of {limit} limit. Reset in {reset_ms}ms."
     )
+
 
 # Header replay is an allow-list, not a deny-list: replay only the semantic and
 # discriminator headers a client (and classify()) actually consume, and let the
@@ -205,9 +205,7 @@ SHAPES: dict[str, _Spec] = {
         "reject.content-safety.body.json",
         403,
     ),
-    "content-moderation": _Spec(
-        "rejections", "reject.content-moderation.headers.txt", None, 400
-    ),
+    "content-moderation": _Spec("rejections", "reject.content-moderation.headers.txt", None, 400),
     # Agent Kill Switch (docs/verified-apis.md §4, #694): nested error.code == "agent_killed".
     "agent-killed": _Spec(
         "rejections",
@@ -265,9 +263,7 @@ SHAPES: dict[str, _Spec] = {
         "responses.stream.sample.sse",
         200,
     ),
-    "models-notfound": _Spec(
-        "anypoint/llm_proxy", "models.notfound.headers.txt", None, 404
-    ),
+    "models-notfound": _Spec("anypoint/llm_proxy", "models.notfound.headers.txt", None, 404),
     # --- the /chat/completions happy path (#895) ---
     # The non-streaming 200 is a live capture (docs/verified-apis.md §2, Chat
     # Completions row): the Azure OpenAI model-based route, #896.
@@ -415,9 +411,8 @@ def compute_manifest() -> dict[str, str]:
     """A ``{"<directory>/<name>": "sha256:<hex>"}`` map over every fixture file
     the simulator serves, computed from the bytes on disk right now."""
     return {
-        f"{directory}/{name}": "sha256:" + hashlib.sha256(
-            fixture_bytes(directory, name)
-        ).hexdigest()
+        f"{directory}/{name}": "sha256:"
+        + hashlib.sha256(fixture_bytes(directory, name)).hexdigest()
         for directory, name in _served_files()
     }
 

@@ -75,7 +75,7 @@ def _pii_response() -> httpx.Response:
     )
     return httpx.Response(
         403,
-        json={"error": {"type": "pii_detected", "message": "blocked: [{\"pii_type\": \"EMAIL\"}]"}},
+        json={"error": {"type": "pii_detected", "message": 'blocked: [{"pii_type": "EMAIL"}]'}},
         request=request,
     )
 

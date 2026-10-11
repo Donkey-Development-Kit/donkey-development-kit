@@ -33,7 +33,7 @@ _EXIT_USAGE_ERROR = 4
 
 # A well-behaved agent module: bridges refusals with classify(), never retries,
 # logs the correlation id, tolerates an absent budget. Passes all four scenarios.
-_GOOD_AGENT = '''
+_GOOD_AGENT = """
 import logging
 import openai
 from donkey_kit.core.errors import classify
@@ -60,10 +60,10 @@ class Agent:
 
 def build(donkey):
     return Agent(donkey)
-'''
+"""
 
 # The headline bug: retries a terminal 429 budget refusal. Fails the retry scenario.
-_RETRY_BUG_AGENT = '''
+_RETRY_BUG_AGENT = """
 import openai
 from donkey_kit.core.errors import classify
 
@@ -85,17 +85,17 @@ class Agent:
 
 def build(donkey):
     return Agent(donkey)
-'''
+"""
 
 # No openai import on purpose: the invalid-exemption path must fail at
 # validation, not because the module could not be imported.
-_BAD_KNOWN_LIMITATIONS_AGENT = '''
+_BAD_KNOWN_LIMITATIONS_AGENT = """
 KNOWN_LIMITATIONS = {"not_a_real_scenario": "this key names no scenario"}
 
 
 def build(donkey):
     return object()
-'''
+"""
 
 
 def test_plugin_is_inert_without_the_flag(pytester: pytest.Pytester) -> None:

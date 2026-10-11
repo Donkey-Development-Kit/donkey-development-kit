@@ -29,13 +29,15 @@ from donkey_kit.simulator.fixtures import parse_headers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "model_wallet"
 _LLM_PROXY = (
-    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
     / "anypoint"
     / "llm_proxy"
 )
-_TOKEN_WINDOW_429 = parse_headers(
-    (_LLM_PROXY / "reject.token-rate-limit.headers.txt").read_text()
-)
+_TOKEN_WINDOW_429 = parse_headers((_LLM_PROXY / "reject.token-rate-limit.headers.txt").read_text())
 
 
 def _headers(name: str) -> dict[str, str]:
