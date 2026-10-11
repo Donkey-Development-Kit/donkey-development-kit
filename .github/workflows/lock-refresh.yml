@@ -30,12 +30,16 @@
 #
 # Security: no PR code runs here. `workflow_run` fires only for `Nightly
 # matrix`, which has no pull_request trigger, and the job checks out `develop`
-# itself. Event values reach `run:` bodies through env:, never interpolated.
+# itself. That is why zizmor's dangerous-triggers audit is waived on the
+# trigger below (#757, as in pr-labels.yml): the risk it flags is running
+# untrusted code with this token. Event values reach `run:` bodies through
+# env:, never interpolated. The checkout persists no credentials (docs/ci.md
+# convention 7), so the push passes the token explicitly through env:.
 
 name: Lock refresh
 
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: ["Nightly matrix"]
     types: [completed]
   workflow_dispatch: {}
@@ -67,11 +71,13 @@ jobs:
     env:
       BRANCH: bot/lock-refresh
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: develop
-          token: ${{ secrets.LOCK_REFRESH_TOKEN || github.token }}
-      - uses: actions/setup-python@v7
+          # No token is left in .git/config (docs/ci.md convention 7); the push
+          # below passes the token explicitly.
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       # The refresh tool comes from its own lock (combo "lock").
@@ -95,7 +101,9 @@ jobs:
           git add constraints
           git commit -q -m "chore(deps): refresh the PR CI lock" \
             -m "Recompiled by lock-refresh.yml after a green nightly: ${RUN_URL}"
-          git push --force origin "$BRANCH"
+          # The checkout persisted no credentials, so authenticate the push with
+          # the token from env: (never interpolated into this script).
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$BRANCH"
           body="Recompiled \`python/constraints/\` with \`python scripts/compile_constraints.py\` after a green nightly (#763, ADR 0011): ${RUN_URL}
 
           Merge when CI is green. A red run here is an upstream change the lock cannot take yet: fix the code or wait, never add a ceiling (§8.4). If CI did not start, close and reopen this PR (docs/ci.md, \`lock-refresh.yml\`)."
