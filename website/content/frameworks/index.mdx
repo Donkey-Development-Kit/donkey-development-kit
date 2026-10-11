@@ -41,12 +41,33 @@ Each card shows what has been proven about that adapter, in the terms the
 The proxy data plane every adapter calls (base URL, credential headers,
 streaming, rejection shapes) is live-verified.
 
+{/* BEGIN GENERATED: framework-status (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) */}
+Each factory's status is its constructor row in the [ledger §8](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md); its
+depth is the adapter roster's `conformance_tested`.
+
+| Framework | Factory | Depth | Ledger status |
+|---|---|---|---|
+| [LangGraph](/frameworks/langgraph) | `donkey.langgraph.chat_model()` | <Badge tone="accent">Conformance-tested</Badge> | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [Google ADK](/frameworks/adk) | `donkey.adk.model()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [Google ADK](/frameworks/adk) | `donkey.adk.gemini()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [Strands](/frameworks/strands) | `donkey.strands.model()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [MS Agent Framework](/frameworks/agent-framework) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [OpenAI Agents SDK](/frameworks/openai) | `donkey.openai_agents.model()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [Anthropic SDK](/frameworks/anthropic) | `donkey.anthropic.client()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [CrewAI](/frameworks/crewai) | `donkey.crewai.llm()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [LlamaIndex](/frameworks/llamaindex) | `donkey.llamaindex.llm()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+{/* END GENERATED: framework-status */}
+
+A card reads Conformance-tested for a conformance-tested adapter, and otherwise
+the ledger status of the adapter's default factory, so the ADK card rates
+`model()`.
+
 <CardGrid>
   <Card title="LangGraph" href="/frameworks/langgraph" badge="Conformance-tested" badgeTone="accent">
     `chat_model()` → `langchain_openai.ChatOpenAI`
   </Card>
   <Card title="Google ADK" href="/frameworks/adk" badge="Signature-confirmed" badgeTone="neutral">
-    `model()` → `google.adk … LiteLlm` (signature-confirmed); `gemini()` → `google.adk.models.Gemini` (live-verified)
+    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
   </Card>
   <Card title="Strands" href="/frameworks/strands" badge="Signature-confirmed" badgeTone="neutral">
     `model()` → `strands … OpenAIModel`

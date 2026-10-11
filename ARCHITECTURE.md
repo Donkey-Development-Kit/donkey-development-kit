@@ -445,10 +445,15 @@ is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streami
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
 discovery and Exchange publication (BG §2.5). The framework adapters are not
-blocked. They build their native object directly, and their constructor rows in
-§8 of the ledger read **signature-confirmed offline**, except ADK's `gemini()`,
-which is **live-verified**. An adapter refuses with `blocked(...)` only when the
-installed framework version lacks the class or field it depends on.
+blocked. They build their native object directly, and an adapter refuses with
+`blocked(...)` only when the installed framework version lacks the class or
+field it depends on. Their status, generated from the ledger's §8 rows (§8.4
+maps each factory to its row):
+
+<!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
+LangGraph is conformance-tested against the simulator in CI.
+Each adapter factory's constructor row in §8 of the ledger reads **signature-confirmed offline**, except Google ADK's `gemini()`, which is **live-verified**.
+<!-- END GENERATED: framework-status-summary -->
 
 ---
 
@@ -607,17 +612,18 @@ along with the eight-adapter roster (#197):
 
 - **Deep — conformance-tested against the simulator:** LangGraph, and only
   LangGraph (alongside the raw client). Held to the conformance suite; the
-  `ADAPTERS` registry marks it `conformance_tested=True`. Its `ChatOpenAI`
-  constructor is signature-confirmed offline, not live-verified.
+  `ADAPTERS` registry marks it `conformance_tested=True`.
 - **Supported at `connection_kwargs()`:** Google ADK, Strands, Microsoft Agent
-  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. Each
-  constructor is **signature-confirmed offline** (`scripts/verify_frameworks.py`),
-  except ADK's `gemini()`, which is **live-verified**. None is conformance-tested,
-  and none is carried in the nightly framework matrix — a demoted framework returns with its own
-  conformance run when demand justifies it.
+  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. None is
+  conformance-tested, and none is carried in the nightly framework matrix — a
+  demoted framework returns with its own conformance run when demand justifies it.
 - **Out of scope:** AutoGen and Semantic Kernel — Microsoft positions Agent
   Framework as their direct successor, so carrying all three would mean
   shipping two sunset-path adapters.
+
+Depth is separate from verification. What the ledger records for each factory's
+constructor is in [Verification discipline](#verification-discipline) above,
+generated from §8.
 
 This makes `connection_kwargs()` *more* load-bearing, not less: it is the
 entire supported surface for seven of the eight. A second framework is
