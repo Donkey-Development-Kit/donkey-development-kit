@@ -10,7 +10,8 @@
 # IS a fresh resolve (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`,
 # and everything in nightly-matrix.yml) deliberately keep resolving fresh —
 # they are the canary ADR 0007 rule 4 relies on. Refresh the lock with
-# `python scripts/compile_constraints.py` (see CONTRIBUTING.md); keep
+# `python scripts/compile_constraints.py` (see CONTRIBUTING.md), or merge the
+# PR lock-refresh.yml opens after each green nightly (ADR 0011, #763); keep
 # `scripts/compile_constraints.py`'s `_COMBOS` in sync with the jobs below —
 # each entry's `extras`/`dev_group` must match that job's install line exactly.
 name: CI
@@ -89,8 +90,9 @@ jobs:
           wheel_dir="$(mktemp -d)"
           venv_dir="$(mktemp -d)"
           trap 'rm -rf "$wheel_dir" "$venv_dir"' EXIT
-          pip install build
-          python -m build --wheel --outdir "$wheel_dir"
+          # The locked release toolchain, as publish-*.yml uses it (#763).
+          pip install -c constraints/release-py3.11.txt build hatchling
+          python -m build --no-isolation --wheel --outdir "$wheel_dir"
           set -- "$wheel_dir"/*.whl
           test "$#" -eq 1
           # #821: the wheel ships fixtures; none may carry a tenant identifier.
@@ -172,10 +174,11 @@ jobs:
       - name: mypy --strict (blocking, working instruction #8)
         run: mypy
       # #721: the examples are user-facing code, so they get the same --strict
-      # config, one directory per invocation (each is its own program). The
-      # framework extras are absent here, so their imports resolve through the
-      # absence-only overrides in pyproject.toml. LangGraph is the exception: it
-      # is not in those overrides and is checked against the real package in the
+      # config, one directory per invocation (each is its own program). mypy
+      # never follows a framework extra (the follow_imports = "skip" override
+      # in pyproject.toml, #763), installed or not, so this gives the same
+      # result in a venv with every extra. LangGraph is the exception: it is
+      # not in that override and is checked against the real package in the
       # langgraph-demo job below.
       - name: mypy --strict over python/examples (#721)
         run: |

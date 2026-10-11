@@ -181,7 +181,10 @@ find yourself on `main` about to start work, `git checkout develop` first.
 **Use a worktree when there's any chance of a parallel session** (another editor
 window, a running dev server, a `pytest --looponfail` holding files): one issue =
 one branch = one worktree. A fresh worktree has no installed venv/extras — run
-`pip install -e ".[llm,cli]" --group dev` in its `python/` before testing.
+`pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt`
+in its `python/` before testing. On Python 3.11 that installs the same pinned
+versions as the `typecheck-and-lint` job, so `mypy`, `ruff` and `lint-imports`
+give CI's result (#763).
 
 **No workarounds for prerequisites.** If work on issue #N turns out to need an
 out-of-scope change first (a missing `core/` primitive, a verification unblock),
@@ -606,7 +609,8 @@ failure — don't "fix" the script to make a genuinely-blocked adapter pass.
 
 ```bash
 # from python/
-pip install -e ".[llm,cli]" --group dev   # what CI installs (pip 25.1+)
+pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt
+                                     # the typecheck-and-lint job's install (Python 3.11, pip 25.1+)
 pytest -q                            # full suite
 pytest -q tests/unit                 # unit only (the base-only CI job)
 pytest -q -m local_gateway           # opt-in local-gateway tests
@@ -629,8 +633,13 @@ build plan has the rationale behind each rule:
   `X | None` over `Optional[X]` (ruff `UP` rewrites the old form), and put
   `from __future__ import annotations` at the top of every module (ruff `I002`).
   Don't silence a real signature mismatch with an unexplained `# type: ignore`
-  — the single `[[tool.mypy.overrides]]` block already handles optional/absent
-  framework deps.
+  — the `follow_imports = "skip"` override in `pyproject.toml` already makes
+  every optional framework extra `Any`, whether or not it is installed, so
+  `mypy` gives the same result in a `.[llm,cli]` venv and in one with every
+  extra (#763). The adapters' real framework signatures are checked by the
+  `adapter-contract` jobs and `scripts/verify_frameworks.py`, not by mypy.
+  A new extra's import module joins that override in the same PR
+  (`tests/unit/test_house_style_config.py` checks it).
 - **Framework-free core & lazy imports.** `core/` depends on **httpx only** (the
   build plan allows pydantic too, but core imports none) — no agent framework,
   ever. Adapters import their framework **lazily,
@@ -680,11 +689,16 @@ build plan has the rationale behind each rule:
   merging to "simplify" the file count). The jobs that are deliberately a
   fresh resolve (`all-extra-resolves`, `adk-stacks`, `anthropic-stacks`, and
   everything in `.github/workflows/nightly-matrix.yml`, the canary ADR 0007
-  rule 4 relies on) have no `-c` flag and must keep none. **Refresh the lock**
-  after changing a dependency, or on whatever cadence a maintainer judges
-  useful — there is no scheduled job that does this automatically (opening a
-  PR from a scheduled workflow needs write-access credentials this repo
-  doesn't grant one, so it stays a manual step):
+  rule 4 relies on) have no `-c` flag and must keep none. The lock also pins
+  the release toolchain (`build`, `twine`, `hatchling`, the `release` group)
+  and `uv` (the `lock` group) as tool-only combos; every `python -m build`
+  step installs from `constraints/release-py3.11.txt` and builds with
+  `--no-isolation` (#763). After each green nightly on `develop`,
+  `.github/workflows/lock-refresh.yml` recompiles every file and opens or
+  updates one `chore(deps): refresh the PR CI lock` PR
+  ([ADR 0011](docs/adr/0011-nightly-lock-refresh-pr.md),
+  [`docs/ci.md`](docs/ci.md#lock-refreshyml-the-lock-bump)). **Refresh the
+  lock by hand** in the PR that changes a dependency:
   ```bash
   cd python
   python scripts/compile_constraints.py   # needs `uv` on PATH (dev-time only; CI still uses plain pip)
@@ -900,8 +914,18 @@ Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .
 `website/` (Nextra) describes how the SDK behaves from a consumer's
 perspective. When code changes what the SDK does — or which platform facts it
 depends on — the docs must change *with it*, or the drift is discovered by a
-confused adopter instead of at review time. This is a PR-time discipline with
-two automated backstops (#797):
+confused adopter instead of at review time.
+
+Some facts are generated, so they can't drift: `python scripts/generate_docs.py`
+(from `python/`) writes the PyPI README (`python/README.md`, from the root
+`README.md`), the settings index in `reference/configuration.mdx`, the CLI
+command reference in `cli.mdx`, the adapter capabilities table in
+`frameworks/index.mdx`, and the whole Python API page (`reference/api.mdx`).
+Edit the code, the docstring or the root README, run the script, and commit the
+result; never edit a `BEGIN GENERATED` region by hand.
+`tests/unit/test_generated_docs.py` fails when a committed copy is stale, and
+`--check` reports the same without writing. Everything else is a PR-time
+discipline with two automated backstops (#797):
 
 - **The docs-sync reminder.** [`python/scripts/check_docs_sync.py`](python/scripts/check_docs_sync.py)
   holds every row of the table below as data, and the `Docs-sync reminder`
@@ -930,7 +954,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | --- | --- |
 | `core/errors.py` | `errors.mdx` |
 | `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
-| `core/_verify.py`, `docs/verified-apis.md`, `docs/unsupported-boundary.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
+| `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
 | `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx` |
@@ -954,7 +978,8 @@ shape, so one surface never says "live" while another still says "planned" or
 
 - `classify()` and the related docstrings in `python/src/donkey_kit/core/`
   (notably `core/errors.py`);
-- `docs/unsupported-boundary.md`;
+- `website/content/reference/unsupported-boundary.mdx` (the one boundary list;
+  `docs/unsupported-boundary.md` is only a pointer to it);
 - `website/content/**` **and** the generated `website/public/**` copies
   (regenerate with `npm run generate:llms`);
 - the fixture index (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`);
