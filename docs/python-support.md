@@ -4,6 +4,15 @@
 and that CI tests. This page says which versions those are and when a version
 is added or dropped (#745).
 
+<!-- toc -->
+**Contents**
+
+- [Supported versions](#supported-versions)
+- [The rules](#the-rules)
+- [Python 3.10](#python-310)
+- [Raising the floor: the checklist](#raising-the-floor-the-checklist)
+<!-- tocstop -->
+
 ## Supported versions
 
 | Python | Supported | CPython end of life |

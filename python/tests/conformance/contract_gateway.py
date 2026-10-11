@@ -60,18 +60,47 @@ def _route(name: str) -> tuple[dict[str, str], bytes]:
 
 def _anthropic_stream(model: str) -> bytes:
     events: list[tuple[str | None, Any]] = [
-        ("message_start", {"type": "message_start", "message": {
-            "id": "msg_contract", "type": "message", "role": "assistant", "model": model,
-            "content": [], "stop_reason": None, "stop_sequence": None,
-            "usage": {"input_tokens": 1, "output_tokens": 1}}}),
-        ("content_block_start", {"type": "content_block_start", "index": 0,
-                                 "content_block": {"type": "text", "text": ""}}),
-        ("content_block_delta", {"type": "content_block_delta", "index": 0,
-                                 "delta": {"type": "text_delta", "text": "PONG"}}),
+        (
+            "message_start",
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg_contract",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": model,
+                    "content": [],
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                },
+            },
+        ),
+        (
+            "content_block_start",
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            },
+        ),
+        (
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "PONG"},
+            },
+        ),
         ("content_block_stop", {"type": "content_block_stop", "index": 0}),
-        ("message_delta", {"type": "message_delta",
-                           "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-                           "usage": {"output_tokens": 1}}),
+        (
+            "message_delta",
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "usage": {"output_tokens": 1},
+            },
+        ),
         ("message_stop", {"type": "message_stop"}),
     ]
     return _sse(events)

@@ -205,7 +205,11 @@ def test_nightly_lowest_direct_legs_match_adapters() -> None:
     assert "--resolution lowest-direct" in runs
     assert "scripts/check_floors.py --base --dev-group" in runs
     assert "tests/conformance/test_adapter_contract.py" in runs
-    python = [s["with"]["python-version"] for s in job["steps"] if "with" in s]
+    python = [
+        s["with"]["python-version"]
+        for s in job["steps"]
+        if str(s.get("uses", "")).startswith("actions/setup-python@")
+    ]
     floor = _pyproject()["project"]["requires-python"].removeprefix(">=")
     assert python == [floor]
 

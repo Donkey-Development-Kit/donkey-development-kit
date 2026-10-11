@@ -127,8 +127,12 @@ def test_request_rate_limit_retry_after_prefers_retry_after_header() -> None:
     err = classify(
         _resp(
             429,
-            {"retry-after": "7", "x-ratelimit-limit": "3", "x-ratelimit-remaining": "0",
-             "x-ratelimit-reset": "40000"},
+            {
+                "retry-after": "7",
+                "x-ratelimit-limit": "3",
+                "x-ratelimit-remaining": "0",
+                "x-ratelimit-reset": "40000",
+            },
         )
     )
     assert isinstance(err, RequestRateLimitExceeded)
@@ -586,8 +590,14 @@ def test_openai_object_envelope_4xx_is_upstream_request_error() -> None:
     err = classify(
         _json_resp(
             400,
-            {"error": {"message": "no such model", "type": "invalid_request_error",
-                       "code": "model_not_found", "param": "model"}},
+            {
+                "error": {
+                    "message": "no such model",
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                    "param": "model",
+                }
+            },
         )
     )
     assert isinstance(err, UpstreamRequestError)
@@ -607,10 +617,20 @@ def test_gemini_list_envelope_400_is_upstream_request_error_not_policy_violation
     err = classify(
         _json_list_resp(
             400,
-            [{"error": {"code": 400, "message": "Missing or invalid Authorization header.",
-                        "status": "INVALID_ARGUMENT"}}],
-            {"x-llm-proxy-model-based-routing-success":
-             "Request passed through without model-based routing."},
+            [
+                {
+                    "error": {
+                        "code": 400,
+                        "message": "Missing or invalid Authorization header.",
+                        "status": "INVALID_ARGUMENT",
+                    }
+                }
+            ],
+            {
+                "x-llm-proxy-model-based-routing-success": (
+                    "Request passed through without model-based routing."
+                )
+            },
         )
     )
     assert isinstance(err, UpstreamRequestError)
