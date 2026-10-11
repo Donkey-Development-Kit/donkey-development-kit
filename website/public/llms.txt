@@ -11,6 +11,7 @@
 ## Frameworks
 
 - [Overview](https://docs.donkey-kit.dev/frameworks.md): (status: offline-verified) Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
+- [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): (status: offline-verified) Which versions of each agent framework donkey-kit supports — the minimum, the version every PR tests, and known incompatibilities.
 - [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md): (status: offline-verified) Use a governed LangChain ChatOpenAI in LangGraph, pointed at your Omni Gateway LLM proxy with full header and transport injection, typed refusals, and conformance testing.
 - [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md): (status: offline-verified) Use a governed LiteLlm model, or ADK's native Gemini model on a Format=Gemini proxy, in Google's Agent Development Kit (ADK), pointed at your Omni Gateway LLM proxy.
 - [Strands](https://docs.donkey-kit.dev/frameworks/strands.md): (status: offline-verified) Use a governed OpenAIModel in Strands Agents, pointed at your Omni Gateway LLM proxy with full header and transport injection.

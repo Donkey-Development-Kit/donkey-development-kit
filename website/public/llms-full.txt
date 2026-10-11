@@ -757,7 +757,9 @@ Each card shows what has been proven about that adapter, in the terms the
 | Signature-confirmed | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
 
 The proxy data plane every adapter calls (base URL, credential headers,
-streaming, rejection shapes) is live-verified.
+streaming, rejection shapes) is live-verified. For the framework versions each
+adapter supports and is tested on, see
+[Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md).
 
 Each factory's status is its constructor row in the [ledger §8](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md); its
 depth is the adapter roster's `conformance_tested`.
@@ -991,6 +993,63 @@ configured proxy URL; it then receives the configured credentials.
 
 See the [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md) for how each constructor
 signature the adapters depend on is checked.
+
+---
+
+Source: https://docs.donkey-kit.dev/frameworks/compatibility.md
+
+# Version compatibility
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
+Which versions of each framework `donkey-kit` supports. Install a framework
+with its extra, for example `pip install "donkey-kit[langgraph]"`; the extra
+declares the minimum versions below.
+
+**Supported** means any release at or above the minimum, except a version
+listed as known incompatible. The extras set no upper bounds, so a fresh
+install takes each framework's newest release.
+
+- **Tested on every PR** is the exact version every pull request installs
+  and tests the adapter against, on Python 3.12.
+- **Minimum supported** is tested every night: CI installs each extra at
+  its minimum versions on the oldest supported Python and runs the tests.
+- **Newer releases** are tested every night: CI installs each framework's
+  newest release and runs the same tests. A failing night opens a public
+  [`nightly-failure` issue](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues?q=is%3Aissue%20is%3Aopen%20label%3Anightly-failure).
+- **Known incompatible** lists the open rows of the
+  [known upstream incompatibilities](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md#81-known-upstream-incompatibilities-floors-not-ceilings). A break is fixed in the SDK or recorded there, never
+  pinned away.
+
+[![Nightly matrix](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/workflows/nightly-matrix.yml/badge.svg)](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/workflows/nightly-matrix.yml)
+
+| Framework | Tier | Extra | Package | Minimum supported | Tested on every PR | Known incompatible |
+|---|---|---|---|---|---|---|
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | Conformance-tested | `[langgraph]` | `langgraph` | 0.4 | 1.2.14 | `langgraph==0.5.0` with `langchain-core>=1.0` |
+|  |  |  | `langchain-openai` | 0.3.9 | 1.6.7 |  |
+|  |  |  | `langchain-core` | 0.3.45 | 1.6.7 |  |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `connection_kwargs()` | `[adk]` | `google-adk` | 2.4 | 2.11.0 | None known |
+|  |  |  | `litellm` | 1.84 | 1.104.0 |  |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.58.0 | None known |
+| [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `connection_kwargs()` | `[agent_framework]` | `agent-framework` | 1.13 | 1.20.0 | None known |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `connection_kwargs()` | `[openai-agents]` | `openai-agents` | 0.20 | 0.23.1 | None known |
+|  |  |  | `openai` | 2.45 | 3.24.0 |  |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 1.11.0 | None known |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.23 | None known |
+| [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `connection_kwargs()` | `[llamaindex]` | `llama-index-llms-openai-like` | 0.8 | 0.8.1 | None known |
+
+## Installing several frameworks together
+
+Each extra installs on its own and next to `[all]`. Whether two framework
+extras resolve in one environment is re-checked every night; see the
+[co-installability table](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/co-installability.md).
+
+## More detail
+
+The [framework support reference](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/framework-support.md) in the repository has the
+same table, where each column comes from, which CI job tests each version,
+and the full list of recorded upstream changes, including those the SDK
+already handles.
 
 ---
 
@@ -1564,13 +1623,15 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   place, with LiteLLM's error on `framework_error`. Outside those scopes, and
   without `typed_refusals()`, you get LiteLLM's error unchanged; see the
   [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
-- **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
-  accepts `client_kwargs`; the `adk` extra declares that floor. On an older
+- **`gemini()` needs the `adk` extra's minimum `google-adk`** (see
+  [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)), the first release whose
+  `Gemini` accepts `client_kwargs`. On an older
   ADK, `Gemini` drops the governed client without an error and talks to Google
   directly, so `gemini()` raises `NotImplementedError` instead of returning a
   model that bypasses the gateway.
-- `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
-  own upper bound if you need one.
+- The `adk` extra's `litellm` requirement is a floor, not a ceiling (see
+  [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)) — pin your own upper
+  bound if you need one.
 
 See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface through
 ADK's `LiteLlm` model, and [Native Gemini](#native-gemini) for `gemini()`.
@@ -1741,9 +1802,10 @@ rejection with the SDK's typed refusal.
 **What you get**
 
 - A native `agent_framework.openai.OpenAIChatCompletionClient`, which calls
-  the Chat Completions API (`POST /chat/completions`), checked against
-  agent-framework 1.19.0. Pass `api="responses"` for the Responses client (see
-  [Which API](#which-api)).
+  the Chat Completions API (`POST /chat/completions`). Pass
+  `api="responses"` for the Responses client (see [Which API](#which-api)).
+  The supported and tested agent-framework versions are on
+  [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md).
 - `policy_middleware()`, which ends a run on a proxy refusal with a typed
   `PolicyViolation` such as `PIIDetected`.
 - Supported at `connection_kwargs()`. The client gets an `async_client` that
@@ -1908,8 +1970,9 @@ the transport raised under Agent Framework's wrapper. Errors that are not from
 the gateway pass through unchanged. A `donkey.run()` block or a
 `@donkey.governed` function applies the same bridge, so a run without the
 middleware still ends typed. The middleware is marked with Agent Framework's
-`@chat_middleware` decorator. That is confirmed offline against
-agent-framework 1.19.0, with no live round-trip yet. If the decorator is
+`@chat_middleware` decorator. That is confirmed offline against the
+[tested agent-framework version](https://docs.donkey-kit.dev/frameworks/compatibility.md), with no live
+round-trip yet. If the decorator is
 missing from your installed version, `policy_middleware()` raises a
 `NotImplementedError` naming it.
 
@@ -1917,7 +1980,7 @@ missing from your installed version, `policy_middleware()` raises a
 
 - **Constructor signature.** `OpenAIChatClient` and
   `OpenAIChatCompletionClient` both take `model`, `base_url`, `api_key`, and
-  `default_headers` (agent-framework 1.19.0; `model_id` is not accepted). If the import fails or an upstream release renames a kwarg,
+  `default_headers` (`model_id` is not accepted). If the import fails or an upstream release renames a kwarg,
   `chat_client()` raises a `NotImplementedError` naming the class path or
   signature to check, rather than a raw `ImportError` or `TypeError`.
 - **`donkey.last_call` is set in the context that made the call.** A cold read
@@ -2110,8 +2173,9 @@ straight into the client constructor.
 pip install "donkey-kit[anthropic]"
 ```
 
-This installs the newest `anthropic` release. `anthropic` 0.x (from 0.40) works
-too, so a project that holds it below 1.0 needs no change.
+This installs the newest `anthropic` release. `anthropic` 0.x works too, from
+the extra's minimum (see [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)),
+so a project that holds it below 1.0 needs no change.
 
 ## Quickstart
 

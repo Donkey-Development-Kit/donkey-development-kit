@@ -2,7 +2,8 @@
 
 `donkey-kit` supports the CPython versions that are still maintained upstream
 and that CI tests. This page says which versions those are and when a version
-is added or dropped (#745).
+is added or dropped (#745). For which versions of each agent framework are
+supported, see [`framework-support.md`](framework-support.md).
 
 <!-- toc -->
 **Contents**

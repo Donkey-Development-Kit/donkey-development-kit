@@ -31,7 +31,9 @@ Each card shows what has been proven about that adapter, in the terms the
 | Signature-confirmed | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
 
 The proxy data plane every adapter calls (base URL, credential headers,
-streaming, rejection shapes) is live-verified.
+streaming, rejection shapes) is live-verified. For the framework versions each
+adapter supports and is tested on, see
+[Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md).
 
 Each factory's status is its constructor row in the [ledger §8](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md); its
 depth is the adapter roster's `conformance_tested`.

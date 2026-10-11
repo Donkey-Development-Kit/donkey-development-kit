@@ -267,13 +267,15 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   place, with LiteLLM's error on `framework_error`. Outside those scopes, and
   without `typed_refusals()`, you get LiteLLM's error unchanged; see the
   [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
-- **`gemini()` needs `google-adk>=2.4`**, the first release whose `Gemini`
-  accepts `client_kwargs`; the `adk` extra declares that floor. On an older
+- **`gemini()` needs the `adk` extra's minimum `google-adk`** (see
+  [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)), the first release whose
+  `Gemini` accepts `client_kwargs`. On an older
   ADK, `Gemini` drops the governed client without an error and talks to Google
   directly, so `gemini()` raises `NotImplementedError` instead of returning a
   model that bypasses the gateway.
-- `google-adk` requires `litellm>=1.84` as a floor, not a ceiling — pin your
-  own upper bound if you need one.
+- The `adk` extra's `litellm` requirement is a floor, not a ceiling (see
+  [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)) — pin your own upper
+  bound if you need one.
 
 See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface through
 ADK's `LiteLlm` model, and [Native Gemini](#native-gemini) for `gemini()`.
