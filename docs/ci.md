@@ -30,7 +30,7 @@ policy behind the locks and the nightly run, see
   - [2. One required status check: ci-ok. In place (#755)](#2-one-required-status-check-ci-ok-in-place-755)
   - [3. CI runs on develop, not just on PRs. In place (#755)](#3-ci-runs-on-develop-not-just-on-prs-in-place-755)
   - [4. Every scheduled workflow alerts on failure. Partly in place](#4-every-scheduled-workflow-alerts-on-failure-partly-in-place)
-  - [5. One task runner mirrors CI. Target (#765)](#5-one-task-runner-mirrors-ci-target-765)
+  - [5. One task runner mirrors CI. In place (#765)](#5-one-task-runner-mirrors-ci-in-place-765)
   - [6. Jobs are bounded and superseded runs are cancelled. In place (#761)](#6-jobs-are-bounded-and-superseded-runs-are-cancelled-in-place-761)
   - [7. Least-privilege workflows. Partly in place (#757, #771)](#7-least-privilege-workflows-partly-in-place-757-771)
   - [8. The site is built on PRs, on a supported Node. In place (#759)](#8-the-site-is-built-on-prs-on-a-supported-node-in-place-759)
@@ -335,7 +335,9 @@ The lock also covers tools (#763). The `release` dependency group (`build`,
 floors and bump pins one at a time). `mypy` never follows an optional extra
 (`follow_imports = "skip"`), so its result doesn't depend on which extras are
 installed. The declared floors are not locked: the nightly `lowest-direct` job
-installs them fresh (#769).
+installs them fresh (#769). One tool stays unlocked: `NOX_VERSION` pins nox
+itself, but each job's `pipx run` resolves nox's own dependencies fresh
+(convention 5).
 
 ### 2. One required status check: `ci-ok`. **In place** (#755)
 
@@ -362,14 +364,37 @@ updates one labelled tracking issue (never one issue per run), using
 `nightly-failure` label (#755), and `lock-refresh.yml`, which follows the
 nightly, with the `lock-refresh-failure` label (#763). `docs.yml`'s cron still needs the same step.
 
-### 5. One task runner mirrors CI. **Target** (#765)
+### 5. One task runner mirrors CI. **In place** (#765)
 
-Workflows call `nox -s <session>`, one session per blocking CI job, and the
-CONTRIBUTING gate documents sessions instead of raw commands. One local command
-then reproduces every blocking job. Until this lands, the install and run lines
-in `ci.yml` are the source of truth, and CONTRIBUTING's gate is a subset of
-them. `.pre-commit-config.yaml` exists today with gitleaks only. #765 adds
-ruff, ruff-format, lint-imports and `llms.txt` regeneration.
+`python/noxfile.py` has one session per `ci.yml` job, named after the job
+(`ci-ok` aside), and the CONTRIBUTING gate documents sessions instead of raw
+commands, so `nox` from `python/` reproduces every blocking job. Each job keeps
+its install and cache steps (its lock lives there, convention 1) and then runs
+its session in place: `pipx run --spec "nox==$NOX_VERSION" nox --no-venv
+--no-install -s <job>`. Locally, the session installs the same line into its own
+virtualenv. `tests/unit/test_noxfile.py` checks that every job has a session,
+calls it, installs what the session's `CI_INSTALLS` entry says, and runs no
+check inline (a check tool, a repo script, npm, node or `timeout`). The
+exceptions are named in that test and in the noxfile's docstring:
+
+- **CI-only steps.** The benchmark's trend alert reads the previous `main`
+  run's artifact, and `workflow-lint` downloads actionlint and zizmor (each
+  verified by sha256) onto the Linux runner. Locally the session takes both
+  linters from `PATH`.
+- **`uses:` actions stay steps.** `pip-audit`'s session writes the exact pin
+  list that the pinned `pypa/gh-action-pip-audit` step then audits, and run
+  locally it installs pip-audit and audits the list itself.
+  `dependency-review` is a single action with no checkout, and the dependency
+  graph diff it reads exists only on GitHub, so its job calls no session. The
+  session of the same name only skips, saying so.
+- **The site's `npm ci`.** `docs-site` installs nothing through
+  `CI_INSTALLS`: its session runs `npm ci` itself, under `--no-install` too,
+  so the job keeps only its Node setup.
+
+`.pre-commit-config.yaml`
+runs gitleaks, ruff, ruff format, lint-imports and the `llms.txt` regeneration
+at commit time, with the byte-exact fixtures excluded from the formatter. The
+nightly matrix and the publish workflows are not sessions.
 
 ### 6. Jobs are bounded and superseded runs are cancelled. **In place** (#761)
 
@@ -402,15 +427,16 @@ to the publish job alone, and `docs.yml` grants `pages: write` and
 `id-token: write` to its deploy job alone; its build job, which runs
 third-party npm code, has `contents: read` only (#757). Values from `${{ }}`
 are bound to `env:` and used as quoted shell variables, never interpolated
-into a `run:` body. In place since #757:
+into a `run:` body. In place:
 
 - Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment, and
   every checkout sets `persist-credentials: false`.
 - `.github/dependabot.yml` sends weekly, grouped version updates for actions
   and for `website/` npm, all targeting `develop`, with a 7-day cooldown on new
-  releases. pip version updates stay off until the dev/release lock from #763
-  exists: the floors in `pyproject.toml` are never raised on a schedule
-  (`§8.4`). Security updates are on for every ecosystem.
+  releases. pip version updates stay off: `lock-refresh.yml` moves the lock
+  (#763, [ADR 0011](adr/0011-nightly-lock-refresh-pr.md)), and the floors in
+  `pyproject.toml` are never raised on a schedule (`§8.4`). Security updates
+  are on for every ecosystem.
 - `.github/CODEOWNERS` covers `.github/`, `python/pyproject.toml`,
   `python/scripts/`, `python/src/donkey_kit/core/` and `python/tests/fixtures/`.
   The owners' review is required once the branch rules turn on
@@ -419,20 +445,20 @@ into a `run:` body. In place since #757:
 - `tests/unit/test_workflow_supply_chain.py` fails on an unpinned `uses:`, a
   checkout that keeps the token, an OIDC or Pages grant outside the publish
   and deploy jobs, or a missing Dependabot, CODEOWNERS or binary-image rule.
-
-Still open:
-
-- Pin the release build tools (`pip install build twine` in the publish
-  workflows) with the toolchain lock (#763).
-- Pin manual docs deploys to `main` (#771).
+- The publish workflows install `build`, `twine` and `hatchling` from
+  `constraints/release-py3.11.txt` and build with `--no-isolation` (#763).
+- `docs.yml` always builds `main`, so a manual run from another branch can't
+  publish unreleased docs (#771).
 
 ### 8. The site is built on PRs, on a supported Node. **In place** (#759)
 
 The `docs-site` job in `ci.yml` builds the site on every PR that touches it,
 so broken MDX, a bad import or a dead internal link fails there instead of in
-the release deploy. It runs `npm ci`, `npm run typecheck`, `npm run lint`, a
-production build with `DOCS_BASE_PATH=/donkey-development-kit` (the project
-prefix the Pages deploy uses), and `npm run check:links` over `out/`. The
+the release deploy. Its `docs-site` nox session (convention 5) runs `npm ci`,
+`npm run typecheck`, `npm run lint`, a production build with
+`DOCS_BASE_PATH=/donkey-development-kit` (the project prefix the Pages deploy
+uses), and `npm run check:links` over `out/`. Only the build sees
+`GITHUB_TOKEN`, for the roadmap fetch. The
 check is a job-level path test on `website/**` and the two docs workflows, not
 a workflow-level `paths:` filter: a skipped workflow would never report
 `ci-ok`, the required check (convention 2). The job always starts and its steps
@@ -483,7 +509,10 @@ The same rules apply in every Donkey-Development-Kit repo:
   exist).
 - A new PR-gating job installs from its own constraints file, gets a
   `_COMBOS` entry in `compile_constraints.py` and a place in `ci-ok`'s
-  `needs:`. A new job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
+  `needs:`. Its checks go in a `python/noxfile.py` session of the same name,
+  with its install line in `CI_INSTALLS`, and the job runs that session
+  (convention 5). Change a check in the session, not in the workflow. A new
+  job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
 - A new scheduled workflow ships with its failure-alert step (convention 4).
 - A new `uses:` is pinned to the full commit SHA of a release, with the
   release's `# vX.Y.Z` as a trailing comment, and a new checkout sets

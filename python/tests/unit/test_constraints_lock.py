@@ -21,6 +21,7 @@ either `pyproject.toml` (a direct dependency the lock has never heard of) or
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -35,6 +36,7 @@ _PYTHON_ROOT = Path(__file__).resolve().parents[2]
 _CONSTRAINTS_DIR = _PYTHON_ROOT / "constraints"
 _WORKFLOWS_DIR = _PYTHON_ROOT.parent / ".github" / "workflows"
 _CI_YAML = _WORKFLOWS_DIR / "ci.yml"
+_NOXFILE = _PYTHON_ROOT / "noxfile.py"
 _CONSTRAINT_REF_RE = re.compile(r"constraints/([A-Za-z0-9._-]+\.txt)")
 _PIN_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==")
 
@@ -200,9 +202,32 @@ def test_every_dist_build_uses_the_locked_release_toolchain() -> None:
     `python -m build` alone builds in an isolated env with whatever hatchling
     is newest that day. `--no-isolation` makes it use the hatchling the job
     installed from constraints/release-py3.11.txt, and the same step must
-    install from that file.
+    install from that file. base-only's build lives in its nox session (#765),
+    so each noxfile function that builds is held to the same rule.
     """
     seen = 0
+    for function in ast.walk(ast.parse(_NOXFILE.read_text(encoding="utf-8"))):
+        if not isinstance(function, ast.FunctionDef):
+            continue
+        strings = [
+            node.value
+            for node in ast.walk(function)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
+        for call in ast.walk(function):
+            if not isinstance(call, ast.Call):
+                continue
+            args = [a.value for a in call.args if isinstance(a, ast.Constant)]
+            if args[:3] != ["python", "-m", "build"]:
+                continue
+            seen += 1
+            assert "--no-isolation" in args, (
+                f"noxfile.py {function.name}: builds in an isolated env; add --no-isolation"
+            )
+            assert "constraints/release-py3.11.txt" in strings, (
+                f"noxfile.py {function.name}: builds without installing its toolchain "
+                "with -c constraints/release-py3.11.txt"
+            )
     for workflow in sorted(_WORKFLOWS_DIR.glob("*.yml")):
         for step in re.split(r"\n\s*- ", workflow.read_text(encoding="utf-8")):
             commands = [
