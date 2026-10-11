@@ -134,8 +134,16 @@ def test_misspelt_boolean_raises_config_error(clean_env: pytest.MonkeyPatch) -> 
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
-    [("1", True), ("TRUE", True), (" yes ", True), ("on", True),
-     ("0", False), ("False", False), ("no", False), ("off", False)],
+    [
+        ("1", True),
+        ("TRUE", True),
+        (" yes ", True),
+        ("on", True),
+        ("0", False),
+        ("False", False),
+        ("no", False),
+        ("off", False),
+    ],
 )
 def test_boolean_tokens_parse(clean_env: pytest.MonkeyPatch, raw: str, expected: bool) -> None:
     clean_env.setenv("DONKEY_TELEMETRY", raw)
@@ -207,8 +215,6 @@ async def test_async_retry_loop_with_no_attempts_raises_config_error() -> None:
 
 
 def test_sync_retry_loop_with_no_attempts_raises_config_error() -> None:
-    with DonkeyClient(
-        _negative_retries(), transport=httpx.MockTransport(_never_called)
-    ) as client:
+    with DonkeyClient(_negative_retries(), transport=httpx.MockTransport(_never_called)) as client:
         with pytest.raises(ConfigError, match="max_retries is -1"):
             client.get("https://proxy/thing")

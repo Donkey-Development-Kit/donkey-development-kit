@@ -48,9 +48,7 @@ from donkey_kit.simulator.app import (
 
 def _client() -> httpx.AsyncClient:
     """A fresh app (fresh x-token counter) behind an in-process transport."""
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=build_app()), base_url="http://sim"
-    )
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=build_app()), base_url="http://sim")
 
 
 async def test_happy_path_replays_success_verbatim_and_stamps_honesty() -> None:
@@ -303,9 +301,7 @@ async def test_chat_completions_sentinel_rejection_classifies(
     shape: str, exc: type[Exception]
 ) -> None:
     async with _client() as client:
-        resp = await client.post(
-            "/v1/chat/completions", json={"model": SIM_MODEL_PREFIX + shape}
-        )
+        resp = await client.post("/v1/chat/completions", json={"model": SIM_MODEL_PREFIX + shape})
     assert resp.headers[SIMULATOR_HEADER] == "true"
     assert resp.content == fx.load(shape).body
     assert isinstance(classify(resp), exc)
@@ -330,12 +326,8 @@ async def test_stock_openai_client_reads_chat_completions(stream: bool) -> None:
             chunks = await client.chat.completions.create(
                 model="gpt-5-mini", messages=messages, stream=True
             )
-            text = "".join(
-                [c.choices[0].delta.content or "" async for c in chunks if c.choices]
-            )
+            text = "".join([c.choices[0].delta.content or "" async for c in chunks if c.choices])
         else:
-            completion = await client.chat.completions.create(
-                model="gpt-5-mini", messages=messages
-            )
+            completion = await client.chat.completions.create(model="gpt-5-mini", messages=messages)
             text = completion.choices[0].message.content or ""
     assert text == "pong — how can I help?"

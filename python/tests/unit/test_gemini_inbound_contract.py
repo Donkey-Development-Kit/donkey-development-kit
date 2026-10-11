@@ -35,9 +35,7 @@ def _headers(name: str) -> dict[str, str]:
 
 
 def _fixture_response(body: str, headers: str, status: int = 200) -> httpx.Response:
-    return httpx.Response(
-        status, content=(FIXTURES / body).read_bytes(), headers=_headers(headers)
-    )
+    return httpx.Response(status, content=(FIXTURES / body).read_bytes(), headers=_headers(headers))
 
 
 # --- the captured shapes ------------------------------------------------------
