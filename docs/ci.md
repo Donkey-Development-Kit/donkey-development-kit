@@ -427,15 +427,16 @@ to the publish job alone, and `docs.yml` grants `pages: write` and
 `id-token: write` to its deploy job alone; its build job, which runs
 third-party npm code, has `contents: read` only (#757). Values from `${{ }}`
 are bound to `env:` and used as quoted shell variables, never interpolated
-into a `run:` body. In place since #757:
+into a `run:` body. In place:
 
 - Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment, and
   every checkout sets `persist-credentials: false`.
 - `.github/dependabot.yml` sends weekly, grouped version updates for actions
   and for `website/` npm, all targeting `develop`, with a 7-day cooldown on new
-  releases. pip version updates stay off until the dev/release lock from #763
-  exists: the floors in `pyproject.toml` are never raised on a schedule
-  (`§8.4`). Security updates are on for every ecosystem.
+  releases. pip version updates stay off: `lock-refresh.yml` moves the lock
+  (#763, [ADR 0011](adr/0011-nightly-lock-refresh-pr.md)), and the floors in
+  `pyproject.toml` are never raised on a schedule (`§8.4`). Security updates
+  are on for every ecosystem.
 - `.github/CODEOWNERS` covers `.github/`, `python/pyproject.toml`,
   `python/scripts/`, `python/src/donkey_kit/core/` and `python/tests/fixtures/`.
   The owners' review is required once the branch rules turn on
@@ -444,12 +445,10 @@ into a `run:` body. In place since #757:
 - `tests/unit/test_workflow_supply_chain.py` fails on an unpinned `uses:`, a
   checkout that keeps the token, an OIDC or Pages grant outside the publish
   and deploy jobs, or a missing Dependabot, CODEOWNERS or binary-image rule.
-
-Still open:
-
-- Pin the release build tools (`pip install build twine` in the publish
-  workflows) with the toolchain lock (#763).
-- Pin manual docs deploys to `main` (#771).
+- The publish workflows install `build`, `twine` and `hatchling` from
+  `constraints/release-py3.11.txt` and build with `--no-isolation` (#763).
+- `docs.yml` always builds `main`, so a manual run from another branch can't
+  publish unreleased docs (#771).
 
 ### 8. The site is built on PRs, on a supported Node. **In place** (#759)
 
