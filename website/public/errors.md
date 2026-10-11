@@ -383,10 +383,9 @@ in a group before matching. On Python 3.10, which has no builtin
 `ExceptionGroup`, the bridge recognises the `exceptiongroup` backport's groups
 that anyio raises.
 
-  The bridge only sees calls that went through the SDK's transport. ADK's
-  `model()` (LiteLLM) and CrewAI own their transport, so their errors pass
-  through untyped. These are the same
-  [conformance exemptions](https://docs.donkey-kit.dev/testing.md#exemptions) as their correlation ids.
+  The bridge only sees calls that went through the SDK's transport. CrewAI
+  owns its transport, so its errors pass through untyped. This is the same
+  [conformance exemption](https://docs.donkey-kit.dev/testing.md#exemptions) as its correlation id.
 
 ### Classifying a response yourself
 

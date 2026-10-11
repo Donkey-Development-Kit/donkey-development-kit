@@ -1,5 +1,6 @@
 import { generateStaticParamsFor, importPage } from 'nextra/pages'
 import { Badge } from '../../components'
+import { pageMetadata } from '../../lib/site.mjs'
 import { statusOf } from '../../lib/status.mjs'
 import { useMDXComponents as getMDXComponents } from '../../mdx-components'
 
@@ -21,7 +22,7 @@ export async function generateMetadata(props: PageProps) {
     status?: unknown
     statusBadge?: unknown
   }
-  return rest
+  return pageMetadata(rest, params.mdxPath)
 }
 
 const Wrapper = getMDXComponents().wrapper
