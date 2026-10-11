@@ -44,7 +44,11 @@ from donkey_kit.llm.client import LLMClient
 from donkey_kit.simulator.fixtures import parse_headers
 
 LLM_PROXY = (
-    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
     / "anypoint"
     / "llm_proxy"
 )

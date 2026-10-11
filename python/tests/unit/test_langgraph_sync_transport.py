@@ -166,7 +166,9 @@ async def test_last_call_observed_after_call(call: _Call) -> None:
     # of this context; the record must still reach the caller (#850).
     donkey = Donkey(_cfg())
     donkey._http.governed_transport.replace_inner(httpx.MockTransport(_success_or_stream))
-    donkey._sync_http_client().governed_transport.replace_inner(httpx.MockTransport(_success_or_stream))
+    donkey._sync_http_client().governed_transport.replace_inner(
+        httpx.MockTransport(_success_or_stream)
+    )
     async with donkey:
         await call(donkey.langgraph("gpt-4o"))
         assert donkey.last_call.status is LastCallStatus.OBSERVED

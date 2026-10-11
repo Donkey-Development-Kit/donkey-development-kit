@@ -28,7 +28,11 @@ from donkey_kit.core.telemetry import policy_type_slug
 from donkey_kit.simulator.fixtures import parse_headers
 
 FIXTURES = (
-    Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
     / "anypoint"
     / "llm_proxy"
 )

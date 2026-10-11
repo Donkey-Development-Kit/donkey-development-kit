@@ -264,7 +264,7 @@ def test_loopback_http_does_not_warn_with_the_switch_on(
 
 
 @pytest.mark.parametrize("filename", [_TOML, _LOCAL_TOML])
-@pytest.mark.parametrize("line", ['allow_http = true\n', 'DONKEY_ALLOW_HTTP = "1"\n'])
+@pytest.mark.parametrize("line", ["allow_http = true\n", 'DONKEY_ALLOW_HTTP = "1"\n'])
 def test_allow_http_switch_cannot_come_from_a_config_file(
     project: Path, filename: str, line: str
 ) -> None:
@@ -348,9 +348,7 @@ async def test_donkey_from_env_sends_no_credentials_to_a_project_base_url(
 
     seen: list[httpx.Request] = []
 
-    async def _no_network(
-        self: httpx.AsyncHTTPTransport, request: httpx.Request
-    ) -> httpx.Response:
+    async def _no_network(self: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(599)
 
@@ -951,9 +949,7 @@ def _strings(value: object) -> list[str]:
     return []
 
 
-def test_asdict_round_trip_validates(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_asdict_round_trip_validates(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DONKEY_LLM_PROXY_URL", "https://llm.example.test/")
     _env_llm_creds(monkeypatch)
     cfg = DonkeyConfig.from_env()
@@ -1005,9 +1001,7 @@ def test_provenance_recorded_in_another_process_does_not_make_a_url_trusted(
         again.validated(need="llm")
 
 
-def test_unreadable_provenance_is_refused(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_unreadable_provenance_is_refused(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     as_dict = dataclasses.asdict(_project_url_env_secret(project, monkeypatch))
     as_dict["_sources"] = {**as_dict["_sources"], "llm_proxy_url": "project"}
 
@@ -1079,9 +1073,7 @@ def test_unknown_cost_key_in_the_local_overlay_is_still_an_error(project: Path) 
         DonkeyConfig.from_env()
 
 
-def test_local_overlay_linked_to_the_user_file_is_refused(
-    project: Path, tmp_path: Path
-) -> None:
+def test_local_overlay_linked_to_the_user_file_is_refused(project: Path, tmp_path: Path) -> None:
     """A committed link from the overlay to the user file would label the user
     file's credentials as the local overlay's."""
     user = tmp_path / "xdg" / _TOML
@@ -1120,9 +1112,7 @@ def test_link_that_stays_inside_the_working_directory_is_read(project: Path) -> 
     assert cfg.source_of("application_name").kind == "local"
 
 
-def test_env_wins_over_the_local_overlay(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_env_wins_over_the_local_overlay(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write(project / _TOML, 'application_name = "from-project"\n')
     _write(project / _LOCAL_TOML, 'application_name = "from-local"\n')
     monkeypatch.setenv("DONKEY_APP_NAME", "from-env")

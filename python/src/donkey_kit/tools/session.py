@@ -99,8 +99,7 @@ class ToolSet:
             NotImplementedError: Always, for now; see docs/verified-apis.md §9.
         """
         raise _verify.blocked(
-            "langchain_mcp_adapters.client.MultiServerMCPClient binding "
-            "(docs/verified-apis.md §9)."
+            "langchain_mcp_adapters.client.MultiServerMCPClient binding (docs/verified-apis.md §9)."
         )
 
     def adk(self) -> list[object]:  # -> list[McpToolset]

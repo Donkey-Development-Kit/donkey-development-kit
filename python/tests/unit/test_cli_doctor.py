@@ -44,17 +44,18 @@ def llm_env(monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
 
 
 def _patch_probe(monkeypatch: pytest.MonkeyPatch, result: ProbeResult) -> None:
-    monkeypatch.setattr(
-        "donkey_kit.cli.doctor._live_probe", lambda _c, _m: result
-    )
+    monkeypatch.setattr("donkey_kit.cli.doctor._live_probe", lambda _c, _m: result)
 
 
 def test_incomplete_config_exits_1_and_names_the_var(
     monkeypatch: pytest.MonkeyPatch, tmp_path: object
 ) -> None:
     monkeypatch.chdir(tmp_path)  # type: ignore[arg-type]
-    for var in ("DONKEY_LLM_PROXY_URL", "DONKEY_LLM_PROXY_CLIENT_ID",
-                "DONKEY_LLM_PROXY_CLIENT_SECRET"):
+    for var in (
+        "DONKEY_LLM_PROXY_URL",
+        "DONKEY_LLM_PROXY_CLIENT_ID",
+        "DONKEY_LLM_PROXY_CLIENT_SECRET",
+    ):
         monkeypatch.delenv(var, raising=False)
 
     result = runner.invoke(app, ["doctor"])
@@ -105,9 +106,7 @@ def test_all_ok_exits_0(monkeypatch: pytest.MonkeyPatch, llm_env: None) -> None:
     assert "observed" in out
 
 
-def test_json_output_is_machine_readable(
-    monkeypatch: pytest.MonkeyPatch, llm_env: None
-) -> None:
+def test_json_output_is_machine_readable(monkeypatch: pytest.MonkeyPatch, llm_env: None) -> None:
     _patch_probe(monkeypatch, ProbeResult(AuthError("nope"), None))
     result = runner.invoke(app, ["doctor", "--json"])
 
