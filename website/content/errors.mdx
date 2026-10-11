@@ -391,10 +391,9 @@ in a group before matching. On Python 3.10, which has no builtin
 that anyio raises.
 
 <Callout type="info">
-  The bridge only sees calls that went through the SDK's transport. ADK's
-  `model()` (LiteLLM) and CrewAI own their transport, so their errors pass
-  through untyped. These are the same
-  [conformance exemptions](/testing#exemptions) as their correlation ids.
+  The bridge only sees calls that went through the SDK's transport. CrewAI
+  owns its transport, so its errors pass through untyped. This is the same
+  [conformance exemption](/testing#exemptions) as its correlation id.
 </Callout>
 
 ### Classifying a response yourself

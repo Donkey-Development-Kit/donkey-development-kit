@@ -218,7 +218,7 @@ headers go on the wire.
     An `OpenAILike` for `complete()` and `chat()`; typed refusals.
   
   
-    A `LiteLlm` model in an `InMemoryRunner` — and why its refusals are not typed.
+    A `LiteLlm` model in an `InMemoryRunner`, and a refusal outside `donkey.run()`.
   
   
     The native client on `/v1/messages`, `last_call` and simulated refusals.
