@@ -65,13 +65,20 @@ _CONSTRAINTS_DIR = _PYTHON_ROOT / "constraints"
 
 @dataclass(frozen=True)
 class Combo:
-    """One exact `pip install -e ".[...]" [--group dev]` a PR-gating ci.yml job runs."""
+    """One exact install line a workflow job runs: `pip install -e ".[...]" [--group dev]`
+    for a PR-gating ci.yml job, or the tool-only install of a dependency group."""
 
     name: str
     extras: tuple[str, ...]
     dev_group: bool
     python_versions: tuple[str, ...]
-    covers: str  # which ci.yml job(s), for the comment header
+    covers: str  # which workflow job(s), for the comment header
+    # Further dependency groups, each passed as `--group <name>` (#763).
+    groups: tuple[str, ...] = ()
+    # False for a tool-only lock (the `release` and `lock` groups): the compile
+    # then covers just the groups, not donkey-kit's own dependencies, because
+    # the job installs only those tools (`pip install -c <file> build twine`).
+    project: bool = True
 
     def file_name(self, python_version: str) -> str:
         return f"{self.name}-py{python_version}.txt"
@@ -84,6 +91,9 @@ class Combo:
 # compile` select versions the job's own, narrower install would never have
 # requested, which is exactly how the old merged-file design broke (see the
 # module docstring).
+#
+# The last two combos lock tools rather than a ci.yml install line (#763): the
+# release toolchain (build, twine, hatchling) and the lock's own `uv`.
 #
 # Deliberately NOT covered (ADR 0007 rules 1-2, resolve fresh every run):
 #   all-extra-resolves, anthropic-stacks, adk-stacks, and everything in
@@ -187,6 +197,25 @@ _COMBOS: tuple[Combo, ...] = (
         ("3.12",),
         "adapter-contract(llamaindex)",
     ),
+    # Tool-only locks (#763): no extras, no dev group, no donkey-kit deps.
+    Combo(
+        "release",
+        (),
+        False,
+        ("3.11",),
+        "publish-pypi.yml + publish-testpypi.yml build, base-only wheel build",
+        groups=("release",),
+        project=False,
+    ),
+    Combo(
+        "lock",
+        (),
+        False,
+        ("3.11",),
+        "lock-refresh.yml",
+        groups=("lock",),
+        project=False,
+    ),
 )
 
 
@@ -196,11 +225,10 @@ def _compile_one(combo: Combo, python_version: str, out_file: Path) -> str:
     Returns the rendered content (header + the compiled pins), so the caller
     can either write it or diff it against what's committed.
     """
-    cmd = [
-        "uv",
-        "pip",
-        "compile",
-        str(_PYTHON_ROOT / "pyproject.toml"),
+    cmd = ["uv", "pip", "compile"]
+    if combo.project:
+        cmd.append(str(_PYTHON_ROOT / "pyproject.toml"))
+    cmd += [
         "--python-version",
         python_version,
         "--python-platform",
@@ -214,6 +242,9 @@ def _compile_one(combo: Combo, python_version: str, out_file: Path) -> str:
         cmd.extend(["--extra", extra])
     if combo.dev_group:
         cmd.extend(["--group", "dev"])
+    for group in combo.groups:
+        # Without a SRC_FILE, uv reads the group from ./pyproject.toml (cwd below).
+        cmd.extend(["--group", group])
     try:
         subprocess.run(cmd, check=True, cwd=_PYTHON_ROOT, capture_output=True, text=True)
     except subprocess.CalledProcessError as exc:
@@ -224,7 +255,8 @@ def _compile_one(combo: Combo, python_version: str, out_file: Path) -> str:
         "# GENERATED FILE — do not edit by hand.\n"
         f"# Refresh with: python scripts/compile_constraints.py  "
         f"(combo={combo.name!r}, python {python_version})\n"
-        "# Covers ci.yml job(s): "
+        # Tool-only locks serve jobs outside ci.yml too (publish-*.yml, lock-refresh.yml).
+        f"# Covers {'ci.yml' if combo.project else 'workflow'} job(s): "
         f"{combo.covers}\n"
         "# See scripts/compile_constraints.py and docs/adr/0007-dependency-policy.md rule 3.\n"
         "#\n"
