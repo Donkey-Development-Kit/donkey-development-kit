@@ -67,9 +67,7 @@ class RunnerAgent:
         logger.info("runner: calling the model", extra={"correlation_id": current_correlation_id()})
         try:
             # Tracing off: the SDK's default trace exporter posts to OpenAI, not the proxy.
-            return await Runner.run(
-                self._agent, text, run_config=RunConfig(tracing_disabled=True)
-            )
+            return await Runner.run(self._agent, text, run_config=RunConfig(tracing_disabled=True))
         except Exception as exc:
             typed = _refusal(exc)
             if typed is exc:

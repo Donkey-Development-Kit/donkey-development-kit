@@ -40,7 +40,12 @@ from donkey_kit.simulator.fixtures import parse_headers
 #: Live captures from ``ddk-azure-openai-model-routing`` (2026-10-07, #896).
 _AZURE = (
     Path(__file__).resolve().parents[2]
-    / "src" / "donkey_kit" / "simulator" / "_fixtures" / "anypoint" / "azure_openai_routing"
+    / "src"
+    / "donkey_kit"
+    / "simulator"
+    / "_fixtures"
+    / "anypoint"
+    / "azure_openai_routing"
 )
 
 
@@ -69,8 +74,11 @@ def test_incomplete_config_skips_probe_and_lists_missing_fields(
     monkeypatch: pytest.MonkeyPatch, tmp_path: object
 ) -> None:
     monkeypatch.chdir(tmp_path)  # type: ignore[arg-type]
-    for var in ("DONKEY_LLM_PROXY_URL", "DONKEY_LLM_PROXY_CLIENT_ID",
-                "DONKEY_LLM_PROXY_CLIENT_SECRET"):
+    for var in (
+        "DONKEY_LLM_PROXY_URL",
+        "DONKEY_LLM_PROXY_CLIENT_ID",
+        "DONKEY_LLM_PROXY_CLIENT_SECRET",
+    ):
         monkeypatch.delenv(var, raising=False)
 
     # A probe that would explode if called — proves the gate short-circuits.
@@ -117,8 +125,7 @@ def test_wrong_credentials_diagnosed_as_auth(llm_env: None) -> None:
 
 def test_model_not_allowed_diagnosed_from_verified_passthrough(llm_env: None) -> None:
     err = UpstreamRequestError(
-        "The upstream model provider rejected the request (400): "
-        "model 'gpt-4o' does not exist.",
+        "The upstream model provider rejected the request (400): model 'gpt-4o' does not exist.",
         code="model_not_found",
         param="model",
     )
@@ -135,9 +142,7 @@ def test_model_not_allowed_diagnosed_from_verified_passthrough(llm_env: None) ->
 def test_non_model_typed_error_leaves_model_ok_and_notes_it(llm_env: None) -> None:
     """A policy refusal on the probe means auth + model were accepted; it's
     surfaced on its own [i] line, never mis-attributed to credentials or model."""
-    checks = run_diagnostics(
-        "gpt-4o", probe=_probe(ProbeResult(PIIDetected("blocked"), None))
-    )
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(PIIDetected("blocked"), None)))
     assert _by_name(checks, "credentials").level is Level.OK
     assert _by_name(checks, "model").level is Level.OK
     assert _by_name(checks, "policy").level is Level.INFO
@@ -276,9 +281,7 @@ def test_routed_404_on_both_routes_fails_the_model_line(llm_env: None) -> None:
 
 
 def test_routed_404_without_a_chat_probe_leaves_the_model_unchecked(llm_env: None) -> None:
-    checks = run_diagnostics(
-        "gpt-4o", probe=_probe(_rejected("reject.responses-not-served"))
-    )
+    checks = run_diagnostics("gpt-4o", probe=_probe(_rejected("reject.responses-not-served")))
     assert _by_name(checks, "model").level is Level.SKIP
     assert _by_name(checks, "responses").level is Level.INFO
     assert not doctor.has_failure(checks)
@@ -390,9 +393,7 @@ def test_endpoint_source_labels(
             f'[donkey]\nllm_proxy_url = "{url}"\n'
         )
     else:
-        (tmp_path / "xdg" / ".donkey-kit.toml").write_text(
-            f'[donkey]\nllm_proxy_url = "{url}"\n'
-        )
+        (tmp_path / "xdg" / ".donkey-kit.toml").write_text(f'[donkey]\nllm_proxy_url = "{url}"\n')
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "cid")
     monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "secret")
 

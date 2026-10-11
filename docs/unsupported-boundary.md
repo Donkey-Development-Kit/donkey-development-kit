@@ -31,6 +31,14 @@ Classification:
 | Successful-response budget window in `x-llm-proxy-ratelimit` prose | `core.budget.Budget` | **Documented but no SLA for third-party use** | Captured from a real Model Proxy and parsed fail-open: an absent or changed sentence is ignored, never fatal. The exact prose contract is `VERIFIED (LIVE)` in `verified-apis.md` §4 but is not stated in the public policy page. Owner: DDK maintainers; re-capture on gateway-policy changes. |
 | Gateway identity and routing response metadata: `x-request-id`, `x-envoy-decorator-operation`, and `x-llm-proxy-{routing-type,routing-fallback,llm-provider,llm-model}` | `core.lastcall.LastCall`; `core.transport.DonkeyAsyncClient` | **Documented but no SLA for third-party use** | Captured from a real Model Proxy (`verified-apis.md` §2 and §3). Parsers are fail-open: missing or unrecognised values become `None`, and only an explicit `routing-fallback: true` changes retry behavior. Owner: DDK maintainers; contract changes require new fixtures before parser changes. |
 
+<!-- toc -->
+**Contents**
+
+- [Deliberately outside the shipping boundary](#deliberately-outside-the-shipping-boundary)
+- [Local Mode is not a supported deployment target](#local-mode-is-not-a-supported-deployment-target)
+- [Undocumented surfaces](#undocumented-surfaces)
+<!-- tocstop -->
+
 ## Deliberately outside the shipping boundary
 
 - Exchange search and asset resolution, API Manager governed-state reads, MCP

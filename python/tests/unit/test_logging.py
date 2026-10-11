@@ -222,4 +222,3 @@ def test_otlp_bootstrap_inert_path_logs_debug(
     assert any("OTLP export not installed" in m for m in _debug(caplog))
     # DEBUG only: "inert and silent" (BG §1.6) means no WARNING or louder.
     assert all(r.levelno == logging.DEBUG for r in caplog.records)
-

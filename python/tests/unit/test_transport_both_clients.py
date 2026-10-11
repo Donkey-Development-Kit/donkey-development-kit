@@ -99,9 +99,7 @@ def _send(
 
     async def run() -> tuple[httpx.Response, list[PolicyViolation]]:
         async with _Async(cfg, None, transport=transport) as client:
-            response = await client.request(
-                method, _URL, json=body if method == "POST" else None
-            )
+            response = await client.request(method, _URL, json=body if method == "POST" else None)
             return response, client.refusals
 
     return asyncio.run(run())
@@ -275,8 +273,9 @@ def test_a_substitution_raises_on_both_clients_when_opted_in(kind: str) -> None:
 
 def test_both_clients_expose_their_governed_transport() -> None:
     inner = httpx.MockTransport(lambda r: httpx.Response(200))
-    assert isinstance(DonkeyAsyncClient(_CFG, None, transport=inner).governed_transport,
-                      GovernedTransport)
+    assert isinstance(
+        DonkeyAsyncClient(_CFG, None, transport=inner).governed_transport, GovernedTransport
+    )
     sync = DonkeyClient(_CFG, transport=inner)
     assert isinstance(sync.governed_transport, GovernedSyncTransport)
     assert sync.governed_transport.inner is inner
@@ -311,15 +310,17 @@ def _request(method: str = "POST", body: bytes = b'{"model": "m"}') -> httpx.Req
 
 def test_decide_retry_is_pure() -> None:
     req = _request()
-    assert decide_retry(_CFG, req, httpx.Response(200), attempt=0, attempts=4,
-                        can_refresh=False) == Finish(None)
-    retry = decide_retry(_CFG, req, httpx.Response(503), attempt=0, attempts=4,
-                         can_refresh=False)
+    assert decide_retry(
+        _CFG, req, httpx.Response(200), attempt=0, attempts=4, can_refresh=False
+    ) == Finish(None)
+    retry = decide_retry(_CFG, req, httpx.Response(503), attempt=0, attempts=4, can_refresh=False)
     assert isinstance(retry, Retry)
-    assert decide_retry(_CFG, req, httpx.Response(502), attempt=0, attempts=4,
-                        can_refresh=False) == Finish("unsafe")
-    assert decide_retry(_CFG, req, httpx.Response(503), attempt=3, attempts=4,
-                        can_refresh=False) == Finish("exhausted")
+    assert decide_retry(
+        _CFG, req, httpx.Response(502), attempt=0, attempts=4, can_refresh=False
+    ) == Finish("unsafe")
+    assert decide_retry(
+        _CFG, req, httpx.Response(503), attempt=3, attempts=4, can_refresh=False
+    ) == Finish("exhausted")
 
 
 # --- config ----------------------------------------------------------------------

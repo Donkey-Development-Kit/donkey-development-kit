@@ -53,9 +53,7 @@ def test_the_walk_finds_the_documented_tree() -> None:
 def test_every_error_is_exported_from_donkey_kit(cls: type[DonkeyError]) -> None:
     # Exactly one home: the stable namespace, or experimental for errors only a
     # verification-blocked surface raises (#730).
-    homes = [
-        mod for mod in (donkey_kit, donkey_kit.experimental) if cls.__name__ in mod.__all__
-    ]
+    homes = [mod for mod in (donkey_kit, donkey_kit.experimental) if cls.__name__ in mod.__all__]
     assert len(homes) == 1, f"{cls.__name__} exported from {homes}"
     assert getattr(homes[0], cls.__name__) is cls
 
@@ -84,9 +82,7 @@ def test_every_error_ships_its_own_nonempty_default(cls: type[DonkeyError]) -> N
 
 @pytest.mark.parametrize("cls", _TREE, ids=lambda c: c.__name__)
 def test_every_error_accepts_a_remediation_override(cls: type[DonkeyError]) -> None:
-    assert _build(cls, remediation="do the specific thing").remediation == (
-        "do the specific thing"
-    )
+    assert _build(cls, remediation="do the specific thing").remediation == ("do the specific thing")
 
 
 @pytest.mark.parametrize("cls", _TREE, ids=lambda c: c.__name__)
