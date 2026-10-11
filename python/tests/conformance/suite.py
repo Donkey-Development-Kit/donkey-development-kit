@@ -98,8 +98,8 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
 # that cannot satisfy a scenario records WHY here rather than skipping silently.
 # Every adapter but CrewAI sends through our shared httpx client (#740), so
-# CrewAI is the only one listed for the transport scenarios; ADK's model() is
-# listed for typed_refusal_bridged alone (#724). CrewAI's structural reason: the
+# CrewAI is the only one listed, ADK's model() included since its refusals are
+# bridged too (#969). CrewAI's structural reason: the
 # native OpenAI provider builds both its sync OpenAI and its AsyncOpenAI from
 # ONE client_params dict, and the openai SDK type-checks http_client per client,
 # so no single value can carry our clients to both. With an interceptor set it
@@ -142,17 +142,12 @@ _CREWAI_JWT_EXEMPTION = (
 
 # typed_refusal_bridged: the bridge types an error only when the SDK's transport
 # raised it or sent the request behind it (#724, ADR 0002). A framework that owns
-# the transport raises its own errors for a call the SDK never saw, and one that
-# re-wraps a refusal around a response it rebuilt hides the one the SDK sent, so
-# the bridge leaves both as they are rather than guess at their shape. Mirrors
-# typed_refusals=False in the factory's AdapterCapabilities (#726).
-_LITELLM_REFUSAL_EXEMPTION = (
-    "adk.model() only: LiteLLM sends through our transport (#946) but re-raises a "
-    "refusal as its own exception around a response it rebuilt, which carries no "
-    "sign that our transport sent it; the typed-refusal bridge cannot tell a gateway "
-    "refusal from any other failure there, so it passes them through (#724). "
-    "adk.gemini() is handed our httpx client and is bridged (conformance-tested, #955)."
-)
+# the transport raises its own errors for a call the SDK never saw, so the bridge
+# leaves them as they are rather than guess at their shape. Mirrors
+# typed_refusals=False in the factory's AdapterCapabilities (#726). ADK's model()
+# is not listed: LiteLLM re-raises a refusal around a response it rebuilt, and
+# the adapter's llm_client tags that error with the refusal our transport
+# recorded for the call (#969).
 _CREWAI_REFUSAL_EXEMPTION = (
     "CrewAI's native OpenAI provider owns the transport, so its errors come from a "
     "client the SDK never saw; the typed-refusal bridge passes them through rather "
@@ -160,10 +155,9 @@ _CREWAI_REFUSAL_EXEMPTION = (
 )
 
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
-    # ADK's model() and CrewAI each raise a framework error the bridge cannot type;
-    # adk.gemini() is handed our httpx client, records no exemption (#691) and is
-    # bridge-tested in test_typed_refusal_bridge.py (#955).
-    "adk": {"typed_refusal_bridged": _LITELLM_REFUSAL_EXEMPTION},
+    # CrewAI raises a framework error the bridge cannot type. ADK records no
+    # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
+    # in test_typed_refusal_bridge.py.
     "crewai": {
         "correlation_id_propagated": _CREWAI_TRANSPORT_EXEMPTION,
         "gateway_identity_observed": _CREWAI_LAST_CALL_EXEMPTION,
