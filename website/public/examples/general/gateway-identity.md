@@ -1,5 +1,7 @@
 # Gateway identity (last_call)
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 A refusal already tells you which gateway said no. `donkey.last_call` is the
 success-path counterpart: after every governed call it records which gateway
 served the request, what it actually routed to, and what the call cost —

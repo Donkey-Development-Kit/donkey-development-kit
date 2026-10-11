@@ -1,13 +1,11 @@
 ---
 description: Run a local server that replays real gateway rejections, so you can build and test failure handling without a governed gateway.
+status: live
 ---
 
 import { Callout } from 'nextra/components'
-import { Badge } from '../components'
 
 # Local simulator
-
-<Badge tone="live">Live</Badge>
 
 Nobody can make the production gateway emit a PII block on cue, so the branch
 of your agent that handles `PIIDetected` usually runs for the first time on a

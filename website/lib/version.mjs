@@ -4,31 +4,28 @@ import { resolve } from 'node:path'
 // The version banner (#795): which `donkey-kit` version these docs describe,
 // and the latest release on PyPI when that is a different one.
 //
-// The documented version is read from the SDK's own pyproject.toml at build
-// time, so the site and the package it describes share one version source.
-// The latest PyPI version is fetched at build time too; a failed or slow fetch
-// leaves it unknown and the banner shows the documented version alone.
+// The documented version is read at build time from `__version__` in the
+// SDK's `__init__.py`, the package's one version source (#767: pyproject.toml
+// declares the version dynamic), so the site and the package it describes
+// cannot disagree. The latest PyPI version is fetched at build time too; a
+// failed or slow fetch leaves it unknown and the banner shows the documented
+// version alone.
 
 export const PYPI_JSON_URL = 'https://pypi.org/pypi/donkey-kit/json'
 export const RELEASES_URL =
   'https://github.com/Donkey-Development-Kit/donkey-development-kit/releases'
 
 // website/ is the working directory for `next build` and `npm test`.
-const PYPROJECT = resolve(process.cwd(), '..', 'python', 'pyproject.toml')
+const PACKAGE_INIT = resolve(process.cwd(), '..', 'python', 'src', 'donkey_kit', '__init__.py')
 
 /**
- * The `version` of the `[project]` table in a pyproject.toml.
+ * The module-level `__version__ = "..."` assignment in an `__init__.py`.
  *
  * @param {string} text
  * @returns {string | null}
  */
-export function projectVersion(text) {
-  const start = text.search(/^\[project\]\s*$/m)
-  if (start === -1) return null
-  const rest = text.slice(start).split('\n').slice(1).join('\n')
-  const end = rest.search(/^\[/m)
-  const table = end === -1 ? rest : rest.slice(0, end)
-  const match = table.match(/^version\s*=\s*"([^"]+)"/m)
+export function packageVersion(text) {
+  const match = text.match(/^__version__\s*=\s*"([^"]+)"/m)
   return match ? match[1] : null
 }
 
@@ -38,9 +35,9 @@ export function projectVersion(text) {
  * @param {string} [path]
  * @returns {Promise<string | null>}
  */
-export async function documentedVersion(path = PYPROJECT) {
+export async function documentedVersion(path = PACKAGE_INIT) {
   try {
-    return projectVersion(await readFile(path, 'utf8'))
+    return packageVersion(await readFile(path, 'utf8'))
   } catch {
     return null
   }

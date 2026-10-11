@@ -1,5 +1,7 @@
 # Typed refusals
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Governance outcomes should be something you branch on, not something you
 parse. These examples run the gateway's rejection shapes through `classify()`
 and show the exception hierarchy you write `except` clauses against. The

@@ -1,5 +1,6 @@
 ---
 description: Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
+status: offline-verified
 ---
 
 import { Callout } from 'nextra/components'
@@ -80,7 +81,8 @@ export DONKEY_LLM_PROXY_URL=…  DONKEY_LLM_PROXY_CLIENT_ID=…  DONKEY_LLM_PROX
 ```python
 from donkey_kit import Donkey
 async with Donkey.from_env() as donkey:
-    model = donkey.<framework>.<factory>("gpt-4o")   # native object at the proxy
+    # donkey.<framework>.<factory>(...), here LangGraph's chat_model:
+    model = donkey.langgraph.chat_model("gpt-4o")   # native object at the proxy
 ```
 
 Each framework page shows the factory name, the native class you get back, the

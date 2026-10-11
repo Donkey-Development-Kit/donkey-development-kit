@@ -1,6 +1,6 @@
 # CLI & decorators
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Two on-ramps to the SDK: decorators that govern a function in one line, and a
 four-command CLI for setup, diagnosis, local simulation, and conformance

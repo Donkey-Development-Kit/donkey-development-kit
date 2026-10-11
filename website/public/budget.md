@@ -1,6 +1,6 @@
 # Budget & pacing
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Once a token-rate-limit policy is applied, the governed proxy reports your
 token budget on its responses, in **two shapes** depending on the response:

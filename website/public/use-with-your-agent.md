@@ -1,6 +1,6 @@
 # Use these docs with your agent
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 You probably ask your coding assistant before you open a docs site. These docs
 are published in the [llms.txt convention](https://llmstxt.org) so an assistant
