@@ -33,11 +33,30 @@ Each card shows what has been proven about that adapter, in the terms the
 The proxy data plane every adapter calls (base URL, credential headers,
 streaming, rejection shapes) is live-verified.
 
+Each factory's status is its constructor row in the [ledger §8](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md); its
+depth is the adapter roster's `conformance_tested`.
+
+| Framework | Factory | Depth | Ledger status |
+|---|---|---|---|
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | `donkey.langgraph.chat_model()` | Conformance-tested | Signature-confirmed |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.model()` | `connection_kwargs()` | Signature-confirmed |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.gemini()` | `connection_kwargs()` | Live-verified |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `donkey.strands.model()` | `connection_kwargs()` | Signature-confirmed |
+| [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | Signature-confirmed |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | `connection_kwargs()` | Signature-confirmed |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `donkey.anthropic.client()` | `connection_kwargs()` | Signature-confirmed |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `donkey.crewai.llm()` | `connection_kwargs()` | Signature-confirmed |
+| [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `donkey.llamaindex.llm()` | `connection_kwargs()` | Signature-confirmed |
+
+A card reads Conformance-tested for a conformance-tested adapter, and otherwise
+the ledger status of the adapter's default factory, so the ADK card rates
+`model()`.
+
   
     `chat_model()` → `langchain_openai.ChatOpenAI`
   
   
-    `model()` → `google.adk … LiteLlm` (signature-confirmed); `gemini()` → `google.adk.models.Gemini` (live-verified)
+    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
   
   
     `model()` → `strands … OpenAIModel`

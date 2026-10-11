@@ -21,9 +21,20 @@ Targets:
   ``ADAPTERS`` roster and the adapter classes.
 * ``website/content/reference/api.mdx`` — the Python API reference, written
   whole from the public signatures and the first paragraph of each docstring.
+* Per-framework verification status (#1081), owned by ``docs/verified-apis.md``:
+  the §8 Status column rates each factory, the §8.4 roster maps each
+  ``ADAPTERS`` factory to its §8 row and page, and ``conformance_tested`` on
+  the roster gives its depth. From those: the ``framework-status`` table and
+  the ``framework-status-summary`` sentences of ``README.md``, the summary in
+  ``ARCHITECTURE.md``, the status table and card badges of
+  ``website/content/frameworks/index.mdx``, the frontmatter ``status:`` of
+  every ``frameworks/*.mdx`` page, the framework row of ``quickstart.mdx`` and
+  the framework card badge of ``feature-overview.mdx``. A §8 status with no
+  docs label, a factory with no roster row, or a page with no factory fails.
 
 A region sits between two marker comments, ``BEGIN GENERATED: <name>`` and
 ``END GENERATED: <name>``; everything between them is replaced.
+Frontmatter, card badges and single table rows are rewritten in place.
 
     python scripts/generate_docs.py           # rewrite every target
     python scripts/generate_docs.py --check   # exit 1 and list stale targets
@@ -35,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import functools
 import importlib
 import importlib.util
 import inspect
@@ -357,6 +369,400 @@ def adapter_capabilities() -> str:
         "What each factory reports, generated from the adapter roster and each\n"
         "adapter's declared `factories`:\n\n" + _table(header, rows)
     )
+
+
+# --- framework verification status (#1081) ----------------------------------------
+
+LEDGER = REPO / "docs" / "verified-apis.md"
+_LEDGER_REF = "docs/verified-apis.md"
+FRAMEWORK_PAGES = REPO / "website" / "content" / "frameworks"
+
+#: The ledger's §8 Status values a docs label is derived from, by prefix. Any
+#: other value is refused rather than mapped: a new status needs a human to
+#: decide what the docs may claim for it (§0.3).
+_LEDGER_STATUSES: tuple[tuple[str, str], ...] = (
+    ("VERIFIED (LIVE)", "live-verified"),
+    ("VERIFIED (CLI)", "live-verified"),
+    ("UNVERIFIED (signature confirmed", "signature-confirmed"),
+)
+
+#: How each docs status reads: the inline badge text, its tone and the prose phrase.
+_LABELS = {
+    "conformance-tested": ("Conformance-tested", "accent", "conformance-tested"),
+    "live-verified": ("Live-verified", "live", "live-verified"),
+    "signature-confirmed": ("Signature-confirmed", "neutral", "signature-confirmed offline"),
+}
+_PAGE_STATUS = {"live-verified": "live", "signature-confirmed": "offline-verified"}
+#: The page badge of each frontmatter status (``STATUSES`` in ``website/lib/status.mjs``).
+_PAGE_BADGE = {"live": ("Live", "live"), "offline-verified": ("Offline-verified", "neutral")}
+#: Strongest first. A page that covers several factories is rated by its weakest.
+_VERIFICATION_ORDER = ("live-verified", "signature-confirmed")
+
+_PIPE = re.compile(r"(?<!\\)\|")
+_FACTORY_CELL = re.compile(r"^`donkey\.(\w+)\.(\w+)\(\)`$")
+_ROUTE_CELL = re.compile(r"^`(/frameworks/[\w-]+)`$")
+
+
+def _table_rows(lines: Iterable[str]) -> list[list[str]]:
+    """The body rows of the first Markdown table in ``lines``, as stripped cells."""
+    rows: list[list[str]] = []
+    started = False
+    for line in lines:
+        if not line.startswith("|"):
+            if started:
+                break
+            continue
+        started = True
+        cells = [c.strip() for c in _PIPE.split(line.strip())[1:-1]]
+        if all(set(c) <= set("-: ") for c in cells):
+            continue
+        rows.append(cells)
+    return rows[1:]  # drop the header row
+
+
+def ledger_framework_statuses(ledger: str) -> dict[str, str]:
+    """The §8 table of the ledger as ``{Framework column: Status column}``."""
+    lines = ledger.splitlines()
+    start = [i for i, line in enumerate(lines) if line.startswith("## 8. ")]
+    if len(start) != 1:
+        raise GenerationError(f"{_LEDGER_REF}: expected one '## 8. ' heading")
+    out: dict[str, str] = {}
+    for cells in _table_rows(lines[start[0] + 1 :]):
+        if len(cells) < 3:
+            raise GenerationError(f"{_LEDGER_REF} §8: a row has fewer than 3 cells: {cells}")
+        name, status = cells[0], cells[2]
+        if name in out:
+            raise GenerationError(f"{_LEDGER_REF} §8: row {name!r} appears twice")
+        out[name] = status
+    return out
+
+
+def verification_of(status: str) -> str:
+    """The docs label for one §8 Status value; refuses one it does not know."""
+    for prefix, label in _LEDGER_STATUSES:
+        if status.startswith(prefix):
+            return label
+    raise GenerationError(
+        f"{_LEDGER_REF} §8: no docs label for status {status!r}; extend _LEDGER_STATUSES "
+        f"in {_SCRIPT} and the §8.4 mapping table together"
+    )
+
+
+@dataclass(frozen=True)
+class FactoryStatus:
+    """One SDK factory's status, from the ledger and the adapter roster."""
+
+    framework: str
+    attr: str
+    factory: str
+    route: str
+    ledger_row: str
+    #: ``live-verified`` or ``signature-confirmed``, from the §8 Status column.
+    verification: str
+    #: ``AdapterSpec.conformance_tested`` of the factory's adapter.
+    conformance_tested: bool
+    #: Whether this is the adapter's default factory (the first in ``factories``).
+    default: bool
+    #: How many factories the adapter declares.
+    siblings: int
+
+    @property
+    def call(self) -> str:
+        return f"donkey.{self.attr}.{self.factory}()"
+
+    @property
+    def headline(self) -> str:
+        """The badge a card or list shows: depth first, then verification."""
+        return "conformance-tested" if self.conformance_tested else self.verification
+
+    @property
+    def short_name(self) -> str:
+        """The framework, plus the factory when the adapter has more than one."""
+        if self.siblings > 1:
+            return f"{self.framework} `{self.factory}()`"
+        return self.framework
+
+
+def framework_statuses(ledger: str | None = None) -> list[FactoryStatus]:
+    """Every SDK factory's status, in roster order (``docs/verified-apis.md`` §8.4).
+
+    The roster maps each factory to its §8 row and docs page; the status is
+    that row's Status column, and the depth is the adapter's
+    ``conformance_tested``. Raises :class:`GenerationError` when the roster and
+    ``ADAPTERS`` list different factories, or a row names a §8 row or page that
+    does not exist.
+    """
+    from donkey_kit import integrations
+
+    text = LEDGER.read_text(encoding="utf-8") if ledger is None else ledger
+    statuses = ledger_framework_statuses(text)
+    lines = text.splitlines()
+    begin = [i for i, line in enumerate(lines) if "BEGIN ROSTER: framework-status" in line]
+    end = [i for i, line in enumerate(lines) if "END ROSTER: framework-status" in line]
+    if len(begin) != 1 or len(end) != 1 or end[0] < begin[0]:
+        raise GenerationError(f"{_LEDGER_REF}: expected one framework-status roster (§8.4)")
+
+    factories: dict[tuple[str, str], tuple[Any, bool, int]] = {}
+    for spec in integrations.ADAPTERS.values():
+        module = importlib.import_module(spec.module, integrations.__name__)
+        names = list(getattr(module, spec.cls).factories)
+        for index, name in enumerate(names):
+            factories[(spec.attr, name)] = (spec, index == 0, len(names))
+
+    out: list[FactoryStatus] = []
+    for cells in _table_rows(lines[begin[0] + 1 : end[0]]):
+        if len(cells) != 4:
+            raise GenerationError(f"{_LEDGER_REF} §8.4: a roster row needs 4 cells: {cells}")
+        framework, call, row, route_cell = cells
+        call_match = _FACTORY_CELL.match(call)
+        route_match = _ROUTE_CELL.match(route_cell)
+        if call_match is None or route_match is None:
+            raise GenerationError(f"{_LEDGER_REF} §8.4: unreadable roster row {cells}")
+        key = (call_match.group(1), call_match.group(2))
+        if key not in factories:
+            raise GenerationError(f"{_LEDGER_REF} §8.4: {call} is not a factory in ADAPTERS")
+        if row not in statuses:
+            raise GenerationError(f"{_LEDGER_REF} §8.4: {call} names no §8 row {row!r}")
+        route = route_match.group(1)
+        if not (REPO / "website" / "content" / f"{route.lstrip('/')}.mdx").is_file():
+            raise GenerationError(f"{_LEDGER_REF} §8.4: {call} names a missing page {route}")
+        spec, default, siblings = factories[key]
+        out.append(
+            FactoryStatus(
+                framework=framework,
+                attr=key[0],
+                factory=key[1],
+                route=route,
+                ledger_row=row,
+                verification=verification_of(statuses[row]),
+                conformance_tested=spec.conformance_tested,
+                default=default,
+                siblings=siblings,
+            )
+        )
+    seen = [(s.attr, s.factory) for s in out]
+    if len(seen) != len(set(seen)):
+        raise GenerationError(f"{_LEDGER_REF} §8.4: a factory is listed twice")
+    missing = sorted(f"donkey.{a}.{f}()" for a, f in set(factories) - set(seen))
+    if missing:
+        raise GenerationError(f"{_LEDGER_REF} §8.4: no roster row for {', '.join(missing)}")
+    for attr in {s.attr for s in out}:
+        rows = [s for s in out if s.attr == attr]
+        if len({(s.framework, s.route) for s in rows}) != 1:
+            raise GenerationError(
+                f"{_LEDGER_REF} §8.4: donkey.{attr} factories name different frameworks or pages"
+            )
+    return out
+
+
+def _weakest(verifications: Iterable[str]) -> str:
+    return max(verifications, key=_VERIFICATION_ORDER.index)
+
+
+def page_statuses(rows: list[FactoryStatus]) -> dict[str, str]:
+    """Each framework page's frontmatter ``status:``, by route.
+
+    A framework page is rated by its adapter's default factory, the surface
+    its main code uses; the ``/frameworks`` overview by the weakest factory.
+    """
+    out = {s.route: _PAGE_STATUS[s.verification] for s in rows if s.default}
+    out["/frameworks"] = _PAGE_STATUS[_weakest(s.verification for s in rows)]
+    return out
+
+
+def _badge(label: str) -> str:
+    text, tone, _ = _LABELS[label]
+    return f'<Badge tone="{tone}">{text}</Badge>'
+
+
+def _join(names: list[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def framework_status_table(*, mdx: bool) -> str:
+    """One row per SDK factory: its depth and its ledger status."""
+    rows = framework_statuses()
+    ledger_link = (
+        f"[ledger §8]({REPO_URL}/blob/{DOCS_REF}/{_LEDGER_REF})"
+        if mdx
+        else f"[`{_LEDGER_REF}` §8]({_LEDGER_REF})"
+    )
+
+    def label(name: str) -> str:
+        return _badge(name) if mdx else f"**{_LABELS[name][0]}**"
+
+    body = [
+        (
+            s.framework if not mdx else f"[{s.framework}]({s.route})",
+            f"`{s.call}`",
+            label("conformance-tested") if s.conformance_tested else "`connection_kwargs()`",
+            label(s.verification),
+        )
+        for s in rows
+    ]
+    intro = (
+        f"Each factory's status is its constructor row in the {ledger_link}; its\n"
+        "depth is the adapter roster's `conformance_tested`.\n\n"
+    )
+    return intro + _table(("Framework", "Factory", "Depth", "Ledger status"), body)
+
+
+def framework_status_summary() -> str:
+    """The per-factory statuses as two sentences of prose."""
+    rows = framework_statuses()
+    deep = list(dict.fromkeys(s.framework for s in rows if s.conformance_tested))
+    if deep:
+        verb = "is" if len(deep) == 1 else "are"
+        first = f"{_join(deep)} {verb} conformance-tested against the simulator in CI."
+    else:
+        first = "No adapter is conformance-tested against the simulator."
+    groups = {v: [s for s in rows if s.verification == v] for v in _VERIFICATION_ORDER}
+    groups = {v: g for v, g in groups.items() if g}
+    common = max(groups, key=lambda v: len(groups[v]))
+    others = [v for v in groups if v != common]
+    second = (
+        f"Each adapter factory's constructor row in §8 of the ledger reads **{_LABELS[common][2]}**"
+    )
+    if others:
+        parts = []
+        for v in others:
+            names = [
+                f"{s.framework}'s `{s.factory}()`" if s.siblings > 1 else s.framework
+                for s in groups[v]
+            ]
+            verb = "which is" if len(names) == 1 else "which are"
+            parts.append(f"{_join(names)}, {verb} **{_LABELS[v][2]}**")
+        second += ", except " + "; and ".join(parts)
+    return f"{first}\n{second}."
+
+
+def _frontmatter_status(text: str, status: str, where: str) -> str:
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        raise GenerationError(f"{where}: no frontmatter")
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            break
+        if line.startswith("status:"):
+            lines[i] = f"status: {status}\n"
+            return "".join(lines)
+    raise GenerationError(f"{where}: no 'status:' line in the frontmatter")
+
+
+_CARD = re.compile(r'(<Card\b[^>]*?\bhref="(?P<href>[^"]+)"[^>]*>)')
+_CARD_BADGE = re.compile(r'\bbadge="[^"]*"(\s+)badgeTone="[^"]*"')
+
+
+def _card_badges(text: str, badges: dict[str, tuple[str, str]], where: str) -> str:
+    """``text`` with the ``badge``/``badgeTone`` of each ``<Card href=...>`` in ``badges``."""
+    seen: list[str] = []
+
+    def card(match: re.Match[str]) -> str:
+        href = match.group("href")
+        if href not in badges:
+            return match.group(0)
+        seen.append(href)
+        badge, tone = badges[href]
+        tag, count = _CARD_BADGE.subn(
+            lambda m: f'badge="{badge}"{m.group(1)}badgeTone="{tone}"', match.group(0)
+        )
+        if count != 1:
+            raise GenerationError(f'{where}: the {href} card needs badge="…" badgeTone="…"')
+        return tag
+
+    out = _CARD.sub(card, text)
+    for href in badges:
+        if seen.count(href) != 1:
+            raise GenerationError(f'{where}: expected one <Card href="{href}">')
+    return out
+
+
+def _replace_row(text: str, prefix: str, row: str, where: str) -> str:
+    lines = text.splitlines(keepends=True)
+    hits = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+    if len(hits) != 1:
+        raise GenerationError(f"{where}: expected one table row starting {prefix!r}")
+    lines[hits[0]] = row + "\n"
+    return "".join(lines)
+
+
+def _rel(path: Path) -> str:
+    return str(path.relative_to(REPO))
+
+
+def framework_page(path: Path) -> str:
+    """A framework page with its frontmatter ``status:`` from its factories."""
+    route = f"/frameworks/{path.stem}" if path.stem != "index" else "/frameworks"
+    statuses = page_statuses(framework_statuses())
+    if route not in statuses:
+        raise GenerationError(
+            f"{_rel(path)}: no factory in {_LEDGER_REF} §8.4 names {route}; add its roster row"
+        )
+    return _frontmatter_status(path.read_text(encoding="utf-8"), statuses[route], _rel(path))
+
+
+def frameworks_index() -> str:
+    """``frameworks/index.mdx``: its status, the cards' badges and the status table."""
+    path = FRAMEWORK_PAGES / "index.mdx"
+    rows = framework_statuses()
+    badges = {}
+    for s in rows:
+        if s.default:
+            text, tone, _ = _LABELS[s.headline]
+            badges[s.route] = (text, tone)
+    text = replace_region(
+        framework_page(path), "framework-status", framework_status_table(mdx=True)
+    )
+    return _card_badges(text, badges, _rel(path))
+
+
+_QUICKSTART_ROW = "| Framework adapters for "
+
+
+def quickstart() -> str:
+    """``quickstart.mdx`` with its framework-adapters row from the factories' statuses."""
+    path = REPO / "website" / "content" / "quickstart.mdx"
+    rows = framework_statuses()
+    adapters = len({s.attr for s in rows})
+    groups: list[tuple[str, list[FactoryStatus]]] = []
+    for label in ("conformance-tested", *_VERIFICATION_ORDER):
+        members = [s for s in rows if s.headline == label]
+        if members:
+            groups.append((label, members))
+    largest = max(range(len(groups)), key=lambda i: len(groups[i][1]))
+    parts = []
+    for index, (label, members) in enumerate(groups):
+        if len(groups) == 1:
+            names = "all of them"
+        elif index == largest:
+            names = "the rest"
+        else:
+            names = _join(list(dict.fromkeys(s.short_name for s in members)))
+        parts.append(f"{_badge(label)} {names}")
+    if largest != len(groups) - 1:
+        parts.append(parts.pop(largest))
+    row = (
+        f"{_QUICKSTART_ROW}{adapters} frameworks | {' · '.join(parts)} | "
+        "[Frameworks](/frameworks#supported-frameworks) |"
+    )
+    return _replace_row(path.read_text(encoding="utf-8"), _QUICKSTART_ROW, row, _rel(path))
+
+
+def feature_overview() -> str:
+    """``feature-overview.mdx`` with its framework card badge from the overview page's status."""
+    path = REPO / "website" / "content" / "feature-overview.mdx"
+    status = page_statuses(framework_statuses())["/frameworks"]
+    text = path.read_text(encoding="utf-8")
+    return _card_badges(text, {"/frameworks": _PAGE_BADGE[status]}, _rel(path))
+
+
+def _with_region(path: Path, region: str, render: Callable[[], str]) -> Callable[[], str]:
+    def rendered() -> str:
+        return replace_region(path.read_text(encoding="utf-8"), region, render())
+
+    return rendered
 
 
 # --- API reference -------------------------------------------------------------
@@ -696,7 +1102,46 @@ def _pypi_readme() -> str:
     return pypi_readme((REPO / "README.md").read_text(encoding="utf-8"))
 
 
+_README = REPO / "README.md"
+_ARCHITECTURE = REPO / "ARCHITECTURE.md"
+
+
+def _framework_page_targets() -> tuple[Target, ...]:
+    """One target per framework page; a page with no roster row fails its render."""
+    if not FRAMEWORK_PAGES.is_dir():
+        return ()
+    return tuple(
+        Target(
+            f"framework-page-status-{path.stem}",
+            path,
+            None,
+            functools.partial(framework_page, path),
+        )
+        for path in sorted(FRAMEWORK_PAGES.glob("*.mdx"))
+        if path.stem != "index"
+    )
+
+
 TARGETS: tuple[Target, ...] = (
+    # The README targets come first: pypi-readme is written from the result.
+    Target(
+        "framework-status-readme",
+        _README,
+        None,
+        _with_region(_README, "framework-status", lambda: framework_status_table(mdx=False)),
+    ),
+    Target(
+        "framework-status-summary-readme",
+        _README,
+        None,
+        _with_region(_README, "framework-status-summary", framework_status_summary),
+    ),
+    Target(
+        "framework-status-summary-architecture",
+        _ARCHITECTURE,
+        None,
+        _with_region(_ARCHITECTURE, "framework-status-summary", framework_status_summary),
+    ),
     Target("pypi-readme", REPO / "python" / "README.md", None, _pypi_readme),
     Target(
         "settings-index",
@@ -722,6 +1167,20 @@ TARGETS: tuple[Target, ...] = (
         REPO / "website" / "content" / "reference" / "api.mdx",
         None,
         api_reference,
+    ),
+    Target("framework-status-index", FRAMEWORK_PAGES / "index.mdx", None, frameworks_index),
+    *_framework_page_targets(),
+    Target(
+        "framework-status-quickstart",
+        REPO / "website" / "content" / "quickstart.mdx",
+        None,
+        quickstart,
+    ),
+    Target(
+        "framework-status-feature-overview",
+        REPO / "website" / "content" / "feature-overview.mdx",
+        None,
+        feature_overview,
     ),
 )
 

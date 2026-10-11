@@ -119,10 +119,27 @@ held to the full conformance bar, the rest supported through the three-line
 `connection_kwargs()` escape hatch. Every framework below returns its framework's
 **own native object** — never a wrapper.
 
-| Tier | Frameworks | Status ([`docs/verified-apis.md` §8](docs/verified-apis.md)) |
-| --- | --- | --- |
-| **Deep** | The raw client (`donkey.llm.client()`) and **LangGraph** | **Conformance-tested against the simulator** in CI. LangGraph's `ChatOpenAI` constructor is signature-confirmed offline; it has had no live round-trip. |
-| **Supported via `connection_kwargs()`** | Google ADK, Strands, Microsoft Agent Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex | **Signature-confirmed offline**: each factory builds its native object against the installed framework (`scripts/verify_frameworks.py`), with no live round-trip and no conformance run. The exception is ADK's `gemini()`, which is **live-verified** through a `Format=Gemini` proxy. |
+<!-- BEGIN GENERATED: framework-status (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
+Each factory's status is its constructor row in the [`docs/verified-apis.md` §8](docs/verified-apis.md); its
+depth is the adapter roster's `conformance_tested`.
+
+| Framework | Factory | Depth | Ledger status |
+|---|---|---|---|
+| LangGraph | `donkey.langgraph.chat_model()` | **Conformance-tested** | **Signature-confirmed** |
+| Google ADK | `donkey.adk.model()` | `connection_kwargs()` | **Signature-confirmed** |
+| Google ADK | `donkey.adk.gemini()` | `connection_kwargs()` | **Live-verified** |
+| Strands | `donkey.strands.model()` | `connection_kwargs()` | **Signature-confirmed** |
+| MS Agent Framework | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | **Signature-confirmed** |
+| OpenAI Agents SDK | `donkey.openai_agents.model()` | `connection_kwargs()` | **Signature-confirmed** |
+| Anthropic SDK | `donkey.anthropic.client()` | `connection_kwargs()` | **Signature-confirmed** |
+| CrewAI | `donkey.crewai.llm()` | `connection_kwargs()` | **Signature-confirmed** |
+| LlamaIndex | `donkey.llamaindex.llm()` | `connection_kwargs()` | **Signature-confirmed** |
+<!-- END GENERATED: framework-status -->
+
+**Signature-confirmed** means the factory builds its native object against the
+installed framework (`scripts/verify_frameworks.py`), with no live round-trip.
+**Live-verified** means a real round-trip through a governed proxy. The raw
+client (`donkey.llm.client()`) is conformance-tested too.
 
 `connection_kwargs()` works for all eight; a second deep adapter is promoted from
 demand evidence, one at a time (#223/#244) — never guessed up front. See the
@@ -133,11 +150,15 @@ for each.
 
 The **LLM data plane** — governed model access through the Omni Gateway proxy —
 is live-verified against a real Anypoint sandbox. The framework-free client and
-the framework adapters are wired to that contract, but the adapters themselves
-are not live-verified: the raw client and LangGraph are conformance-tested
-against the simulator, ADK's `gemini()` is live-verified, and every other
-adapter constructor is signature-confirmed offline (see
-[Framework support](#framework-support)).
+the framework adapters are wired to that contract; the raw client is
+conformance-tested against the simulator. For the adapters (each factory is
+listed under [Framework support](#framework-support)):
+
+<!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
+LangGraph is conformance-tested against the simulator in CI.
+Each adapter factory's constructor row in §8 of the ledger reads **signature-confirmed offline**, except Google ADK's `gemini()`, which is **live-verified**.
+<!-- END GENERATED: framework-status-summary -->
+
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
 rather than guessing at an unverified endpoint, header, or class name — that
 currently includes Exchange→MCP tool discovery and Exchange publication; their

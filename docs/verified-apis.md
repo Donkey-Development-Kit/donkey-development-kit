@@ -78,6 +78,7 @@ its status here flips to `VERIFIED`.
   - [8.1 Known upstream incompatibilities (floors, not ceilings)](#81-known-upstream-incompatibilities-floors-not-ceilings)
   - [8.2 Known upstream runtime limitations](#82-known-upstream-runtime-limitations)
   - [8.3 Extras floors (lowest verified versions)](#83-extras-floors-lowest-verified-versions)
+  - [8.4 Docs status roster](#84-docs-status-roster)
 - [9. MCP tool binding classes (BG §2.7) — verify each name](#9-mcp-tool-binding-classes-bg-27--verify-each-name)
 - [10. Descriptor-derivation attributes (BG §2.5) — semi-public, put in nightly matrix](#10-descriptor-derivation-attributes-bg-25--semi-public-put-in-nightly-matrix)
 - [11. A2D platform MCP tools — shapes captured 2026-08-28 (NOT the direct Anypoint REST API)](#11-a2d-platform-mcp-tools--shapes-captured-2026-08-28-not-the-direct-anypoint-rest-api)
@@ -789,6 +790,44 @@ the leg if any declared floor is not the installed version. The framework legs
 leave `[llm]` out, because a framework that needs a newer `openai` than
 `openai>=1.66` would otherwise push its own resolve above its floor. The
 `openai-1x` PR job holds `[llm]` to the 1.x line (`openai<2`).
+
+### 8.4 Docs status roster
+
+Which §8 row rates each SDK factory. The docs never state a framework's status
+by hand: `python/scripts/generate_docs.py` reads this table, the **Status**
+column of the §8 table above, and `conformance_tested` on the `ADAPTERS` roster
+(`src/donkey_kit/integrations/__init__.py`), and writes every status the docs
+show from them: the root `README.md` framework table and summary, the
+`ARCHITECTURE.md` summary, the `website/content/frameworks/*.mdx` frontmatter,
+status table and cards, and the Quickstart and Feature overview rows. A unit
+test (`tests/unit/test_generated_docs.py`) fails on drift (#1081).
+
+To change a framework's status, change its §8 row. The script maps the Status
+column as follows and refuses any other value:
+
+| §8 Status | Docs label | Page `status:` |
+|---|---|---|
+| `VERIFIED (LIVE)`, `VERIFIED (CLI)` | Live-verified | `live` |
+| `UNVERIFIED (signature confirmed; …)` | Signature-confirmed | `offline-verified` |
+
+Every factory in `ADAPTERS` needs a row here, and every row needs its §8 row
+and its docs page. A page is rated by its adapter's default factory (the first
+in its `factories`), and a conformance-tested adapter's card reads
+Conformance-tested.
+
+<!-- BEGIN ROSTER: framework-status (parsed by python/scripts/generate_docs.py) -->
+| Framework | SDK factory | §8 row | Docs page |
+|---|---|---|---|
+| LangGraph | `donkey.langgraph.chat_model()` | LangGraph | `/frameworks/langgraph` |
+| Google ADK | `donkey.adk.model()` | Google ADK | `/frameworks/adk` |
+| Google ADK | `donkey.adk.gemini()` | Google ADK (native Gemini) | `/frameworks/adk` |
+| Strands | `donkey.strands.model()` | Strands | `/frameworks/strands` |
+| MS Agent Framework | `donkey.agent_framework.chat_client()` | MS Agent Framework | `/frameworks/agent-framework` |
+| OpenAI Agents SDK | `donkey.openai_agents.model()` | OpenAI Agents SDK | `/frameworks/openai` |
+| Anthropic SDK | `donkey.anthropic.client()` | Anthropic SDK | `/frameworks/anthropic` |
+| CrewAI | `donkey.crewai.llm()` | CrewAI | `/frameworks/crewai` |
+| LlamaIndex | `donkey.llamaindex.llm()` | LlamaIndex | `/frameworks/llamaindex` |
+<!-- END ROSTER: framework-status -->
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 
