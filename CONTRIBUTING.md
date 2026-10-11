@@ -267,6 +267,12 @@ from the formatter. `pre-commit run --all-files` runs every hook over the whole
 tree. The hooks are an early warning: CI runs the same checks, so skipping them
 only moves the failure to the PR.
 
+The commits that only reformatted the tree are listed in
+`.git-blame-ignore-revs` at the repository root, so `git blame` shows the
+commit that last changed a line's meaning. Turn that on once per clone with
+`git config blame.ignoreRevsFile .git-blame-ignore-revs`. A future
+formatting-only commit gets a line there, with a comment.
+
 If the diff touches an adapter or framework wiring, also run the signature check
 (the executable form of the `docs/verified-apis.md §8` verification step, and the nightly-matrix gate):
 
