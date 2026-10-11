@@ -54,12 +54,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/base-only-py3.11.txt') }}
@@ -68,7 +70,7 @@ jobs:
       # its own (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e . --group dev -c constraints/base-only-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -123,12 +125,14 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
@@ -137,7 +141,7 @@ jobs:
       - name: pip resolves donkey-kit[all]
         run: timeout 300 pip install --dry-run ".[all]"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -146,12 +150,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/typecheck-and-lint-py3.11.txt') }}
@@ -159,7 +165,7 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -206,8 +212,10 @@ jobs:
       # run: body directly (injection hardening).
       BASE_REF: ${{ github.base_ref }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: fetch the base branch's pyproject.toml
@@ -233,11 +241,12 @@ jobs:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # Full history, so BASE_SHA..HEAD_SHA resolves.
           fetch-depth: 0
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: no placeholder git identities in the PR's commits (#1048)
@@ -257,12 +266,14 @@ jobs:
       # run: body directly (injection hardening); also names this job's lock.
       PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-${{ hashFiles(format('python/constraints/test-py{0}.txt', matrix.python-version)) }}
@@ -280,7 +291,7 @@ jobs:
           python -m pip install --upgrade pip &&
           pip install -e ".[llm,cli,local,otel]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -365,19 +376,21 @@ jobs:
       # not silently skip (see tests/conftest.py).
       DONKEY_CONTRACT_EXTRA: anthropic
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
           restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,anthropic]" --group dev "$ANTHROPIC_SPEC"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -414,19 +427,21 @@ jobs:
       # silently skip (see tests/conftest.py).
       DONKEY_CONTRACT_EXTRA: adk
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
           restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,adk]" --group dev "$ADK_SPEC"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -451,12 +466,14 @@ jobs:
       # silently skip (see tests/conftest.py).
       DONKEY_CONTRACT_EXTRA: agent_framework
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/agent-framework-middleware-py3.12.txt') }}
@@ -464,7 +481,7 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,agent_framework]" --group dev -c constraints/agent-framework-middleware-py3.12.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -488,12 +505,14 @@ jobs:
       # silently skip (see tests/conftest.py).
       DONKEY_CONTRACT_EXTRA: llamaindex
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/llamaindex-transport-py3.12.txt') }}
@@ -501,7 +520,7 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,llamaindex]" --group dev -c constraints/llamaindex-transport-py3.12.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -524,12 +543,14 @@ jobs:
       # tests/conftest.py; a comma-separated list is how one job owns two).
       DONKEY_CONTRACT_EXTRA: "openai-agents,strands"
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/agents-strands-last-call-py3.12.txt') }}
@@ -537,7 +558,7 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,openai-agents,strands]" --group dev -c constraints/agents-strands-last-call-py3.12.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -575,12 +596,14 @@ jobs:
       # run: body directly (injection hardening).
       DONKEY_CONTRACT_EXTRA: ${{ matrix.extra }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles(format('python/constraints/adapter-contract-{0}-py3.12.txt', matrix.extra)) }}
@@ -593,7 +616,7 @@ jobs:
           pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev
           -c "constraints/adapter-contract-${DONKEY_CONTRACT_EXTRA}-py3.12.txt"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -639,12 +662,14 @@ jobs:
       # workspace. `github.*` values are workflow-owned, not PR input.
       DONKEY_BENCHMARK_JSON: ${{ github.workspace }}/benchmark-result.json
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/benchmark-py3.11.txt') }}
@@ -652,7 +677,7 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/benchmark-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -660,7 +685,7 @@ jobs:
         run: pytest -q -m benchmark -s
       - name: Upload the benchmark result for trending (#753)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: benchmark-result
           path: ${{ env.DONKEY_BENCHMARK_JSON }}
@@ -690,12 +715,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/quickstart-py3.11.txt') }}
@@ -703,7 +730,7 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: pip install -e ".[llm,local,otel]" -c constraints/quickstart-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -724,12 +751,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/langgraph-demo-py3.11.txt') }}
@@ -737,7 +766,7 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,langgraph,local,otel]" --group dev -c constraints/langgraph-demo-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -771,8 +800,10 @@ jobs:
       run:
         working-directory: website
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20
       - name: Unit-test the analytics beacon gate and the reader-facing link ref
@@ -787,6 +818,110 @@ jobs:
             exit 1
           fi
           echo "llms artifacts are up to date."
+
+  pip-audit:
+    # #757: known vulnerabilities in what a consumer installs today, blocking.
+    # The install is resolved fresh (no -c): the question is what
+    # `pip install donkey-kit` / `donkey-kit[all]` pulls in now, not what the
+    # PR lock pinned (ADR 0007 rule 3 governs the lock; this job is an audit,
+    # like all-extra-resolves is a resolve check). pip only resolves (--dry-run
+    # --report), so nothing is installed; the pinned set, minus donkey-kit
+    # itself, goes to pip-audit with --no-deps. nightly-matrix.yml repeats this
+    # so a new advisory reaches a human between PRs.
+    name: pip-audit (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: base
+            spec: "."
+          - target: all
+            spec: ".[all]"
+    env:
+      # Bind the matrix value to an env var so it is never interpolated into a
+      # run: body directly (injection hardening).
+      SPEC: ${{ matrix.spec }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: resolve the install into an exact pin list
+        run: |
+          python -m pip install --upgrade pip
+          timeout 300 pip install --dry-run --ignore-installed --quiet \
+            --report "$RUNNER_TEMP/resolve.json" "$SPEC"
+          jq -r '.install[] | select(.metadata.name != "donkey-kit")
+            | "\(.metadata.name)==\(.metadata.version)"' \
+            "$RUNNER_TEMP/resolve.json" > "$RUNNER_TEMP/pip-audit-requirements.txt"
+          cat "$RUNNER_TEMP/pip-audit-requirements.txt"
+      - uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: ${{ runner.temp }}/pip-audit-requirements.txt
+          no-deps: true
+
+  dependency-review:
+    # #757 (from #233): flag a PR that adds a dependency with a known
+    # vulnerability, or under a licence incompatible with Apache-2.0, at review
+    # time. Reads the dependency graph diff between base and head, so it needs
+    # no checkout. PRs only: there is no diff to review on a push.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          deny-licenses: GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later
+
+  workflow-lint:
+    # #757: actionlint (workflow syntax, expressions, shellcheck over run:
+    # bodies) and zizmor (Actions security audits: unpinned or impostor uses:,
+    # excessive permissions, template injection, persisted credentials) over
+    # .github/. Both tools are fetched at a pinned version and verified by
+    # sha256 before they run, the same way secret-scan.yml fetches gitleaks.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      # sha256 of actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz, from the release's checksums.txt
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+      ZIZMOR_VERSION: "1.30.1"
+      # sha256 of zizmor-${ZIZMOR_VERSION}-py3-none-manylinux_2_28_x86_64.whl, from PyPI
+      ZIZMOR_SHA256: "eee12266b793cb87ad4a7e3af2e72404f8a63e3de5eb099b80bf7b1cfd232a8e"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: install actionlint
+        working-directory: ${{ runner.temp }}
+        run: |
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
+          tar xzf "$tarball" actionlint
+          sudo install actionlint /usr/local/bin/actionlint
+      - name: actionlint
+        run: actionlint -color
+      - name: install zizmor
+        run: |
+          echo "zizmor==${ZIZMOR_VERSION} --hash=sha256:${ZIZMOR_SHA256}" > "$RUNNER_TEMP/zizmor.txt"
+          python -m pip install --require-hashes --no-deps -r "$RUNNER_TEMP/zizmor.txt"
+      - name: zizmor
+        env:
+          # Read-only token for the online audits (impostor commits, known-vulnerable actions).
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --format=github .github/
 
   ci-ok:
     # #755: the one required status check. Branch protection requires only this
@@ -814,6 +949,9 @@ jobs:
       - quickstart
       - langgraph-demo
       - docs-llms-drift
+      - pip-audit
+      - dependency-review
+      - workflow-lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

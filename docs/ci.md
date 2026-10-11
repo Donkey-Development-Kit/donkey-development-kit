@@ -78,6 +78,11 @@ The jobs, grouped by what they protect:
   (BG §1.6) and trends it across runs. `quickstart` and `langgraph-demo` run
   the documented examples against the local simulator. `docs-llms-drift`
   regenerates `llms.txt` and fails on any diff.
+- **Supply chain.** `pip-audit` audits a fresh resolve of the base install
+  and of `.[all]` for known vulnerabilities, blocking (#757).
+  `dependency-review` flags a PR that adds a vulnerable dependency or one
+  under a GPL/AGPL licence, and runs on PRs only. `workflow-lint` runs
+  actionlint and zizmor over `.github/` (convention 7).
 - **The gate itself.** `ci-ok` needs every other job and fails unless each one
   succeeded or was skipped. It is the one required status check (convention 2).
 
@@ -86,7 +91,9 @@ The jobs, grouped by what they protect:
 The nightly run resolves fresh against the newest upstream releases, with no
 constraints (ADR 0007 rule 4). `matrix` re-verifies the conformance-tested
 adapter (LangGraph) against §8 signatures, and `framework-legs` runs every
-`ADAPTERS` entry (#748). A live proxy round-trip is available only through
+`ADAPTERS` entry (#748). `pip-audit` repeats the PR job's vulnerability audit,
+so an advisory published between PRs still reaches a human (#757). A live
+proxy round-trip is available only through
 `workflow_dispatch` with `live: true`. A red nightly is an upstream signal: fix
 it by adapting the code or by moving the lock, never by adding a ceiling
 (`§8.4`). Any failed run, scheduled or manual, opens one issue labelled
@@ -343,15 +350,32 @@ serialise their runs and never cancel one mid-flight.
 
 Every workflow declares `permissions:` at the top, and elevated permissions go
 only on the job that needs them. The publish workflows grant `id-token: write`
-to the publish job alone. Values from `${{ }}` are bound to `env:` and used as
-quoted shell variables, never interpolated into a `run:` body. Still open:
+to the publish job alone, and `docs.yml` grants `pages: write` and
+`id-token: write` to its deploy job alone; its build job, which runs
+third-party npm code, has `contents: read` only (#757). Values from `${{ }}`
+are bound to `env:` and used as quoted shell variables, never interpolated
+into a `run:` body. In place since #757:
 
-- Pin every `uses:` to a full commit SHA with a version comment, starting with
-  `pypa/gh-action-pypi-publish` (still on the `release/v1` branch ref).
-- Move `docs.yml`'s `pages: write` and `id-token: write` from the workflow to
-  the deploy job.
-- Add a `.github/dependabot.yml` for actions, pip and npm, a `CODEOWNERS` file
-  covering `.github/**` and the other sensitive paths, and workflow linting.
+- Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment, and
+  every checkout sets `persist-credentials: false`.
+- `.github/dependabot.yml` sends weekly, grouped version updates for actions
+  and for `website/` npm, all targeting `develop`, with a 7-day cooldown on new
+  releases. pip version updates stay off until the dev/release lock from #763
+  exists: the floors in `pyproject.toml` are never raised on a schedule
+  (`§8.4`). Security updates are on for every ecosystem.
+- `.github/CODEOWNERS` covers `.github/`, `python/pyproject.toml`,
+  `python/scripts/`, `python/src/donkey_kit/core/` and `python/tests/fixtures/`.
+  The owners' review is required once the branch rules turn on
+  "Require review from Code Owners".
+- `ci.yml`'s `workflow-lint` runs actionlint and zizmor over `.github/`.
+- `tests/unit/test_workflow_supply_chain.py` fails on an unpinned `uses:`, a
+  checkout that keeps the token, an OIDC or Pages grant outside the publish
+  and deploy jobs, or a missing Dependabot, CODEOWNERS or binary-image rule.
+
+Still open:
+
+- Pin the release build tools (`pip install build twine` in the publish
+  workflows) with the toolchain lock (#763).
 - Pin manual docs deploys to `main` (#771).
 
 ### 8. The site is built on PRs, on a supported Node. **Target** (#759)
@@ -403,6 +427,11 @@ The same rules apply in every Donkey-Development-Kit repo:
   `_COMBOS` entry in `compile_constraints.py` and a place in `ci-ok`'s
   `needs:`. A new job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
 - A new scheduled workflow ships with its failure-alert step (convention 4).
+- A new `uses:` is pinned to the full commit SHA of a release, with the
+  release's `# vX.Y.Z` as a trailing comment, and a new checkout sets
+  `persist-credentials: false` (convention 7). Run `actionlint` and
+  `zizmor .github/` locally before pushing a workflow change; `workflow-lint`
+  runs both on the PR.
 - A change to which tests run where updates the test-surface table in
   [`CONTRIBUTING.md` §2](../CONTRIBUTING.md#2-testing-strategy).
 - A change to the dependency policy itself needs an ADR (see

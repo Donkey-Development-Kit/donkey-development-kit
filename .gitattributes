@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Images are binary (#757): never normalise line endings in them, never show a
+# textual diff, never attempt a textual merge. SVG stays text on purpose.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.avif binary
