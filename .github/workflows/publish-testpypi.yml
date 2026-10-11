@@ -19,21 +19,49 @@ defaults:
     working-directory: python
 
 jobs:
+  test:
+    name: Test suite at the release commit
+    # #767: a dispatch does not wait for develop's CI, so the suite runs again
+    # here, on the exact commit being uploaded, before any upload. Same install
+    # and command as ci.yml's `test` job (3.11 leg).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/test-py3.11.txt
+      - run: pytest -q
+
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Build
+        # The release toolchain comes from the lock, and --no-isolation builds
+        # with that hatchling instead of the newest one on PyPI (#763). Refresh
+        # with scripts/compile_constraints.py (combo "release").
         run: |
-          pip install build twine
-          python -m build
+          pip install -c constraints/release-py3.11.txt build twine hatchling
+          python -m build --no-isolation
       - name: twine check (PyPI long description renders cleanly)
         run: twine check dist/*
+      - name: every dist carries the declared version (#767)
+        # No tag here (dev snapshots are not GitHub Releases), but a stale or
+        # mis-spelled version must still fail before the unreusable upload.
+        run: python scripts/check_release_version.py dist/*
       - name: no tenant identifiers or live platform hosts in the built dists (#821)
         run: python scripts/scrub_fixtures.py --check dist/*
       - name: Floors, never ceilings (§8.4) — no upper pins in the built metadata
@@ -54,14 +82,18 @@ jobs:
             exit 1
           fi
           echo "Requires-Dist carries only >= floors."
-      - uses: actions/upload-artifact@v4
+      - name: the built wheel installs and imports in a clean virtualenv (#767)
+        run: python scripts/smoke_test_wheel.py dist/*.whl
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
           path: python/dist/
 
   publish-testpypi:
     name: Publish to TestPyPI (dev dry-run)
-    needs: build
+    # Every gate passes first: the suite at this commit, and the build job's
+    # version check and clean-install smoke test (#767).
+    needs: [test, build]
     # develop-scoped: a dispatch from any other ref is skipped — a dev snapshot
     # only ever ships from develop, matching the branch model.
     if: ${{ github.ref == 'refs/heads/develop' }}
@@ -71,11 +103,13 @@ jobs:
     permissions:
       id-token: write # OIDC token for Trusted Publishing; no stored secret.
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist/
+          # PEP 740 attestations, as on production (#767).
+          attestations: true

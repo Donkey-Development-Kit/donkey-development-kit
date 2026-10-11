@@ -5,7 +5,8 @@ drifts from its job is a local gate that passes while CI fails. These checks
 read the noxfile's source (no nox import, so they run in every CI job) and
 .github/workflows/ci.yml:
 
-* every job but ci-ok is a session of the same name, and its check step calls it;
+* every job but ci-ok is a session of the same name, and its check step calls it
+  (bar dependency-review, a GitHub-only action with no checkout to run one);
 * each session's install string is the job's install step, verbatim;
 * each session installs its own job's line, not another job's;
 * the matrices match, and no job runs a check (a tool, a repo script, npm,
@@ -38,9 +39,10 @@ _PRE_COMMIT = _REPO / ".pre-commit-config.yaml"
 _LINT_LOCK = _PYTHON / "constraints" / "typecheck-and-lint-py3.11.txt"
 _FIXTURE_DIRS = ("src/donkey_kit/simulator/_fixtures", "tests/fixtures")
 
-#: How a job calls its session: the pinned nox, in the job's own environment.
+#: How a job calls its session: the pinned nox, in the job's own environment
+#: (``-f`` for the jobs whose steps run in website/ or the repo root).
 _NOX = re.compile(
-    r'pipx run --spec "nox==\$NOX_VERSION" nox (?:-f \.\./python/noxfile\.py )?'
+    r'pipx run --spec "nox==\$NOX_VERSION" nox (?:-f (?:\.\./)?python/noxfile\.py )?'
     r'--no-venv --no-install -s (?P<session>"[^"]+"|\S+)'
 )
 #: Checks that belong in a session, never inline in a job's step: the check
@@ -50,16 +52,25 @@ _TOOLS = re.compile(
     r"(?<![\w-])(pytest|mypy|ruff|lint-imports|vulture|coverage|npm|node|timeout)(?![\w-])"
     r"|scripts/"
 )
-#: (job, step name) of the steps that are CI-only by design, not a local check:
-#: the benchmark trend alert reads the previous main run's artifact (#753).
+#: (job, step name) of the steps that are CI-only by design, not a local check
+#: or the job's install line: the benchmark trend alert reads the previous main
+#: run's artifact (#753), and workflow-lint fetches its two linters, verified by
+#: sha256, for the Linux runner (#757); locally they come from PATH.
 _CI_ONLY_STEPS = {
     ("benchmark", "Alert on a relative regression vs. the previous main run (#753)"),
+    ("workflow-lint", "install actionlint"),
+    ("workflow-lint", "install zizmor"),
 }
+#: Jobs that are a GitHub-only ``uses:`` action with no checkout, so no session
+#: can run there: dependency-review reads GitHub's dependency graph diff (#757).
+#: Each still has a session (it skips) and a ``None`` install.
+_GITHUB_ONLY_JOBS = {"dependency-review"}
 #: The matrix env var each parametrized job names its session leg with.
 _LEG_VARS = {
     "anthropic-stacks": "$ANTHROPIC_SPEC",
     "adk-stacks": "$ADK_SPEC",
     "adapter-contract": "$DONKEY_CONTRACT_EXTRA",
+    "pip-audit": "$TARGET",
 }
 
 
@@ -132,6 +143,11 @@ def _steps(job: dict[str, Any]) -> list[tuple[str, str]]:
     ]
 
 
+def _local_steps(name: str, job: dict[str, Any]) -> list[tuple[str, str]]:
+    """``_steps(job)`` without the steps that are CI-only by design."""
+    return [(step, run) for step, run in _steps(job) if (name, step) not in _CI_ONLY_STEPS]
+
+
 def _runs(job: dict[str, Any]) -> list[str]:
     return [run for _, run in _steps(job)]
 
@@ -146,13 +162,31 @@ def test_every_ci_job_has_a_session_of_the_same_name() -> None:
 def test_each_job_runs_its_session(job: str) -> None:
     sessions = [m["session"] for run in _runs(_jobs()[job]) for m in _NOX.finditer(run)]
     leg = _LEG_VARS.get(job)
-    assert sessions == [f'"{job}({leg})"' if leg else job]
+    expected = [f'"{job}({leg})"' if leg else job]
+    assert sessions == ([] if job in _GITHUB_ONLY_JOBS else expected)
+
+
+@pytest.mark.parametrize("job", sorted(_GITHUB_ONLY_JOBS))
+def test_a_github_only_job_runs_nothing_and_its_session_skips(job: str) -> None:
+    # The exemption above holds only while the job is an action alone: a run:
+    # step or a checkout would make a session possible, and then it belongs there.
+    steps = _jobs()[job]["steps"]
+    assert all("uses" in step and "run" not in step for step in steps), steps
+    assert not any(str(step["uses"]).startswith("actions/checkout@") for step in steps)
+    assert _literal("CI_INSTALLS")[job] is None
+    body = _sessions()[job].body
+    calls = [ast.unparse(node.func) for node in ast.walk(body[-1]) if isinstance(node, ast.Call)]
+    assert len(body) == 2 and calls == ["session.skip"], ast.unparse(_sessions()[job])
 
 
 @pytest.mark.parametrize("job", sorted(_literal("CI_INSTALLS")) if _NOXFILE.is_file() else [])
 def test_each_session_installs_what_its_job_installs(job: str) -> None:
     expected = _literal("CI_INSTALLS")[job]
-    installs = [run for run in _runs(_jobs()[job]) if "pip install" in run and "nox" not in run]
+    installs = [
+        run
+        for _, run in _local_steps(job, _jobs()[job])
+        if "pip install" in run and "nox" not in run
+    ]
     assert installs == ([] if expected is None else [" ".join(expected.split())])
 
 
@@ -168,11 +202,8 @@ def test_no_job_runs_a_check_outside_its_session() -> None:
     inline = {
         (name, step): run
         for name, job in _jobs().items()
-        for step, run in _steps(job)
-        if (name, step) not in _CI_ONLY_STEPS
-        and not _NOX.search(run)
-        and "pip install" not in run
-        and _TOOLS.search(run)
+        for step, run in _local_steps(name, job)
+        if not _NOX.search(run) and "pip install" not in run and _TOOLS.search(run)
     }
     assert inline == {}
 
@@ -194,6 +225,9 @@ def test_session_matrices_are_the_ci_matrices() -> None:
     )
     assert jobs["adk-stacks"]["strategy"]["matrix"]["adk"] == _literal("ADK_SPECS")
     assert jobs["adapter-contract"]["strategy"]["matrix"]["extra"] == _literal("CONTRACT_EXTRAS")
+    audit = jobs["pip-audit"]["strategy"]["matrix"]["include"]
+    assert {leg["target"]: leg["spec"] for leg in audit} == _literal("AUDIT_SPECS")
+    assert jobs["pip-audit"]["env"]["TARGET"] == "${{ matrix.target }}"
 
 
 def test_ci_pins_the_nox_version_the_noxfile_needs() -> None:

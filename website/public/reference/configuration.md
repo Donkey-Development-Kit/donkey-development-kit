@@ -1,5 +1,7 @@
 # Configuration
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 `Donkey.from_env(...)` builds its configuration from the values you pass,
 then environment variables, then the config files, then defaults.
 `Donkey(DonkeyConfig(...))` uses only what you pass. See [Building a config](#building-a-config) for both paths,
@@ -38,6 +40,47 @@ the values are checked like any other (see [Invalid values](#invalid-values)).
 `DonkeyConfig.from_env()` takes no arguments; it is `DonkeyConfig.resolve()`.
 `with_overrides(...)` accepts the same names on a config you already have, and
 returns a new config.
+
+## All settings
+
+Every `DonkeyConfig` field except `cost` (set per dimension, see
+[Cost-attribution tags](#cost-attribution-tags)), in the order the SDK reads
+them. The config-file key goes in the `[donkey]` table of `.donkey-kit.toml`.
+This table is generated from the field table in `core/config.py`.
+
+| Env var | `DonkeyConfig` field | Config-file key | Default |
+|---|---|---|---|
+| `ANYPOINT_CLIENT_ID` | `client_id` | `client_id` | unset |
+| `ANYPOINT_CLIENT_SECRET` | `client_secret` | `client_secret` | unset |
+| `ANYPOINT_ORG_ID` | `org_id` | `org_id` | unset |
+| `ANYPOINT_ENV` | `environment` | `environment` | `Sandbox` |
+| `ANYPOINT_REGION` | `region` | `region` | `us` |
+| `ANYPOINT_BASE_URL` | `base_url` | `base_url` | from `region` |
+| `DONKEY_LLM_PROXY_URL` | `llm_proxy_url` | `llm_proxy_url` | unset |
+| `DONKEY_LLM_PROXY_CLIENT_ID` | `llm_proxy_client_id` | `llm_proxy_client_id` | unset |
+| `DONKEY_LLM_PROXY_CLIENT_SECRET` | `llm_proxy_client_secret` | `llm_proxy_client_secret` | unset |
+| `DONKEY_LLM_PROXY_KEY` | `llm_proxy_key` | `llm_proxy_key` | unset |
+| `DONKEY_LLM_PROXY_AUTH` | `llm_proxy_auth` | `llm_proxy_auth` | `client-id` |
+| `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` | `llm_proxy_wallet_client_id` | `llm_proxy_wallet_client_id` | unset |
+| `DONKEY_APP_NAME` | `application_name` | `application_name` | unset |
+| `DONKEY_BUSINESS_GROUP` | `business_group` | `business_group` | unset |
+| `DONKEY_CORRELATION_HEADER` | `correlation_header` | `correlation_header` | `X-Correlation-Id` |
+| `DONKEY_CALL_ID_HEADER` | `call_id_header` | `call_id_header` | `X-Donkey-Request-Id` |
+| `DONKEY_COST_TEAM_HEADER` | `cost_team_header` | `cost_team_header` | `X-Anypoint-Cost-Team` |
+| `DONKEY_COST_PROJECT_HEADER` | `cost_project_header` | `cost_project_header` | `X-Anypoint-Cost-Project` |
+| `DONKEY_COST_ENV_HEADER` | `cost_env_header` | `cost_env_header` | `X-Anypoint-Cost-Env` |
+| `DONKEY_COST_ENDUSER_HEADER` | `cost_enduser_header` | `cost_enduser_header` | `X-Anypoint-Cost-Enduser-Id` |
+| `DONKEY_TIMEOUT_S` | `timeout_s` | `timeout_s` | `60.0` |
+| `DONKEY_MAX_RETRIES` | `max_retries` | `max_retries` | `3` |
+| `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `registry_cache_ttl_s` | `300` |
+| `DONKEY_TELEMETRY` | `telemetry` | `telemetry` | `true` |
+| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | `telemetry_capture_content` | `false` |
+| `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | `telemetry_install_global` | `false` |
+| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `on_model_substitution` | `off` |
+| `DONKEY_SEND_COST_HEADERS` | `send_cost_headers` | `send_cost_headers` | `false` |
+| `DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS` | `retry_model_calls_on_gateway_errors` | `retry_model_calls_on_gateway_errors` | `false` |
+
+The sections below explain each setting.
 
 ## Governed model access
 

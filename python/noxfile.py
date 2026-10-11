@@ -8,7 +8,7 @@ Locally, from ``python/`` (``pipx install nox``)::
 
     nox -l                          # list the sessions
     nox -s typecheck-and-lint test-3.11  # the quick loop: lint, types, one test leg
-    nox -s typecheck-and-lint test  # the same, with the whole 3.10-3.12 test matrix
+    nox -s typecheck-and-lint test  # the same, with the whole 3.10-3.14 test matrix
     nox                             # every session: the whole blocking CI gate
     nox -s "adapter-contract(crewai)"   # one leg of a matrix job
     nox -R -s test-3.11             # rerun in the existing venv, skipping installs
@@ -16,10 +16,22 @@ Locally, from ``python/`` (``pipx install nox``)::
 Each session that installs something builds its own virtualenv and installs
 exactly what its CI job installs (``CI_INSTALLS`` below, with the job's
 ``-c constraints/...`` lock), so a session's result is the job's result. The
-three that install nothing (new-dependencies, commit-identities,
-docs-llms-drift) run git, npm, node and stdlib-only scripts on the current
-interpreter and PATH instead. A Python that is not on your machine is
-skipped, not failed, unless you pass ``--error-on-missing-interpreters``.
+ones that install nothing (new-dependencies, commit-identities,
+docs-llms-drift, docs-site, workflow-lint) run git, npm, node, stdlib-only
+scripts and the workflow linters on the current interpreter and PATH instead;
+docs-site's ``npm ci`` is one of its checks, in CI too. A Python that is not
+on your machine is skipped, not failed, unless you pass
+``--error-on-missing-interpreters``.
+
+A few steps stay in ci.yml by design, and tests/unit/test_noxfile.py names
+each: benchmark's trend alert reads the previous main run's artifact, and
+workflow-lint's job downloads actionlint and zizmor, sha256-verified, for its
+Linux runner (locally, put the versions that job pins on your PATH). A
+``uses:`` action is never a session: pip-audit's job audits the session's pin
+list with pypa/gh-action-pip-audit, so locally the session runs pip-audit
+itself. dependency-review is GitHub's dependency-graph diff, with no checkout
+and nothing to run locally, so its job calls no session and its session only
+skips, saying so.
 
 In CI the job installs into the runner's Python itself (that is where its cache
 and lock steps live) and then runs ``nox --no-venv --no-install -s <job>``: the
@@ -29,6 +41,7 @@ same commands, in the job's environment, with every ``session.install`` a no-op.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shlex
 import string
@@ -89,6 +102,11 @@ CI_INSTALLS: dict[str, str | None] = {
         'pip install -e ".[llm,cli,local,otel]" --group dev '
         '-c "constraints/test-py${PYTHON_VERSION}.txt"'
     ),
+    "openai-1x": (
+        "python -m pip install --upgrade pip && "
+        'pip install -e ".[llm,cli,local,otel]" --group dev "openai<2" '
+        "-c constraints/openai-1x-py3.12.txt"
+    ),
     "anthropic-stacks": (
         "python -m pip install --upgrade pip && "
         'pip install -e ".[llm,anthropic]" --group dev "$ANTHROPIC_SPEC"'
@@ -127,13 +145,17 @@ CI_INSTALLS: dict[str, str | None] = {
         "-c constraints/langgraph-demo-py3.11.txt"
     ),
     "docs-llms-drift": None,
+    "docs-site": None,
+    "pip-audit": "python -m pip install --upgrade pip",
+    "dependency-review": None,
+    "workflow-lint": None,
 }
 
 # The matrices of ci.yml's matrix jobs, in its order (test_noxfile.py checks).
 # The ids are the matrix values, so CI names a leg as "<job>($VAR)". Both
 # anthropic legs map to one venv directory (.nox/anthropic-stacks-anthropic-1);
 # installs rerun per leg, so only -R (no reinstall) across the two is unsafe.
-TEST_PYTHONS = ["3.10", "3.11", "3.12"]
+TEST_PYTHONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 ANTHROPIC_SPECS = ["anthropic>=1", "anthropic<1"]
 ADK_SPECS = ["google-adk>=2.4", "google-adk==2.4.0"]
 CONTRACT_EXTRAS = [
@@ -146,6 +168,8 @@ CONTRACT_EXTRAS = [
     "crewai",
     "llamaindex",
 ]
+# pip-audit's matrix `include`: each leg's target (its id) and the spec it resolves.
+AUDIT_SPECS = {"base": ".", "all": ".[all]"}
 
 # A wall-clock bound, as CI's `timeout N cmd`, that also works where coreutils'
 # `timeout` does not exist (macOS): run argv[2:] under this interpreter.
@@ -241,12 +265,16 @@ def base_only(session: nox.Session) -> None:
     )
     session.run("python", "-c", _NO_PYDANTIC)
     session.run("pytest", "-q", "tests/unit")
-    # The installed-wheel check runs in its own environment. `build` is installed
-    # with run(), not install(), so it is installed in CI's --no-install run too.
+    # The installed-wheel check runs in its own environment. The build uses the
+    # locked release toolchain, as publish-*.yml does (#763): --no-isolation
+    # builds with the hatchling installed here, not the newest one. It is
+    # installed with run(), not install(), so it is installed in CI's
+    # --no-install run too.
     with tempfile.TemporaryDirectory() as wheel_dir, tempfile.TemporaryDirectory() as venv_dir:
-        if session.run("python", "-m", "pip", "install", "build") is None:
+        toolchain = ("-c", "constraints/release-py3.11.txt", "build", "hatchling")
+        if session.run("python", "-m", "pip", "install", *toolchain) is None:
             return  # --install-only
-        session.run("python", "-m", "build", "--wheel", "--outdir", wheel_dir)
+        session.run("python", "-m", "build", "--no-isolation", "--wheel", "--outdir", wheel_dir)
         wheels = sorted(Path(wheel_dir).glob("*.whl"))
         if len(wheels) != 1:
             session.error(f"expected exactly one wheel, built {wheels}")
@@ -271,8 +299,12 @@ def typecheck_and_lint(session: nox.Session) -> None:
     """mypy --strict, ruff, import-linter, the repo's own checks and vulture."""
     _install(session, "typecheck-and-lint")
     session.run("mypy")
-    # #721: each example package is its own program. LangGraph is checked
-    # against the real package in the langgraph-demo session.
+    # #721: the examples are user-facing code, so they get the same --strict
+    # config, one package per invocation (each is its own program). mypy never
+    # follows a framework extra (the follow_imports = "skip" override in
+    # pyproject.toml, #763), installed or not, so this gives the same result in
+    # a venv with every extra. LangGraph is the exception: it is not in that
+    # override and is checked against the real package in langgraph-demo.
     for example in sorted((_PYTHON_DIR / "examples").iterdir()):
         if not example.is_dir() or example.name[0] in "._" or example.name == "langgraph":
             continue
@@ -363,6 +395,19 @@ def test(session: nox.Session) -> None:
         out.write("### Coverage (branch, python 3.11 leg)\n\n")
         out.flush()
         session.run("coverage", "report", "--format=markdown", stdout=out)
+
+
+@nox.session(name="openai-1x", python="3.12")
+def openai_1x(session: nox.Session) -> None:
+    """The default and local_gateway suites on openai 1.x, which the `llm` floor allows (#769)."""
+    _install(session, "openai-1x")
+    session.run(
+        "python",
+        "-c",
+        "import openai; assert openai.__version__.startswith('1.'), openai.__version__",
+    )
+    session.run("pytest", "-q")
+    session.run("pytest", "-q", "-m", "local_gateway")  # BG §1.4
 
 
 def _framework_tests(session: nox.Session, extra: str, *files: str) -> None:
@@ -510,3 +555,97 @@ def docs_llms_drift(session: nox.Session) -> None:
         session.run("git", "--no-pager", "diff", "--", "public", external=True)
         session.error("llms artifacts are out of date")
     session.log("llms artifacts are up to date.")
+
+
+# The project-prefix base path the site deploys under (docs-site, #759).
+_DOCS_BASE_PATH = "/donkey-development-kit"
+# Unset for a command: only the docs-site build needs the GitHub token.
+_NO_GITHUB_TOKEN: dict[str, str | None] = {"GITHUB_TOKEN": None}
+
+
+@nox.session(name="docs-site", venv_backend="none")
+def docs_site(session: nox.Session) -> None:
+    """The docs site type-checks, lints, builds and has no dead internal link (#759).
+
+    Runs ``npm ci`` first, as the job does, so it replaces ``website/node_modules``.
+    The build's prebuild regenerates ``data/roadmap.json`` from the GitHub API
+    (``GITHUB_TOKEN`` if set) and keeps the committed snapshot if it can't reach it.
+    """
+    session.chdir(_WEBSITE_DIR)
+    session.run("npm", "ci", env=_NO_GITHUB_TOKEN, external=True)
+    session.run("npm", "run", "typecheck", env=_NO_GITHUB_TOKEN, external=True)
+    session.run("npm", "run", "lint", env=_NO_GITHUB_TOKEN, external=True)
+    # The static export with the project-prefix base path, as preview:pages builds it.
+    session.run("npm", "run", "build", env={"DOCS_BASE_PATH": _DOCS_BASE_PATH}, external=True)
+    # Internal links and anchors in out/.
+    session.run(
+        "npm",
+        "run",
+        "check:links",
+        env={"DOCS_BASE_PATH": _DOCS_BASE_PATH, **_NO_GITHUB_TOKEN},
+        external=True,
+    )
+
+
+@nox.session(name="pip-audit", python="3.12")
+@nox.parametrize("target", list(AUDIT_SPECS), ids=list(AUDIT_SPECS))
+def pip_audit(session: nox.Session, target: str) -> None:
+    """No known vulnerability in a fresh resolve of the base install or ``[all]`` (#757).
+
+    Fresh, not locked: the question is what ``pip install donkey-kit`` pulls in
+    today. pip only resolves (``--dry-run --report``), so nothing is installed,
+    and the pinned set minus donkey-kit itself is audited with ``--no-deps``.
+    CI passes ``-- <file>``: the session writes the pin list there, and the
+    job's pypa/gh-action-pip-audit step audits it. Without a path the session
+    audits the list itself, with the pip-audit range that action installs.
+    """
+    _install(session, "pip-audit")
+    with tempfile.TemporaryDirectory() as tmp:
+        report = Path(tmp) / "resolve.json"
+        _bounded(
+            session,
+            300,
+            *("-m", "pip", "install", "--dry-run", "--ignore-installed", "--quiet"),
+            *("--report", str(report), AUDIT_SPECS[target]),
+        )
+        if not report.is_file():
+            return  # --install-only
+        resolved = json.loads(report.read_text(encoding="utf-8"))["install"]
+        pins = "".join(
+            f"{dist['metadata']['name']}=={dist['metadata']['version']}\n"
+            for dist in resolved
+            if dist["metadata"]["name"] != "donkey-kit"
+        )
+        print(pins, end="")
+        requirements = Path(session.posargs[0]) if session.posargs else Path(tmp) / "pins.txt"
+        requirements.write_text(pins, encoding="utf-8")
+        if session.posargs:
+            return  # CI: the pip-audit action audits the list
+        session.install("pip-audit~=2.0,>=2.5.6")
+        session.run("pip-audit", "--requirement", str(requirements), "--no-deps")
+
+
+@nox.session(name="dependency-review", venv_backend="none")
+def dependency_review(session: nox.Session) -> None:
+    """GitHub-only: a PR's new dependencies, for known vulnerabilities and licences (#757).
+
+    The job runs actions/dependency-review-action on the dependency graph diff
+    GitHub keeps between a PR's base and head. It has no checkout, so it calls
+    no session, and there is nothing to run locally. The session exists so
+    every ci.yml job has one; ``nox`` lists it and skips it.
+    """
+    session.skip("GitHub-only: dependency-review reads the PR's dependency graph diff on GitHub")
+
+
+@nox.session(name="workflow-lint", venv_backend="none")
+def workflow_lint(session: nox.Session) -> None:
+    """actionlint and zizmor over .github/ (#757).
+
+    Runs the tools on PATH: in CI, the copies the job fetched and verified by
+    sha256; locally, install the ``ACTIONLINT_VERSION`` and ``ZIZMOR_VERSION``
+    the workflow-lint job pins. zizmor's online audits read ``GH_TOKEN`` if set;
+    actionlint (and the shellcheck it runs) never gets it.
+    """
+    session.chdir(_PYTHON_DIR.parent)
+    session.run("actionlint", "-color", env={"GH_TOKEN": None}, external=True)
+    session.run("zizmor", "--format=github", ".github/", external=True)

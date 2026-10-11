@@ -1,5 +1,7 @@
 # Examples
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The [DDK demos repo](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos)
 holds runnable examples for every piece of the SDK: the governed client, typed
 refusals, budget pacing, simulation, the conformance suite, telemetry,
@@ -218,7 +220,7 @@ headers go on the wire.
     An `OpenAILike` for `complete()` and `chat()`; typed refusals.
   
   
-    A `LiteLlm` model in an `InMemoryRunner` — and why its refusals are not typed.
+    A `LiteLlm` model in an `InMemoryRunner`, and a refusal outside `donkey.run()`.
   
   
     The native client on `/v1/messages`, `last_call` and simulated refusals.

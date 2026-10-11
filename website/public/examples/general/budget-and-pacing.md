@@ -1,5 +1,7 @@
 # Budget & pacing
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The gateway reports your token budget only in-band, on response headers —
 there is no endpoint to ask how much is left. `donkey.budget` reads those
 headers for you, so the window is an object rather than a header you parse.

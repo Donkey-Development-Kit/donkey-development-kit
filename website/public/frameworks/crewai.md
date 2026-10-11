@@ -1,5 +1,7 @@
 # CrewAI
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 CrewAI gets a governed native LLM object pointed at the Agent Fabric LLM
 proxy. The adapter translates the governed connection into CrewAI's own
 model-string and kwarg conventions for you.

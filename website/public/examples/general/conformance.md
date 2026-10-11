@@ -1,5 +1,7 @@
 # Conformance suite
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Four questions a team usually cannot answer about its own agent: does it retry
 a budget refusal (it must not)? Does a typed refusal survive its error
 handling? Does the run's correlation id reach its logs? Does it still work when

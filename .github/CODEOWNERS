@@ -1,0 +1,28 @@
+# Code owners for the paths where a bad change reaches users or the release
+# identity without touching SDK behaviour a reviewer would notice (#757).
+# GitHub requests a review from these owners on any PR that changes a matching
+# path; with "Require review from Code Owners" on in the develop and main
+# branch rules, their approval is required to merge.
+#
+# The last matching pattern wins, so keep the specific paths below the general
+# ones. Every owner must have write access to the repository, or GitHub
+# ignores the line.
+
+# Workflows, Dependabot, release-note config and this file: CI runs these
+# with repository tokens, and the publish workflows hold the PyPI identity.
+/.github/                         @tbolis-at-mulesoft @amirkhan-ak-sf
+
+# Package metadata: dependencies, extras, the build backend, tool config.
+/python/pyproject.toml            @tbolis-at-mulesoft @amirkhan-ak-sf
+
+# CI gate scripts (dependency allowlist, fixture scrubbing, verification
+# claims, constraints lock, commit identities) and the fixture capture tool.
+/python/scripts/                  @tbolis-at-mulesoft @amirkhan-ak-sf
+
+# The framework-free core (§1.1), including the verification registry
+# (core/_verify.py, §0.3).
+/python/src/donkey_kit/core/      @tbolis-at-mulesoft @amirkhan-ak-sf
+
+# Captured gateway fixtures and their lock (§2): tests trust these as ground
+# truth, and the scrubber keeps tenant data out of them.
+/python/tests/fixtures/           @tbolis-at-mulesoft @amirkhan-ak-sf

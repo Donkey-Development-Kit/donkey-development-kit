@@ -1,5 +1,7 @@
 # Telemetry
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Platform teams ask for two things agent teams rarely deliver: a trace that
 follows one logical run across every model call it fans out into, and spans in
 the standard GenAI vocabulary so they land in existing dashboards. Both come

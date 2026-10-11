@@ -1,5 +1,7 @@
 # Model access
 
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
@@ -69,7 +71,8 @@ export DONKEY_LLM_PROXY_URL=…  DONKEY_LLM_PROXY_CLIENT_ID=…  DONKEY_LLM_PROX
 ```python
 from donkey_kit import Donkey
 async with Donkey.from_env() as donkey:
-    model = donkey.<framework>.<factory>("gpt-4o")   # native object at the proxy
+    # donkey.<framework>.<factory>(...), here LangGraph's chat_model:
+    model = donkey.langgraph.chat_model("gpt-4o")   # native object at the proxy
 ```
 
 Each framework page shows the factory name, the native class you get back, the
@@ -121,6 +124,21 @@ one `connection_kwargs()` configures. Each factory reports its own, so ADK's
 | `streaming` | `False` where the governed connection turns streaming off (Strands, `stream=False`). |
 | `typed_refusals` | A gateway refusal reaches you as a typed exception through `donkey.run()` or `typed_refusals()`. |
 | `observes_last_call` | A call through this object populates `donkey.last_call`. |
+
+What each factory reports, generated from the adapter roster and each
+adapter's declared `factories`:
+
+| Factory | Extra | `transport` | `sync` | `streaming` | `typed_refusals` | `observes_last_call` |
+|---|---|---|---|---|---|---|
+| `donkey.langgraph.chat_model()` | `[langgraph]` | `shared` | ✅ | ✅ | ✅ | ✅ |
+| `donkey.adk.model()` | `[adk]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.adk.gemini()` | `[adk]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.strands.model()` | `[strands]` | `shared` | ❌ | ❌ | ✅ | ✅ |
+| `donkey.agent_framework.chat_client()` | `[agent_framework]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.openai_agents.model()` | `[openai-agents]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.anthropic.client()` | `[anthropic]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.crewai.llm()` | `[crewai]` | `framework` | ❌ | ✅ | ❌ | ❌ |
+| `donkey.llamaindex.llm()` | `[llamaindex]` | `shared` | ✅ | ✅ | ✅ | ✅ |
 
 ```python
 caps = donkey.adk.capabilities("gemini")
