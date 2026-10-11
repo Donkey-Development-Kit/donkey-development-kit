@@ -62,6 +62,33 @@ diff, so the committed artifacts cannot drift from the pages.
 npm run generate:llms   # regenerate after editing pages; commit the result
 ```
 
+The artifacts stay committed on purpose (#795). Every PR diff shows how a page
+edit changes what assistants read, the drift job checks them without a build,
+and `.gitattributes` marks them `linguist-generated` so GitHub collapses them
+in review.
+
+## Generated from the SDK code
+
+Some pages restate facts that live in the Python code. Those parts are written
+by [`python/scripts/generate_docs.py`](../python/scripts/generate_docs.py), not
+by hand:
+
+- `content/reference/api.mdx`, the whole Python API page, from the public
+  docstrings and signatures;
+- the `BEGIN GENERATED` regions in `content/reference/configuration.mdx`
+  (settings index), `content/cli.mdx` (command reference) and
+  `content/frameworks/index.mdx` (adapter capabilities).
+
+Edit the code or docstring, then run the script from `python/` and commit the
+result. The unit test `tests/unit/test_generated_docs.py` fails when a
+committed copy is stale. The prose around a region is hand-written as usual.
+
+The version banner at the top of every page is built at build time by
+[`lib/version.mjs`](lib/version.mjs): it reads the version from
+`../python/pyproject.toml`, and asks PyPI for the latest release with a
+3-second timeout. If PyPI can't be reached, the banner shows only the
+documented version.
+
 ## Deploy — GitHub Pages
 
 The site is published by [`.github/workflows/docs.yml`](../.github/workflows/docs.yml)

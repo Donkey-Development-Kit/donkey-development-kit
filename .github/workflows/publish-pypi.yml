@@ -20,6 +20,25 @@ defaults:
     working-directory: python
 
 jobs:
+  test:
+    name: Test suite at the release commit
+    # #767: a Release can be published on a commit whose CI never went green,
+    # so the suite runs again here, on the exact commit being uploaded, before
+    # any upload. Same install and command as ci.yml's `test` job (3.11 leg).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/test-py3.11.txt
+      - run: pytest -q
+
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
@@ -32,11 +51,25 @@ jobs:
         with:
           python-version: "3.11"
       - name: Build
+        # The release toolchain comes from the lock, and --no-isolation builds
+        # with that hatchling instead of the newest one on PyPI (#763). Refresh
+        # with scripts/compile_constraints.py (combo "release").
         run: |
-          pip install build twine
-          python -m build
+          pip install -c constraints/release-py3.11.txt build twine hatchling
+          python -m build --no-isolation
       - name: twine check (PyPI long description renders cleanly)
         run: twine check dist/*
+      - name: the tag is v<version> and every dist carries that version (#767)
+        # The version is declared once, in src/donkey_kit/__init__.py. A final
+        # (non-pre-release) Release must also carry a final X.Y.Z version: only
+        # those reach production PyPI. Event values go through env, never
+        # straight into the script (injection hardening).
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          if [ "$PRERELEASE" = "false" ]; then set -- --final; fi
+          python scripts/check_release_version.py --tag "$TAG" "$@" dist/*
       - name: no tenant identifiers or live platform hosts in the built dists (#821)
         # PyPI releases are immutable: this is the last chance to catch one.
         run: python scripts/scrub_fixtures.py --check dist/*
@@ -58,6 +91,8 @@ jobs:
             exit 1
           fi
           echo "Requires-Dist carries only >= floors."
+      - name: the built wheel installs and imports in a clean virtualenv (#767)
+        run: python scripts/smoke_test_wheel.py dist/*.whl
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
@@ -65,7 +100,9 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI (final release)
-    needs: build
+    # Every gate passes first: the suite at this commit, and the build job's
+    # tag/version check and clean-install smoke test (#767).
+    needs: [test, build]
     # Prod requires a *published, non-pre-release* GitHub Release. The explicit
     # event_name check means a manual dispatch can never reach prod — but this
     # workflow has no workflow_dispatch trigger at all, so that can't happen.
@@ -83,3 +120,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/
+          # PEP 740 attestations, signed with this job's OIDC identity and
+          # uploaded with each file (#767). The action's default today; set
+          # explicitly so a default change can't drop them silently.
+          attestations: true
