@@ -607,9 +607,7 @@ def test_from_response_populates_usage_from_the_committed_fixture() -> None:
     # AC1: the three detail fields (and the totals) parse from the captured LIVE
     # fixture, with the fixture bytes themselves as the test input.
     fixture = load("success")
-    resp = httpx.Response(
-        200, content=fixture.body, headers={"content-type": "application/json"}
-    )
+    resp = httpx.Response(200, content=fixture.body, headers={"content-type": "application/json"})
     record = LastCall.from_response(resp)
     assert record.status is LastCallStatus.OBSERVED
     assert record.input_tokens == 17
@@ -901,9 +899,7 @@ def test_semantic_routing_helper_reads_the_header() -> None:
 
 
 def test_from_response_surfaces_matched_topic_and_score() -> None:
-    resp = httpx.Response(
-        200, headers={**_IDENTITY_HEADERS, _SEMANTIC_HEADER: _SEMANTIC_SUCCESS}
-    )
+    resp = httpx.Response(200, headers={**_IDENTITY_HEADERS, _SEMANTIC_HEADER: _SEMANTIC_SUCCESS})
     record = LastCall.from_response(resp)
     assert record.matched_topic == "Finance"
     assert record.routing_score == 0.62
@@ -926,6 +922,4 @@ def test_semantic_score_is_a_float() -> None:
 def test_no_unverified_warning_on_the_semantic_read_path() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
-        LastCall.from_response(
-            httpx.Response(200, headers={_SEMANTIC_HEADER: _SEMANTIC_SUCCESS})
-        )
+        LastCall.from_response(httpx.Response(200, headers={_SEMANTIC_HEADER: _SEMANTIC_SUCCESS}))

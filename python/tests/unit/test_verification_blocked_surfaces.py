@@ -33,15 +33,11 @@ _CONFIG = DonkeyConfig(
 )
 
 
-_SYNC_BLOCKED_SURFACES: tuple[
-    tuple[str, Callable[[Donkey], object]], ...
-] = (
+_SYNC_BLOCKED_SURFACES: tuple[tuple[str, Callable[[Donkey], object]], ...] = (
     ("Donkey.tools.lock", lambda donkey: donkey.tools.lock()),
 )
 
-_ASYNC_BLOCKED_SURFACES: tuple[
-    tuple[str, Callable[[Donkey], Awaitable[object]]], ...
-] = (
+_ASYNC_BLOCKED_SURFACES: tuple[tuple[str, Callable[[Donkey], Awaitable[object]]], ...] = (
     ("Donkey.tools.discover", lambda donkey: donkey.tools.discover()),
     (
         "publish_if_changed",

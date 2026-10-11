@@ -14,8 +14,7 @@ except ImportError as exc:
     # A curated ImportError, not SystemExit: importing this module must not
     # kill the interpreter (test collection, docs tooling), #811.
     raise ImportError(
-        'The donkey CLI needs the [cli] extra. Install it with:\n'
-        '    pip install "donkey-kit[cli]"'
+        'The donkey CLI needs the [cli] extra. Install it with:\n    pip install "donkey-kit[cli]"'
     ) from exc
 
 from ..core.config import TOML_NAME
