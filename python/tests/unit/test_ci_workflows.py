@@ -33,7 +33,12 @@ def _needs(job: dict[str, Any]) -> set[str]:
 
 @pytest.mark.parametrize(
     ("workflow", "aggregate"),
-    [("ci.yml", "ci-ok"), ("nightly-matrix.yml", "alert"), ("lock-refresh.yml", "alert")],
+    [
+        ("ci.yml", "ci-ok"),
+        ("nightly-matrix.yml", "alert"),
+        ("lock-refresh.yml", "alert"),
+        ("framework-release-watch.yml", "alert"),
+    ],
 )
 def test_aggregate_job_needs_every_other_job(workflow: str, aggregate: str) -> None:
     jobs = _workflow(workflow)["jobs"]
@@ -88,3 +93,33 @@ def test_lock_refresh_write_scopes_stay_on_their_own_jobs() -> None:
     assert jobs["alert"]["if"] == "failure()"
     assert jobs["alert"]["permissions"] == {"issues": "write"}
     assert set(jobs) == {"refresh", "alert"}
+
+
+def test_framework_release_watch_alert_is_the_only_job_that_writes_issues() -> None:
+    # #1066: `alert` closes stale issues even when nothing is new, so it runs
+    # always(), and it is the one job with a write scope.
+    workflow = _workflow("framework-release-watch.yml")
+    assert workflow["permissions"] == {"contents": "read"}
+    jobs = workflow["jobs"]
+    assert jobs["alert"]["if"] == "always()"
+    assert jobs["alert"]["permissions"] == {"contents": "read", "issues": "write"}
+    assert not [k for k, v in jobs.items() if k != "alert" and "permissions" in v]
+
+
+def test_framework_release_watch_dry_run_on_pull_requests_writes_nothing() -> None:
+    # Every step that calls `gh` with the write token is skipped on a PR (#1066).
+    steps = _workflow("framework-release-watch.yml")["jobs"]["alert"]["steps"]
+    writers = [s for s in steps if "GH_TOKEN" in s.get("env", {})]
+    assert writers
+    for step in writers:
+        assert "github.event_name != 'pull_request'" in step["if"], step["name"]
+
+
+def test_framework_release_watch_matches_the_script_paths_it_runs() -> None:
+    triggers = _workflow("framework-release-watch.yml")[True]
+    assert set(triggers["pull_request"]["paths"]) == {
+        ".github/workflows/framework-release-watch.yml",
+        "python/scripts/check_framework_releases.py",
+    }
+    assert "package" in triggers["workflow_dispatch"]["inputs"]
+    assert triggers["schedule"] == [{"cron": "30 5 * * *"}]

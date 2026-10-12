@@ -751,8 +751,13 @@ build plan has the rationale behind each rule:
   `.github/workflows/lock-refresh.yml` recompiles every file and opens or
   updates one `chore(deps): refresh the PR CI lock` PR
   ([ADR 0011](docs/adr/0011-nightly-lock-refresh-pr.md),
-  [`docs/ci.md`](docs/ci.md#lock-refreshyml-the-lock-bump)). **Refresh the
-  lock by hand** in the PR that changes a dependency:
+  [`docs/ci.md`](docs/ci.md#lock-refreshyml-the-lock-bump)). An open
+  `framework-release` issue is the other trigger: when
+  `.github/workflows/framework-release-watch.yml` marks a framework release
+  safe to bump and no bump PR carries it yet, refresh the lock for it
+  ([`docs/ci.md`](docs/ci.md#framework-release-watchyml-one-release-at-a-time),
+  #1066). **Refresh the lock by hand** in the PR that changes a dependency, or
+  for a `framework-release` issue:
   ```bash
   cd python
   python scripts/compile_constraints.py   # needs `uv` on PATH (dev-time only; CI still uses plain pip)
