@@ -35,7 +35,7 @@ install takes each framework's newest release.
 | [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `connection_kwargs()` | `[openai-agents]` | `openai-agents` | 0.20 | 0.23.1 | None known |
 |  |  |  | `openai` | 2.45 | 3.24.0 |  |
 | [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 1.11.0 | None known |
-| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.23 | None known |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.27 | None known |
 | [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `connection_kwargs()` | `[llamaindex]` | `llama-index-llms-openai-like` | 0.8 | 0.8.1 | None known |
 
 ## Installing several frameworks together
