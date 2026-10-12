@@ -2,8 +2,9 @@
 
 The script finds each framework extra's direct requirement whose newest stable
 PyPI release is ahead of the adapter-contract lock, and plans the
-``framework-release`` issues for ``framework-release-watch.yml``. These tests
-never touch the network: the PyPI lookup is injected.
+``framework-release`` issues for ``framework-release-watch.yml``, with the AI
+impact review where one ran (#1067). These tests never touch the network: the
+PyPI lookup is injected.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ def _load() -> ModuleType:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module  # dataclasses resolve annotations through it
-    sys.path.insert(0, str(_SCRIPTS))  # its sibling import of check_new_dependencies
+    sys.path.insert(0, str(_SCRIPTS))  # its sibling imports
     try:
         spec.loader.exec_module(module)
     finally:
@@ -226,8 +227,59 @@ def test_find_releases_lists_only_packages_ahead_of_the_lock() -> None:
             "bump": "patch",
             "released_at": "2026-10-09",
             "release_notes_url": "https://pypi.org/project/pkg/1.15.27/",
+            "compare_url": "",
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("urls", "compare"),
+    [
+        (
+            {"Homepage": "https://docs.x.test", "Source": "https://github.com/acme/kit.git"},
+            "https://github.com/acme/kit/compare/v1.0...v1.1",
+        ),
+        # A source key beats any other GitHub link.
+        (
+            {
+                "Issues": "https://github.com/acme/tracker/issues",
+                "Repository": "https://github.com/acme/kit",
+            },
+            "https://github.com/acme/kit/compare/v1.0...v1.1",
+        ),
+        ({"Homepage": "https://gitlab.com/acme/kit"}, ""),
+        ({}, ""),
+    ],
+)
+def test_compare_url_is_the_github_source_between_the_v_tags(
+    urls: dict[str, str], compare: str
+) -> None:
+    assert cfr.compare_url(_project({}, **urls), "1.0", "1.1") == compare
+
+
+def test_replay_reports_a_past_release_as_if_the_lock_pinned_the_older_one() -> None:
+    watches = [cfr.Watch("anthropic", "anthropic", "anthropic", "1.11.0")]
+    project = _project(
+        {"0.116.0": [_file("2026-03-01")], "1.0.0": [_file("2026-04-01")]},
+        Source="https://github.com/anthropics/anthropic-sdk-python",
+    )
+    (entry,) = cfr.replay_releases(watches, lambda _n: project, "0.116.0", "1.0.0")
+    assert (entry["locked"], entry["latest"], entry["bump"]) == ("0.116.0", "1.0.0", "major")
+    assert entry["released_at"] == "2026-04-01"
+    assert entry["compare_url"].endswith("/compare/v0.116.0...v1.0.0")
+
+
+@pytest.mark.parametrize(("locked", "latest"), [("1.0", "1.0"), ("2.0", "1.0"), ("x", "1.0")])
+def test_replay_needs_an_older_then_a_newer_version(locked: str, latest: str) -> None:
+    with pytest.raises(ValueError, match="older..newer"):
+        cfr.replay_releases([], lambda _n: None, locked, latest)
+
+
+def test_replay_fails_on_a_version_pypi_does_not_have() -> None:
+    watches = [cfr.Watch("crewai", "crewai", "crewai", "1.0")]
+    project = _project({"1.0": [_file("2026-01-01")], "1.1": [_file("2026-02-01", yanked=True)]})
+    with pytest.raises(LookupError, match="1.1"):
+        cfr.replay_releases(watches, lambda _n: project, "1.0", "1.1")
 
 
 def test_find_releases_fails_on_a_package_pypi_does_not_know() -> None:
@@ -289,10 +341,44 @@ def _open(body: str, number: int = 7) -> list[Any]:
     return cfr.parse_open_issues([{"number": number, "body": body}])
 
 
-def _plan(results: list[dict[str, Any]], issues: list[Any], watches: Any = None) -> list[Any]:
+def _plan(
+    results: list[dict[str, Any]],
+    issues: list[Any],
+    watches: Any = None,
+    impacts: dict[tuple[str, str, str], Any] | None = None,
+) -> list[Any]:
     return cfr.plan_issues(
-        results, issues, _WATCHES if watches is None else watches, "RUN", lambda e: f"COMMIT-{e}"
+        results,
+        issues,
+        _WATCHES if watches is None else watches,
+        "RUN",
+        lambda e: f"COMMIT-{e}",
+        impacts,
     )
+
+
+_REVIEW = {
+    "risk": "high",
+    "affected": [
+        {
+            "symbol": "Crew.kickoff",
+            "change": "renamed",
+            "usage": "crewai.build_llm",
+            "citation": "https://github.com/crewaiinc/crewai/releases/tag/1.15.27",
+        }
+    ],
+    "action": "adapt adapter",
+    "confidence": "medium",
+    "summary": "kickoff was renamed.",
+}
+
+
+def _impacts(review: Any = None) -> dict[tuple[str, str, str], Any]:
+    impact = {"release": _RELEASE, "review": review or _REVIEW, "model": "m", "run_url": ""}
+    return {("crewai", "crewai", "1.15.27"): impact}
+
+
+_IMPACT = _impacts()[("crewai", "crewai", "1.15.27")]
 
 
 def test_a_new_release_opens_one_issue() -> None:
@@ -325,11 +411,44 @@ def test_a_rerun_with_changed_results_comments_once() -> None:
     assert ops[1]["body"].startswith("The results changed.")
 
 
-def test_an_edit_keeps_the_impact_section() -> None:
-    impact = "<!-- impact:start -->\nreviewed: no breaking change\n<!-- impact:end -->"
+def test_an_issue_without_a_review_says_impact_review_unavailable() -> None:
+    (op,) = _plan([_result()], [])
+    assert "## Impact review (AI, advisory)" in op["body"]
+    assert "Impact review unavailable" in op["body"]
+
+
+def test_a_new_issue_embeds_this_runs_review() -> None:
+    (op,) = _plan([_result()], [], impacts=_impacts())
+    assert "**Risk: high.** Recommended action: **adapt adapter**." in op["body"]
+    assert "Impact review unavailable" not in op["body"]
+
+
+def test_an_edit_without_a_review_keeps_the_earlier_review() -> None:
+    body = cfr.render_issue(_result(), "OLD-RUN", cfr.render_impact(_IMPACT))
+    (op,) = _plan([_result()], _open(body))
+    assert "**Risk: high.**" in op["body"]
+
+
+def test_an_edit_with_a_review_replaces_the_earlier_one() -> None:
+    body = cfr.render_issue(_result(), "OLD-RUN", cfr.render_impact(_IMPACT))
+    low = dict(_REVIEW, risk="low", action="watch", affected=[])
+    (op,) = _plan([_result()], _open(body), impacts=_impacts(low))
+    assert "**Risk: low.**" in op["body"] and "**Risk: high.**" not in op["body"]
+
+
+def test_an_edit_does_not_keep_a_block_that_holds_no_review() -> None:
+    # Only a block the review wrote survives; anything else in the markers is
+    # replaced by the "unavailable" notice.
+    impact = "<!-- impact:start -->\nhand-edited\n<!-- impact:end -->"
     body = cfr.render_issue(_result(), "OLD-RUN", impact)
     (op,) = _plan([_result()], _open(body))
-    assert impact in op["body"]
+    assert "hand-edited" not in op["body"] and "Impact review unavailable" in op["body"]
+
+
+def test_a_review_for_another_version_is_not_used() -> None:
+    impacts = {("crewai", "crewai", "1.15.26"): _IMPACT}
+    (op,) = _plan([_result()], [], impacts=impacts)
+    assert "Impact review unavailable" in op["body"]
 
 
 def test_a_newer_release_supersedes_the_older_issue() -> None:
@@ -396,6 +515,55 @@ def test_cli_json_matrix_is_empty_when_nothing_is_new(
 def test_cli_rejects_an_unwatched_package(capsys: pytest.CaptureFixture[str]) -> None:
     assert cfr.main(["--package", "requests"], fetch=lambda _n: None) == 2
     assert "not a watched package" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv", [["--replay", "1.0..2.0"], ["--package", "crewai", "--replay", "2.0"]]
+)
+def test_cli_replay_needs_a_package_and_a_range(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cfr.main(["--json", *argv], fetch=lambda _n: None) == 2
+    assert "--replay needs" in capsys.readouterr().out
+
+
+def test_cli_replay_prints_one_entry(capsys: pytest.CaptureFixture[str]) -> None:
+    project = _project({"1.0": [_file("2026-01-01")], "2.0": [_file("2026-02-01")]})
+    argv = ["--json", "--package", "crewai", "--replay", "1.0..2.0"]
+    assert cfr.main(argv, fetch=lambda _n: project) == 0
+    (entry,) = json.loads(capsys.readouterr().out)
+    assert (entry["package"], entry["locked"], entry["latest"]) == ("crewai", "1.0", "2.0")
+
+
+def test_cli_plan_issues_reads_the_impacts(tmp_path: Path) -> None:
+    results, impacts = (
+        tmp_path / "results" / "result-crewai",
+        tmp_path / "impacts" / "impact-crewai",
+    )
+    results.mkdir(parents=True)
+    impacts.mkdir(parents=True)
+    (results / "result.json").write_text(json.dumps(_result()))
+    (impacts / "impact.json").write_text(json.dumps(_IMPACT))
+    (tmp_path / "open.json").write_text("[]")
+    out = tmp_path / "plan.json"
+    argv = [
+        "--plan-issues",
+        "--results",
+        str(tmp_path / "results"),
+        "--impacts",
+        str(tmp_path / "impacts"),
+        "--open-issues",
+        str(tmp_path / "open.json"),
+        "--run-url",
+        "RUN",
+        "--repo-url",
+        "https://github.com/o/r",
+        "--out",
+        str(out),
+    ]
+    assert cfr.main(argv) == 0
+    (op,) = json.loads(out.read_text())
+    assert "**Risk: high.**" in op["body"]
 
 
 def test_cli_constraints_for_writes_the_rewritten_lock(tmp_path: Path) -> None:

@@ -51,7 +51,7 @@ should be split.
 | Did this change break something? | `ci.yml` (PR-gating jobs, resolving from the committed lock) | Every PR; pushes to `main` and `develop` |
 | Did an upstream release break us? | `nightly-matrix.yml`, plus the fresh-resolve jobs in `ci.yml` (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`) | Daily 06:00 UTC; every PR for the `ci.yml` jobs |
 | Can the lock move to the newest releases? | `lock-refresh.yml` (opens one bump PR; its CI answers) | After each green nightly on `develop`; manual |
-| Which new framework release breaks which adapter? | `framework-release-watch.yml` (one `framework-release` issue per release ahead of the lock) | Daily 05:30 UTC; manual, optionally for one package; a dry run on PRs that change it |
+| Which new framework release breaks which adapter? | `framework-release-watch.yml` (one `framework-release` issue per release ahead of the lock) | Daily 05:30 UTC; manual, optionally for one package or a replay of one past release; a dry run on PRs that change it |
 | Did the live gateway's contract drift? | `live-contract-check.yml` (the `openai-model-routing` proxy only) | Mondays 07:00 UTC |
 | Did a secret get committed? | `secret-scan.yml` (gitleaks over the full history) | Every PR; pushes to `main` and `develop` |
 | Is the published site current? | `docs.yml` (build and deploy to GitHub Pages) | Pushes to `main` under `website/**`; every 6 hours; manual |
@@ -179,11 +179,60 @@ What to do with an issue:
   incompatibility in [`verified-apis.md` §8.1](verified-apis.md). Never add a
   ceiling (`§8.4`).
 
+**Impact review (AI, advisory).** The checks say *whether* a release breaks the
+adapter; they don't say what in the changelog did. Beside `evaluate`, the
+`ai-review` job runs one leg per release (#1067). It gives
+`anthropics/claude-code-action` (pinned by SHA, model `claude-sonnet-5-5`) a
+prompt that `python scripts/review_framework_release.py --prompt` builds: the
+package and both versions, the release notes and the GitHub compare link, the
+adapter module, its `FRAMEWORKS` rows in `verify_frameworks.py`, and its
+[`verified-apis.md`](verified-apis.md) §8 rows with all of §8.1 and §8.2. The
+model answers in a fixed schema: **Risk** (none, low or high), the **affected
+symbols**, each with an upstream citation, the **recommended action** (bump,
+adapt adapter, record §8.1, or watch) and its **confidence**. `alert` puts the
+answer in the issue under "Impact review (AI, advisory)".
+
+- *It is advisory.* It is never verification (§0.3), and it never changes a §8
+  row or the next action the checks give. Confirm a finding against the cited
+  source before acting on it.
+- *It is read-only.* The job has `contents: read` and no write token. The model
+  can read files (never `/proc`, where its key lives) and fetch pages from
+  github.com, raw.githubusercontent.com and pypi.org, nothing else: no shell,
+  no edits, no subagents and no GitHub tools, and in-repo Claude settings are
+  ignored. The prompt says fetched pages are data, not instructions. Only
+  `alert` writes, and the answer is untrusted: the script keeps only the
+  schema's fields, escapes Markdown, strips HTML and comment markers,
+  neutralises `@` mentions and `#` references, keeps only `http(s)` citations,
+  and drops an answer that holds anything shaped like a credential.
+- *It never fails the run.* No key, a failed action or an answer outside the
+  schema leaves "Impact review unavailable" in the issue and a notice in the
+  run. A rerun without a review keeps the review an earlier run wrote.
+- *It runs once per release.* The review is cached by extra, package and
+  version (`actions/cache`), so the daily rerun of an open issue costs nothing.
+  To review a release again, delete its `ai-review-v1-…` cache under
+  **Actions → Caches**.
+
+**One-time setup for the review.** The key is an environment secret, never a
+repository secret, and the environment admits only `develop`:
+
+1. Create an `ai-review` environment in **Settings → Environments**. Under
+   deployment branches, allow only `develop`; leave required reviewers off,
+   because the daily run is unattended.
+2. Add the environment secret `ANTHROPIC_API_KEY`:
+   `gh secret set ANTHROPIC_API_KEY --env ai-review` prompts for the value.
+   `tests/unit/test_ci_workflows.py` holds `ai-review` as the only job on that
+   environment, and keeps it off pull requests.
+
 Run it for one package with
 `gh workflow run framework-release-watch.yml --ref develop -f package=crewai`.
-A PR that changes the workflow or the script gets a dry run: the planned issue
-bodies go to the job summary and nothing is written. A failed run opens or
-updates one issue labelled `framework-release-watch-failure`.
+To check the review against a release with a known outcome, replay that
+release as a dry run:
+`gh workflow run framework-release-watch.yml --ref develop -f package=anthropic -f replay=0.116.0..1.0.0`
+evaluates and reviews `anthropic` 1.0.0 as if the lock still pinned 0.116.0,
+and puts the planned issue in the job summary without writing it. A PR that
+changes the workflow or either script gets a dry run too: the planned issue
+bodies go to the job summary, nothing is written, and the review doesn't run. A
+failed run opens or updates one issue labelled `framework-release-watch-failure`.
 
 ### `live-contract-check.yml`: the gateway contract
 
@@ -496,6 +545,10 @@ into a `run:` body. In place:
   `constraints/release-py3.11.txt` and build with `--no-isolation` (#763).
 - `docs.yml` always builds `main`, so a manual run from another branch can't
   publish unreleased docs (#771).
+- The model call in `framework-release-watch.yml`'s `ai-review` job reads its
+  key from the `ai-review` environment, which admits only `develop`. The job has
+  `contents: read`, and the model gets read and fetch tools only; its output
+  reaches an issue only through `alert`, after validation (#1067).
 
 ### 8. The site is built on PRs, on a supported Node. **In place** (#759)
 

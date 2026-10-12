@@ -1,4 +1,4 @@
-# Framework release watch (#1066).
+# Framework release watch (#1066, AI impact review #1067).
 #
 # PR CI installs each framework from its committed lock (ADR 0007 rule 3) and
 # the nightly resolves everything fresh at once (rule 4), so neither says which
@@ -14,13 +14,25 @@
 #                --require-installed, the whole suite with the skip guard armed,
 #                and the example smoke. Each check is continue-on-error, so a
 #                red check is a result, recorded in result.json, not a red run.
+#   `ai-review` — one leg per release, beside `evaluate`: a model reads the
+#                upstream notes against the adapter and returns Risk, the
+#                affected symbols with citations, a recommended action and its
+#                confidence (scripts/review_framework_release.py builds the
+#                prompt and validates the answer into impact.json). Advisory
+#                only: never verification (§0.3), never a §8 row. It reads files
+#                and fetches pages, nothing else, holds no write scope, and
+#                cannot fail the run: no key or a failed review is "impact
+#                review unavailable". One review per release, cached.
 #   `alert`    — the only job that writes. It opens or updates ONE issue per
-#                release, labelled `framework-release`, and closes the ones the
-#                lock has caught up with. A rerun with unchanged results edits
-#                the issue but adds no comment.
+#                release, labelled `framework-release`, with the impact review
+#                embedded, and closes the ones the lock has caught up with. A
+#                rerun with unchanged results edits the issue but adds no comment.
 #
-# On a pull request touching this workflow or the script it is a dry run: the
-# planned issue bodies go to the job summary and nothing is written.
+# On a pull request touching this workflow or its scripts it is a dry run: the
+# planned issue bodies go to the job summary, nothing is written, and the review
+# does not run (its key is an `ai-review` environment secret). A dispatch with
+# `replay` reruns one past release of `package`, e.g. a break §8.1 records, as a
+# dry run too.
 #
 # Alerting (docs/ci.md convention 4): a failed run (PyPI down, a broken plan)
 # opens or updates ONE open issue labelled `framework-release-watch-failure`.
@@ -40,10 +52,15 @@ on:
         description: "Check only this watched package (e.g. crewai); empty checks all"
         type: string
         default: ""
+      replay:
+        description: "LOCKED..LATEST: rerun one past release of `package` as a dry run (e.g. 0.116.0..1.0.0)"
+        type: string
+        default: ""
   pull_request:
     paths:
       - .github/workflows/framework-release-watch.yml
       - python/scripts/check_framework_releases.py
+      - python/scripts/review_framework_release.py
 
 permissions:
   contents: read
@@ -75,10 +92,12 @@ jobs:
         id: detect
         env:
           PACKAGE: ${{ inputs.package }}
+          REPLAY: ${{ inputs.replay }}
         run: |
           set -euo pipefail
           args=(--json)
           if [ -n "${PACKAGE:-}" ]; then args+=(--package "$PACKAGE"); fi
+          if [ -n "${REPLAY:-}" ]; then args+=(--replay "$REPLAY"); fi
           matrix=$(python scripts/check_framework_releases.py "${args[@]}")
           echo "$matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
@@ -179,11 +198,114 @@ jobs:
           path: ${{ runner.temp }}/result/result.json
           retention-days: 14
 
+  ai-review:
+    # The `ai-review` environment holds ANTHROPIC_API_KEY and admits only
+    # develop, so the job is skipped (not failed) on pull requests and on
+    # dispatches from other branches. No step here may fail the run: the
+    # review and its record are continue-on-error, and a leg without a review
+    # leaves "impact review unavailable" in the issue.
+    needs: [detect]
+    if: >-
+      needs.detect.outputs.count != '0' &&
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ai-review
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    name: ai-review (${{ matrix.package }} ${{ matrix.latest }})
+    env:
+      MODEL: claude-sonnet-5-5
+      RELEASE: ${{ toJSON(matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Is the review key set?
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No ANTHROPIC_API_KEY in the ai-review environment: impact review unavailable."
+          fi
+      # At most one review per release: artifacts do not outlive their run, the
+      # cache does (and the daily restore keeps it from expiring).
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache
+        with:
+          path: ${{ runner.temp }}/impact
+          key: ai-review-v1-${{ matrix.extra }}-${{ matrix.package }}-${{ matrix.latest }}
+      - name: Build the prompt
+        id: prompt
+        if: steps.cache.outputs.cache-hit != 'true' && steps.key.outputs.available == 'true'
+        run: >-
+          python scripts/review_framework_release.py --prompt
+          --release "$RELEASE" --github-output "$GITHUB_OUTPUT"
+      # Read-only: files on the runner (never /proc, where the key lives) and
+      # pages on the hosts the release notes are on. No shell, no edits, no
+      # subagents, no GitHub tools (agent mode installs none unless allowed),
+      # and no in-repo Claude settings that could widen any of that.
+      - name: Review the release (AI, advisory)
+        id: review
+        if: steps.prompt.outcome == 'success'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --model ${{ env.MODEL }}
+            --max-turns 30
+            --setting-sources user
+            --allowedTools "Read,Grep,Glob,WebFetch(domain:github.com),WebFetch(domain:raw.githubusercontent.com),WebFetch(domain:pypi.org)"
+            --disallowedTools "Bash,Edit,Write,MultiEdit,NotebookEdit,Task,Agent,WebSearch,Read(//proc/**)"
+            --json-schema '${{ steps.prompt.outputs.schema }}'
+      - name: Record the review
+        id: record
+        if: steps.review.outcome == 'success'
+        continue-on-error: true
+        env:
+          REVIEW: ${{ steps.review.outputs.structured_output }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python scripts/review_framework_release.py --record "$RUNNER_TEMP/impact/impact.json" \
+            --release "$RELEASE" --review "$REVIEW" --model "$MODEL" --run-url "$RUN_URL"
+          if [ -f "$RUNNER_TEMP/impact/impact.json" ]; then echo "saved=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Impact review unavailable
+        if: steps.review.outcome == 'failure' || steps.record.outcome == 'failure'
+        run: echo "::notice::The review did not complete; the issue says impact review unavailable."
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.record.outputs.saved == 'true'
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/impact
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: impact-${{ matrix.extra }}-${{ matrix.package }}
+          path: ${{ runner.temp }}/impact/impact.json
+          if-no-files-found: ignore
+          retention-days: 14
+
   alert:
     # `needs:` lists every other job (tests/unit/test_ci_workflows.py asserts
     # it); `always()` so stale issues are closed even when nothing is new.
     if: always()
-    needs: [detect, evaluate]
+    needs: [detect, evaluate, ai-review]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -203,8 +325,15 @@ jobs:
         with:
           pattern: result-*
           path: ${{ runner.temp }}/results
+      # The reviews are advisory: none at all is "impact review unavailable".
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.detect.outputs.count != '0' && needs.detect.outputs.count != ''
+        continue-on-error: true
+        with:
+          pattern: impact-*
+          path: ${{ runner.temp }}/impacts
       - name: List the open framework-release issues
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && !inputs.replay
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -221,6 +350,7 @@ jobs:
       - name: Plan the issue writes
         env:
           EVENT: ${{ github.event_name }}
+          REPLAY: ${{ inputs.replay }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
@@ -228,13 +358,13 @@ jobs:
           open="$RUNNER_TEMP/open-issues.json"
           [ -f "$open" ] || echo '[]' > "$open"
           dry=()
-          if [ "$EVENT" = pull_request ]; then dry=(--dry-run); fi
+          if [ "$EVENT" = pull_request ] || [ -n "${REPLAY:-}" ]; then dry=(--dry-run); fi
           python scripts/check_framework_releases.py --plan-issues \
-            --results "$RUNNER_TEMP/results" --open-issues "$open" \
+            --results "$RUNNER_TEMP/results" --impacts "$RUNNER_TEMP/impacts" --open-issues "$open" \
             --run-url "$RUN_URL" --repo-url "$REPO_URL" \
             --out "$RUNNER_TEMP/plan.json" "${dry[@]}" >> "$GITHUB_STEP_SUMMARY"
       - name: Open, update and close the framework-release issues
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && !inputs.replay
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

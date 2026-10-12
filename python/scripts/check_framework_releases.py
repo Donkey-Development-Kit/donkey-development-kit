@@ -15,6 +15,9 @@ Pre-releases, dev releases and fully yanked releases are never "latest".
 
     python scripts/check_framework_releases.py [--json] [--package NAME]
         # releases ahead of the lock: a table, or the workflow's matrix as JSON
+    python scripts/check_framework_releases.py --json --package NAME \\
+        --replay LOCKED..LATEST
+        # one past release, as if the lock still pinned LOCKED (#1067)
     python scripts/check_framework_releases.py --constraints-for PKG==VER \\
         --extra EXTRA --out PATH
         # the extra's lock with only PKG's pin moved to VER
@@ -22,12 +25,13 @@ Pre-releases, dev releases and fully yanked releases are never "latest".
         --release JSON --mode locked|co-bump --outcome STEP=OUTCOME ...
         # one evaluate leg's result.json, from inside its venv
     python scripts/check_framework_releases.py --plan-issues --results DIR \\
-        --open-issues FILE --run-url URL --repo-url URL --out PLAN
+        [--impacts DIR] --open-issues FILE --run-url URL --repo-url URL --out PLAN
         # the create/edit/comment/close operations for the alert job; prints
         # the rendered plan as Markdown for the job summary
 
-Uses only the standard library (plus ``check_new_dependencies.py`` beside it),
-so the detect and alert jobs run it without installing the package.
+Uses only the standard library (plus ``check_new_dependencies.py`` and
+``review_framework_release.py`` beside it), so the detect and alert jobs run it
+without installing the package.
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ from pathlib import Path
 from typing import Any
 
 from check_new_dependencies import Fetch, canonicalize, fetch_project, requirement_name
+from review_framework_release import REVIEWED, UNAVAILABLE, load_impacts, render_impact
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -75,11 +80,7 @@ _CHECKS = (
 _ICONS = {"success": "✅ pass", "failure": "❌ fail", "skipped": "⏭️ skipped"}
 _MARKER = re.compile(r"<!-- framework-release (?P<data>\{.*?\}) -->")
 _IMPACT = re.compile(r"<!-- impact:start -->.*?<!-- impact:end -->", re.DOTALL)
-_IMPACT_PLACEHOLDER = (
-    "<!-- impact:start -->\n"
-    "_No changelog impact review yet (#1067). Read the release notes above._\n"
-    "<!-- impact:end -->"
-)
+_GITHUB = re.compile(r"^https?://github\.com/(?P<repo>[\w.-]+/[\w.-]+?)(?:\.git)?(?:[/#?].*)?$")
 
 
 @dataclass(frozen=True, order=True)
@@ -153,9 +154,19 @@ def latest_release(project: Mapping[str, Any]) -> Release | None:
     if best is None:
         return None
     _, text, files = best
+    return _release(project, text, files)
+
+
+def release_of(project: Mapping[str, Any], version: str) -> Release | None:
+    """``version`` of the project if PyPI has live files for it, else ``None``."""
+    files = [f for f in project.get("releases", {}).get(version, []) if not f.get("yanked")]
+    return _release(project, version, files) if files else None
+
+
+def _release(project: Mapping[str, Any], version: str, files: list[Mapping[str, Any]]) -> Release:
     uploaded = min(f["upload_time_iso_8601"] for f in files)
     name = project.get("info", {}).get("name", "")
-    return Release(text, uploaded[:10], release_notes_url(project, name, text))
+    return Release(version, uploaded[:10], release_notes_url(project, name, version))
 
 
 def release_notes_url(project: Mapping[str, Any], name: str, version: str) -> str:
@@ -171,6 +182,19 @@ def release_notes_url(project: Mapping[str, Any], name: str, version: str) -> st
             if any(word in key for word in words):
                 return str(url)
     return f"https://pypi.org/project/{name}/{version}/"
+
+
+def compare_url(project: Mapping[str, Any], locked: str, latest: str) -> str:
+    """The GitHub compare view between the two versions' ``v`` tags when the
+    project's source is on GitHub, else ``""``. Projects that tag differently
+    404 here; the review prompt says so."""
+    urls = {k.lower(): v for k, v in (project.get("info", {}).get("project_urls") or {}).items()}
+    ranked = sorted(urls.items(), key=lambda kv: not any(w in kv[0] for w in ("source", "repo")))
+    for _, url in ranked:
+        match = _GITHUB.match(str(url))
+        if match:
+            return f"https://github.com/{match['repo']}/compare/v{locked}...v{latest}"
+    return ""
 
 
 def read_pins(text: str) -> dict[str, str]:
@@ -236,28 +260,57 @@ def watched(pyproject: Mapping[str, Any], constraints: Path) -> list[Watch]:
     return found
 
 
+def _entry(watch: Watch, project: Mapping[str, Any], release: Release) -> dict[str, str]:
+    return {
+        **asdict(watch),
+        "latest": release.version,
+        "bump": bump_kind(watch.locked, release.version),
+        "released_at": release.released_at,
+        "release_notes_url": release.release_notes_url,
+        "compare_url": compare_url(project, watch.locked, release.version),
+    }
+
+
+def _project_of(watch: Watch, fetch: Fetch) -> Mapping[str, Any]:
+    project = fetch(watch.package)
+    if project is None:
+        raise LookupError(f"{watch.package}: not found on PyPI")
+    return project
+
+
 def find_releases(watches: Iterable[Watch], fetch: Fetch) -> list[dict[str, str]]:
     """One matrix entry per watched package whose newest stable release is ahead
     of its pin."""
     entries: list[dict[str, str]] = []
     for watch in watches:
-        project = fetch(watch.package)
-        if project is None:
-            raise LookupError(f"{watch.package}: not found on PyPI")
+        project = _project_of(watch, fetch)
         latest = latest_release(project)
         newest = Version.parse(latest.version) if latest else None
         locked = Version.parse(watch.locked)
         if latest is None or newest is None or locked is None or newest <= locked:
             continue
-        entries.append(
-            {
-                **asdict(watch),
-                "latest": latest.version,
-                "bump": bump_kind(watch.locked, latest.version),
-                "released_at": latest.released_at,
-                "release_notes_url": latest.release_notes_url,
-            }
-        )
+        entries.append(_entry(watch, project, latest))
+    return entries
+
+
+def replay_releases(
+    watches: Iterable[Watch], fetch: Fetch, locked: str, latest: str
+) -> list[dict[str, str]]:
+    """The matrix entries for one past release, as if the lock pinned ``locked``.
+
+    A manual run uses it to rerun the watch on a release with a known outcome,
+    e.g. the breaks §8.1 records (#1067)."""
+    old, new = Version.parse(locked), Version.parse(latest)
+    if old is None or new is None or new <= old:
+        raise ValueError(f"--replay needs two versions, older..newer, got {locked}..{latest}")
+    entries: list[dict[str, str]] = []
+    for watch in watches:
+        project = _project_of(watch, fetch)
+        release = release_of(project, latest)
+        if release is None:
+            raise LookupError(f"{watch.package} {latest}: no live release on PyPI")
+        replayed = Watch(watch.framework, watch.extra, watch.package, locked)
+        entries.append(_entry(replayed, project, release))
     return entries
 
 
@@ -365,7 +418,8 @@ def _next_action(result: Mapping[str, Any]) -> str:
 
 
 def render_issue(result: Mapping[str, Any], run_url: str, impact: str | None = None) -> str:
-    """The whole issue body. ``impact`` keeps an existing impact section (#1067)."""
+    """The whole issue body. ``impact`` is the rendered impact section (#1067),
+    "impact review unavailable" when ``None``."""
     release = result["release"]
     marker = {
         "extra": release["extra"],
@@ -392,9 +446,9 @@ def render_issue(result: Mapping[str, Any], run_url: str, impact: str | None = N
             "",
             render_results(result, run_url),
             "",
-            "## Impact",
+            "## Impact review (AI, advisory)",
             "",
-            impact or _IMPACT_PLACEHOLDER,
+            impact or UNAVAILABLE,
             "",
             "## Next action",
             "",
@@ -446,12 +500,15 @@ def plan_issues(
     watches: Iterable[Watch],
     run_url: str,
     lock_commit_url: Callable[[str], str],
+    impacts: Mapping[tuple[str, str, str], Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """The issue operations for one run, in order.
 
     * a release with no open issue gets one (``create``);
     * an open issue for the same release gets its body refreshed (``edit``),
-      plus a ``comment`` only when the results changed;
+      plus a ``comment`` only when the results changed. A run without an impact
+      review (``impacts``, keyed by extra, package and version) keeps the
+      review an earlier run wrote;
     * an open issue for an older release of a package that now has a newer one
       is closed as superseded;
     * an open issue whose release the lock has reached, or whose package is no
@@ -467,6 +524,8 @@ def plan_issues(
         release = result["release"]
         key = (release["extra"], release["package"])
         seen.add(key)
+        review = (impacts or {}).get((*key, release["latest"]))
+        impact = render_impact(review) if review else None
         current = [i for i in by_key.get(key, []) if i.version == release["latest"]]
         for older in (i for i in by_key.get(key, []) if i.version != release["latest"]):
             ops.append(
@@ -483,18 +542,20 @@ def plan_issues(
                 {
                     "op": "create",
                     "title": issue_title(release),
-                    "body": render_issue(result, run_url),
+                    "body": render_issue(result, run_url, impact),
                 }
             )
             continue
         issue, *duplicates = current
-        impact = _IMPACT.search(issue.body)
+        earlier = _IMPACT.search(issue.body)
+        if impact is None and earlier and REVIEWED in earlier[0]:
+            impact = earlier[0]
         ops.append(
             {
                 "op": "edit",
                 "number": issue.number,
                 "title": issue_title(release),
-                "body": render_issue(result, run_url, impact[0] if impact else None),
+                "body": render_issue(result, run_url, impact),
             }
         )
         if issue.digest != _digest(result):
@@ -576,6 +637,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--constraints", type=Path, default=DEFAULT_CONSTRAINTS)
     parser.add_argument("--json", action="store_true", help="print the matrix as JSON")
     parser.add_argument("--package", help="check only this watched package")
+    parser.add_argument("--replay", metavar="LOCKED..LATEST", help="one past release of --package")
     parser.add_argument("--constraints-for", metavar="PKG==VER", help="write a rewritten lock")
     parser.add_argument("--extra", help="the lock --constraints-for rewrites")
     parser.add_argument("--out", type=Path, help="output file")
@@ -586,6 +648,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--verify-json", type=Path, help="verify_frameworks.py --json output")
     parser.add_argument("--plan-issues", action="store_true", help="plan the alert job's writes")
     parser.add_argument("--results", type=Path, help="directory of result.json files")
+    parser.add_argument("--impacts", type=Path, help="directory of impact.json files")
     parser.add_argument("--open-issues", type=Path, help="gh issue list --json number,body")
     parser.add_argument("--run-url", default="")
     parser.add_argument("--repo-url", default="")
@@ -631,6 +694,7 @@ def main(argv: list[str], fetch: Fetch = fetch_project) -> int:
             watches,
             args.run_url,
             _git_lock_commit_url(args.repo_url),
+            load_impacts(args.impacts),
         )
         if args.out:
             args.out.write_text(json.dumps(ops, indent=2), encoding="utf-8")
@@ -643,7 +707,14 @@ def main(argv: list[str], fetch: Fetch = fetch_project) -> int:
         if not watches:
             print(f"::error::{args.package} is not a watched package")
             return 2
-    entries = find_releases(watches, fetch)
+    if args.replay:
+        locked, sep, latest = args.replay.partition("..")
+        if not (args.package and sep):
+            print("::error::--replay needs --package and LOCKED..LATEST")
+            return 2
+        entries = replay_releases(watches, fetch, locked.strip(), latest.strip())
+    else:
+        entries = find_releases(watches, fetch)
     if args.json:
         print(json.dumps(entries))
     elif not entries:
