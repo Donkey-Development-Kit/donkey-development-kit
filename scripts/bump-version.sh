@@ -12,6 +12,13 @@
 # convention, and the PR body closes the issue. Pass it with --issue N, or the
 # script asks for it.
 #
+# The PR is linked to a milestone, the release the bump ships in. Pass it with
+# --milestone "<title>" or --milestone <number>. Without the flag the script
+# uses the tracking issue's milestone, then the open milestone whose title ends
+# in "(X.Y.Z)" for the new version's base, then asks (Enter = none). The issue
+# gets the milestone too when it has none; a different one already on the
+# issue is left alone, with a warning.
+#
 # It then opens a squash PR into `develop` (branch → develop is always a squash
 # merge, per [[ddk-merge-strategy]]) and enables GitHub auto-merge so it lands
 # the moment the blocking CI gates pass (base-only, typecheck-and-lint incl.
@@ -35,6 +42,7 @@
 # Usage:
 #   bash scripts/bump-version.sh                # interactive
 #   bash scripts/bump-version.sh --issue 1234   # the issue tracking this bump
+#   bash scripts/bump-version.sh --milestone 21 # the milestone (title or number)
 #   bash scripts/bump-version.sh --dry-run      # show every action, mutate nothing
 #   bash scripts/bump-version.sh --yes          # skip the final confirm prompt
 #
@@ -49,6 +57,7 @@ MERGE_TIMEOUT_SECS="${MERGE_TIMEOUT_SECS:-1800}"
 DRY_RUN=0
 ASSUME_YES=0
 ISSUE=""
+MILESTONE_ARG=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
@@ -57,8 +66,12 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || { printf 'error: --issue needs an issue number\n' >&2; exit 2; }
       ISSUE="$2"; shift ;;
     --issue=*) ISSUE="${1#--issue=}" ;;
+    --milestone)
+      [ "$#" -ge 2 ] || { printf 'error: --milestone needs a milestone title or number\n' >&2; exit 2; }
+      MILESTONE_ARG="$2"; shift ;;
+    --milestone=*) MILESTONE_ARG="${1#--milestone=}" ;;
     -h|--help)
-      grep '^#' "$0" | sed -E 's/^# ?//' | sed -n '2,40p'
+      sed -n '2,/^set /p' "$0" | sed '$d' | sed -E 's/^# ?//'
       exit 0 ;;
     *) printf 'error: unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -197,10 +210,82 @@ if [ -z "$ISSUE" ]; then
 fi
 ISSUE="${ISSUE#\#}"
 [[ "$ISSUE" =~ ^[1-9][0-9]*$ ]] || die "not an issue number: '$ISSUE'"
-if [ "$DRY_RUN" -eq 0 ]; then
-  issue_state=$(gh issue view "$ISSUE" --repo "$REPO" --json state --jq .state 2>/dev/null) \
-    || die "issue #$ISSUE not found in $REPO"
-  [ "$issue_state" = "OPEN" ] || die "issue #$ISSUE is $issue_state; a bump closes an open issue"
+# Read-only lookups still run under --dry-run (best-effort) so it can show the
+# milestone it would use; a real run fails hard instead.
+ISSUE_MILESTONE=""
+if issue_info=$(gh issue view "$ISSUE" --repo "$REPO" --json state,milestone \
+     --jq '[.state, (.milestone.title // "")] | @tsv' 2>/dev/null); then
+  IFS=$'\t' read -r issue_state ISSUE_MILESTONE <<<"$issue_info"
+  if [ "$DRY_RUN" -eq 0 ] && [ "$issue_state" != "OPEN" ]; then
+    die "issue #$ISSUE is $issue_state; a bump closes an open issue"
+  fi
+elif [ "$DRY_RUN" -eq 0 ]; then
+  die "issue #$ISSUE not found in $REPO"
+else
+  info "note: could not look up issue #$ISSUE (dry run, continuing)"
+fi
+
+# --- The milestone the bump ships in -----------------------------------------
+# Resolution: --milestone, then the issue's milestone, then the open milestone
+# whose title ends in "(X.Y.Z)" for the new version's base, then ask.
+# One "<number>\t<title>" line per open milestone.
+OPEN_MILESTONES=$(gh api "repos/${REPO}/milestones?state=open&per_page=100" \
+  --jq '.[] | "\(.number)\t\(.title)"' 2>/dev/null) || OPEN_MILESTONES=""
+
+# Print the title of the open milestone with this number or exact title.
+open_milestone_title() {
+  local want="$1" num title
+  while IFS=$'\t' read -r num title; do
+    [ -n "$num" ] || continue
+    if [ "$want" = "$num" ] || [ "$want" = "$title" ]; then
+      printf '%s' "$title"; return 0
+    fi
+  done <<<"$OPEN_MILESTONES"
+  return 1
+}
+
+MILESTONE=""
+if [ -n "$MILESTONE_ARG" ]; then
+  MILESTONE_ARG="${MILESTONE_ARG#\#}"
+  MILESTONE=$(open_milestone_title "$MILESTONE_ARG") \
+    || die "no open milestone '$MILESTONE_ARG' in $REPO (pass its exact title or number)"
+  if [ -n "$ISSUE_MILESTONE" ] && [ "$ISSUE_MILESTONE" != "$MILESTONE" ]; then
+    printf '\033[33mwarning:\033[0m issue #%s is in milestone "%s"; the PR goes in "%s" and the issue keeps its own\n' \
+      "$ISSUE" "$ISSUE_MILESTONE" "$MILESTONE" >&2
+  fi
+elif [ -n "$ISSUE_MILESTONE" ]; then
+  if MILESTONE=$(open_milestone_title "$ISSUE_MILESTONE"); then
+    info "milestone: using issue #$ISSUE's milestone"
+  else
+    info "note: issue #$ISSUE's milestone \"$ISSUE_MILESTONE\" is not open; not linking it to the PR"
+  fi
+fi
+
+if [ -z "$MILESTONE" ] && [ -z "$ISSUE_MILESTONE" ]; then
+  new_base=""
+  [[ "$NEW" =~ ^([0-9]+\.[0-9]+\.[0-9]+) ]] && new_base=${BASH_REMATCH[1]}
+  matches=$(printf '%s\n' "$OPEN_MILESTONES" | awk -F'\t' -v s="(${new_base})" \
+    'length($2) >= length(s) && substr($2, length($2) - length(s) + 1) == s { print $2 }')
+  if [ -n "$matches" ] && [ "$(printf '%s\n' "$matches" | wc -l)" -eq 1 ]; then
+    MILESTONE="$matches"
+    info "milestone: matched version ${new_base}"
+  elif [ -n "$OPEN_MILESTONES" ] && [ "$ASSUME_YES" -eq 0 ]; then
+    printf '\nWhich milestone does this bump ship in? (Enter = none)\n\n'
+    ms_titles=()
+    while IFS=$'\t' read -r _ title; do
+      [ -n "$title" ] || continue
+      ms_titles+=("$title")
+      printf '  %d) %s\n' "${#ms_titles[@]}" "$title"
+    done <<<"$OPEN_MILESTONES"
+    printf '\n'
+    ms_choice=""
+    read -r -p "Milestone: " ms_choice
+    if [ -n "$ms_choice" ]; then
+      [[ "$ms_choice" =~ ^[0-9]+$ ]] && [ "$ms_choice" -ge 1 ] && [ "$ms_choice" -le "${#ms_titles[@]}" ] \
+        || die "milestone choice out of range: $ms_choice"
+      MILESTONE="${ms_titles[$((ms_choice - 1))]}"
+    fi
+  fi
 fi
 
 # --- Confirm ------------------------------------------------------------------
@@ -209,6 +294,12 @@ BRANCH="chore/${ISSUE}-bump-version-${NEW//./-}"
 printf '\n'
 printf '  version:  \033[1m%s\033[0m  →  \033[1m%s\033[0m\n' "$CURRENT" "$NEW"
 printf '  issue:    #%s\n' "$ISSUE"
+if [ -n "$MILESTONE" ]; then
+  printf '  milestone: %s\n' "$MILESTONE"
+  [ -z "$ISSUE_MILESTONE" ] && printf '            (also set on issue #%s, which has none)\n' "$ISSUE"
+else
+  printf '  milestone: none\n'
+fi
 printf '  branch:   %s  (off %s)\n' "$BRANCH" "$BASE_BRANCH"
 printf '  file:     %s\n' "$INIT_PY"
 printf '  merge:    squash into %s, auto-merge when CI is green\n' "$BASE_BRANCH"
@@ -264,6 +355,11 @@ Auto-merge (squash) is enabled — this will merge once the blocking CI gates pa
 if [ "$DRY_RUN" -eq 1 ]; then
   printf '\033[33m[dry-run]\033[0m would run: gh pr create --repo %s --base %s --head %s --title %q --body <…>\n' \
     "$REPO" "$BASE_BRANCH" "$BRANCH" "$PR_TITLE"
+  if [ -n "$MILESTONE" ]; then
+    printf '\033[33m[dry-run]\033[0m   … with --milestone "%s"\n' "$MILESTONE"
+    [ -z "$ISSUE_MILESTONE" ] && printf '\033[33m[dry-run]\033[0m would run: gh issue edit %s --repo %s --milestone "%s"\n' \
+      "$ISSUE" "$REPO" "$MILESTONE"
+  fi
   printf '\033[33m[dry-run]\033[0m would run: gh pr merge --repo %s --squash --auto --delete-branch --subject %q --head %s\n' \
     "$REPO" "chore: bump version to ${NEW}" "$BRANCH"
   printf '\033[33m[dry-run]\033[0m would wait for the merge, then: git switch %s && git pull --ff-only origin %s\n' \
@@ -274,14 +370,24 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 info "opening PR into $BASE_BRANCH"
+MILESTONE_ARGS=()
+[ -n "$MILESTONE" ] && MILESTONE_ARGS=(--milestone "$MILESTONE")
+# ${a[@]+…} because bash 3.2 (macOS) treats an empty array as unset under -u.
 gh pr create --repo "$REPO" \
   --base "$BASE_BRANCH" --head "$BRANCH" \
   --title "$PR_TITLE" --body "$PR_BODY" \
+  ${MILESTONE_ARGS[@]+"${MILESTONE_ARGS[@]}"} \
   || die "gh pr create failed"
 
 PR_NUM=$(gh pr view "$BRANCH" --repo "$REPO" --json number --jq .number) \
   || die "could not resolve the PR number just created"
 info "opened PR #$PR_NUM"
+
+if [ -n "$MILESTONE" ] && [ -z "$ISSUE_MILESTONE" ]; then
+  info "setting milestone \"$MILESTONE\" on issue #$ISSUE"
+  gh issue edit "$ISSUE" --repo "$REPO" --milestone "$MILESTONE" >/dev/null \
+    || printf '\033[33mwarning:\033[0m could not set the milestone on issue #%s; set it by hand\n' "$ISSUE" >&2
+fi
 
 # --- Enable auto-merge (squash) — merges the moment CI goes green -------------
 info "enabling auto-merge (squash) on PR #$PR_NUM"

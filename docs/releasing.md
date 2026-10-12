@@ -126,7 +126,9 @@ promotion PR — so the code on `main` already reads the version its tag will
 carry. `scripts/bump-version.sh` does the bump: it asks for the issue that
 tracks it (`--issue N`), names the branch `chore/<issue#>-bump-version-<version>`
 per the branch convention, edits `__version__`, and opens the PR that closes
-that issue. A tag whose version disagrees with `__version__` at that commit
+that issue. It links the PR to the release's milestone (`--milestone`, else the
+issue's milestone, else the open milestone titled for the new version, else it
+asks), and sets that milestone on the issue too if the issue has none. A tag whose version disagrees with `__version__` at that commit
 fails the publish before any upload (see [Release gates](#release-gates)).
 
 ## How a release reaches PyPI
