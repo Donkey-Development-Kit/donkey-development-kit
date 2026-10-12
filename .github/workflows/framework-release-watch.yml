@@ -1,0 +1,284 @@
+# Framework release watch (#1066).
+#
+# PR CI installs each framework from its committed lock (ADR 0007 rule 3) and
+# the nightly resolves everything fresh at once (rule 4), so neither says which
+# upstream release breaks which adapter. This workflow tests each new release
+# on its own: everything else stays at the PR lock and only that package moves.
+#
+#   `detect`   — scripts/check_framework_releases.py lists every framework
+#                extra's direct requirement whose newest stable PyPI release is
+#                ahead of python/constraints/adapter-contract-<extra>-py3.12.txt.
+#   `evaluate` — one leg per release: install from the lock with only that pin
+#                moved (or, when that does not resolve, unconstrained: "needs
+#                co-bump"), then the adapter-contract checks: verify_frameworks.py
+#                --require-installed, the whole suite with the skip guard armed,
+#                and the example smoke. Each check is continue-on-error, so a
+#                red check is a result, recorded in result.json, not a red run.
+#   `alert`    — the only job that writes. It opens or updates ONE issue per
+#                release, labelled `framework-release`, and closes the ones the
+#                lock has caught up with. A rerun with unchanged results edits
+#                the issue but adds no comment.
+#
+# On a pull request touching this workflow or the script it is a dry run: the
+# planned issue bodies go to the job summary and nothing is written.
+#
+# Alerting (docs/ci.md convention 4): a failed run (PyPI down, a broken plan)
+# opens or updates ONE open issue labelled `framework-release-watch-failure`.
+#
+# Security: matrix values and inputs reach run: bodies through env:, never
+# interpolated. The scheduled and dispatch runs check out the default branch,
+# so they watch develop's lock.
+
+name: Framework release watch
+
+on:
+  schedule:
+    - cron: "30 5 * * *" # 05:30 UTC daily, before the 06:00 nightly
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Check only this watched package (e.g. crewai); empty checks all"
+        type: string
+        default: ""
+  pull_request:
+    paths:
+      - .github/workflows/framework-release-watch.yml
+      - python/scripts/check_framework_releases.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: framework-release-watch-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    working-directory: python
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+      count: ${{ steps.detect.outputs.count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # Standard library only: nothing to install.
+      - name: List releases ahead of the PR lock
+        id: detect
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          set -euo pipefail
+          args=(--json)
+          if [ -n "${PACKAGE:-}" ]; then args+=(--package "$PACKAGE"); fi
+          matrix=$(python scripts/check_framework_releases.py "${args[@]}")
+          echo "$matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq length <<<"$matrix")" >> "$GITHUB_OUTPUT"
+
+  evaluate:
+    needs: [detect]
+    if: needs.detect.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    name: evaluate (${{ matrix.package }} ${{ matrix.latest }})
+    env:
+      FRAMEWORK: ${{ matrix.framework }}
+      EXTRA: ${{ matrix.extra }}
+      PACKAGE: ${{ matrix.package }}
+      LATEST: ${{ matrix.latest }}
+      RELEASE: ${{ toJSON(matrix) }}
+      # tests/conftest.py's skip guard: an importorskip of this framework fails.
+      DONKEY_CONTRACT_EXTRA: ${{ matrix.extra }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Write the PR lock with only this package moved
+        run: >-
+          python scripts/check_framework_releases.py
+          --constraints-for "$PACKAGE==$LATEST" --extra "$EXTRA"
+          --out "$RUNNER_TEMP/constraints.txt"
+      # The adapter-contract job's install line exactly (ci.yml), so every
+      # other package is held at the pins compiled for it.
+      - name: Does the release resolve against the lock?
+        id: mode
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if pip install --dry-run -e ".[llm,local,$EXTRA]" --group dev \
+              -c "$RUNNER_TEMP/constraints.txt" > "$RUNNER_TEMP/resolve.log" 2>&1; then
+            echo "mode=locked" >> "$GITHUB_OUTPUT"
+          else
+            tail -n 20 "$RUNNER_TEMP/resolve.log"
+            echo "mode=co-bump" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install
+        id: install
+        continue-on-error: true
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = locked ]; then
+            pip install -e ".[llm,local,$EXTRA]" --group dev -c "$RUNNER_TEMP/constraints.txt"
+          else
+            pip install -e ".[llm,local,$EXTRA]" --group dev "$PACKAGE==$LATEST"
+          fi
+      - name: Signature verification (§8), fail if not installed
+        id: verify
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python scripts/verify_frameworks.py --only "$FRAMEWORK" --require-installed --json \
+            | tee "$RUNNER_TEMP/verify.json"
+      - name: Whole suite, skip guard armed
+        id: pytest
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: python -m pytest -q
+      - name: Strict example smoke
+        id: smoke
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: timeout 120 python scripts/smoke_example.py "$FRAMEWORK"
+      - name: Record the result
+        if: always()
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+          INSTALL: ${{ steps.install.outcome }}
+          VERIFY: ${{ steps.verify.outcome }}
+          PYTEST: ${{ steps.pytest.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+        run: >-
+          python scripts/check_framework_releases.py
+          --record-result "$RUNNER_TEMP/result/result.json"
+          --release "$RELEASE" --mode "${MODE:-co-bump}"
+          --verify-json "$RUNNER_TEMP/verify.json"
+          --outcome "install=$INSTALL" "verify=$VERIFY" "pytest=$PYTEST" "smoke=$SMOKE"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: result-${{ matrix.extra }}-${{ matrix.package }}
+          path: ${{ runner.temp }}/result/result.json
+          retention-days: 14
+
+  alert:
+    # `needs:` lists every other job (tests/unit/test_ci_workflows.py asserts
+    # it); `always()` so stale issues are closed even when nothing is new.
+    if: always()
+    needs: [detect, evaluate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The close comment links the commit that last moved each lock.
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.detect.outputs.count != '0' && needs.detect.outputs.count != ''
+        with:
+          pattern: result-*
+          path: ${{ runner.temp }}/results
+      - name: List the open framework-release issues
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # `gh issue create --label` fails when a label does not exist.
+          gh label create framework-release --repo "$REPO" --force \
+            --color 1D76DB --description "A framework release is ahead of the PR lock (#1066)"
+          # `dependencies` may already exist with its own colour: never overwrite it.
+          gh label create dependencies --repo "$REPO" --color 0366D6 \
+            --description "Pull requests that update a dependency file" 2>/dev/null || true
+          gh issue list --repo "$REPO" --label framework-release --state open \
+            --limit 200 --json number,body > "$RUNNER_TEMP/open-issues.json"
+      - name: Plan the issue writes
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          open="$RUNNER_TEMP/open-issues.json"
+          [ -f "$open" ] || echo '[]' > "$open"
+          dry=()
+          if [ "$EVENT" = pull_request ]; then dry=(--dry-run); fi
+          python scripts/check_framework_releases.py --plan-issues \
+            --results "$RUNNER_TEMP/results" --open-issues "$open" \
+            --run-url "$RUN_URL" --repo-url "$REPO_URL" \
+            --out "$RUNNER_TEMP/plan.json" "${dry[@]}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Open, update and close the framework-release issues
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          while read -r op; do
+            kind=$(jq -r .op <<<"$op")
+            number=$(jq -r '.number // empty' <<<"$op")
+            case "$kind" in
+              create)
+                jq -r .body <<<"$op" | gh issue create --repo "$REPO" \
+                  --title "$(jq -r .title <<<"$op")" \
+                  --label framework-release --label dependencies --body-file - ;;
+              edit)
+                jq -r .body <<<"$op" | gh issue edit "$number" --repo "$REPO" \
+                  --title "$(jq -r .title <<<"$op")" --body-file - ;;
+              comment)
+                jq -r .body <<<"$op" | gh issue comment "$number" --repo "$REPO" --body-file - ;;
+              close)
+                jq -r .comment <<<"$op" | gh issue comment "$number" --repo "$REPO" --body-file -
+                gh issue close "$number" --repo "$REPO" \
+                  --reason "$(jq -r .reason <<<"$op")" < /dev/null ;;
+            esac
+          done < <(jq -c '.[]' "$RUNNER_TEMP/plan.json")
+      - name: Open or update the framework-release-watch-failure tracking issue
+        if: >-
+          github.event_name != 'pull_request' &&
+          (failure() || contains(needs.*.result, 'failure'))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create framework-release-watch-failure --repo "$REPO" --force \
+            --color B60205 --description "The framework release watch failed (#1066)"
+          existing=$(gh issue list --repo "$REPO" --label framework-release-watch-failure \
+            --state open --json number --jq '.[0].number // empty')
+          body="The framework release watch failed: ${RUN_URL}
+
+          New framework releases are not being tested against the PR lock until this is fixed (docs/ci.md, \`framework-release-watch.yml\`)."
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "Framework release watch failing" \
+              --label framework-release-watch-failure --body "$body"
+          fi

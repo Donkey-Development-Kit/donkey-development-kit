@@ -20,6 +20,7 @@ policy behind the locks and the nightly run, see
   - [ci.yml: the PR gate](#ciyml-the-pr-gate)
   - [nightly-matrix.yml: the canary](#nightly-matrixyml-the-canary)
   - [lock-refresh.yml: the lock bump](#lock-refreshyml-the-lock-bump)
+  - [framework-release-watch.yml: one release at a time](#framework-release-watchyml-one-release-at-a-time)
   - [live-contract-check.yml: the gateway contract](#live-contract-checkyml-the-gateway-contract)
 - [Scenario maps](#scenario-maps)
   - [Feature or fix (normal path)](#feature-or-fix-normal-path)
@@ -50,6 +51,7 @@ should be split.
 | Did this change break something? | `ci.yml` (PR-gating jobs, resolving from the committed lock) | Every PR; pushes to `main` and `develop` |
 | Did an upstream release break us? | `nightly-matrix.yml`, plus the fresh-resolve jobs in `ci.yml` (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`) | Daily 06:00 UTC; every PR for the `ci.yml` jobs |
 | Can the lock move to the newest releases? | `lock-refresh.yml` (opens one bump PR; its CI answers) | After each green nightly on `develop`; manual |
+| Which new framework release breaks which adapter? | `framework-release-watch.yml` (one `framework-release` issue per release ahead of the lock) | Daily 05:30 UTC; manual, optionally for one package; a dry run on PRs that change it |
 | Did the live gateway's contract drift? | `live-contract-check.yml` (the `openai-model-routing` proxy only) | Mondays 07:00 UTC |
 | Did a secret get committed? | `secret-scan.yml` (gitleaks over the full history) | Every PR; pushes to `main` and `develop` |
 | Is the published site current? | `docs.yml` (build and deploy to GitHub Pages) | Pushes to `main` under `website/**`; every 6 hours; manual |
@@ -141,6 +143,47 @@ admin rights on the repository picks one:
 Without either, the PR step fails and the run files the
 `lock-refresh-failure` issue. Check the setup with
 `gh workflow run lock-refresh.yml --ref develop`.
+
+### `framework-release-watch.yml`: one release at a time
+
+The nightly resolves everything fresh at once, so a red nightly doesn't say
+which upstream release broke which adapter. This workflow tests each new
+release on its own (#1066). `detect` runs
+`python scripts/check_framework_releases.py`, which lists every direct
+requirement of each framework extra whose newest stable PyPI release is ahead
+of its pin in `python/constraints/adapter-contract-<extra>-py3.12.txt`.
+Pre-releases and yanked releases don't count. `evaluate` runs one leg per
+release. It installs the `adapter-contract` job's line with that one pin moved.
+If that doesn't resolve, it installs the release unconstrained and marks it
+"needs co-bump". Then it runs the `adapter-contract` checks:
+`verify_frameworks.py --require-installed`, the whole suite with the skip guard
+armed, and the example smoke. A red check is a result, not a red run.
+
+`alert` keeps one open issue per release, titled
+`framework-release: <package> <locked> → <latest>` and labelled
+`framework-release` and `dependencies`. The issue lists the versions, the bump
+kind, the release date and notes, the result of each check, the run link and
+the next action. A rerun refreshes the body and comments only when the results
+changed. A newer release of the same package closes the older issue as
+superseded. Once the lock reaches the release, the next run closes the issue
+with a link to the lock commit.
+
+What to do with an issue:
+
+- **All green: safe to bump.** The next `lock-refresh.yml` PR may already
+  carry it. If not, from `python/` run `python scripts/compile_constraints.py`,
+  then `python scripts/generate_docs.py`, then
+  `python scripts/verify_frameworks.py --only <framework> --emit-verified`, and
+  then the pre-PR gate.
+- **Anything red.** Adapt the adapter to the release, or record the
+  incompatibility in [`verified-apis.md` §8.1](verified-apis.md). Never add a
+  ceiling (`§8.4`).
+
+Run it for one package with
+`gh workflow run framework-release-watch.yml --ref develop -f package=crewai`.
+A PR that changes the workflow or the script gets a dry run: the planned issue
+bodies go to the job summary and nothing is written. A failed run opens or
+updates one issue labelled `framework-release-watch-failure`.
 
 ### `live-contract-check.yml`: the gateway contract
 
@@ -363,8 +406,10 @@ Each cron workflow ends with an `if: failure()` job or step that opens or
 updates one labelled tracking issue (never one issue per run), using
 `issues: write` on that job only. `live-contract-check.yml` does this with the
 `live-contract-drift` label (#753), `nightly-matrix.yml` with the
-`nightly-failure` label (#755), and `lock-refresh.yml`, which follows the
-nightly, with the `lock-refresh-failure` label (#763). `docs.yml`'s cron still needs the same step.
+`nightly-failure` label (#755), `lock-refresh.yml`, which follows the
+nightly, with the `lock-refresh-failure` label (#763), and
+`framework-release-watch.yml` with the `framework-release-watch-failure` label
+(#1066). `docs.yml`'s cron still needs the same step.
 
 ### 5. One task runner mirrors CI. **In place** (#765)
 
