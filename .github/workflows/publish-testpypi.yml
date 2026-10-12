@@ -146,6 +146,11 @@ jobs:
     # offline groups takes about 7); the wait below gives up at 26, before
     # this bound, so a slow run still ends in a status.
     timeout-minutes: 30
+    # No checkout here, so the workflow-wide `python` working directory does
+    # not exist and the step cannot start; run from the workspace root.
+    defaults:
+      run:
+        working-directory: .
     permissions:
       statuses: write # the `acceptance (published)` status on this commit
     env:
