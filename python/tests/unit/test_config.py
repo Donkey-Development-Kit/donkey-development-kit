@@ -56,25 +56,37 @@ def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.client_id == "cid"
     assert cfg.region == "eu"
     assert cfg.telemetry is False
-    with pytest.warns(UnverifiedValueWarning, match="docs/verified-apis.md §1"):
-        assert cfg.control_plane_url.startswith("https://eu1")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        assert cfg.control_plane_url == "https://eu1.anypoint.mulesoft.com"
 
 
-@pytest.mark.parametrize("region", ["eu", "ca", "jp"])
+@pytest.mark.parametrize("region", ["ca", "jp"])
 def test_unconfirmed_region_host_warns_once(region: Region) -> None:
-    # docs/verified-apis.md §1: only the US host is confirmed.
+    # docs/verified-apis.md §1: the ca/jp hosts come from the Hyperforce docs, on
+    # platform.mulesoft.com; {region}1.anypoint.mulesoft.com does not resolve (#22).
     cfg = DonkeyConfig(region=region)
     with pytest.warns(UnverifiedValueWarning, match=f"anypoint.region_host.{region}"):
-        assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
+        assert cfg.control_plane_url == f"https://{region}1.platform.mulesoft.com"
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
-        assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
+        assert cfg.control_plane_url == f"https://{region}1.platform.mulesoft.com"
 
 
-def test_us_region_and_base_url_override_are_quiet() -> None:
+@pytest.mark.parametrize(
+    ("region", "host"),
+    [("us", "https://anypoint.mulesoft.com"), ("eu", "https://eu1.anypoint.mulesoft.com")],
+)
+def test_verified_region_hosts_are_quiet(region: Region, host: str) -> None:
+    # docs/verified-apis.md §1: US VERIFIED (CLI), EU VERIFIED (plugin) (#22).
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
-        assert DonkeyConfig().control_plane_url == "https://anypoint.mulesoft.com"
+        assert DonkeyConfig(region=region).control_plane_url == host
+
+
+def test_base_url_override_is_quiet() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
         override = DonkeyConfig(region="eu", base_url="https://eu1.example.test")
         assert override.control_plane_url == "https://eu1.example.test"
 

@@ -476,7 +476,9 @@ endpoint comes from somewhere else. Loopback URLs are included. The usual cases:
 
 **Not affected:** URL and credentials all in environment variables (the usual
 CI setup); config built entirely with `DonkeyConfig(...)`; URLs in the user
-config file; a `base_url` on `anypoint.mulesoft.com`, `eu1.`, `ca1.` or `jp1.`.
+config file; a `base_url` on `anypoint.mulesoft.com`, `eu1.anypoint.mulesoft.com`,
+`ca1.platform.mulesoft.com` or `jp1.platform.mulesoft.com` (before 0.1.3 the
+CA and JP entries were `ca1.anypoint.` and `jp1.anypoint.`, which do not exist, #22).
 
 **Symptom:** building a client (`donkey.llm.client()`, a framework factory,
 `connection_kwargs()`) raises, before anything is sent:

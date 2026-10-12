@@ -525,7 +525,13 @@ def test_env_url_with_env_credentials_is_allowed(
 
 
 @pytest.mark.parametrize(
-    "host", ["https://anypoint.mulesoft.com", "https://eu1.anypoint.mulesoft.com/"]
+    "host",
+    [
+        "https://anypoint.mulesoft.com",
+        "https://eu1.anypoint.mulesoft.com/",
+        "https://ca1.platform.mulesoft.com",
+        "https://jp1.platform.mulesoft.com/",
+    ],
 )
 def test_project_base_url_on_a_standard_anypoint_host_is_allowed(
     project: Path, monkeypatch: pytest.MonkeyPatch, host: str
