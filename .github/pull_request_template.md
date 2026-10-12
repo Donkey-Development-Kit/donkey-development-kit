@@ -10,11 +10,11 @@ Phase N). CONTRIBUTING.md §1, "The PR", has the full rules. -->
 
 ## Test plan
 
-- [ ] `pytest -q`
-- [ ] `mypy`
-- [ ] `ruff check .`
-- [ ] `lint-imports`
-- [ ] `vulture`
+<!-- Run from python/. CONTRIBUTING.md §1, "The pre-PR gate", lists the
+sessions. -->
+
+- [ ] `nox -s typecheck-and-lint test-3.11` (the quick gate)
+- [ ] `nox` (every session: the whole blocking CI gate)
 - [ ] `python scripts/verify_frameworks.py` (adapters or extras changed)
 
 ## ADR needed?
