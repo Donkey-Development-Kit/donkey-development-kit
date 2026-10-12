@@ -61,28 +61,18 @@ def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
         assert cfg.control_plane_url == "https://eu1.anypoint.mulesoft.com"
 
 
-@pytest.mark.parametrize("region", ["jp"])
-def test_unconfirmed_region_host_warns_once(region: Region) -> None:
-    # docs/verified-apis.md §1: the jp host comes from the Hyperforce docs, on
-    # platform.mulesoft.com; {region}1.anypoint.mulesoft.com does not resolve (#22).
-    cfg = DonkeyConfig(region=region)
-    with pytest.warns(UnverifiedValueWarning, match=f"anypoint.region_host.{region}"):
-        assert cfg.control_plane_url == f"https://{region}1.platform.mulesoft.com"
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", UnverifiedValueWarning)
-        assert cfg.control_plane_url == f"https://{region}1.platform.mulesoft.com"
-
-
 @pytest.mark.parametrize(
     ("region", "host"),
     [
         ("us", "https://anypoint.mulesoft.com"),
         ("eu", "https://eu1.anypoint.mulesoft.com"),
         ("ca", "https://ca1.platform.mulesoft.com"),
+        ("jp", "https://jp1.platform.mulesoft.com"),
     ],
 )
 def test_verified_region_hosts_are_quiet(region: Region, host: str) -> None:
-    # docs/verified-apis.md §1: US VERIFIED (CLI), EU VERIFIED (plugin), CA VERIFIED (LIVE) (#22).
+    # docs/verified-apis.md §1: US VERIFIED (CLI), EU VERIFIED (plugin), CA and JP
+    # VERIFIED (LIVE); the Hyperforce hosts are on platform.mulesoft.com (#22).
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         assert DonkeyConfig(region=region).control_plane_url == host
@@ -91,7 +81,6 @@ def test_verified_region_hosts_are_quiet(region: Region, host: str) -> None:
 def test_base_url_override_is_quiet() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
-        # An unconfirmed region stays quiet once base_url overrides it.
         override = DonkeyConfig(region="jp", base_url="https://jp1.example.test")
         assert override.control_plane_url == "https://jp1.example.test"
 

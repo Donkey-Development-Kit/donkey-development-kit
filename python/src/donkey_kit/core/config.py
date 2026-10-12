@@ -62,7 +62,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
     import tomli as tomllib
 
 from . import _verify
-from ._verify import REGION_HOSTS, UNVERIFIED_REGION_HOSTS
+from ._verify import REGION_HOSTS
 from .cost import CostTags
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
@@ -533,14 +533,11 @@ class DonkeyConfig:
     # --------------------------------------------------------------- derived
     @property
     def control_plane_url(self) -> str:
-        """The Anypoint control-plane base URL — explicit override or region.
-
-        A region whose host is unconfirmed (docs/verified-apis.md §1) warns once
-        with an ``UnverifiedValueWarning``; set ``base_url`` to silence it."""
+        """The Anypoint control-plane base URL — explicit override or region
+        (docs/verified-apis.md §1)."""
         if self.base_url:
             return self.base_url
-        unconfirmed = UNVERIFIED_REGION_HOSTS.get(self.region)
-        return unconfirmed.get() if unconfirmed else REGION_HOSTS[self.region]
+        return REGION_HOSTS[self.region]
 
     def source_of(self, name: str) -> ConfigSource:
         """Where field ``name`` was resolved from. ``explicit`` (set in code) when

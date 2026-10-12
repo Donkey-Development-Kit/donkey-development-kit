@@ -215,24 +215,14 @@ LLM_PROXY_WALLET_JWT_SCHEME = _wire.LLM_PROXY_WALLET_JWT_SCHEME
 # --- Region host map (docs/verified-apis.md §1) ------------------------------
 # The US host is VERIFIED (CLI) 2026-08-28; EU is VERIFIED (plugin) 2026-10-12
 # (the CLI's ``validServers``, plus a live unauthenticated smoke request, #22);
-# CA is VERIFIED (LIVE) 2026-10-12 (a client-credentials token and an org read
-# against a real ca1 org, #22). Both Hyperforce hosts are on
-# ``platform.mulesoft.com``, not ``anypoint.mulesoft.com``. The jp host is
-# UNVERIFIED: an ``Unverified`` placeholder taken from the Hyperforce docs, so
-# resolving it with no ``base_url`` override warns once
-# (``DonkeyConfig.control_plane_url``).
-# ``REGION_HOSTS`` holds every host as a string, for host checks that must not warn.
-UNVERIFIED_REGION_HOSTS: dict[str, Unverified] = {
-    region: Unverified(
-        key=f"anypoint.region_host.{region}",
-        placeholder=f"https://{region}1.platform.mulesoft.com",
-        doc_ref="docs/verified-apis.md §1",
-    )
-    for region in ("jp",)
-}
+# CA and JP are VERIFIED (LIVE) 2026-10-12 (a client-credentials token and an
+# org read against a real in-region org, #22). Both Hyperforce hosts are on
+# ``platform.mulesoft.com``, not ``anypoint.mulesoft.com``. Every host is
+# confirmed, so none is an ``Unverified`` placeholder and resolving a region
+# never warns.
 REGION_HOSTS: dict[str, str] = {
     "us": "https://anypoint.mulesoft.com",
     "eu": "https://eu1.anypoint.mulesoft.com",
     "ca": "https://ca1.platform.mulesoft.com",
-    **{region: host.placeholder for region, host in UNVERIFIED_REGION_HOSTS.items()},
+    "jp": "https://jp1.platform.mulesoft.com",
 }
