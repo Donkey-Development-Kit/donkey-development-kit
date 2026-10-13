@@ -297,9 +297,7 @@ def _render_records(records: list[logging.LogRecord]) -> str:
         except Exception:  # noqa: BLE001 — a bad format string must not abort capture
             parts.append(str(record.msg))
         parts.extend(
-            str(value)
-            for key, value in record.__dict__.items()
-            if key not in _STD_LOGRECORD_KEYS
+            str(value) for key, value in record.__dict__.items() if key not in _STD_LOGRECORD_KEYS
         )
     return "\n".join(parts)
 
@@ -465,9 +463,7 @@ async def run_conformance(
     results: list[Result] = []
     for scenario in SCENARIOS:
         if scenario.name in known:
-            results.append(
-                Result(scenario.name, scenario.title, "exempt", known[scenario.name])
-            )
+            results.append(Result(scenario.name, scenario.title, "exempt", known[scenario.name]))
             continue
         harness = ConformanceHarness(agent_factory, run_input=run_input)
         outcome = await harness.run_scenario(scenario)

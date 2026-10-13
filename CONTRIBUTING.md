@@ -24,12 +24,41 @@ cited section.
 > the bug.
 
 All Python work happens in `python/`; commands below are run from there unless
-noted. There is no Makefile — every command runs directly.
+noted. There is no Makefile: the task runner is nox (`python/noxfile.py`, see
+[the pre-PR gate](#the-pre-pr-gate)), and every other command runs directly.
 
 > **Found a vulnerability?** Don't open an issue or a PR for it. Report it
 > privately as described in [`SECURITY.md`](SECURITY.md).
 
 ---
+
+<!-- toc -->
+**Contents**
+
+- [1. Branch, PR & release workflow](#1-branch-pr--release-workflow)
+  - [Who can contribute: internal vs external](#who-can-contribute-internal-vs-external)
+  - [The issue is the plan](#the-issue-is-the-plan)
+  - [Branch model](#branch-model)
+  - [The lifecycle](#the-lifecycle)
+  - [The pre-PR gate](#the-pre-pr-gate)
+  - [The PR](#the-pr)
+  - [Architecture decision records](#architecture-decision-records)
+  - [Merging](#merging)
+- [2. Testing strategy](#2-testing-strategy)
+  - [tests/unit/ — the framework-free gate](#testsunit--the-framework-free-gate)
+  - [tests/typecheck/ — downstream static contracts](#teststypecheck--downstream-static-contracts)
+  - [The conformance kit — "never a silent skip"](#the-conformance-kit--never-a-silent-skip)
+  - [Adding a framework adapter: the integration checklist](#adding-a-framework-adapter-the-integration-checklist)
+  - [Fixture-driven tests — captures, not conveniences](#fixture-driven-tests--captures-not-conveniences)
+  - [local_gateway and sandbox — infra-gated, clean-skip by default](#local_gateway-and-sandbox--infra-gated-clean-skip-by-default)
+  - [scripts/verify_frameworks.py — signatures, outside pytest](#scriptsverify_frameworkspy--signatures-outside-pytest)
+  - [Commands](#commands)
+- [3. Coding conventions](#3-coding-conventions)
+  - [Rule-to-enforcement map](#rule-to-enforcement-map)
+  - [Logging](#logging)
+- [4. Docs-sync rule](#4-docs-sync-rule)
+  - [The one deliberate duplication — and its drift risk](#the-one-deliberate-duplication--and-its-drift-risk)
+<!-- tocstop -->
 
 ## 1. Branch, PR & release workflow
 
@@ -153,7 +182,10 @@ find yourself on `main` about to start work, `git checkout develop` first.
 **Use a worktree when there's any chance of a parallel session** (another editor
 window, a running dev server, a `pytest --looponfail` holding files): one issue =
 one branch = one worktree. A fresh worktree has no installed venv/extras — run
-`pip install -e ".[llm,cli]" --group dev` in its `python/` before testing.
+`pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt`
+in its `python/` before testing. On Python 3.11 that installs the same pinned
+versions as the `typecheck-and-lint` job, so `mypy`, `ruff` and `lint-imports`
+give CI's result (#763).
 
 **No workarounds for prerequisites.** If work on issue #N turns out to need an
 out-of-scope change first (a missing `core/` primitive, a verification unblock),
@@ -162,38 +194,84 @@ scope or guessing at an unverified value.
 
 ### The pre-PR gate
 
-Before drafting the PR, run the exact checks CI runs, from `python/`. Any
-non-zero exit means stop and fix before opening the PR:
+CI's checks live in one file, `python/noxfile.py`. Every job in
+`.github/workflows/ci.yml` (except the `ci-ok` aggregate) is a
+[nox](https://nox.thea.codes/) session of the same name, and the job runs that
+session, so one command reproduces every blocking CI job. Install the two tools
+once, then run the gate from `python/` before drafting the PR. Any non-zero exit
+means stop and fix before opening the PR:
 
 ```bash
+pipx install nox pre-commit     # or: pip install nox pre-commit
+pre-commit install              # once per clone, from the repository root (hooks below)
 cd python
-pytest -q          # the `test` matrix job (3.10/3.11/3.12 in CI)
-mypy               # mypy --strict, BLOCKING
-ruff check .       # rule families in pyproject.toml (see the §3 map); line-length 100
-lint-imports       # the layered, framework-free-core contract
-vulture            # dead code in src/; allowed names in vulture_whitelist.py
+nox                             # every session: the whole blocking CI gate
+nox -s typecheck-and-lint test-3.11   # the quick loop: lint, types, one test leg
+nox -l                          # list the sessions
 ```
 
-The `test` job's Python 3.11 leg also measures branch coverage and fails below
-the floor (`fail_under` in `[tool.coverage.report]`, `python/pyproject.toml`,
-#751). It posts the report to the job summary. To reproduce it locally, run:
+Each session that installs something builds its own virtualenv and installs
+exactly what its job installs, with the job's `-c constraints/...` lock, so its
+result is the job's result. The five that install nothing (`new-dependencies`,
+`commit-identities`, `docs-llms-drift`, `docs-site`, `workflow-lint`) run on
+your current interpreter and `PATH`. `nox -s test` runs all five test legs
+(3.10 to 3.14), each in a fresh virtualenv, so it is slow; `nox -R -s <session>` reruns one in its existing virtualenv without
+reinstalling. CI installs into the runner's Python and runs the same session
+with `nox --no-venv --no-install`; `tests/unit/test_noxfile.py` fails when a job
+and its session drift apart.
 
-```bash
-coverage run -m pytest -q && coverage run -m pytest -q -m local_gateway
-coverage combine && coverage report   # exits non-zero below the floor
-```
+| Session | What it checks |
+| --- | --- |
+| `typecheck-and-lint` | `mypy --strict`, then each `examples/` package; `ruff check .`; `ruff format --check .`; `lint-imports`; the verification-claim, doc-link and fixture-scrub scripts; `vulture` |
+| `test` (`test-3.10` to `test-3.14`) | the default suite and `-m local_gateway`; the offline seams under a dead proxy; the default suite under a dead proxy and OTLP collector; on 3.11, branch coverage and its floor |
+| `base-only` | the base install alone: `import donkey_kit`, no pydantic, `tests/unit`, and the built wheel's packaged fixtures |
+| `all-extra-resolves` | `pip install --dry-run ".[all]"` resolves within 5 minutes, per Python |
+| `anthropic-stacks(...)`, `adk-stacks(...)`, `agent-framework-middleware`, `llamaindex-transport`, `agents-strands-last-call` | each framework's tests, with that framework installed |
+| `adapter-contract(<extra>)` | the whole suite and the strict example smoke, one leg per `ADAPTERS` extra |
+| `benchmark`, `quickstart`, `langgraph-demo` | the span-overhead budget, the gateway-free quickstart, and the Scenario-A demo with its conformance run |
+| `new-dependencies`, `commit-identities` | a new direct dependency exists on PyPI; no placeholder git identity in the branch's commits. Both compare against `origin/develop`, so `git fetch origin` first |
+| `openai-1x` | `[llm]` with openai held below 2: the default suite and `-m local_gateway` (#769) |
+| `docs-llms-drift` | the website's `npm test`, and the committed llms artifacts match a fresh generation (needs Node) |
+| `docs-site` | the website's `npm ci`, typecheck, lint, production build and internal-link check (needs Node; the build fetches the roadmap from the GitHub API, and `GITHUB_TOKEN` lifts its rate limit) |
+| `pip-audit(base)`, `pip-audit(all)` | resolve the base and `[all]` installs to exact pins, then audit them for known vulnerabilities |
+| `workflow-lint` | `actionlint` and `zizmor --format=github .github/`, from the repository root (both on `PATH`) |
+| `dependency-review` | nothing locally: it skips. The job is GitHub's dependency-review action over the PR's dependency graph diff |
 
-The floor only goes up. Raise it in the PR whose tests lift the total past the
-next integer, and never lower it to make a PR pass.
+Where a green local `nox` and a red CI run can still differ:
 
-The secret scan runs outside `python/`, in its own `secret-scan` CI job (gitleaks
-over the full history, configured in `.gitleaks.toml`). Install the matching
-commit hook once per clone so a secret is caught before it is committed:
+- **Interpreters you don't have.** A session whose Python is not installed is
+  skipped, not failed (`nox --error-on-missing-interpreters` fails it instead).
+  CI runs 3.10 to 3.14; `uv python install 3.10 3.11 3.12 3.13 3.14` gets them.
+- **CI-only steps.** Each job's install and pip-cache steps, the
+  `new-dependencies` base-branch fetch, the benchmark's artifact upload and
+  trend comparison (on `main` pushes), `workflow-lint`'s linter downloads, the
+  `pip-audit` action that audits the session's pin list, and the whole
+  `dependency-review` job stay in the workflow.
+- **Other workflows.** `secret-scan`, the nightly matrix and the publish
+  workflows are not sessions. To scan the history as `secret-scan` does, run
+  `gitleaks git .` from the repository root.
 
-```bash
-pipx install pre-commit   # or: pip install pre-commit
-pre-commit install        # from the repository root; runs gitleaks on staged changes
-```
+The `test-3.11` session's coverage step fails below the floor (`fail_under` in
+`[tool.coverage.report]`, `python/pyproject.toml`, #751); in CI it also posts the
+report to the job summary. The floor only goes up. Raise it in the PR whose
+tests lift the total past the next integer, and never lower it to make a PR
+pass.
+
+**Commit hooks.** `pre-commit install` runs the checks that are fast on staged
+files at each commit: gitleaks (secrets, configured in `.gitleaks.toml`),
+`ruff check`, `ruff format`, `lint-imports`, and the llms regeneration when a
+website page changes. When a hook rewrites a file (`ruff format`, the llms
+generator), the commit fails; stage the change and commit again. The byte-exact
+fixtures (`src/donkey_kit/simulator/_fixtures/`, `tests/fixtures/`) are excluded
+from the formatter. `pre-commit run --all-files` runs every hook over the whole
+tree. The hooks are an early warning: CI runs the same checks, so skipping them
+only moves the failure to the PR.
+
+The commits that only reformatted the tree are listed in
+`.git-blame-ignore-revs` at the repository root, so `git blame` shows the
+commit that last changed a line's meaning. Turn that on once per clone with
+`git config blame.ignoreRevsFile .git-blame-ignore-revs`. A future
+formatting-only commit gets a line there, with a comment.
 
 If the diff touches an adapter or framework wiring, also run the signature check
 (the executable form of the `docs/verified-apis.md §8` verification step, and the nightly-matrix gate):
@@ -210,17 +288,18 @@ rule 3 — [§3](#3-coding-conventions) above has the full rule):
 python scripts/compile_constraints.py   # needs `uv` on PATH; writes constraints/<combo>-py3.NN.txt
 ```
 
-If you added or touched an adapter, sanity-check that a bare `pip install -e .
---group dev` + `python -c "import donkey_kit"` still succeeds — that's the
-`base-only` CI job catching a framework import that leaked into a lower layer.
+If you added or touched an adapter, `nox -s base-only` checks that a bare
+`pip install -e . --group dev` still imports `donkey_kit` and passes
+`tests/unit`: that is the CI job that catches a framework import leaked into a
+lower layer.
 
 **(fork)** GitHub withholds repository secrets from pull requests opened from a
 fork, so the secret-gated jobs (the `--live` framework round-trip and anything
 reading the `DONKEY_LLM_PROXY_*` env vars) do **not** run on your PR — a
 maintainer runs them before merge. Run everything that needs no secrets locally
-so the gate is green on what CI *can* check on a fork: `pytest -q tests/unit`,
-`mypy`, `ruff check .`, `lint-imports`, and offline `python
-scripts/verify_frameworks.py` (no `--live`). The `sandbox` suite needs a real
+so the gate is green on what CI *can* check on a fork: every nox session above
+(none needs a secret) and offline `python scripts/verify_frameworks.py` (no
+`--live`). The `sandbox` suite needs a real
 Anypoint sandbox you likely don't have, and `local_gateway` needs the optional
 `[local]` extra installed (no Docker, no Omni/Flex Gateway — donkey-development-kit
 does not support Local Mode as a test surface, #661); both clean-skip when their
@@ -578,7 +657,9 @@ failure — don't "fix" the script to make a genuinely-blocked adapter pass.
 
 ```bash
 # from python/
-pip install -e ".[llm,cli]" --group dev   # what CI installs (pip 25.1+)
+pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt
+                                     # a dev env: the typecheck-and-lint job's install (Python 3.11, pip 25.1+)
+nox -s <session>                     # one CI job, in its own env (the pre-PR gate)
 pytest -q                            # full suite
 pytest -q tests/unit                 # unit only (the base-only CI job)
 pytest -q -m local_gateway           # opt-in local-gateway tests
@@ -601,8 +682,13 @@ build plan has the rationale behind each rule:
   `X | None` over `Optional[X]` (ruff `UP` rewrites the old form), and put
   `from __future__ import annotations` at the top of every module (ruff `I002`).
   Don't silence a real signature mismatch with an unexplained `# type: ignore`
-  — the single `[[tool.mypy.overrides]]` block already handles optional/absent
-  framework deps.
+  — the `follow_imports = "skip"` override in `pyproject.toml` already makes
+  every optional framework extra `Any`, whether or not it is installed, so
+  `mypy` gives the same result in a `.[llm,cli]` venv and in one with every
+  extra (#763). The adapters' real framework signatures are checked by the
+  `adapter-contract` jobs and `scripts/verify_frameworks.py`, not by mypy.
+  A new extra's import module joins that override in the same PR
+  (`tests/unit/test_house_style_config.py` checks it).
 - **Framework-free core & lazy imports.** `core/` depends on **httpx only** (the
   build plan allows pydantic too, but core imports none) — no agent framework,
   ever. Adapters import their framework **lazily,
@@ -633,7 +719,12 @@ build plan has the rationale behind each rule:
   `pyproject.toml` — add `foo>=X`, never `foo<Y`. Known incompatibilities are
   documented in `docs/verified-apis.md §8.1` as dev constraints, not encoded as
   pins; the nightly matrix exists to surface breakage from newest releases early.
-  Each floor is the lowest verified release (`docs/verified-apis.md §8.3`).
+  Each floor is the lowest verified release (`docs/verified-apis.md §8.3`),
+  and the nightly `lowest-direct` job installs it and runs the suites against
+  it (#769). Changing a floor means that job's leg must still pass at the new
+  floor: reproduce it with `uv pip install --resolution lowest-direct -e
+  ".[local,<extra>]" --group dev` on Python 3.10, then
+  `python scripts/check_floors.py --extras <extra>`.
   [ADR 0007](docs/adr/0007-dependency-policy.md) records the dependency
   policy. This does not apply to `python/constraints/*.txt` (below): those
   are exact, CI-only pins for reproducibility, not a `pyproject.toml` ceiling.
@@ -652,11 +743,21 @@ build plan has the rationale behind each rule:
   merging to "simplify" the file count). The jobs that are deliberately a
   fresh resolve (`all-extra-resolves`, `adk-stacks`, `anthropic-stacks`, and
   everything in `.github/workflows/nightly-matrix.yml`, the canary ADR 0007
-  rule 4 relies on) have no `-c` flag and must keep none. **Refresh the lock**
-  after changing a dependency, or on whatever cadence a maintainer judges
-  useful — there is no scheduled job that does this automatically (opening a
-  PR from a scheduled workflow needs write-access credentials this repo
-  doesn't grant one, so it stays a manual step):
+  rule 4 relies on) have no `-c` flag and must keep none. The lock also pins
+  the release toolchain (`build`, `twine`, `hatchling`, the `release` group)
+  and `uv` (the `lock` group) as tool-only combos; every `python -m build`
+  step installs from `constraints/release-py3.11.txt` and builds with
+  `--no-isolation` (#763). After each green nightly on `develop`,
+  `.github/workflows/lock-refresh.yml` recompiles every file and opens or
+  updates one `chore(deps): refresh the PR CI lock` PR
+  ([ADR 0011](docs/adr/0011-nightly-lock-refresh-pr.md),
+  [`docs/ci.md`](docs/ci.md#lock-refreshyml-the-lock-bump)). An open
+  `framework-release` issue is the other trigger: when
+  `.github/workflows/framework-release-watch.yml` marks a framework release
+  safe to bump and no bump PR carries it yet, refresh the lock for it
+  ([`docs/ci.md`](docs/ci.md#framework-release-watchyml-one-release-at-a-time),
+  #1066). **Refresh the lock by hand** in the PR that changes a dependency, or
+  for a `framework-release` issue:
   ```bash
   cd python
   python scripts/compile_constraints.py   # needs `uv` on PATH (dev-time only; CI still uses plain pip)
@@ -682,7 +783,7 @@ build plan has the rationale behind each rule:
   the same PR, and removing a package means removing its entry. On a PR that
   adds a name, CI also checks that the project exists on PyPI and warns when it
   is young, abandoned, or one or two characters off another allowlisted name.
-- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10/3.11/3.12,
+- **3.10 floor.** `requires-python = ">=3.10"`; CI matrix is 3.10 to 3.14,
   and the version classifiers match it. When the floor moves is set by
   [`docs/python-support.md`](docs/python-support.md).
   `tomllib` is stdlib only on 3.11+, so `tomli` is backfilled below 3.11;
@@ -808,11 +909,14 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | No unexplained `# type: ignore` | mypy `warn_unused_ignores` (part of `strict`) catches stale ones; the explanation is review-only | `mypy` |
 | `X \| None`, PEP 585/604 syntax | ruff `UP`, `FA` | `ruff check .` |
 | `from __future__ import annotations` in every module | ruff `I002` (`isort.required-imports`) | `ruff check .` |
+| Formatting is the formatter's (#765) | `ruff format` (`[tool.ruff.format]`; the byte-exact fixtures excluded) | `typecheck-and-lint`: `ruff format --check .`; pre-commit hook |
 | Framework-free core, layering | import-linter contracts in `pyproject.toml` (whole-package and in-core layers, both exhaustive; the CLI on top, so nothing imports it; the root package loads only production layers; core's forbidden third-party packages, #729); `tests/unit/test_architecture.py` (core's third-party imports as an allowlist, imports inside functions included; `import donkey_kit` in a fresh interpreter loads no dev-only module or the CLI) | `lint-imports`, `pytest` |
 | Small core modules (#729) | `tests/unit/test_architecture.py` (500-line budget; a ratchet for the four modules already past it) | `pytest` |
 | Lazy framework imports | `import donkey_kit` and `tests/unit` with no extras installed | `base-only` job |
 | Verification guards | `scripts/check_verification_claims.py` (no status claims outside `core/_verify.py`); not inventing a value is review-only | `typecheck-and-lint` |
 | Extras are floors, never ceilings | `tests/unit/test_house_style_config.py` (only `>=`/`!=` specifiers) | `pytest` |
+| Declared floors are the tested floors (#769) | `scripts/check_floors.py` after a `--resolution lowest-direct` install, per extra; `tests/unit/test_support_matrix.py` keeps the legs in step with `ADAPTERS` | `lowest-direct` (nightly) |
+| Which framework extras co-install is generated, not prose (#769) | `scripts/coinstall_matrix.py --check` against `docs/co-installability.md` | `co-installability` (nightly) |
 | Every direct dependency is a reviewed decision (#936) | `tests/unit/test_house_style_config.py` (every declared name has a `dependency_allowlist.toml` entry with a reason and date, and no stale entry); `scripts/check_new_dependencies.py` (a new name exists on PyPI; age, staleness and lookalike warnings) | `pytest`; `new-dependencies` (PRs) |
 | No placeholder git identities in PR commits (#1048) | `scripts/check_commit_identities.py` (author, committer and `Co-authored-by` trailers; a squash merge turns each PR-commit author into a trailer on `develop`) | `commit-identities` (PRs) |
 | 3.10 floor | `requires-python`, ruff `target-version = "py310"`, mypy `python_version = "3.10"`, the 3.10 leg of the `test` matrix | `ruff`, `mypy`, `test` |
@@ -825,6 +929,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |
+| Hardened Actions supply chain (#757) | `tests/unit/test_workflow_supply_chain.py` (every `uses:` on a full SHA with a `# vX.Y.Z` comment, no checkout keeps the token, OIDC and Pages writes on the publish and deploy jobs only, Dependabot, CODEOWNERS and binary-image rules present); actionlint and zizmor over `.github/`; `pip-audit` on a fresh base and `.[all]` resolve; `dependency-review` (PRs) | `pytest`; `workflow-lint`, `pip-audit`, `dependency-review` |
 | No tenant identifiers in tracked files or built dists (#821) | `scripts/scrub_fixtures.py --check` (UUIDs outside `ALLOWED_UUIDS`, platform hosts, provider account headers) | `typecheck-and-lint`, `base-only` (wheel), publish workflows (wheel + sdist) |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
@@ -833,8 +938,9 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported from `donkey_kit` or `donkey_kit.experimental`, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
 | One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |
 
-Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .`,
-`lint-imports`, `vulture`, `pytest`), plus `verify_frameworks.py` if you touched adapters.
+Self-review before pushing = the pre-PR gate in Section 1 (`nox`, every job;
+`nox -s typecheck-and-lint test-3.11` while you work), plus `verify_frameworks.py`
+if you touched adapters.
 
 ### Logging
 
@@ -871,21 +977,54 @@ Self-review before pushing = the pre-PR gate in Section 1 (`mypy`, `ruff check .
 `website/` (Nextra) describes how the SDK behaves from a consumer's
 perspective. When code changes what the SDK does — or which platform facts it
 depends on — the docs must change *with it*, or the drift is discovered by a
-confused adopter instead of at review time. There is no automated drift detector;
-this is a PR-time discipline. The surface→page map (code paths under
-`python/src/donkey_kit/`, pages under `website/content/`):
+confused adopter instead of at review time.
+
+Some facts are generated, so they can't drift: `python scripts/generate_docs.py`
+(from `python/`) writes the PyPI README (`python/README.md`, from the root
+`README.md`), the settings index in `reference/configuration.mdx`, the CLI
+command reference in `cli.mdx`, the adapter capabilities table in
+`frameworks/index.mdx`, and the whole Python API page (`reference/api.mdx`).
+Edit the code, the docstring or the root README, run the script, and commit the
+result; never edit a `BEGIN GENERATED` region by hand.
+`tests/unit/test_generated_docs.py` fails when a committed copy is stale, and
+`--check` reports the same without writing. Everything else is a PR-time
+discipline with two automated backstops (#797):
+
+- **The docs-sync reminder.** [`python/scripts/check_docs_sync.py`](python/scripts/check_docs_sync.py)
+  holds every row of the table below as data, and the `Docs-sync reminder`
+  workflow runs it on every PR that touches `python/src/donkey_kit/`,
+  `docs/verified-apis.md`, `docs/unsupported-boundary.md` or `README.md`. A surface
+  whose code changed without any of its mapped pages gets a warning annotation
+  on the PR. It never fails the build; it is the prompt to do one of the two
+  things below. Run it locally with
+  `python scripts/check_docs_sync.py --base origin/develop`. When you change a
+  row here, change the script's `SURFACES` with it; its unit test fails if a
+  mapped page or code path does not exist, or if the workflow's `paths:` filter
+  misses a mapped file outside the package.
+- **The snippet check.** [`python/scripts/check_doc_snippets.py`](python/scripts/check_doc_snippets.py)
+  (run by `tests/unit/test_check_doc_snippets.py`) checks every Python fence in
+  the READMEs, `MIGRATION.md` and `website/content/` against the installed SDK:
+  imports, `donkey.<attr>` chains and call kwargs, so a renamed parameter fails
+  CI on the page that still uses the old name. Pages marked `status: roadmap`
+  are exempt, and a `status: live` page may not call an API that raises
+  `_verify.blocked(...)`. The status vocabulary is in
+  [`website/README.md`](website/README.md).
+
+The surface→page map (code paths under `python/src/donkey_kit/` unless they
+start with `docs/` or are `README.md`, pages under `website/content/`):
 
 | Code surface | Docs page(s) |
 | --- | --- |
 | `core/errors.py` | `errors.mdx` |
 | `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
-| `core/_verify.py`, `docs/verified-apis.md`, `docs/unsupported-boundary.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
+| `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
 | `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx` |
 | `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
 | `simulator/*` | `simulator.mdx` |
-| `conformance/*`, `donkey.simulate()` | `testing.mdx` |
+| `conformance/*` | `testing.mdx` |
+| `donkey.py` (the `Donkey` facade: `from_env`, `run`, `simulate()`, `tools`) | `quickstart.mdx`, `testing.mdx`, `reference/configuration.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
 | `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
@@ -902,7 +1041,8 @@ shape, so one surface never says "live" while another still says "planned" or
 
 - `classify()` and the related docstrings in `python/src/donkey_kit/core/`
   (notably `core/errors.py`);
-- `docs/unsupported-boundary.md`;
+- `website/content/reference/unsupported-boundary.mdx` (the one boundary list;
+  `docs/unsupported-boundary.md` is only a pointer to it);
 - `website/content/**` **and** the generated `website/public/**` copies
   (regenerate with `npm run generate:llms`);
 - the fixture index (`python/src/donkey_kit/simulator/_fixtures/rejections/README.md`);

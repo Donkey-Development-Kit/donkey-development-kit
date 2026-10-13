@@ -44,15 +44,22 @@ git checkout -b docs/13-verified-apis-update
 
 ### Run the pre-PR gate
 
-Run the same checks CI runs, from `python/`:
+Every CI job is a [nox](https://nox.thea.codes/) session of the same name, so one
+command runs the checks CI runs. From the repository root:
 
 ```bash
-pip install -e ".[llm,cli]" --group dev   # pip 25.1+
-pytest -q          # tests
-mypy               # mypy --strict
-ruff check .       # lint
-lint-imports       # the framework-free core contract
+pipx install nox pre-commit     # once
+pre-commit install              # once per clone: gitleaks, ruff, ruff format, lint-imports, and the llms regeneration (needs Node) at commit
+cd python
+nox -s typecheck-and-lint test-3.11  # types, lint, format, import contracts, one test leg
+nox                             # every CI job
 ```
+
+Each session that installs something builds its own environment and installs
+what its CI job installs.
+A Python version you don't have is skipped, and CI still runs it. The
+[contributor guide](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/CONTRIBUTING.md#the-pre-pr-gate)
+lists every session and what CI checks that a local run can't.
 
 If you touched an adapter, also run `python scripts/verify_frameworks.py`.
 

@@ -1,5 +1,7 @@
 # Strands Agents
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Strands Agents gets a governed `OpenAIModel` pointed at the Agent Fabric LLM
 proxy. The connection details travel in Strands' `client_args`, which Strands
 passes straight through to its underlying OpenAI client.

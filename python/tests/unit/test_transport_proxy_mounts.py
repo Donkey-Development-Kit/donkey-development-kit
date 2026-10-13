@@ -85,9 +85,7 @@ async def test_simulate_stays_offline_under_proxy(
     assert no_sockets == []
 
 
-def test_sync_simulate_stays_offline_under_proxy(
-    dead_proxy: str, no_sockets: list[object]
-) -> None:
+def test_sync_simulate_stays_offline_under_proxy(dead_proxy: str, no_sockets: list[object]) -> None:
     donkey = Donkey(DonkeyConfig())
     sync = donkey._sync_http_client()
     with donkey.simulate(PIIDetected):
@@ -203,8 +201,9 @@ def test_explicit_mounts_are_folded_honoured_and_closed() -> None:
 # --- 3. fail closed ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("make", [lambda: DonkeyClient(DonkeyConfig()),
-                                  lambda: DonkeyAsyncClient(DonkeyConfig(), None)])
+@pytest.mark.parametrize(
+    "make", [lambda: DonkeyClient(DonkeyConfig()), lambda: DonkeyAsyncClient(DonkeyConfig(), None)]
+)
 def test_swap_refuses_when_a_mount_could_bypass_it(make: object) -> None:
     client = make()  # type: ignore[operator]
     client._mounts = {URLPattern("all://"): httpx.MockTransport(lambda r: httpx.Response(200))}

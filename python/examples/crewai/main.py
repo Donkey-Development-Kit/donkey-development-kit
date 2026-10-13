@@ -1,8 +1,9 @@
 """CrewAI adapter example (BG §1.8).
 
-Supported and conformance-tested (BG §1.8): ``build(donkey)`` makes one governed
-call through ``crewai.Agent.kickoff_async`` and passes the public conformance
-kit, with every scenario an asserted exemption (``KNOWN_LIMITATIONS``, #740).
+Supported at ``connection_kwargs()`` (BG §1.8): ``build(donkey)`` makes one governed
+call through ``crewai.Agent.kickoff_async`` and runs the public conformance kit in CI
+(``adapter-contract``), with every scenario an asserted exemption
+(``KNOWN_LIMITATIONS``, #740).
 
 Demonstrates constructing a native CrewAI LLM (a ``crewai.BaseLLM``, concretely
 ``OpenAICompletion``) pointed at the governed Agent Fabric LLM proxy with a

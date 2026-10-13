@@ -1,5 +1,7 @@
 # `last_call` field reference
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 `donkey.last_call` is what the gateway said about the **most recent governed
 model call** in the current context. It is an immutable snapshot: every governed
 response replaces the record wholesale rather than mutating it, so a reader

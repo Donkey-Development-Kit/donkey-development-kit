@@ -1,7 +1,8 @@
 # ADR 0002: One framework-agnostic typed-refusal bridge, in core
 
 - **Status:** Accepted
-- **Amended by:** #950 (2026-10-05), exception groups.
+- **Amended by:** #950 (2026-10-05), exception groups; #969 (2026-10-10),
+  refusal capture.
 - **Date:** 2026-10-03
 - **Issue:** #724 (part of #707). Recorded under the ADR process from #731.
 
@@ -149,3 +150,32 @@ decision 1 never looked inside one. The bridge now does, by this rule:
 Alternatives considered: always keeping the group, even a uniform one, would
 make `except PIIDetected` miss every task-group refusal. Raising the first
 refusal of a mixed group would hide the user's own bugs in sibling tasks.
+
+## Amendment (2026-10-10, #969)
+
+LiteLLM, under ADK's `LiteLlm` (`donkey.adk.model()`), sends through our
+transport (#946) but raises a refusal as its own exception around a response
+it rebuilt: no gateway headers, no `request.extensions`, and no `__cause__`.
+Decision 6 rightly refuses to classify it, so the factory was exempt. The
+bridge now has one more rule, ahead of the translators:
+
+1. **A per-call capture records what the transport saw.**
+   `core/refusals.py` `capture_refusals()` opens a `RefusalCapture` in a
+   context variable. While one is open, the governed pipeline records each
+   send's typed outcome in it: the classified error of a non-2xx final
+   response, the `ModelSubstituted` it raises, the `GatewayUnavailable` or
+   lifecycle `ConfigError` of a failed send, and `None` for a success, so a
+   retried call that succeeds clears an earlier failure.
+2. **The adapter tags the framework's error and re-raises it unchanged.**
+   The adapter opens the capture around exactly one framework call and, if the
+   call raises, tags that exception with the last recorded outcome. Outside
+   `donkey.run()`, `@governed` and `typed_refusals()`, the caller still sees
+   the framework's error.
+3. **`translate()` returns a link's tag.** A tagged link stands for its typed
+   error, as a `DonkeyError` link does. Decision 6 still holds: a tag only ever
+   holds an error the SDK's own transport recorded.
+
+Alternatives considered: reading `donkey.last_call` misses the call, because
+ADK runs the model in a task of its own and the record stays there. Matching
+the exception's status code to the last refusal could pair a refusal with the
+wrong call.

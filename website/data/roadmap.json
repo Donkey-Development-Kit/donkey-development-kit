@@ -1,6 +1,6 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-10-09T08:26:36.609Z",
+  "generatedAt": "2026-10-13T13:30:39.535Z",
   "milestones": [
     {
       "number": 11,
@@ -1551,10 +1551,10 @@
     {
       "number": 20,
       "title": "Phase 1.2 — Stabilize the MVP (0.1.2)",
-      "state": "open",
+      "state": "closed",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/20",
-      "open": 1,
-      "closed": 75,
+      "open": 0,
+      "closed": 77,
       "issues": [
         {
           "number": 706,
@@ -2084,8 +2084,15 @@
         {
           "number": 1057,
           "title": "Update release docs and version references for the 0.1.2 release",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1057",
+          "epic": false
+        },
+        {
+          "number": 1060,
+          "title": "ci: benchmark job fails on main pushes because the hermetic env strips DONKEY_BENCHMARK_JSON",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1060",
           "epic": false
         }
       ]
@@ -2095,97 +2102,97 @@
       "title": "Phase 1.3 — Stabilize the MVP (0.1.3)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/21",
-      "open": 13,
-      "closed": 7,
+      "open": 2,
+      "closed": 37,
       "issues": [
         {
           "number": 711,
           "title": "epic(ci): code review — CI/CD & developer experience",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/711",
           "epic": true
         },
         {
           "number": 712,
           "title": "epic(docs): code review — documentation, examples & website",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/712",
           "epic": true
         },
         {
           "number": 757,
           "title": "ci(security): harden the Actions supply chain — SHA pins, Dependabot, CODEOWNERS, least-privilege Pages",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/757",
           "epic": false
         },
         {
           "number": 759,
           "title": "ci(site): build, type-check and link-check the docs site on PRs, and move off Node 20",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/759",
           "epic": false
         },
         {
           "number": 763,
           "title": "ci(deps): pin the dev and release toolchain with a lock, and make mypy independent of installed extras",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/763",
           "epic": false
         },
         {
           "number": 765,
           "title": "chore(dx): one task runner that mirrors CI, pre-commit, and an honest CONTRIBUTING gate section",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/765",
           "epic": false
         },
         {
           "number": 767,
           "title": "ci(release): automated release gates — one version source, tag check, wheel smoke test, reviewers, attestations",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/767",
           "epic": false
         },
         {
           "number": 769,
           "title": "ci: test the declared support matrix — lowest-direct per extra, openai<2, Python 3.13/3.14, co-installability",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/769",
           "epic": false
         },
         {
           "number": 771,
           "title": "ci(site): pin manual docs deploys to main",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/771",
           "epic": false
         },
         {
           "number": 795,
           "title": "docs: one source of truth per class of fact — generated tables, API reference, release notes, version banner",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/795",
           "epic": false
         },
         {
           "number": 797,
           "title": "docs: make doc snippets tests, add a frontmatter status vocabulary, and add a path-based docs-sync reminder",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/797",
           "epic": false
         },
         {
           "number": 799,
           "title": "feat(site): add baseline SEO and share metadata",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/799",
           "epic": false
         },
         {
           "number": 969,
           "title": "feat(refusals): bridge typed refusals through ADK model() (LiteLLM)",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/969",
           "epic": false
         },
@@ -2232,10 +2239,143 @@
           "epic": false
         },
         {
+          "number": 1052,
+          "title": "Nightly framework matrix failing",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1052",
+          "epic": false
+        },
+        {
           "number": 1053,
           "title": "docs(site): add mermaid diagrams for classify() order and credential checks",
           "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1053",
+          "epic": false
+        },
+        {
+          "number": 1063,
+          "title": "docs: add a table of contents to the root and docs/ markdown files",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1063",
+          "epic": false
+        },
+        {
+          "number": 1065,
+          "title": "epic(ci): watch supported-framework releases, assess their impact, and publish supported versions",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1065",
+          "epic": true
+        },
+        {
+          "number": 1066,
+          "title": "ci: detect new framework releases and test each one in isolation against the PR lock",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1066",
+          "epic": false
+        },
+        {
+          "number": 1067,
+          "title": "ci: add an AI changelog impact review to the framework release watch",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1067",
+          "epic": false
+        },
+        {
+          "number": 1068,
+          "title": "docs: publish a generated framework version-compatibility page",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1068",
+          "epic": false
+        },
+        {
+          "number": 1081,
+          "title": "docs: single-source per-framework verification status and drift-check it",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1081",
+          "epic": false
+        },
+        {
+          "number": 1082,
+          "title": "ci(release): dispatch acceptance after TestPyPI publish, report on PR",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1082",
+          "epic": false
+        },
+        {
+          "number": 1088,
+          "title": "ci(deps): stop Dependabot proposing @types/node and TypeScript majors the site can't take",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1088",
+          "epic": false
+        },
+        {
+          "number": 1090,
+          "title": "docs(examples): stop calling the connection_kwargs-only examples \"conformance-tested\"",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1090",
+          "epic": false
+        },
+        {
+          "number": 1091,
+          "title": "chore(repo): PR template test plan lists the pre-nox raw gate",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1091",
+          "epic": false
+        },
+        {
+          "number": 1093,
+          "title": "chore(website): override katex to 0.18.10 to clear Dependabot alert #49",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1093",
+          "epic": false
+        },
+        {
+          "number": 1114,
+          "title": "chore(release): let bump-version.sh link a milestone to the bump issue and PR",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1114",
+          "epic": false
+        },
+        {
+          "number": 1116,
+          "title": "framework-release: crewai 1.15.23 → 1.15.27",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1116",
+          "epic": false
+        },
+        {
+          "number": 1117,
+          "title": "chore(release): bump version to 0.1.3.dev0",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1117",
+          "epic": false
+        },
+        {
+          "number": 1120,
+          "title": "Remove the Agent Fabric → DDK rebrand references from the docs",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1120",
+          "epic": false
+        },
+        {
+          "number": 1122,
+          "title": "ci(release): TestPyPI acceptance job fails to start (no checkout for the python working directory)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1122",
+          "epic": false
+        },
+        {
+          "number": 1133,
+          "title": "Update release docs and version references for the 0.1.3 release",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1133",
+          "epic": false
+        },
+        {
+          "number": 1134,
+          "title": "chore(release): bump version to 0.1.3",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1134",
           "epic": false
         }
       ]
@@ -2245,7 +2385,7 @@
       "title": "Phase 2 — Differentiate, go beyond (0.2.0)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/12",
-      "open": 49,
+      "open": 57,
       "closed": 2,
       "issues": [
         {
@@ -2604,6 +2744,62 @@
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/991",
           "epic": false
+        },
+        {
+          "number": 1102,
+          "title": "epic(scanner): publish agents and MCP servers through the self-managed scanner (GA-gated)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1102",
+          "epic": true
+        },
+        {
+          "number": 1103,
+          "title": "scanner: self-managed scanner client — push, commit, unstage",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1103",
+          "epic": false
+        },
+        {
+          "number": 1104,
+          "title": "scanner: build the agent service bundle (config.json + a2a-card.json ZIP)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1104",
+          "epic": false
+        },
+        {
+          "number": 1105,
+          "title": "scanner: build the MCP server service bundle",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1105",
+          "epic": false
+        },
+        {
+          "number": 1106,
+          "title": "cli: donkey publish --target self-managed-scanner",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1106",
+          "epic": false
+        },
+        {
+          "number": 1107,
+          "title": "scanner: refuse to register the same service via Exchange and the self-managed scanner",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1107",
+          "epic": false
+        },
+        {
+          "number": 1108,
+          "title": "simulator: emulate the self-managed scanner push/commit/unstage endpoints",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1108",
+          "epic": false
+        },
+        {
+          "number": 1109,
+          "title": "docs: document publishing via the self-managed scanner",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1109",
+          "epic": false
         }
       ]
     },
@@ -2612,7 +2808,7 @@
       "title": "Phase 3 — Platform capabilities (0.3.0)",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/13",
-      "open": 10,
+      "open": 11,
       "closed": 0,
       "issues": [
         {
@@ -2683,6 +2879,13 @@
           "title": "telemetry: a run-scoped rollup answering \"what did this task cost\"",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/317",
+          "epic": false
+        },
+        {
+          "number": 1110,
+          "title": "scanner: publish REST APIs (OpenAPI / RAML) through the self-managed scanner",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1110",
           "epic": false
         }
       ]
@@ -2852,8 +3055,8 @@
       "title": "Verification",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/16",
-      "open": 33,
-      "closed": 15,
+      "open": 32,
+      "closed": 17,
       "issues": [
         {
           "number": 1,
@@ -2872,7 +3075,7 @@
         {
           "number": 22,
           "title": "Verify Anypoint control-plane region hosts for EU, CA and JP Hyperforce",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/22",
           "epic": false
         },
@@ -2886,7 +3089,7 @@
         {
           "number": 34,
           "title": "Verify the eight framework constructor signatures against installed packages (§8)",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/34",
           "epic": false
         },
@@ -3189,6 +3392,13 @@
           "title": "verify: whether the platform's End-to-End Correlation ID uses a header other than x-correlation-id",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1039",
+          "epic": false
+        },
+        {
+          "number": 1101,
+          "title": "verify: self-managed scanner is GA, and its push/commit/unstage contract",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1101",
           "epic": false
         }
       ]

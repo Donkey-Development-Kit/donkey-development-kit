@@ -1,5 +1,7 @@
 # Model access
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
@@ -29,13 +31,34 @@ Each card shows what has been proven about that adapter, in the terms the
 | Signature-confirmed | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
 
 The proxy data plane every adapter calls (base URL, credential headers,
-streaming, rejection shapes) is live-verified.
+streaming, rejection shapes) is live-verified. For the framework versions each
+adapter supports and is tested on, see
+[Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md).
+
+Each factory's status is its constructor row in the [ledger §8](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md); its
+depth is the adapter roster's `conformance_tested`.
+
+| Framework | Factory | Depth | Ledger status |
+|---|---|---|---|
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | `donkey.langgraph.chat_model()` | Conformance-tested | Live-verified |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.model()` | `connection_kwargs()` | Live-verified |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.gemini()` | `connection_kwargs()` | Live-verified |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `donkey.strands.model()` | `connection_kwargs()` | Live-verified |
+| [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | Live-verified |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | `connection_kwargs()` | Live-verified |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `donkey.anthropic.client()` | `connection_kwargs()` | Live-verified |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `donkey.crewai.llm()` | `connection_kwargs()` | Live-verified |
+| [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `donkey.llamaindex.llm()` | `connection_kwargs()` | Live-verified |
+
+A card reads Conformance-tested for a conformance-tested adapter, and otherwise
+the ledger status of the adapter's default factory, so the ADK card rates
+`model()`.
 
   
     `chat_model()` → `langchain_openai.ChatOpenAI`
   
   
-    `model()` → `google.adk … LiteLlm` (signature-confirmed); `gemini()` → `google.adk.models.Gemini` (live-verified)
+    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
   
   
     `model()` → `strands … OpenAIModel`
@@ -69,7 +92,8 @@ export DONKEY_LLM_PROXY_URL=…  DONKEY_LLM_PROXY_CLIENT_ID=…  DONKEY_LLM_PROX
 ```python
 from donkey_kit import Donkey
 async with Donkey.from_env() as donkey:
-    model = donkey.<framework>.<factory>("gpt-4o")   # native object at the proxy
+    # donkey.<framework>.<factory>(...), here LangGraph's chat_model:
+    model = donkey.langgraph.chat_model("gpt-4o")   # native object at the proxy
 ```
 
 Each framework page shows the factory name, the native class you get back, the
@@ -121,6 +145,21 @@ one `connection_kwargs()` configures. Each factory reports its own, so ADK's
 | `streaming` | `False` where the governed connection turns streaming off (Strands, `stream=False`). |
 | `typed_refusals` | A gateway refusal reaches you as a typed exception through `donkey.run()` or `typed_refusals()`. |
 | `observes_last_call` | A call through this object populates `donkey.last_call`. |
+
+What each factory reports, generated from the adapter roster and each
+adapter's declared `factories`:
+
+| Factory | Extra | `transport` | `sync` | `streaming` | `typed_refusals` | `observes_last_call` |
+|---|---|---|---|---|---|---|
+| `donkey.langgraph.chat_model()` | `[langgraph]` | `shared` | ✅ | ✅ | ✅ | ✅ |
+| `donkey.adk.model()` | `[adk]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.adk.gemini()` | `[adk]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.strands.model()` | `[strands]` | `shared` | ❌ | ❌ | ✅ | ✅ |
+| `donkey.agent_framework.chat_client()` | `[agent_framework]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.openai_agents.model()` | `[openai-agents]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.anthropic.client()` | `[anthropic]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.crewai.llm()` | `[crewai]` | `framework` | ❌ | ✅ | ❌ | ❌ |
+| `donkey.llamaindex.llm()` | `[llamaindex]` | `shared` | ✅ | ✅ | ✅ | ✅ |
 
 ```python
 caps = donkey.adk.capabilities("gemini")

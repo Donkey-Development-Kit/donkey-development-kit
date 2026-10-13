@@ -44,6 +44,17 @@ owns. The gateway — not the SDK — enforces policy.
 
 ---
 
+<!-- toc -->
+**Contents**
+
+- [Layered architecture](#layered-architecture)
+  - [How the pieces connect](#how-the-pieces-connect)
+- [Verification discipline](#verification-discipline)
+- [Error-taxonomy design (BG §1.2)](#error-taxonomy-design-bg-12)
+- [Adapter support depth (BG §1.8)](#adapter-support-depth-bg-18)
+- [Related documents](#related-documents)
+<!-- tocstop -->
+
 ## Layered architecture
 
 The package is a strict stack. Higher layers depend on lower layers; **no lower
@@ -434,10 +445,15 @@ is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streami
 and the live rejection shapes), the OAuth2 control-plane token path, and the
 CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
 discovery and Exchange publication (BG §2.5). The framework adapters are not
-blocked. They build their native object directly, and their constructor rows in
-§8 of the ledger read **signature-confirmed offline**, except ADK's `gemini()`,
-which is **live-verified**. An adapter refuses with `blocked(...)` only when the
-installed framework version lacks the class or field it depends on.
+blocked. They build their native object directly, and an adapter refuses with
+`blocked(...)` only when the installed framework version lacks the class or
+field it depends on. Their status, generated from the ledger's §8 rows (§8.4
+maps each factory to its row):
+
+<!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
+LangGraph is conformance-tested against the simulator in CI.
+Each adapter factory's constructor row in §8 of the ledger reads **live-verified**.
+<!-- END GENERATED: framework-status-summary -->
 
 ---
 
@@ -560,6 +576,17 @@ recovers the typed error by duck type, without importing any framework.
 - stops at a link that carries no HTTP request or response, such as the
   user's own re-wrap or a bug in a handler, and leaves the error alone.
 
+Right after the `DonkeyError` check, a link tagged by a refusal capture returns its tag (#969). LiteLLM
+re-raises a refusal around a response it rebuilt, with no cause and no gateway
+headers, so nothing on the error leads back to our transport. For such a
+framework the adapter opens `capture_refusals()` around one framework call (ADK's
+`model()` does it in the `LiteLLMClient` it passes as `llm_client`). The governed
+pipeline records each send's typed outcome there: the classified error of a
+non-2xx final response, the `ModelSubstituted` it raises, the
+`GatewayUnavailable` or lifecycle `ConfigError` of a failed send, and `None` for
+a success. The adapter tags the error the call raised with the last outcome and
+re-raises it unchanged, so the tag only ever holds what our transport saw.
+
 A framework wrapper that carries no HTTP shape is seen through by an optional
 per-adapter translator, named by `AdapterSpec.refusal_translator` in
 `integrations/__init__.py`. It is loaded only once that framework has been
@@ -585,17 +612,18 @@ along with the eight-adapter roster (#197):
 
 - **Deep — conformance-tested against the simulator:** LangGraph, and only
   LangGraph (alongside the raw client). Held to the conformance suite; the
-  `ADAPTERS` registry marks it `conformance_tested=True`. Its `ChatOpenAI`
-  constructor is signature-confirmed offline, not live-verified.
+  `ADAPTERS` registry marks it `conformance_tested=True`.
 - **Supported at `connection_kwargs()`:** Google ADK, Strands, Microsoft Agent
-  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. Each
-  constructor is **signature-confirmed offline** (`scripts/verify_frameworks.py`),
-  except ADK's `gemini()`, which is **live-verified**. None is conformance-tested,
-  and none is carried in the nightly framework matrix — a demoted framework returns with its own
-  conformance run when demand justifies it.
+  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. None is
+  conformance-tested, and none is carried in the nightly framework matrix — a
+  demoted framework returns with its own conformance run when demand justifies it.
 - **Out of scope:** AutoGen and Semantic Kernel — Microsoft positions Agent
   Framework as their direct successor, so carrying all three would mean
   shipping two sunset-path adapters.
+
+Depth is separate from verification. What the ledger records for each factory's
+constructor is in [Verification discipline](#verification-discipline) above,
+generated from §8.
 
 This makes `connection_kwargs()` *more* load-bearing, not less: it is the
 entire supported surface for seven of the eight. A second framework is
@@ -617,8 +645,9 @@ through the shared client (`http_client` / `async_http_client`, an
 exemptions are gone (#740). Only CrewAI remains: its native OpenAI provider
 builds the sync `OpenAI` and the `AsyncOpenAI` from one `client_params` dict,
 and with an interceptor set it replaces `http_client` with its own `httpx`
-client, so the SDK's async client cannot be injected. ADK's `model()` keeps one
-exemption, `typed_refusal_bridged` (#724). `tests/unit/test_adapter_roster.py`
+client, so the SDK's async client cannot be injected. ADK's `model()` had one
+more exemption, `typed_refusal_bridged` (#724), until its refusal capture
+bridged it (#969). `tests/unit/test_adapter_roster.py`
 keeps the table and each adapter's `AdapterCapabilities` equal:
 `gateway_identity_observed` is exempt exactly when `observes_last_call` is false,
 `typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`

@@ -5,7 +5,9 @@
 :class:`~donkey_kit.core.transport.DonkeyClient`. It holds the config, budget
 and header names, stamps the per-send headers, runs the sans-IO retry decision
 (:mod:`.policy`) with its log record, types a failed send, and settles the
-final response: refusal, span attributes and substitution. The clients add
+final response: refusal, span attributes and substitution. Inside a
+:func:`~donkey_kit.core.refusals.capture_refusals` block it also records each
+send's typed outcome there (#969). The clients add
 only what differs between them, which is how they wait and how they close.
 Before #728 each client carried its own copy of all of this, and the two had
 drifted.
@@ -22,7 +24,15 @@ import httpx
 
 from ..budget import Budget
 from ..config import DonkeyConfig
-from ..errors import ConfigError, GatewayUnavailable, ModelSubstituted, PolicyViolation
+from ..errors import (
+    ConfigError,
+    DonkeyError,
+    GatewayUnavailable,
+    ModelSubstituted,
+    PolicyViolation,
+    classify,
+)
+from ..refusals import capturing, record_outcome
 from ..telemetry import GenAiSpan
 from .failures import _gateway_unavailable, _lifecycle_error
 from .headers import (
@@ -146,12 +156,14 @@ class _GovernedPipeline(_CheckedEndpoints):
     def _unreachable(self, request: httpx.Request, exc: httpx.TransportError) -> GatewayUnavailable:
         """A transport-level failure (DNS, refused, TLS, timeout) as the typed
         :class:`GatewayUnavailable`, carrying the ids already on the request (#379)."""
-        return _gateway_unavailable(
+        typed = _gateway_unavailable(
             request,
             exc,
             correlation_header=self._correlation_header,
             call_id_header=self._call_id_header,
         )
+        record_outcome(typed)
+        return typed
 
     def _send_error(
         self, request: httpx.Request, exc: Exception, *, client_closed: bool
@@ -164,13 +176,16 @@ class _GovernedPipeline(_CheckedEndpoints):
         if isinstance(exc, httpx.TransportError):
             return self._unreachable(request, exc)
         if isinstance(exc, RuntimeError):
-            return _lifecycle_error(
+            typed = _lifecycle_error(
                 request,
                 exc,
                 client_closed=client_closed,
                 correlation_header=self._correlation_header,
                 call_id_header=self._call_id_header,
             )
+            if typed is not None:
+                record_outcome(typed)
+            return typed
         return None
 
     def _settle(
@@ -195,4 +210,22 @@ class _GovernedPipeline(_CheckedEndpoints):
             correlation_header=self._correlation_header,
             cost_tags=effective_cost_tags(self._cfg),
         )
-        return violation, _substitution_error(self._cfg, request, response)
+        substitution = _substitution_error(self._cfg, request, response)
+        if capturing():
+            _record_settled(response, substitution)
+        return violation, substitution
+
+
+def _record_settled(response: httpx.Response, substitution: ModelSubstituted | None) -> None:
+    """Record a final response's typed outcome in the open refusal capture
+    (#969): the substitution to raise, else the classified error of a non-2xx
+    response, else ``None``, so a success clears an earlier failure in the same
+    framework call. Never raises."""
+    outcome: DonkeyError | None = substitution
+    try:
+        if outcome is None and response.status_code >= 400:
+            outcome = classify(response)
+    except Exception:  # noqa: BLE001 — classification must never break the request
+        _log.debug("classifying the final response for the refusal capture failed", exc_info=True)
+        return
+    record_outcome(outcome)

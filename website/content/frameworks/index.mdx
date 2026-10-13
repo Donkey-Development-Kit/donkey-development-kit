@@ -1,5 +1,6 @@
 ---
 description: Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
+status: live
 ---
 
 import { Callout } from 'nextra/components'
@@ -38,31 +39,54 @@ Each card shows what has been proven about that adapter, in the terms the
 | <Badge tone="neutral">Signature-confirmed</Badge> | The factory builds the native object against the installed framework, checked offline by `python scripts/verify_frameworks.py`. No live round-trip yet. |
 
 The proxy data plane every adapter calls (base URL, credential headers,
-streaming, rejection shapes) is live-verified.
+streaming, rejection shapes) is live-verified. For the framework versions each
+adapter supports and is tested on, see
+[Version compatibility](/frameworks/compatibility).
+
+{/* BEGIN GENERATED: framework-status (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) */}
+Each factory's status is its constructor row in the [ledger §8](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md); its
+depth is the adapter roster's `conformance_tested`.
+
+| Framework | Factory | Depth | Ledger status |
+|---|---|---|---|
+| [LangGraph](/frameworks/langgraph) | `donkey.langgraph.chat_model()` | <Badge tone="accent">Conformance-tested</Badge> | <Badge tone="live">Live-verified</Badge> |
+| [Google ADK](/frameworks/adk) | `donkey.adk.model()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [Google ADK](/frameworks/adk) | `donkey.adk.gemini()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [Strands](/frameworks/strands) | `donkey.strands.model()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [MS Agent Framework](/frameworks/agent-framework) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [OpenAI Agents SDK](/frameworks/openai) | `donkey.openai_agents.model()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [Anthropic SDK](/frameworks/anthropic) | `donkey.anthropic.client()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [CrewAI](/frameworks/crewai) | `donkey.crewai.llm()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [LlamaIndex](/frameworks/llamaindex) | `donkey.llamaindex.llm()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+{/* END GENERATED: framework-status */}
+
+A card reads Conformance-tested for a conformance-tested adapter, and otherwise
+the ledger status of the adapter's default factory, so the ADK card rates
+`model()`.
 
 <CardGrid>
   <Card title="LangGraph" href="/frameworks/langgraph" badge="Conformance-tested" badgeTone="accent">
     `chat_model()` → `langchain_openai.ChatOpenAI`
   </Card>
-  <Card title="Google ADK" href="/frameworks/adk" badge="Signature-confirmed" badgeTone="neutral">
-    `model()` → `google.adk … LiteLlm` (signature-confirmed); `gemini()` → `google.adk.models.Gemini` (live-verified)
+  <Card title="Google ADK" href="/frameworks/adk" badge="Live-verified" badgeTone="live">
+    `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
   </Card>
-  <Card title="Strands" href="/frameworks/strands" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="Strands" href="/frameworks/strands" badge="Live-verified" badgeTone="live">
     `model()` → `strands … OpenAIModel`
   </Card>
-  <Card title="MS Agent Framework" href="/frameworks/agent-framework" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="MS Agent Framework" href="/frameworks/agent-framework" badge="Live-verified" badgeTone="live">
     `chat_client()` → Agent Framework chat client
   </Card>
-  <Card title="OpenAI Agents SDK" href="/frameworks/openai" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="OpenAI Agents SDK" href="/frameworks/openai" badge="Live-verified" badgeTone="live">
     `model()` → `agents.OpenAIChatCompletionsModel`
   </Card>
-  <Card title="Anthropic SDK" href="/frameworks/anthropic" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="Anthropic SDK" href="/frameworks/anthropic" badge="Live-verified" badgeTone="live">
     `client()` → `anthropic.AsyncAnthropic`
   </Card>
-  <Card title="CrewAI" href="/frameworks/crewai" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="CrewAI" href="/frameworks/crewai" badge="Live-verified" badgeTone="live">
     `llm()` → `crewai.BaseLLM` (`OpenAICompletion`)
   </Card>
-  <Card title="LlamaIndex" href="/frameworks/llamaindex" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="LlamaIndex" href="/frameworks/llamaindex" badge="Live-verified" badgeTone="live">
     `llm()` → `OpenAILike` (`is_chat_model=True`)
   </Card>
   <Card title="No framework" href="/quickstart" badge="Conformance-tested" badgeTone="accent">
@@ -80,7 +104,8 @@ export DONKEY_LLM_PROXY_URL=…  DONKEY_LLM_PROXY_CLIENT_ID=…  DONKEY_LLM_PROX
 ```python
 from donkey_kit import Donkey
 async with Donkey.from_env() as donkey:
-    model = donkey.<framework>.<factory>("gpt-4o")   # native object at the proxy
+    # donkey.<framework>.<factory>(...), here LangGraph's chat_model:
+    model = donkey.langgraph.chat_model("gpt-4o")   # native object at the proxy
 ```
 
 Each framework page shows the factory name, the native class you get back, the
@@ -132,6 +157,23 @@ one `connection_kwargs()` configures. Each factory reports its own, so ADK's
 | `streaming` | `False` where the governed connection turns streaming off (Strands, `stream=False`). |
 | `typed_refusals` | A gateway refusal reaches you as a typed exception through `donkey.run()` or `typed_refusals()`. |
 | `observes_last_call` | A call through this object populates `donkey.last_call`. |
+
+{/* BEGIN GENERATED: adapter-capabilities (edit python/scripts/generate_docs.py, then run it) */}
+What each factory reports, generated from the adapter roster and each
+adapter's declared `factories`:
+
+| Factory | Extra | `transport` | `sync` | `streaming` | `typed_refusals` | `observes_last_call` |
+|---|---|---|---|---|---|---|
+| `donkey.langgraph.chat_model()` | `[langgraph]` | `shared` | ✅ | ✅ | ✅ | ✅ |
+| `donkey.adk.model()` | `[adk]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.adk.gemini()` | `[adk]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.strands.model()` | `[strands]` | `shared` | ❌ | ❌ | ✅ | ✅ |
+| `donkey.agent_framework.chat_client()` | `[agent_framework]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.openai_agents.model()` | `[openai-agents]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.anthropic.client()` | `[anthropic]` | `shared` | ❌ | ✅ | ✅ | ✅ |
+| `donkey.crewai.llm()` | `[crewai]` | `framework` | ❌ | ✅ | ❌ | ❌ |
+| `donkey.llamaindex.llm()` | `[llamaindex]` | `shared` | ✅ | ✅ | ✅ | ✅ |
+{/* END GENERATED: adapter-capabilities */}
 
 ```python
 caps = donkey.adk.capabilities("gemini")

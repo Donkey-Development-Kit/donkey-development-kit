@@ -56,27 +56,33 @@ def test_env_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.client_id == "cid"
     assert cfg.region == "eu"
     assert cfg.telemetry is False
-    with pytest.warns(UnverifiedValueWarning, match="docs/verified-apis.md §1"):
-        assert cfg.control_plane_url.startswith("https://eu1")
-
-
-@pytest.mark.parametrize("region", ["eu", "ca", "jp"])
-def test_unconfirmed_region_host_warns_once(region: Region) -> None:
-    # docs/verified-apis.md §1: only the US host is confirmed.
-    cfg = DonkeyConfig(region=region)
-    with pytest.warns(UnverifiedValueWarning, match=f"anypoint.region_host.{region}"):
-        assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
-        assert cfg.control_plane_url == f"https://{region}1.anypoint.mulesoft.com"
+        assert cfg.control_plane_url == "https://eu1.anypoint.mulesoft.com"
 
 
-def test_us_region_and_base_url_override_are_quiet() -> None:
+@pytest.mark.parametrize(
+    ("region", "host"),
+    [
+        ("us", "https://anypoint.mulesoft.com"),
+        ("eu", "https://eu1.anypoint.mulesoft.com"),
+        ("ca", "https://ca1.platform.mulesoft.com"),
+        ("jp", "https://jp1.platform.mulesoft.com"),
+    ],
+)
+def test_verified_region_hosts_are_quiet(region: Region, host: str) -> None:
+    # docs/verified-apis.md §1: US VERIFIED (CLI), EU VERIFIED (plugin), CA and JP
+    # VERIFIED (LIVE); the Hyperforce hosts are on platform.mulesoft.com (#22).
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
-        assert DonkeyConfig().control_plane_url == "https://anypoint.mulesoft.com"
-        override = DonkeyConfig(region="eu", base_url="https://eu1.example.test")
-        assert override.control_plane_url == "https://eu1.example.test"
+        assert DonkeyConfig(region=region).control_plane_url == host
+
+
+def test_base_url_override_is_quiet() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnverifiedValueWarning)
+        override = DonkeyConfig(region="jp", base_url="https://jp1.example.test")
+        assert override.control_plane_url == "https://jp1.example.test"
 
 
 def test_unknown_region_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -134,9 +140,7 @@ def test_install_global_env_overrides_toml(tmp_path, monkeypatch: pytest.MonkeyP
 # unless the developer opts into a hard error, through the normal precedence.
 
 
-def test_on_model_substitution_defaults_to_off(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_on_model_substitution_defaults_to_off(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_toml(tmp_path, monkeypatch)
     assert DonkeyConfig().on_model_substitution == "off"  # dataclass default
     assert DonkeyConfig.from_env().on_model_substitution == "off"  # resolved default
@@ -183,9 +187,7 @@ def test_unknown_on_model_substitution_is_a_config_error(
 # durable wallet-selector client id. An unknown mode fails loudly at resolve time.
 
 
-def test_llm_proxy_auth_defaults_to_client_id(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_llm_proxy_auth_defaults_to_client_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_toml(tmp_path, monkeypatch)
     assert DonkeyConfig().llm_proxy_auth == "client-id"  # dataclass default
     assert DonkeyConfig.from_env().llm_proxy_auth == "client-id"  # resolved default
@@ -197,9 +199,7 @@ def test_llm_proxy_auth_from_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> N
     assert DonkeyConfig.from_env().llm_proxy_auth == "jwt"
 
 
-def test_llm_proxy_auth_is_case_insensitive(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_llm_proxy_auth_is_case_insensitive(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_toml(tmp_path, monkeypatch)
     monkeypatch.setenv("DONKEY_LLM_PROXY_AUTH", "JWT")
     assert DonkeyConfig.from_env().llm_proxy_auth == "jwt"
@@ -289,9 +289,7 @@ def test_cost_tags_from_toml_table(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     assert cfg.cost == CostTags(team="support", enduser_id="user-7")
 
 
-def test_cost_env_overrides_toml_per_dimension(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cost_env_overrides_toml_per_dimension(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_toml(
         tmp_path,
         monkeypatch,
@@ -312,9 +310,7 @@ def test_unknown_cost_key_in_toml_is_a_config_error(
     assert "teem" in str(exc.value)
 
 
-def test_cost_header_name_overrides_resolve(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cost_header_name_overrides_resolve(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_toml(tmp_path, monkeypatch)
     monkeypatch.setenv("DONKEY_COST_TEAM_HEADER", "x-cost-team")
     monkeypatch.setenv("DONKEY_COST_PROJECT_HEADER", "x-cost-project")

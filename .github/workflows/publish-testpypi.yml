@@ -5,6 +5,11 @@
 # longer falls through to TestPyPI. Trust is keyed on this filename
 # (publish-testpypi.yml) + the `testpypi` Environment; register it once on
 # test.pypi.org (see docs/releasing.md).
+#
+# After the upload, the `acceptance` job dispatches the maintainers' acceptance
+# workflow (its offline groups) against the version just published, waits for
+# it, and posts the result as the `acceptance (published)` commit status on
+# this commit, which the develop → main promotion PR shows (#1082).
 name: Publish to TestPyPI
 
 on:
@@ -19,21 +24,58 @@ defaults:
     working-directory: python
 
 jobs:
+  test:
+    name: Test suite at the release commit
+    # #767: a dispatch does not wait for develop's CI, so the suite runs again
+    # here, on the exact commit being uploaded, before any upload. Same install
+    # and command as ci.yml's `test` job (3.11 leg).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/test-py3.11.txt
+      - run: pytest -q
+
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Build
+        # The release toolchain comes from the lock, and --no-isolation builds
+        # with that hatchling instead of the newest one on PyPI (#763). Refresh
+        # with scripts/compile_constraints.py (combo "release").
         run: |
-          pip install build twine
-          python -m build
+          pip install -c constraints/release-py3.11.txt build twine hatchling
+          python -m build --no-isolation
       - name: twine check (PyPI long description renders cleanly)
         run: twine check dist/*
+      - name: every dist carries the declared version (#767)
+        # No tag here (dev snapshots are not GitHub Releases), but a stale or
+        # mis-spelled version must still fail before the unreusable upload.
+        run: python scripts/check_release_version.py dist/*
+      - name: the declared version, for the acceptance dispatch (#1082)
+        id: version
+        run: >-
+          python -c "import re, pathlib;
+          text = pathlib.Path('src/donkey_kit/__init__.py').read_text();
+          print('version=' + re.search(r'^__version__\s*=\s*\"([^\"]+)\"', text, re.M).group(1))"
+          >> "$GITHUB_OUTPUT"
       - name: no tenant identifiers or live platform hosts in the built dists (#821)
         run: python scripts/scrub_fixtures.py --check dist/*
       - name: Floors, never ceilings (§8.4) — no upper pins in the built metadata
@@ -54,14 +96,18 @@ jobs:
             exit 1
           fi
           echo "Requires-Dist carries only >= floors."
-      - uses: actions/upload-artifact@v4
+      - name: the built wheel installs and imports in a clean virtualenv (#767)
+        run: python scripts/smoke_test_wheel.py dist/*.whl
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: python/dist/
 
   publish-testpypi:
     name: Publish to TestPyPI (dev dry-run)
-    needs: build
+    # Every gate passes first: the suite at this commit, and the build job's
+    # version check and clean-install smoke test (#767).
+    needs: [test, build]
     # develop-scoped: a dispatch from any other ref is skipped — a dev snapshot
     # only ever ships from develop, matching the branch model.
     if: ${{ github.ref == 'refs/heads/develop' }}
@@ -71,11 +117,100 @@ jobs:
     permissions:
       id-token: write # OIDC token for Trusted Publishing; no stored secret.
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist/
+          # PEP 740 attestations, as on production (#767).
+          attestations: true
+
+  acceptance:
+    name: Acceptance run against the published version
+    # #1082: the acceptance suite installs the PUBLISHED artifact from the
+    # index, which no gate above does. This job starts its offline groups
+    # (no credentials, no gateway) and reports back here; the live groups stay
+    # a manual run (docs/releasing.md, "The acceptance run").
+    #
+    # Setup, once: the ACCEPTANCE_REPO repository variable (owner/name of the
+    # acceptance repository) and the ACCEPTANCE_DISPATCH_TOKEN secret, a
+    # fine-grained token with Actions read and write on that repository only.
+    # Without both, the job posts an `error` status saying so, so a promotion
+    # PR never shows a missing run as green.
+    needs: [build, publish-testpypi]
+    runs-on: ubuntu-latest
+    # The acceptance workflow's own limit is 25 minutes (a cold run of the
+    # offline groups takes about 7); the wait below gives up at 26, before
+    # this bound, so a slow run still ends in a status.
+    timeout-minutes: 30
+    # No checkout here, so the workflow-wide `python` working directory does
+    # not exist and the step cannot start; run from the workspace root.
+    defaults:
+      run:
+        working-directory: .
+    permissions:
+      statuses: write # the `acceptance (published)` status on this commit
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      ACCEPTANCE_REPO: ${{ vars.ACCEPTANCE_REPO }}
+      HAS_TOKEN: ${{ secrets.ACCEPTANCE_DISPATCH_TOKEN != '' }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Dispatch the acceptance run, wait for it, report it
+        env:
+          STATUS_TOKEN: ${{ github.token }}
+          DISPATCH_TOKEN: ${{ secrets.ACCEPTANCE_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          status() { # state, description, target URL
+            GH_TOKEN="$STATUS_TOKEN" gh api --silent "repos/$REPO/statuses/$SHA" \
+              -f state="$1" -f context="acceptance (published)" \
+              -f description="$2" -f target_url="$3"
+          }
+          if [ -z "$ACCEPTANCE_REPO" ] || [ "$HAS_TOKEN" != true ]; then
+            status error "Not run: set ACCEPTANCE_REPO and ACCEPTANCE_DISPATCH_TOKEN (docs/releasing.md)" "$RUN_URL"
+            echo "::warning::No acceptance run: the ACCEPTANCE_REPO variable or ACCEPTANCE_DISPATCH_TOKEN secret is unset."
+            exit 0
+          fi
+          export GH_TOKEN="$DISPATCH_TOKEN"
+          status pending "Dispatching the offline groups for $VERSION" "$RUN_URL"
+          if ! gh workflow run published-gate.yml -R "$ACCEPTANCE_REPO" --ref develop \
+              -f version="$VERSION" -f index=testpypi -f sdk_sha="$SHA"; then
+            status error "Could not dispatch the acceptance run" "$RUN_URL"
+            exit 1
+          fi
+          # The dispatch API returns no run id. The acceptance run-name carries
+          # this commit's SHA and the version, so find the run by its title.
+          run_id=""
+          for _ in $(seq 1 24); do
+            sleep 5
+            run_id="$(gh run list -R "$ACCEPTANCE_REPO" -w published-gate.yml -e workflow_dispatch -L 20 \
+              --json databaseId,displayTitle \
+              --jq "[.[] | select((.displayTitle | contains(\"$SHA\")) and (.displayTitle | contains(\"$VERSION \")))][0].databaseId // empty")"
+            [ -n "$run_id" ] && break
+          done
+          if [ -z "$run_id" ]; then
+            status error "Dispatched, but no acceptance run appeared within 2 minutes" "$RUN_URL"
+            exit 1
+          fi
+          run_url="$(gh run view "$run_id" -R "$ACCEPTANCE_REPO" --json url --jq .url)"
+          status pending "Groups 3, 4, 5 running on $VERSION; live groups stay manual" "$run_url"
+          if ! timeout 26m gh run watch "$run_id" -R "$ACCEPTANCE_REPO" --interval 30 > /dev/null; then
+            if [ "$(gh run view "$run_id" -R "$ACCEPTANCE_REPO" --json status --jq .status)" != completed ]; then
+              status error "Acceptance run still going after 26 minutes; check it by hand" "$run_url"
+              exit 1
+            fi
+          fi
+          conclusion="$(gh run view "$run_id" -R "$ACCEPTANCE_REPO" --json conclusion --jq .conclusion)"
+          echo "Acceptance run $run_url: $conclusion"
+          if [ "$conclusion" = success ]; then
+            status success "Offline groups 3, 4, 5 passed on $VERSION; live groups stay manual" "$run_url"
+          else
+            status failure "Offline groups on $VERSION: $conclusion" "$run_url"
+            exit 1
+          fi

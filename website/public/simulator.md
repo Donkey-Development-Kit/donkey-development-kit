@@ -1,6 +1,6 @@
 # Local simulator
 
-Live
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Nobody can make the production gateway emit a PII block on cue, so the branch
 of your agent that handles `PIIDetected` usually runs for the first time on a

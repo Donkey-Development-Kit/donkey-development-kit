@@ -1,5 +1,7 @@
 # Microsoft Agent Framework
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Microsoft Agent Framework gets a governed chat client pointed at the Omni
 Gateway LLM proxy, plus policy middleware that ends a run on a governance
 rejection with the SDK's typed refusal.
@@ -7,9 +9,10 @@ rejection with the SDK's typed refusal.
 **What you get**
 
 - A native `agent_framework.openai.OpenAIChatCompletionClient`, which calls
-  the Chat Completions API (`POST /chat/completions`), checked against
-  agent-framework 1.19.0. Pass `api="responses"` for the Responses client (see
-  [Which API](#which-api)).
+  the Chat Completions API (`POST /chat/completions`). Pass
+  `api="responses"` for the Responses client (see [Which API](#which-api)).
+  The supported and tested agent-framework versions are on
+  [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md).
 - `policy_middleware()`, which ends a run on a proxy refusal with a typed
   `PolicyViolation` such as `PIIDetected`.
 - Supported at `connection_kwargs()`. The client gets an `async_client` that
@@ -174,8 +177,9 @@ the transport raised under Agent Framework's wrapper. Errors that are not from
 the gateway pass through unchanged. A `donkey.run()` block or a
 `@donkey.governed` function applies the same bridge, so a run without the
 middleware still ends typed. The middleware is marked with Agent Framework's
-`@chat_middleware` decorator. That is confirmed offline against
-agent-framework 1.19.0, with no live round-trip yet. If the decorator is
+`@chat_middleware` decorator. That is confirmed offline against the
+[tested agent-framework version](https://docs.donkey-kit.dev/frameworks/compatibility.md), with no live
+round-trip yet. If the decorator is
 missing from your installed version, `policy_middleware()` raises a
 `NotImplementedError` naming it.
 
@@ -183,7 +187,7 @@ missing from your installed version, `policy_middleware()` raises a
 
 - **Constructor signature.** `OpenAIChatClient` and
   `OpenAIChatCompletionClient` both take `model`, `base_url`, `api_key`, and
-  `default_headers` (agent-framework 1.19.0; `model_id` is not accepted). If the import fails or an upstream release renames a kwarg,
+  `default_headers` (`model_id` is not accepted). If the import fails or an upstream release renames a kwarg,
   `chat_client()` raises a `NotImplementedError` naming the class path or
   signature to check, rather than a raw `ImportError` or `TypeError`.
 - **`donkey.last_call` is set in the context that made the call.** A cold read

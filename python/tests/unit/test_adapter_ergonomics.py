@@ -420,6 +420,8 @@ _FACTORIES = [
         ("gpt-4o",),
         "api_base",
         "https://override",
+        # model() passes a LiteLLMClient subclass as llm_client (#969)
+        (("google.adk.models.lite_llm", "LiteLLMClient"),),
     ),
     _F(
         "strands",
@@ -514,9 +516,7 @@ def _set_proxy_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("f", _FACTORIES, ids=lambda f: f.module)
-def test_factory_and_connection_kwargs_do_not_drift(
-    f: _F, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_factory_and_connection_kwargs_do_not_drift(f: _F, monkeypatch: pytest.MonkeyPatch) -> None:
     _set_proxy_env(monkeypatch)
     mod = importlib.import_module(f"donkey_kit.integrations.{f.module}")
     factory = getattr(mod, f.factory)
@@ -712,6 +712,7 @@ def test_adk_last_call_status_does_not_depend_on_factory_order(
 
     _install_gemini_stub(monkeypatch)
     _install_native_stub(monkeypatch, "google.adk.models.lite_llm", "LiteLlm")
+    _install_native_stub(monkeypatch, "google.adk.models.lite_llm", "LiteLLMClient")
     monkeypatch.setattr("donkey_kit.donkey._missing_module", lambda _probe: None)
     token = lastcall._last_call.set(None)
     try:

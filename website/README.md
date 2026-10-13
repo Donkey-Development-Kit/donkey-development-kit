@@ -62,6 +62,33 @@ diff, so the committed artifacts cannot drift from the pages.
 npm run generate:llms   # regenerate after editing pages; commit the result
 ```
 
+The artifacts stay committed on purpose (#795). Every PR diff shows how a page
+edit changes what assistants read, the drift job checks them without a build,
+and `.gitattributes` marks them `linguist-generated` so GitHub collapses them
+in review.
+
+## Generated from the SDK code
+
+Some pages restate facts that live in the Python code. Those parts are written
+by [`python/scripts/generate_docs.py`](../python/scripts/generate_docs.py), not
+by hand:
+
+- `content/reference/api.mdx`, the whole Python API page, from the public
+  docstrings and signatures;
+- the `BEGIN GENERATED` regions in `content/reference/configuration.mdx`
+  (settings index), `content/cli.mdx` (command reference) and
+  `content/frameworks/index.mdx` (adapter capabilities).
+
+Edit the code or docstring, then run the script from `python/` and commit the
+result. The unit test `tests/unit/test_generated_docs.py` fails when a
+committed copy is stale. The prose around a region is hand-written as usual.
+
+The version banner at the top of every page is built at build time by
+[`lib/version.mjs`](lib/version.mjs): it reads `__version__` from
+`../python/src/donkey_kit/__init__.py` (the package's one version source), and asks PyPI for the latest release with a
+3-second timeout. If PyPI can't be reached, the banner shows only the
+documented version.
+
 ## Deploy — GitHub Pages
 
 The site is published by [`.github/workflows/docs.yml`](../.github/workflows/docs.yml)
@@ -107,6 +134,20 @@ errors.
 
 `npm test` runs the beacon gate's unit tests.
 
+## Checks (same as the `docs-site` CI job)
+
+Needs Node >= 22 (CI uses 24). Run after `npm ci`:
+
+```bash
+npm run typecheck                                  # tsc --noEmit
+npm run lint                                       # syntax-check the .mjs files (scripts/lint.mjs)
+DOCS_BASE_PATH=/donkey-development-kit npm run build
+DOCS_BASE_PATH=/donkey-development-kit npm run check:links   # internal links + #anchors in out/
+```
+
+There is no `start` script: the site is a static export (`output: 'export'`),
+so serve `out/` with `npm run preview:pages` instead of `next start`.
+
 ## Structure
 
 The sidebar is grouped into capability pillars by separators in
@@ -131,10 +172,41 @@ content/
   reference/                          Configuration, unsupported boundary
 ```
 
-Capability status uses one vocabulary: `<Badge tone="live">Live</Badge>` for
-what is available now and `<Badge tone="roadmap">Roadmap</Badge>` for what is
-planned. Delivery detail (phases, milestones, issues) belongs on the Roadmap
-page only.
+Every page declares its status in frontmatter, in one vocabulary that follows
+the verification ledger (`docs/verified-apis.md`, §0.3):
+
+```yaml
+---
+description: …
+status: live            # or offline-verified, or roadmap
+---
+```
+
+| `status` | Means | Badge |
+| --- | --- | --- |
+| `live` | Shipped, and the gateway contract it rests on is `VERIFIED (LIVE)` / `VERIFIED (CLI)` in the ledger. | Live |
+| `offline-verified` | Shipped and proven offline (conformance against the simulator, `verify_frameworks.py` signature checks), with no live round-trip yet: the ledger row reads UNVERIFIED (signature confirmed). | Offline-verified |
+| `roadmap` | Planned design, or an API that raises `_verify.blocked(...)` until its ledger row is confirmed. | Roadmap |
+
+The page-level badge is rendered from that value (see
+[`lib/status.mjs`](lib/status.mjs)), and the same value is shown in
+`llms.txt` and under the H1 of each per-page `.md`, so don't hand-write a
+`<Badge>` under the H1. `statusBadge: false` hides the badge on pages that
+document no SDK surface (the landing page, the roadmap, the community pages).
+Inline badges in tables, cards and legends are still written by hand. A page
+is rated by the surface its main code uses (a scenario built on
+`donkey.langgraph.chat_model(...)` is `offline-verified`, like the framework
+pages); when one section of a page stands on a weaker ledger row than the rest,
+that section carries its own inline badge, as the framework card on the
+Feature overview does. A missing or unknown status fails `npm test`, `node scripts/generate-llms.mjs`
+and `npm run build`.
+
+The status is also what the Python snippet check reads
+(`python/scripts/check_doc_snippets.py`, run by the unit suite in CI): every
+Python fence must import, resolve and bind against the real SDK, `roadmap`
+pages are exempt, and a `live` page may not call an API that raises
+`_verify.blocked(...)`. Delivery detail (phases, milestones, issues) belongs on
+the Roadmap page only.
 
 ## Roadmap data
 

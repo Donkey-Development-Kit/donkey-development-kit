@@ -1,5 +1,7 @@
 # OpenAI Agents SDK
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
 `OpenAIChatCompletionsModel` backed by a pre-built `AsyncOpenAI` client. The
 adapter builds that client itself, with the SDK's shared HTTP client and proxy

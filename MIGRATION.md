@@ -1,5 +1,49 @@
 # Migration guide
 
+<!-- toc -->
+**Contents**
+
+- [0.1.2: public API surface, removed control plane and typed errors](#012-public-api-surface-removed-control-plane-and-typed-errors)
+  - [1. donkey_kit.provisioning and donkey_kit.governance are gone](#1-donkey_kitprovisioning-and-donkey_kitgovernance-are-gone)
+  - [2. Hidden CLI commands validate, plan, apply, drift, lint, generate are removed](#2-hidden-cli-commands-validate-plan-apply-drift-lint-generate-are-removed)
+  - [3. Three errors are removed](#3-three-errors-are-removed)
+  - [4. Blocked-surface types moved to donkey_kit.experimental](#4-blocked-surface-types-moved-to-donkey_kitexperimental)
+  - [5. Two renamed names, with deprecated aliases](#5-two-renamed-names-with-deprecated-aliases)
+  - [6. run_context() is deprecated](#6-run_context-is-deprecated)
+  - [7. Removed names](#7-removed-names)
+  - [8. Internal names renamed without an alias](#8-internal-names-renamed-without-an-alias)
+  - [9. pydantic and pyyaml are no longer installed for you](#9-pydantic-and-pyyaml-are-no-longer-installed-for-you)
+  - [10. The dev, mcp and a2a extras are gone, and [all] installs no test runner](#10-the-dev-mcp-and-a2a-extras-are-gone-and-all-installs-no-test-runner)
+  - [11. The conformance plugin's --agent is now --donkey-agent](#11-the-conformance-plugins---agent-is-now---donkey-agent)
+  - [12. Donkey() no longer installs the global OpenTelemetry provider](#12-donkey-no-longer-installs-the-global-opentelemetry-provider)
+  - [13. The user config file is merged beneath the project files](#13-the-user-config-file-is-merged-beneath-the-project-files)
+  - [14. Donkey.from_env() accepts every field](#14-donkeyfrom_env-accepts-every-field)
+  - [15. A 502 or 504 on a model call is no longer retried by default](#15-a-502-or-504-on-a-model-call-is-no-longer-retried-by-default)
+  - [16. Errors leaving donkey.run() and @donkey.governed are typed](#16-errors-leaving-donkeyrun-and-donkeygoverned-are-typed)
+  - [17. A request-rate-limit 429 is RequestRateLimitExceeded](#17-a-request-rate-limit-429-is-requestratelimitexceeded)
+  - [Shipped simulator fixtures moved into the package (not breaking)](#shipped-simulator-fixtures-moved-into-the-package-not-breaking)
+  - [New exports (not breaking)](#new-exports-not-breaking)
+  - [LlamaIndex, Agent Framework and ADK model() report last_call (not breaking)](#llamaindex-agent-framework-and-adk-model-report-last_call-not-breaking)
+- [0.1.1: credential handling, endpoint trust and printed output](#011-credential-handling-endpoint-trust-and-printed-output)
+  - [1. Non-loopback http:// endpoints are refused](#1-non-loopback-http-endpoints-are-refused)
+  - [2. A URL from the project's config files only gets credentials from those files](#2-a-url-from-the-projects-config-files-only-gets-credentials-from-those-files)
+  - [3. .donkey-kit.local.toml is now read](#3-donkey-kitlocaltoml-is-now-read)
+  - [4. Each credential stays on its own plane](#4-each-credential-stays-on-its-own-plane)
+  - [5. Cost-tag headers are off by default](#5-cost-tag-headers-are-off-by-default)
+  - [6. donkey doctor output](#6-donkey-doctor-output)
+  - [7. Some configurable header names are refused](#7-some-configurable-header-names-are-refused)
+  - [8. Config files that link outside the working directory are refused](#8-config-files-that-link-outside-the-working-directory-are-refused)
+  - [9. URL overrides passed to factories must use https://](#9-url-overrides-passed-to-factories-must-use-https)
+  - [10. Credentials go only to checked endpoints](#10-credentials-go-only-to-checked-endpoints)
+  - [11. LlamaIndex, MS Agent Framework and ADK's model() send through the SDK's client](#11-llamaindex-ms-agent-framework-and-adks-model-send-through-the-sdks-client)
+  - [12. PIIDetected messages no longer contain the flagged values](#12-piidetected-messages-no-longer-contain-the-flagged-values)
+  - [13. repr() / str() of DonkeyConfig omit the secrets](#13-repr--str-of-donkeyconfig-omit-the-secrets)
+  - [14. Printed connection_kwargs() show '*' for secrets](#14-printed-connection_kwargs-show--for-secrets)
+  - [15. typed_refusals() no longer chains the LangChain error](#15-typed_refusals-no-longer-chains-the-langchain-error)
+  - [16. An Agent Kill Switch block raises AgentKilled](#16-an-agent-kill-switch-block-raises-agentkilled)
+  - [17. donkey-kit[all] leaves out the seven connection_kwargs() frameworks](#17-donkey-kitall-leaves-out-the-seven-connection_kwargs-frameworks)
+<!-- tocstop -->
+
 ## 0.1.2: public API surface, removed control plane and typed errors
 
 Changes since `0.1.1` that can affect existing code. 0.1.2 defines the public
@@ -422,7 +466,9 @@ endpoint comes from somewhere else. Loopback URLs are included. The usual cases:
 
 **Not affected:** URL and credentials all in environment variables (the usual
 CI setup); config built entirely with `DonkeyConfig(...)`; URLs in the user
-config file; a `base_url` on `anypoint.mulesoft.com`, `eu1.`, `ca1.` or `jp1.`.
+config file; a `base_url` on `anypoint.mulesoft.com`, `eu1.anypoint.mulesoft.com`,
+`ca1.platform.mulesoft.com` or `jp1.platform.mulesoft.com` (before 0.1.3 the
+CA and JP entries were `ca1.anypoint.` and `jp1.anypoint.`, which do not exist, #22).
 
 **Symptom:** building a client (`donkey.llm.client()`, a framework factory,
 `connection_kwargs()`) raises, before anything is sent:
@@ -799,183 +845,3 @@ whose current releases can't be installed together, so pip failed with
 `resolution-too-deep`.
 
 **Fix:** add the framework you use: `pip install "donkey-kit[all,crewai]"`.
-
-## `agent-fabric` → `donkey-kit` (the DDK rebrand)
-
-This SDK was renamed from **Agent Fabric SDK** to the **Donkey Development Kit
-(DDK)**. The rename is a **trademark** decision, not a functional one:
-"Agent Fabric" is a MuleSoft/Salesforce product name, and this project is an
-independent, unaffiliated SDK *for consuming* MuleSoft Agent Fabric — the name
-cannot be part of our own product identity. The MuleSoft product it targets is
-still referred to as "Agent Fabric" throughout the docs; only the SDK's own
-identity changed.
-
-**This is a clean break.** Because the SDK is pre-1.0, there are **no
-compatibility shims** — no import aliases, no environment-variable fallbacks, no
-OpenTelemetry dual-emit. Pin the last `agent-fabric` release if you are not
-ready to migrate; otherwise apply every rename below in one pass. The rename is
-purely mechanical: no behavior, no wire contract, and no verified API changed.
-
-### At a glance
-
-| Surface | Was | Now |
-| --- | --- | --- |
-| PyPI distribution | `agent-fabric` | `donkey-kit` |
-| Import package | `agent_fabric` | `donkey_kit` |
-| Client class / instance | `Fabric` / `fabric` | `Donkey` / `donkey` |
-| Other public classes | `FabricConfig`, `FabricError`, `FabricSpec`, `FabricAsyncClient`, `FabricClient` | `DonkeyConfig`, `DonkeyError`, `DonkeySpec`, `DonkeyAsyncClient`, `DonkeyClient` |
-| CLI command | `agent-fabric …` | `donkey …` |
-| Config file / table / lock | `.agent-fabric.toml` / `[fabric]` / `fabric.lock` | `.donkey-kit.toml` / `[donkey]` / `donkey.lock` |
-| Env prefix | `AGENT_FABRIC_*` (and `FABRIC_*`) | `DONKEY_*` |
-| OpenTelemetry attribute namespace | `fabric.*` | `donkey.*` |
-| pytest plugin entry-point / flag | `agent_fabric_conformance` / `--fabric-conformance` | `donkey_kit_conformance` / `--donkey-conformance` |
-| Simulator honesty header | `x-fabric-simulator` | `x-donkey-simulator` |
-
-### 1. Install
-
-```diff
-- pip install "agent-fabric[llm,langgraph]"
-+ pip install "donkey-kit[llm,langgraph]"
-```
-
-Extras keep their names (`llm`, `langgraph`, `cli`, `otel`, `dev`, …); only the
-distribution name changed.
-
-### 2. Imports and the client class
-
-```diff
-- from agent_fabric import Fabric
-- fabric = Fabric.from_env()
-- model = fabric.langgraph.chat_model("gpt-4o")
-+ from donkey_kit import Donkey
-+ donkey = Donkey.from_env()
-+ model = donkey.langgraph.chat_model("gpt-4o")
-```
-
-Every `Fabric*` public class gains a `Donkey*` name (see the table above); the
-raw client is `donkey.llm.client()`. The `donkey.<framework>` factory,
-`connection_kwargs()` accessor, and module-level factory keep their shapes —
-only the package and instance name changed.
-
-### 3. CLI
-
-The top-level command is now `donkey`. `donkey --help` lists four commands:
-
-```bash
-donkey init      # write a commented .donkey-kit.toml from the resolved config
-donkey doctor    # diagnose config, credentials, gateway, model and budget
-donkey mock      # run the local gateway simulator
-donkey test --agent=myagent:build   # run the conformance suite against your agent
-```
-
-The provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
-`generate`, `status`, `publish`, `verify`) are hidden from `--help`. All of
-them except `validate` exit with status 3 and a `blocked on verification`
-message. (A later release removed all but `status`, `publish` and `verify`; see
-the first section of this guide.)
-
-### 4. Configuration file
-
-Rename the file, the table header, and the lockfile:
-
-```diff
-- # .agent-fabric.toml
-- [fabric]
-+ # .donkey-kit.toml
-+ [donkey]
-  llm_proxy_url = "https://<ingress>/<instance>"
-```
-
-```diff
-- fabric.lock
-+ donkey.lock
-```
-
-### 5. Environment variables
-
-Every `AGENT_FABRIC_*` variable becomes `DONKEY_*`. There is **no fallback** —
-the old names are not read.
-
-| Was | Now |
-| --- | --- |
-| `AGENT_FABRIC_LLM_PROXY_URL` | `DONKEY_LLM_PROXY_URL` |
-| `AGENT_FABRIC_LLM_PROXY_CLIENT_ID` | `DONKEY_LLM_PROXY_CLIENT_ID` |
-| `AGENT_FABRIC_LLM_PROXY_CLIENT_SECRET` | `DONKEY_LLM_PROXY_CLIENT_SECRET` |
-| `AGENT_FABRIC_LLM_PROXY_KEY` | `DONKEY_LLM_PROXY_KEY` |
-| `AGENT_FABRIC_APP_NAME` | `DONKEY_APP_NAME` |
-| `AGENT_FABRIC_BUSINESS_GROUP` | `DONKEY_BUSINESS_GROUP` |
-| `AGENT_FABRIC_CORRELATION_HEADER` | `DONKEY_CORRELATION_HEADER` |
-| `AGENT_FABRIC_CALL_ID_HEADER` | `DONKEY_CALL_ID_HEADER` |
-| `AGENT_FABRIC_TIMEOUT_S` | `DONKEY_TIMEOUT_S` |
-| `AGENT_FABRIC_MAX_RETRIES` | `DONKEY_MAX_RETRIES` |
-| `AGENT_FABRIC_REGISTRY_CACHE_TTL_S` | `DONKEY_REGISTRY_CACHE_TTL_S` |
-| `AGENT_FABRIC_TELEMETRY` | `DONKEY_TELEMETRY` |
-| `FABRIC_SANDBOX_TESTS` | `DONKEY_SANDBOX_TESTS` |
-
-**Not renamed** — these belong to MuleSoft/Anypoint, not the SDK, and keep
-their names:
-
-- `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, `ANYPOINT_ORG_ID`,
-  `ANYPOINT_ENV`, `ANYPOINT_REGION`, `ANYPOINT_BASE_URL` — Anypoint
-  control-plane credentials (separate from the LLM proxy's
-  `client_id`/`client_secret` consumer-auth pair).
-- CI secret names such as `MULESOFT_LLM_PROXY_*` — these are the *upstream*
-  MuleSoft-owned secret names; the SDK still reads them into `DONKEY_*` at the
-  workflow level.
-
-### 6. Testing surfaces
-
-```diff
-- pytest --fabric-conformance --fabric-agent=myagent:build
-+ pytest --donkey-conformance --donkey-agent=myagent:build
-```
-
-The pytest plugin's entry-point key is now `donkey_kit_conformance`. If you had
-pinned the flag or the entry-point name anywhere (tox, CI, a wrapper), update
-it. The simulator's honesty header — the one that marks a response as coming
-from the local gateway simulator rather than a real gateway — is now
-`x-donkey-simulator` (was `x-fabric-simulator`).
-
-### 7. OpenTelemetry (breaking) — the `fabric.*` → `donkey.*` namespace flip
-
-**This is the one change that reaches your observability backend**, so it gets
-its own section. Every DDK-specific span name and attribute key moved from the
-`fabric.*` namespace to `donkey.*`. There is **no dual-emit**: the old keys stop
-appearing the moment you upgrade.
-
-**What did *not* change:** the OpenTelemetry `gen_ai.*` semantic-convention
-attributes (`gen_ai.system`, `gen_ai.request.model`,
-`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, …) are untouched —
-they are not ours to rename. A governed model call still opens **one** span
-carrying both namespaces at once.
-
-Span name (the SDK emits one span, for each governed model call):
-
-| Was | Now |
-| --- | --- |
-| `fabric.llm.chat` | `donkey.llm.chat` |
-
-Attribute keys:
-
-| Was | Now |
-| --- | --- |
-| `fabric.correlation_id` | `donkey.correlation_id` |
-| `fabric.policy.decision` | `donkey.policy.decision` |
-| `fabric.policy.type` | `donkey.policy.type` |
-| `fabric.budget.remaining` | `donkey.budget.remaining` |
-| `fabric.cost.team` | `donkey.cost.team` |
-
-**Action required on your side:** update any dashboards, alerts, saved queries,
-span-attribute processors, or sampling rules that key off `fabric.*`. Point them
-at `donkey.*`. Queries that only use the `gen_ai.*` attributes need no change.
-
-### What stays the same
-
-- References to **MuleSoft "Agent Fabric"**, **Anypoint**, and the **Omni
-  Gateway** — these name the product DDK consumes, not the SDK.
-- The wire contract: base URL shape (no `/v1`), the `client_id`/`client_secret`
-  header pair, streaming, and the typed rejection shapes.
-- The Anypoint CLI plugin literal `mulesoft-anypoint-cli-agent-fabric-plugin`
-  and the Maven coordinate `com.mulesoft.agents:agent-fabric-transformation`.
-- The `gen_ai.*` OpenTelemetry attributes and `x-anypoint-*` /
-  `x-correlation-id` headers.

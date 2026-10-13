@@ -1,5 +1,7 @@
 # Anthropic SDK
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 The Anthropic SDK gets a governed `AsyncAnthropic` client pointed at the Omni
 Gateway LLM proxy, with the SDK's shared transport and proxy headers passed
 straight into the client constructor.
@@ -23,8 +25,9 @@ straight into the client constructor.
 pip install "donkey-kit[anthropic]"
 ```
 
-This installs the newest `anthropic` release. `anthropic` 0.x (from 0.40) works
-too, so a project that holds it below 1.0 needs no change.
+This installs the newest `anthropic` release. `anthropic` 0.x works too, from
+the extra's minimum (see [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)),
+so a project that holds it below 1.0 needs no change.
 
 ## Quickstart
 

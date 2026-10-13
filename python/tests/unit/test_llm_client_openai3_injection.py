@@ -183,9 +183,7 @@ async def test_an_async_streamed_call_closes_the_shared_response() -> None:
     chunks = _Chunks()
     shared = DonkeyAsyncClient(_CFG, None, transport=httpx.MockTransport(lambda r: _sse(chunks)))
     async with shared:
-        stream = await LLMClient(_CFG, shared).client().chat.completions.create(
-            **_HI, stream=True
-        )
+        stream = await LLMClient(_CFG, shared).client().chat.completions.create(**_HI, stream=True)
         text = "".join([c.choices[0].delta.content or "" async for c in stream])
     assert text == "hi there"
     assert chunks.closed

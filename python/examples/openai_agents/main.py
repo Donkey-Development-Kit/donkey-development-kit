@@ -1,7 +1,8 @@
 """OpenAI Agents SDK adapter example (BG §1.8).
 
-Supported and conformance-tested (BG §1.8): ``build(donkey)`` makes one governed
-call through ``agents.Runner.run`` and passes the public conformance kit.
+Supported at ``connection_kwargs()`` (BG §1.8): ``build(donkey)`` makes one governed
+call through ``agents.Runner.run`` and runs the public conformance kit in CI
+(``adapter-contract``).
 
 Demonstrates constructing a native ``agents.OpenAIChatCompletionsModel`` pointed
 at the governed Agent Fabric LLM proxy with a single factory call:
@@ -67,9 +68,7 @@ class RunnerAgent:
         logger.info("runner: calling the model", extra={"correlation_id": current_correlation_id()})
         try:
             # Tracing off: the SDK's default trace exporter posts to OpenAI, not the proxy.
-            return await Runner.run(
-                self._agent, text, run_config=RunConfig(tracing_disabled=True)
-            )
+            return await Runner.run(self._agent, text, run_config=RunConfig(tracing_disabled=True))
         except Exception as exc:
             typed = _refusal(exc)
             if typed is exc:

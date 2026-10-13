@@ -4,7 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "donkey-kit"
-version = "0.1.2"
+# The version is declared once, as `__version__` in src/donkey_kit/__init__.py,
+# and hatch reads it from there ([tool.hatch.version] below, #767). Bump only
+# that file (scripts/bump-version.sh does it); test_release_version.py checks
+# nothing here re-declares it.
+dynamic = ["version"]
 description = "An SDK for consuming Agent Fabric capabilities (governed model and tool access) from your own agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,6 +31,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 
@@ -74,7 +80,9 @@ adk = ["google-adk>=2.4", "litellm>=1.84"]
 # 1.13 is the first whose `OpenAIChatClient(model=...)` call reaches the proxy:
 # 1.12 builds it but sends elsewhere, and 1.11 and earlier lack the class path.
 agent_framework = ["agent-framework>=1.13"]
-openai-agents = ["openai-agents>=0.20", "openai>=1.66"]
+# openai-agents 0.20 itself requires openai>=2.45, so that is the real floor
+# (the nightly lowest-direct leg checks it, #769).
+openai-agents = ["openai-agents>=0.20", "openai>=2.45"]
 anthropic = ["anthropic>=0.116"]
 # 1.15.3 keeps `openai/<id>` + `base_url` on the native OpenAI provider for any
 # model id; earlier releases fall back to LiteLLM for non-OpenAI-looking ids.
@@ -123,11 +131,12 @@ test = ["pytest>=8.0", "pytest-asyncio>=0.23.1"]
 # --- Everything a user runs, together ---
 # The framework-free extras plus the one deep adapter (BG §1.8). No test runner
 # or linter (#744): add `donkey-kit[all,test]` for the conformance plugin. The
-# seven connection_kwargs()-only framework extras are deliberately NOT here: at
-# their current releases they are not co-installable upstream, and with
-# floors-only extras (§8.4) no floor makes them so — pip fails with
-# resolution-too-deep. Install those one at a time. See docs/verified-apis.md
-# §8.1 (#697).
+# seven connection_kwargs()-only framework extras are deliberately NOT here:
+# whether they co-install is an upstream property no floor can guarantee
+# (§8.4), and pip once failed `[all]` with resolution-too-deep when it bundled
+# them (#697). Which ones resolve together today is the generated
+# docs/co-installability.md table, re-checked nightly (#769). See
+# docs/verified-apis.md §8.1.
 all = [
     "donkey-kit[llm,langgraph,otel,cli,local]",
 ]
@@ -170,7 +179,27 @@ dev = [
     # Hermetic test suite (#747): caps every test at timeout (below), so a test
     # that stalls on a dead proxy or an unreachable collector fails fast
     # instead of hanging CI.
-    "pytest-timeout>=2.3",
+    # 2.3.0 was never published; 2.3.1 is the lowest 2.3 release (#769).
+    "pytest-timeout>=2.3.1",
+]
+# The release toolchain (#763). The publish workflows and ci.yml's base-only
+# wheel build install these from constraints/release-py3.11.txt and build with
+# `python -m build --no-isolation`, so the backend that builds a shipped dist is
+# the locked one, not whatever hatchling was newest that day. [build-system]
+# above keeps its floor (§8.4): it is what an sdist consumer's build resolves.
+release = [
+    "build>=1.2.1",
+    # 6.1 drops pkginfo for packaging's metadata parser, so `twine check`
+    # accepts the Metadata-Version 2.4 (PEP 639) dists hatchling>=1.27 writes
+    # whatever pkginfo is installed; 6.0.0 rejects them.
+    "twine>=6.1",
+    "hatchling>=1.27",
+]
+# The lock's own refresh tool (#763): scripts/compile_constraints.py drives
+# `uv pip compile`. lock-refresh.yml installs it from constraints/lock-py3.11.txt.
+lock = [
+    # 0.6.7: the first release whose `uv pip compile` takes `--group`.
+    "uv>=0.6.7",
 ]
 
 [project.scripts]
@@ -184,6 +213,12 @@ donkey = "donkey_kit.cli:main"
 # framework-free suite/report siblings); the harness that pulls in Donkey is
 # imported lazily. The plugin is inert unless `--donkey-conformance` is passed.
 donkey_kit_conformance = "donkey_kit.conformance.plugin"
+
+# The one version source (#767): hatch's default pattern reads the
+# `__version__ = "..."` line, and the wheel, the sdist and `__version__` can no
+# longer disagree.
+[tool.hatch.version]
+path = "src/donkey_kit/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/donkey_kit"]
@@ -216,15 +251,21 @@ python_version = "3.10"
 files = ["src/donkey_kit", "tests/typecheck"]
 
 [[tool.mypy.overrides]]
-# Optional deps may be absent (CI installs only [llm,cli] + the dev group) or ship no stubs;
-# neither should fail the base typecheck. opentelemetry IS typed when the [otel]
-# extra is present, so it is listed here for absence only — telemetry.py must not
-# carry an inline ignore that goes stale the moment someone installs it.
-# tomli is the <3.11 tomllib backfill (core/config.py): mypy targets
-# py3.10 so it analyzes the `import tomli` branch, but CI runs on 3.11 where tomli
-# is not installed — absence only, same rationale as the framework extras above.
+# Optional extras are never followed, installed or not (#763), so `mypy` gives the
+# same result in the typecheck job's [llm,cli] + dev venv and in a venv with
+# every extra. Before this, mypy followed whatever happened to be installed: a
+# venv with a framework extra type-checked the adapters against that release's
+# own annotations (and once reached numpy's 3.12-only `type` statements through
+# a framework, failing at the 3.10 target), while CI checked them against Any.
+# `skip` makes the CI behaviour the only behaviour: each package below is Any
+# whether or not it is present, and the adapters' real signatures are checked
+# by the adapter-contract jobs and scripts/verify_frameworks.py (§8), not here.
+# `follow_imports_for_stubs` extends the skip to packages that ship .pyi files
+# (numpy, opentelemetry). tests/unit/test_house_style_config.py keeps every
+# optional extra outside [llm,cli] in this list. langgraph itself is NOT listed:
+# src/ never imports it, and the langgraph-demo job checks examples/langgraph
+# against the real package.
 module = [
-    "tomli",
     "langchain_openai.*",
     "langchain_core.*",
     "opentelemetry.*",
@@ -242,8 +283,22 @@ module = [
     # public return type is a framework-free Protocol, so no Any leaks out.
     "starlette.*",
     "uvicorn.*",
-    # httpx2 is typed, and arrives with openai>=3 or anthropic>=1.0; listed for
-    # absence only, under an older openai with no anthropic (#701).
+    # Never imported by src/, but reachable through a framework's own imports.
+    "numpy.*",
+]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Absence only: these are part of the typecheck environment and typed, so mypy
+# follows them when present. tomli is the <3.11 tomllib backfill (core/config.py):
+# mypy targets py3.10 so it analyzes the `import tomli` branch, but it may be
+# absent on 3.11+. httpx2 arrives with openai>=3 or anthropic>=1.0 and
+# tests/typecheck/ checks against its real types; it is absent under an older
+# openai with no anthropic (#701).
+module = [
+    "tomli",
     "httpx2.*",
 ]
 ignore_missing_imports = true
@@ -254,9 +309,11 @@ ignore_missing_imports = true
 # fail the base typecheck; an inline ignore would go stale whenever it is present.
 # The CrewAI adapter's interceptor subclasses crewai's BaseInterceptor, likewise,
 # and the LangGraph adapter's last_call handler langchain_core's BaseCallbackHandler.
-# The Strands adapter's model subclasses the OpenAIModel class it is handed (#951).
+# The Strands adapter's model subclasses the OpenAIModel class it is handed (#951),
+# and the ADK adapter's llm_client the LiteLLMClient class it is handed (#969).
 module = [
     "donkey_kit.core.transport.httpx2",
+    "donkey_kit.integrations.adk",
     "donkey_kit.integrations.crewai",
     "donkey_kit.integrations.langgraph",
     "donkey_kit.integrations.strands",
@@ -328,6 +385,13 @@ skip_covered = false
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.format]
+# #765: `ruff format --check .` runs in the typecheck-and-lint job and as a
+# pre-commit hook. The captured fixtures are byte-exact (their manifest hashes
+# them, scripts/scrub_fixtures.py reads them as captured), so the formatter
+# never rewrites them, including their README.md files.
+exclude = ["src/donkey_kit/simulator/_fixtures/**", "tests/fixtures/**"]
 
 [tool.ruff.lint]
 # SLF001: no reaching into another object's private members (#719); RUF022:

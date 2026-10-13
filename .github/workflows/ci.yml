@@ -10,7 +10,8 @@
 # IS a fresh resolve (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`,
 # and everything in nightly-matrix.yml) deliberately keep resolving fresh —
 # they are the canary ADR 0007 rule 4 relies on. Refresh the lock with
-# `python scripts/compile_constraints.py` (see CONTRIBUTING.md); keep
+# `python scripts/compile_constraints.py` (see CONTRIBUTING.md), or merge the
+# PR lock-refresh.yml opens after each green nightly (ADR 0011, #763); keep
 # `scripts/compile_constraints.py`'s `_COMBOS` in sync with the jobs below —
 # each entry's `extras`/`dev_group` must match that job's install line exactly.
 name: CI
@@ -46,6 +47,16 @@ defaults:
   run:
     working-directory: python
 
+# #765: each job's checks are the python/noxfile.py session of the same name, so
+# `nox -s <job>` runs locally exactly what the job runs here (CONTRIBUTING.md,
+# "The pre-PR gate"). The job installs into the runner's Python, where its lock
+# and cache steps live, then runs that session in place: --no-venv uses the
+# job's Python, --no-install skips the session's own installs. pipx keeps nox
+# and its dependencies out of the job's environment. Change a check in the
+# session, not here; tests/unit/test_noxfile.py keeps the two in step.
+env:
+  NOX_VERSION: "2026.8.17"
+
 jobs:
   base-only:
     # Working instruction #9: install ONLY the base package and run the base
@@ -54,12 +65,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/base-only-py3.11.txt') }}
@@ -68,46 +81,12 @@ jobs:
       # its own (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e . --group dev -c constraints/base-only-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      - name: import donkey_kit with no framework extras installed
-        run: python -c "import donkey_kit; from donkey_kit import Donkey; print(donkey_kit.__version__)"
-      - name: a plain install carries no pydantic (#730)
-        run: |
-          if pip show pydantic >/dev/null 2>&1; then
-            echo "pydantic is installed by .[dev]; the base install must not need it" >&2
-            exit 1
-          fi
-          python -c "import sys, donkey_kit, donkey_kit.experimental; assert 'pydantic' not in sys.modules"
-      - run: pytest -q tests/unit
-      - name: installed wheel resolves packaged simulator fixtures (BG §1.4)
-        run: |
-          wheel_dir="$(mktemp -d)"
-          venv_dir="$(mktemp -d)"
-          trap 'rm -rf "$wheel_dir" "$venv_dir"' EXIT
-          pip install build
-          python -m build --wheel --outdir "$wheel_dir"
-          set -- "$wheel_dir"/*.whl
-          test "$#" -eq 1
-          # #821: the wheel ships fixtures; none may carry a tenant identifier.
-          python scripts/scrub_fixtures.py --check "$1"
-          python -m venv "$venv_dir"
-          "$venv_dir/bin/pip" install "$1"
-          "$venv_dir/bin/python" - <<'PY'
-          from donkey_kit.simulator import fixtures
-
-          # Prove load() reads the wheel's package data, not a checkout (#746).
-          assert "site-packages" in fixtures.LOCK_PATH.parts, fixtures.LOCK_PATH
-          for shape in fixtures.SHAPES:
-              fixtures.load(shape)
-          assert fixtures.LOCK_PATH.exists(), fixtures.LOCK_PATH
-          assert fixtures.compute_manifest() == fixtures.read_lock()
-          before = fixtures.LOCK_PATH.read_bytes()
-          fixtures.write_lock()
-          assert fixtures.LOCK_PATH.read_bytes() == before
-          PY
+      - name: base import, no pydantic (#730), tests/unit, installed-wheel fixtures (BG §1.4)
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s base-only
 
   all-extra-resolves:
     # #697: `[all]` once bundled framework extras that are not co-installable
@@ -121,23 +100,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
           restore-keys: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-
       - run: python -m pip install --upgrade pip
       - name: pip resolves donkey-kit[all]
-        run: timeout 300 pip install --dry-run ".[all]"
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s all-extra-resolves
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
@@ -146,12 +127,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/typecheck-and-lint-py3.11.txt') }}
@@ -159,37 +142,16 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli]" --group dev -c constraints/typecheck-and-lint-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      - name: mypy --strict (blocking, working instruction #8)
-        run: mypy
-      # #721: the examples are user-facing code, so they get the same --strict
-      # config, one directory per invocation (each is its own program). The
-      # framework extras are absent here, so their imports resolve through the
-      # absence-only overrides in pyproject.toml. LangGraph is the exception: it
-      # is not in those overrides and is checked against the real package in the
-      # langgraph-demo job below.
-      - name: mypy --strict over python/examples (#721)
-        run: |
-          for dir in examples/*/; do
-            name="$(basename "$dir")"
-            if [ "$name" = langgraph ]; then continue; fi
-            echo "mypy -p examples.$name"
-            mypy -p "examples.$name"
-          done
-      - run: ruff check .
-      - name: import-linter (framework-free core, §1.1)
-        run: lint-imports
-      - name: no verification-status claims in src/ outside core/_verify.py (#718)
-        run: python scripts/check_verification_claims.py
-      - name: no doc links to untracked paths, no committed plan files (#785)
-        run: python scripts/check_doc_links.py
-      - name: no tenant identifiers or live platform hosts in tracked files (#821)
-        run: python scripts/scrub_fixtures.py --check
-      - name: no dead code in src/ (vulture, whitelist in vulture_whitelist.py, #720)
-        run: vulture
+      # mypy --strict (working instruction #8) and over each python/examples
+      # package but LangGraph (#721, checked in langgraph-demo), ruff check and
+      # ruff format --check (#765), import-linter (§1.1), the verification-claims
+      # (#718), doc-link (#785) and fixture-scrub (#821) scripts, and vulture (#720).
+      - name: types, lint, format, import contracts, repo checks, dead code
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s typecheck-and-lint
 
   new-dependencies:
     # #936: a direct dependency new to this PR must exist on PyPI, so a
@@ -206,8 +168,10 @@ jobs:
       # run: body directly (injection hardening).
       BASE_REF: ${{ github.base_ref }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: fetch the base branch's pyproject.toml
@@ -216,7 +180,7 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE_REF"
           git show "FETCH_HEAD:python/pyproject.toml" > "$RUNNER_TEMP/base-pyproject.toml" || true
       - name: new direct dependencies exist on PyPI (#936)
-        run: python scripts/check_new_dependencies.py --base "$RUNNER_TEMP/base-pyproject.toml"
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s new-dependencies -- --base "$RUNNER_TEMP/base-pyproject.toml"
 
   commit-identities:
     # #1048: a squash merge turns every PR-commit author into a Co-authored-by
@@ -233,15 +197,16 @@ jobs:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # Full history, so BASE_SHA..HEAD_SHA resolves.
           fetch-depth: 0
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: no placeholder git identities in the PR's commits (#1048)
-        run: python scripts/check_commit_identities.py "$BASE_SHA..$HEAD_SHA"
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s commit-identities -- "$BASE_SHA..$HEAD_SHA"
 
   test:
     runs-on: ubuntu-latest
@@ -251,18 +216,20 @@ jobs:
       # exists to show which versions fail.
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     env:
       # Bind the matrix value to an env var so it is never interpolated into a
       # run: body directly (injection hardening); also names this job's lock.
       PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.job }}-${{ hashFiles(format('python/constraints/test-py{0}.txt', matrix.python-version)) }}
@@ -280,67 +247,55 @@ jobs:
           python -m pip install --upgrade pip &&
           pip install -e ".[llm,cli,local,otel]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      # Coverage (#751) is measured on ONE leg only (3.11, matching the other
-      # single-leg jobs' convention) — branch coverage on three Python
-      # versions would just triple the runtime for the same number, since the
-      # source under measurement doesn't change per interpreter. `coverage
-      # run -m pytest` instead of a bare `pytest` is the only difference on
-      # that leg; `[run] patch = ["subprocess"]` (pyproject.toml) makes it
-      # also measure the conformance plugin/report tests' own
-      # `pytester.runpytest_subprocess()` children, which a plain `pytest -q`
-      # run never did.
-      - run: pytest -q
-        if: matrix.python-version != '3.11'
-      - run: coverage run -m pytest -q
-        if: matrix.python-version == '3.11'
-      # The local gateway simulator's out-of-process boot (BG §1.4) is
-      # local_gateway-marked and deselected from the default run above. It is
-      # pure-Python (no docker), so run it explicitly here where [local] is
-      # installed — the one marker path that is now safe in CI (sandbox stays
-      # off, needing real Anypoint creds).
-      - name: local gateway simulator boot (BG §1.4)
-        if: matrix.python-version != '3.11'
-        run: pytest -q -m local_gateway
-      - name: local gateway simulator boot (BG §1.4), coverage leg (#751)
-        if: matrix.python-version == '3.11'
-        run: coverage run -m pytest -q -m local_gateway
-      # #801: the offline seams (simulate(), the conformance harness) must stay
-      # offline behind a corporate proxy. Every proxy variable points at a dead
-      # port, so a request that escapes the swapped-in fixture fails the run.
-      - name: offline seams stay offline under HTTP(S)_PROXY (#801)
-        env:
-          HTTPS_PROXY: http://127.0.0.1:9
-          HTTP_PROXY: http://127.0.0.1:9
-          ALL_PROXY: http://127.0.0.1:9
-        run: >-
-          pytest -q tests/unit/test_simulate.py tests/unit/test_conformance.py
-          tests/unit/test_conformance_plugin.py tests/unit/test_transport_proxy_mounts.py
-      # #747: the default suite itself (not just the four offline-seam files
-      # above) must stay green with a dead corporate proxy and a dead OTLP
-      # collector ambient in the shell — that is exactly the hermetic-env
-      # autouse fixture in tests/conftest.py's job. Both point at a closed
-      # port, so a test that reads either var without going through the
-      # fixture (or that leaks a real socket past pytest-socket) fails loud
-      # instead of silently depending on the runner's own environment.
-      - name: default suite stays green under a dead proxy/collector (#747)
-        env:
-          HTTPS_PROXY: http://127.0.0.1:9
-          OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:9
-        run: pytest -q
-      # Combine the parallel data files `coverage run` + the subprocess patch
-      # produced, then post the report to the PR job summary and enforce the
-      # floor (`fail_under` in `[tool.coverage.report]`, pyproject.toml) in the
-      # same step — `coverage report` prints the table before it raises on a
-      # floor miss, so the summary still shows the numbers that failed the job.
-      - name: coverage report + floor (#751)
-        if: matrix.python-version == '3.11'
-        run: |
-          coverage combine
-          { echo "### Coverage (branch, python 3.11 leg)"; echo; coverage report --format=markdown; } >> "$GITHUB_STEP_SUMMARY"
+      # The default suite, the local gateway simulator's boot (BG §1.4), the
+      # offline seams under a dead HTTP(S)_PROXY (#801), the default suite again
+      # under a dead proxy and OTLP collector (#747), and on the 3.11 leg only,
+      # branch coverage (#751) with its report in the job summary and its floor
+      # (`fail_under`, pyproject.toml). Under --no-venv the session is named
+      # `test` and reads the leg's version from the interpreter.
+      - name: suites, offline seams, coverage on 3.11 (nox -s test)
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s test
+
+  openai-1x:
+    # #769: the `llm` extra's floor is openai>=1.66, but every other job
+    # resolves the 2.x line, so nothing tested the 1.x releases the floor
+    # allows. This job adds `"openai<2"` to the `test` job's install line and
+    # runs the same default and local_gateway suites. The pin is this job's
+    # only: the extra keeps its floor and no ceiling (§8.4). Locked like the
+    # other PR jobs (combo "openai-1x"); the nightly `lowest-direct` job covers
+    # the floor itself.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - id: pip-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/openai-1x-py3.12.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: >-
+          python -m pip install --upgrade pip &&
+          pip install -e ".[llm,cli,local,otel]" --group dev "openai<2" -c constraints/openai-1x-py3.12.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+      # openai resolved to a 1.x release, then the default suite and the local
+      # gateway simulator's boot (BG §1.4), as the `test` job runs them.
+      - name: openai is 1.x; default and local_gateway suites
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s openai-1x
 
   anthropic-stacks:
     # #701: anthropic>=1.0 is built on httpx2 and rejects the shared httpx client,
@@ -365,31 +320,25 @@ jobs:
       # not silently skip (see tests/conftest.py).
       DONKEY_CONTRACT_EXTRA: anthropic
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
           restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,anthropic]" --group dev "$ANTHROPIC_SPEC"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      - run: >-
-          pytest -q
-          tests/unit/test_anthropic_client_stacks.py
-          tests/unit/test_anthropic_httpx2_bridge.py
-          tests/unit/test_adapter_ergonomics.py
-          tests/unit/test_adapter_async_last_call.py
-          tests/unit/test_default_runtime.py
-          tests/unit/test_shared_client_views.py
-          tests/conformance/test_typed_refusal_bridge.py
+      - run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s "anthropic-stacks($ANTHROPIC_SPEC)"
 
   adk-stacks:
     # #735: below google-adk 2.4, Gemini silently drops client_kwargs and
@@ -414,29 +363,25 @@ jobs:
       # silently skip (see tests/conftest.py).
       DONKEY_CONTRACT_EXTRA: adk
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/pyproject.toml') }}
           restore-keys: pip-${{ runner.os }}-py3.12-${{ github.job }}-
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,adk]" --group dev "$ADK_SPEC"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      - run: >-
-          pytest -q
-          tests/unit/test_adapter_ergonomics.py
-          tests/unit/test_framework_redirects.py
-          tests/unit/test_adapter_async_last_call.py
-          tests/unit/test_transport_injection.py
-          tests/conformance/test_typed_refusal_bridge.py
+      - run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s "adk-stacks($ADK_SPEC)"
 
   agent-framework-middleware:
     # #739: policy_middleware() is only meaningful on a real Agent Framework
@@ -451,12 +396,14 @@ jobs:
       # silently skip (see tests/conftest.py).
       DONKEY_CONTRACT_EXTRA: agent_framework
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/agent-framework-middleware-py3.12.txt') }}
@@ -464,16 +411,11 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,agent_framework]" --group dev -c constraints/agent-framework-middleware-py3.12.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      - run: >-
-          pytest -q
-          tests/unit/test_agent_framework_policy_middleware.py
-          tests/unit/test_adapter_ergonomics.py
-          tests/unit/test_transport_injection.py
-          tests/conformance/test_typed_refusal_bridge.py
+      - run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s agent-framework-middleware
 
   llamaindex-transport:
     # #740: LlamaIndex sends through the shared client, so its calls carry the
@@ -488,12 +430,14 @@ jobs:
       # silently skip (see tests/conftest.py).
       DONKEY_CONTRACT_EXTRA: llamaindex
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/llamaindex-transport-py3.12.txt') }}
@@ -501,15 +445,11 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,llamaindex]" --group dev -c constraints/llamaindex-transport-py3.12.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      - run: >-
-          pytest -q
-          tests/unit/test_transport_injection.py
-          tests/unit/test_adapter_ergonomics.py
-          tests/conformance/test_typed_refusal_bridge.py
+      - run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s llamaindex-transport
 
   agents-strands-last-call:
     # #899: the OpenAI Agents SDK and Strands send through the shared client, but
@@ -524,12 +464,14 @@ jobs:
       # tests/conftest.py; a comma-separated list is how one job owns two).
       DONKEY_CONTRACT_EXTRA: "openai-agents,strands"
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles('python/constraints/agents-strands-last-call-py3.12.txt') }}
@@ -537,15 +479,11 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,openai-agents,strands]" --group dev -c constraints/agents-strands-last-call-py3.12.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      - run: >-
-          pytest -q
-          tests/unit/test_adapter_async_last_call.py
-          tests/unit/test_adapter_ergonomics.py
-          tests/conformance/test_typed_refusal_bridge.py
+      - run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s agents-strands-last-call
 
   adapter-contract:
     # #742: the adapter contract suite, one leg per ADAPTERS extra, each with its
@@ -575,12 +513,14 @@ jobs:
       # run: body directly (injection hardening).
       DONKEY_CONTRACT_EXTRA: ${{ matrix.extra }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.12-${{ github.job }}-${{ hashFiles(format('python/constraints/adapter-contract-{0}-py3.12.txt', matrix.extra)) }}
@@ -593,23 +533,18 @@ jobs:
           pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev
           -c "constraints/adapter-contract-${DONKEY_CONTRACT_EXTRA}-py3.12.txt"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      # #748: the whole suite, not a file list, so every test that needs this
-      # leg's framework runs against the real install instead of skipping. For
-      # LangGraph, the one deep adapter (BG §1.8), that includes its refusal
-      # mapping, run correlation and conformance tests, so breaking them fails a
-      # required check. Other frameworks' tests skip, as they are not installed.
-      - run: python -m pytest -q
-      # #748: strict example smoke. Build the example's native object (non-zero
-      # on a missing framework or a drifted constructor, instead of printing
-      # install guidance and exiting 0) and drive it through the conformance kit
-      # in-process: no network, no credentials. ADAPTERS keys use underscores
-      # where extras use hyphens (openai-agents), hence the substitution.
-      - name: Strict example smoke
-        run: python scripts/smoke_example.py "${DONKEY_CONTRACT_EXTRA//-/_}"
+      # #748: the whole suite (`python -m pytest -q`), not a file list, so every
+      # test that needs this leg's framework runs against the real install
+      # instead of skipping. For LangGraph, the one deep adapter (BG §1.8), that
+      # includes its refusal mapping, run correlation and conformance tests.
+      # Then the strict example smoke: build the example's native object and
+      # drive it through the conformance kit in-process, with no network.
+      - name: whole suite and strict example smoke
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s "adapter-contract($DONKEY_CONTRACT_EXTRA)"
 
   benchmark:
     # BG §1.6 / #194 AC #3: the GenAI span adds < 1 ms per governed call. The
@@ -639,12 +574,14 @@ jobs:
       # workspace. `github.*` values are workflow-owned, not PR input.
       DONKEY_BENCHMARK_JSON: ${{ github.workspace }}/benchmark-result.json
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/benchmark-py3.11.txt') }}
@@ -652,15 +589,15 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,cli,local,otel]" --group dev -c constraints/benchmark-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - name: GenAI span overhead < 1ms/call (BG §1.6, #194)
-        run: pytest -q -m benchmark -s
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s benchmark
       - name: Upload the benchmark result for trending (#753)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: benchmark-result
           path: ${{ env.DONKEY_BENCHMARK_JSON }}
@@ -690,12 +627,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/quickstart-py3.11.txt') }}
@@ -703,12 +642,12 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: pip install -e ".[llm,local,otel]" -c constraints/quickstart-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       - name: run the gateway-free quickstart (must exit 0, no credentials)
-        run: timeout 120 python examples/quickstart/main.py
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s quickstart
 
   langgraph-demo:
     # #199 / BG §1.8: the Phase-1 acceptance artefact — Scenario A end to end
@@ -724,12 +663,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - id: pip-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/langgraph-demo-py3.11.txt') }}
@@ -737,20 +678,15 @@ jobs:
       # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
       - run: python -m pip install --upgrade pip && pip install -e ".[llm,langgraph,local,otel]" --group dev -c constraints/langgraph-demo-py3.11.txt
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
-      - name: mypy --strict over the LangGraph example, langgraph installed (#721)
-        run: mypy -p examples.langgraph
-      - name: run the gateway-free Scenario-A demo (must exit 0, no credentials)
-        run: timeout 120 python -m examples.langgraph.main
-      - name: conformance passes against the demo's own agent factory
-        # `python -m pytest` (not the bare `pytest` console script) so the
-        # working directory (python/) lands on sys.path — that's what makes the
-        # `examples` namespace package importable for --donkey-agent=examples.langgraph.
-        # main:build. The bare script omits cwd from sys.path and fails to import.
-        run: python -m pytest -q --donkey-conformance --donkey-agent=examples.langgraph.main:build
+      # mypy --strict over examples.langgraph with langgraph installed (#721),
+      # the demo under a 120 s bound, then conformance against its build()
+      # factory: the `--donkey-conformance` invocation a team runs on its agent.
+      - name: typecheck, run, and conformance-test the Scenario-A demo
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s langgraph-demo
 
   # The nightly framework matrix (§8.4) is .github/workflows/nightly-matrix.yml.
   # It resolves fresh against the newest upstream releases: `matrix` re-checks
@@ -771,22 +707,177 @@ jobs:
       run:
         working-directory: website
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 20
-      - name: Unit-test the analytics beacon gate and the reader-facing link ref
-        run: npm test
-      - run: node scripts/generate-llms.mjs
-      - name: Fail if the generated llms artifacts are stale
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # npm test (the analytics beacon gate and the reader-facing link ref), then
+      # regenerate and fail on any diff under public/. The session lives in
+      # python/noxfile.py with the others; it runs node, npm and git only.
+      - name: website unit tests; generated llms artifacts are current
+        run: pipx run --spec "nox==$NOX_VERSION" nox -f ../python/noxfile.py --no-venv --no-install -s docs-llms-drift
+
+  docs-site:
+    # #759: build, type-check and link-check the Nextra site on PRs, so broken
+    # MDX, a bad import or a dead internal link fails here instead of in the
+    # release deploy (docs.yml builds only from main). Job-level path filter:
+    # a workflow-level `paths:` would skip the required `ci-ok` aggregate, so
+    # the job always starts and its steps no-op when the PR leaves the site
+    # alone. On pushes to main/develop it always runs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Two commits, so HEAD^1 (the base tip of a PR merge commit) exists.
+          fetch-depth: 2
+      - name: does this change touch the site?
+        id: scope
+        working-directory: .
         run: |
-          if [ -n "$(git status --porcelain public)" ]; then
-            echo "::error::llms artifacts are out of date. Run 'npm run generate:llms' in website/ and commit the result."
-            git status --porcelain public
-            git --no-pager diff -- public
-            exit 1
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          echo "llms artifacts are up to date."
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(website/|\.github/workflows/(ci|docs)\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No website/** or docs workflow changes; skipping the site checks."
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.run == 'true'
+        with:
+          # No `cache: npm`: setup-* built-in caching saves from PRs too, which
+          # #1005 rules out for ci.yml. The install is a few seconds.
+          node-version: 24
+      # npm ci, type-check, lint, the static export built with the project-prefix
+      # base path (as preview:pages does), then its internal links and anchors.
+      # The session installs node_modules itself (npm ci), so the job has no
+      # install step, and it hands the token to the build alone.
+      - name: npm ci, type-check, lint, build, check internal links (nox -s docs-site)
+        if: steps.scope.outputs.run == 'true'
+        run: pipx run --spec "nox==$NOX_VERSION" nox -f ../python/noxfile.py --no-venv --no-install -s docs-site
+        env:
+          # For prebuild's data/roadmap.json refresh (GitHub API).
+          GITHUB_TOKEN: ${{ github.token }}
+
+  pip-audit:
+    # #757: known vulnerabilities in what a consumer installs today, blocking.
+    # The install is resolved fresh (no -c): the question is what
+    # `pip install donkey-kit` / `donkey-kit[all]` pulls in now, not what the
+    # PR lock pinned (ADR 0007 rule 3 governs the lock; this job is an audit,
+    # like all-extra-resolves is a resolve check). pip only resolves (--dry-run
+    # --report), so nothing is installed; the pinned set, minus donkey-kit
+    # itself, goes to pip-audit with --no-deps. nightly-matrix.yml repeats this
+    # so a new advisory reaches a human between PRs.
+    name: pip-audit (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: base
+            spec: "."
+          - target: all
+            spec: ".[all]"
+    env:
+      # Bind the matrix value to an env var so it is never interpolated into a
+      # run: body directly (injection hardening).
+      SPEC: ${{ matrix.spec }}
+      # Names this leg's nox session, pip-audit($TARGET).
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      # The session resolves $SPEC into the exact pin list, minus donkey-kit, at
+      # the path given after `--`; the action below audits that list. Run
+      # without a path, as locally, the session audits the list itself.
+      - name: resolve the install into an exact pin list
+        run: >-
+          pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s "pip-audit($TARGET)"
+          -- "$RUNNER_TEMP/pip-audit-requirements.txt"
+      - uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: ${{ runner.temp }}/pip-audit-requirements.txt
+          no-deps: true
+
+  dependency-review:
+    # #757 (from #233): flag a PR that adds a dependency with a known
+    # vulnerability, or under a licence incompatible with Apache-2.0, at review
+    # time. Reads the dependency graph diff between base and head, so it needs
+    # no checkout. PRs only: there is no diff to review on a push. The one job
+    # that calls no nox session: with no checkout there is no noxfile, and the
+    # graph diff exists only on GitHub (python/noxfile.py's dependency-review
+    # session skips, saying so; docs/ci.md convention 5).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          deny-licenses: GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later
+
+  workflow-lint:
+    # #757: actionlint (workflow syntax, expressions, shellcheck over run:
+    # bodies) and zizmor (Actions security audits: unpinned or impostor uses:,
+    # excessive permissions, template injection, persisted credentials) over
+    # .github/. Both tools are fetched at a pinned version and verified by
+    # sha256 before they run, the same way secret-scan.yml fetches gitleaks.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      # sha256 of actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz, from the release's checksums.txt
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+      ZIZMOR_VERSION: "1.30.1"
+      # sha256 of zizmor-${ZIZMOR_VERSION}-py3-none-manylinux_2_28_x86_64.whl, from PyPI
+      ZIZMOR_SHA256: "eee12266b793cb87ad4a7e3af2e72404f8a63e3de5eb099b80bf7b1cfd232a8e"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: install actionlint
+        working-directory: ${{ runner.temp }}
+        run: |
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
+          tar xzf "$tarball" actionlint
+          sudo install actionlint /usr/local/bin/actionlint
+      - name: install zizmor
+        run: |
+          echo "zizmor==${ZIZMOR_VERSION} --hash=sha256:${ZIZMOR_SHA256}" > "$RUNNER_TEMP/zizmor.txt"
+          python -m pip install --require-hashes --no-deps -r "$RUNNER_TEMP/zizmor.txt"
+      # The two installs above are this job's alone (tests/unit/test_noxfile.py
+      # lists them as CI-only); the session runs the tools on PATH.
+      - name: actionlint and zizmor over .github/ (nox -s workflow-lint)
+        env:
+          # Read-only token for zizmor's online audits (impostor commits,
+          # known-vulnerable actions); the session withholds it from actionlint.
+          GH_TOKEN: ${{ github.token }}
+        run: pipx run --spec "nox==$NOX_VERSION" nox -f python/noxfile.py --no-venv --no-install -s workflow-lint
 
   ci-ok:
     # #755: the one required status check. Branch protection requires only this
@@ -804,6 +895,7 @@ jobs:
       - new-dependencies
       - commit-identities
       - test
+      - openai-1x
       - anthropic-stacks
       - adk-stacks
       - agent-framework-middleware
@@ -814,6 +906,10 @@ jobs:
       - quickstart
       - langgraph-demo
       - docs-llms-drift
+      - docs-site
+      - pip-audit
+      - dependency-review
+      - workflow-lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

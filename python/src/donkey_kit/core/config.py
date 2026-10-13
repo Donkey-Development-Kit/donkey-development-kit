@@ -62,7 +62,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
     import tomli as tomllib
 
 from . import _verify
-from ._verify import REGION_HOSTS, UNVERIFIED_REGION_HOSTS
+from ._verify import REGION_HOSTS
 from .cost import CostTags
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
@@ -112,11 +112,11 @@ Capability = Literal["control_plane", "llm"]
 
 
 class ConfigOverrides(TypedDict, total=False):
-    """The public :class:`DonkeyConfig` fields, each optional, as keyword
-    arguments: what :meth:`DonkeyConfig.resolve`, :meth:`DonkeyConfig.with_overrides`
-    and ``Donkey.from_env`` accept, so a misspelt field fails type checking
-    (#716, #727). Must list exactly the dataclass's public fields; a unit test
-    pins that."""
+    """The public :class:`DonkeyConfig` fields, each optional, as keyword arguments:
+    what :meth:`DonkeyConfig.resolve`, :meth:`DonkeyConfig.with_overrides` and
+    ``Donkey.from_env`` accept, so a misspelt field fails type checking (#716, #727).
+
+    Must list exactly the dataclass's public fields; a unit test pins that."""
 
     client_id: str | None
     client_secret: str | None
@@ -287,7 +287,7 @@ class DonkeyConfig:
     org_id: str | None = None
     environment: str = "Sandbox"
     region: Region = "us"
-    base_url: str | None = None           # override; else derived from region
+    base_url: str | None = None  # override; else derived from region
 
     # --- LLM proxy (data plane) — SEPARATE credential from the control plane ---
     # Auth is a client_id/client_secret REQUEST-header pair (client-id-enforcement),
@@ -380,9 +380,7 @@ class DonkeyConfig:
     # Where each field was resolved from and a keyed digest of the value it had
     # there, filled in by resolve(). A field with no entry, or whose value no
     # longer matches, was set in code and counts as explicit.
-    _sources: Mapping[str, _Loaded] = field(
-        default_factory=dict, repr=False, compare=False
-    )
+    _sources: Mapping[str, _Loaded] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         loaded = {name: _as_loaded(name, entry) for name, entry in self._sources.items()}
@@ -535,14 +533,11 @@ class DonkeyConfig:
     # --------------------------------------------------------------- derived
     @property
     def control_plane_url(self) -> str:
-        """The Anypoint control-plane base URL — explicit override or region.
-
-        A region whose host is unconfirmed (docs/verified-apis.md §1) warns once
-        with an ``UnverifiedValueWarning``; set ``base_url`` to silence it."""
+        """The Anypoint control-plane base URL — explicit override or region
+        (docs/verified-apis.md §1)."""
         if self.base_url:
             return self.base_url
-        unconfirmed = UNVERIFIED_REGION_HOSTS.get(self.region)
-        return unconfirmed.get() if unconfirmed else REGION_HOSTS[self.region]
+        return REGION_HOSTS[self.region]
 
     def source_of(self, name: str) -> ConfigSource:
         """Where field ``name`` was resolved from. ``explicit`` (set in code) when
@@ -711,9 +706,7 @@ def _binding_error(
     if offer_local_file:
         local = origin.path.parent / LOCAL_TOML_NAME
         options.append(f"keep the credentials in {local}, next to the project file")
-    options.append(
-        f"trust the project config files by setting {TRUST_PROJECT_CONFIG_ENV}=1"
-    )
+    options.append(f"trust the project config files by setting {TRUST_PROJECT_CONFIG_ENV}=1")
     return ConfigError(
         f"Not sending {', '.join(credentials)} to {host_of(url)}: {key} is set in "
         f"{origin.path}, and credentials from outside the project config files "

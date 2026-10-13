@@ -1,5 +1,6 @@
 ---
 description: Use a governed AsyncAnthropic client with the Anthropic SDK, pointed at a Format=Anthropic Omni Gateway LLM proxy with full header and transport injection.
+status: live
 ---
 
 import { Callout, Tabs } from 'nextra/components'
@@ -32,8 +33,9 @@ straight into the client constructor.
 pip install "donkey-kit[anthropic]"
 ```
 
-This installs the newest `anthropic` release. `anthropic` 0.x (from 0.40) works
-too, so a project that holds it below 1.0 needs no change.
+This installs the newest `anthropic` release. `anthropic` 0.x works too, from
+the extra's minimum (see [Version compatibility](/frameworks/compatibility)),
+so a project that holds it below 1.0 needs no change.
 
 ## Quickstart
 

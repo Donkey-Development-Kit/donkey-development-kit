@@ -13,6 +13,33 @@ a release reaches PyPI, see [`releasing.md`](releasing.md). For the dependency
 policy behind the locks and the nightly run, see
 [ADR 0007](adr/0007-dependency-policy.md).
 
+<!-- toc -->
+**Contents**
+
+- [The signals](#the-signals)
+  - [ci.yml: the PR gate](#ciyml-the-pr-gate)
+  - [nightly-matrix.yml: the canary](#nightly-matrixyml-the-canary)
+  - [lock-refresh.yml: the lock bump](#lock-refreshyml-the-lock-bump)
+  - [framework-release-watch.yml: one release at a time](#framework-release-watchyml-one-release-at-a-time)
+  - [live-contract-check.yml: the gateway contract](#live-contract-checkyml-the-gateway-contract)
+- [Scenario maps](#scenario-maps)
+  - [Feature or fix (normal path)](#feature-or-fix-normal-path)
+  - [Hotfix (into main, then back to develop)](#hotfix-into-main-then-back-to-develop)
+  - [Error scenarios and recovery](#error-scenarios-and-recovery)
+- [Conventions](#conventions)
+  - [1. PR CI resolves from a lock; the nightly run resolves fresh. In place (#982)](#1-pr-ci-resolves-from-a-lock-the-nightly-run-resolves-fresh-in-place-982)
+  - [2. One required status check: ci-ok. In place (#755)](#2-one-required-status-check-ci-ok-in-place-755)
+  - [3. CI runs on develop, not just on PRs. In place (#755)](#3-ci-runs-on-develop-not-just-on-prs-in-place-755)
+  - [4. Every scheduled workflow alerts on failure. Partly in place](#4-every-scheduled-workflow-alerts-on-failure-partly-in-place)
+  - [5. One task runner mirrors CI. In place (#765)](#5-one-task-runner-mirrors-ci-in-place-765)
+  - [6. Jobs are bounded and superseded runs are cancelled. In place (#761)](#6-jobs-are-bounded-and-superseded-runs-are-cancelled-in-place-761)
+  - [7. Least-privilege workflows. Partly in place (#757, #771)](#7-least-privilege-workflows-partly-in-place-757-771)
+  - [8. The site is built on PRs, on a supported Node. In place (#759)](#8-the-site-is-built-on-prs-on-a-supported-node-in-place-759)
+  - [9. Release gates are code, not prose. Target (#767)](#9-release-gates-are-code-not-prose-target-767)
+  - [10. Workflow names follow one style. In place (#1009)](#10-workflow-names-follow-one-style-in-place-1009)
+- [Changing a workflow](#changing-a-workflow)
+<!-- tocstop -->
+
 ## The signals
 
 Each workflow answers exactly one question. Mixing two signals in one job makes
@@ -23,6 +50,8 @@ should be split.
 | --- | --- | --- |
 | Did this change break something? | `ci.yml` (PR-gating jobs, resolving from the committed lock) | Every PR; pushes to `main` and `develop` |
 | Did an upstream release break us? | `nightly-matrix.yml`, plus the fresh-resolve jobs in `ci.yml` (`all-extra-resolves`, `anthropic-stacks`, `adk-stacks`) | Daily 06:00 UTC; every PR for the `ci.yml` jobs |
+| Can the lock move to the newest releases? | `lock-refresh.yml` (opens one bump PR; its CI answers) | After each green nightly on `develop`; manual |
+| Which new framework release breaks which adapter? | `framework-release-watch.yml` (one `framework-release` issue per release ahead of the lock) | Daily 05:30 UTC; manual, optionally for one package or a replay of one past release; a dry run on PRs that change it |
 | Did the live gateway's contract drift? | `live-contract-check.yml` (the `openai-model-routing` proxy only) | Mondays 07:00 UTC |
 | Did a secret get committed? | `secret-scan.yml` (gitleaks over the full history) | Every PR; pushes to `main` and `develop` |
 | Is the published site current? | `docs.yml` (build and deploy to GitHub Pages) | Pushes to `main` under `website/**`; every 6 hours; manual |
@@ -43,8 +72,9 @@ The jobs, grouped by what they protect:
 - **Static checks.** `typecheck-and-lint` runs `mypy`, `ruff check`,
   `lint-imports`, the verification-claim and doc-link checkers, the fixture
   scrub check and `vulture`.
-- **Behaviour.** `test` is the Python 3.10–3.12 matrix and includes the
-  `local_gateway` suite. `adapter-contract` runs one leg per `ADAPTERS` extra
+- **Behaviour.** `test` is the Python 3.10–3.14 matrix and includes the
+  `local_gateway` suite. `openai-1x` runs the same suites with `openai<2`, the
+  1.x range the `llm` extra's floor allows (#769). `adapter-contract` runs one leg per `ADAPTERS` extra
   with its real framework installed (#742). The framework-specific jobs
   (`anthropic-stacks`, `adk-stacks`, `agent-framework-middleware`,
   `llamaindex-transport`, `agents-strands-last-call`) cover tests that only
@@ -52,7 +82,13 @@ The jobs, grouped by what they protect:
 - **Promises made in the docs.** `benchmark` enforces the < 1 ms span overhead
   (BG §1.6) and trends it across runs. `quickstart` and `langgraph-demo` run
   the documented examples against the local simulator. `docs-llms-drift`
-  regenerates `llms.txt` and fails on any diff.
+  regenerates `llms.txt` and fails on any diff. `docs-site` builds the site
+  and checks its internal links and anchors (#759).
+- **Supply chain.** `pip-audit` audits a fresh resolve of the base install
+  and of `.[all]` for known vulnerabilities, blocking (#757).
+  `dependency-review` flags a PR that adds a vulnerable dependency or one
+  under a GPL/AGPL licence, and runs on PRs only. `workflow-lint` runs
+  actionlint and zizmor over `.github/` (convention 7).
 - **The gate itself.** `ci-ok` needs every other job and fails unless each one
   succeeded or was skipped. It is the one required status check (convention 2).
 
@@ -61,12 +97,142 @@ The jobs, grouped by what they protect:
 The nightly run resolves fresh against the newest upstream releases, with no
 constraints (ADR 0007 rule 4). `matrix` re-verifies the conformance-tested
 adapter (LangGraph) against §8 signatures, and `framework-legs` runs every
-`ADAPTERS` entry (#748). A live proxy round-trip is available only through
+`ADAPTERS` entry (#748). `lowest-direct` installs base, the framework-free
+extras and each framework extra at their declared floors (`uv pip install
+--resolution lowest-direct`, Python 3.10), runs their suites, and fails a leg
+whose installed versions are not its declared floors
+(`scripts/check_floors.py`, ADR 0007 rule 1). `co-installability` re-resolves
+every framework extra pair and fails when `docs/co-installability.md` no longer
+matches (#769). `pip-audit` repeats the PR job's vulnerability audit, so an
+advisory published between PRs still reaches a human (#757). A live proxy
+round-trip is available only through
 `workflow_dispatch` with `live: true`. A red nightly is an upstream signal: fix
 it by adapting the code or by moving the lock, never by adding a ceiling
 (`§8.4`). Any failed run, scheduled or manual, opens one issue labelled
 `nightly-failure`, or comments on it if it is already open (#755). Close that
 issue once the nightly is green again.
+
+### `lock-refresh.yml`: the lock bump
+
+After every green nightly on `develop`, and on manual dispatch, this workflow
+reruns `python scripts/compile_constraints.py` on `develop` (#763,
+[ADR 0011](adr/0011-nightly-lock-refresh-pr.md)). When any file under
+`python/constraints/` changed, it regenerates the docs that restate the lock
+(`python scripts/generate_docs.py`, which writes the
+[framework version pages](framework-support.md), #1068) and the site's llms
+outputs, force-pushes the result to `bot/lock-refresh` and opens one PR to
+`develop`, or updates the body of the one already open. Merge it once its CI is green. A red bump PR is an upstream
+change the lock can't take yet: fix the code, or leave the PR open until the
+next refresh replaces it. Never add a ceiling (`§8.4`). The branch belongs to
+the workflow, so don't push to it by hand. A failed run opens or updates one
+issue labelled `lock-refresh-failure`.
+
+**One-time setup.** A PR opened with the default `github.token` doesn't start
+`pull_request` workflows, so its CI never runs on its own. A maintainer with
+admin rights on the repository picks one:
+
+1. Add a `LOCK_REFRESH_TOKEN` repository secret: a fine-grained token, or a
+   GitHub App installation token, with **Contents** and **Pull requests**
+   write access to this repository only. The workflow uses it when it
+   exists, and CI runs on the bump PR like on any other.
+2. Or, with no secret, allow the default token to open PRs: **Settings →
+   Actions → General → Workflow permissions → Allow GitHub Actions to create
+   and approve pull requests**. Then close and reopen each bump PR to start
+   its CI.
+
+Without either, the PR step fails and the run files the
+`lock-refresh-failure` issue. Check the setup with
+`gh workflow run lock-refresh.yml --ref develop`.
+
+### `framework-release-watch.yml`: one release at a time
+
+The nightly resolves everything fresh at once, so a red nightly doesn't say
+which upstream release broke which adapter. This workflow tests each new
+release on its own (#1066). `detect` runs
+`python scripts/check_framework_releases.py`, which lists every direct
+requirement of each framework extra whose newest stable PyPI release is ahead
+of its pin in `python/constraints/adapter-contract-<extra>-py3.12.txt`.
+Pre-releases and yanked releases don't count. `evaluate` runs one leg per
+release. It installs the `adapter-contract` job's line with that one pin moved.
+If that doesn't resolve, it installs the release unconstrained and marks it
+"needs co-bump". Then it runs the `adapter-contract` checks:
+`verify_frameworks.py --require-installed`, the whole suite with the skip guard
+armed, and the example smoke. A red check is a result, not a red run.
+
+`alert` keeps one open issue per release, titled
+`framework-release: <package> <locked> → <latest>` and labelled
+`framework-release` and `dependencies`. The issue lists the versions, the bump
+kind, the release date and notes, the result of each check, the run link and
+the next action. A rerun refreshes the body and comments only when the results
+changed. A newer release of the same package closes the older issue as
+superseded. Once the lock reaches the release, the next run closes the issue
+with a link to the lock commit.
+
+What to do with an issue:
+
+- **All green: safe to bump.** The next `lock-refresh.yml` PR may already
+  carry it. If not, from `python/` run `python scripts/compile_constraints.py`,
+  then `python scripts/generate_docs.py`, then
+  `python scripts/verify_frameworks.py --only <framework> --emit-verified`, and
+  then the pre-PR gate.
+- **Anything red.** Adapt the adapter to the release, or record the
+  incompatibility in [`verified-apis.md` §8.1](verified-apis.md). Never add a
+  ceiling (`§8.4`).
+
+**Impact review (AI, advisory).** The checks say *whether* a release breaks the
+adapter; they don't say what in the changelog did. Beside `evaluate`, the
+`ai-review` job runs one leg per release (#1067). It gives
+`anthropics/claude-code-action` (pinned by SHA, model `claude-sonnet-5-5`) a
+prompt that `python scripts/review_framework_release.py --prompt` builds: the
+package and both versions, the release notes and the GitHub compare link, the
+adapter module, its `FRAMEWORKS` rows in `verify_frameworks.py`, and its
+[`verified-apis.md`](verified-apis.md) §8 rows with all of §8.1 and §8.2. The
+model answers in a fixed schema: **Risk** (none, low or high), the **affected
+symbols**, each with an upstream citation, the **recommended action** (bump,
+adapt adapter, record §8.1, or watch) and its **confidence**. `alert` puts the
+answer in the issue under "Impact review (AI, advisory)".
+
+- *It is advisory.* It is never verification (§0.3), and it never changes a §8
+  row or the next action the checks give. Confirm a finding against the cited
+  source before acting on it.
+- *It is read-only.* The job has `contents: read` and no write token. The model
+  can read files (never `/proc`, where its key lives) and fetch pages from
+  github.com, raw.githubusercontent.com and pypi.org, nothing else: no shell,
+  no edits, no subagents and no GitHub tools, and in-repo Claude settings are
+  ignored. The prompt says fetched pages are data, not instructions. Only
+  `alert` writes, and the answer is untrusted: the script keeps only the
+  schema's fields, escapes Markdown, strips HTML and comment markers,
+  neutralises `@` mentions and `#` references, keeps only `http(s)` citations,
+  and drops an answer that holds anything shaped like a credential.
+- *It never fails the run.* No key, a failed action or an answer outside the
+  schema leaves "Impact review unavailable" in the issue and a notice in the
+  run. A rerun without a review keeps the review an earlier run wrote.
+- *It runs once per release.* The review is cached by extra, package and
+  version (`actions/cache`), so the daily rerun of an open issue costs nothing.
+  To review a release again, delete its `ai-review-v1-…` cache under
+  **Actions → Caches**.
+
+**One-time setup for the review.** The key is an environment secret, never a
+repository secret, and the environment admits only `develop`:
+
+1. Create an `ai-review` environment in **Settings → Environments**. Under
+   deployment branches, allow only `develop`; leave required reviewers off,
+   because the daily run is unattended.
+2. Add the environment secret `ANTHROPIC_API_KEY`:
+   `gh secret set ANTHROPIC_API_KEY --env ai-review` prompts for the value.
+   `tests/unit/test_ci_workflows.py` holds `ai-review` as the only job on that
+   environment, and keeps it off pull requests.
+
+Run it for one package with
+`gh workflow run framework-release-watch.yml --ref develop -f package=crewai`.
+To check the review against a release with a known outcome, replay that
+release as a dry run:
+`gh workflow run framework-release-watch.yml --ref develop -f package=anthropic -f replay=0.116.0..1.0.0`
+evaluates and reviews `anthropic` 1.0.0 as if the lock still pinned 0.116.0,
+and puts the planned issue in the job summary without writing it. A PR that
+changes the workflow or either script gets a dry run too: the planned issue
+bodies go to the job summary, nothing is written, and the review doesn't run. A
+failed run opens or updates one issue labelled `framework-release-watch-failure`.
 
 ### `live-contract-check.yml`: the gateway contract
 
@@ -253,10 +419,19 @@ extras, dev group and Python combination, never merged across combinations
 `python scripts/compile_constraints.py`, and keep its `_COMBOS` in sync with the
 install lines in `ci.yml`.
 
-Still open under #763: pinning the build backend and the release tools,
-Dependabot-driven lock bumps, and making `mypy` independent of which extras are
-installed. Still open under #769: a lowest-direct job that keeps the declared
-floors honest, an `openai<2` leg, and Python 3.13/3.14 in the matrix.
+The lock also covers tools (#763). The `release` dependency group (`build`,
+`twine`, `hatchling`) and the `lock` group (`uv`) compile to
+`constraints/release-py3.11.txt` and `constraints/lock-py3.11.txt`. Every
+`python -m build` step installs from the release file and builds with
+`--no-isolation`, so a published dist is built by the locked `hatchling`.
+`lock-refresh.yml` opens the PR that moves the lock after each green nightly
+([ADR 0011](adr/0011-nightly-lock-refresh-pr.md); Dependabot would raise the
+floors and bump pins one at a time). `mypy` never follows an optional extra
+(`follow_imports = "skip"`), so its result doesn't depend on which extras are
+installed. The declared floors are not locked: the nightly `lowest-direct` job
+installs them fresh (#769). One tool stays unlocked: `NOX_VERSION` pins nox
+itself, but each job's `pipx run` resolves nox's own dependencies fresh
+(convention 5).
 
 ### 2. One required status check: `ci-ok`. **In place** (#755)
 
@@ -279,17 +454,43 @@ promotion. `secret-scan.yml` covers `develop` too. There is no merge queue, so
 Each cron workflow ends with an `if: failure()` job or step that opens or
 updates one labelled tracking issue (never one issue per run), using
 `issues: write` on that job only. `live-contract-check.yml` does this with the
-`live-contract-drift` label (#753), and `nightly-matrix.yml` with the
-`nightly-failure` label (#755). `docs.yml`'s cron still needs the same step.
+`live-contract-drift` label (#753), `nightly-matrix.yml` with the
+`nightly-failure` label (#755), `lock-refresh.yml`, which follows the
+nightly, with the `lock-refresh-failure` label (#763), and
+`framework-release-watch.yml` with the `framework-release-watch-failure` label
+(#1066). `docs.yml`'s cron still needs the same step.
 
-### 5. One task runner mirrors CI. **Target** (#765)
+### 5. One task runner mirrors CI. **In place** (#765)
 
-Workflows call `nox -s <session>`, one session per blocking CI job, and the
-CONTRIBUTING gate documents sessions instead of raw commands. One local command
-then reproduces every blocking job. Until this lands, the install and run lines
-in `ci.yml` are the source of truth, and CONTRIBUTING's gate is a subset of
-them. `.pre-commit-config.yaml` exists today with gitleaks only. #765 adds
-ruff, ruff-format, lint-imports and `llms.txt` regeneration.
+`python/noxfile.py` has one session per `ci.yml` job, named after the job
+(`ci-ok` aside), and the CONTRIBUTING gate documents sessions instead of raw
+commands, so `nox` from `python/` reproduces every blocking job. Each job keeps
+its install and cache steps (its lock lives there, convention 1) and then runs
+its session in place: `pipx run --spec "nox==$NOX_VERSION" nox --no-venv
+--no-install -s <job>`. Locally, the session installs the same line into its own
+virtualenv. `tests/unit/test_noxfile.py` checks that every job has a session,
+calls it, installs what the session's `CI_INSTALLS` entry says, and runs no
+check inline (a check tool, a repo script, npm, node or `timeout`). The
+exceptions are named in that test and in the noxfile's docstring:
+
+- **CI-only steps.** The benchmark's trend alert reads the previous `main`
+  run's artifact, and `workflow-lint` downloads actionlint and zizmor (each
+  verified by sha256) onto the Linux runner. Locally the session takes both
+  linters from `PATH`.
+- **`uses:` actions stay steps.** `pip-audit`'s session writes the exact pin
+  list that the pinned `pypa/gh-action-pip-audit` step then audits, and run
+  locally it installs pip-audit and audits the list itself.
+  `dependency-review` is a single action with no checkout, and the dependency
+  graph diff it reads exists only on GitHub, so its job calls no session. The
+  session of the same name only skips, saying so.
+- **The site's `npm ci`.** `docs-site` installs nothing through
+  `CI_INSTALLS`: its session runs `npm ci` itself, under `--no-install` too,
+  so the job keeps only its Node setup.
+
+`.pre-commit-config.yaml`
+runs gitleaks, ruff, ruff format, lint-imports and the `llms.txt` regeneration
+at commit time, with the byte-exact fixtures excluded from the formatter. The
+nightly matrix and the publish workflows are not sessions.
 
 ### 6. Jobs are bounded and superseded runs are cancelled. **In place** (#761)
 
@@ -318,35 +519,70 @@ serialise their runs and never cancel one mid-flight.
 
 Every workflow declares `permissions:` at the top, and elevated permissions go
 only on the job that needs them. The publish workflows grant `id-token: write`
-to the publish job alone. Values from `${{ }}` are bound to `env:` and used as
-quoted shell variables, never interpolated into a `run:` body. Still open:
+to the publish job alone, and `docs.yml` grants `pages: write` and
+`id-token: write` to its deploy job alone; its build job, which runs
+third-party npm code, has `contents: read` only (#757). Values from `${{ }}`
+are bound to `env:` and used as quoted shell variables, never interpolated
+into a `run:` body. In place:
 
-- Pin every `uses:` to a full commit SHA with a version comment, starting with
-  `pypa/gh-action-pypi-publish` (still on the `release/v1` branch ref).
-- Move `docs.yml`'s `pages: write` and `id-token: write` from the workflow to
-  the deploy job.
-- Add a `.github/dependabot.yml` for actions, pip and npm, a `CODEOWNERS` file
-  covering `.github/**` and the other sensitive paths, and workflow linting.
-- Pin manual docs deploys to `main` (#771).
+- Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment, and
+  every checkout sets `persist-credentials: false`.
+- `.github/dependabot.yml` sends weekly, grouped version updates for actions
+  and for `website/` npm, all targeting `develop`, with a 7-day cooldown on new
+  releases. pip version updates stay off: `lock-refresh.yml` moves the lock
+  (#763, [ADR 0011](adr/0011-nightly-lock-refresh-pr.md)), and the floors in
+  `pyproject.toml` are never raised on a schedule (`§8.4`). Security updates
+  are on for every ecosystem.
+- `.github/CODEOWNERS` covers `.github/`, `python/pyproject.toml`,
+  `python/scripts/`, `python/src/donkey_kit/core/` and `python/tests/fixtures/`.
+  The owners' review is required once the branch rules turn on
+  "Require review from Code Owners".
+- `ci.yml`'s `workflow-lint` runs actionlint and zizmor over `.github/`.
+- `tests/unit/test_workflow_supply_chain.py` fails on an unpinned `uses:`, a
+  checkout that keeps the token, an OIDC or Pages grant outside the publish
+  and deploy jobs, or a missing Dependabot, CODEOWNERS or binary-image rule.
+- The publish workflows install `build`, `twine` and `hatchling` from
+  `constraints/release-py3.11.txt` and build with `--no-isolation` (#763).
+- `docs.yml` always builds `main`, so a manual run from another branch can't
+  publish unreleased docs (#771).
+- The model call in `framework-release-watch.yml`'s `ai-review` job reads its
+  key from the `ai-review` environment, which admits only `develop`. The job has
+  `contents: read`, and the model gets read and fetch tools only; its output
+  reaches an issue only through `alert`, after validation (#1067).
 
-### 8. The site is built on PRs, on a supported Node. **Target** (#759)
+### 8. The site is built on PRs, on a supported Node. **In place** (#759)
 
-A PR job, filtered to `website/**`, runs `npm ci`, a production build, a link
-and anchor check over the export, and `tsc --noEmit`. Today the only website
-job on PRs is `docs-llms-drift`, so the site is first built after promotion to
-`main`. Both workflows still use Node 20, which reached end of life on
-2026-04-30.
+The `docs-site` job in `ci.yml` builds the site on every PR that touches it,
+so broken MDX, a bad import or a dead internal link fails there instead of in
+the release deploy. Its `docs-site` nox session (convention 5) runs `npm ci`,
+`npm run typecheck`, `npm run lint`, a production build with
+`DOCS_BASE_PATH=/donkey-development-kit` (the project prefix the Pages deploy
+uses), and `npm run check:links` over `out/`. Only the build sees
+`GITHUB_TOKEN`, for the roadmap fetch. The
+check is a job-level path test on `website/**` and the two docs workflows, not
+a workflow-level `paths:` filter: a skipped workflow would never report
+`ci-ok`, the required check (convention 2). The job always starts and its steps
+no-op when the PR leaves the site alone. Pushes to `main` and `develop` always
+run it. `ci.yml` and `docs.yml` both use Node 24, since Node 20 reached end of
+life on 2026-04-30.
 
-### 9. Release gates are code, not prose. **Target** (#767)
+### 9. Release gates are code, not prose. **Partly in place** (#767)
 
-Before any upload: the version is read from one source file, the tag equals
-`v<version>`, the unit suite passes, and the built wheel installs and imports
-in a clean environment. The `pypi` environment requires reviewers, and the
-upload generates attestations. The acceptance run against the published
-pre-release is listed in `releasing.md`, and its status is attached to the
-promotion PR. Today the version lives in both `python/pyproject.toml` and
-`python/src/donkey_kit/__init__.py`, kept in sync by `scripts/bump-version.sh`,
-and the publish build runs `twine check` and the upper-pin grep only.
+The version is declared once, as `__version__` in
+`python/src/donkey_kit/__init__.py`; `pyproject.toml` reads it from there.
+Before either publish workflow uploads anything, its `test` job runs the suite
+at that commit, and its `build` job checks that every built dist carries the
+declared version (and, on `publish-pypi.yml`, that the tag equals
+`v<version>` and a final Release carries a final `X.Y.Z`), then installs the
+built wheel into a clean virtualenv and imports it. The upload generates PEP
+740 attestations. The acceptance run against the TestPyPI build is a listed
+gate in [`releasing.md`](releasing.md#release-gates): after the TestPyPI
+upload, `publish-testpypi.yml`'s `acceptance` job runs its offline groups
+against the published version and reports them as the `acceptance (published)`
+commit status, which the promotion PR shows (#1082). Still by hand: required
+reviewers on the `pypi` environment are a repository setting, so no workflow
+can enforce them, and the live acceptance groups are run and recorded on the
+promotion PR by the maintainer.
 
 ### 10. Workflow names follow one style. **In place** (#1009)
 
@@ -376,8 +612,16 @@ The same rules apply in every Donkey-Development-Kit repo:
   exist).
 - A new PR-gating job installs from its own constraints file, gets a
   `_COMBOS` entry in `compile_constraints.py` and a place in `ci-ok`'s
-  `needs:`. A new job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
+  `needs:`. Its checks go in a `python/noxfile.py` session of the same name,
+  with its install line in `CI_INSTALLS`, and the job runs that session
+  (convention 5). Change a check in the session, not in the workflow. A new
+  job in `nightly-matrix.yml` goes in `alert`'s `needs:`.
 - A new scheduled workflow ships with its failure-alert step (convention 4).
+- A new `uses:` is pinned to the full commit SHA of a release, with the
+  release's `# vX.Y.Z` as a trailing comment, and a new checkout sets
+  `persist-credentials: false` (convention 7). Run `actionlint` and
+  `zizmor .github/` locally before pushing a workflow change; `workflow-lint`
+  runs both on the PR.
 - A change to which tests run where updates the test-surface table in
   [`CONTRIBUTING.md` §2](../CONTRIBUTING.md#2-testing-strategy).
 - A change to the dependency policy itself needs an ADR (see

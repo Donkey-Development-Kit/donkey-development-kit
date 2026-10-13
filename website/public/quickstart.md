@@ -1,5 +1,7 @@
 # Quickstart
 
+Status: Live. Shipped, and verified against a real governed gateway.
+
 Make your first governed model call, then see what a plain `base_url` can't
 give you — a **typed refusal**, a **budget** and a **span** — in a few
 minutes, on your laptop. You start against DDK's **local gateway simulator**,
@@ -11,7 +13,7 @@ Omni Gateway later is an environment change, not a code change.
 | Capability | Status | Learn more |
 |---|---|---|
 | Governed model access (the raw client, through the proxy data plane) | Live | [Frameworks](https://docs.donkey-kit.dev/frameworks.md) |
-| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified ADK `gemini()` · Signature-confirmed the rest | [Frameworks](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) |
+| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified the rest | [Frameworks](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) |
 | Typed refusals | Live | [Typed refusals](https://docs.donkey-kit.dev/errors.md) |
 | Budget & pacing | Live | [Budget & pacing](https://docs.donkey-kit.dev/budget.md) |
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |

@@ -1,14 +1,16 @@
 import type { Metadata } from 'next'
 import { Play } from 'next/font/google'
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
-import { Head } from 'nextra/components'
+import Link from 'next/link'
+import { Banner, Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
 import { cloudflareBeacon } from '../lib/analytics.mjs'
 import { EDIT_REF, REPO_URL } from '../lib/repo.mjs'
+import { OG_IMAGE, SITE_NAME, siteBase } from '../lib/site.mjs'
+import { documentedVersion, latestPypiVersion, versionBanner } from '../lib/version.mjs'
 import '../styles/globals.css'
 
-const SITE_NAME = 'Donkey Development Kit'
 const SITE_DESCRIPTION =
   'Governed by the gateway, understood by your code. An open-source SDK that brings Agent Fabric and Omni Gateway awareness into your agent framework.'
 
@@ -34,15 +36,22 @@ const play = Play({
 // come from each page's frontmatter, resolved by generateMetadata in the
 // [[...mdxPath]] route.
 export const metadata: Metadata = {
+  // Resolves canonical / og:url / og:image to absolute URLs. The image itself
+  // comes from the app/opengraph-image.jpg and app/icon.png file conventions.
+  metadataBase: new URL(siteBase()),
   title: {
     default: SITE_NAME,
     template: `%s — ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
   openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
     title: SITE_NAME,
     description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
   },
+  twitter: { card: 'summary_large_image', images: [OG_IMAGE.url] },
 }
 
 const navbar = (
@@ -124,6 +133,13 @@ export default async function RootLayout({
   children: React.ReactNode
 }) {
   const pageMap = await getPageMap()
+  // Read once at build time: the static export ships the result (#795).
+  const version = versionBanner(await documentedVersion(), await latestPypiVersion())
+  const banner = version && (
+    <Banner storageKey={version.storageKey}>
+      {version.text} <Link href="/release-notes">Release notes</Link>
+    </Banner>
+  )
   return (
     <html
       lang="en"
@@ -135,6 +151,7 @@ export default async function RootLayout({
       <Head color={{ hue: 198, saturation: 100, lightness: { light: 50, dark: 50 } }} />
       <body>
         <Layout
+          banner={banner}
           navbar={navbar}
           footer={footer}
           pageMap={pageMap}
