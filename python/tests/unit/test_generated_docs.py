@@ -160,6 +160,9 @@ def test_api_reference_does_not_restate_the_version() -> None:
 
 _LEDGER = gen.LEDGER.read_text(encoding="utf-8") if gen.LEDGER.is_file() else ""
 _GEMINI_ROW = "| Google ADK (native Gemini) | `google.adk"
+_ADK_MODEL_ROW = "| Google ADK | `google.adk.models.lite_llm"
+_STRANDS_ROW = "| Strands | `strands.models"
+_SIGNATURE_CONFIRMED = "UNVERIFIED (signature confirmed; pending maintainer sign-off)"
 
 
 def _with_status(ledger: str, row_prefix: str, status: str) -> str:
@@ -186,9 +189,8 @@ def test_every_adapter_factory_has_a_ledger_status() -> None:
     }
     assert {(s.attr, s.factory) for s in rows} == expected
     by_call = {s.call: s for s in rows}
-    # The ledger's one VERIFIED (LIVE) framework row (§8) reads live; the rest do not.
-    assert by_call["donkey.adk.gemini()"].verification == "live-verified"
-    assert by_call["donkey.adk.model()"].verification == "signature-confirmed"
+    # Every §8 framework row has had a live round-trip (#34), so every factory reads live.
+    assert {s.verification for s in rows} == {"live-verified"}
     assert by_call["donkey.langgraph.chat_model()"].conformance_tested
 
 
@@ -204,17 +206,17 @@ def test_ledger_status_labels_are_never_invented() -> None:
 
 
 def test_flipping_a_ledger_row_flips_the_docs() -> None:
-    flipped = _with_status(_LEDGER, "| Strands | `strands.models", "VERIFIED (LIVE)")
+    demoted = _with_status(_LEDGER, _STRANDS_ROW, _SIGNATURE_CONFIRMED)
+    rows = gen.framework_statuses(demoted)
+    strands = next(s for s in rows if s.attr == "strands")
+    assert strands.verification == "signature-confirmed"
+    assert gen.page_statuses(rows)["/frameworks/strands"] == "offline-verified"
+
+    flipped = _with_status(demoted, _STRANDS_ROW, "VERIFIED (LIVE)")
     rows = gen.framework_statuses(flipped)
     strands = next(s for s in rows if s.attr == "strands")
     assert strands.verification == "live-verified"
     assert gen.page_statuses(rows)["/frameworks/strands"] == "live"
-
-    demoted = _with_status(
-        _LEDGER, _GEMINI_ROW, "UNVERIFIED (signature confirmed; pending maintainer sign-off)"
-    )
-    rows = gen.framework_statuses(demoted)
-    assert {s.verification for s in rows} == {"signature-confirmed"}
 
 
 def test_an_unknown_ledger_status_fails_generation() -> None:
@@ -235,8 +237,9 @@ def test_the_roster_must_cover_every_factory() -> None:
 
 
 def test_a_page_is_rated_by_its_default_factory() -> None:
-    statuses = gen.page_statuses(gen.framework_statuses())
-    # ADK's default factory is model(), signature-confirmed; gemini() does not lift the page.
+    # ADK's default factory is model(); a live gemini() does not lift the page.
+    demoted = _with_status(_LEDGER, _ADK_MODEL_ROW, _SIGNATURE_CONFIRMED)
+    statuses = gen.page_statuses(gen.framework_statuses(demoted))
     assert statuses["/frameworks/adk"] == "offline-verified"
     assert statuses["/frameworks"] == "offline-verified"
 

@@ -1,6 +1,6 @@
 # Microsoft Agent Framework
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Microsoft Agent Framework gets a governed chat client pointed at the Omni
 Gateway LLM proxy, plus policy middleware that ends a run on a governance

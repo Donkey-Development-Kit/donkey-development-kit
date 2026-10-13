@@ -1,6 +1,6 @@
 # LangGraph
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 LangGraph (and LangChain more broadly) gets a governed `ChatOpenAI` pointed at
 your Agent Fabric LLM proxy. LangGraph is the **deep adapter**: every proxy

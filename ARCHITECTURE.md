@@ -452,7 +452,7 @@ maps each factory to its row):
 
 <!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
 LangGraph is conformance-tested against the simulator in CI.
-Each adapter factory's constructor row in §8 of the ledger reads **signature-confirmed offline**, except Google ADK's `gemini()`, which is **live-verified**.
+Each adapter factory's constructor row in §8 of the ledger reads **live-verified**.
 <!-- END GENERATED: framework-status-summary -->
 
 ---

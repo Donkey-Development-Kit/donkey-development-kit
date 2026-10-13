@@ -1,6 +1,6 @@
 # LlamaIndex
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM
 proxy, with the chat-model flag a chat-only gateway requires already set.

@@ -1,6 +1,6 @@
 # Version compatibility
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Which versions of each framework `donkey-kit` supports. Install a framework
 with its extra, for example `pip install "donkey-kit[langgraph]"`; the extra

@@ -1,6 +1,6 @@
 # Strands Agents
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Strands Agents gets a governed `OpenAIModel` pointed at the Agent Fabric LLM
 proxy. The connection details travel in Strands' `client_args`, which Strands
