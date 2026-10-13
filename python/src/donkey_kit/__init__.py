@@ -163,7 +163,7 @@ _logging.getLogger(__name__).addHandler(_logging.NullHandler())
 # The package's one version source (#767): pyproject.toml declares the version
 # dynamic and hatch reads this line, so bump it here and nowhere else. The
 # release workflows fail when a tag disagrees with it (docs/releasing.md).
-__version__ = "0.1.3.dev0"
+__version__ = "0.1.3"
 
 __all__ = [
     "AgentKilled",
