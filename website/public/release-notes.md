@@ -19,7 +19,7 @@ Each Release covers:
 To read the notes for one version, open
 `https://github.com/Donkey-Development-Kit/donkey-development-kit/releases/tag/v<version>`,
 for example
-[`v0.1.2`](https://github.com/Donkey-Development-Kit/donkey-development-kit/releases/tag/v0.1.2).
+[`v0.1.3`](https://github.com/Donkey-Development-Kit/donkey-development-kit/releases/tag/v0.1.3).
 
 ## Which version you have
 
