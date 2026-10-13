@@ -1,6 +1,6 @@
 ---
 description: Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
-status: offline-verified
+status: live
 ---
 
 import { Callout } from 'nextra/components'
@@ -49,15 +49,15 @@ depth is the adapter roster's `conformance_tested`.
 
 | Framework | Factory | Depth | Ledger status |
 |---|---|---|---|
-| [LangGraph](/frameworks/langgraph) | `donkey.langgraph.chat_model()` | <Badge tone="accent">Conformance-tested</Badge> | <Badge tone="neutral">Signature-confirmed</Badge> |
-| [Google ADK](/frameworks/adk) | `donkey.adk.model()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [LangGraph](/frameworks/langgraph) | `donkey.langgraph.chat_model()` | <Badge tone="accent">Conformance-tested</Badge> | <Badge tone="live">Live-verified</Badge> |
+| [Google ADK](/frameworks/adk) | `donkey.adk.model()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
 | [Google ADK](/frameworks/adk) | `donkey.adk.gemini()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
-| [Strands](/frameworks/strands) | `donkey.strands.model()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
-| [MS Agent Framework](/frameworks/agent-framework) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
-| [OpenAI Agents SDK](/frameworks/openai) | `donkey.openai_agents.model()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
-| [Anthropic SDK](/frameworks/anthropic) | `donkey.anthropic.client()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
-| [CrewAI](/frameworks/crewai) | `donkey.crewai.llm()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
-| [LlamaIndex](/frameworks/llamaindex) | `donkey.llamaindex.llm()` | `connection_kwargs()` | <Badge tone="neutral">Signature-confirmed</Badge> |
+| [Strands](/frameworks/strands) | `donkey.strands.model()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [MS Agent Framework](/frameworks/agent-framework) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [OpenAI Agents SDK](/frameworks/openai) | `donkey.openai_agents.model()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [Anthropic SDK](/frameworks/anthropic) | `donkey.anthropic.client()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [CrewAI](/frameworks/crewai) | `donkey.crewai.llm()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
+| [LlamaIndex](/frameworks/llamaindex) | `donkey.llamaindex.llm()` | `connection_kwargs()` | <Badge tone="live">Live-verified</Badge> |
 {/* END GENERATED: framework-status */}
 
 A card reads Conformance-tested for a conformance-tested adapter, and otherwise
@@ -68,25 +68,25 @@ the ledger status of the adapter's default factory, so the ADK card rates
   <Card title="LangGraph" href="/frameworks/langgraph" badge="Conformance-tested" badgeTone="accent">
     `chat_model()` → `langchain_openai.ChatOpenAI`
   </Card>
-  <Card title="Google ADK" href="/frameworks/adk" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="Google ADK" href="/frameworks/adk" badge="Live-verified" badgeTone="live">
     `model()` → `google.adk … LiteLlm`; `gemini()` → `google.adk.models.Gemini`
   </Card>
-  <Card title="Strands" href="/frameworks/strands" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="Strands" href="/frameworks/strands" badge="Live-verified" badgeTone="live">
     `model()` → `strands … OpenAIModel`
   </Card>
-  <Card title="MS Agent Framework" href="/frameworks/agent-framework" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="MS Agent Framework" href="/frameworks/agent-framework" badge="Live-verified" badgeTone="live">
     `chat_client()` → Agent Framework chat client
   </Card>
-  <Card title="OpenAI Agents SDK" href="/frameworks/openai" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="OpenAI Agents SDK" href="/frameworks/openai" badge="Live-verified" badgeTone="live">
     `model()` → `agents.OpenAIChatCompletionsModel`
   </Card>
-  <Card title="Anthropic SDK" href="/frameworks/anthropic" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="Anthropic SDK" href="/frameworks/anthropic" badge="Live-verified" badgeTone="live">
     `client()` → `anthropic.AsyncAnthropic`
   </Card>
-  <Card title="CrewAI" href="/frameworks/crewai" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="CrewAI" href="/frameworks/crewai" badge="Live-verified" badgeTone="live">
     `llm()` → `crewai.BaseLLM` (`OpenAICompletion`)
   </Card>
-  <Card title="LlamaIndex" href="/frameworks/llamaindex" badge="Signature-confirmed" badgeTone="neutral">
+  <Card title="LlamaIndex" href="/frameworks/llamaindex" badge="Live-verified" badgeTone="live">
     `llm()` → `OpenAILike` (`is_chat_model=True`)
   </Card>
   <Card title="No framework" href="/quickstart" badge="Conformance-tested" badgeTone="accent">

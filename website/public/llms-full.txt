@@ -283,7 +283,7 @@ Omni Gateway later is an environment change, not a code change.
 | Capability | Status | Learn more |
 |---|---|---|
 | Governed model access (the raw client, through the proxy data plane) | Live | [Frameworks](https://docs.donkey-kit.dev/frameworks.md) |
-| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified Google ADK `gemini()` · Signature-confirmed the rest | [Frameworks](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) |
+| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified the rest | [Frameworks](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) |
 | Typed refusals | Live | [Typed refusals](https://docs.donkey-kit.dev/errors.md) |
 | Budget & pacing | Live | [Budget & pacing](https://docs.donkey-kit.dev/budget.md) |
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
@@ -726,7 +726,7 @@ Source: https://docs.donkey-kit.dev/frameworks.md
 
 # Model access
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
@@ -766,15 +766,15 @@ depth is the adapter roster's `conformance_tested`.
 
 | Framework | Factory | Depth | Ledger status |
 |---|---|---|---|
-| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | `donkey.langgraph.chat_model()` | Conformance-tested | Signature-confirmed |
-| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.model()` | `connection_kwargs()` | Signature-confirmed |
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | `donkey.langgraph.chat_model()` | Conformance-tested | Live-verified |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.model()` | `connection_kwargs()` | Live-verified |
 | [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.gemini()` | `connection_kwargs()` | Live-verified |
-| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `donkey.strands.model()` | `connection_kwargs()` | Signature-confirmed |
-| [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | Signature-confirmed |
-| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | `connection_kwargs()` | Signature-confirmed |
-| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `donkey.anthropic.client()` | `connection_kwargs()` | Signature-confirmed |
-| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `donkey.crewai.llm()` | `connection_kwargs()` | Signature-confirmed |
-| [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `donkey.llamaindex.llm()` | `connection_kwargs()` | Signature-confirmed |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `donkey.strands.model()` | `connection_kwargs()` | Live-verified |
+| [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | Live-verified |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | `connection_kwargs()` | Live-verified |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `donkey.anthropic.client()` | `connection_kwargs()` | Live-verified |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `donkey.crewai.llm()` | `connection_kwargs()` | Live-verified |
+| [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `donkey.llamaindex.llm()` | `connection_kwargs()` | Live-verified |
 
 A card reads Conformance-tested for a conformance-tested adapter, and otherwise
 the ledger status of the adapter's default factory, so the ADK card rates
@@ -1000,7 +1000,7 @@ Source: https://docs.donkey-kit.dev/frameworks/compatibility.md
 
 # Version compatibility
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Which versions of each framework `donkey-kit` supports. Install a framework
 with its extra, for example `pip install "donkey-kit[langgraph]"`; the extra
@@ -1057,7 +1057,7 @@ Source: https://docs.donkey-kit.dev/frameworks/langgraph.md
 
 # LangGraph
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 LangGraph (and LangChain more broadly) gets a governed `ChatOpenAI` pointed at
 your Agent Fabric LLM proxy. LangGraph is the **deep adapter**: every proxy
@@ -1356,7 +1356,7 @@ Source: https://docs.donkey-kit.dev/frameworks/adk.md
 
 # Google ADK
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Google's Agent Development Kit (ADK) reaches the Agent Fabric LLM proxy in one
 of two ways, depending on the proxy's ingress **Format**:
@@ -1642,7 +1642,7 @@ Source: https://docs.donkey-kit.dev/frameworks/strands.md
 
 # Strands Agents
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Strands Agents gets a governed `OpenAIModel` pointed at the Agent Fabric LLM
 proxy. The connection details travel in Strands' `client_args`, which Strands
@@ -1793,7 +1793,7 @@ Source: https://docs.donkey-kit.dev/frameworks/agent-framework.md
 
 # Microsoft Agent Framework
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Microsoft Agent Framework gets a governed chat client pointed at the Omni
 Gateway LLM proxy, plus policy middleware that ends a run on a governance
@@ -1997,7 +1997,7 @@ Source: https://docs.donkey-kit.dev/frameworks/openai.md
 
 # OpenAI Agents SDK
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
 `OpenAIChatCompletionsModel` backed by a pre-built `AsyncOpenAI` client. The
@@ -2148,7 +2148,7 @@ Source: https://docs.donkey-kit.dev/frameworks/anthropic.md
 
 # Anthropic SDK
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 The Anthropic SDK gets a governed `AsyncAnthropic` client pointed at the Omni
 Gateway LLM proxy, with the SDK's shared transport and proxy headers passed
@@ -2323,7 +2323,7 @@ Source: https://docs.donkey-kit.dev/frameworks/crewai.md
 
 # CrewAI
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 CrewAI gets a governed native LLM object pointed at the Agent Fabric LLM
 proxy. The adapter translates the governed connection into CrewAI's own
@@ -2475,7 +2475,7 @@ Source: https://docs.donkey-kit.dev/frameworks/llamaindex.md
 
 # LlamaIndex
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 LlamaIndex gets a governed `OpenAILike` LLM pointed at the Agent Fabric LLM
 proxy, with the chat-model flag a chat-only gateway requires already set.

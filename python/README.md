@@ -119,15 +119,15 @@ depth is the adapter roster's `conformance_tested`.
 
 | Framework | Factory | Depth | Ledger status |
 |---|---|---|---|
-| LangGraph | `donkey.langgraph.chat_model()` | **Conformance-tested** | **Signature-confirmed** |
-| Google ADK | `donkey.adk.model()` | `connection_kwargs()` | **Signature-confirmed** |
+| LangGraph | `donkey.langgraph.chat_model()` | **Conformance-tested** | **Live-verified** |
+| Google ADK | `donkey.adk.model()` | `connection_kwargs()` | **Live-verified** |
 | Google ADK | `donkey.adk.gemini()` | `connection_kwargs()` | **Live-verified** |
-| Strands | `donkey.strands.model()` | `connection_kwargs()` | **Signature-confirmed** |
-| MS Agent Framework | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | **Signature-confirmed** |
-| OpenAI Agents SDK | `donkey.openai_agents.model()` | `connection_kwargs()` | **Signature-confirmed** |
-| Anthropic SDK | `donkey.anthropic.client()` | `connection_kwargs()` | **Signature-confirmed** |
-| CrewAI | `donkey.crewai.llm()` | `connection_kwargs()` | **Signature-confirmed** |
-| LlamaIndex | `donkey.llamaindex.llm()` | `connection_kwargs()` | **Signature-confirmed** |
+| Strands | `donkey.strands.model()` | `connection_kwargs()` | **Live-verified** |
+| MS Agent Framework | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | **Live-verified** |
+| OpenAI Agents SDK | `donkey.openai_agents.model()` | `connection_kwargs()` | **Live-verified** |
+| Anthropic SDK | `donkey.anthropic.client()` | `connection_kwargs()` | **Live-verified** |
+| CrewAI | `donkey.crewai.llm()` | `connection_kwargs()` | **Live-verified** |
+| LlamaIndex | `donkey.llamaindex.llm()` | `connection_kwargs()` | **Live-verified** |
 <!-- END GENERATED: framework-status -->
 
 **Signature-confirmed** means the factory builds its native object against the
@@ -152,7 +152,7 @@ listed under [Framework support](#framework-support)):
 
 <!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
 LangGraph is conformance-tested against the simulator in CI.
-Each adapter factory's constructor row in §8 of the ledger reads **signature-confirmed offline**, except Google ADK's `gemini()`, which is **live-verified**.
+Each adapter factory's constructor row in §8 of the ledger reads **live-verified**.
 <!-- END GENERATED: framework-status-summary -->
 
 Everything still gated raises `NotImplementedError("blocked on verification: …")`

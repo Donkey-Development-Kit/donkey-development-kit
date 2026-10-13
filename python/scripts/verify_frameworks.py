@@ -18,18 +18,19 @@ Two independent checks per framework:
      caught too.
 
   B. LIVE ROUND-TRIP (``--live``, needs the 3 DONKEY_LLM_PROXY_* env vars):
-     make one real completion through the framework's *own* native call and
-     confirm a governed response comes back. Only LangGraph's call API is
-     exercised directly here (``ChatOpenAI.ainvoke``); for the others the
-     framework's agent-loop/runtime API is itself unverified, so the script
-     constructs the object and then probes the proxy path via the framework's
-     underlying OpenAI client only where that is safe — otherwise it records
-     LIVE as ``skipped (framework runtime API not verified)`` rather than
-     guessing a method name.
+     run one real user turn through the framework's *own* smallest agent,
+     built around the object check A constructed (LangGraph ``ainvoke``, ADK
+     ``InMemoryRunner``, Strands ``Agent``, OpenAI Agents ``Runner.run``, CrewAI
+     ``Crew.kickoff``, LlamaIndex ``FunctionAgent``, Agent Framework ``Agent``,
+     Anthropic ``messages.create``), and confirm a non-empty reply comes back.
+     ``agent_framework.responses`` and LangGraph's default call ``/responses``,
+     so point the proxy at one that serves it. ADK's native Gemini model and the
+     Anthropic client need their own wire format: they run only when
+     ``DONKEY_GEMINI_PROXY_URL`` / ``DONKEY_ANTHROPIC_PROXY_URL`` is set.
 
 Usage:
     python scripts/verify_frameworks.py                # signature check, all installed
-    python scripts/verify_frameworks.py --live         # + one real proxy round-trip
+    python scripts/verify_frameworks.py --live         # + one real agent turn per framework
     python scripts/verify_frameworks.py --only langgraph strands
     python scripts/verify_frameworks.py --only langgraph --require-installed
         # also fail if "langgraph" (or any --only key) is NOT INSTALLED
@@ -58,7 +59,9 @@ import json
 import os
 import sys
 import traceback
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 # --- ground truth: the exact docs/verified-apis.md §8 rows this script confirms ---
 # (framework key, factory import path, factory fn, expected native module.Class,
@@ -156,6 +159,16 @@ MODEL = os.environ.get("DEMO_MODEL", "gpt-4o")
 # Its live round-trip runs only when this points at one (same consumer creds).
 GEMINI_PROXY_ENV = "DONKEY_GEMINI_PROXY_URL"
 GEMINI_MODEL = os.environ.get("DEMO_GEMINI_MODEL", "gemini-2.5-flash")
+# The Anthropic client speaks the native Messages API, which needs a
+# Format=Anthropic proxy; its live turn runs only when this points at one.
+ANTHROPIC_PROXY_ENV = "DONKEY_ANTHROPIC_PROXY_URL"
+ANTHROPIC_MODEL = os.environ.get("DEMO_ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+
+# Check B's one user turn. Generic on purpose: a proxy with a PII policy rejects
+# anything that reads as a person, email or phone number.
+LIVE_PROMPT = "Reply with the single word: hello."
+LIVE_AGENT_NAME = "greeter"
+LIVE_INSTRUCTIONS = "You are a concise assistant. Answer in as few words as possible."
 
 
 @dataclass
@@ -258,7 +271,8 @@ def check_signature(
         # argument, so its factory takes no positional model (BG §1.8 divergence).
         obj: object
         if res.framework == "anthropic":
-            obj = fn()
+            anthropic_url = os.environ.get(ANTHROPIC_PROXY_ENV)
+            obj = fn(base_url=anthropic_url) if anthropic_url else fn()
         elif res.framework == "adk.gemini":
             obj = fn(GEMINI_MODEL, base_url=os.environ.get(GEMINI_PROXY_ENV) or None)
         elif res.framework == "agent_framework.responses":
@@ -306,21 +320,131 @@ def check_signature(
     return obj
 
 
-async def check_live(res: Result, obj: object) -> None:
-    """Check B — one real completion through the framework's native call.
+async def _langgraph_turn(obj: Any) -> str:  # noqa: ANN401
+    reply = await obj.ainvoke([("user", LIVE_PROMPT)])
+    return str(getattr(reply, "content", reply))
 
-    Only LangGraph's runtime call is verified here. For the rest, the framework's
-    agent-loop API is itself unverified (verification discipline), so we do not guess a method — the
-    proxy path they share is already live-verified via the raw client (docs/verified-apis.md §2).
+
+async def _adk_turn(obj: Any) -> str:  # noqa: ANN401
+    from google.adk.agents import Agent
+    from google.adk.runners import InMemoryRunner
+    from google.genai import types
+
+    runner = InMemoryRunner(
+        agent=Agent(name=LIVE_AGENT_NAME, model=obj, instruction=LIVE_INSTRUCTIONS),
+        app_name="verify-frameworks",
+    )
+    session = await runner.session_service.create_session(
+        app_name=runner.app_name, user_id="verify"
+    )
+    text = ""
+    async for event in runner.run_async(
+        user_id="verify",
+        session_id=session.id,
+        new_message=types.Content(role="user", parts=[types.Part(text=LIVE_PROMPT)]),
+    ):
+        if event.is_final_response() and event.content and event.content.parts:
+            text += "".join(part.text or "" for part in event.content.parts)
+    return text
+
+
+async def _strands_turn(obj: Any) -> str:  # noqa: ANN401
+    from strands import Agent
+
+    # The default callback handler prints the reply to stdout.
+    agent = Agent(model=obj, system_prompt=LIVE_INSTRUCTIONS, callback_handler=None)
+    return str(await agent.invoke_async(LIVE_PROMPT))
+
+
+async def _agent_framework_turn(obj: Any) -> str:  # noqa: ANN401
+    from agent_framework import Agent
+
+    agent = Agent(client=obj, name=LIVE_AGENT_NAME, instructions=LIVE_INSTRUCTIONS)
+    return str((await agent.run(LIVE_PROMPT)).text)
+
+
+async def _openai_agents_turn(obj: Any) -> str:  # noqa: ANN401
+    from agents import Agent, Runner, set_tracing_disabled
+
+    # The Agents SDK exports traces to OpenAI by default, with a key this run does not have.
+    set_tracing_disabled(True)
+    agent = Agent(name=LIVE_AGENT_NAME, instructions=LIVE_INSTRUCTIONS, model=obj)
+    return str((await Runner.run(agent, LIVE_PROMPT)).final_output)
+
+
+async def _anthropic_turn(obj: Any) -> str:  # noqa: ANN401
+    message = await obj.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=256,
+        messages=[{"role": "user", "content": LIVE_PROMPT}],
+    )
+    return "".join(block.text for block in message.content if block.type == "text")
+
+
+async def _crewai_turn(obj: Any) -> str:  # noqa: ANN401
+    from crewai import Agent, Crew, Task
+
+    agent = Agent(
+        role="Assistant",
+        goal="Answer the request briefly.",
+        backstory=LIVE_INSTRUCTIONS,
+        llm=obj,
+        allow_delegation=False,
+        verbose=False,
+    )
+    task = Task(description=LIVE_PROMPT, expected_output="One word.", agent=agent)
+    crew = Crew(agents=[agent], tasks=[task], verbose=False)
+    # kickoff() is sync; a thread keeps it off this event loop.
+    return str((await asyncio.to_thread(crew.kickoff)).raw)
+
+
+async def _llamaindex_turn(obj: Any) -> str:  # noqa: ANN401
+    from llama_index.core.agent.workflow import FunctionAgent
+
+    agent = FunctionAgent(tools=[], llm=obj, system_prompt=LIVE_INSTRUCTIONS)
+    return str(await agent.run(user_msg=LIVE_PROMPT))
+
+
+# Check B per framework: the framework's smallest agent (or, for Anthropic, its
+# client call) around the object the adapter returned, one user turn. Each call
+# was first run live by the acceptance suite's group 7 on 2026-10-13 (#34).
+LIVE_TURNS: dict[str, Callable[[Any], Awaitable[str]]] = {
+    "langgraph": _langgraph_turn,
+    "adk": _adk_turn,
+    "strands": _strands_turn,
+    "agent_framework": _agent_framework_turn,
+    "agent_framework.responses": _agent_framework_turn,
+    "openai_agents": _openai_agents_turn,
+    "anthropic": _anthropic_turn,
+    "crewai": _crewai_turn,
+    "llamaindex": _llamaindex_turn,
+}
+
+
+async def check_live(res: Result, obj: object) -> None:
+    """Check B — one real turn through the framework's own native call.
+
+    Each framework runs its smallest agent around the adapter's object
+    (``LIVE_TURNS``); a reply that comes back empty fails the check. ADK's native
+    Gemini model and the Anthropic client need a proxy in their own wire format,
+    so they run only when ``DONKEY_GEMINI_PROXY_URL`` / ``DONKEY_ANTHROPIC_PROXY_URL``
+    point at one.
     """
-    if res.framework == "langgraph":
+    if res.framework == "anthropic" and not os.environ.get(ANTHROPIC_PROXY_ENV):
+        res.live = f"skipped: set {ANTHROPIC_PROXY_ENV} to a Format=Anthropic proxy"
+        return
+    turn = LIVE_TURNS.get(res.framework)
+    if turn is not None:
         try:
-            reply = await obj.ainvoke([("user", "Say hi in exactly three words.")])  # type: ignore[attr-defined]
-            text = getattr(reply, "content", str(reply))
-            res.live = "ok"
-            res.detail = f"completion: {text!r}"
+            text = await turn(obj)
         except Exception as exc:  # noqa: BLE001
             res.live = f"fail: {type(exc).__name__}: {exc}"
+            return
+        if text.strip():
+            res.live = "ok"
+            res.detail = f"completion: {text!r}"
+        else:
+            res.live = "fail: the framework returned an empty reply"
         return
     if res.framework == "adk.gemini":
         # ADK's model-level call (BaseLlm.generate_content_async), live-verified
@@ -345,10 +469,7 @@ async def check_live(res: Result, obj: object) -> None:
         except Exception as exc:  # noqa: BLE001
             res.live = f"fail: {type(exc).__name__}: {exc}"
         return
-    res.live = (
-        "skipped: framework runtime call API not verified (docs/verified-apis.md §8/§9); "
-        "shared proxy path verified via raw client (docs/verified-apis.md §2)"
-    )
+    res.live = f"skipped: no live turn defined for {res.framework!r}"
 
 
 async def run(only: list[str] | None, live: bool) -> list[Result]:
