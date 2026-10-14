@@ -42,7 +42,7 @@ aiologic==0.17.1
 aiosignal==1.4.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
-anthropic==1.13.0
+anthropic==1.14.0
 anyio==4.15.1
 asgiref==3.12.1
 ast-serialize==0.13.0
@@ -64,12 +64,12 @@ azure-monitor-opentelemetry-exporter==1.0.0b58
 azure-search-documents==12.0.0
 azure-storage-blob==12.31.0
 backoff==2.2.1
-boto3==1.43.113
-botocore==1.43.113
+boto3==1.43.114
+botocore==1.43.114
 certifi==2026.7.22
 cffi==2.0.0
 charset-normalizer==3.5.2
-claude-agent-sdk==0.2.166
+claude-agent-sdk==0.2.167
 click==8.5.0
 clr-loader==0.2.10
 coverage==7.16.2
@@ -175,7 +175,7 @@ packaging==26.3
 pathspec==1.1.1
 pluggy==1.6.0
 portalocker==3.2.0
-posthog==7.69.0
+posthog==7.70.0
 powerfx==0.0.34
 priority==2.0.0
 propcache==0.5.4
@@ -190,7 +190,7 @@ pydantic-core==2.50.1
 pydantic-monty==0.0.23
 pydantic-monty-client==0.0.23
 pydantic-monty-runtime==0.0.23
-pydantic-settings==2.15.0
+pydantic-settings==2.16.0
 pygments==2.21.0
 pyjwt==2.15.1
 pytest==9.1.1

@@ -25,7 +25,7 @@ jiter==0.17.0
 jsonpatch==1.35
 jsonpointer==3.2.1
 langchain-core==1.6.10
-langchain-openai==1.7.1
+langchain-openai==1.7.2
 langchain-protocol==0.0.19
 langgraph==1.2.15
 langgraph-checkpoint==4.3.0
