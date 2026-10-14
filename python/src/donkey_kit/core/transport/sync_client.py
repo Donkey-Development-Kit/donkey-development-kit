@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -10,12 +11,13 @@ import httpx
 from ..budget import Budget
 from ..config import TOKEN_AUTH_MODES, DonkeyConfig
 from ..errors import PolicyViolation
+from ..reactions import Invoke, ReactionRun, RefusalHandlers
 from ..telemetry import GenAiSpan, genai_span, start_genai_span
 from .failures import _no_attempts, sync_token_auth_error
 from .governed import GovernedSyncTransport, _SyncMountRouter
 from .headers import Origin, _apply_auth, _apply_call_id_header
 from .observe import _observe_final
-from .pipeline import ClientOptions, _GovernedPipeline
+from .pipeline import ClientOptions, SendOptions, _GovernedPipeline
 from .policy import Finish, Retry, _request_model
 from .streaming import _is_streaming_success, _read_error_body, _SpanClosingSyncStream
 from .views import DonkeyClientView
@@ -65,9 +67,12 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
         *,
         budget: Budget | None = None,
         origins: set[Origin] | None = None,
+        reactions: RefusalHandlers | None = None,
         **kw: Unpack[ClientOptions],
     ) -> None:
-        self._init_pipeline(cfg, budget=budget, control_plane=False, origins=origins)
+        self._init_pipeline(
+            cfg, budget=budget, control_plane=False, origins=origins, reactions=reactions
+        )
         self._view: DonkeyClientView | None = None
         super().__init__(
             timeout=cfg.timeout_s, event_hooks={"request": [self._inject_headers]}, **kw
@@ -114,9 +119,42 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
         must call ``super()._on_response(...)``."""
         _observe_final(request, response, self._budget)
 
-    def _on_refusal(self, violation: PolicyViolation) -> None:
-        """Called once for a final policy refusal (see
-        :meth:`DonkeyAsyncClient._on_refusal`, #208). The default does nothing."""
+    def _on_refusal(
+        self,
+        request: httpx.Request,
+        response: httpx.Response,
+        violation: PolicyViolation,
+        options: SendOptions,
+    ) -> httpx.Response:
+        """Called once per logical ``send()`` whose final response is a policy
+        refusal; runs the ``donkey.on(...)`` handlers (see
+        :meth:`DonkeyAsyncClient._on_refusal`, BG §2.1, #208). An ``async``
+        handler cannot be awaited here, so its refusal propagates with a warning."""
+        run = self._reactions.start()
+        while (step := run.react(violation, request)) is not None:
+            if isinstance(step, Invoke):
+                try:
+                    result = step.fn(step.arg)
+                except Exception as exc:  # noqa: BLE001 - a handler never masks the refusal
+                    ReactionRun.failed(step, exc)
+                    return response
+                if inspect.isawaitable(result):
+                    ReactionRun.cannot_await(step, result)
+                    return response
+                resend = ReactionRun.after(step)
+                if resend is None:
+                    return response
+            else:
+                resend = step
+            response.close()
+            if resend.delay:
+                time.sleep(resend.delay)
+            request = resend.request
+            response, refused = self._governed_send(request, options)
+            if refused is None:
+                return response
+            violation = refused
+        return response
 
     def send(
         self,
@@ -137,10 +175,21 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
         """
         if self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES:
             raise sync_token_auth_error(self._cfg.llm_proxy_auth)
+        options = (stream, auth, follow_redirects)
+        response, violation = self._governed_send(request, options)
+        if violation is None:
+            return response
+        return self._on_refusal(request, response, violation, options)
+
+    def _governed_send(
+        self, request: httpx.Request, options: SendOptions
+    ) -> tuple[httpx.Response, PolicyViolation | None]:
+        """One governed request in its own span (see
+        :meth:`DonkeyAsyncClient._governed_send`)."""
+        stream = options[0]
         model = _request_model(request)
         enabled = self._cfg.telemetry and model is not None  # see DonkeyAsyncClient.send
         capture = self._cfg.telemetry_capture_content
-        options = (stream, auth, follow_redirects)
         if model is not None and stream:
             # Streaming: a detached span the stream wrapper ends, inert with
             # telemetry off (see DonkeyAsyncClient.send, #193, #817).
@@ -157,11 +206,8 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
             return self._send_with_retries(request, gspan, options)
 
     def _send_with_retries(
-        self,
-        request: httpx.Request,
-        gspan: GenAiSpan,
-        options: tuple[bool, AuthTypes | UseClientDefault | None, bool | UseClientDefault],
-    ) -> httpx.Response:
+        self, request: httpx.Request, gspan: GenAiSpan, options: SendOptions
+    ) -> tuple[httpx.Response, PolicyViolation | None]:
         """The retry loop (see :meth:`DonkeyAsyncClient._send_with_retries`)."""
         _apply_call_id_header(request, self._call_id_header)  # once, before the loop (#195)
         attempts = self._cfg.max_retries + 1
@@ -196,7 +242,7 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
         gspan: GenAiSpan,
         *,
         streaming: bool,
-    ) -> httpx.Response:
+    ) -> tuple[httpx.Response, PolicyViolation | None]:
         """Fire the response hooks exactly once, on the response actually
         returned, then record the span (see :meth:`DonkeyAsyncClient._finish`,
         including the bounded read of a non-2xx stream body, #805)."""
@@ -208,8 +254,6 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
                 raise self._unreachable(request, exc) from exc
         self._on_response(request, response)
         violation, substitution = self._settle(request, response, gspan)
-        if violation is not None:
-            self._on_refusal(violation)
         if substitution is not None:
             response.close()
             raise substitution
@@ -219,7 +263,7 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
                 response.stream = _SpanClosingSyncStream(body, gspan)
             else:
                 gspan.end()
-        return response
+        return response, violation
 
 
 def build_sync_http_client(
@@ -227,9 +271,10 @@ def build_sync_http_client(
     *,
     budget: Budget | None = None,
     origins: set[Origin] | None = None,
+    reactions: RefusalHandlers | None = None,
 ) -> DonkeyClient:
     """Factory for the shared blocking client (BG §1.1). See :class:`DonkeyClient`
     for why it takes no :class:`AuthProvider`. Pass ``budget`` to share one budget
     object with the async client (BG §1.3, #185), and ``origins`` to share its
-    checked endpoints."""
-    return DonkeyClient(cfg, budget=budget, origins=origins)
+    checked endpoints, and ``reactions`` for the ``donkey.on(...)`` handlers (BG §2.1)."""
+    return DonkeyClient(cfg, budget=budget, origins=origins, reactions=reactions)

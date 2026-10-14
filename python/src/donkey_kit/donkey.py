@@ -31,6 +31,7 @@ from .core.cachecontrol import CacheControls, CacheScope, cache_scope
 from .core.config import ConfigOverrides, DonkeyConfig
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
+from .core.reactions import OnRefusal
 from .core.runtime import Runtime
 from .core.telemetry import RunScope, run_scope
 from .core.toolspec import register_tool
@@ -57,7 +58,7 @@ else:
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
 
-    from .core.errors import DonkeyError
+    from .core.errors import DonkeyError, PolicyViolation
     from .integrations._base import Adapter
     from .integrations.adk import ADKAdapter
     from .integrations.agent_framework import AgentFrameworkAdapter
@@ -634,6 +635,36 @@ class Donkey:
         rejected at decoration time rather than recorded blank (#200).
         """
         return register_tool(func)
+
+    def on(self, refusal: type[PolicyViolation]) -> OnRefusal:
+        """Declare once what to do when a call is refused with ``refusal`` (`BG §2.1`).
+
+        The reaction runs inside this Donkey's governed transport, for every
+        model call it makes, so no call site needs its own try/except::
+
+            donkey.on(TokenBudgetExceeded).wait_for_reset(max_wait="45m")
+            donkey.on(PIIDetected).call(mask_and_retry, max_times=1)
+            donkey.on(ContentSafetyBlocked).fallback(model="internal-safe-model")
+            donkey.on(PolicyViolation).escalate(to=hitl_queue)  # catch-all
+
+        The most specific registered type wins, so ``on(PolicyViolation)`` is
+        the catch-all, and registering a type again replaces its reaction.
+
+        A handler reacts; it never decides policy. No reaction turns a refusal
+        into a success: it either lets the refusal propagate, or issues a new
+        governed request that the gateway judges afresh. There is no
+        ``ignore()``, and ``max_times``/``max_wait`` bound every reaction. A
+        handler that raises is logged and the refusal propagates.
+        :class:`~donkey_kit.core.errors.AgentKilled` is never handled
+        (`BG §2.6`).
+
+        Raises:
+            TypeError: ``refusal`` is not a ``PolicyViolation`` subclass, or is
+                ``AgentKilled``.
+
+        Docs: https://docs.donkey-kit.dev/refusal-handlers
+        """
+        return self._runtime.reactions.on(refusal)
 
     def simulate(self, error: type[DonkeyError], *, times: int = 1) -> AbstractContextManager[None]:
         """Inject a real gateway refusal in-process, no server (#190, BG §1.5).

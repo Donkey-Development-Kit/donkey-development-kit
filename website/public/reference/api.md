@@ -176,6 +176,16 @@ donkey.tool(func: Callable) -> Callable
 
 Mark a callable as a governed tool **without changing call behaviour**, recording its name, signature and docstring in an introspectable registry.
 
+### `donkey.on()`
+
+```python nocheck
+donkey.on(refusal: type[PolicyViolation]) -> OnRefusal
+```
+
+Declare once what to do when a call is refused with `refusal`.
+
+Guide: [`/refusal-handlers`](https://docs.donkey-kit.dev/refusal-handlers.md)
+
 ### `donkey.simulate()`
 
 ```python nocheck
@@ -469,6 +479,8 @@ is raised.
 | `LLMClient` | class | The framework-free proxy client factory. |
 | `LastCall` | class | What the gateway said about the most recent governed model call. |
 | `LastCallStatus` | class | Why `LastCall` fields are (or are not) populated — so a `None` is never ambiguous between "the gateway said nothing" and "the SDK never saw the response". `str`-valued so it prints and logs cleanly. |
+| `OnRefusal` | class | Returned by `donkey.on(refusal)`: pick exactly one reaction. |
+| `RefusalContext` | class | What a `OnRefusal.call` handler is given: the refusal, a copy of the refused request's JSON body, and `resend`. |
 | `Region` | type alias | One of `us`, `eu`, `ca`, `jp`. |
 | `RequestWindow` | class | The gateway's request-count window, `donkey.budget.requests`. |
 | `RunScope` | class | A **dual sync/async** context manager that sets the run correlation id for the governed calls made in its block. |

@@ -609,7 +609,7 @@ layers = [
     "budget | cache | cachecontrol | telemetry | toolspec",
     "auth | correlation",
     "config",
-    "cost | endpoints | header_names | refusals",
+    "cost | endpoints | header_names | reactions | refusals",
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",

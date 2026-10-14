@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import ssl
 from collections.abc import Mapping
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypeAlias, TypedDict
 
 import httpx
 
@@ -32,6 +32,7 @@ from ..errors import (
     PolicyViolation,
     classify,
 )
+from ..reactions import RefusalHandlers
 from ..refusals import capturing, record_outcome
 from ..telemetry import GenAiSpan
 from .failures import _gateway_unavailable, _lifecycle_error
@@ -54,9 +55,17 @@ from .policy import (
     refusal,
 )
 
-__all__ = ["AsyncClientOptions", "ClientOptions"]
+if TYPE_CHECKING:
+    from httpx._client import UseClientDefault
+    from httpx._types import AuthTypes
+
+__all__ = ["AsyncClientOptions", "ClientOptions", "SendOptions"]
 
 _log = logging.getLogger(__name__)
+
+
+#: One ``send()``'s ``(stream, auth, follow_redirects)``, reused by a re-send.
+SendOptions: TypeAlias = "tuple[bool, AuthTypes | UseClientDefault | None, bool | UseClientDefault]"
 
 
 class _CommonOptions(TypedDict, total=False):
@@ -94,6 +103,7 @@ class _GovernedPipeline(_CheckedEndpoints):
     _control_plane: bool
     _correlation_header: str
     _call_id_header: str
+    _reactions: RefusalHandlers
 
     def _init_pipeline(
         self,
@@ -102,8 +112,13 @@ class _GovernedPipeline(_CheckedEndpoints):
         budget: Budget | None,
         control_plane: bool,
         origins: set[Origin] | None,
+        reactions: RefusalHandlers | None = None,
     ) -> None:
         self._cfg = cfg
+        # The ``donkey.on(...)`` handlers the ``_on_refusal`` hook runs (BG §2.1,
+        # #208). A client built without them gets an empty set, so it reacts to
+        # nothing: the control plane, and a standalone ``LLMClient``.
+        self._reactions = reactions if reactions is not None else RefusalHandlers()
         self._control_plane = control_plane
         self._init_origins(cfg.control_plane_url if control_plane else cfg.llm_proxy_url, origins)
         # The two correlation request-header NAMES, resolved once (config override

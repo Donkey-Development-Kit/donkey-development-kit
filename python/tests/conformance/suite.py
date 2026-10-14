@@ -63,6 +63,12 @@ CONFORMANCE_SCENARIOS = [
     # what the SDK's transport sent or raised, so the adapters whose framework
     # owns the transport record an asserted exemption below.
     "typed_refusal_bridged",
+    # A reaction registered with donkey.on(...) runs at the transport's
+    # _on_refusal hook and never turns a refusal into a success: the refusal
+    # propagates, or a NEW governed request goes out and its own result returns
+    # (BG §2.1, #208, #209). Only adapters routed through our httpx client run
+    # handlers, so CrewAI records an asserted exemption below.
+    "refusal_handler_cannot_unrefuse",
 ]
 
 # Where each scenario runs (#749), as pytest node ids relative to ``python/``.
@@ -92,6 +98,10 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
     ),
     "typed_refusal_bridged": (
         "tests/conformance/test_typed_refusal_bridge.py::test_refusal_reaches_user_code_typed",
+    ),
+    "refusal_handler_cannot_unrefuse": (
+        "tests/conformance/test_handlers_cannot_unrefuse.py::test_a_handler_never_turns_a_refusal_into_a_success",
+        "tests/conformance/test_handlers_cannot_unrefuse.py::test_a_success_comes_only_from_a_new_governed_request",
     ),
 }
 
@@ -154,6 +164,14 @@ _CREWAI_REFUSAL_EXEMPTION = (
     "than classify a response our transport did not send (#724)."
 )
 
+# refusal_handler_cannot_unrefuse: donkey.on(...) reactions run at our
+# transport's _on_refusal hook (#208), which a framework that owns the transport
+# never reaches. Mirrors transport="framework" in its AdapterCapabilities (#726).
+_CREWAI_HANDLER_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport, so its refusals never "
+    "reach our _on_refusal hook and donkey.on(...) handlers do not run for it (#208)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # CrewAI raises a framework error the bridge cannot type. ADK records no
     # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
@@ -163,5 +181,6 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "gateway_identity_observed": _CREWAI_LAST_CALL_EXEMPTION,
         "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
         "typed_refusal_bridged": _CREWAI_REFUSAL_EXEMPTION,
+        "refusal_handler_cannot_unrefuse": _CREWAI_HANDLER_EXEMPTION,
     },
 }
