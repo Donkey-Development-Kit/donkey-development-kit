@@ -24,6 +24,7 @@ from contextlib import AsyncExitStack
 from .auth import AnypointConnectedApp, AuthProvider, EndpointCheckedAuth
 from .budget import Budget
 from .config import TOKEN_AUTH_MODES, DonkeyConfig
+from .reactions import RefusalHandlers
 from .telemetry import configure_otlp_export
 from .transport import (
     DonkeyAsyncClient,
@@ -85,8 +86,11 @@ class Runtime:
         # One Budget per runtime (never global, BG §1.3 / #185): both data-plane
         # transports feed it in-band from every response's x-token-* headers.
         self._budget = Budget()
+        # One set of ``donkey.on(...)`` handlers, run by both data-plane clients'
+        # ``_on_refusal`` hook (BG §2.1, #208); the control plane reacts to none.
+        self._reactions = RefusalHandlers()
         self._http: DonkeyAsyncClient = build_http_client(
-            self._cfg, data_plane_auth, budget=self._budget
+            self._cfg, data_plane_auth, budget=self._budget, reactions=self._reactions
         )
         control_plane_auth = self._auth
         if auth is not None:
@@ -128,6 +132,11 @@ class Runtime:
         return self._budget
 
     @property
+    def reactions(self) -> RefusalHandlers:
+        """The refusal reaction handlers both data-plane clients run (BG §2.1)."""
+        return self._reactions
+
+    @property
     def http(self) -> DonkeyAsyncClient:
         """The shared data-plane (LLM proxy) client."""
         return self._http
@@ -154,7 +163,10 @@ class Runtime:
             # Same Budget object as the async client, so a blocking caller updates
             # the budget on identical terms (BG §1.3, #185).
             self._sync_http = build_sync_http_client(
-                self._cfg, budget=self._budget, origins=self._http.checked_origins
+                self._cfg,
+                budget=self._budget,
+                origins=self._http.checked_origins,
+                reactions=self._reactions,
             )
         return self._sync_http
 

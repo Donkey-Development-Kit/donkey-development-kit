@@ -141,10 +141,12 @@ Beside it:
   level, plus the optional `opentelemetry` lazily.
 - **core is layered too:** `runtime` → `transport` → `budget | cache |
   cachecontrol | telemetry | toolspec` → `auth | correlation` → `config` →
-  `cost | endpoints | header_names | refusals` → `errors` → `_refusal_body |
+  `cost | endpoints | header_names | reactions | refusals` → `errors` → `_refusal_body |
   lastcall | masking` → `_verify` → `_wire`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
-  through it. `_refusal_body` holds the refusal-body parsers (`errors`' JSON
+  through it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
+  sans-IO, it decides each next step and the clients sleep and send.
+  `_refusal_body` holds the refusal-body parsers (`errors`' JSON
   envelope and PII-span helpers), split out to keep `errors` under its size
   ceiling. This contract is exhaustive too.
 
@@ -346,7 +348,7 @@ request either plane sends passes the same origin check.
   | --- | --- | --- |
   | `_inject_headers` | every attempt (an httpx request event hook, so every retry and redirect hop) | correlation, call-id, attribution, cache-control and opt-in cost-tag headers (`BG §1.7`); the plane's credentials, on checked endpoints only |
   | `_on_response` | once, on the final response (in `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
-  | `_on_refusal` | once, when the final response is a policy refusal, with the `PolicyViolation` `classify()` made of it, after the span is recorded | typed-refusal reaction handlers (`BG §1.2`, #208); the default does nothing and the refusal is still returned. The typed-refusal bridge (`core/refusals.py`, #724) maps refusals at the framework boundary without it |
+  | `_on_refusal` | once, when the final response is a policy refusal, with the `PolicyViolation` `classify()` made of it, after the span is recorded | the `donkey.on(...)` refusal handlers (`BG §2.1`, #208, `core/reactions.py`): a reaction either lets the refusal propagate or sends a **new** governed request through `_governed_send` (new span and call id, same correlation id), never a success for the refused one (#209). With no handler registered it returns the refusal unchanged. The typed-refusal bridge (`core/refusals.py`, #724) maps refusals at the framework boundary without it |
   | `governed_transport.replace_inner()` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`). Each client's transport is a `GovernedTransport` (`GovernedSyncTransport` on the sync twin) that owns the inner transport; the constructors fold httpx's proxy mounts into it, so a swap covers every route and fails closed if a mount appears later (#801, #728) |
 
   There is no per-`send()` request hook: the old no-op `_on_request` was

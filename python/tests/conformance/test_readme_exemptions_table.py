@@ -32,6 +32,7 @@ _SCENARIOS = {
     "JWT refreshed per send": "jwt_token_refreshed",
     "budget refusal not retried": "retries_token_budget",
     "typed refusal bridged": "typed_refusal_bridged",
+    "refusal handler cannot un-refuse": "refusal_handler_cannot_unrefuse",
 }
 _PUBLIC_ONLY = {"retries_token_budget"}
 

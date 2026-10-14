@@ -70,6 +70,13 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     **Advantage:** a PII block is never mistaken for an auth failure, and a
     policy `429` is never retried.
   </Card>
+  <Card title="Refusal handlers" href="/refusal-handlers" icon="↺" badge="Live" badgeTone="live">
+    **Purpose:** register a reaction to a typed refusal once with
+    `donkey.on(...)`: wait for the reset, mask and resend, fall back to another
+    model, or escalate. **Goal:** one PII handler instead of one per graph node.
+    **Advantage:** applied at the transport and bounded, and no handler can turn
+    a refusal into a success.
+  </Card>
   <Card title="Budget & pacing" href="/budget" icon="◷" badge="Live" badgeTone="live">
     **Purpose:** expose the gateway's token window as a `Budget` object.
     **Goal:** stop *before* the limit, not after it. **Advantage:**

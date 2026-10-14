@@ -417,7 +417,10 @@ billed it. Every 4xx is terminal — **including a 429**: on this proxy a 429 is
 token-budget refusal (`TokenBudgetExceeded`) or a request-rate-limit refusal
 (`RequestRateLimitExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
-against, but the transport never silently retries it.
+against, but the transport never silently retries it. To wait out the reset,
+or to react to any other refusal, register a [refusal handler](https://docs.donkey-kit.dev/refusal-handlers.md)
+(`donkey.on(TokenBudgetExceeded).wait_for_reset(max_wait="45m")`). It is
+opt-in and bounded, and it re-sends only as a new governed request.
 
 In `jwt` mode the async client additionally refreshes the wallet JWT and
 retries **once** on a 401. In the default client-id mode the data-plane client

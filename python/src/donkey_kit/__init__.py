@@ -54,6 +54,7 @@ if TYPE_CHECKING:
         classify,
     )
     from .core.lastcall import LastCall, LastCallStatus
+    from .core.reactions import OnRefusal, RefusalContext
     from .core.refusals import TypedRefusals
     from .core.telemetry import RunScope
     from .core.toolspec import ToolSpec, registered_tools
@@ -91,9 +92,11 @@ _LAZY = {
     "LastCallStatus": ".core.lastcall",
     "ModelNotRoutable": ".core.errors",
     "ModelSubstituted": ".core.errors",
+    "OnRefusal": ".core.reactions",
     "PIIDetected": ".core.errors",
     "PolicyViolation": ".core.errors",
     "PromptInjectionBlocked": ".core.errors",
+    "RefusalContext": ".core.reactions",
     "Region": ".core.config",
     "RequestRateLimitExceeded": ".core.errors",
     "RunScope": ".core.telemetry",
@@ -188,9 +191,11 @@ __all__ = [
     "LastCallStatus",
     "ModelNotRoutable",
     "ModelSubstituted",
+    "OnRefusal",
     "PIIDetected",
     "PolicyViolation",
     "PromptInjectionBlocked",
+    "RefusalContext",
     "Region",
     "RequestRateLimitExceeded",
     "RequestWindow",

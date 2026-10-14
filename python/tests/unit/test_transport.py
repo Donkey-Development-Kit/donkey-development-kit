@@ -58,8 +58,9 @@ class _RecordingAsync(DonkeyAsyncClient):
     async def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         self.responses.append(response.status_code)
 
-    async def _on_refusal(self, violation: PolicyViolation) -> None:
+    async def _on_refusal(self, request, response, violation, options) -> httpx.Response:
         self.refusals.append(violation)
+        return await super()._on_refusal(request, response, violation, options)
 
 
 class _RecordingSync(DonkeyClient):
@@ -71,8 +72,9 @@ class _RecordingSync(DonkeyClient):
     def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         self.responses.append(response.status_code)
 
-    def _on_refusal(self, violation: PolicyViolation) -> None:
+    def _on_refusal(self, request, response, violation, options) -> httpx.Response:
         self.refusals.append(violation)
+        return super()._on_refusal(request, response, violation, options)
 
 
 async def test_correlation_and_attribution_headers_injected() -> None:
@@ -786,19 +788,24 @@ async def test_openai_default_retries_do_not_resend_unsafe_model_post(status: in
 # --- lifecycle hooks (BG §1.1, #179) --------------------------------------
 # The seams every Phase 1 feature attaches to: _inject_headers stamps each
 # logical send, _on_response fires exactly once per logical send(), _on_refusal
-# fires once with the classified PolicyViolation (#208), and the inner transport
+# fires once with the classified PolicyViolation and returns what send() returns
+# (#208, its handlers are in test_refusal_handlers.py), and the inner transport
 # is swappable on a live client through GovernedTransport.replace_inner() (#728).
 # The unused _on_request seam was deleted (#728).
 
 
 async def test_default_hooks_are_noop_seams() -> None:
     """The seams exist and the defaults are no-ops (byte-identical behaviour to
-    a hookless client — the rest of this module asserts that)."""
+    a hookless client — the rest of this module asserts that). With no
+    ``donkey.on(...)`` handler, ``_on_refusal`` returns the refusal as it is."""
     async with _client(lambda r: httpx.Response(200)) as client:
         req = httpx.Request("GET", "https://x")
+        refused = httpx.Response(429, request=req)
         assert not hasattr(client, "_on_request")
         assert await client._on_response(req, httpx.Response(200)) is None
-        assert await client._on_refusal(TokenBudgetExceeded("over")) is None
+        options = (False, httpx.USE_CLIENT_DEFAULT, httpx.USE_CLIENT_DEFAULT)
+        violation = TokenBudgetExceeded("over")
+        assert await client._on_refusal(req, refused, violation, options) is refused
 
 
 @pytest.mark.parametrize("status", [200, 503, 500])

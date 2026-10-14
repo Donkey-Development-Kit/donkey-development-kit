@@ -143,3 +143,6 @@ if_changed  # unused variable (src/donkey_kit/cli/_blocked.py)
 environment  # unused variable (src/donkey_kit/core/config.py, src/donkey_kit/registry/exchange.py)
 # Keyword of the blocked publish_if_changed stub (BG §2.5).
 publication  # unused variable (src/donkey_kit/registry/publication.py)
+# donkey.on(...).escalate(to=...) is public API (BG §2.1, #208); only user code
+# and the tests call it.
+_.escalate  # unused method (src/donkey_kit/core/reactions.py)

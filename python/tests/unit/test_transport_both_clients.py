@@ -67,8 +67,9 @@ class _Async(DonkeyAsyncClient):
         super().__init__(*args, **kwargs)
         self.refusals: list[PolicyViolation] = []
 
-    async def _on_refusal(self, violation: PolicyViolation) -> None:
+    async def _on_refusal(self, request: Any, response: Any, violation: Any, options: Any) -> Any:
         self.refusals.append(violation)
+        return await super()._on_refusal(request, response, violation, options)
 
 
 class _Sync(DonkeyClient):
@@ -76,8 +77,9 @@ class _Sync(DonkeyClient):
         super().__init__(*args, **kwargs)
         self.refusals: list[PolicyViolation] = []
 
-    def _on_refusal(self, violation: PolicyViolation) -> None:
+    def _on_refusal(self, request: Any, response: Any, violation: Any, options: Any) -> Any:
         self.refusals.append(violation)
+        return super()._on_refusal(request, response, violation, options)
 
 
 def _send(

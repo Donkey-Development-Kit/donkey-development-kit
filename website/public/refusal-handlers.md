@@ -1,0 +1,186 @@
+# Refusal handlers
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+A graph with twelve nodes that each call a model needs one answer to "what do
+we do when the gateway blocks PII?", not twelve `try`/`except` blocks.
+`donkey.on(...)` registers that answer once. Every governed data-plane client of
+that `Donkey` then applies it at the transport, under whatever framework sits
+between your code and the call:
+
+```python
+import asyncio
+
+from donkey_kit import (
+    ContentSafetyBlocked,
+    Donkey,
+    PIIDetected,
+    PolicyViolation,
+    RefusalContext,
+    TokenBudgetExceeded,
+)
+
+donkey = Donkey()
+hitl_queue: asyncio.Queue[PolicyViolation] = asyncio.Queue()
+
+def redact(text: str) -> str:
+    return "[REDACTED]"  # your masking, e.g. a call to your own redaction service
+
+def mask_and_resend(ctx: RefusalContext) -> None:
+    body = ctx.body or {}
+    for message in body.get("messages", []):
+        if isinstance(message.get("content"), str):
+            message["content"] = redact(message["content"])
+    ctx.resend(json=body)
+
+donkey.on(TokenBudgetExceeded).wait_for_reset(max_wait="45m")
+donkey.on(PIIDetected).call(mask_and_resend, max_times=1)
+donkey.on(ContentSafetyBlocked).fallback(model="internal-safe-model")
+donkey.on(PolicyViolation).escalate(to=hitl_queue)
+```
+
+## The four reactions
+
+`donkey.on(refusal)` returns a builder. Call exactly one of its four methods.
+
+| Reaction | What it does | When the refusal propagates instead |
+|---|---|---|
+| `wait_for_reset(max_wait="15m", max_times=1)` | Sleeps for the refusal's own reset time (`.retry_after`), then sends the same request again. | The refusal carries no reset time; the wait would take the call's total past `max_wait`; `max_times` re-sends already happened. |
+| `call(handler, max_times=1)` | Runs `handler(ctx)` with a `RefusalContext`. If the handler calls `ctx.resend(json=...)`, that body goes out as a new request once the handler returns. | The handler returned without calling `ctx.resend()`; the handler raised; `max_times` handler runs already happened. |
+| `fallback(model=..., max_times=1)` | Sends the same request again with its JSON body's `model` replaced. | The request has no JSON body naming a `model` (a native Gemini call names the model in its URL); the refused request already asked for that model; `max_times` was reached. |
+| `escalate(to=...)` | Hands the refusal to `to`, a callable or a queue (its `put_nowait`). | Always: an escalation records the refusal, it never retries. |
+
+A `RefusalContext` gives the handler `ctx.violation` (the typed refusal),
+`ctx.body` (a copy of the refused request's JSON body, or `None`) and
+`ctx.resend(json=...)`, which you can call once. Changing `ctx.body` changes
+nothing until you pass it to `resend()`.
+
+`max_wait` takes seconds, a `timedelta`, or a string such as `"45m"`, `"30s"`,
+`"1h30m"` or `"500ms"`. Both bounds must be positive; anything else raises
+`ValueError` when you register.
+
+## Which handler runs
+
+- **The most specific registered type wins.** The refusal's class hierarchy is
+  walked from the class itself up, so with both `on(PIIDetected)` and
+  `on(PolicyViolation)` registered, a `PIIDetected` runs the first and a
+  `ContentSafetyBlocked` runs the second. `on(PolicyViolation)` is the
+  catch-all.
+- **One handler per type.** Registering a second reaction for the same type
+  replaces the first.
+- **Only one handler runs per refusal.** A handler that reaches its bound does
+  not fall through to the catch-all; the refusal propagates.
+- **Per `Donkey`, data plane only.** The registration applies to every model
+  call that `Donkey` makes, async and blocking, across every framework adapter
+  it builds. Control-plane calls react to nothing.
+
+`AgentKilled` is terminal and is never handled. An administrator blocked the
+agent and no retry can succeed, so `donkey.on(AgentKilled)` raises `TypeError`,
+and an `on(PolicyViolation)` catch-all skips it.
+
+## Bounds
+
+`max_times` and `max_wait` are outer bounds on every reaction, and both
+default to the conservative end: one re-send, and at most 15 minutes of waiting.
+They count per logical call: each new call your code makes starts again from
+zero, and the re-sends a handler makes for one call all count against that
+call's bounds. When a bound is reached, the latest refusal propagates, so a
+re-sent request that was refused again reaches you as that second refusal.
+
+`wait_for_reset()` never waits without a reset time. A refusal that does not
+say when its window resets propagates rather than retrying at zero delay,
+because a zero-delay retry against a spent budget only spends another request.
+
+## Design boundary: a handler reacts, it never un-refuses
+
+Every reaction ends in one of two ways:
+
+- the refusal propagates to your code exactly as it would without the handler,
+  or
+- a **new** governed request goes out, and the gateway judges it from scratch.
+  Its result, success or refusal, is what your code gets.
+
+There is no `ignore()`, `suppress()` or `allow()`, and no way to return a
+success for the refused request. A `call()` handler that returns without calling
+`ctx.resend()` lets the refusal propagate, so returning early can never swallow
+it.
+
+This is deliberate. The gateway is where policy is enforced. A client-side
+"allow this refusal anyway" would be client-side enforcement by another name: a
+team could ship one to get past a PII policy, and the platform would record a
+block that the agent then carried on as if it had passed. Handlers exist to make
+reacting cheap (mask and resend, wait, fall back, tell a human), never to decide
+that a refusal does not count. The SDK's own tests pin the four method names, so
+adding a fifth is a deliberate change, not an accident.
+
+A new request is a new governed call. It gets its own call id and telemetry
+span, keeps the run's correlation id, and goes through every policy again. A
+masked prompt that still carries PII is refused again; a fallback model your
+gateway does not allow is refused too.
+
+## When a handler fails
+
+- **A handler that raises does not mask the refusal.** The exception is logged
+  at `WARNING` with its traceback, and the original refusal propagates.
+- **An `async def` handler** is awaited on the async client. The blocking
+  client cannot await it, so there the refusal propagates with a `WARNING`;
+  use a plain function if you make blocking calls.
+- A request whose body was streamed in (rather than passed as `json=` or
+  `content=`) cannot be re-sent, so `wait_for_reset()` lets its refusal
+  propagate.
+
+## What your code sees
+
+A handled call that ends in a success returns that success, from the new
+request. Every other outcome reaches your code as the refusal it was, typed
+inside [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids), `typed_refusals()` or
+`@donkey.governed` exactly as in [Typed refusals](https://docs.donkey-kit.dev/errors.md). So keep catching
+the refusals you care about: an escalated `PIIDetected` still raises, after the
+handler has queued it.
+
+## `pace()` prevents the 429, a handler reacts to it
+
+[`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) and `wait_for_reset()` answer different
+questions, so use both:
+
+- `pace(reserve=...)` runs **before** a request. It raises
+  `BudgetReserveReached` without sending when the request would cross your
+  reserve, so the `429` never happens.
+- `on(TokenBudgetExceeded).wait_for_reset()` runs **after** a `429` has landed,
+  for example because another process shared the window, or because `pace()`
+  had not yet seen a budget response.
+
+```python
+from donkey_kit import Donkey, TokenBudgetExceeded
+
+donkey = Donkey()
+donkey.on(TokenBudgetExceeded).wait_for_reset(max_wait="45m", max_times=2)
+
+async def enrich(record: dict[str, str]) -> None:
+    async with donkey.budget.pace(reserve=0.05):  # stops before the wall
+        ...  # the model call; a 429 that still lands is waited out
+```
+
+## Framework support
+
+Handlers run at the SDK's transport, so they apply to every adapter whose calls
+go through the SDK's HTTP client. CrewAI's provider owns its own transport, so
+its refusals never reach the hook and handlers do not run for its calls. That
+exemption is asserted in the conformance suite, not skipped (see
+[Conformance exemptions](https://github.com/Donkey-Development-Kit/donkey-development-kit#conformance-exemptions)).
+
+## Test a handler with the simulator
+
+[`donkey.simulate()`](https://docs.donkey-kit.dev/simulator.md) serves a real captured refusal, so the
+handler runs exactly as it would against the gateway. A handler's re-send is a
+new logical call, so with `times=1` the re-send gets past the simulator:
+
+```python
+from donkey_kit import Donkey, PIIDetected
+
+donkey = Donkey()
+donkey.on(PIIDetected).call(mask_and_resend, max_times=1)
+
+with donkey.simulate(PIIDetected, times=1):
+    ...  # the first call is refused, the masked re-send goes out
+```

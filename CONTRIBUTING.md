@@ -1019,6 +1019,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
 | `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
+| `core/reactions.py`, `core/transport/*` `_on_refusal` | `refusal-handlers.mdx` |
 | `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx` |
 | `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
