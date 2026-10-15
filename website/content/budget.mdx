@@ -108,6 +108,15 @@ re-raises `BudgetReserveReached` after one attempt instead of calling
 `wait_for_reset()` and spinning at zero delay. Preserve the last checkpoint and
 escalate rather than crossing the reserve.
 
+If an administrator kills the agent with the gateway's Agent Kill Switch, the
+loop ends too. The kill reaches `enrich()` as
+[`AgentKilled`](/errors), which is not a `BudgetReserveReached`, so the loop
+lets it propagate. From then on, `pace()` and `wait_for_reset()` on that
+`Donkey` raise `AgentKilled`. A sibling task that is asleep in
+`wait_for_reset()` wakes and raises it too, instead of sleeping until the
+window resets. A new `Donkey`, created after the agent has been restored,
+starts without the kill.
+
 ## Example: a dashboard that prevents the outage
 
 `fraction_used` is per-agent, so it can be graphed. The owner of a support
@@ -205,4 +214,7 @@ transport does not see the context variable, so its calls are not steered.
   once instead of spinning at zero delay.
 - A semantic-cache **hit** is a verbatim replay with no provider round-trip, so
   it never advances the budget window — the replayed `usage` is not fresh spend.
+- Once the gateway kills the agent, `pace()` and `wait_for_reset()` raise
+  `AgentKilled` on that `Donkey`, and a task already asleep in
+  `wait_for_reset()` wakes and raises it, whichever thread received the kill.
 - Budget state is per-`Donkey` instance.

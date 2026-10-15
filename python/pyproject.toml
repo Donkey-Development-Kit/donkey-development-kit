@@ -607,7 +607,7 @@ layers = [
     "runtime",
     "transport",
     "budget | cache | cachecontrol | telemetry | toolspec",
-    "auth | correlation",
+    "auth | correlation | spanflush",
     "config",
     "cost | endpoints | header_names | reactions | refusals",
     "errors",

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from .. import spanflush
 from ..budget import Budget
 from ..config import TOKEN_AUTH_MODES, DonkeyConfig
 from ..errors import PolicyViolation
@@ -196,14 +197,18 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
             gspan = start_genai_span(enabled=enabled, capture_content=capture)
             try:
                 gspan.record(request_model=model)
-                return self._send_with_retries(request, gspan, options)
+                settled = self._send_with_retries(request, gspan, options)
             except BaseException:
                 gspan.set_error()
                 gspan.end()
                 raise
-        with genai_span(enabled=enabled, capture_content=capture) as gspan:
-            gspan.record(request_model=model)
-            return self._send_with_retries(request, gspan, options)
+        else:
+            with genai_span(enabled=enabled, capture_content=capture) as gspan:
+                gspan.record(request_model=model)
+                settled = self._send_with_retries(request, gspan, options)
+        if self._observe_kill(settled[1]):
+            spanflush.flush()
+        return settled
 
     def _send_with_retries(
         self, request: httpx.Request, gspan: GenAiSpan, options: SendOptions

@@ -43,12 +43,23 @@ from the stock ``rate-limiting`` policy's ``x-ratelimit-limit`` /
 the gateway sends it on every ``200`` as well as on its ``429`` (when the policy
 sets ``exposeHeaders: true``, docs/verified-apis.md §4). :meth:`Budget.pace`
 refuses when *either* window has reached the reserve.
+
+A gateway kill ends pacing for good (BG §2.6, #220). The transport hands every
+:class:`~donkey_kit.core.errors.AgentKilled` refusal to
+:meth:`Budget.observe_refusal`, after which :meth:`Budget.pace` and
+:meth:`Budget.wait_for_reset` raise it instead of pacing, and a task already
+asleep in :meth:`Budget.wait_for_reset` wakes and raises it. So one task's kill
+stops every pace loop on the same ``Donkey``, not just its own, and none of them
+sends again to find out.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import copy
 import re
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -56,7 +67,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from . import _wire
-from .errors import BudgetReserveReached
+from .errors import AgentKilled, BudgetReserveReached, DonkeyError
 from .lastcall import is_cache_hit
 
 __all__ = [
@@ -103,6 +114,12 @@ _RATELIMIT_RE = re.compile(
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _wake(future: asyncio.Future[None]) -> None:
+    """End a :meth:`Budget.wait_for_reset` sleep, at most once."""
+    if not future.done():
+        future.set_result(None)
 
 
 def _parse_int(raw: str | None) -> int | None:
@@ -220,6 +237,41 @@ class Budget(_Window):
         # Sticky: a later pass through pace() leaves it alone, so a concurrent
         # task's success cannot redirect another task's pending wait.
         self._tripped: _Window = self
+        # The gateway's kill-switch refusal, once one has arrived (BG §2.6,
+        # #220). Terminal for this Budget's lifetime: nothing un-kills it.
+        self._killed: AgentKilled | None = None
+        # The wait_for_reset() sleeps a kill cuts short, with their event loops:
+        # the kill can arrive from another loop, or from the sync client's thread.
+        self._sleeps: set[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = set()
+        self._sleeps_lock = threading.Lock()
+
+    def observe_refusal(self, refusal: DonkeyError) -> None:
+        """Note a typed refusal the gateway sent, as :meth:`observe` notes its
+        headers. The transport calls it; only an
+        :class:`~donkey_kit.core.errors.AgentKilled` changes anything (BG §2.6,
+        #220).
+
+        A kill is terminal and sticky. From then on :meth:`pace` and
+        :meth:`wait_for_reset` raise it, and every :meth:`wait_for_reset` already
+        asleep, on any event loop, wakes now and raises it. The first kill is the
+        one kept. A ``Donkey`` built after an administrator restores the agent
+        starts with a fresh ``Budget``."""
+        if not isinstance(refusal, AgentKilled):
+            return
+        with self._sleeps_lock:
+            if self._killed is not None:
+                return
+            self._killed = refusal
+            sleeps, self._sleeps = self._sleeps, set()
+        for loop, future in sleeps:
+            with contextlib.suppress(RuntimeError):  # that loop has closed: nothing to wake
+                loop.call_soon_threadsafe(_wake, future)
+
+    def _raise_if_killed(self) -> None:
+        if self._killed is not None:
+            # A copy per raise: tasks re-raising one instance would all write
+            # to its __traceback__.
+            raise copy.copy(self._killed)
 
     def observe(self, response: httpx.Response, *, now: datetime | None = None) -> None:
         """Update from a response's budget headers.
@@ -324,9 +376,16 @@ class Budget(_Window):
         When both have reached the reserve, the exception names the one that
         releases last (one with no known reset first). ``now`` is injectable for
         tests; production passes nothing and the wall clock (UTC) is used.
+
+        Once the gateway has killed the agent (see :meth:`observe_refusal`),
+        :meth:`pace` raises :class:`~donkey_kit.core.errors.AgentKilled` on
+        entry and the guarded block never runs. It is not a
+        :class:`BudgetReserveReached`, so the loop above ends instead of waiting
+        (BG §2.6, #220).
         """
         if not 0.0 <= reserve <= 1.0:
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")
+        self._raise_if_killed()
         current = now if now is not None else _utcnow()
         reached = [
             (name, window, used)
@@ -370,7 +429,12 @@ class Budget(_Window):
         an unconditional wait-and-retry loop cannot make progress. ``now`` is
         injectable for tests; production passes nothing and the wall clock (UTC)
         is used.
+
+        Raises :class:`~donkey_kit.core.errors.AgentKilled` once the gateway has
+        killed the agent, whether the kill came before the call or during the
+        sleep: the kill wakes it early (BG §2.6, #220).
         """
+        self._raise_if_killed()
         if window is None:
             target = self._tripped
         elif window == "tokens":
@@ -385,4 +449,22 @@ class Budget(_Window):
         current = now if now is not None else _utcnow()
         delay = (reset_at - current).total_seconds()
         if delay > 0:
-            await asyncio.sleep(delay)
+            await self._sleep(delay)
+
+    async def _sleep(self, delay: float) -> None:
+        """``asyncio.sleep(delay)``, cut short by :meth:`observe_refusal`."""
+        loop = asyncio.get_running_loop()
+        killed: asyncio.Future[None] = loop.create_future()
+        sleep = (loop, killed)
+        with self._sleeps_lock:
+            if self._killed is not None:
+                _wake(killed)  # killed since the check on entry
+            self._sleeps.add(sleep)
+        timer = asyncio.ensure_future(asyncio.sleep(delay))
+        try:
+            await asyncio.wait((timer, killed), return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            timer.cancel()
+            with self._sleeps_lock:
+                self._sleeps.discard(sleep)
+        self._raise_if_killed()
