@@ -2797,7 +2797,7 @@ never burn an exhausted budget or replay a blocked prompt.
 |---|---|---|---|
 | `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. |
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
-| `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. | Ask an administrator to restore this agent's model access in Governance > Security. |
+| `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. It also stops [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) loops, and spans are flushed before it reaches you. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
@@ -3200,7 +3200,9 @@ nothing until you pass it to `resend()`.
 
 `AgentKilled` is terminal and is never handled. An administrator blocked the
 agent and no retry can succeed, so `donkey.on(AgentKilled)` raises `TypeError`,
-and an `on(PolicyViolation)` catch-all skips it.
+and an `on(PolicyViolation)` catch-all skips it. The kill also stops any
+[`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) loop on the same `Donkey`, and DDK flushes its
+spans before the error reaches you.
 
 ## Bounds
 
@@ -3854,6 +3856,15 @@ re-raises `BudgetReserveReached` after one attempt instead of calling
 `wait_for_reset()` and spinning at zero delay. Preserve the last checkpoint and
 escalate rather than crossing the reserve.
 
+If an administrator kills the agent with the gateway's Agent Kill Switch, the
+loop ends too. The kill reaches `enrich()` as
+[`AgentKilled`](https://docs.donkey-kit.dev/errors.md), which is not a `BudgetReserveReached`, so the loop
+lets it propagate. From then on, `pace()` and `wait_for_reset()` on that
+`Donkey` raise `AgentKilled`. A sibling task that is asleep in
+`wait_for_reset()` wakes and raises it too, instead of sleeping until the
+window resets. A new `Donkey`, created after the agent has been restored,
+starts without the kill.
+
 ## Example: a dashboard that prevents the outage
 
 `fraction_used` is per-agent, so it can be graphed. The owner of a support
@@ -3949,6 +3960,9 @@ transport does not see the context variable, so its calls are not steered.
   once instead of spinning at zero delay.
 - A semantic-cache **hit** is a verbatim replay with no provider round-trip, so
   it never advances the budget window — the replayed `usage` is not fresh spend.
+- Once the gateway kills the agent, `pace()` and `wait_for_reset()` raise
+  `AgentKilled` on that `Donkey`, and a task already asleep in
+  `wait_for_reset()` wakes and raises it, whichever thread received the kill.
 - Budget state is per-`Donkey` instance.
 
 ---
@@ -4239,6 +4253,12 @@ need to flush earlier with `trace.get_tracer_provider().force_flush()`, for
 example in a serverless handler or a script that checks its collector before it
 exits, that call only reaches DDK's spans when they go through the global
 provider. Turn the flag on, or set your own provider.
+
+One exit is flushed for you. When the gateway's Agent Kill Switch refuses a call,
+DDK force-flushes both DDK's own provider and the global one before
+[`AgentKilled`](https://docs.donkey-kit.dev/errors.md) reaches your code, waiting up to 2 seconds for each. So
+the kill's own span, and the spans before it, are exported even if the agent exits
+straight away. A failed export never replaces the `AgentKilled`.
 
 Opt out of telemetry entirely with a single flag:
 
@@ -6760,9 +6780,10 @@ an endpoint:
   and the ability to disable it centrally — are platform capabilities the SDK's
   job is to make *reachable and typed*, not to reimplement. The kill switch's
   refusal is already typed: a blocked agent surfaces as
-  [`AgentKilled`](https://docs.donkey-kit.dev/errors.md), never retried. Stopping a run cleanly on it, and
-  identity itself, are [Phase 2](https://docs.donkey-kit.dev/roadmap.md); see [Identity](https://docs.donkey-kit.dev/identity.md). Until
-  then the SDK does not fabricate a stand-in.
+  [`AgentKilled`](https://docs.donkey-kit.dev/errors.md), never retried, and the run stops cleanly on it:
+  [`pace()`](https://docs.donkey-kit.dev/budget.md) loops end and spans are flushed. Identity itself is
+  [Phase 2](https://docs.donkey-kit.dev/roadmap.md); see [Identity](https://docs.donkey-kit.dev/identity.md). Until then the SDK does not
+  fabricate a stand-in.
 
 ## Verification status
 
@@ -12328,6 +12349,14 @@ A heuristic `ModelHandle` for a known model id.
 ## `Budget` (`donkey.budget`)
 
 The token-budget window for one `Donkey`, updated in-band from each response's budget headers (numeric `x-token-*` or the prose `x-llm-proxy-ratelimit` fallback). Its request-count sibling is `requests`.
+
+### `donkey.budget.observe_refusal()`
+
+```python nocheck
+donkey.budget.observe_refusal(refusal: DonkeyError) -> None
+```
+
+Note a typed refusal the gateway sent, as `observe` notes its headers. The transport calls it; only an `AgentKilled` changes anything.
 
 ### `donkey.budget.observe()`
 

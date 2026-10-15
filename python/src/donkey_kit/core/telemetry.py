@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 # The run-scoped correlation state lives in ``core.correlation`` (#728); these
 # names are re-exported so ``donkey_kit.core.telemetry.<name>`` keeps working.
+from . import spanflush
 from .correlation import (
     RunScope,
     current_correlation_id,
@@ -255,8 +256,7 @@ class TelemetryExportWarning(UserWarning):
 # Guards ``configure_otlp_export`` to build at most one provider per process
 # (one exporter, one batch thread). Reset by `_reset_for_tests` below.
 _otlp_export_configured = False
-# The DDK-scoped provider's tracer, set when an endpoint is configured and the
-# global provider was neither set by the host nor installed by opt-in.
+# The DDK-scoped provider's tracer, set when neither host nor opt-in set the global one.
 _scoped_tracer: Any | None = None
 # One-time de-dupe for the missing-exporter warning, keyed by protocol.
 _warned_missing_exporter: set[str] = set()
@@ -409,7 +409,7 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
         trace.set_tracer_provider(provider)
         _log.debug("OTLP export installed as the global provider (protocol %s)", _otlp_protocol())
         return
-    _scoped_tracer = provider.get_tracer("donkey_kit")
+    _scoped_tracer = spanflush.keep(provider).get_tracer("donkey_kit")  # flushed on a kill
     _log.debug("OTLP export installed on a DDK-scoped provider (protocol %s)", _otlp_protocol())
 
 

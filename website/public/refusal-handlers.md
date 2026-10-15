@@ -79,7 +79,9 @@ nothing until you pass it to `resend()`.
 
 `AgentKilled` is terminal and is never handled. An administrator blocked the
 agent and no retry can succeed, so `donkey.on(AgentKilled)` raises `TypeError`,
-and an `on(PolicyViolation)` catch-all skips it.
+and an `on(PolicyViolation)` catch-all skips it. The kill also stops any
+[`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) loop on the same `Donkey`, and DDK flushes its
+spans before the error reaches you.
 
 ## Bounds
 

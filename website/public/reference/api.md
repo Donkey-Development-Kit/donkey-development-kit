@@ -348,6 +348,14 @@ A heuristic `ModelHandle` for a known model id.
 
 The token-budget window for one `Donkey`, updated in-band from each response's budget headers (numeric `x-token-*` or the prose `x-llm-proxy-ratelimit` fallback). Its request-count sibling is `requests`.
 
+### `donkey.budget.observe_refusal()`
+
+```python nocheck
+donkey.budget.observe_refusal(refusal: DonkeyError) -> None
+```
+
+Note a typed refusal the gateway sent, as `observe` notes its headers. The transport calls it; only an `AgentKilled` changes anything.
+
 ### `donkey.budget.observe()`
 
 ```python nocheck

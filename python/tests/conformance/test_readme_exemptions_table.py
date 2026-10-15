@@ -34,6 +34,7 @@ _SCENARIOS = {
     "typed refusal bridged": "typed_refusal_bridged",
     "refusal handler cannot un-refuse": "refusal_handler_cannot_unrefuse",
     "custom policy typed": "custom_policy_typed",
+    "agent kill stops cleanly": "agent_killed_stops_cleanly",
 }
 _PUBLIC_ONLY = {"retries_token_budget"}
 

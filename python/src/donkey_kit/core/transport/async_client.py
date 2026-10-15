@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from .. import spanflush
 from ..auth import AuthProvider
 from ..budget import Budget
 from ..config import DonkeyConfig
@@ -256,7 +257,7 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
             gspan = start_genai_span(enabled=enabled, capture_content=capture)
             try:
                 gspan.record(request_model=model)
-                return await self._send_with_retries(request, gspan, options)
+                settled = await self._send_with_retries(request, gspan, options)
             except BaseException:
                 # No response settled (a transport error or cancellation), or a
                 # raise after it did: no stream wrapper will close the detached
@@ -264,11 +265,16 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
                 gspan.set_error()
                 gspan.end()
                 raise
-        # Buffered path: the span is a context manager, so it closes even when
-        # the send raises before a response exists (#179/#192).
-        with genai_span(enabled=enabled, capture_content=capture) as gspan:
-            gspan.record(request_model=model)
-            return await self._send_with_retries(request, gspan, options)
+        else:
+            # Buffered path: the span is a context manager, so it closes even
+            # when the send raises before a response exists (#179/#192).
+            with genai_span(enabled=enabled, capture_content=capture) as gspan:
+                gspan.record(request_model=model)
+                settled = await self._send_with_retries(request, gspan, options)
+        if self._observe_kill(settled[1]):
+            # Off the loop: the flush blocks on the exporter (bounded).
+            await asyncio.to_thread(spanflush.flush)
+        return settled
 
     async def _send_with_retries(
         self, request: httpx.Request, gspan: GenAiSpan, options: SendOptions

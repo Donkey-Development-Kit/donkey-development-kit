@@ -609,7 +609,7 @@ layers = [
     "runtime",
     "transport",
     "budget | cache | cachecontrol | telemetry | toolspec",
-    "auth | correlation",
+    "auth | correlation | spanflush",
     "config",
     "classifier | cost | endpoints | header_names | reactions | refusals",
     "_policy_spec",
