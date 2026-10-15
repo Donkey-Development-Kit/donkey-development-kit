@@ -55,6 +55,11 @@ A **refused** request still produces a span, with `donkey.policy.decision=refuse
 and `otel.status_code=ERROR`. A streaming response produces **exactly one** span,
 with token counts filled in at stream end.
 
+A [tool that needs approval](/hitl) records each step of its approval as a
+`donkey.tool.approval` span with one event (`donkey.approval.pending`,
+`.approved`, `.rejected` or `.timed_out`). The event names the approver and
+carries `donkey.correlation_id`, but never the tool's arguments.
+
 Export goes over OTLP to wherever you already send spans. **Nothing in the
 emit path is Anypoint-specific**, so if your team already runs Grafana, Elastic,
 Honeycomb, New Relic, Datadog, Dynatrace, Langfuse or Phoenix, "policy refusals

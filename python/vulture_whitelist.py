@@ -147,3 +147,7 @@ publication  # unused variable (src/donkey_kit/registry/publication.py)
 # donkey.on(...).escalate(to=...) is public API (BG §2.1, #208); only user code
 # and the tests call it.
 _.escalate  # unused method (src/donkey_kit/core/reactions.py)
+# donkey.approvals.reject(...) and Approval.requested_at are public API (BG §2.3,
+# #211); only user code and the tests use them.
+_.reject  # unused method (src/donkey_kit/core/approvals.py)
+requested_at  # unused variable (src/donkey_kit/core/approvals.py)

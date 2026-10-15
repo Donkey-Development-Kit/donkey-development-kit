@@ -171,10 +171,29 @@ Wrap a callable so its body runs inside a `donkey.run()` scope.
 ### `donkey.tool()`
 
 ```python nocheck
-donkey.tool(func: Callable) -> Callable
+donkey.tool(
+    func: Callable | None = None,
+    /,
+    *,
+    approval: ApprovalMode | None = None,
+    risk: str | None = None,
+    approval_timeout: Duration = '15m',
+) -> Callable | Callable[[Callable], Callable]
 ```
 
-Mark a callable as a governed tool **without changing call behaviour**, recording its name, signature and docstring in an introspectable registry.
+Mark a callable as a governed tool, recording its name, signature and docstring in an introspectable registry, and optionally gate it behind a human approval.
+
+Guide: [`/hitl`](https://docs.donkey-kit.dev/hitl.md)
+
+### `donkey.approvals`
+
+```python nocheck
+donkey.approvals: Approvals
+```
+
+The pending tool approvals of this process: resolve or reject the call a `ApprovalRequired` names. Process-wide, like the tool registry, so every `Donkey` returns the same one.
+
+Guide: [`/hitl`](https://docs.donkey-kit.dev/hitl.md)
 
 ### `donkey.on()`
 
@@ -464,6 +483,8 @@ is raised.
 | Exception | Base | Meaning |
 |---|---|---|
 | `AgentKilled` | `PolicyViolation` | The gateway's Agent Kill Switch blocked this agent — it is quarantined in Governance > Security, or listed in the policy's *Killed Agent IDs*. |
+| `ApprovalRequired` | `DonkeyError` | A `@donkey.tool(approval="required")` tool was called, and was not run. |
+| `ApprovalTimedOut` | `DonkeyError` | A pending approval passed its timeout before anyone resolved it, so the call was not made. `approval` is the expired call. |
 | `AuthError` | `DonkeyError` | Rejected credentials on the Anypoint control plane or LLM-proxy data plane. |
 | `BudgetReserveReached` | `DonkeyError` | Raised by `Budget.pace` *before* it lets a request through that would cross the caller's reserve. |
 | `ConfigError` | `DonkeyError` | Configuration is missing or invalid, or an endpoint may not receive the credentials that would be sent to it (see `DonkeyConfig.check_endpoints`). Raised locally before any request; reports ALL missing fields at once. The transport also raises it, with its own remediation, for a send on a closed client or from a closed event loop. |
@@ -484,6 +505,8 @@ is raised.
 
 | Name | Kind | Meaning |
 |---|---|---|
+| `Approval` | class | One call of an approval-gated tool, waiting for a human. |
+| `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |
 | `Budget` | class | The token-budget window for one `Donkey`, updated in-band from each response's budget headers (numeric `x-token-*` or the prose `x-llm-proxy-ratelimit` fallback). Its request-count sibling is `requests`. |
 | `CacheControls` | class | The per-request semantic-cache steering controls. |
 | `CacheScope` | class | A **dual sync/async** context manager that applies `CacheControls` to the governed calls made in its block. |

@@ -139,7 +139,7 @@ Beside it:
   allowlist twin is `test_core_depends_only_on_httpx_and_the_stdlib`
   (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
   level, plus the optional `opentelemetry` lazily.
-- **core is layered too:** `runtime` → `transport` → `budget | cache |
+- **core is layered too:** `runtime` → `transport | approvals` → `budget | cache |
   cachecontrol | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
   `_policy_spec` → `errors` → `_refusal_body | lastcall | masking` → `_verify` →
@@ -147,6 +147,11 @@ Beside it:
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
   through it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
   sans-IO, it decides each next step and the clients sleep and send.
+  `approvals` holds the `@donkey.tool(approval="required")` gate and the
+  `donkey.approvals` registry (#211): it reads correlation, errors and telemetry,
+  sits beside `transport`, and neither imports the other. A resumed tool's model
+  calls go through the transport like any other, so an approval never overrides
+  a refusal.
   `spanflush` flushes the span providers on a kill (#220); it imports nothing
   from core, so the transport reaches it without telemetry exposing its provider.
   `_refusal_body` holds the refusal-body parsers (`errors`' JSON

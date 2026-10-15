@@ -51,6 +51,11 @@ process-global registry you read with `registered_tools()`. Both `ToolSpec` and
 A tool with **no docstring is rejected at decoration time** (`ValueError`) — an
 undescribed tool is useless to a model and to a registry.
 
+`@donkey.tool(approval="required", risk="financial")` gates the tool behind a
+human decision: a call raises `ApprovalRequired` instead of running, and
+`donkey.approvals.resolve(...)` runs it once someone approves. The approval is
+client-side and advisory. See [Human-in-the-loop](/hitl).
+
 The same markers are what the planned [scanner](/publishing) and
 [A2A](/a2a) agent-card generator read, so marking tools now carries forward.
 

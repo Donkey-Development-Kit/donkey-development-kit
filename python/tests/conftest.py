@@ -15,7 +15,16 @@ from typing import Any
 
 import pytest
 
-from donkey_kit.core import _verify, classifier, lastcall, runtime, spanflush, telemetry, toolspec
+from donkey_kit.core import (
+    _verify,
+    approvals,
+    classifier,
+    lastcall,
+    runtime,
+    spanflush,
+    telemetry,
+    toolspec,
+)
 from donkey_kit.integrations import ADAPTERS, _base
 
 pytest_plugins = ["pytester"]
@@ -206,6 +215,7 @@ def _reset_module_state() -> Iterator[None]:
     telemetry._reset_for_tests()
     spanflush._reset_for_tests()
     toolspec._reset_for_tests()
+    approvals._reset_for_tests()
     # A sync governed call records ``last_call`` into the caller's context,
     # which for a sync test is the main context every later test inherits; an
     # async test's tasks copy it and read a stale call instead of UNOBSERVED.
@@ -219,4 +229,5 @@ def _reset_module_state() -> Iterator[None]:
     telemetry._reset_for_tests()
     spanflush._reset_for_tests()
     toolspec._reset_for_tests()
+    approvals._reset_for_tests()
     lastcall._last_call.set(None)

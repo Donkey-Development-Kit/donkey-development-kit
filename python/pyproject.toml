@@ -596,7 +596,9 @@ type = "layers"
 # those features read config; config reads cost, endpoints and header names;
 # everything reports through errors. classifier (the classify() registry,
 # #210) sits beside cost and the rest, over _policy_spec (its match-spec
-# checks); it fills a hook slot in errors, so errors never imports it. Two
+# checks); it fills a hook slot in errors, so errors never imports it.
+# approvals (the @donkey.tool approval gate, #211) sits beside transport: it
+# reads correlation, errors and telemetry, and neither imports the other. Two
 # deviations from the order sketched in #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
 # through lastcall.request_id; and _wire sits below _verify, because the
 # verification placeholders name wire headers. A sibling group with `|` is
@@ -607,7 +609,7 @@ containers = ["donkey_kit.core"]
 exhaustive = true
 layers = [
     "runtime",
-    "transport",
+    "transport | approvals",
     "budget | cache | cachecontrol | telemetry | toolspec",
     "auth | correlation | spanflush",
     "config",

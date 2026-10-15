@@ -74,9 +74,10 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     the service identity.
   
   
-    **Purpose:** one vocabulary for "pause and ask a human". **Advantage:**
-    mapped onto each framework's native interrupt, so approval flows look the
-    same everywhere.
+    **Purpose:** one vocabulary for "pause and ask a human".
+    **Goal:** `@donkey.tool(approval="required")` pauses the call until someone
+    decides. **Advantage:** the approver lands on the span next to the
+    correlation ID. Client-side and advisory; it never overrides a refusal.
   
   
     **Purpose:** read the policy set in force. **Advantage:** skip calls that

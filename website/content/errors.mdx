@@ -120,6 +120,8 @@ DonkeyError                     # base of the whole tree
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at/.window
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
+├─ ApprovalRequired             # client-side: an approval-gated tool was called, not run; .approval
+├─ ApprovalTimedOut             # client-side: nobody decided before approval_timeout; .approval
 └─ ToolInvocationError, RegistryError, PublicationDrift
                                 # tool access, registry and publishing (Roadmap surfaces;
                                 # import them from donkey_kit.experimental)
@@ -154,7 +156,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](/cli). |
 
-Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
+More `DonkeyError`s are **client-side signals**, not gateway refusals, so
 they sit outside the retry question. `BudgetReserveReached` is raised *before* a
 call by [`donkey.budget.pace()`](/budget) and is meant to be recovered from
 (`await donkey.budget.wait_for_reset()`, then continue) when its `.reset_at` is
@@ -163,6 +165,10 @@ immediately and an unconditional retry would spin. Its `.remediation` carries
 that branch as an inspectable next step, so you don't have to parse the
 exception message. `ModelSubstituted` reports that a call *succeeded* against a
 different model than requested (opt-in via `on_model_substitution="raise"`).
+`ApprovalRequired` and `ApprovalTimedOut` come from a
+[`@donkey.tool(approval="required")`](/hitl) tool: the first means the tool is
+waiting for a human decision, the second that nobody decided in time. Neither
+is a `PolicyViolation`, and refusal handlers never see them.
 `ConfigError` is raised locally, before any request. It reports every missing
 field at once, and it also reports an endpoint that may not receive the
 configured credentials: a non-`https://` URL, or a URL from the project's config
