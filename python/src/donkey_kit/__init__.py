@@ -30,7 +30,13 @@ from importlib import import_module as _import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .core.approvals import Approval, ApprovalRequired, Approvals, ApprovalTimedOut
+    from .core.approvals import (
+        Approval,
+        ApprovalRejected,
+        ApprovalRequired,
+        Approvals,
+        ApprovalTimedOut,
+    )
     from .core.budget import Budget, RequestWindow
     from .core.cachecontrol import CacheControls, CacheScope
     from .core.classifier import Classifier, PolicyRegistration, classify
@@ -73,6 +79,7 @@ _LAZY = {
     "AgentKilled": ".core.errors",
     "Approval": ".core.approvals",
     "ApprovalRequired": ".core.approvals",
+    "ApprovalRejected": ".core.approvals",
     "ApprovalTimedOut": ".core.approvals",
     "Approvals": ".core.approvals",
     "AuthError": ".core.errors",
@@ -178,6 +185,7 @@ __version__ = "0.2.0.dev0"
 __all__ = [
     "AgentKilled",
     "Approval",
+    "ApprovalRejected",
     "ApprovalRequired",
     "ApprovalTimedOut",
     "Approvals",

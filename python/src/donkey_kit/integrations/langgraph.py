@@ -16,6 +16,10 @@ Three things hang off it, in ergonomic-lockstep with the rest of the SDK:
   proxy refusal a node raises back into the SDK's typed taxonomy (#198 AC3,
   #724). ``donkey.run()`` and ``@donkey.governed`` apply it on their own.
 
+An approval-gated tool (``@donkey.tool(approval="required")``) pauses the graph
+with LangGraph's native ``interrupt()``, and ``Command(resume=...)`` carries the
+decision into the audit trail: see :func:`approval_interrupt` (BG §2.3, #212).
+
 Correlation IDs reach every node for free (#195): LangGraph runs nodes on
 ``asyncio`` tasks that copy the current context, so a run id bound with
 ``donkey.run(id=…)`` is visible via ``current_correlation_id()`` inside each
@@ -27,10 +31,16 @@ docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+import hashlib
+import math
+import time
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from ..core.approvals import Approval, ApprovalRejected, record_decision, record_pending
+from ..core.correlation import current_correlation_id
 from ..core.masking import masked
 from . import AdapterCapabilities
 from . import typed_refusals as _bridge
@@ -41,7 +51,13 @@ if TYPE_CHECKING:
 
     from ..core.refusals import TypedRefusals
 
-__all__ = ["LangGraphAdapter", "chat_model", "typed_refusals"]
+__all__ = [
+    "APPROVAL_INTERRUPT",
+    "LangGraphAdapter",
+    "approval_interrupt",
+    "chat_model",
+    "typed_refusals",
+]
 
 
 class LangGraphAdapter(Adapter):
@@ -214,3 +230,90 @@ def typed_refusals() -> TypedRefusals:
     ``exc.framework_error``.
     """
     return _bridge()
+
+
+#: The ``type`` of the value a gated tool passes to ``interrupt()``, so a caller
+#: reading ``result["__interrupt__"]`` can tell a DDK approval from other pauses.
+APPROVAL_INTERRUPT = "donkey.approval"
+
+
+def approval_interrupt(
+    tool: str, arguments: Mapping[str, Any], risk: str | None
+) -> Approval | None:
+    """Pause a ``@donkey.tool(approval="required")`` call with LangGraph's own
+    ``interrupt()`` when it runs inside a graph (BG §2.3, #212).
+
+    The gate calls this before it falls back to raising ``ApprovalRequired``. It
+    returns ``None`` outside a graph, or in a graph run without a checkpointer
+    thread, which LangGraph cannot resume. Inside one, the first pass records the
+    pending approval and lets ``interrupt()`` pause the graph; the interrupt's
+    value is a dict with ``type`` :data:`APPROVAL_INTERRUPT`, the
+    ``approval_id``, ``tool``, ``arguments``, ``risk`` and ``correlation_id``.
+    Resuming with ``Command(resume={"approved": True, "by": "m.keller"})``
+    re-runs the node, records the approver and returns the approval, and the gate
+    runs the tool. ``{"approved": False, ...}`` records the rejection and raises
+    :class:`~donkey_kit.core.approvals.ApprovalRejected`.
+
+    The approval id is derived from the thread, the tool and its arguments, so
+    the pending and the decision events share it across a process restart. The
+    checkpointer holds the pause, so ``approval_timeout`` does not apply.
+
+    Raises:
+        ApprovalRejected: The resume value rejected the call.
+        ValueError: The resume value is not ``{"approved": bool, "by": str}``.
+    """
+    from langgraph.config import get_config
+    from langgraph.errors import GraphInterrupt
+    from langgraph.types import interrupt
+
+    try:
+        configurable = get_config().get("configurable") or {}
+    except RuntimeError:  # not inside a runnable: no graph to pause
+        return None
+    thread = configurable.get("thread_id")
+    if thread is None:
+        return None
+    digest = hashlib.sha256(repr((str(thread), tool, sorted(arguments.items()))).encode())
+    approval_id = digest.hexdigest()[:32]
+    approval = Approval(
+        id=approval_id,
+        tool=tool,
+        arguments=arguments,
+        risk=risk,
+        correlation_id=current_correlation_id() or approval_id,
+        requested_at=time.time(),
+        expires_at=math.inf,
+    )
+    try:
+        decision = interrupt(
+            {
+                "type": APPROVAL_INTERRUPT,
+                "approval_id": approval.id,
+                "tool": tool,
+                "arguments": dict(arguments),
+                "risk": risk,
+                "correlation_id": approval.correlation_id,
+            }
+        )
+    except GraphInterrupt:
+        record_pending(approval)
+        raise
+    approved, by = _decision(decision)
+    record_decision(approval, approved=approved, by=by)
+    if not approved:
+        raise ApprovalRejected(
+            f"tool {tool!r} was rejected by {by} (approval {approval.id})", approval=approval
+        )
+    return approval
+
+
+def _decision(value: object) -> tuple[bool, str]:
+    """``(approved, by)`` from a ``Command(resume=...)`` value."""
+    if isinstance(value, Mapping):
+        approved, by = value.get("approved"), value.get("by")
+        if isinstance(approved, bool) and isinstance(by, str) and by.strip():
+            return approved, by.strip()
+    raise ValueError(
+        "resume a DDK approval with Command(resume={'approved': True, 'by': '<approver>'}); "
+        f"got a {type(value).__name__} without a bool 'approved' and a non-empty 'by'"
+    )

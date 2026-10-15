@@ -151,7 +151,9 @@ Beside it:
   `donkey.approvals` registry (#211): it reads correlation, errors and telemetry,
   sits beside `transport`, and neither imports the other. A resumed tool's model
   calls go through the transport like any other, so an approval never overrides
-  a refusal.
+  a refusal. Inside a LangGraph graph the gate pauses with `interrupt()` instead
+  (#212): `donkey.py` passes the LangGraph adapter's hook into `gate(natives=...)`,
+  so core still imports no framework.
   `spanflush` flushes the span providers on a kill (#220); it imports nothing
   from core, so the transport reaches it without telemetry exposing its provider.
   `_refusal_body` holds the refusal-body parsers (`errors`' JSON

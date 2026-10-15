@@ -126,6 +126,10 @@ is not made. `pending()` drops expired approvals. Nothing in DDK waits on a
 human, so an unanswered approval never hangs your agent. Call the tool again
 to ask for a fresh decision.
 
+A pause that [LangGraph holds](#in-a-langgraph-graph) has no timeout: it waits
+in the checkpointer until the graph is resumed, and `approval_timeout` does not
+apply.
+
 ## The audit trail
 
 Each step of an approval is a short `donkey.tool.approval` span, a child of
@@ -133,7 +137,7 @@ whatever span is current, with one event:
 
 | Event | Extra attribute |
 |---|---|
-| `donkey.approval.pending` | `donkey.approval.expires_at` |
+| `donkey.approval.pending` | `donkey.approval.expires_at`, unless LangGraph holds the pause |
 | `donkey.approval.approved` | `donkey.approval.approved_by` |
 | `donkey.approval.rejected` | `donkey.approval.rejected_by` |
 | `donkey.approval.timed_out` | — |
@@ -160,16 +164,97 @@ and resolving one after a restart raises `KeyError`. When a pause has to
 survive a restart, use a framework's own durable pause, such as LangGraph's
 checkpointer (see below).
 
+## In a LangGraph graph
+
+Inside a LangGraph graph that runs with a checkpointer and a `thread_id`, a
+gated tool does not raise `ApprovalRequired`. It pauses with LangGraph's own
+`interrupt()`, from a plain node or from a `ToolNode`, and you resume it with
+`Command(resume=...)`. Nothing changes on the tool:
+
+```python
+from donkey_kit import Donkey
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command
+
+donkey = Donkey()
+
+@donkey.tool(approval="required", risk="financial")
+def issue_refund(ticket_id: str, amount: float) -> str:
+    """Refund a support ticket."""
+    return f"refunded {ticket_id}"
+
+def refund(state: dict) -> dict:
+    return {"result": issue_refund(state["ticket_id"], state["amount"])}
+
+builder = StateGraph(dict)
+builder.add_node("refund", refund)
+builder.add_edge(START, "refund")
+builder.add_edge("refund", END)
+graph = builder.compile(checkpointer=MemorySaver())
+thread = {"configurable": {"thread_id": "ticket-T-1"}}
+
+paused = graph.invoke({"ticket_id": "T-1", "amount": 140.0}, thread)
+request = paused["__interrupt__"][0].value  # show this to a reviewer
+
+done = graph.invoke(Command(resume={"approved": True, "by": "m.keller"}), thread)
+```
+
+The interrupt's value describes the call:
+
+| Key | What it holds |
+|---|---|
+| `type` | `"donkey.approval"`, so you can tell it from your own interrupts. |
+| `approval_id` | The approval's id, the same one on its span events. |
+| `tool`, `arguments`, `risk` | As on an `Approval`. `arguments` is a plain `dict`. |
+| `correlation_id` | The enclosing `donkey.run()` id, or a fresh one outside a run. |
+
+Resume with `{"approved": True, "by": "<approver>"}` to record the approver and
+run the tool, or `{"approved": False, "by": "<approver>"}` to refuse it. A
+refused call raises `ApprovalRejected` from the tool, which carries the
+`Approval`; a `ToolNode(handle_tool_errors=True)` turns it into a tool message
+for the model. Any other resume value raises `ValueError`. `by` must be a
+non-empty string, and DDK records it without authenticating it.
+
+The pause lives in your checkpointer, not in `donkey.approvals`: `pending()`
+does not list it, and `resolve` and `reject` do not apply to it. A durable
+checkpointer keeps it across a restart. A fresh process with the same graph and
+thread resumes it, and the approval id joins the pending and approved events
+because DDK derives it from the thread, the tool and the arguments. The
+interrupt's value, arguments included, is stored by your checkpointer like the
+rest of the graph's state.
+
+A refusal and the pause compose. A model call refused before the gated tool
+raises typed, and no approval is requested. A model call the approved tool
+makes is judged by the gateway as usual, and its refusal leaves the graph
+typed.
+
+  **LangGraph re-runs a node from its start on resume.** If one node calls two
+  gated tools, or the model asks for two in one turn, LangGraph pauses for each
+  in turn, and resuming the second runs the first approved tool again. Give the
+  model one gated call per turn (for example `parallel_tool_calls=False`), or
+  make the tool safe to repeat.
+
+The resumed tool runs under the correlation id of the `donkey.run()` that
+resumes the graph, or the pause's own outside a run. To join the gateway's
+records to the pause, resume under the same run id you paused under.
+
+Two cases fall back to the raise-and-resume form above, with
+`ApprovalRequired` raised out of the graph: a graph compiled without a
+checkpointer, which has no thread to resume, and, on Python 3.10, a graph run
+with `ainvoke()`, where LangGraph cannot see the run's config from inside the
+tool (see [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md#interrupt-composes-with-typed-refusals)).
+
 ## Mapped onto what your framework already has
 
 DDK does not introduce a new pause mechanism. The raise-and-resume form above
-works in any Python code. Mapping the same vocabulary onto each framework's
-own primitive is planned:
+works in any Python code, and LangGraph's own `interrupt()` is mapped. Mapping
+the same vocabulary onto the other frameworks' primitives is planned:
 
 | Framework / protocol | Native primitive | Status |
 |---|---|---|
 | Any Python code | `ApprovalRequired` + `donkey.approvals.resolve(...)` | Live |
-| LangGraph | `interrupt()` / `Command(resume=…)` | Roadmap |
+| LangGraph | `interrupt()` / `Command(resume=…)` | Live |
 | OpenAI Agents SDK | tool-approval / guardrail hooks | Roadmap |
 | Google ADK | before/after tool callbacks | Roadmap |
 | Strands | hooks | Roadmap |

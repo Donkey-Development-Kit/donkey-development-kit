@@ -18,7 +18,11 @@ judges a refusal handler's re-send (BG §2.1).
 
 There is no queue and no approval UI (build plan, "Do not build"). Pending
 approvals live in this process's memory, so a restart forgets them; a framework
-checkpointer (LangGraph's, #212) is the durable form.
+checkpointer is the durable form. ``gate(natives=...)`` takes framework hooks
+that pause the call with the framework's own primitive instead: inside a
+LangGraph graph, the LangGraph adapter's hook calls ``interrupt()`` (#212), and
+``Command(resume=...)`` carries the decision. Core never imports a framework:
+the hook is passed in from the top-level ``donkey`` module.
 """
 
 from __future__ import annotations
@@ -26,13 +30,14 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
+import math
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Literal, NoReturn, TypeAlias, TypeVar
+from typing import Any, Literal, TypeAlias, TypeVar
 
 from .correlation import request_correlation_id, run_scope
 from .errors import DonkeyError
@@ -42,12 +47,16 @@ __all__ = [
     "APPROVAL_TIMEOUT",
     "Approval",
     "ApprovalMode",
+    "ApprovalRejected",
     "ApprovalRequired",
     "ApprovalTimedOut",
     "Approvals",
+    "NativePause",
     "approvals",
     "gate",
     "parse_timeout",
+    "record_decision",
+    "record_pending",
 ]
 
 _log = logging.getLogger(__name__)
@@ -78,7 +87,9 @@ class Approval:
     defaults included, so the approver sees the whole call. ``correlation_id`` is
     the enclosing ``donkey.run()`` id, or a fresh one outside a run; the resumed
     call runs under it, so the gateway records join to the approval.
-    ``requested_at`` and ``expires_at`` are Unix timestamps.
+    ``requested_at`` and ``expires_at`` are Unix timestamps; ``expires_at`` is
+    ``math.inf`` for a call a framework holds, such as a LangGraph interrupt,
+    which never expires.
     """
 
     id: str
@@ -136,6 +147,27 @@ class ApprovalRequired(DonkeyError):
         return self.approval.risk
 
 
+class ApprovalRejected(DonkeyError):
+    """A human rejected an approval-gated call that a framework paused natively,
+    so the tool was not run (BG §2.3, #212). :attr:`approval` is the call.
+
+    Raised where the framework resumes the call, for example from a LangGraph
+    tool resumed with ``Command(resume={"approved": False, "by": ...})``. The
+    raise-and-resume form needs no error: ``donkey.approvals.reject()`` just
+    drops the call.
+    """
+
+    remediation = (
+        "A human rejected this tool call, so it was not run. Tell the agent, or "
+        "let the framework turn the error into a tool message (LangGraph: "
+        "ToolNode(handle_tool_errors=True))."
+    )
+
+    def __init__(self, message: str, *, approval: Approval, remediation: str | None = None) -> None:
+        super().__init__(message, remediation=remediation, correlation_id=approval.correlation_id)
+        self.approval = approval
+
+
 class ApprovalTimedOut(DonkeyError):
     """A pending approval passed its timeout before anyone resolved it, so the
     call was not made (BG §2.3). :attr:`approval` is the expired call."""
@@ -149,6 +181,16 @@ class ApprovalTimedOut(DonkeyError):
     def __init__(self, message: str, *, approval: Approval, remediation: str | None = None) -> None:
         super().__init__(message, remediation=remediation, correlation_id=approval.correlation_id)
         self.approval = approval
+
+
+#: A framework hook ``gate`` tries before raising :class:`ApprovalRequired`. It
+#: takes the tool name, the bound arguments and the risk, and returns ``None``
+#: when the call is not running inside its framework. Otherwise it pauses the
+#: call with the framework's own primitive (raising whatever the framework needs
+#: raised), raises :class:`ApprovalRejected`, or returns the approved
+#: :class:`Approval`, whose decision it has recorded; ``gate`` then runs the call
+#: under the approval's correlation id.
+NativePause: TypeAlias = Callable[[str, Mapping[str, Any], str | None], Approval | None]
 
 
 @dataclass(frozen=True)
@@ -207,7 +249,7 @@ class Approvals:
         """
         who = _identity(approved_by, "approved_by")
         pending = _take(approval_id)
-        record_decision(pending.approval, _EVENT_APPROVED, "donkey.approval.approved_by", who)
+        record_decision(pending.approval, approved=True, by=who)
         return _resume(pending)
 
     def reject(self, approval_id: str, *, rejected_by: str) -> Approval:
@@ -222,7 +264,7 @@ class Approvals:
         """
         who = _identity(rejected_by, "rejected_by")
         pending = _take(approval_id)
-        record_decision(pending.approval, _EVENT_REJECTED, "donkey.approval.rejected_by", who)
+        record_decision(pending.approval, approved=False, by=who)
         return pending.approval
 
 
@@ -291,32 +333,39 @@ def parse_timeout(value: Duration) -> float:
         ) from None
 
 
-def gate(func: _F, *, risk: str | None, timeout: float) -> _F:
+def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[NativePause] = ()) -> _F:
     """Wrap ``func`` so a call requests approval instead of running it.
 
     The wrapper keeps ``func``'s name, docstring and signature, and is ``async``
     when ``func`` is, so a framework that introspects tools sees the original.
     It binds the call's arguments first, so a call that could never run raises
-    :class:`TypeError` at once instead of waiting for an approver.
+    :class:`TypeError` at once instead of waiting for an approver. Each of
+    ``natives`` is tried next (see :data:`NativePause`); when none applies, the
+    call is recorded as pending and :class:`ApprovalRequired` is raised.
     """
     signature = inspect.signature(func)
 
-    def request(args: tuple[Any, ...], kwargs: dict[str, Any]) -> ApprovalRequired:
+    def ask(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Approval:
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
+        arguments = MappingProxyType(dict(bound.arguments))
+        for native in natives:
+            approved = native(func.__name__, arguments, risk)
+            if approved is not None:
+                return approved
         now = time.time()
         approval = Approval(
             id=uuid.uuid4().hex,
             tool=func.__name__,
-            arguments=MappingProxyType(dict(bound.arguments)),
+            arguments=arguments,
             risk=risk,
             correlation_id=request_correlation_id(),
             requested_at=now,
             expires_at=now + timeout,
         )
         _add(_Pending(approval, func, args, dict(kwargs)))
-        _record(approval, _EVENT_PENDING, {"donkey.approval.expires_at": approval.expires_at})
-        return ApprovalRequired(
+        record_pending(approval)
+        raise ApprovalRequired(
             f"tool {approval.tool!r} needs human approval (id {approval.id})",
             approval=approval,
         )
@@ -324,23 +373,38 @@ def gate(func: _F, *, risk: str | None, timeout: float) -> _F:
     if inspect.iscoroutinefunction(func):
 
         @functools.wraps(func)
-        async def async_gated(*args: Any, **kwargs: Any) -> NoReturn:
-            raise request(args, kwargs)
+        async def async_gated(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+            approval = ask(args, kwargs)
+            with run_scope(approval.correlation_id):
+                return await func(*args, **kwargs)
 
         return async_gated  # type: ignore[return-value]
 
     @functools.wraps(func)
-    def gated(*args: Any, **kwargs: Any) -> NoReturn:
-        raise request(args, kwargs)
+    def gated(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        approval = ask(args, kwargs)
+        with run_scope(approval.correlation_id):
+            return func(*args, **kwargs)
 
     return gated  # type: ignore[return-value]
 
 
-def record_decision(approval: Approval, event: str, key: str, who: str) -> None:
-    """Record a decision on ``approval`` as a span event and a log record: the
-    audit trail of who approved or rejected which call (BG §1.7)."""
-    _record(approval, event, {key: who})
-    _log.info("approval %s for tool %s: %s by %s", approval.id, approval.tool, event, who)
+def record_pending(approval: Approval) -> None:
+    """Record ``approval`` as waiting for a decision: a
+    ``donkey.approval.pending`` span event, with its expiry when it has one."""
+    expiry = {"donkey.approval.expires_at": approval.expires_at}
+    _record(approval, _EVENT_PENDING, expiry if math.isfinite(approval.expires_at) else {})
+
+
+def record_decision(approval: Approval, *, approved: bool, by: str) -> None:
+    """Record who approved or rejected ``approval`` as a span event and a log
+    record: the audit trail of who decided which call (BG §1.7)."""
+    if approved:
+        _record(approval, _EVENT_APPROVED, {"donkey.approval.approved_by": by})
+    else:
+        _record(approval, _EVENT_REJECTED, {"donkey.approval.rejected_by": by})
+    verdict = "approved" if approved else "rejected"
+    _log.info("approval %s for tool %s: %s by %s", approval.id, approval.tool, verdict, by)
 
 
 def _identity(value: str, name: str) -> str:

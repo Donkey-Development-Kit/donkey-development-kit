@@ -20,12 +20,19 @@ import inspect
 import os
 import sys
 import warnings
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
 from .core import _verify
-from .core.approvals import APPROVAL_TIMEOUT, ApprovalMode, Approvals, gate, parse_timeout
+from .core.approvals import (
+    APPROVAL_TIMEOUT,
+    Approval,
+    ApprovalMode,
+    Approvals,
+    gate,
+    parse_timeout,
+)
 from .core.approvals import approvals as _approvals
 from .core.auth import AuthProvider
 from .core.budget import Budget
@@ -91,6 +98,18 @@ def _missing_module(probe: tuple[str, ...]) -> str | None:
         except (ImportError, ValueError):
             return module
     return None
+
+
+def _langgraph_interrupt(
+    tool: str, arguments: Mapping[str, Any], risk: str | None
+) -> Approval | None:
+    """The LangGraph native pause for a gated tool (#212). A no-op until the
+    process has imported LangGraph, so ``import donkey_kit`` never loads it."""
+    if "langgraph" not in sys.modules:
+        return None
+    from .integrations.langgraph import approval_interrupt
+
+    return approval_interrupt(tool, arguments, risk)
 
 
 class ToolsFacade:
@@ -668,6 +687,11 @@ class Donkey:
                 ...  # ask a human, then:
                 await donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
 
+        Inside a LangGraph graph run with a checkpointer, the call pauses the
+        graph with LangGraph's own ``interrupt()`` instead, and
+        ``Command(resume={"approved": True, "by": "m.keller"})`` resumes it (see
+        :func:`donkey_kit.integrations.langgraph.approval_interrupt`).
+
         The approval is client-side and advisory: calling the undecorated
         function bypasses it, and the gateway never learns of it (gateway
         step-up is #214). It never overrides a refusal: the gateway still judges
@@ -696,7 +720,8 @@ class Donkey:
         timeout = parse_timeout(approval_timeout)
 
         def decorate(fn: _Callable) -> _Callable:
-            target = gate(fn, risk=risk, timeout=timeout) if approval else fn
+            natives = (_langgraph_interrupt,)
+            target = gate(fn, risk=risk, timeout=timeout, natives=natives) if approval else fn
             return register_tool(target, approval=approval, risk=risk)
 
         # Bare ``@donkey.tool`` passes the callable positionally; the

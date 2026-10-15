@@ -30,6 +30,7 @@ _APPROVAL = Approval(
 # Keyword arguments a subclass cannot be built without. Every other subclass
 # takes only the message.
 _REQUIRED_KWARGS: dict[str, dict[str, Any]] = {
+    "ApprovalRejected": {"approval": _APPROVAL},
     "ApprovalRequired": {"approval": _APPROVAL},
     "ApprovalTimedOut": {"approval": _APPROVAL},
     "BudgetReserveReached": {"fraction_used": 0.9, "reserve": 0.1},

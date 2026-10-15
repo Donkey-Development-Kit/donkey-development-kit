@@ -483,6 +483,7 @@ is raised.
 | Exception | Base | Meaning |
 |---|---|---|
 | `AgentKilled` | `PolicyViolation` | The gateway's Agent Kill Switch blocked this agent — it is quarantined in Governance > Security, or listed in the policy's *Killed Agent IDs*. |
+| `ApprovalRejected` | `DonkeyError` | A human rejected an approval-gated call that a framework paused natively, so the tool was not run. `approval` is the call. |
 | `ApprovalRequired` | `DonkeyError` | A `@donkey.tool(approval="required")` tool was called, and was not run. |
 | `ApprovalTimedOut` | `DonkeyError` | A pending approval passed its timeout before anyone resolved it, so the call was not made. `approval` is the expired call. |
 | `AuthError` | `DonkeyError` | Rejected credentials on the Anypoint control plane or LLM-proxy data plane. |

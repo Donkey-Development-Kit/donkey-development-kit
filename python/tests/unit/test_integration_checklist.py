@@ -50,7 +50,8 @@ _PYPROJECT = tomllib.loads((_PYTHON / "pyproject.toml").read_text())
 _CI = yaml.safe_load((_REPO / ".github" / "workflows" / "ci.yml").read_text())
 
 #: Module-level names in an adapter's ``__all__`` that are helpers, not factories.
-_HELPERS = {"refusal_translator", "typed_refusals"}
+#: ``approval_interrupt`` is the gate's LangGraph pause hook (#212), not a factory.
+_HELPERS = {"approval_interrupt", "refusal_translator", "typed_refusals"}
 
 #: The ``adapter-contract`` CI leg's nox session runs the whole suite (#748): the
 #: contract files and every other test that needs the leg's framework run against it.
