@@ -74,6 +74,7 @@ SURFACES: tuple[Surface, ...] = (
         files=("docs/verified-apis.md", "docs/unsupported-boundary.md"),
     ),
     Surface(("core/budget.py",), ("budget.mdx",)),
+    Surface(("core/approvals.py", "core/toolspec.py"), ("hitl.mdx", "cli.mdx")),
     Surface(("core/telemetry.py", "core/cost.py"), ("telemetry.mdx",)),
     Surface(("core/lastcall.py",), ("reference/last-call.mdx",)),
     Surface(("llm/*.py",), ("quickstart.mdx", "feature-overview.mdx")),

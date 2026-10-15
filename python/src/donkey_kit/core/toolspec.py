@@ -36,9 +36,12 @@ class ToolSpec:
     """An introspectable record of a ``@donkey.tool``-marked callable.
 
     ``name`` / ``qualname`` / ``signature`` / ``docstring`` / ``is_async``
-    describe the tool without executing it; ``func`` is the **original** callable
-    (identity preserved — the decorator does not wrap it). This is the shape the
-    Phase 2 scanner and the A2A card generator read (#200).
+    describe the tool without executing it; ``func`` is the callable the
+    decorator returned: the original (identity preserved), or for an
+    approval-gated tool the gate that wraps it, so a consumer calling it gets the
+    approval too. ``approval`` and ``risk`` are the ``@donkey.tool(...)``
+    arguments (BG §2.3, #211). This is the shape the Phase 2 scanner and the A2A
+    card generator read (#200).
     """
 
     name: str
@@ -47,6 +50,8 @@ class ToolSpec:
     docstring: str
     is_async: bool
     func: Callable[..., Any]
+    approval: str | None = None
+    risk: str | None = None
 
 
 # Process-global, in decoration order. Tools are a process-wide concept (a
@@ -56,11 +61,12 @@ class ToolSpec:
 _REGISTRY: list[ToolSpec] = []
 
 
-def register_tool(func: _F) -> _F:
+def register_tool(func: _F, *, approval: str | None = None, risk: str | None = None) -> _F:
     """Implementation behind ``@donkey.tool`` (#200).
 
     Returns ``func`` unchanged (identity preserved) after attaching a
-    :data:`TOOL_MARKER` and recording a :class:`ToolSpec`. Raises
+    :data:`TOOL_MARKER` and recording a :class:`ToolSpec` with ``approval`` and
+    ``risk`` (BG §2.3). Raises
     :class:`ValueError` when ``func`` has no docstring — an undescribed tool is
     useless to a model and to the registry, so it is rejected rather than
     recorded blank (#200).
@@ -80,6 +86,8 @@ def register_tool(func: _F) -> _F:
         docstring=doc.strip(),
         is_async=inspect.iscoroutinefunction(func),
         func=func,
+        approval=approval,
+        risk=risk,
     )
     setattr(func, TOOL_MARKER, spec)
     _REGISTRY.append(spec)

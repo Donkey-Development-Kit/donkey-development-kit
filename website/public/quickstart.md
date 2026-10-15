@@ -23,7 +23,7 @@ Omni Gateway later is an environment change, not a code change.
 | Governed tool access (MCP) | Roadmap | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
 | A2A agents (`serve`, `expose`, `dev`) | Roadmap | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
 | On-behalf-of identity | Roadmap | [Identity](https://docs.donkey-kit.dev/identity.md) |
-| Human-in-the-loop | Roadmap | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
+| Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
 | Scan & publish to the registry | Roadmap | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 

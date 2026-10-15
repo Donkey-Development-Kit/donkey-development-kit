@@ -25,6 +25,8 @@ from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
 from .core import _verify
+from .core.approvals import APPROVAL_TIMEOUT, ApprovalMode, Approvals, gate, parse_timeout
+from .core.approvals import approvals as _approvals
 from .core.auth import AuthProvider
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope, cache_scope
@@ -33,7 +35,7 @@ from .core.classifier import classify as _classify
 from .core.config import ConfigOverrides, DonkeyConfig
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
-from .core.reactions import OnRefusal
+from .core.reactions import Duration, OnRefusal
 from .core.runtime import Runtime
 from .core.telemetry import RunScope, run_scope
 from .core.toolspec import register_tool
@@ -571,8 +573,8 @@ class Donkey:
         There is deliberately **no** ``id=`` argument: each call opens its own
         run, and a fixed id pinned across every call would collapse unrelated runs
         into one correlation. When you need to pin a specific id, use
-        ``donkey.run(id=...)`` directly. ``approval=`` / ``risk=`` arrive with
-        HITL (2.3) and are out of scope here (#200).
+        ``donkey.run(id=...)`` directly. ``approval=`` / ``risk=`` live on
+        :meth:`tool`, per tool (BG §2.3).
         """
 
         def decorate(fn: Callable[_P, _R]) -> Callable[_P, _R]:
@@ -614,16 +616,36 @@ class Donkey:
             return decorate(func)
         return decorate
 
+    @overload
     @staticmethod
-    def tool(func: _Callable) -> _Callable:
-        """Mark a callable as a governed tool **without changing call behaviour**,
-        recording its name, signature and docstring in an introspectable registry
-        (#200).
+    def tool(func: _Callable, /) -> _Callable: ...
 
-        Returns the **same** callable (identity preserved — it is not wrapped)
-        with a ``__donkey_tool__`` marker attached, and appends a
-        :class:`~donkey_kit.core.toolspec.ToolSpec` to the process-global registry
-        read by :func:`~donkey_kit.core.toolspec.registered_tools`::
+    @overload
+    @staticmethod
+    def tool(
+        *,
+        approval: ApprovalMode | None = None,
+        risk: str | None = None,
+        approval_timeout: Duration = APPROVAL_TIMEOUT,
+    ) -> Callable[[_Callable], _Callable]: ...
+
+    @staticmethod
+    def tool(
+        func: _Callable | None = None,
+        /,
+        *,
+        approval: ApprovalMode | None = None,
+        risk: str | None = None,
+        approval_timeout: Duration = APPROVAL_TIMEOUT,
+    ) -> _Callable | Callable[[_Callable], _Callable]:
+        """Mark a callable as a governed tool, recording its name, signature and
+        docstring in an introspectable registry (#200), and optionally gate it
+        behind a human approval (`BG §2.3`).
+
+        Bare, it returns the **same** callable (identity preserved, not
+        wrapped) with a ``__donkey_tool__`` marker attached, and appends a
+        :class:`~donkey_kit.core.toolspec.ToolSpec` to the process-global
+        registry read by :func:`~donkey_kit.core.toolspec.registered_tools`::
 
             @donkey.tool
             async def lookup_crm(customer_id: str) -> dict: ...
@@ -632,11 +654,68 @@ class Donkey:
         generator (BG §2.9) both read, so the one annotation pays off three times
         (#200).
 
-        Raises :class:`ValueError` when the callable has no docstring — an
-        undescribed tool is useless to a model and to the registry, so it is
-        rejected at decoration time rather than recorded blank (#200).
+        With ``approval="required"`` a call does not run the tool. It records a
+        pending :class:`~donkey_kit.core.approvals.Approval`, emits it as a span
+        event and raises :class:`~donkey_kit.core.approvals.ApprovalRequired`;
+        :attr:`approvals` resolves or rejects it::
+
+            @donkey.tool(approval="required", risk="financial")
+            async def issue_refund(ticket_id: str, amount: float) -> str: ...
+
+            try:
+                await issue_refund("T-1", 140.0)
+            except ApprovalRequired as err:
+                ...  # ask a human, then:
+                await donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
+
+        The approval is client-side and advisory: calling the undecorated
+        function bypasses it, and the gateway never learns of it (gateway
+        step-up is #214). It never overrides a refusal: the gateway still judges
+        every model call the resumed tool makes.
+
+        Args:
+            func: The tool, when used bare (``@donkey.tool``).
+            approval: ``"required"`` gates every call behind a human decision.
+            risk: A label for the approver and the span, such as ``"financial"``.
+            approval_timeout: How long a pending approval waits before resolving
+                it raises :class:`~donkey_kit.core.approvals.ApprovalTimedOut`:
+                seconds, a ``timedelta`` or a string such as ``"15m"``.
+
+        Raises:
+            ValueError: The callable has no docstring (an undescribed tool is
+                useless to a model and to the registry, #200), ``approval`` is
+                not ``"required"``, ``risk`` is blank, or ``approval_timeout``
+                is not a positive duration.
+
+        Docs: https://docs.donkey-kit.dev/hitl
         """
-        return register_tool(func)
+        if approval is not None and approval != "required":
+            raise ValueError(f'approval must be "required" or None, not {approval!r}')
+        if risk is not None and (not isinstance(risk, str) or not risk.strip()):
+            raise ValueError(f"risk must be a non-empty label such as 'financial', not {risk!r}")
+        timeout = parse_timeout(approval_timeout)
+
+        def decorate(fn: _Callable) -> _Callable:
+            target = gate(fn, risk=risk, timeout=timeout) if approval else fn
+            return register_tool(target, approval=approval, risk=risk)
+
+        # Bare ``@donkey.tool`` passes the callable positionally; the
+        # parametrised ``@donkey.tool(...)`` passes nothing and returns the
+        # decorator to be applied next.
+        if func is not None:
+            return decorate(func)
+        return decorate
+
+    @property
+    def approvals(self) -> Approvals:
+        """The pending tool approvals of this process (`BG §2.3`): resolve or
+        reject the call a :class:`~donkey_kit.core.approvals.ApprovalRequired`
+        names. Process-wide, like the tool registry, so every ``Donkey`` returns
+        the same one.
+
+        Docs: https://docs.donkey-kit.dev/hitl
+        """
+        return _approvals
 
     def on(self, refusal: type[PolicyViolation]) -> OnRefusal:
         """Declare once what to do when a call is refused with ``refusal`` (`BG §2.1`).

@@ -88,10 +88,11 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     reaches the gateway. **Advantage:** requests never silently fall back to
     the service identity.
   </Card>
-  <Card title="Human-in-the-loop" href="/hitl" icon="⏸" badge="Roadmap" badgeTone="roadmap">
-    **Purpose:** one vocabulary for "pause and ask a human". **Advantage:**
-    mapped onto each framework's native interrupt, so approval flows look the
-    same everywhere.
+  <Card title="Human-in-the-loop" href="/hitl" icon="⏸" badge="Live" badgeTone="live">
+    **Purpose:** one vocabulary for "pause and ask a human".
+    **Goal:** `@donkey.tool(approval="required")` pauses the call until someone
+    decides. **Advantage:** the approver lands on the span next to the
+    correlation ID. Client-side and advisory; it never overrides a refusal.
   </Card>
   <Card title="Policy handshake" href="/policies" icon="⚖" badge="Roadmap" badgeTone="roadmap">
     **Purpose:** read the policy set in force. **Advantage:** skip calls that

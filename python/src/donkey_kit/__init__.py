@@ -30,6 +30,7 @@ from importlib import import_module as _import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .core.approvals import Approval, ApprovalRequired, Approvals, ApprovalTimedOut
     from .core.budget import Budget, RequestWindow
     from .core.cachecontrol import CacheControls, CacheScope
     from .core.classifier import Classifier, PolicyRegistration, classify
@@ -70,6 +71,10 @@ if TYPE_CHECKING:
 # pull the whole SDK into every test session in the environment (#746).
 _LAZY = {
     "AgentKilled": ".core.errors",
+    "Approval": ".core.approvals",
+    "ApprovalRequired": ".core.approvals",
+    "ApprovalTimedOut": ".core.approvals",
+    "Approvals": ".core.approvals",
     "AuthError": ".core.errors",
     "Budget": ".core.budget",
     "BudgetReserveReached": ".core.errors",
@@ -172,6 +177,10 @@ __version__ = "0.2.0.dev0"
 
 __all__ = [
     "AgentKilled",
+    "Approval",
+    "ApprovalRequired",
+    "ApprovalTimedOut",
+    "Approvals",
     "AuthError",
     "Budget",
     "BudgetReserveReached",
