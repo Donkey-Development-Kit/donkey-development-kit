@@ -32,6 +32,7 @@ docs/verified-apis.md §8.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import math
 import time
 from collections.abc import Mapping
@@ -262,12 +263,16 @@ def approval_interrupt(
         ApprovalRejected: The resume value rejected the call.
         ValueError: The resume value is not ``{"approved": bool, "by": str}``.
     """
-    from langgraph.config import get_config
-    from langgraph.errors import GraphInterrupt
-    from langgraph.types import interrupt
+    # Loaded by name, so mypy sees them as Any with or without LangGraph
+    # installed (#763). A static import would need langgraph in the mypy skip
+    # list, which also erases the real LangGraph types the langgraph-demo job
+    # checks examples/langgraph against.
+    lg_config = importlib.import_module("langgraph.config")
+    lg_errors = importlib.import_module("langgraph.errors")
+    lg_types = importlib.import_module("langgraph.types")
 
     try:
-        configurable = get_config().get("configurable") or {}
+        configurable = lg_config.get_config().get("configurable") or {}
     except RuntimeError:  # not inside a runnable: no graph to pause
         return None
     thread = configurable.get("thread_id")
@@ -285,7 +290,7 @@ def approval_interrupt(
         expires_at=math.inf,
     )
     try:
-        decision = interrupt(
+        decision = lg_types.interrupt(
             {
                 "type": APPROVAL_INTERRUPT,
                 "approval_id": approval.id,
@@ -295,7 +300,7 @@ def approval_interrupt(
                 "correlation_id": approval.correlation_id,
             }
         )
-    except GraphInterrupt:
+    except lg_errors.GraphInterrupt:
         record_pending(approval)
         raise
     approved, by = _decision(decision)
