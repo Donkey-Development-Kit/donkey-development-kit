@@ -263,8 +263,8 @@ files = ["src/donkey_kit", "tests/typecheck"]
 # `follow_imports_for_stubs` extends the skip to packages that ship .pyi files
 # (numpy, opentelemetry). tests/unit/test_house_style_config.py keeps every
 # optional extra outside [llm,cli] in this list. langgraph itself is NOT listed:
-# src/ never imports it, and the langgraph-demo job checks examples/langgraph
-# against the real package.
+# src/ never imports it statically (approval_interrupt() loads it by name), and
+# the langgraph-demo job checks examples/langgraph against the real package.
 module = [
     "langchain_openai.*",
     "langchain_core.*",

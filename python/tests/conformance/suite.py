@@ -79,6 +79,13 @@ CONFORMANCE_SCENARIOS = [
     # stops a sibling pace() loop, and flushes spans (BG §2.6, #220). All of it
     # happens in our transport, so CrewAI records an asserted exemption below.
     "agent_killed_stops_cleanly",
+    # An approval-gated tool pauses with the framework's own primitive (the raw
+    # client raises ApprovalRequired; LangGraph calls interrupt()), sends nothing
+    # while paused, records the approver on resume, and its resumed model call is
+    # still judged by the gateway: a refusal comes back typed, under the decision
+    # event's correlation id (BG §2.3, #211, #212). The resumed call needs our
+    # transport, so CrewAI records an asserted exemption below.
+    "approval_round_trip",
 ]
 
 # Where each scenario runs (#749), as pytest node ids relative to ``python/``.
@@ -118,6 +125,9 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
     ),
     "agent_killed_stops_cleanly": (
         "tests/conformance/test_agent_killed_stops_cleanly.py::test_a_kill_stops_the_agent_and_its_pace_loops",
+    ),
+    "approval_round_trip": (
+        "tests/conformance/test_approval_round_trip.py::test_an_approved_tool_resumes_and_is_still_judged_by_the_gateway",
     ),
 }
 
@@ -207,6 +217,15 @@ _CREWAI_KILL_EXEMPTION = (
     "(#220)."
 )
 
+# approval_round_trip: the pause and the approver's span event are client-side
+# and framework-free, but the resumed tool's model call is judged through our
+# transport (#211, #212), which CrewAI's calls never pass through.
+_CREWAI_APPROVAL_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport, so a resumed tool's model "
+    "call carries neither the approval's correlation id nor a typed refusal; the "
+    "pause and the approver's span event work as for any Python code (#211)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # CrewAI raises a framework error the bridge cannot type. ADK records no
     # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
@@ -219,5 +238,6 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "refusal_handler_cannot_unrefuse": _CREWAI_HANDLER_EXEMPTION,
         "custom_policy_typed": _CREWAI_CUSTOM_POLICY_EXEMPTION,
         "agent_killed_stops_cleanly": _CREWAI_KILL_EXEMPTION,
+        "approval_round_trip": _CREWAI_APPROVAL_EXEMPTION,
     },
 }

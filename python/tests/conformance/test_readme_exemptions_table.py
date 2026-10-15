@@ -35,6 +35,7 @@ _SCENARIOS = {
     "refusal handler cannot un-refuse": "refusal_handler_cannot_unrefuse",
     "custom policy typed": "custom_policy_typed",
     "agent kill stops cleanly": "agent_killed_stops_cleanly",
+    "approval round trip": "approval_round_trip",
 }
 _PUBLIC_ONLY = {"retries_token_budget"}
 

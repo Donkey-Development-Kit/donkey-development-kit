@@ -121,6 +121,7 @@ DonkeyError                     # base of the whole tree
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at/.window
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
 ├─ ApprovalRequired             # client-side: an approval-gated tool was called, not run; .approval
+├─ ApprovalRejected             # client-side: a reviewer refused a LangGraph-paused tool; .approval
 ├─ ApprovalTimedOut             # client-side: nobody decided before approval_timeout; .approval
 └─ ToolInvocationError, RegistryError, PublicationDrift
                                 # tool access, registry and publishing (Roadmap surfaces;
@@ -167,8 +168,10 @@ exception message. `ModelSubstituted` reports that a call *succeeded* against a
 different model than requested (opt-in via `on_model_substitution="raise"`).
 `ApprovalRequired` and `ApprovalTimedOut` come from a
 [`@donkey.tool(approval="required")`](/hitl) tool: the first means the tool is
-waiting for a human decision, the second that nobody decided in time. Neither
-is a `PolicyViolation`, and refusal handlers never see them.
+waiting for a human decision, the second that nobody decided in time.
+`ApprovalRejected` comes from a gated tool that LangGraph paused and a reviewer
+refused on resume. None of them is a `PolicyViolation`, and refusal handlers
+never see them.
 `ConfigError` is raised locally, before any request. It reports every missing
 field at once, and it also reports an endpoint that may not receive the
 configured credentials: a non-`https://` URL, or a URL from the project's config
