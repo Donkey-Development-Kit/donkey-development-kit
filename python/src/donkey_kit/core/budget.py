@@ -33,7 +33,7 @@ never a misleading zero.
 
 Both the numeric ``x-token-reset`` and the prose ``Reset in … ms`` are
 **milliseconds *to* reset** — a delta, not an epoch (docs/verified-apis.md §4) —
-so ``reset_at`` is anchored to ``observed_at`` the same way ``errors._retry_after``
+so ``reset_at`` is anchored to ``observed_at`` the same way ``_refusal_body.retry_after``
 treats the header.
 
 A second, independent window counts **requests** rather than tokens (#974):

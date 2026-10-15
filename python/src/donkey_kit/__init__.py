@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .core.budget import Budget, RequestWindow
     from .core.cachecontrol import CacheControls, CacheScope
+    from .core.classifier import Classifier, PolicyRegistration, classify
     from .core.config import ConfigOverrides, DonkeyConfig, Region
     from .core.cost import CostTags
     from .core.errors import (
@@ -51,7 +52,6 @@ if TYPE_CHECKING:
         TokenBudgetExceeded,
         UpstreamModelError,
         UpstreamRequestError,
-        classify,
     )
     from .core.lastcall import LastCall, LastCallStatus
     from .core.reactions import OnRefusal, RefusalContext
@@ -78,6 +78,7 @@ _LAZY = {
     "CacheScope": ".core.cachecontrol",
     "ConfigError": ".core.errors",
     "ConfigOverrides": ".core.config",
+    "Classifier": ".core.classifier",
     "ContentSafetyBlocked": ".core.errors",
     "CostTags": ".core.cost",
     "Donkey": ".donkey",
@@ -94,6 +95,7 @@ _LAZY = {
     "ModelSubstituted": ".core.errors",
     "OnRefusal": ".core.reactions",
     "PIIDetected": ".core.errors",
+    "PolicyRegistration": ".core.classifier",
     "PolicyViolation": ".core.errors",
     "PromptInjectionBlocked": ".core.errors",
     "RefusalContext": ".core.reactions",
@@ -106,7 +108,7 @@ _LAZY = {
     "TypedRefusals": ".core.refusals",
     "UpstreamModelError": ".core.errors",
     "UpstreamRequestError": ".core.errors",
-    "classify": ".core.errors",
+    "classify": ".core.classifier",
     "registered_tools": ".core.toolspec",
     "typed_refusals": ".integrations",
 }
@@ -175,6 +177,7 @@ __all__ = [
     "BudgetReserveReached",
     "CacheControls",
     "CacheScope",
+    "Classifier",
     "ConfigError",
     "ConfigOverrides",
     "ContentSafetyBlocked",
@@ -193,6 +196,7 @@ __all__ = [
     "ModelSubstituted",
     "OnRefusal",
     "PIIDetected",
+    "PolicyRegistration",
     "PolicyViolation",
     "PromptInjectionBlocked",
     "RefusalContext",

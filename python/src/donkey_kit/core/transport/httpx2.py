@@ -83,7 +83,7 @@ def _copy_sent_ids(forwarded: httpx.Request, request: httpx2.Request) -> None:
 
     ``httpx2.AsyncClient`` binds the returned response to ``request``, whatever
     the transport passes, so that is where ``classify(exc.response)`` reads the
-    sent correlation and call ids (``core/errors._sent_ids``). The ``donkey_*``
+    sent correlation and call ids (``core/_refusal_body.sent_ids``). The ``donkey_*``
     extensions name the headers that carry them. Only those two headers are
     copied, so the consumer credentials stay off the framework's request.
     """

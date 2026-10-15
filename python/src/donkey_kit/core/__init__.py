@@ -10,6 +10,7 @@ from .auth import AnypointConnectedApp, AuthProvider, ChainedAuth, StaticToken
 from .budget import Budget, RequestWindow
 from .cache import TTLCache
 from .cachecontrol import CacheControls, CacheScope, cache_scope, current_cache_controls
+from .classifier import Classifier, PolicyRegistration, classify
 from .config import ConfigOverrides, DonkeyConfig, Region
 from .cost import CostTags
 from .errors import (
@@ -32,7 +33,6 @@ from .errors import (
     ToolInvocationError,
     UpstreamModelError,
     UpstreamRequestError,
-    classify,
 )
 from .lastcall import LastCall, LastCallStatus
 from .telemetry import (
@@ -63,6 +63,7 @@ __all__ = [
     "CacheControls",
     "CacheScope",
     "ChainedAuth",
+    "Classifier",
     "ConfigError",
     "ConfigOverrides",
     "ContentSafetyBlocked",
@@ -79,6 +80,7 @@ __all__ = [
     "ModelNotRoutable",
     "ModelSubstituted",
     "PIIDetected",
+    "PolicyRegistration",
     "PolicyViolation",
     "PromptInjectionBlocked",
     "PublicationDrift",

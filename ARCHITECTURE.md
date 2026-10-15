@@ -141,14 +141,17 @@ Beside it:
   level, plus the optional `opentelemetry` lazily.
 - **core is layered too:** `runtime` → `transport` → `budget | cache |
   cachecontrol | telemetry | toolspec` → `auth | correlation` → `config` →
-  `cost | endpoints | header_names | reactions | refusals` → `errors` → `_refusal_body |
-  lastcall | masking` → `_verify` → `_wire`.
+  `classifier | cost | endpoints | header_names | reactions | refusals` →
+  `_policy_spec` → `errors` → `_refusal_body | lastcall | masking` → `_verify` →
+  `_wire | _response`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
   through it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
   sans-IO, it decides each next step and the clients sleep and send.
   `_refusal_body` holds the refusal-body parsers (`errors`' JSON
   envelope and PII-span helpers), split out to keep `errors` under its size
-  ceiling. This contract is exhaustive too.
+  ceiling. `classifier` holds the `classify.register()` registry (#210, ADR
+  0012) over `_policy_spec`, its match-spec checks; it fills a hook slot in
+  `errors`, so `errors` never imports it. This contract is exhaustive too.
 
 Two rules the import graph can't express are tests in
 `tests/unit/test_architecture.py`:
@@ -505,6 +508,7 @@ flowchart TD
   r429 -->|yes| RequestRateLimitExceeded
   r429 -->|"no (empty body, x-token-* headers)"| TokenBudgetExceeded
   status -->|"any other 4xx"| c4xx{"body?"}
+  c4xx -->|"a classify.register() shape<br/>(checked first, #210)"| Registered["your registered type"]
   c4xx -->|"nested provider error object"| UpstreamRequestError
   c4xx -->|"flat error: not in the known<br/>unique model map"| ModelNotRoutable
   c4xx -->|"anything else, incl. a 403<br/>without www-authenticate"| PV["PolicyViolation<br/>(policy=unknown, shape unconfirmed)"]
@@ -513,7 +517,7 @@ flowchart TD
 
   classDef refusal fill:#fde2e2,stroke:#c0392b,color:#000
   classDef other fill:#e8f0fe,stroke:#3367d6,color:#000
-  class PIIDetected,AgentKilled,ContentSafetyBlocked,PromptInjectionBlocked,RequestRateLimitExceeded,TokenBudgetExceeded,PV refusal
+  class PIIDetected,AgentKilled,ContentSafetyBlocked,PromptInjectionBlocked,RequestRateLimitExceeded,TokenBudgetExceeded,PV,Registered refusal
   class AuthError,UpstreamRequestError,ModelNotRoutable,UpstreamModelError,DonkeyError other
 ```
 
@@ -560,6 +564,16 @@ a generic `PolicyViolation` (`policy="unknown"`) whose message *says so* rather
 than pretending to a precision the captures don't yet support — the same
 verification-discipline honesty as the verification ledger. All errors subclass `DonkeyError`, which carries the
 correlation/request IDs and the raw response for inspection.
+
+**A customer's own policy shape is registered, not captured (#210, ADR 0012).**
+A custom (PDK) policy sends a shape no capture of ours can contain.
+`classify.register(match=..., raises=...)` in `core/classifier.py` maps it to a
+`PolicyViolation` subclass the customer defines. `classify()` tries the
+registry after every built-in policy rule and before the upstream-envelope and
+unconfirmed fall-through rules, and `register()` rejects any spec a built-in
+rule would claim, so the fixture-driven rules above always win. The registry is
+process-wide, because `classify()` also runs where no `Donkey` exists, and a
+registered type's slug is recorded verbatim as `donkey.policy.type`.
 
 **Typed refusals cross the framework boundary in one place (#724, ADR 0002).**
 A framework's client re-wraps what the transport raised: the OpenAI and

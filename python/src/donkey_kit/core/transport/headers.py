@@ -281,7 +281,7 @@ def _apply_base_headers(
     (docs/verified-apis.md §3) and no Anypoint platform API reads them
     (docs/verified-apis.md §12.2), so they are not sent there (#833)."""
     request.headers[correlation_header] = correlation_id
-    # Stamp the resolved name so read-back (errors._sent_ids) honours a
+    # Stamp the resolved name so read-back (_refusal_body.sent_ids) honours a
     # header-name override without core/errors importing DonkeyConfig (#363).
     # Idempotent across retries — same name each send.
     request.extensions["donkey_correlation_header"] = correlation_header

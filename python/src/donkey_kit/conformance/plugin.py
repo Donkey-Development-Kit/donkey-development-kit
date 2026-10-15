@@ -13,7 +13,7 @@ follows without exception:
 
 1. **It is inert unless asked.** With no ``--donkey-conformance`` flag,
    :func:`pytest_collection` returns ``None`` and default collection runs
-   untouched; the only footprint is its ``--donkey-*`` CLI options and two
+   untouched; the only footprint is its ``--donkey-*`` CLI options and three
    unused fixtures.
 2. **Its module top is import-light.** It imports only stdlib, ``pytest``, and
    the framework-free :mod:`~.suite`/:mod:`~.report` siblings, and the root
@@ -42,7 +42,14 @@ from .suite import SCENARIOS, Result, Scenario, validate_known_limitations
 if TYPE_CHECKING:  # keep the heavy import out of the auto-loaded module body
     from .harness import AgentFactory
 
-__all__ = ["donkey", "gateway", "pytest_addoption", "pytest_collection", "pytest_terminal_summary"]
+__all__ = [
+    "classify_registry",
+    "donkey",
+    "gateway",
+    "pytest_addoption",
+    "pytest_collection",
+    "pytest_terminal_summary",
+]
 
 # Stash keys carry collection-time state to the run/summary phases without
 # module globals (pytest recommends config.stash over ad-hoc attributes).
@@ -276,15 +283,41 @@ def donkey() -> Any:
     where absent — so ``donkey.openai()`` constructs and ``simulate()`` works
     with no live gateway and no env setup, while any real config you *have* set
     is preserved. Torn down synchronously; the async transport opens no
-    connection unless a real request is made (which ``simulate()`` intercepts)."""
+    connection unless a real request is made (which ``simulate()`` intercepts).
+
+    A ``classify.register()`` made during the test is dropped at teardown, as
+    with :func:`classify_registry`; registrations made at import time stay."""
+    from .._testing import isolated_classify
     from ..donkey import Donkey
     from .harness import offline_config
 
-    fab = Donkey(offline_config())
-    try:
-        yield fab
-    finally:
-        fab.close()
+    with isolated_classify():
+        fab = Donkey(offline_config())
+        try:
+            yield fab
+        finally:
+            fab.close()
+
+
+@pytest.fixture
+def classify_registry() -> Any:
+    """The process-wide ``donkey_kit.classify``, with any registration the test
+    makes dropped at teardown, so a custom policy type registered in one test
+    never leaks into the next (#210)::
+
+        def test_salary_block_is_typed(classify_registry):
+            classify_registry.register(
+                match={"status": 403, "error_type": "acme_salary_block"},
+                raises=SalaryLeakBlocked,
+            )
+            ...
+
+    Registrations made at import time (by the module that defines the custom
+    types) are kept."""
+    from .._testing import isolated_classify
+
+    with isolated_classify() as registry:
+        yield registry
 
 
 @pytest.fixture

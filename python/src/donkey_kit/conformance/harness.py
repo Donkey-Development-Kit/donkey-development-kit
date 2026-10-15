@@ -362,7 +362,8 @@ class ConformanceHarness:
         return self._agent
 
     def serve_refusal(self, error: type[DonkeyError]) -> None:
-        """Arm the gateway to answer the next model call with the captured refusal for ``error``."""
+        """Arm the gateway to answer the next model call with the refusal for ``error``:
+        its captured fixture, or a ``classify.register()`` entry's example (#210)."""
         self._arm(_fixture_responder(_refusal_fixture(error)))
 
     def serve_success(self, *, budget_headers: bool = True) -> None:

@@ -69,6 +69,11 @@ CONFORMANCE_SCENARIOS = [
     # (BG §2.1, #208, #209). Only adapters routed through our httpx client run
     # handlers, so CrewAI records an asserted exemption below.
     "refusal_handler_cannot_unrefuse",
+    # A refusal shape registered with classify.register() reaches user code as
+    # its registered type inside donkey.run(), a donkey.on(...) handler for it
+    # runs, and the span names its slug verbatim (BG §2.2, #210). The bridge and
+    # handlers both need our transport, so CrewAI records an asserted exemption.
+    "custom_policy_typed",
 ]
 
 # Where each scenario runs (#749), as pytest node ids relative to ``python/``.
@@ -102,6 +107,9 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
     "refusal_handler_cannot_unrefuse": (
         "tests/conformance/test_handlers_cannot_unrefuse.py::test_a_handler_never_turns_a_refusal_into_a_success",
         "tests/conformance/test_handlers_cannot_unrefuse.py::test_a_success_comes_only_from_a_new_governed_request",
+    ),
+    "custom_policy_typed": (
+        "tests/conformance/test_custom_policy_typed.py::test_a_custom_refusal_is_typed_handled_and_named_on_the_span",
     ),
 }
 
@@ -172,6 +180,15 @@ _CREWAI_HANDLER_EXEMPTION = (
     "reach our _on_refusal hook and donkey.on(...) handlers do not run for it (#208)."
 )
 
+# custom_policy_typed: a registered shape is typed by the same bridge and
+# handled by the same _on_refusal hook as a built-in one (#210), so it is exempt
+# for the same structural reason as the two scenarios above.
+_CREWAI_CUSTOM_POLICY_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport, so a refusal shape "
+    "registered with classify.register() is neither bridged to its type nor seen "
+    "by donkey.on(...) handlers for its calls (#210)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # CrewAI raises a framework error the bridge cannot type. ADK records no
     # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
@@ -182,5 +199,6 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
         "typed_refusal_bridged": _CREWAI_REFUSAL_EXEMPTION,
         "refusal_handler_cannot_unrefuse": _CREWAI_HANDLER_EXEMPTION,
+        "custom_policy_typed": _CREWAI_CUSTOM_POLICY_EXEMPTION,
     },
 }

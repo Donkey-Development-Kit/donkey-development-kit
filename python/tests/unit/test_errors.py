@@ -429,8 +429,10 @@ def test_gateway_unavailable_remediation_names_the_three_causes_and_doctor() -> 
 
 
 def _all_policy_violation_types() -> set[type[PolicyViolation]]:
-    """Every PolicyViolation type, the base included, discovered transitively so
-    a subclass added later is covered without editing this test."""
+    """Every SDK PolicyViolation type, the base included, discovered transitively
+    so a subclass added later is covered without editing this test. Customer
+    subclasses that other tests define for ``classify.register()`` (#210) inherit
+    the base default by design, so only ``donkey_kit``'s own types are checked."""
     seen: set[type[PolicyViolation]] = {PolicyViolation}
     stack: list[type[PolicyViolation]] = [PolicyViolation]
     while stack:
@@ -438,7 +440,7 @@ def _all_policy_violation_types() -> set[type[PolicyViolation]]:
             if sub not in seen:
                 seen.add(sub)
                 stack.append(sub)
-    return seen
+    return {cls for cls in seen if cls.__module__.startswith("donkey_kit")}
 
 
 def test_every_policy_violation_type_ships_its_own_nonempty_default() -> None:

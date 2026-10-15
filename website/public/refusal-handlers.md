@@ -70,6 +70,9 @@ nothing until you pass it to `resend()`.
   replaces the first.
 - **Only one handler runs per refusal.** A handler that reaches its bound does
   not fall through to the catch-all; the refusal propagates.
+- **Custom policy types compose.** A type registered with
+  [`classify.register()`](https://docs.donkey-kit.dev/custom-policies.md) is handled like a built-in one, so
+  `on(SalaryLeakBlocked)` and an `on(...)` on its shared base both work.
 - **Per `Donkey`, data plane only.** The registration applies to every model
   call that `Donkey` makes, async and blocking, across every framework adapter
   it builds. Control-plane calls react to nothing.

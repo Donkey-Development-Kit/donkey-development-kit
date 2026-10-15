@@ -33,6 +33,7 @@ _SCENARIOS = {
     "budget refusal not retried": "retries_token_budget",
     "typed refusal bridged": "typed_refusal_bridged",
     "refusal handler cannot un-refuse": "refusal_handler_cannot_unrefuse",
+    "custom policy typed": "custom_policy_typed",
 }
 _PUBLIC_ONLY = {"retries_token_budget"}
 

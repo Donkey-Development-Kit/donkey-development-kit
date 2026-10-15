@@ -93,7 +93,7 @@ def test_every_error_rejects_a_blank_remediation(cls: type[DonkeyError], bad: st
 
 
 def test_classify_is_exported_from_donkey_kit() -> None:
-    from donkey_kit.core.errors import classify
+    from donkey_kit.core.classifier import classify
 
     assert "classify" in donkey_kit.__all__
     assert donkey_kit.classify is classify

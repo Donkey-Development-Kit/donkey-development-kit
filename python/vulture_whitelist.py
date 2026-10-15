@@ -32,6 +32,7 @@ exitstatus  # unused variable (src/donkey_kit/conformance/plugin.py)
 question  # unused variable (src/donkey_kit/conformance/suite.py)
 _.pace  # unused method (src/donkey_kit/core/budget.py)
 _.wait_for_reset  # unused method (src/donkey_kit/core/budget.py)
+_.unregister  # unused method (src/donkey_kit/core/classifier.py): public API, #210
 cost_team_header  # unused variable (src/donkey_kit/core/config.py)
 cost_project_header  # unused variable (src/donkey_kit/core/config.py)
 cost_env_header  # unused variable (src/donkey_kit/core/config.py)

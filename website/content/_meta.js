@@ -17,6 +17,7 @@ export default {
   },
   errors: 'Typed refusals',
   'refusal-handlers': 'Refusal handlers',
+  'custom-policies': 'Custom policies',
   budget: 'Budget & pacing',
   identity: 'Identity',
   hitl: 'Human-in-the-loop',

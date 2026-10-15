@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from donkey_kit.core import _verify, lastcall, runtime, telemetry, toolspec
+from donkey_kit.core import _verify, classifier, lastcall, runtime, telemetry, toolspec
 from donkey_kit.integrations import ADAPTERS, _base
 
 pytest_plugins = ["pytester"]
@@ -202,6 +202,7 @@ def _reset_module_state() -> Iterator[None]:
     these by hand; add a new module's ``_reset_for_tests()`` here instead."""
     _verify._reset_for_tests()
     _base._reset_for_tests()
+    classifier._reset_for_tests()
     telemetry._reset_for_tests()
     toolspec._reset_for_tests()
     # A sync governed call records ``last_call`` into the caller's context,
@@ -213,6 +214,7 @@ def _reset_module_state() -> Iterator[None]:
     yield
     _verify._reset_for_tests()
     _base._reset_for_tests()
+    classifier._reset_for_tests()
     telemetry._reset_for_tests()
     toolspec._reset_for_tests()
     lastcall._last_call.set(None)

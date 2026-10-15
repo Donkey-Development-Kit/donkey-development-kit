@@ -25,13 +25,24 @@ a generic :class:`PolicyViolation` or :class:`DonkeyError`.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from . import _verify, _wire
-from ._refusal_body import code_str, json_body, nested_error, pii_spans, pii_summary, str_or_none
+from . import _wire
+from ._refusal_body import (
+    MODEL_NOT_ROUTABLE_RE,
+    code_str,
+    content_safety_reject,
+    json_body,
+    nested_error,
+    parse_retry_after,
+    pii_spans,
+    pii_summary,
+    sent_ids,
+    str_or_none,
+)
+from ._refusal_body import retry_after as read_retry_after
 from ._response import RequestLike, ResponseLike
 from .lastcall import request_id as read_request_id
 
@@ -707,6 +718,12 @@ def classify(
     shape (docs/verified-apis.md §4), a **403 carrying no ``www-authenticate`` header** and matching
     none of the policy discriminators above is treated as one of these unconfirmed
     refusals, not mis-typed as an :class:`AuthError`.
+
+    A shape a customer registered with ``classify.register()`` (BG §2.2, #210,
+    ``core/classifier``) is matched after every built-in above and before the
+    upstream-envelope rule, so a verified shape always wins and a custom
+    policy's nested-envelope 403 is not mis-typed as an
+    :class:`UpstreamRequestError`.
     """
 
     shape = _shape(response, correlation_id=correlation_id, call_id=call_id)
@@ -741,7 +758,7 @@ class _Shape:
 
 def _shape(response: ResponseLike, *, correlation_id: str | None, call_id: str | None) -> _Shape:
     """Parse ``response`` once for :func:`classify`'s matchers."""
-    sent_correlation, sent_call = _sent_ids(response)
+    sent_correlation, sent_call = sent_ids(response)
     error_obj = nested_error(response)
     return _Shape(
         response=response,
@@ -816,7 +833,7 @@ def _match_content_safety(s: _Shape) -> DonkeyError | None:
     #253/#568). Keyed on the header, so a reject with an unexpected or absent
     body is still caught; ahead of the auth rule. The message names the vendor;
     the remediation is the class default, which covers both vendors."""
-    cs = _content_safety_reject(s.response)
+    cs = content_safety_reject(s.response)
     if cs is None:
         return None
     vendor, categories = cs
@@ -887,7 +904,7 @@ def _match_request_rate_limit(s: _Shape) -> DonkeyError | None:
         return None
     return RequestRateLimitExceeded(
         "Request rate limit exceeded (429).",
-        retry_after=_retry_after(s.response, reset_header=_wire.REQUEST_RESET_HEADER),
+        retry_after=read_retry_after(s.response, reset_header=_wire.REQUEST_RESET_HEADER),
         **s.kw,
     )
 
@@ -900,7 +917,7 @@ def _match_token_budget(s: _Shape) -> DonkeyError | None:
         return None
     return TokenBudgetExceeded(
         "Token rate limit or budget exceeded (429).",
-        retry_after=_retry_after(s.response),
+        retry_after=read_retry_after(s.response),
         **s.kw,
     )
 
@@ -930,7 +947,7 @@ def _match_model_not_routable(s: _Shape) -> DonkeyError | None:
     if not 400 <= s.status < 500:
         return None
     flat_error = str_or_none(s.body.get("error")) if s.body is not None else None
-    unroutable = _MODEL_NOT_ROUTABLE_RE.search(flat_error) if flat_error else None
+    unroutable = MODEL_NOT_ROUTABLE_RE.search(flat_error) if flat_error else None
     if unroutable is None:
         return None
     return ModelNotRoutable(
@@ -971,11 +988,25 @@ def _match_upstream_failure(s: _Shape) -> DonkeyError | None:
     return UpstreamModelError(f"Upstream/provider failure ({s.status}). Retryable.", **s.kw)
 
 
-#: :func:`classify`'s rules, most specific first. The order is the contract:
-#: every policy shape with its own discriminator (body ``type``/``code``, a
-#: vendor header, ``matched_patterns``) precedes the 401/403 auth rule, and the
-#: upstream envelope precedes the unconfirmed-refusal fall-through.
-_MATCHERS: tuple[Callable[[_Shape], DonkeyError | None], ...] = (
+#: A customer-registered refusal shape (BG §2.2, #210), installed by
+#: ``core/classifier`` when it is imported. A hook slot, not an import: this
+#: module sits below the registry in the core layers, and with no registry
+#: imported there is nothing registered to match.
+_REGISTERED_MATCHER: list[Callable[[_Shape], DonkeyError | None]] = []
+
+
+def _match_registered(s: _Shape) -> DonkeyError | None:
+    """A shape a customer registered with ``classify.register()`` (#210)."""
+    return _REGISTERED_MATCHER[0](s) if _REGISTERED_MATCHER else None
+
+
+#: The built-in rules a registration may never shadow (``classify.register()``
+#: rejects any spec one of these claims). Every policy shape with its own
+#: discriminator (body ``type``/``code``, a vendor header, ``matched_patterns``)
+#: precedes the 401/403 auth rule. ``model_not_routable`` needs a flat-string
+#: ``error`` and ``upstream_request`` a nested object, so the two are disjoint
+#: and their order between them is free.
+_POLICY_MATCHERS: tuple[Callable[[_Shape], DonkeyError | None], ...] = (
     _match_pii,
     _match_agent_killed,
     _match_content_safety,
@@ -984,104 +1015,17 @@ _MATCHERS: tuple[Callable[[_Shape], DonkeyError | None], ...] = (
     _match_auth,
     _match_request_rate_limit,
     _match_token_budget,
-    _match_upstream_request,
     _match_model_not_routable,
+)
+
+#: :func:`classify`'s rules, most specific first. The order is the contract:
+#: the built-ins, then the customer registry (so a verified shape always wins,
+#: and a registered nested-envelope refusal is not mis-typed as a provider
+#: mistake), then the upstream envelope and the unconfirmed-refusal fall-through.
+_MATCHERS: tuple[Callable[[_Shape], DonkeyError | None], ...] = (
+    *_POLICY_MATCHERS,
+    _match_registered,
+    _match_upstream_request,
     _match_unconfirmed_refusal,
     _match_upstream_failure,
 )
-
-
-def _sent_ids(response: ResponseLike) -> tuple[str | None, str | None]:
-    """The ``(correlation_id, call_id)`` the client sent, read back from the
-    response's own request headers under the names the transport actually used
-    (BG §1.1, #195, #363).
-
-    The transport stamps the resolved header names onto ``request.extensions``
-    at injection time (``donkey_correlation_header`` / ``donkey_call_id_header``),
-    so a per-``Donkey`` header-name override (``DonkeyConfig.correlation_header``
-    / ``.call_id_header``, docs/verified-apis.md §3) is honoured here without ``core/errors``
-    importing ``DonkeyConfig`` — it only reads a plain dict carried on the same
-    object ``response.request`` returns. When the stamp is absent (a response not
-    produced by our transport — e.g. a hand-built stock-client response), the
-    default names from ``core/_verify`` are used.
-
-    Returns ``(None, None)`` when the request is unavailable (httpx raises if it
-    was never set on the response)."""
-    try:
-        request = response.request
-    except RuntimeError:
-        return None, None
-    headers = request.headers
-    corr_name = request.extensions.get("donkey_correlation_header") or _verify.CORRELATION_ID_HEADER
-    call_name = request.extensions.get("donkey_call_id_header") or _verify.CALL_ID_HEADER
-    return headers.get(corr_name), headers.get(call_name)
-
-
-def _retry_after(
-    response: ResponseLike, *, reset_header: str = _wire.TOKEN_RESET_HEADER
-) -> float | None:
-    """Seconds until the caller may retry. Prefers the standard ``retry-after``
-    (delta-seconds) header; falls back to the rate-limit policy's reset header
-    (``x-token-reset``, or ``x-ratelimit-reset`` for the request window), which
-    is captured in **milliseconds** (docs/verified-apis.md §4)."""
-    seconds = parse_retry_after(response.headers.get(_wire.RETRY_AFTER_HEADER))
-    if seconds is not None:
-        return seconds
-    reset_ms = response.headers.get(reset_header)
-    if reset_ms is not None:
-        try:
-            return max(0.0, float(reset_ms) / 1000.0)
-        except ValueError:
-            return None
-    return None
-
-
-def parse_retry_after(raw: str | None) -> float | None:
-    """A ``Retry-After`` delta-seconds value, floored at 0, or ``None`` when it
-    is absent or not a number. The one parser behind both the transport's retry
-    sleep and an error's ``retry_after``: a negative value (e.g. ``"-1"``) means
-    "retry now", never a negative wait (#286, #815)."""
-    if raw is None:
-        return None
-    try:
-        return max(0.0, float(raw))
-    except ValueError:
-        return None  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
-
-
-# The model-based-routing rejection for a bare model name on a multi-provider
-# proxy (docs/verified-apis.md §4, #825). Live text: "Failed to parse model from
-# request: Model 'gpt-5-mini' is not in the known unique model map and multiple
-# providers are configured. Use 'provider/model' format."
-_MODEL_NOT_ROUTABLE_RE = re.compile(
-    r"Model '(?P<model>[^']*)' is not in the known unique model map"
-)
-
-# Content-safety / guardrails policies report their verdict in a pair of vendor
-# headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
-# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
-# #253/#568).
-_CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
-    (
-        _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
-        _wire.AZURE_CONTENT_SAFETY_REASON_HEADER,
-        "Azure Content Safety",
-    ),
-    (
-        _wire.BEDROCK_GUARDRAIL_ACTION_HEADER,
-        _wire.BEDROCK_GUARDRAIL_REASON_HEADER,
-        "Amazon Bedrock Guardrails",
-    ),
-)
-
-
-def _content_safety_reject(response: ResponseLike) -> tuple[str, list[str]] | None:
-    """``(vendor, categories)`` when a content-safety policy header reports
-    ``action: reject``, else ``None``. Categories are the comma-separated flagged
-    reasons from the sibling ``...-reason`` header (empty list if absent)."""
-    for action_h, reason_h, vendor in _CONTENT_SAFETY_VENDORS:
-        if response.headers.get(action_h) == "reject":
-            reason = response.headers.get(reason_h, "")
-            categories = [c.strip() for c in reason.split(",") if c.strip()]
-            return vendor, categories
-    return None
