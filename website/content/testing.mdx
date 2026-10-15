@@ -53,7 +53,9 @@ The selectable refusals are the ones produced from a captured fixture:
 `TokenBudgetExceeded`, `RequestRateLimitExceeded`, `PIIDetected`,
 `PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`, `UpstreamRequestError`, `ModelNotRoutable`,
 `UpstreamModelError`, `AuthError`, and the generic `PolicyViolation` (the
-content-moderation shape).
+content-moderation shape). A type registered with
+[`classify.register()`](/custom-policies) is selectable too: `simulate()` serves
+the minimal response its registration describes.
 Asking for a refusal no gateway response produces — for example a client-side
 `ConfigError` — raises a `ValueError`.
 
@@ -116,6 +118,25 @@ By default the plugin reads a `KNOWN_LIMITATIONS` attribute from the `--donkey-a
 module; point elsewhere with `--donkey-known-limitations=module:NAME`. The
 mapping is validated at collection time, so an unknown scenario key or an empty
 reason fails the run before any scenario executes.
+
+### Custom policy registrations
+
+[`classify.register()`](/custom-policies) is process-wide, so a registration
+made in one test would leak into the next. The plugin's `donkey` fixture drops
+any registration made during the test at teardown, and the `classify_registry`
+fixture does the same while yielding the registry itself:
+
+```python
+def test_salary_block_is_typed(classify_registry):
+    classify_registry.register(
+        match=dict(status=403, error_type="acme_salary_block"),
+        raises=SalaryLeakBlocked,
+    )
+    ...
+```
+
+Registrations made at import time, by the module that defines your types, are
+kept.
 
 ## The `gateway` fixture
 

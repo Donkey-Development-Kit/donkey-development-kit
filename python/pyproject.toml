@@ -594,8 +594,10 @@ type = "layers"
 # Top to bottom (#729). The order is the real import graph: runtime builds the
 # transports; transport attaches budget, telemetry and cache control; auth and
 # those features read config; config reads cost, endpoints and header names;
-# everything reports through errors. Two deviations from the order sketched in
-# #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
+# everything reports through errors. classifier (the classify() registry,
+# #210) sits beside cost and the rest, over _policy_spec (its match-spec
+# checks); it fills a hook slot in errors, so errors never imports it. Two
+# deviations from the order sketched in #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
 # through lastcall.request_id; and _wire sits below _verify, because the
 # verification placeholders name wire headers. A sibling group with `|` is
 # independent: its members never import each other. `exhaustive` makes a new
@@ -609,7 +611,8 @@ layers = [
     "budget | cache | cachecontrol | telemetry | toolspec",
     "auth | correlation | spanflush",
     "config",
-    "cost | endpoints | header_names | reactions | refusals",
+    "classifier | cost | endpoints | header_names | reactions | refusals",
+    "_policy_spec",
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",

@@ -34,6 +34,10 @@ donkey.usage.cache_write_tokens   = 128
 donkey.usage.reasoning_tokens     = 96
 ```
 
+A refusal typed by a [custom policy registration](https://docs.donkey-kit.dev/custom-policies.md) records its
+slug verbatim as `donkey.policy.type`, for example `acme_salary_block`, so the
+span and your policy's own logs share one string.
+
 The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
 semantic conventions have no pinned key for — cached / cache-write prompt tokens
 and reasoning-model thinking tokens. They are read from the response `usage`

@@ -67,6 +67,13 @@ flowchart TD
 `GatewayUnavailable` never reaches `classify()`: it is raised when there is no
 response to classify.
 
+A gateway policy of your own, such as a PDK policy, sends a shape none of these
+rules know, so it lands on one of the "other 4xx" rows. Register the shape with
+`classify.register()` to type it as an exception you define. A registered shape
+is checked after every built-in policy rule and before the `UpstreamRequestError`
+and unconfirmed-`PolicyViolation` rows, so a built-in shape always wins. See
+[Custom policies](https://docs.donkey-kit.dev/custom-policies.md).
+
 `RequestRateLimitExceeded` is the `429` of the gateway's stock `rate-limiting`
 policy, which counts requests rather than tokens. It is a subclass of
 `PolicyViolation` and a sibling of `TokenBudgetExceeded`, not a subclass of it.
@@ -403,6 +410,9 @@ except openai.APIStatusError as e:
     if isinstance(governed, PIIDetected):
         print("blocked, entities:", governed.entities)
 ```
+
+A shape registered with [`classify.register()`](https://docs.donkey-kit.dev/custom-policies.md) comes back as
+its registered type here too.
 
 The blocking client from `donkey.llm.client(sync=True)` behaves identically here.
 Drop the `await`: it is the same OpenAI SDK raising the same

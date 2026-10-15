@@ -485,7 +485,7 @@ _PII_REFUSAL = {"error": {"type": "pii_detected", "message": "PII detected."}}
 
 async def test_overridden_header_names_survive_classify_round_trip() -> None:
     """#363: with the header names overridden, the ids the transport SENT are the
-    ids ``classify()`` reads back — not ``None`` because ``_sent_ids`` looked up
+    ids ``classify()`` reads back — not ``None`` because ``sent_ids`` looked up
     the default placeholder names. The transport stamps the resolved names on
     ``request.extensions``; read-back honours them without importing config.
 

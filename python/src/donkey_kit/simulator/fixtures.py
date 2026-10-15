@@ -310,13 +310,19 @@ def fixture_bytes(directory: str, name: str) -> bytes:
 @dataclass(frozen=True)
 class Fixture:
     """A fully resolved captured shape: what the simulator serves and what the
-    tests assert against. ``body`` is ``b""`` for the empty-body captures."""
+    tests assert against. ``body`` is ``b""`` for the empty-body captures.
+
+    ``verbatim_headers`` marks a shape whose every header is a discriminator:
+    the response a ``classify.register()`` entry describes (#210), which
+    :func:`replay_headers` then replays whole instead of filtering through the
+    capture allow-list."""
 
     shape: str
     status: int
     headers: dict[str, str]
     body: bytes
     content_type: str | None
+    verbatim_headers: bool = False
 
 
 def load(shape: str) -> Fixture:
@@ -361,7 +367,7 @@ def replay_headers(fixture: Fixture) -> dict[str, str]:
     for key, value in fixture.headers.items():
         if key == "content-type":
             continue
-        if key in _KEEP_EXACT or key.startswith(_KEEP_PREFIX):
+        if fixture.verbatim_headers or key in _KEEP_EXACT or key.startswith(_KEEP_PREFIX):
             out[key] = value
     return out
 

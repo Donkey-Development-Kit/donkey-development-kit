@@ -974,6 +974,10 @@ def _kind(obj: object) -> str:
         return "class"
     if inspect.isfunction(obj):
         return "function"
+    # An SDK instance with methods, e.g. ``classify`` (#210); typing aliases
+    # are callable too, so the test is the instance's own type.
+    if type(obj).__module__.startswith("donkey_kit.") and callable(obj):
+        return "callable object"
     return "type alias"
 
 

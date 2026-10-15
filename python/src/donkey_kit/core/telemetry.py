@@ -46,16 +46,9 @@ from .correlation import (
 
 if TYPE_CHECKING:
     from .config import DonkeyConfig
-from .errors import (
-    AgentKilled,
-    ContentSafetyBlocked,
-    DonkeyError,
-    PIIDetected,
-    PolicyViolation,
-    PromptInjectionBlocked,
-    RequestRateLimitExceeded,
-    TokenBudgetExceeded,
-)
+# The DONKEY_POLICY_TYPE slug lives beside the refusal registry it consults
+# (#210); re-exported here, where the span code and its callers read it.
+from .classifier import policy_type_slug
 
 __all__ = [
     "DONKEY_BUDGET_REMAINING",
@@ -421,26 +414,6 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
 
 
 # --- GenAI chat span (#192, BG §1.6) ----------------------------------------
-# Most-specific subclass first: a PIIDetected is also a PolicyViolation.
-_POLICY_SLUGS: tuple[tuple[type[DonkeyError], str], ...] = (
-    (TokenBudgetExceeded, "token_budget"),
-    (RequestRateLimitExceeded, "request_rate_limit"),
-    (PIIDetected, "pii_detected"),
-    (PromptInjectionBlocked, "injection"),
-    (ContentSafetyBlocked, "content_safety"),
-    (AgentKilled, "agent_killed"),
-    (PolicyViolation, "policy_violation"),
-)
-
-
-def policy_type_slug(error: DonkeyError) -> str | None:
-    """The :data:`DONKEY_POLICY_TYPE` value for a classified refusal, or ``None``
-    for a non-policy error (auth / upstream / transport) that carries no
-    governance allow-or-refuse decision."""
-    for kind, slug in _POLICY_SLUGS:
-        if isinstance(error, kind):
-            return slug
-    return None
 
 
 def build_genai_attributes(

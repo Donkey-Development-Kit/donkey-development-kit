@@ -9,12 +9,18 @@ which adapters an agent resolved. Those are private details of
 another package's underscore members, every such access lives here, in one
 private module, under one justified ruff ``SLF001`` exemption
 (``pyproject.toml``). Nothing in the production layers imports this module.
+
+It also holds the reset seam for ``classify.register()``'s process-wide
+registry (#210), so a registration one test makes never leaks into the next.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import contextlib
+from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Protocol
+
+from .core import classifier
 
 if TYPE_CHECKING:
     from .core.transport import DonkeyAsyncClient, DonkeyClient
@@ -24,6 +30,7 @@ if TYPE_CHECKING:
 __all__ = [
     "SwappableClient",
     "http_clients",
+    "isolated_classify",
     "resolved_adapters",
     "swap_transport",
     "transport_of",
@@ -61,3 +68,19 @@ def http_clients(donkey: Donkey) -> tuple[DonkeyAsyncClient, DonkeyClient]:
 def resolved_adapters(donkey: Donkey) -> Mapping[str, Adapter]:
     """The adapters resolved on ``donkey`` so far, by attribute name."""
     return donkey._adapter_cache
+
+
+@contextlib.contextmanager
+def isolated_classify() -> Iterator[classifier.Classifier]:
+    """Snapshot ``classify.register()``'s registry and restore it on exit (#210).
+
+    Registrations made before entry (e.g. at import time by the module that
+    defines the custom types) stay; registrations made inside are dropped on
+    exit, including on failure. Yields the process-wide ``classify``. The
+    conformance plugin's ``donkey`` and ``classify_registry`` fixtures wrap a
+    test in this."""
+    snapshot = classifier.classify.registered()
+    try:
+        yield classifier.classify
+    finally:
+        classifier._restore(snapshot)

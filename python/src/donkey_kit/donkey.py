@@ -28,6 +28,8 @@ from .core import _verify
 from .core.auth import AuthProvider
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope, cache_scope
+from .core.classifier import Classifier
+from .core.classifier import classify as _classify
 from .core.config import ConfigOverrides, DonkeyConfig
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
@@ -665,6 +667,30 @@ class Donkey:
         Docs: https://docs.donkey-kit.dev/refusal-handlers
         """
         return self._runtime.reactions.on(refusal)
+
+    @property
+    def classify(self) -> Classifier:
+        """The process-wide refusal classifier (`BG §2.2`): the same object as
+        ``donkey_kit.classify``. Call it to type an error response, or register
+        a custom gateway policy's refusal shape on it::
+
+            class SalaryLeakBlocked(PolicyViolation):
+                remediation = "Salary figures may not leave HR. Ask the user to open the HR portal."
+
+            donkey.classify.register(
+                match=dict(status=403, error_type="acme_salary_block"),
+                raises=SalaryLeakBlocked,
+            )
+
+        A registration is process-wide, not per ``Donkey``: ``classify()`` also
+        runs where no ``Donkey`` exists (the transport, ``classify(err.response)``
+        bridging, ``donkey doctor``), and every path must type a refusal the same
+        way. Handlers (:meth:`on`) and spans pick a registered type up with no
+        extra wiring.
+
+        Docs: https://docs.donkey-kit.dev/custom-policies
+        """
+        return _classify
 
     def simulate(self, error: type[DonkeyError], *, times: int = 1) -> AbstractContextManager[None]:
         """Inject a real gateway refusal in-process, no server (#190, BG §1.5).

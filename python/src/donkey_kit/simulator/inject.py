@@ -9,7 +9,8 @@ against, so the injected refusal is the real shape — and it asserts that
 round-trip at enter time ("same files, both fail together", BG §1.4 / BG §1.5).
 
 Framework isolation (the layered architecture): this module imports only ``httpx``, the
-framework-free ``core.errors`` taxonomy, and the sibling fixtures loader — never
+framework-free ``core.errors`` taxonomy and ``core.classifier`` registry, and the
+sibling fixtures loader — never
 a web framework — so it is safe on the base import path. It is a dev-only
 simulator sibling, kept out of the five production layers by the import-linter
 contract; ``donkey.py`` (the orchestrator) imports it lazily inside
@@ -25,6 +26,7 @@ from typing import Any, cast
 import httpx
 
 from .._testing import SwappableClient, swap_transport, transport_of
+from ..core.classifier import classify as _registry
 from ..core.errors import (
     AgentKilled,
     AuthError,
@@ -149,16 +151,15 @@ def resolve_fixture(error: type[DonkeyError]) -> Fixture:
     back to it, asserting that round-trip. Raises ``TypeError`` for a non-error
     type and ``ValueError`` for an unmapped one (verification discipline: no silent miss)."""
     if not (isinstance(error, type) and issubclass(error, DonkeyError)):
-        raise TypeError(
-            f"simulate() expects a DonkeyError subclass, got {error!r}. "
-            f"Supported: {', '.join(sorted(e.__name__ for e in _EXC_TO_SHAPE))}."
-        )
+        raise TypeError(f"simulate() expects a DonkeyError subclass, got {error!r}. {_supported()}")
     shape = _EXC_TO_SHAPE.get(error)
     if shape is None:
+        registered = _registered_fixture(error)
+        if registered is not None:
+            return registered
         raise ValueError(
-            f"simulate() cannot inject {error.__name__}: no captured fixture maps "
-            f"back to it via classify(). Supported: "
-            f"{', '.join(sorted(e.__name__ for e in _EXC_TO_SHAPE))}."
+            f"simulate() cannot inject {error.__name__}: no captured fixture or "
+            f"classify.register() entry maps back to it via classify(). {_supported()}"
         )
     fixture = load(shape)
     # 'Same files, both fail together': the injected bytes MUST classify() back
@@ -178,6 +179,37 @@ def resolve_fixture(error: type[DonkeyError]) -> Fixture:
             f"not the requested {error.__name__}; the fixture and classify() have drifted."
         )
     return fixture
+
+
+def _registered_fixture(error: type[DonkeyError]) -> Fixture | None:
+    """The response a ``classify.register()`` entry for ``error`` describes
+    (#210), when one classifies back to it. A registered type has no capture:
+    the spec's own synthesised example is its fixture, the same response the
+    registration checks ran through the built-in rules. ``None`` when no entry
+    raises ``error``, or each one ties with another registration."""
+    for reg in _registry.registered():
+        if reg.raises is not error:
+            continue
+        example = reg.example()
+        if isinstance(classify(example), error):
+            return Fixture(
+                shape=f"registered:{error.__name__}",
+                status=example.status_code,
+                headers={
+                    name: value
+                    for name, value in example.headers.items()
+                    if name not in ("content-type", "content-length")
+                },
+                body=example.content,
+                content_type=example.headers.get("content-type"),
+                verbatim_headers=True,
+            )
+    return None
+
+
+def _supported() -> str:
+    names = ", ".join(sorted(e.__name__ for e in _EXC_TO_SHAPE))
+    return f"Supported: {names}, or a type registered with classify.register()."
 
 
 @contextlib.contextmanager
