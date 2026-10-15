@@ -25,6 +25,7 @@ import httpx
 from ..budget import Budget
 from ..config import DonkeyConfig
 from ..errors import (
+    AgentKilled,
     ConfigError,
     DonkeyError,
     GatewayUnavailable,
@@ -202,6 +203,20 @@ class _GovernedPipeline(_CheckedEndpoints):
                 record_outcome(typed)
             return typed
         return None
+
+    def _observe_kill(self, violation: PolicyViolation | None) -> bool:
+        """Whether ``violation`` is the gateway's kill switch (BG §2.6, #220),
+        handing it to the budget first so every ``pace()`` loop on it stops.
+        Called once a send has settled and its span is closed. ``True`` means
+        the client flushes spans next, so the kill's own span is exported
+        before the agent exits; with telemetry off there are none to flush.
+        The kill is never retried: :func:`~.policy.decide_retry` finishes on
+        any 4xx, and ``_mark_terminal`` tells the provider SDK not to retry."""
+        if not isinstance(violation, AgentKilled):
+            return False
+        if self._budget is not None:
+            self._budget.observe_refusal(violation)
+        return self._cfg.telemetry
 
     def _settle(
         self, request: httpx.Request, response: httpx.Response, gspan: GenAiSpan

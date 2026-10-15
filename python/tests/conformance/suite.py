@@ -69,6 +69,11 @@ CONFORMANCE_SCENARIOS = [
     # (BG §2.1, #208, #209). Only adapters routed through our httpx client run
     # handlers, so CrewAI records an asserted exemption below.
     "refusal_handler_cannot_unrefuse",
+    # The gateway's Agent Kill Switch refusal reaches user code as AgentKilled,
+    # is sent once with retries on, runs no donkey.on(...) handler, wakes and
+    # stops a sibling pace() loop, and flushes spans (BG §2.6, #220). All of it
+    # happens in our transport, so CrewAI records an asserted exemption below.
+    "agent_killed_stops_cleanly",
 ]
 
 # Where each scenario runs (#749), as pytest node ids relative to ``python/``.
@@ -102,6 +107,9 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
     "refusal_handler_cannot_unrefuse": (
         "tests/conformance/test_handlers_cannot_unrefuse.py::test_a_handler_never_turns_a_refusal_into_a_success",
         "tests/conformance/test_handlers_cannot_unrefuse.py::test_a_success_comes_only_from_a_new_governed_request",
+    ),
+    "agent_killed_stops_cleanly": (
+        "tests/conformance/test_agent_killed_stops_cleanly.py::test_a_kill_stops_the_agent_and_its_pace_loops",
     ),
 }
 
@@ -172,6 +180,16 @@ _CREWAI_HANDLER_EXEMPTION = (
     "reach our _on_refusal hook and donkey.on(...) handlers do not run for it (#208)."
 )
 
+# agent_killed_stops_cleanly: the kill latches into the Budget and flushes spans
+# at our transport's _governed_send (#220), which CrewAI's calls never pass
+# through. Mirrors transport="framework" in its AdapterCapabilities (#726).
+_CREWAI_KILL_EXEMPTION = (
+    "CrewAI's native OpenAI provider owns the transport, so a kill-switch refusal "
+    "never reaches our transport: it does not stop donkey.budget.pace() loops or "
+    "flush spans, and CrewAI's own rate-limit retry decides whether it is re-sent "
+    "(#220)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # CrewAI raises a framework error the bridge cannot type. ADK records no
     # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
@@ -182,5 +200,6 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "jwt_token_refreshed": _CREWAI_JWT_EXEMPTION,
         "typed_refusal_bridged": _CREWAI_REFUSAL_EXEMPTION,
         "refusal_handler_cannot_unrefuse": _CREWAI_HANDLER_EXEMPTION,
+        "agent_killed_stops_cleanly": _CREWAI_KILL_EXEMPTION,
     },
 }

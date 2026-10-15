@@ -109,6 +109,12 @@ example in a serverless handler or a script that checks its collector before it
 exits, that call only reaches DDK's spans when they go through the global
 provider. Turn the flag on, or set your own provider.
 
+One exit is flushed for you. When the gateway's Agent Kill Switch refuses a call,
+DDK force-flushes both DDK's own provider and the global one before
+[`AgentKilled`](https://docs.donkey-kit.dev/errors.md) reaches your code, waiting up to 2 seconds for each. So
+the kill's own span, and the spans before it, are exported even if the agent exits
+straight away. A failed export never replaces the `AgentKilled`.
+
 Opt out of telemetry entirely with a single flag:
 
 ```bash

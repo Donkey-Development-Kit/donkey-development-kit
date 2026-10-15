@@ -140,12 +140,14 @@ Beside it:
   (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
   level, plus the optional `opentelemetry` lazily.
 - **core is layered too:** `runtime` → `transport` → `budget | cache |
-  cachecontrol | telemetry | toolspec` → `auth | correlation` → `config` →
+  cachecontrol | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `cost | endpoints | header_names | reactions | refusals` → `errors` → `_refusal_body |
   lastcall | masking` → `_verify` → `_wire`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
   through it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
   sans-IO, it decides each next step and the clients sleep and send.
+  `spanflush` flushes the span providers on a kill (#220); it imports nothing
+  from core, so the transport reaches it without telemetry exposing its provider.
   `_refusal_body` holds the refusal-body parsers (`errors`' JSON
   envelope and PII-span helpers), split out to keep `errors` under its size
   ceiling. This contract is exhaustive too.
@@ -527,6 +529,12 @@ everything else. The captures established, for example, that:
 - An **Agent Kill Switch** block is a **403** whose nested error carries
   `code: "agent_killed"` (no `type`, no `www-authenticate`) → `AgentKilled`
   (#694). It is keyed on the body `code`, ahead of the auth and generic-4xx rules.
+  It also stops the agent (#220): the transport hands it to the `Budget`,
+  which latches it, so `pace()` and `wait_for_reset()` raise it and any
+  sibling task asleep in `wait_for_reset()` wakes and raises it. With
+  telemetry on, the transport then force-flushes the span providers
+  (`core/spanflush.py`, bounded at 2s per provider) before the response
+  returns, so the kill's span is exported before the agent exits.
 - A **content-safety / guardrail** block (Azure Content Safety, Amazon Bedrock
   Guardrails) is a **403** with a vendor `x-llm-proxy-<vendor>-…-action: reject`
   header → `ContentSafetyBlocked`, its flagged categories parsed from the sibling
