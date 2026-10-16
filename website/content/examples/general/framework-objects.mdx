@@ -101,7 +101,7 @@ Run context
 ```text
 ════════════════════════════════════════════════════════════════════════════════════════
 Demo 08 — native framework objects
-One deep adapter, seven at connection_kwargs(), and no wrappers anywhere.
+Two deep adapters, six at connection_kwargs(), and no wrappers anywhere.
 ════════════════════════════════════════════════════════════════════════════════════════
 
 Run context
@@ -111,7 +111,7 @@ Run context
 
 [1] One call per framework, and what came back
 
-  langgraph        deep — the conformance-gated adapter
+  langgraph        deep — conformance-gated
     donkey.langgraph.chat_model(…)
   PASS  returned langchain_openai.chat_models.base.ChatOpenAI
 
@@ -123,15 +123,15 @@ Run context
     donkey.strands.model(…)
     not installed: pip install "donkey-kit[strands]"
 
-  agent_framework  connection_kwargs()
+  agent_framework  connection_kwargs() + policy_middleware(); model=
     donkey.agent_framework.chat_client(…)
     not installed: pip install "donkey-kit[agent_framework]"
 
-  openai_agents    no connection_kwargs() — builds its own client
+  openai_agents    deep; connection_kwargs() → {openai_client}
     donkey.openai_agents.model(…)
-    not installed: pip install "donkey-kit[openai-agents]"
+  PASS  returned agents.models.openai_chatcompletions.OpenAIChatCompletionsModel
 
-  anthropic        connection_kwargs()
+  anthropic        connection_kwargs(); native route needs Format=Anthropic
     donkey.anthropic.client()
     not installed: pip install "donkey-kit[anthropic]"
 
@@ -154,25 +154,57 @@ Run context
     api_key                        client-id-enforced
     default_headers.client_id      <redacted> (36 chars)
     default_headers.client_secret  <redacted> (40 chars)
-    http_async_client              <donkey_kit.core.transport.DonkeyAsyncClient object at 0x10aac2a50>
-    http_client                    <donkey_kit.core.transport.DonkeyClient object at 0x10aac2c10>
+    http_async_client              <donkey_kit.core.transport.httpx2._ReusableBridgedClient object at 0x10ac683b0>
+    http_client                    <donkey_kit.core.transport.httpx2._ReusableBridgedSyncClient object at 0x1143e3e30>
     max_retries                    0
     use_responses_api              False
 
-  Same base URL, same verified client_id / client_secret pair, handed to the framework's
-  own constructor. Bringing a framework up to the deep bar is demand-driven and happens
-  one at a time, so this is not a stepping stone that everything is queued behind — it
-  is the supported surface.
-  LangGraph is the only adapter held to the conformance bar. It sets
-  use_responses_api=False so ChatOpenAI calls /chat/completions, the one route every
-  upstream behind an OpenAI-format proxy serves.
+  Same base URL, same default client_id / client_secret pair (llm_proxy_auth='client-
+  id'), handed to the framework's own constructor. The model-wallet JWT ingress is a
+  different mode — demo 13. Bringing a framework up to the deep bar is demand-driven and
+  happens one at a time, so this is not a stepping stone that everything is queued
+  behind — it is the supported surface.
+  LangGraph and the Agents SDK are the adapters held to the conformance bar. LangGraph
+  keeps ChatOpenAI on /chat/completions (use_responses_api=False), the one route every
+  upstream behind an OpenAI-format proxy serves; pass use_responses_api=True to opt into
+  /responses on an OpenAI-routed proxy.
+
+[3] Agents SDK: connection_kwargs() is one governed client object
+
+    kwargs = donkey.openai_agents.connection_kwargs()
+    OpenAIChatCompletionsModel(model="gpt-4o", **kwargs)
+
+  keys                   ['openai_client']
+  openai_client          openai.AsyncOpenAI
+  base_url               https://demo-gateway.example.invalid/openai-sdk/
+  PASS  one key — header and transport injection travel as one object
+
+  The Agents SDK does not take loose URL/header kwargs. It takes a client. So
+  connection_kwargs() returns that client, and model() is
+  OpenAIChatCompletionsModel(model=..., **those kwargs). donkey.openai() is still the
+  raw factory; donkey.openai_agents is this adapter.
+
+[4] Agent Framework: policy_middleware() ends the run on a refusal
+
+    agent = Agent(
+        client=donkey.agent_framework.chat_client("gpt-4o"),
+        middleware=[donkey.agent_framework.policy_middleware()],
+    )
+    with donkey.simulate(PIIDetected):
+        await agent.run("my email is jane@example.com")   # → PIIDetected
+
+  agent-framework is not installed — pip install "donkey-kit[agent_framework]"
+  The behaviour is still the point: with the middleware, a policy refusal ends
+  agent.run() as the typed PIIDetected, not as the framework's generic client error, and
+  the loop does not retry it.
 
 What is and is not verified here
 ────────────────────────────────
   The proxy contract these objects are configured against is live-verified: the base URL
   shape, the credential header pair, the rejection shapes. The adapters themselves are
   held to three bars (docs/verified-apis.md §8):
-  • Conformance-tested against the simulator: the raw client and LangGraph.
+  • Conformance-tested against the simulator: the raw client, LangGraph and the OpenAI
+    Agents SDK.
   • Signature-confirmed offline: every other adapter, ADK's model() included. The SDK's
     scripts/verify_frameworks.py builds each native object against the installed
     framework; Agent Framework's model= kwarg (not model_id) is confirmed that way
@@ -199,12 +231,12 @@ depth:
 
 ```python
 ROSTER = [
-    ("langgraph", "chat_model", True, "deep — the conformance-gated adapter"),
+    ("langgraph", "chat_model", True, "deep — conformance-gated"),
     ("adk", "model", True, "connection_kwargs()"),
     ("strands", "model", True, "connection_kwargs()"),
-    ("agent_framework", "chat_client", True, "connection_kwargs()"),
-    ("openai_agents", "model", True, "no connection_kwargs() — builds its own client"),
-    ("anthropic", "client", False, "connection_kwargs()"),
+    ("agent_framework", "chat_client", True, "connection_kwargs() + policy_middleware(); model="),
+    ("openai_agents", "model", True, "deep; connection_kwargs() → {openai_client}"),
+    ("anthropic", "client", False, "connection_kwargs(); native route needs Format=Anthropic"),
     ("crewai", "llm", True, "connection_kwargs()"),
     ("llamaindex", "llm", True, "connection_kwargs()"),
 ]
