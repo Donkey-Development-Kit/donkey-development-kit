@@ -18,7 +18,7 @@ repos:
       - id: gitleaks
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.0
+    rev: v0.17.1
     hooks:
       # ruff reads python/pyproject.toml, the closest config to each file.
       - id: ruff-check
