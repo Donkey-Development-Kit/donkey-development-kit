@@ -144,9 +144,12 @@ def test_verify_frameworks_covers_every_adapter_factory() -> None:
 
 
 def test_nightly_matrix_is_the_conformance_tested_set() -> None:
+    # (framework, extra) pairs, as in framework-legs: openai_agents installs the
+    # hyphenated `openai-agents` extra.
     workflow = yaml.safe_load(_NIGHTLY.read_text())
-    matrix = workflow["jobs"]["matrix"]["strategy"]["matrix"]["framework"]
-    assert set(matrix) == {attr for attr, s in ADAPTERS.items() if s.conformance_tested}
+    include = workflow["jobs"]["matrix"]["strategy"]["matrix"]["include"]
+    pairs = {(entry["framework"], entry["extra"]) for entry in include}
+    assert pairs == {(attr, s.extra) for attr, s in ADAPTERS.items() if s.conformance_tested}
 
 
 def test_nightly_framework_legs_match_adapters() -> None:

@@ -67,8 +67,20 @@ async def _langgraph(donkey: Donkey) -> None:
     await builder.compile().ainvoke({"messages": [("user", "hi")]})
 
 
-# The conformance-tested roster (BG §1.8): the raw client and LangGraph.
-SURFACES: dict[str, Call] = {"openai": _openai, "langgraph": _langgraph}
+async def _openai_agents(donkey: Donkey) -> None:
+    agents = pytest.importorskip("agents")
+    agent = agents.Agent(name="conformance", model=donkey.openai_agents.model("gpt-4o"))
+    # Tracing off: the Agents SDK would otherwise export spans to OpenAI.
+    await agents.Runner.run(agent, "hi", run_config=agents.RunConfig(tracing_disabled=True))
+
+
+# The conformance-tested roster (BG §1.8): the raw client, LangGraph and the
+# OpenAI Agents SDK (#223).
+SURFACES: dict[str, Call] = {
+    "openai": _openai,
+    "langgraph": _langgraph,
+    "openai_agents": _openai_agents,
+}
 
 
 def _mask(ctx: RefusalContext) -> None:

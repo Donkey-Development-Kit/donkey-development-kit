@@ -45,7 +45,7 @@ depth is the adapter roster's `conformance_tested`.
 | [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.gemini()` | `connection_kwargs()` | Live-verified |
 | [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `donkey.strands.model()` | `connection_kwargs()` | Live-verified |
 | [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | Live-verified |
-| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | `connection_kwargs()` | Live-verified |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | Conformance-tested | Live-verified |
 | [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `donkey.anthropic.client()` | `connection_kwargs()` | Live-verified |
 | [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `donkey.crewai.llm()` | `connection_kwargs()` | Live-verified |
 | [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `donkey.llamaindex.llm()` | `connection_kwargs()` | Live-verified |

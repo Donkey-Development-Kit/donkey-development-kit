@@ -80,8 +80,8 @@ The jobs, grouped by what they protect:
   `llamaindex-transport`, `agents-strands-last-call`) cover tests that only
   mean something with that framework present.
 - **Promises made in the docs.** `benchmark` enforces the < 1 ms span overhead
-  (BG §1.6) and trends it across runs. `quickstart` and `langgraph-demo` run
-  the documented examples against the local simulator. `docs-llms-drift`
+  (BG §1.6) and trends it across runs. `quickstart`, `langgraph-demo` and
+  `openai-agents-demo` run the documented examples against the local simulator. `docs-llms-drift`
   regenerates `llms.txt` and fails on any diff. `docs-site` builds the site
   and checks its internal links and anchors (#759).
 - **Supply chain.** `pip-audit` audits a fresh resolve of the base install
@@ -96,7 +96,7 @@ The jobs, grouped by what they protect:
 
 The nightly run resolves fresh against the newest upstream releases, with no
 constraints (ADR 0007 rule 4). `matrix` re-verifies the conformance-tested
-adapter (LangGraph) against §8 signatures, and `framework-legs` runs every
+adapters (LangGraph, the OpenAI Agents SDK) against §8 signatures, and `framework-legs` runs every
 `ADAPTERS` entry (#748). `lowest-direct` installs base, the framework-free
 extras and each framework extra at their declared floors (`uv pip install
 --resolution lowest-direct`, Python 3.10), runs their suites, and fails a leg

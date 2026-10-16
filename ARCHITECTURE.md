@@ -465,7 +465,7 @@ field it depends on. Their status, generated from the ledger's §8 rows (§8.4
 maps each factory to its row):
 
 <!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
-LangGraph is conformance-tested against the simulator in CI.
+LangGraph and OpenAI Agents SDK are conformance-tested against the simulator in CI.
 Each adapter factory's constructor row in §8 of the ledger reads **live-verified**.
 <!-- END GENERATED: framework-status-summary -->
 
@@ -641,11 +641,11 @@ Not every framework gets the same CI guarantee, and the roster is deliberately
 scoped rather than exhaustive. The former Tier 1 / Tier 2 split is **retired**
 along with the eight-adapter roster (#197):
 
-- **Deep — conformance-tested against the simulator:** LangGraph, and only
-  LangGraph (alongside the raw client). Held to the conformance suite; the
-  `ADAPTERS` registry marks it `conformance_tested=True`.
+- **Deep — conformance-tested against the simulator:** LangGraph and the
+  OpenAI Agents SDK (alongside the raw client). Held to the conformance suite;
+  the `ADAPTERS` registry marks them `conformance_tested=True`.
 - **Supported at `connection_kwargs()`:** Google ADK, Strands, Microsoft Agent
-  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. None is
+  Framework, Anthropic SDK, CrewAI, LlamaIndex. None is
   conformance-tested, and none is carried in the nightly framework matrix — a
   demoted framework returns with its own conformance run when demand justifies it.
 - **Out of scope:** AutoGen and Semantic Kernel — Microsoft positions Agent
@@ -657,9 +657,14 @@ constructor is in [Verification discipline](#verification-discipline) above,
 generated from §8.
 
 This makes `connection_kwargs()` *more* load-bearing, not less: it is the
-entire supported surface for seven of the eight. A second framework is
-promoted to deep support from demand evidence, one at a time — never guessed
-up front. The demotion landed in #197; deepening LangGraph is tracked in #198.
+entire supported surface for six of the eight. A framework is promoted to deep
+support from demand evidence, one at a time — never guessed up front. The
+demotion landed in #197 and deepening LangGraph in #198; the OpenAI Agents SDK
+was promoted second, on Phase 1 demand (#223), and the next promotion is #244.
+Its one asserted exemption is `approval_round_trip`: under `Runner.run` the
+Agents SDK turns an exception raised inside a `function_tool` into a
+tool-result string, so the approval gate never pauses (#213 owns the native
+`needs_approval` mapping).
 
 **Conformance is how "supported" is proven, not asserted.** One suite
 (`python/tests/conformance/suite.py`) runs identically against every adapter. A
@@ -685,7 +690,7 @@ keeps the table and each adapter's `AdapterCapabilities` equal:
 when `transport` is `"framework"`.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
-matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
+matrix shrinks to the deep adapters, and the deliverable becomes the **customer-facing
 pytest plugin** users run against their own agent (#191).
 
 ---

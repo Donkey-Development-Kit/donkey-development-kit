@@ -125,9 +125,9 @@ Configuration and first-agent walkthroughs live on the
 
 ## Framework support
 
-The roster is deliberately **one deep, seven shallow** (`BG §1.8`): one adapter
-held to the full conformance bar, the rest supported through the three-line
-`connection_kwargs()` escape hatch. Every framework below returns its framework's
+The roster is deliberately **two deep, six shallow** (`BG §1.8`): LangGraph and
+the OpenAI Agents SDK are held to the full conformance bar, the rest supported
+through the three-line `connection_kwargs()` escape hatch. Every framework below returns its framework's
 **own native object** — never a wrapper.
 
 <!-- BEGIN GENERATED: framework-status (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
@@ -141,7 +141,7 @@ depth is the adapter roster's `conformance_tested`.
 | Google ADK | `donkey.adk.gemini()` | `connection_kwargs()` | **Live-verified** |
 | Strands | `donkey.strands.model()` | `connection_kwargs()` | **Live-verified** |
 | MS Agent Framework | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | **Live-verified** |
-| OpenAI Agents SDK | `donkey.openai_agents.model()` | `connection_kwargs()` | **Live-verified** |
+| OpenAI Agents SDK | `donkey.openai_agents.model()` | **Conformance-tested** | **Live-verified** |
 | Anthropic SDK | `donkey.anthropic.client()` | `connection_kwargs()` | **Live-verified** |
 | CrewAI | `donkey.crewai.llm()` | `connection_kwargs()` | **Live-verified** |
 | LlamaIndex | `donkey.llamaindex.llm()` | `connection_kwargs()` | **Live-verified** |
@@ -152,8 +152,9 @@ installed framework (`scripts/verify_frameworks.py`), with no live round-trip.
 **Live-verified** means a real round-trip through a governed proxy. The raw
 client (`donkey.llm.client()`) is conformance-tested too.
 
-`connection_kwargs()` works for all eight; a second deep adapter is promoted from
-demand evidence, one at a time (#223/#244) — never guessed up front. See the
+`connection_kwargs()` works for all eight; a deep adapter is promoted from demand
+evidence, one at a time — never guessed up front. The OpenAI Agents SDK was the
+second, on Phase 1 demand (#223); the next is #244. See the
 [framework pages](https://docs.donkey-kit.dev/frameworks/)
 for each. Which framework versions are supported and tested is on the site's
 [version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility)
@@ -168,7 +169,7 @@ conformance-tested against the simulator. For the adapters (each factory is
 listed under [Framework support](#framework-support)):
 
 <!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
-LangGraph is conformance-tested against the simulator in CI.
+LangGraph and OpenAI Agents SDK are conformance-tested against the simulator in CI.
 Each adapter factory's constructor row in §8 of the ledger reads **live-verified**.
 <!-- END GENERATED: framework-status-summary -->
 
@@ -202,6 +203,7 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 | CrewAI | refusal handler cannot un-refuse | CrewAI's native OpenAI provider owns the transport, so its refusals never reach the SDK's `_on_refusal` hook and handlers registered with [`donkey.on(...)`](https://docs.donkey-kit.dev/refusal-handlers) do not run for its calls. Every other adapter runs them, and none can turn a refusal into a success (#208, #209). |
 | CrewAI | custom policy typed | For the same reason, a refusal shape registered with [`classify.register()`](https://docs.donkey-kit.dev/custom-policies) is neither typed by `donkey.run()` nor seen by `donkey.on(...)` handlers for CrewAI's calls. Every other adapter raises the registered type, runs its handlers and records its slug as `donkey.policy.type` (#210). |
 | CrewAI | agent kill stops cleanly | CrewAI's native OpenAI provider owns the transport, so a kill-switch refusal never reaches the SDK's transport: it does not stop [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget) loops or flush spans, and CrewAI's own rate-limit retry decides whether the call is re-sent. Every other adapter sends the kill once, stops every pace loop on the same `Donkey`, and flushes spans before the `AgentKilled` reaches your code (#220). |
-| CrewAI | approval round trip | CrewAI's native OpenAI provider owns the transport, so when an approved [`@donkey.tool(approval="required")`](https://docs.donkey-kit.dev/hitl) resumes, its model call carries neither the approval's correlation ID nor a typed refusal. The pause and the approver's span event work as for any Python code. Every other adapter resumes the call under the decision's correlation ID, and the gateway still judges it: a refusal comes back typed (#211, #212). |
+| CrewAI | approval round trip | CrewAI's native OpenAI provider owns the transport, so when an approved [`@donkey.tool(approval="required")`](https://docs.donkey-kit.dev/hitl) resumes, its model call carries neither the approval's correlation ID nor a typed refusal. The pause and the approver's span event work as for any Python code. Every other adapter but the OpenAI Agents SDK resumes the call under the decision's correlation ID, and the gateway still judges it: a refusal comes back typed (#211, #212). |
+| OpenAI Agents SDK | approval round trip | Under `Runner.run`, the Agents SDK turns an exception raised inside a `function_tool` into a tool-result string for the model (its default `failure_error_function`), so the `ApprovalRequired` an approval-gated tool raises never reaches your code, the tool does not run, and there is no pause to resume. Mapping DDK approvals onto the SDK's own `needs_approval` interruptions is #213. Every other scenario passes against a `Runner.run` (#223). |
 
 Each exemption matches what the adapter reports in `donkey.<framework>.capabilities()` (a frozen `AdapterCapabilities` per factory), and a unit test keeps the two in step (#726).

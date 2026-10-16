@@ -37,7 +37,7 @@ install takes each framework's newest release.
 |  |  |  | `litellm` | 1.84 | 1.105.1 |  |
 | Strands | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.60.0 | None known |
 | MS Agent Framework | `connection_kwargs()` | `[agent_framework]` | `agent-framework` | 1.13 | 1.21.0 | None known |
-| OpenAI Agents SDK | `connection_kwargs()` | `[openai-agents]` | `openai-agents` | 0.20 | 0.23.1 | None known |
+| OpenAI Agents SDK | **Conformance-tested** | `[openai-agents]` | `openai-agents` | 0.20 | 0.23.1 | None known |
 |  |  |  | `openai` | 2.45 | 3.31.0 |  |
 | Anthropic SDK | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 1.14.0 | None known |
 | CrewAI | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.28 | None known |

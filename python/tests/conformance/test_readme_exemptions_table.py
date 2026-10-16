@@ -42,6 +42,7 @@ _PUBLIC_ONLY = {"retries_token_budget"}
 # Table label -> the ADAPTERS keys the row names.
 _FRAMEWORKS = {
     "CrewAI": ("crewai",),
+    "OpenAI Agents SDK": ("openai_agents",),
 }
 
 

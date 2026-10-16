@@ -132,6 +132,13 @@ _COMBOS: tuple[Combo, ...] = (
         "langgraph-demo",
     ),
     Combo(
+        "openai-agents-demo",
+        ("llm", "openai-agents", "local", "otel"),
+        True,
+        ("3.11",),
+        "openai-agents-demo",
+    ),
+    Combo(
         "agent-framework-middleware",
         ("llm", "agent_framework"),
         True,
