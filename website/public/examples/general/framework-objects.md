@@ -4,10 +4,11 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 
 No adapter returns a wrapper. `donkey.langgraph.chat_model(...)` hands back a
 real `langchain_openai.ChatOpenAI`, so everything your framework can do with a
-model still works and nothing new appears in your stack traces. LangGraph is
-the one deep, conformance-gated adapter; the other seven are supported at
-`connection_kwargs()` — the SDK gives you the base URL, headers and client
-configuration, and you pass them to the framework's own constructor. The
+model still works and nothing new appears in your stack traces. LangGraph and
+the OpenAI Agents SDK are the deep, conformance-gated adapters; the other six
+are supported at `connection_kwargs()` — the SDK gives you the base URL,
+headers and client configuration, and you pass them to the framework's own
+constructor. The
 companion example covers model handles: `resolve()` gives a local capability
 handle, and `list_models(live=True)` raises a `ConfigError` explaining that the
 proxy has no catalog endpoint rather than guessing one.

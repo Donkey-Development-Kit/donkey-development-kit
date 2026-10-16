@@ -192,6 +192,7 @@ def test_every_adapter_factory_has_a_ledger_status() -> None:
     # Every §8 framework row has had a live round-trip (#34), so every factory reads live.
     assert {s.verification for s in rows} == {"live-verified"}
     assert by_call["donkey.langgraph.chat_model()"].conformance_tested
+    assert by_call["donkey.openai_agents.model()"].conformance_tested
 
 
 def test_ledger_status_labels_are_never_invented() -> None:

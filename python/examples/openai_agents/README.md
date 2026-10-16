@@ -1,43 +1,90 @@
-# OpenAI Agents SDK example
+# OpenAI Agents SDK support-triage demo — Scenario A
 
-Supported at connection_kwargs(). The example's `build(donkey)` makes one governed
-call through `agents.Runner.run` and runs through the public conformance kit
-(`tests/conformance/test_adapter_contract.py`).
+Deep adapter — conformance-tested (BG §1.8), promoted by Phase 1 demand (#223).
+The counterpart of `examples/langgraph`: Scenario A end to end, from
+`pip install` to a drafted reply, **against the local simulator only** — no
+Anypoint credentials, no real gateway — through the Agents SDK's own
+`Runner.run`.
 
-**What this shows.** A one-line factory call gets you a *native*
-`agents.OpenAIChatCompletionsModel` already pointed at the governed Agent Fabric LLM
-proxy. Because the adapter builds the underlying `AsyncOpenAI` client itself,
-header **and** transport injection are both available (full injection) — correct
-base URL, `client_id`/`client_secret` header auth (not bearer), attribution
-headers, and the SDK's shared transport (retry/telemetry hooks). The returned
-object is the OpenAI Agents SDK's own class, not a wrapper, so it drops straight
-into `agents.Agent(model=...)`.
+**What this shows.** A real `agents.Agent`, built on the governed Agent Fabric
+LLM proxy and run by `agents.Runner`. `build(donkey)` is a **conformance-able
+agent factory**: it returns an object with an awaitable `run(text)`, which is
+exactly the shape the customer-facing conformance plugin drives (and the SDK's
+own `tests/conformance/test_openai_agents_conformance.py` runs the four
+scenarios against). `main()` then runs the full Scenario A:
 
-> 📖 **Prefer reading to running?** The canonical walkthrough — install,
-> configure, and the manual equivalent — is in the docs:
+- **No gateway.** It boots the local gateway simulator (BG §1.4) in-process on
+  an ephemeral port and points the SDK at it. The simulator ignores auth, so the
+  credentials are throwaway placeholders.
+- **The PII masking branch.** The simulator runs the `pii_block:every=5`
+  scenario (#188): every 5th `POST /chat/completions` (the route
+  `OpenAIChatCompletionsModel` calls) is served the `pii-detected` 403. The demo
+  triages five support tickets, so the fifth — which we fill with an SSN — is
+  blocked. `Runner.run` is wrapped in `typed_refusals()`, so it surfaces as a
+  typed `PIIDetected`, not the OpenAI client's generic `PermissionDeniedError`.
+  *The simulator triggers on the **count**, not by scanning content — it is a
+  fixture replay, not a PII detector; the SSN just makes the blocked ticket read
+  true. The gateway does the real detection.*
+- **Spans to a local OTLP collector.** `collector.py` is the same stdlib
+  OTLP/HTTP receiver the LangGraph demo bundles. Pointing
+  `OTEL_EXPORTER_OTLP_ENDPOINT` at it lights up the SDK's zero-config export
+  (#194) — every governed call's span (refusals included) flows over the wire
+  and is counted. The Agents SDK's own tracing is off (`RunConfig(
+  tracing_disabled=True)`): its default exporter posts to OpenAI, not the proxy.
+- **Correlation reaches the agent for free.** The agent's dynamic
+  `instructions` log `current_correlation_id()` without it being passed through
+  the run context: `Runner.run` resolves instructions and runs `function_tool`s
+  inside the caller's context, and every model request carries the run id on
+  the shared transport (`tests/unit/test_openai_agents_correlation.py`).
+
+It is timed in CI (the `openai-agents-demo` job) so this first-run experience
+can never silently rot.
+
+The model is a *native* `agents.OpenAIChatCompletionsModel` whose `AsyncOpenAI`
+client the adapter builds itself — correct base URL (no `/v1`),
+`client_id`/`client_secret` header auth (not bearer), attribution headers, and
+the SDK's shared transport (retry/telemetry hooks). It is the Agents SDK's own
+class, not a wrapper, so it drops straight into `agents.Agent(model=...)`.
+
+**One asserted exemption.** Under `Runner.run`, an exception raised inside a
+`function_tool` becomes a tool-result string for the model, so an
+`@donkey.tool(approval="required")` gate never pauses the run. It is recorded in
+the conformance kit's `KNOWN_LIMITATIONS` and pinned by a test; mapping DDK
+approvals onto the SDK's own `needs_approval` interruptions is #213.
+
+> 📖 **Prefer reading to running?** The canonical walkthrough is in the docs:
+> **[Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk)**,
+> and the framework page is
 > **[OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai)**.
 > This README duplicates the runnable essentials on purpose so you can run it in
 > place; if the two ever differ, the docs page is canonical.
 
-## Run
+## Run (no gateway, no credentials)
 
 ```bash
-pip install "donkey-kit[openai-agents]"
+pip install "donkey-kit[llm,openai-agents,local,otel]"
 
-export DONKEY_LLM_PROXY_URL="https://<ingress-gw>/<instance>/"   # note: no /v1
-export DONKEY_LLM_PROXY_CLIENT_ID="<consumer client id>"
-export DONKEY_LLM_PROXY_CLIENT_SECRET="<consumer client secret>"
-
-python examples/openai_agents/main.py
+# Run as a module (it imports the bundled collector as a sibling):
+python -m examples.openai_agents.main
 ```
 
-The script reads its settings the way the SDK does (environment variables, then
-`.donkey-kit.toml`) and stops with the SDK's own `ConfigError`, listing every
-missing setting, when one is absent. For a model-wallet proxy, set
-`DONKEY_LLM_PROXY_AUTH=jwt` and `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` instead of
-the client id and secret; the wallet JWT comes from an `AuthProvider` you pass
-to `Donkey(llm_auth=...)` in your own code
-([Configuration](https://docs.donkey-kit.dev/reference/configuration#jwt--model-wallet-auth-mode)).
+- `openai-agents` — the `openai-agents` package (`agents.Agent`, `Runner`).
+- `local` — the local gateway simulator (`starlette` + `uvicorn`).
+- `otel` — the OpenTelemetry SDK + OTLP exporter, so spans reach the collector.
+
+Expected output: four drafted replies, ticket 5 **blocked** by `PIIDetected`,
+the budget remaining, and the span count the local OTLP collector received. The
+whole run takes about a second.
+
+## Verify it against conformance
+
+The same `build` factory the demo uses is what the customer-facing conformance
+plugin drives — run the four scenarios against it exactly as a customer would
+against their own agent:
+
+```bash
+pytest --donkey-conformance --donkey-agent=examples.openai_agents.main:build
+```
 
 ## The manual equivalent
 

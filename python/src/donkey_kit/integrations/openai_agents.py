@@ -1,6 +1,10 @@
 """OpenAI Agents SDK adapter (``donkey.openai_agents``) (BG §1.8).
 
-Supported at connection_kwargs() — not conformance-tested (BG §1.8).
+A deep, conformance-gated adapter (BG §1.8), promoted next to LangGraph by
+Phase 1 demand (#223). It records one asserted exemption, ``approval_round_trip``
+(tests/conformance/suite.py): the SDK turns an exception a ``function_tool``
+raises into a tool-result string, so the approval gate cannot pause a
+``Runner.run``; mapping it onto the SDK's ``needs_approval`` is #213.
 
 The OpenAI Agents SDK (pip ``openai-agents``, import ``agents``) models a
 provider as an ``OpenAIChatCompletionsModel`` wrapping an ``AsyncOpenAI`` client.
@@ -11,7 +15,13 @@ accepts a pre-built OpenAI client (BG §1.8).
 Point the SDK's *model* at the proxy per-agent rather than mutating the global
 default client, so one process can mix governed and ungoverned models.
 
-Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
+Correlation IDs reach every tool for free: ``Runner.run`` runs dynamic
+instructions and ``function_tool`` bodies inside the caller's context, so a run
+id bound with ``donkey.run(id=…)`` is visible via ``current_correlation_id()``
+there, and every model call the run makes carries it on the shared transport
+(``tests/unit/test_openai_agents_correlation.py``).
+
+Class names / kwargs: docs/verified-apis.md §8.
 """
 
 from __future__ import annotations
@@ -37,8 +47,8 @@ class OpenAIAgentsAdapter(Adapter):
     ``OpenAIChatCompletionsModel``. ``connection_kwargs()`` returns the same
     settings for building it yourself.
 
-    Supported at ``connection_kwargs()`` only (`BG §1.8`): that accessor is the
-    supported surface, and the factories are conveniences over it.
+    A deep, conformance-tested adapter (`BG §1.8`, #223): its factory and
+    ``connection_kwargs()`` are held to the conformance suite in CI.
 
     Raises:
         ImportError: ``donkey.openai_agents`` was read without the ``openai-agents``

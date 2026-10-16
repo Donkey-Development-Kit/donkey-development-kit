@@ -50,11 +50,12 @@ def test_smoke_with_the_framework_missing_raises(
         asyncio.run(script.smoke(attr))
 
 
-@pytest.mark.parametrize("attr", sorted(set(_EXAMPLES) - {"langgraph"}))
+@pytest.mark.parametrize("attr", sorted(set(_EXAMPLES) - {"langgraph", "openai_agents"}))
 def test_example_with_the_framework_missing_still_exits_zero(
     attr: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # LangGraph's example owns a different missing-framework path (its own smoke).
+    # The deep adapters' simulator demos own a different missing-framework path
+    # (their own smoke: the langgraph-demo and openai-agents-demo jobs).
     _hide_framework(attr, monkeypatch)
     example = _load_script().load_example(attr)
     example.main()  # prints guidance, returns

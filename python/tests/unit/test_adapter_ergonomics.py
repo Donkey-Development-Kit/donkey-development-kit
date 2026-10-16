@@ -104,7 +104,7 @@ def test_module_level_factory_matches_method(monkeypatch: pytest.MonkeyPatch) ->
     assert model.temperature == 0.1  # kwargs pass through
 
 
-# --- connection_kwargs() works for all eight (one deep, seven shallow, #197) ---
+# --- connection_kwargs() works for all eight (two deep, six shallow, #197) ---
 #
 # The roster cut (BG §1.8) leaves seven frameworks supported at connection_kwargs()
 # only, so that accessor is their entire governed surface — each gets a test here
@@ -244,19 +244,19 @@ def test_openai_agents_connection_kwargs_carry_governed_client() -> None:
     assert client.max_retries == 0  # we retry in transport (BG §1.1)
 
 
-def test_only_langgraph_is_conformance_tested() -> None:
-    """One deep, seven shallow (BG §1.8, #197): LangGraph is the sole
-    conformance-tested adapter; the other seven are present in the registry but
-    supported at connection_kwargs() only — no code deletion."""
+def test_langgraph_and_openai_agents_are_conformance_tested() -> None:
+    """Two deep, six shallow (BG §1.8, #197): LangGraph and the OpenAI Agents SDK
+    (promoted by Phase 1 demand, #223) are the conformance-tested adapters; the
+    other six are present in the registry but supported at connection_kwargs()
+    only — no code deletion."""
     from donkey_kit.integrations import ADAPTERS
 
     tested = {k for k, spec in ADAPTERS.items() if spec.conformance_tested}
-    assert tested == {"langgraph"}
+    assert tested == {"langgraph", "openai_agents"}
     assert set(ADAPTERS) - tested == {
         "adk",
         "strands",
         "agent_framework",
-        "openai_agents",
         "anthropic",
         "crewai",
         "llamaindex",

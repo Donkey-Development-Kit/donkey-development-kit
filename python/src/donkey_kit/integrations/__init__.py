@@ -117,11 +117,11 @@ class AdapterSpec:
     cls: str
     extra: str
     #: Whether this adapter is held to the conformance suite in CI (`BG §1.8`).
-    #: The roster is deliberately "one deep, seven shallow": only LangGraph is
-    #: conformance-tested; the other seven are supported at ``connection_kwargs()``
-    #: only. A second deep adapter is promoted from demand evidence, one at a time
-    #: (#223/#244) — never guessed up front. Replaces the retired Tier 1/Tier 2
-    #: split (#197).
+    #: The roster is deliberately "two deep, six shallow": LangGraph and the
+    #: OpenAI Agents SDK are conformance-tested; the other six are supported at
+    #: ``connection_kwargs()`` only. A deep adapter is promoted from demand
+    #: evidence, one at a time (the Agents SDK by Phase 1 demand, #223; #244) —
+    #: never guessed up front. Replaces the retired Tier 1/Tier 2 split (#197).
     conformance_tested: bool
     #: The modules the adapter's factories need, probed with
     #: ``importlib.util.find_spec`` so ``Donkey.__getattr__`` can raise the
@@ -190,10 +190,10 @@ def missing_framework_error(extra: str, missing: str | None = None) -> ImportErr
     )
 
 
-# One deep, seven shallow (`BG §1.8`, #197): only LangGraph is conformance-tested;
-# the other seven are supported at ``connection_kwargs()`` only. All eight keep
-# their adapter, extra, and module-level factory — this is a support-tier flag,
-# not a removal.
+# Two deep, six shallow (`BG §1.8`, #197, #223): LangGraph and the OpenAI Agents
+# SDK are conformance-tested; the other six are supported at
+# ``connection_kwargs()`` only. All eight keep their adapter, extra, and
+# module-level factory — this is a support-tier flag, not a removal.
 ADAPTERS: dict[str, AdapterSpec] = {
     "langgraph": AdapterSpec(
         "langgraph",
@@ -234,7 +234,7 @@ ADAPTERS: dict[str, AdapterSpec] = {
         ".openai_agents",
         "OpenAIAgentsAdapter",
         "openai-agents",
-        conformance_tested=False,
+        conformance_tested=True,
         probe=("agents",),
     ),
     "anthropic": AdapterSpec(

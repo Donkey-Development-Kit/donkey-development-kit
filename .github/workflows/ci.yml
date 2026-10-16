@@ -539,8 +539,9 @@ jobs:
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       # #748: the whole suite (`python -m pytest -q`), not a file list, so every
       # test that needs this leg's framework runs against the real install
-      # instead of skipping. For LangGraph, the one deep adapter (BG §1.8), that
-      # includes its refusal mapping, run correlation and conformance tests.
+      # instead of skipping. For the deep adapters (BG §1.8), LangGraph and the
+      # OpenAI Agents SDK, that includes their refusal mapping, run correlation
+      # and conformance tests.
       # Then the strict example smoke: build the example's native object and
       # drive it through the conformance kit in-process, with no network.
       - name: whole suite and strict example smoke
@@ -688,9 +689,48 @@ jobs:
       - name: typecheck, run, and conformance-test the Scenario-A demo
         run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s langgraph-demo
 
+  openai-agents-demo:
+    # #223 / BG §1.8: the second deep adapter's worked demo, the counterpart of
+    # langgraph-demo. examples/openai_agents/main.py triages the same five
+    # support tickets through a real agents.Agent under Runner.run against the
+    # simulator only, blocks the PII-laden one as a typed PIIDetected (the
+    # pii_block:every=5 scenario on /chat/completions), and exports every call's
+    # span to a bundled local OTLP collector. Timed on a clean runner, then the
+    # same build() factory is re-run through the customer-facing conformance
+    # plugin. Unlike langgraph-demo there is no separate mypy step: `agents.*`
+    # stays in pyproject's follow_imports = "skip" list (src/ imports it
+    # statically), so typecheck-and-lint already checks examples.openai_agents.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - id: pip-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/openai-agents-demo-py3.11.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.11-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,openai-agents,local,otel]" --group dev -c constraints/openai-agents-demo-py3.11.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+      # The demo under a 120 s bound, then conformance against its build()
+      # factory: the `--donkey-conformance` invocation a team runs on its agent.
+      - name: run and conformance-test the Scenario-A demo
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s openai-agents-demo
+
   # The nightly framework matrix (§8.4) is .github/workflows/nightly-matrix.yml.
   # It resolves fresh against the newest upstream releases: `matrix` re-checks
-  # LangGraph, the one conformance-tested adapter, against §8 signatures, and
+  # LangGraph and the OpenAI Agents SDK, the conformance-tested adapters,
+  # against §8 signatures, and
   # `framework-legs` runs every ADAPTERS entry (#748). A red run opens or
   # updates one `nightly-failure` tracking issue (#755).
 
@@ -905,6 +945,7 @@ jobs:
       - benchmark
       - quickstart
       - langgraph-demo
+      - openai-agents-demo
       - docs-llms-drift
       - docs-site
       - pip-audit

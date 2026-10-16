@@ -228,7 +228,7 @@ and its session drift apart.
 | `all-extra-resolves` | `pip install --dry-run ".[all]"` resolves within 5 minutes, per Python |
 | `anthropic-stacks(...)`, `adk-stacks(...)`, `agent-framework-middleware`, `llamaindex-transport`, `agents-strands-last-call` | each framework's tests, with that framework installed |
 | `adapter-contract(<extra>)` | the whole suite and the strict example smoke, one leg per `ADAPTERS` extra |
-| `benchmark`, `quickstart`, `langgraph-demo` | the span-overhead budget, the gateway-free quickstart, and the Scenario-A demo with its conformance run |
+| `benchmark`, `quickstart`, `langgraph-demo`, `openai-agents-demo` | the span-overhead budget, the gateway-free quickstart, and the deep adapters' Scenario-A demos with their conformance runs |
 | `new-dependencies`, `commit-identities` | a new direct dependency exists on PyPI; no placeholder git identity in the branch's commits. Both compare against `origin/develop`, so `git fetch origin` first |
 | `openai-1x` | `[llm]` with openai held below 2: the default suite and `-m local_gateway` (#769) |
 | `docs-llms-drift` | the website's `npm test`, and the committed llms artifacts match a fresh generation (needs Node) |
