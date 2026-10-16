@@ -1,9 +1,9 @@
 """LangGraph / LangChain adapter (BG §1.8).
 
-The one deep, conformance-gated adapter (BG §1.8, #198). Header injection is
-FULL (``default_headers`` + our custom async http client, so every governed
-header and transport hook is on the wire) — the best-case adapter, which is why
-it is the one held to the conformance bar.
+The first deep, conformance-gated adapter (BG §1.8, #198); the OpenAI Agents
+SDK joined it in #223. Header injection is FULL (``default_headers`` + our
+custom async http client, so every governed header and transport hook is on the
+wire) — the best-case adapter, which is why it is held to the conformance bar.
 
 Three things hang off it, in ergonomic-lockstep with the rest of the SDK:
 
@@ -69,7 +69,7 @@ class LangGraphAdapter(Adapter):
     ``ChatOpenAI``. ``connection_kwargs()`` returns the same settings for building
     it yourself.
 
-    The one deep, conformance-tested adapter (`BG §1.8`): its factories and
+    A deep, conformance-tested adapter (`BG §1.8`): its factories and
     ``connection_kwargs()`` are held to the conformance suite in CI.
 
     ``typed_refusals()`` (shared by every adapter) re-raises a gateway refusal as

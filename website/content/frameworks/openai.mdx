@@ -12,14 +12,20 @@ import AdapterErrorTaxonomyNote from '../../components/adapter-error-taxonomy-no
 The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
 `OpenAIChatCompletionsModel` backed by a pre-built `AsyncOpenAI` client. The
 adapter builds that client itself, with the SDK's shared HTTP client and proxy
-headers, and hands it to the Agents SDK ready-made.
+headers, and hands it to the Agents SDK ready-made. It is a **deep adapter**
+(`BG §1.8`, promoted by Phase 1 demand in #223): like LangGraph, it runs the full
+conformance suite in CI.
 
 **What you get**
 
 - A native `agents.OpenAIChatCompletionsModel`.
 - Full header **and** transport injection — both travel together in one
   `AsyncOpenAI` object.
-- Supported at `connection_kwargs()`.
+- Per-run correlation IDs that reach the agent's dynamic instructions, its
+  `function_tool`s, and every model request.
+- Typed gateway refusals (`PIIDetected`, `TokenBudgetExceeded`, …) out of
+  `Runner.run`, inside [`typed_refusals()`](/errors).
+- A conformance suite you can run against your own agent.
 
 ## Install
 
@@ -127,6 +133,29 @@ class LastCallHooks(RunHooks):
 agent = Agent(name="assistant", model=donkey.openai_agents.model("gpt-4o"))
 await Runner.run(agent, "hello", hooks=LastCallHooks())
 ```
+
+## Run the conformance suite against your own agent
+
+The suite that tests this adapter is also a pytest plugin you can point at
+your own agent:
+
+```bash
+pytest --donkey-conformance --donkey-agent=my_app:build
+```
+
+`build` returns an object with an awaitable `run(text)`. The suite checks that
+it doesn't retry a budget refusal, surfaces `PIIDetected` typed, carries the
+correlation ID into its logs, and tolerates a response with no budget headers.
+The [`examples/openai_agents`](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/openai_agents)
+factory has exactly this shape: it wraps `Runner.run` in `typed_refusals()`.
+[Support triage with the OpenAI Agents SDK](/scenarios/support-triage-agents-sdk)
+walks through it end to end. See [Testing](/testing).
+
+One scenario of the SDK's internal conformance matrix is an asserted exemption:
+**approval round trip**. Under `Runner.run`, an exception raised inside a
+`function_tool` becomes a tool-result string for the model, so an
+`@donkey.tool(approval="required")` gate never pauses the run. Mapping DDK
+approvals onto the Agents SDK's own `needs_approval` interruptions is #213.
 
 ## Notes
 

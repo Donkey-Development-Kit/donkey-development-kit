@@ -32,7 +32,7 @@ reason = "[llm] and [openai-agents]: the raw OpenAI-compatible proxy client, don
 reviewed = 2026-10-03
 
 [packages.langgraph]
-reason = "[langgraph]: the graph runtime for the deep, conformance-gated adapter (#198)."
+reason = "[langgraph]: the graph runtime for the first deep, conformance-gated adapter (#198)."
 reviewed = 2026-10-03
 
 [packages.langchain-openai]
@@ -56,8 +56,8 @@ reason = "[agent_framework]: Microsoft Agent Framework's OpenAIChatClient and po
 reviewed = 2026-10-03
 
 [packages.openai-agents]
-reason = "[openai-agents]: the OpenAI Agents SDK, supported at connection_kwargs()."
-reviewed = 2026-10-03
+reason = "[openai-agents]: the OpenAI Agents SDK, the second deep, conformance-gated adapter (#223)."
+reviewed = 2026-10-16
 
 [packages.anthropic]
 reason = "[anthropic]: the Anthropic client, supported at connection_kwargs() (#701)."

@@ -67,9 +67,10 @@ from typing import Any
 # (framework key, factory import path, factory fn, expected native module.Class,
 #  the distribution the framework's extra installs — "installed" means it is present)
 # This stays the FULL eight-framework roster so the offline signature check can be
-# run on demand for any of them. Only LangGraph is conformance-tested and carried
-# in the nightly matrix (BG §1.8, #197); the other seven are supported at
-# connection_kwargs() only. `--only <fw>` targets one framework.
+# run on demand for any of them. Only LangGraph and the OpenAI Agents SDK are
+# conformance-tested and carried in the nightly matrix (BG §1.8, #197, #223); the
+# other six are supported at connection_kwargs() only. `--only <fw>` targets one
+# framework.
 FRAMEWORKS: list[tuple[str, str, str, str, str]] = [
     (
         "langgraph",

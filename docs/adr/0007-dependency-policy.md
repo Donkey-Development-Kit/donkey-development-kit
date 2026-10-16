@@ -34,9 +34,10 @@ encoded as pins. What the repo does today:
   related (the `[all]` resolution failure in #697 is that kind of break).
 - **Nightly.** `.github/workflows/nightly-matrix.yml` runs at 06:00 UTC: the
   base gates, a `pip install --dry-run ".[all]"` on Python 3.10 to 3.12, and,
-  for LangGraph only (the one conformance-tested adapter, `BG §1.8`), the
-  signature check, the example smoke and `pytest`, all against the newest
-  releases. The other seven framework extras aren't in it.
+  for the conformance-tested adapters only (`BG §1.8`: LangGraph, and the
+  OpenAI Agents SDK since #223), the signature check, the example smoke and
+  `pytest`, all against the newest releases. The other six framework extras
+  aren't in it.
 
 ## Decision
 

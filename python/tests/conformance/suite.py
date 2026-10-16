@@ -1,13 +1,14 @@
 """The adapter conformance kit — the most important test asset.
 
 ONE suite, defined once. Its blocking scope is the conformance-tested roster
-(BG §1.8, #197): LangGraph and the raw client. A framework is "supported" only
-when it passes all of it, or records a documented, asserted exemption in
-``KNOWN_LIMITATIONS`` (the conformance kit) — never a silent skip. The other seven frameworks
-are supported at ``connection_kwargs()`` only and are not run here; a demoted
-framework rejoins with its own conformance run when demand promotes it
-(#223/#244). The customer-facing pytest plugin (``donkey_kit.conformance``, #191)
-is the shipped deliverable this internal matrix backstops.
+(BG §1.8, #197): LangGraph, the OpenAI Agents SDK (promoted by Phase 1 demand,
+#223) and the raw client. A framework is "supported" only when it passes all of
+it, or records a documented, asserted exemption in ``KNOWN_LIMITATIONS`` (the
+conformance kit) — never a silent skip. The other six frameworks are supported
+at ``connection_kwargs()`` only and are not run here; a demoted framework
+rejoins with its own conformance run when demand promotes it (#223/#244). The
+customer-facing pytest plugin (``donkey_kit.conformance``, #191) is the shipped
+deliverable this internal matrix backstops.
 
 Every name below has an executable body (#749). ``SCENARIO_BODIES`` maps each
 one to the tests that run it, and ``test_transport_exemptions.py`` checks that
@@ -226,6 +227,20 @@ _CREWAI_APPROVAL_EXEMPTION = (
     "pause and the approver's span event work as for any Python code (#211)."
 )
 
+# approval_round_trip for the OpenAI Agents SDK: the Agents SDK runs a
+# function_tool under its own failure_error_function, which by default turns any
+# exception the tool raises into a fixed tool-result string for the model. The
+# gate's ApprovalRequired is such an exception, so it never reaches user code and
+# the run carries on. Mapping a DDK approval onto the SDK's native needs_approval
+# interruption is #213. test_approval_round_trip.py pins the swallowed pause, so
+# this entry fails loudly once #213 changes it.
+_AGENTS_APPROVAL_EXEMPTION = (
+    "The Agents SDK turns an exception raised inside a function_tool into a "
+    "tool-result string for the model (its default failure_error_function), so "
+    "ApprovalRequired never reaches user code and there is no pause to resume; "
+    "the native needs_approval mapping is #213."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # CrewAI raises a framework error the bridge cannot type. ADK records no
     # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
@@ -239,5 +254,9 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "custom_policy_typed": _CREWAI_CUSTOM_POLICY_EXEMPTION,
         "agent_killed_stops_cleanly": _CREWAI_KILL_EXEMPTION,
         "approval_round_trip": _CREWAI_APPROVAL_EXEMPTION,
+    },
+    # Deep since #223: every other scenario runs against a Runner.run surface.
+    "openai_agents": {
+        "approval_round_trip": _AGENTS_APPROVAL_EXEMPTION,
     },
 }

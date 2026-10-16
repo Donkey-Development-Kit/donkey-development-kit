@@ -144,6 +144,11 @@ CI_INSTALLS: dict[str, str | None] = {
         'pip install -e ".[llm,langgraph,local,otel]" --group dev '
         "-c constraints/langgraph-demo-py3.11.txt"
     ),
+    "openai-agents-demo": (
+        "python -m pip install --upgrade pip && "
+        'pip install -e ".[llm,openai-agents,local,otel]" --group dev '
+        "-c constraints/openai-agents-demo-py3.11.txt"
+    ),
     "docs-llms-drift": None,
     "docs-site": None,
     "pip-audit": "python -m pip install --upgrade pip",
@@ -531,6 +536,23 @@ def langgraph_demo(session: nox.Session) -> None:
         "-q",
         "--donkey-conformance",
         "--donkey-agent=examples.langgraph.main:build",
+    )
+
+
+@nox.session(name="openai-agents-demo", python="3.11")
+def openai_agents_demo(session: nox.Session) -> None:
+    """The second deep adapter's Scenario A, then through conformance (#223, BG §1.8)."""
+    _install(session, "openai-agents-demo")
+    # No mypy step: agents.* is follow_imports = "skip", so typecheck-and-lint
+    # already covers examples.openai_agents (unlike langgraph-demo, #721).
+    _bounded(session, 120, "-m", "examples.openai_agents.main")
+    session.run(
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--donkey-conformance",
+        "--donkey-agent=examples.openai_agents.main:build",
     )
 
 

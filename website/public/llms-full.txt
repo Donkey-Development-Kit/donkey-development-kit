@@ -283,7 +283,7 @@ Omni Gateway later is an environment change, not a code change.
 | Capability | Status | Learn more |
 |---|---|---|
 | Governed model access (the raw client, through the proxy data plane) | Live | [Frameworks](https://docs.donkey-kit.dev/frameworks.md) |
-| Framework adapters for 8 frameworks | Conformance-tested LangGraph · Live-verified the rest | [Frameworks](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) |
+| Framework adapters for 8 frameworks | Conformance-tested LangGraph and OpenAI Agents SDK · Live-verified the rest | [Frameworks](https://docs.donkey-kit.dev/frameworks.md#supported-frameworks) |
 | Typed refusals | Live | [Typed refusals](https://docs.donkey-kit.dev/errors.md) |
 | Budget & pacing | Live | [Budget & pacing](https://docs.donkey-kit.dev/budget.md) |
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
@@ -779,7 +779,7 @@ depth is the adapter roster's `conformance_tested`.
 | [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.gemini()` | `connection_kwargs()` | Live-verified |
 | [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `donkey.strands.model()` | `connection_kwargs()` | Live-verified |
 | [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | Live-verified |
-| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | `connection_kwargs()` | Live-verified |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | Conformance-tested | Live-verified |
 | [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `donkey.anthropic.client()` | `connection_kwargs()` | Live-verified |
 | [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `donkey.crewai.llm()` | `connection_kwargs()` | Live-verified |
 | [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `donkey.llamaindex.llm()` | `connection_kwargs()` | Live-verified |
@@ -1040,7 +1040,7 @@ install takes each framework's newest release.
 |  |  |  | `litellm` | 1.84 | 1.105.1 |  |
 | [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.61.1 | None known |
 | [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `connection_kwargs()` | `[agent_framework]` | `agent-framework` | 1.13 | 1.22.0 | None known |
-| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `connection_kwargs()` | `[openai-agents]` | `openai-agents` | 0.20 | 0.24.0 | None known |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | Conformance-tested | `[openai-agents]` | `openai-agents` | 0.20 | 0.24.0 | None known |
 |  |  |  | `openai` | 2.45 | 3.31.0 |  |
 | [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 1.15.0 | None known |
 | [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.28 | None known |
@@ -2016,14 +2016,20 @@ Status: Live. Shipped, and verified against a real governed gateway.
 The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
 `OpenAIChatCompletionsModel` backed by a pre-built `AsyncOpenAI` client. The
 adapter builds that client itself, with the SDK's shared HTTP client and proxy
-headers, and hands it to the Agents SDK ready-made.
+headers, and hands it to the Agents SDK ready-made. It is a **deep adapter**
+(`BG §1.8`, promoted by Phase 1 demand in #223): like LangGraph, it runs the full
+conformance suite in CI.
 
 **What you get**
 
 - A native `agents.OpenAIChatCompletionsModel`.
 - Full header **and** transport injection — both travel together in one
   `AsyncOpenAI` object.
-- Supported at `connection_kwargs()`.
+- Per-run correlation IDs that reach the agent's dynamic instructions, its
+  `function_tool`s, and every model request.
+- Typed gateway refusals (`PIIDetected`, `TokenBudgetExceeded`, …) out of
+  `Runner.run`, inside [`typed_refusals()`](https://docs.donkey-kit.dev/errors.md).
+- A conformance suite you can run against your own agent.
 
 ## Install
 
@@ -2139,6 +2145,29 @@ class LastCallHooks(RunHooks):
 agent = Agent(name="assistant", model=donkey.openai_agents.model("gpt-4o"))
 await Runner.run(agent, "hello", hooks=LastCallHooks())
 ```
+
+## Run the conformance suite against your own agent
+
+The suite that tests this adapter is also a pytest plugin you can point at
+your own agent:
+
+```bash
+pytest --donkey-conformance --donkey-agent=my_app:build
+```
+
+`build` returns an object with an awaitable `run(text)`. The suite checks that
+it doesn't retry a budget refusal, surfaces `PIIDetected` typed, carries the
+correlation ID into its logs, and tolerates a response with no budget headers.
+The [`examples/openai_agents`](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/openai_agents)
+factory has exactly this shape: it wraps `Runner.run` in `typed_refusals()`.
+[Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md)
+walks through it end to end. See [Testing](https://docs.donkey-kit.dev/testing.md).
+
+One scenario of the SDK's internal conformance matrix is an asserted exemption:
+**approval round trip**. Under `Runner.run`, an exception raised inside a
+`function_tool` becomes a tool-result string for the model, so an
+`@donkey.tool(approval="required")` gate never pauses the run. Mapping DDK
+approvals onto the Agents SDK's own `needs_approval` interruptions is #213.
 
 ## Notes
 
@@ -6663,7 +6692,7 @@ terminal before it ever runs on a customer's data.
 
 | Scenario | The job | What it exercises |
 | --- | --- | --- |
-| [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://docs.donkey-kit.dev/errors.md)), [correlation IDs](https://docs.donkey-kit.dev/telemetry.md), [OTel spans](https://docs.donkey-kit.dev/telemetry.md) — the shipped LangGraph demo, end to end |
+| [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://docs.donkey-kit.dev/errors.md)), [correlation IDs](https://docs.donkey-kit.dev/telemetry.md), [OTel spans](https://docs.donkey-kit.dev/telemetry.md) — the shipped LangGraph demo, end to end, and the same job [on the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md) |
 | [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md) | Enrich 50,000 records overnight against a windowed budget, unattended | [Budget pacing](https://docs.donkey-kit.dev/budget.md) (`pace()` / `wait_for_reset()`) and resume, driven by the [simulator's `budget` scenario](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) |
 | [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md) | An internal assistant whose output must clear a content-safety guardrail | [`ContentSafetyBlocked`](https://docs.donkey-kit.dev/errors.md) via the `donkey-sim/content-safety` sentinel, plus per-run correlation |
 
@@ -6794,12 +6823,163 @@ is the framework's own runtime.
 
 ## Where to go next
 
+- [Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md)
+  — the same job on the second deep adapter, through `Runner.run`.
 - [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md) — the same governance, applied to an
   unattended overnight job that paces itself against a budget window.
 - [Typed refusals](https://docs.donkey-kit.dev/errors.md) — the full exception taxonomy the block above lands
   in, with a per-exception "retryable?" cookbook.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — run this same agent factory through the
   conformance suite (`pytest --donkey-conformance`).
+
+---
+
+Source: https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md
+
+# Support triage with the OpenAI Agents SDK
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
+The [support-triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) job, run on the second deep,
+conformance-gated adapter (`BG §1.8`, promoted by Phase 1 demand in #223): an
+`agents.Agent` drafts a one-line reply to each of five support tickets, and the
+fifth, which carries a customer's SSN, comes back as a **typed refusal**. It is
+the same five tickets, the same simulator scenario and the same assertions as
+the LangGraph demo, so you can compare the two frameworks line for line.
+
+`pip install` to a drafted reply against the [local simulator](https://docs.donkey-kit.dev/simulator.md) only
+— no Anypoint credentials, no real gateway.
+
+## What it demonstrates
+
+- **Runs with no gateway.** The demo boots the [local simulator](https://docs.donkey-kit.dev/simulator.md)
+  in-process on an ephemeral port and points the SDK at it; the simulator
+  ignores auth, so the credentials are throwaway placeholders.
+- **The PII-masking branch actually executes.** The simulator runs the
+  `pii_block:every=5` [scenario](https://docs.donkey-kit.dev/simulator.md#scenario-scripting): every fifth
+  `POST /chat/completions` (the route `OpenAIChatCompletionsModel` calls) is
+  served the captured `pii-detected` **403**. The fifth ticket is blocked, and
+  the refusal surfaces out of `Runner.run` as a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md),
+  not the OpenAI client's generic `PermissionDeniedError`.
+- **Correlation reaches the agent for free.** Each ticket runs inside a
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block. The agent's dynamic `instructions`
+  log the run id without it being passed through the run context, because
+  `Runner.run` resolves instructions and runs `function_tool`s inside the
+  caller's context. Every model request carries the id on the wire too.
+- **Every governed call emits an OTel span**, refusals included, exported to a
+  bundled local OTLP collector with [zero config](https://docs.donkey-kit.dev/telemetry.md). The Agents SDK's
+  own tracing is switched off: its default exporter posts to OpenAI, not to your
+  proxy.
+
+## Run it
+
+### Install the extras
+
+```bash
+pip install "donkey-kit[llm,openai-agents,local,otel]"
+```
+
+`openai-agents` brings the framework and the adapter, `local` the simulator,
+`otel` the OpenTelemetry export path.
+
+### Run the demo
+
+From a checkout of the SDK's `python/` directory:
+
+```bash
+python -m examples.openai_agents.main
+```
+
+No environment setup: the demo boots its own simulator, sets its own throwaway
+credentials, and stands up its own local OTLP collector. You'll see one drafted
+reply per routine ticket, a `BLOCKED by policy — PIIDetected` line for the
+PII-laden one, the remaining budget, and the count of spans exported.
+
+## The governed core
+
+The agent is ordinary Agents SDK code; the SDK touches it in exactly two places.
+First, the model is built off a shared `Donkey`, so it rides that instance's
+governed transport:
+
+```python
+from agents import Agent, RunConfig, Runner
+
+agent = Agent(
+    name="triage",
+    instructions=_instructions,
+    model=donkey.openai_agents.model("gpt-4o"),
+)
+```
+
+Second, the call to `Runner.run` is wrapped in
+[`typed_refusals()`](https://docs.donkey-kit.dev/errors.md), so a proxy rejection comes back as a
+`DonkeyError` subclass instead of the OpenAI client's status error:
+
+```python
+from donkey_kit import typed_refusals
+
+async def run(self, text):
+    async with typed_refusals():
+        return await Runner.run(self._agent, text, run_config=RunConfig(tracing_disabled=True))
+```
+
+The caller binds a run id per ticket and catches the typed refusal:
+
+```python
+async with donkey.run(id=f"ticket-{i}"):
+    try:
+        result = await agent.run(f"Draft a one-line support reply to: {ticket}")
+    except PIIDetected as refusal:
+        print(f"  ticket {i}: BLOCKED by policy — PIIDetected ({refusal.policy})")
+```
+
+## Run it through conformance
+
+The demo's `build(donkey)` factory is exactly the shape the customer-facing
+[conformance plugin](https://docs.donkey-kit.dev/testing.md) drives, so the same agent can be held to the
+four public scenarios:
+
+```bash
+pytest --donkey-conformance --donkey-agent=examples.openai_agents.main:build
+```
+
+CI runs both the demo and this conformance pass on every pull request (the
+`openai-agents-demo` job), and the nightly matrix re-runs them against the
+newest Agents SDK release.
+
+  **One asserted exemption: approval round trip.** Under `Runner.run`, the
+  Agents SDK turns an exception raised inside a `function_tool` into a
+  tool-result string for the model, so an `@donkey.tool(approval="required")`
+  gate never pauses the run. It is a documented, test-pinned exemption, not a
+  silent skip; mapping DDK approvals onto the SDK's own `needs_approval`
+  interruptions is tracked in #213. Every other conformance scenario passes.
+
+  **Honest note on the block.** The simulator triggers on the request *count*
+  (`every=5`), not by scanning content — it replays a captured fixture, it is
+  not a PII detector. The real gateway does the detection; here the SSN in
+  ticket five just makes the blocked ticket read true. See
+  [It replays; it does not evaluate](https://docs.donkey-kit.dev/simulator.md#how-the-simulator-works).
+
+## Verification status
+
+The proxy *contract* the demo depends on — the base URL shape (no `/v1`), the
+`client_id`/`client_secret` header pair, the `/chat/completions` route and the
+live-verified rejection shapes including PII — is **live-verified**, and so is
+the `OpenAIChatCompletionsModel` constructor the factory calls (see the
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)).
+`Agent` / `Runner` are the framework's own classes and `Runner.run` is its
+documented API: construction via the SDK factory is the verified surface, and
+everything after is the framework's own runtime.
+
+## Where to go next
+
+- [Support triage on LangGraph](https://docs.donkey-kit.dev/scenarios/support-triage.md) — the same job on
+  the first deep adapter.
+- [OpenAI Agents SDK examples](https://docs.donkey-kit.dev/examples/openai-agents.md) — a tool-calling
+  `Runner`, simulated refusals, and the `/responses` route via
+  `connection_kwargs()`.
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md) — the full exception taxonomy the block above lands
+  in.
 
 ---
 
@@ -8789,10 +8969,11 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 
 No adapter returns a wrapper. `donkey.langgraph.chat_model(...)` hands back a
 real `langchain_openai.ChatOpenAI`, so everything your framework can do with a
-model still works and nothing new appears in your stack traces. LangGraph is
-the one deep, conformance-gated adapter; the other seven are supported at
-`connection_kwargs()` — the SDK gives you the base URL, headers and client
-configuration, and you pass them to the framework's own constructor. The
+model still works and nothing new appears in your stack traces. LangGraph and
+the OpenAI Agents SDK are the deep, conformance-gated adapters; the other six
+are supported at `connection_kwargs()` — the SDK gives you the base URL,
+headers and client configuration, and you pass them to the framework's own
+constructor. The
 companion example covers model handles: `resolve()` gives a local capability
 handle, and `list_models(live=True)` raises a `ConfigError` explaining that the
 proxy has no catalog endpoint rather than guessing one.
@@ -8875,7 +9056,7 @@ Run context
 ```text
 ════════════════════════════════════════════════════════════════════════════════════════
 Demo 08 — native framework objects
-One deep adapter, seven at connection_kwargs(), and no wrappers anywhere.
+Two deep adapters, six at connection_kwargs(), and no wrappers anywhere.
 ════════════════════════════════════════════════════════════════════════════════════════
 
 Run context
@@ -8885,7 +9066,7 @@ Run context
 
 [1] One call per framework, and what came back
 
-  langgraph        deep — the conformance-gated adapter
+  langgraph        deep — conformance-gated
     donkey.langgraph.chat_model(…)
   PASS  returned langchain_openai.chat_models.base.ChatOpenAI
 
@@ -8897,15 +9078,15 @@ Run context
     donkey.strands.model(…)
     not installed: pip install "donkey-kit[strands]"
 
-  agent_framework  connection_kwargs()
+  agent_framework  connection_kwargs() + policy_middleware(); model=
     donkey.agent_framework.chat_client(…)
     not installed: pip install "donkey-kit[agent_framework]"
 
-  openai_agents    no connection_kwargs() — builds its own client
+  openai_agents    deep; connection_kwargs() → {openai_client}
     donkey.openai_agents.model(…)
-    not installed: pip install "donkey-kit[openai-agents]"
+  PASS  returned agents.models.openai_chatcompletions.OpenAIChatCompletionsModel
 
-  anthropic        connection_kwargs()
+  anthropic        connection_kwargs(); native route needs Format=Anthropic
     donkey.anthropic.client()
     not installed: pip install "donkey-kit[anthropic]"
 
@@ -8927,25 +9108,57 @@ Run context
     api_key                        client-id-enforced
     default_headers.client_id      <redacted> (36 chars)
     default_headers.client_secret  <redacted> (40 chars)
-    http_async_client              <donkey_kit.core.transport.DonkeyAsyncClient object at 0x10aac2a50>
-    http_client                    <donkey_kit.core.transport.DonkeyClient object at 0x10aac2c10>
+    http_async_client              <donkey_kit.core.transport.httpx2._ReusableBridgedClient object at 0x10ac683b0>
+    http_client                    <donkey_kit.core.transport.httpx2._ReusableBridgedSyncClient object at 0x1143e3e30>
     max_retries                    0
     use_responses_api              False
 
-  Same base URL, same verified client_id / client_secret pair, handed to the framework's
-  own constructor. Bringing a framework up to the deep bar is demand-driven and happens
-  one at a time, so this is not a stepping stone that everything is queued behind — it
-  is the supported surface.
-  LangGraph is the only adapter held to the conformance bar. It sets
-  use_responses_api=False so ChatOpenAI calls /chat/completions, the one route every
-  upstream behind an OpenAI-format proxy serves.
+  Same base URL, same default client_id / client_secret pair (llm_proxy_auth='client-
+  id'), handed to the framework's own constructor. The model-wallet JWT ingress is a
+  different mode — demo 13. Bringing a framework up to the deep bar is demand-driven and
+  happens one at a time, so this is not a stepping stone that everything is queued
+  behind — it is the supported surface.
+  LangGraph and the Agents SDK are the adapters held to the conformance bar. LangGraph
+  keeps ChatOpenAI on /chat/completions (use_responses_api=False), the one route every
+  upstream behind an OpenAI-format proxy serves; pass use_responses_api=True to opt into
+  /responses on an OpenAI-routed proxy.
+
+[3] Agents SDK: connection_kwargs() is one governed client object
+
+    kwargs = donkey.openai_agents.connection_kwargs()
+    OpenAIChatCompletionsModel(model="gpt-4o", **kwargs)
+
+  keys                   ['openai_client']
+  openai_client          openai.AsyncOpenAI
+  base_url               https://demo-gateway.example.invalid/openai-sdk/
+  PASS  one key — header and transport injection travel as one object
+
+  The Agents SDK does not take loose URL/header kwargs. It takes a client. So
+  connection_kwargs() returns that client, and model() is
+  OpenAIChatCompletionsModel(model=..., **those kwargs). donkey.openai() is still the
+  raw factory; donkey.openai_agents is this adapter.
+
+[4] Agent Framework: policy_middleware() ends the run on a refusal
+
+    agent = Agent(
+        client=donkey.agent_framework.chat_client("gpt-4o"),
+        middleware=[donkey.agent_framework.policy_middleware()],
+    )
+    with donkey.simulate(PIIDetected):
+        await agent.run("my email is jane@example.com")   # → PIIDetected
+
+  agent-framework is not installed — pip install "donkey-kit[agent_framework]"
+  The behaviour is still the point: with the middleware, a policy refusal ends
+  agent.run() as the typed PIIDetected, not as the framework's generic client error, and
+  the loop does not retry it.
 
 What is and is not verified here
 ────────────────────────────────
   The proxy contract these objects are configured against is live-verified: the base URL
   shape, the credential header pair, the rejection shapes. The adapters themselves are
   held to three bars (docs/verified-apis.md §8):
-  • Conformance-tested against the simulator: the raw client and LangGraph.
+  • Conformance-tested against the simulator: the raw client, LangGraph and the OpenAI
+    Agents SDK.
   • Signature-confirmed offline: every other adapter, ADK's model() included. The SDK's
     scripts/verify_frameworks.py builds each native object against the installed
     framework; Agent Framework's model= kwarg (not model_id) is confirmed that way
@@ -8971,12 +9184,12 @@ depth:
 
 ```python
 ROSTER = [
-    ("langgraph", "chat_model", True, "deep — the conformance-gated adapter"),
+    ("langgraph", "chat_model", True, "deep — conformance-gated"),
     ("adk", "model", True, "connection_kwargs()"),
     ("strands", "model", True, "connection_kwargs()"),
-    ("agent_framework", "chat_client", True, "connection_kwargs()"),
-    ("openai_agents", "model", True, "no connection_kwargs() — builds its own client"),
-    ("anthropic", "client", False, "connection_kwargs()"),
+    ("agent_framework", "chat_client", True, "connection_kwargs() + policy_middleware(); model="),
+    ("openai_agents", "model", True, "deep; connection_kwargs() → {openai_client}"),
+    ("anthropic", "client", False, "connection_kwargs(); native route needs Format=Anthropic"),
     ("crewai", "llm", True, "connection_kwargs()"),
     ("llamaindex", "llm", True, "connection_kwargs()"),
 ]
@@ -9901,7 +10114,8 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 
 `donkey.langgraph("…")` returns a real `langchain_openai.ChatOpenAI` with
 `use_responses_api=False`, so calls go to `/chat/completions`, the route every
-upstream serves, on the governed transport. It is the one deep, conformance-gated adapter:
+upstream serves, on the governed transport. It is the first deep, conformance-gated adapter
+(the [OpenAI Agents SDK](https://docs.donkey-kit.dev/examples/openai-agents.md) is the second):
 `donkey.langgraph.typed_refusals()` turns the openai error a graph node raises
 back into the SDK's typed refusal.
 
@@ -10154,6 +10368,11 @@ key, `openai_client`, a governed `AsyncOpenAI`, so the agent stays on the
 live-verified `/responses` route and the SDK owns the transport.
 `donkey.openai_agents.model()` builds a chat-completions model instead. The
 `Runner` re-raises the openai error unchanged, so `classify()` types it.
+
+The Agents SDK is a deep, conformance-gated adapter (`BG §1.8`, #223). For the
+end-to-end walkthrough, a ticket queue with a PII block, correlation and OTel
+spans against the simulator, see
+[Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md).
 
 | # | Script | Shows | Needs |
 | --- | --- | --- | --- |

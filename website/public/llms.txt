@@ -60,6 +60,7 @@
 
 - [Overview](https://docs.donkey-kit.dev/scenarios.md): (status: live) Three end-to-end walkthroughs — support triage, an overnight batch job, and an internal copilot — each showing the governance layer a bare base_url cannot give you.
 - [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md): (status: offline-verified) Draft replies to a queue of support tickets, one carrying PII, with typed refusals, correlation IDs, and OTel spans — the shipped LangGraph demo, end to end, no gateway.
+- [Support triage (Agents SDK)](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md): (status: offline-verified) The support-triage scenario on the second deep adapter — an OpenAI Agents SDK Agent under Runner.run drafts ticket replies, the PII-laden one comes back as a typed refusal, no gateway.
 - [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md): (status: live) Enrich tens of thousands of records overnight against a windowed token budget, unattended — pacing before the wall and resuming after the window resets, tested end to end against the simulator.
 - [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md): (status: live) An internal assistant whose output must clear a content-safety guardrail — the ContentSafetyBlocked branch driven by the simulator, with per-run correlation joining the refusal to your logs.
 
