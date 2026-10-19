@@ -1,0 +1,5 @@
+HTTP/1.1 403 Forbidden
+content-type: application/json
+x-llm-proxy-model-armor-action: reject
+x-llm-proxy-model-armor-phase: request
+x-llm-proxy-model-armor-reason: rai_harassment,rai_dangerous,pi_and_jailbreak

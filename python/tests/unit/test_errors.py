@@ -220,6 +220,70 @@ def test_content_safety_action_allow_is_not_content_safety_blocked() -> None:
     assert "shape unconfirmed" in str(err)
 
 
+def test_model_armor_response_phase_403_is_content_safety_blocked() -> None:
+    """#1178: a response-phase Model Armor block keeps the upstream's headers
+    (``x-gemini-*``, ``vary``) beside the vendor pair; the vendor header still
+    types it."""
+    err = classify(
+        _json_resp(
+            403,
+            {"error": "Content blocked by Google Model Armor", "categories": ["malicious_uri"]},
+            {
+                "x-gemini-service-tier": "standard",
+                "vary": "X-Origin,Referer,Origin,Accept-Encoding",
+                "x-llm-proxy-model-armor-action": "reject",
+                "x-llm-proxy-model-armor-phase": "response",
+                "x-llm-proxy-model-armor-reason": "malicious_uri",
+            },
+        )
+    )
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.categories == ["malicious_uri"]
+    assert "Google Model Armor" in str(err)
+
+
+@pytest.mark.parametrize(
+    ("prefix", "reason"),
+    [
+        ("model-armor", "timeout"),
+        ("azure-content-safety", "service_unavailable"),
+        ("bedrock-guardrail", "service_unavailable"),
+    ],
+)
+def test_content_safety_fail_closed_503_is_an_outage_not_a_block(prefix: str, reason: str) -> None:
+    """#1178: with ``failOpen`` off, a policy that cannot reach its moderation
+    service answers 503 with ``action: reject`` and the cause as the reason (per
+    the policy source). Nothing was judged, so it is the retryable 5xx, never a
+    terminal ContentSafetyBlocked."""
+    err = classify(
+        _json_resp(
+            503,
+            {"error": "service unavailable", "categories": [reason]},
+            {
+                f"x-llm-proxy-{prefix}-action": "reject",
+                f"x-llm-proxy-{prefix}-reason": reason,
+            },
+        )
+    )
+    assert isinstance(err, UpstreamModelError)
+    assert not isinstance(err, PolicyViolation)
+
+
+def test_model_armor_allow_with_skip_detection_is_not_a_block() -> None:
+    """#1178: ``skip_detection`` (content too large for a filter) rides on an
+    ``allow`` verdict; it is never a block, whatever the status."""
+    err = classify(
+        _resp(
+            403,
+            {
+                "x-llm-proxy-model-armor-action": "allow",
+                "x-llm-proxy-model-armor-reason": "skip_detection",
+            },
+        )
+    )
+    assert not isinstance(err, ContentSafetyBlocked)
+
+
 # --- bare model name on a multi-provider proxy (#825) -----------------------
 # The live capture is pinned in test_llm_proxy_contract.py; these pin the edges
 # of the discriminator.
