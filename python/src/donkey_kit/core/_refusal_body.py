@@ -216,7 +216,8 @@ MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the know
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
 # ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
-# #253/#568).
+# #253/#568/#1178). Each policy also sends ``action: reject`` on its fail-closed
+# ``503`` (the moderation service was unreachable), so only a ``403`` is a block.
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
     (
         _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
@@ -228,13 +229,21 @@ _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
         _wire.BEDROCK_GUARDRAIL_REASON_HEADER,
         "Amazon Bedrock Guardrails",
     ),
+    (
+        _wire.MODEL_ARMOR_ACTION_HEADER,
+        _wire.MODEL_ARMOR_REASON_HEADER,
+        "Google Model Armor",
+    ),
 )
 
 
 def content_safety_reject(response: ResponseLike) -> tuple[str, list[str]] | None:
     """``(vendor, categories)`` when a content-safety policy header reports
-    ``action: reject``, else ``None``. Categories are the comma-separated flagged
-    reasons from the sibling ``...-reason`` header (empty list if absent)."""
+    ``action: reject`` on a ``403``, else ``None`` (the same header on the
+    fail-closed ``503`` is an outage, #1178). Categories are the comma-separated
+    flagged reasons from the sibling ``...-reason`` header (empty list if absent)."""
+    if response.status_code != 403:
+        return None
     for action_h, reason_h, vendor in _CONTENT_SAFETY_VENDORS:
         if response.headers.get(action_h) == "reject":
             reason = response.headers.get(reason_h, "")

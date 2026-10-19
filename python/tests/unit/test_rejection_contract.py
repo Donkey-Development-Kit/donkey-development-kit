@@ -154,6 +154,20 @@ def test_row8_bedrock_guardrails_variant_is_content_safety_blocked() -> None:
     assert err.remediation  # required, non-empty
 
 
+def test_row8_google_model_armor_variant_is_content_safety_blocked() -> None:
+    # The Google Model Armor sibling of row 8: the x-llm-proxy-model-armor-*
+    # header family, live-captured against ddk-google-model-armor on 2026-10-19
+    # (#1178) — a request-phase block whose three matched filters are the
+    # categories. Like the Bedrock sibling it is a classify()-contract fixture,
+    # not a simulator-served shape, so it is absent from fixtures.lock.
+    err = classify(_response(REJECTIONS, "content-safety-model-armor", 403))
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.policy == "content-safety"
+    assert err.categories == ["rai_harassment", "rai_dangerous", "pi_and_jailbreak"]
+    assert "Google Model Armor" in str(err)
+    assert err.remediation  # required, non-empty
+
+
 def test_row9_agent_kill_switch_is_agent_killed_not_upstream_or_auth() -> None:
     # docs/verified-apis.md §4, live capture 2026-09-29 (#694): the kill switch
     # rejects with a 403 whose nested error carries `code: agent_killed` and no

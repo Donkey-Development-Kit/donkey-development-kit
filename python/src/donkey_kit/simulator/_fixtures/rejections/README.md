@@ -23,6 +23,7 @@ introduced the policy) — no longer left open as "no URL recorded" (#253):
 | LLM Token Rate Limit (row 1) | https://docs.mulesoft.com/gateway/latest/policies-included-llm-token-rate-limit | v1.11.0 |
 | Azure Content Safety (row 8) | https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety | v1.13.0 |
 | Amazon Bedrock Guardrails (row 8, sibling) | https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails | v1.13.0 |
+| Google Model Armor Guardrails (row 8, sibling) | https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails | v1.14.0 |
 
 **Live-capture status (#253, 2026-09-22):** rows 7 and 8 were re-confirmed
 against the deployed provisioning proxies — `ddk-injection-guard` (Regex Prompt
@@ -53,6 +54,19 @@ vendor `…-action: reject` header family), so, unlike every served fixture, it 
 deliberately **absent from `fixtures.lock`**; the contract test's assertions
 guard its bytes instead.
 
+**Google Model Armor sibling (#1178, 2026-10-19):** row 8's third vendor was
+live-captured against `ddk-google-model-armor` (OpenAI ingress, Gemini upstream,
+instance 21244069, shared-omni-gateway) — a request-phase `403` carrying
+`x-llm-proxy-model-armor-action: reject` / `-phase: request` /
+`-reason: rai_harassment,rai_dangerous,pi_and_jailbreak` and a byte-faithful
+116-byte `{"error":"Content blocked by Google Model Armor","categories":[…]}`
+body. It lives as `reject.content-safety-model-armor.{headers.txt,body.json}`,
+asserted by `test_row8_google_model_armor_variant_is_content_safety_blocked`, and
+like the Bedrock sibling is a classify()-contract fixture only, absent from
+`fixtures.lock`. The policy's fail-closed `503` (Model Armor or the OAuth token
+call failed) sends the same `action: reject` header; it is typed from the policy
+source as the retryable 5xx (row 6), not row 8, and is not captured.
+
 **Agent Kill Switch capture (#694, 2026-09-29):** row 9 was live-captured
 against `ddk-agent-kill-switch` (DDK / Sandbox, API instance 21206201,
 shared-omni-gateway), called with a Keycloak JWT whose `act.sub` is a
@@ -75,7 +89,7 @@ capture (the JWT was a request header, never written to disk).
 | 5 | Upstream provider 4xx | `../anypoint/llm_proxy/reject.model-not-found.body.json` | `UpstreamRequestError` | non-429 4xx, nested `error` with `code`/`type`/`param` | LIVE, 2026-08-28 (OpenAI passthrough) |
 | 6 | Upstream 5xx | `reject.upstream-5xx.{headers.txt,body.empty}` | `UpstreamModelError` (retryable) | 5xx status range (no competing discriminator) | **SYNTHETIC** — status-range classification only; no live capture, no invented body. |
 | 7 | Regex Prompt Guard | `reject.regex-prompt-guard.{headers.txt,body.json}` | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | 403 + top-level `matched_patterns` list (flat-string `error`) | **VERIFIED (LIVE), 2026-09-22 (#253)** — body matches the live capture byte-for-byte against `ddk-injection-guard` (instance 21179713). [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4). |
-| 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **VERIFIED (LIVE)** — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0). |
+| 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling); `reject.content-safety-model-armor.{headers.txt,body.json}` (Model Armor sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor) | **VERIFIED (LIVE)** — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). Google Model Armor 2026-10-19 (#1178): same family confirmed against `ddk-google-model-armor` (`rai_harassment,rai_dangerous,pi_and_jailbreak`). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); [Google Model Armor Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails) (v1.14.0). |
 | 9 | Agent Kill Switch | `reject.agent-killed.{headers.txt,body.json}` | `AgentKilled` (`policy="agent-kill-switch"`) | nested `error.code == "agent_killed"` (no `type`, no `www-authenticate`) | **VERIFIED (LIVE), 2026-09-29 (#694)** — captured against `ddk-agent-kill-switch` (instance 21206201) with a quarantined agent's JWT. |
 | 10 | Request rate limit | `../anypoint/request_rate_limit/reject.request-rate-limit.{headers.txt,body.json}` | `RequestRateLimitExceeded` (`policy="request-rate-limit"`) | 429 + unsuffixed `x-ratelimit-limit`/`-remaining`, no `x-token-limit` (body `{"error":"Too Many Requests"}`) | **VERIFIED (LIVE), 2026-10-07 (#974)** — captured against `ddk-request-rate-limit` (instance 21188400, stock `rate-limiting` 1.5.1, `exposeHeaders: true`). With `exposeHeaders: false` the headers are absent; that shape is not captured and classifies as row 1. |
 
