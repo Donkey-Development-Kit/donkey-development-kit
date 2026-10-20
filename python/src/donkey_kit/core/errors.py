@@ -87,10 +87,9 @@ class DonkeyError(Exception):
     * ``correlation_id`` — the RUN id the client sent (``X-Correlation-Id``),
       shared by every request in a ``donkey.run()`` block. This is the
       client↔gateway join key, and it always equals the header that was sent.
-    * ``call_id`` — the per-request id the client sent (``X-Donkey-Request-Id``),
-      unique per logical request, stable across its retries. It pinpoints one
-      request within a run and exists even when the request fails before any
-      response.
+    * ``call_id`` — the per-request id the client sent (``X-Donkey-Request-Id``), unique per
+      logical request, stable across its retries. It pinpoints one request within a run and
+      exists even when the request fails before any response.
     * ``request_id`` — the UPSTREAM PROVIDER's own id, passed through by the
       gateway and read back from a RESPONSE header whose name varies by provider
       (``x-request-id`` / ``x-amzn-requestid`` / ``apim-request-id``, #542). Quote
@@ -98,12 +97,11 @@ class DonkeyError(Exception):
       — and on any route where the provider forwarded none — unlike the two
       client-sent ids above. The gateway-side join key is ``correlation_id``.
 
-    ``remediation`` names the caller's next step and is **structurally
-    mandatory** on every error in the tree (#182, #715), so a handler written
-    as ``except DonkeyError as e: log(e.remediation)`` never fails inside its
-    own ``except``. An explicit ``remediation=`` wins; otherwise the most-derived
-    class default applies. The constructor raises :class:`ValueError` if the
-    resolved value is empty or whitespace.
+    ``remediation`` names the caller's next step and is **structurally mandatory** on every
+    error in the tree (#182, #715), so a handler written as ``except DonkeyError as e:
+    log(e.remediation)`` never fails inside its own ``except``. An explicit ``remediation=``
+    wins; otherwise the most-derived class default applies. The constructor raises
+    :class:`ValueError` if the resolved value is empty or whitespace.
     """
 
     #: The framework exception this error was mapped from, if any. Kept here
@@ -196,16 +194,14 @@ class AuthError(DonkeyError):
 class PolicyViolation(DonkeyError):
     """Base for gateway-enforced refusals. NEVER retried.
 
-    ``remediation`` names the concrete next step the caller can take, e.g.
-    "Token budget exceeded for business group `finance`; limit resets in 42m;
-    request an increase in API Manager". It is **structurally mandatory** (#182),
-    enforced by the :class:`DonkeyError` constructor, because a typed refusal
-    with no next step is just a renamed exception. When no ``remediation`` is
-    passed, the class-level
-    :attr:`remediation` default applies; every concrete subclass ships its own,
-    and that default is the single source ``donkey doctor`` (#202) reuses so the
-    CLI and the exception never disagree. It names the *action*, not the policy
-    that fired.
+    ``remediation`` names the concrete next step the caller can take, e.g. "Token budget
+    exceeded for business group `finance`; limit resets in 42m; request an increase in API
+    Manager". It is **structurally mandatory** (#182), enforced by the :class:`DonkeyError`
+    constructor, because a typed refusal with no next step is just a renamed exception. When
+    no ``remediation`` is passed, the class-level :attr:`remediation` default applies; every
+    concrete subclass ships its own, and that default is the single source ``donkey doctor``
+    (#202) reuses so the CLI and the exception never disagree. It names the *action*, not the
+    policy that fired.
     """
 
     policy: str = "unknown"
@@ -214,15 +210,13 @@ class PolicyViolation(DonkeyError):
     #: This base value is the generic-refusal fall-through (the shape ``classify``
     #: cannot pin more precisely); every concrete subclass overrides it.
     remediation: str = (
-        "A gateway policy refused this request. This is terminal and was NOT "
-        "retried. PII (403), agent kill switch (403, error code agent_killed), "
-        "request-rate-limit (429 with x-ratelimit-* headers), token-budget "
-        "(429), prompt-injection (the x-injection-protection "
-        "header or the regex prompt guard's matched_patterns) and "
-        "content-safety (Azure Content Safety, Amazon Bedrock Guardrails, "
-        "Google Model Armor, CrowdStrike AIDR) rejections are identified specifically; "
-        "only federated-guardrail verdicts and otherwise-unrecognised shapes fall "
-        "through to here. Inspect .response for the raw body."
+        "A gateway policy refused this request. This is terminal and was NOT retried. PII (403), "
+        "agent kill switch (403, error code agent_killed), request-rate-limit (429 with "
+        "x-ratelimit-* headers), token-budget (429), prompt-injection (the x-injection-protection "
+        "header or the regex prompt guard's matched_patterns) and content-safety (Azure Content "
+        "Safety, Amazon Bedrock Guardrails, Google Model Armor, CrowdStrike AIDR) rejections are "
+        "identified specifically; only federated-guardrail verdicts and otherwise-unrecognised "
+        "shapes fall through to here. Inspect .response for the raw body."
     )
 
     def __init__(self, message: str, *, policy: str | None = None, **kw: Any) -> None:
@@ -251,9 +245,8 @@ class TokenBudgetExceeded(PolicyViolation):
 
     policy = "token-rate-limit"
     remediation: str = (
-        "A token-rate-limit policy exhausted the budget window. Wait for it "
-        "to reset (see retry_after / x-token-reset) or request an increase in "
-        "API Manager."
+        "A token-rate-limit policy exhausted the budget window. Wait for it to reset (see "
+        "retry_after / x-token-reset) or request an increase in API Manager."
     )
 
     def __init__(self, message: str, *, retry_after: float | None = None, **kw: Any) -> None:
@@ -265,11 +258,10 @@ class RequestRateLimitExceeded(PolicyViolation):
     """A request-rate-limit policy refused the request: the window's request
     count is spent (docs/verified-apis.md §4, #974).
 
-    The stock ``rate-limiting`` policy counts requests, not tokens. Its 429 has
-    the body ``{"error":"Too Many Requests"}`` and the ``x-ratelimit-limit`` /
-    ``x-ratelimit-remaining`` / ``x-ratelimit-reset`` headers, and no
-    ``retry-after``. Terminal: never retried by the SDK, like every
-    :class:`PolicyViolation`.
+    The stock ``rate-limiting`` policy counts requests, not tokens. Its 429 has the body
+    ``{"error":"Too Many Requests"}`` and the ``x-ratelimit-limit``, ``x-ratelimit-remaining``
+    and ``x-ratelimit-reset`` headers, and no ``retry-after``. Terminal: never retried by the
+    SDK, like every :class:`PolicyViolation`.
 
     Args:
         message: The human-readable refusal text.
@@ -399,10 +391,11 @@ class ContentSafetyBlocked(PolicyViolation):
     """A provider-backed content-moderation policy (Azure Content Safety, Amazon Bedrock
     Guardrails, Google Model Armor or CrowdStrike AIDR) blocked the request or response.
 
-    ``categories`` carries the flagged reasons the gateway reports in its
-    ``x-llm-proxy-<vendor>-...-reason`` header (e.g. ``severity_hate``,
-    ``blocklist``, ``denied_topic``, ``malicious_prompt``) — the moderation analog of
-    :attr:`PIIDetected.entities`. Empty when the gateway reported no reason."""
+    ``provider`` is the vendor's stable slug (``azure-content-safety``, ``bedrock-guardrails``,
+    ``google-model-armor``, ``crowdstrike-aidr``); ``categories`` the flagged reasons from its
+    ``x-llm-proxy-<vendor>-...-reason`` header (e.g. ``severity_hate``, ``denied_topic``), the
+    moderation analog of :attr:`PIIDetected.entities`, empty when none was reported. Both ride
+    the span as ``donkey.policy.provider`` / ``donkey.policy.categories`` (#1183)."""
 
     policy = "content-safety"
     remediation: str = (
@@ -411,9 +404,17 @@ class ContentSafetyBlocked(PolicyViolation):
         "categories / thresholds (API Manager; Model Armor template; AIDR policy in Falcon)."
     )
 
-    def __init__(self, message: str, *, categories: list[str] | None = None, **kw: Any) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        categories: list[str] | None = None,
+        provider: str | None = None,
+        **kw: Any,
+    ) -> None:
         super().__init__(message, **kw)
         self.categories = categories or []
+        self.provider = provider
 
 
 class PIIDetected(PolicyViolation):
@@ -829,18 +830,17 @@ def _match_agent_killed(s: _Shape) -> DonkeyError | None:
 
 def _match_content_safety(s: _Shape) -> DonkeyError | None:
     """Content safety / guardrails: 403 + a vendor ``...-action: reject`` header
-    (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR,
-    docs/verified-apis.md §4, #253/#568/#1178/#1176). Keyed on the header, so a reject with
-    an unexpected or absent body is still caught; ahead of the auth rule. Not a fail-closed 503.
-    The message names the vendor; the remediation is the class default."""
+    (docs/verified-apis.md §4, #253/#568/#1178/#1176/#1183). Keyed on the header, so an odd
+    or absent body is still caught; ahead of the auth rule; never a fail-closed 503."""
     cs = content_safety_reject(s.response)
     if cs is None:
         return None
-    vendor, categories = cs
+    provider, vendor, categories = cs
     cats = f" ({', '.join(categories)})" if categories else ""
     return ContentSafetyBlocked(
         f"Request blocked by {vendor}{cats} ({s.status}).",
         categories=categories,
+        provider=provider,
         **s.kw,
     )
 

@@ -205,6 +205,18 @@ def _span_decision(
     return POLICY_DECISION_REFUSE, policy_type_slug(violation)
 
 
+def _policy_detail(violation: PolicyViolation | None) -> tuple[str | None, list[str] | None]:
+    """``(donkey.policy.provider, donkey.policy.categories)`` for a refusal an external
+    provider made (#1183). Generic by attribute, not by class: any violation that carries a
+    ``provider`` slug reports it, with its ``categories`` when non-empty. ``(None, None)``
+    otherwise (a PII block, a budget refusal), so the span omits both."""
+    provider = getattr(violation, "provider", None)
+    if provider is None:
+        return None, None
+    categories = list(getattr(violation, "categories", None) or [])
+    return provider, categories or None
+
+
 def _substitution_error(
     cfg: DonkeyConfig, request: httpx.Request, response: httpx.Response
 ) -> ModelSubstituted | None:

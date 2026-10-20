@@ -30,6 +30,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from donkey_kit.core.errors import (
     AgentKilled,
@@ -180,6 +181,36 @@ def test_row8_crowdstrike_aidr_variant_is_content_safety_blocked() -> None:
     assert err.categories == ["malicious_prompt", "pii"]
     assert "CrowdStrike AIDR" in str(err)
     assert err.remediation  # required, non-empty
+
+
+@pytest.mark.parametrize(
+    ("slug", "provider", "categories"),
+    [
+        ("content-safety", "azure-content-safety", ["severity_hate", "severity_violence"]),
+        ("content-safety-bedrock", "bedrock-guardrails", ["content_filter"]),
+        (
+            "content-safety-model-armor",
+            "google-model-armor",
+            ["rai_harassment", "rai_dangerous", "pi_and_jailbreak"],
+        ),
+        ("content-safety-crowdstrike-aidr", "crowdstrike-aidr", ["malicious_prompt", "pii"]),
+    ],
+)
+def test_row8_content_safety_reports_the_provider_slug(
+    slug: str, provider: str, categories: list[str]
+) -> None:
+    # #1183: each vendor's block carries its stable provider slug (public API, the
+    # value of donkey.policy.provider), so a caller can tell the vendors apart
+    # without parsing .response headers.
+    err = classify(_response(REJECTIONS, slug, 403))
+    assert isinstance(err, ContentSafetyBlocked)
+    assert (err.provider, err.categories) == (provider, categories)
+
+
+def test_non_provider_refusal_has_no_provider() -> None:
+    err = classify(_response(LIVE, "pii-detected", 403))
+    assert isinstance(err, PIIDetected)
+    assert getattr(err, "provider", None) is None
 
 
 def test_row9_agent_kill_switch_is_agent_killed_not_upstream_or_auth() -> None:

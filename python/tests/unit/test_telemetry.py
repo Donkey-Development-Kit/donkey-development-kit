@@ -321,6 +321,21 @@ def test_genai_span_records_a_refusal_decision(monkeypatch: pytest.MonkeyPatch) 
     assert attrs["donkey.policy.type"] == "token_budget"
 
 
+def test_build_genai_attributes_carries_the_policy_provider_and_categories() -> None:
+    # #1183: generic who-and-why keys, omitted (like every field) when unknown.
+    attrs = telemetry.build_genai_attributes(
+        policy_provider="google-model-armor", policy_categories=["rai_dangerous"]
+    )
+    assert attrs == {
+        telemetry.DONKEY_POLICY_PROVIDER: "google-model-armor",
+        telemetry.DONKEY_POLICY_CATEGORIES: ["rai_dangerous"],
+    }
+    assert telemetry.DONKEY_POLICY_PROVIDER == "donkey.policy.provider"
+    assert telemetry.DONKEY_POLICY_CATEGORIES == "donkey.policy.categories"
+    no_provider = telemetry.build_genai_attributes(decision="refuse")
+    assert no_provider == {"donkey.policy.decision": "refuse"}
+
+
 # --- set_error: refusals/exceptions mark the span ERROR (#193, AC #1/#4) -----
 
 

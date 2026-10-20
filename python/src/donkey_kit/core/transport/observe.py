@@ -24,7 +24,7 @@ from ..lastcall import (
     usage_from_response,
 )
 from ..telemetry import POLICY_DECISION_REFUSE, GenAiSpan
-from .policy import Finish, Retry, _request_model, _span_decision
+from .policy import Finish, Retry, _policy_detail, _request_model, _span_decision
 
 __all__: list[str] = []
 
@@ -113,6 +113,7 @@ def _record_response(
     the run id is the cross-call join key (BG §1.1, #195)."""
     try:
         decision, policy_type = _span_decision(response, violation)
+        policy_provider, policy_categories = _policy_detail(violation)
         usage = usage_from_response(response)
         matched_topic, routing_score = semantic_routing(response)
         cache_status, cache_score = semantic_cache(response)
@@ -141,6 +142,9 @@ def _record_response(
             reasoning_tokens=usage["reasoning_tokens"],
             decision=decision,
             policy_type=policy_type,
+            # Who blocked it and why, only for a provider-backed refusal (#1183).
+            policy_provider=policy_provider,
+            policy_categories=policy_categories,
             budget_remaining=budget.remaining if budget is not None else None,
             correlation_id=request.headers.get(correlation_header),
             # donkey.cost.* carries the FULL tag value regardless of the
