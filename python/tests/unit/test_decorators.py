@@ -11,7 +11,7 @@ import pytest
 
 from donkey_kit import Donkey, DonkeyConfig, ToolSpec, registered_tools
 from donkey_kit.core.telemetry import current_correlation_id, current_cost_tags
-from donkey_kit.core.toolspec import TOOL_MARKER, tool_spec
+from donkey_kit.core.toolspec import TOOL_MARKER, tool_spec, validate_service_id
 
 
 def _cfg() -> DonkeyConfig:
@@ -201,3 +201,49 @@ def test_registered_tools_reflects_decoration_order() -> None:
         """Second."""
 
     assert [s.name for s in registered_tools()] == ["first", "second"]
+
+
+# --- @donkey.tool(server=...) — tool→server attribution (#503) ---------------
+def test_tool_is_unattributed_by_default() -> None:
+    """No server is ever inferred from the module or function name (#503)."""
+
+    @Donkey.tool
+    def lookup_sku() -> None:
+        """Look up a SKU."""
+
+    (spec,) = registered_tools()
+    assert spec.server is None
+
+
+def test_tool_records_its_server() -> None:
+    @Donkey.tool(server="sku-manager")
+    def lookup_sku() -> None:
+        """Look up a SKU."""
+
+    (spec,) = registered_tools()
+    assert spec.server == "sku-manager"
+    assert tool_spec(lookup_sku) is spec
+
+
+def test_tool_server_composes_with_approval() -> None:
+    @Donkey.tool(server="refunds", approval="required", risk="financial")
+    def issue_refund() -> None:
+        """Issue a refund."""
+
+    (spec,) = registered_tools()
+    assert (spec.server, spec.approval, spec.risk) == ("refunds", "required", "financial")
+
+
+@pytest.mark.parametrize(
+    "bad", ["", "SKU-Manager", "sku_manager", "sku manager", "-sku", "sku-", "sku--manager", 42]
+)
+def test_tool_rejects_a_server_that_is_not_a_kebab_case_service_id(bad: object) -> None:
+    with pytest.raises(ValueError, match="kebab-case service ID"):
+        Donkey.tool(server=bad)  # type: ignore[arg-type]  # deliberately invalid input
+
+    assert registered_tools() == ()
+
+
+@pytest.mark.parametrize("good", ["sku-manager", "rag", "crm2", "a-1-b"])
+def test_validate_service_id_accepts_kebab_case(good: str) -> None:
+    assert validate_service_id(good) == good

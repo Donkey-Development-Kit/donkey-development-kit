@@ -46,7 +46,7 @@ from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.reactions import Duration, OnRefusal
 from .core.runtime import Runtime
 from .core.telemetry import RunScope, run_scope
-from .core.toolspec import register_tool
+from .core.toolspec import register_tool, validate_service_id
 from .core.transport import (
     DonkeyAsyncClient,
     DonkeyAsyncClientView,
@@ -708,6 +708,7 @@ class Donkey:
         approval: ApprovalMode | None = None,
         risk: str | None = None,
         approval_timeout: Duration = APPROVAL_TIMEOUT,
+        server: str | None = None,
     ) -> Callable[[_Callable], _Callable]: ...
 
     @staticmethod
@@ -718,6 +719,7 @@ class Donkey:
         approval: ApprovalMode | None = None,
         risk: str | None = None,
         approval_timeout: Duration = APPROVAL_TIMEOUT,
+        server: str | None = None,
     ) -> _Callable | Callable[[_Callable], _Callable]:
         """Mark a callable as a governed tool, recording its name, signature and
         docstring in an introspectable registry (#200), and optionally gate it
@@ -734,6 +736,14 @@ class Donkey:
         The same marker is what the Phase 2 scanner (BG §2.5) and the A2A agent-card
         generator (BG §2.9) both read, so the one annotation pays off three times
         (#200).
+
+        ``server=`` attributes the tool to the MCP server it belongs to, by that
+        server's service ID. The ID is permanent and always yours to set: it is
+        never inferred from a module path or function name (#503). A tool with
+        no ``server`` is reported by the scanner as unattributed::
+
+            @donkey.tool(server="sku-manager")
+            async def lookup_sku(sku: str) -> dict: ...
 
         With ``approval="required"`` a call does not run the tool. It records a
         pending :class:`~donkey_kit.core.approvals.Approval`, emits it as a span
@@ -766,12 +776,15 @@ class Donkey:
             approval_timeout: How long a pending approval waits before resolving
                 it raises :class:`~donkey_kit.core.approvals.ApprovalTimedOut`:
                 seconds, a ``timedelta`` or a string such as ``"15m"``.
+            server: The service ID (lowercase kebab-case, such as
+                ``"sku-manager"``) of the MCP server this tool belongs to.
 
         Raises:
             ValueError: The callable has no docstring (an undescribed tool is
                 useless to a model and to the registry, #200), ``approval`` is
-                not ``"required"``, ``risk`` is blank, or ``approval_timeout``
-                is not a positive duration.
+                not ``"required"``, ``risk`` is blank, ``approval_timeout``
+                is not a positive duration, or ``server`` is not a kebab-case
+                service ID.
 
         Docs: https://docs.donkey-kit.dev/hitl
         """
@@ -780,11 +793,13 @@ class Donkey:
         if risk is not None and (not isinstance(risk, str) or not risk.strip()):
             raise ValueError(f"risk must be a non-empty label such as 'financial', not {risk!r}")
         timeout = parse_timeout(approval_timeout)
+        if server is not None:
+            validate_service_id(server)
 
         def decorate(fn: _Callable) -> _Callable:
             natives = (_langgraph_interrupt,)
             target = gate(fn, risk=risk, timeout=timeout, natives=natives) if approval else fn
-            return register_tool(target, approval=approval, risk=risk)
+            return register_tool(target, approval=approval, risk=risk, server=server)
 
         # Bare ``@donkey.tool`` passes the callable positionally; the
         # parametrised ``@donkey.tool(...)`` passes nothing and returns the
