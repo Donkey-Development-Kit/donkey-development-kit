@@ -58,7 +58,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
-import re
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -67,6 +66,9 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from . import _wire
+from ._budget_headers import parse_int as _parse_int
+from ._budget_headers import parse_ratelimit_prose as _parse_ratelimit_prose
+from ._budget_headers import received_at as _received_at
 from .errors import AgentKilled, BudgetReserveReached, DonkeyError
 from .lastcall import is_cache_hit
 
@@ -101,16 +103,6 @@ REQUEST_LIMIT_HEADER = _wire.REQUEST_LIMIT_HEADER
 REQUEST_REMAINING_HEADER = _wire.REQUEST_REMAINING_HEADER
 REQUEST_RESET_HEADER = _wire.REQUEST_RESET_HEADER
 
-# Matches `… 10000 tokens remaining of 10000 limit. Reset in 56711ms.`. Requires
-# all three values: a partial or reworded sentence fails to match and is treated
-# as no signal (verification discipline — never guess at an unexpected wire shape). `search`, not
-# `match`, so the leading `Token rate limit:` label is not load-bearing.
-_RATELIMIT_RE = re.compile(
-    r"(?P<remaining>\d+)\s+tokens?\s+remaining\s+of\s+(?P<limit>\d+)\s+limit\b"
-    r".*?reset\s+in\s+(?P<reset>\d+)\s*ms",
-    re.IGNORECASE | re.DOTALL,
-)
-
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -120,34 +112,6 @@ def _wake(future: asyncio.Future[None]) -> None:
     """End a :meth:`Budget.wait_for_reset` sleep, at most once."""
     if not future.done():
         future.set_result(None)
-
-
-def _parse_int(raw: str | None) -> int | None:
-    """A budget header as an int, or ``None`` if absent or non-numeric. Garbage is
-    ignored rather than fatal (verification discipline: never let an unexpected wire value crash the
-    caller's request path)."""
-    if raw is None:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        return None
-
-
-def _parse_ratelimit_prose(raw: str | None) -> tuple[int | None, int | None, int | None]:
-    """The prose ``x-llm-proxy-ratelimit`` header as ``(limit, remaining, reset_ms)``,
-    or an all-``None`` tuple when the header is absent, partial, or reworded.
-
-    Like :func:`_parse_int` this never raises on unexpected input (verification discipline): an
-    unparseable sentence is simply "no signal", never a crash on the caller's
-    request path. All three values must be present in the recognised shape or the
-    whole header is discarded — a half-parsed budget is worse than none."""
-    if raw is None:
-        return None, None, None
-    m = _RATELIMIT_RE.search(raw)
-    if m is None:
-        return None, None, None
-    return int(m["limit"]), int(m["remaining"]), int(m["reset"])
 
 
 class _Window:
@@ -180,8 +144,12 @@ def _record(
     ts: datetime,
 ) -> None:
     """Apply whichever fields resolved to ``window``. All ``None`` is a no-op, so
-    a response without this window's signal leaves ``observed_at`` untouched."""
+    a response without this window's signal leaves ``observed_at`` untouched. So
+    is an observation older than the window's ``observed_at``: the fresher state
+    stays (#311)."""
     if limit is None and remaining is None and reset_ms is None:
+        return
+    if window.observed_at is not None and ts < window.observed_at:
         return
     window.observed_at = ts
     if limit is not None:
@@ -227,6 +195,21 @@ class Budget(_Window):
     Per-``Donkey``, never global: two instances with different credentials hold
     independent state. Construct empty (unobserved); :meth:`observe` mutates it
     from a response. Reads are cheap attribute/property access — no I/O.
+
+    **Concurrency contract (#311).** One ``Budget`` is shared by every call on its
+    ``Donkey``: ``asyncio.gather`` fan-out, LangGraph parallel nodes, and threads
+    on the sync client. Two guarantees hold under any interleaving:
+
+    - It reflects the freshest observation, ordered by when each response's
+      headers arrived, not by when its hooks ran (:meth:`observe`). A stale
+      response landing late never moves it backwards.
+    - :meth:`pace` decides on one consistent snapshot. Tasks that enter it
+      together get the same decision from the same state.
+
+    :meth:`pace` is an admission check on the last observation, not a
+    reservation: it cannot know what calls already in flight will spend. Ten
+    tasks entering together before any of them returns all pass, so size
+    ``reserve`` to cover the width of the fan-out.
     """
 
     def __init__(self) -> None:
@@ -244,6 +227,10 @@ class Budget(_Window):
         # the kill can arrive from another loop, or from the sync client's thread.
         self._sleeps: set[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = set()
         self._sleeps_lock = threading.Lock()
+        # Guards the window fields: observe() writes both windows under it and
+        # pace() decides under it, so neither sees a half-applied response. The
+        # sync client feeds this object from its callers' threads (#311).
+        self._state_lock = threading.Lock()
 
     def observe_refusal(self, refusal: DonkeyError) -> None:
         """Note a typed refusal the gateway sent, as :meth:`observe` notes its
@@ -291,8 +278,21 @@ class Budget(_Window):
         The same response also fills :attr:`requests` from the ``x-ratelimit-*``
         trio, independently: either window can be observed without the other.
 
-        ``now`` is injectable for tests; production passes nothing and the wall
-        clock (UTC) is used.
+        **Ordering (#311): the freshest observation wins, not the last to
+        arrive.** A response's observation time is when its headers came back
+        from the wire, stamped by the governed transport before the body is read
+        or any hook runs. An observation older than a window's ``observed_at``
+        leaves that window as it is, so concurrent calls finishing out of order
+        never move :attr:`fraction_used` backwards. A later observation of a
+        window that has reset (a higher ``remaining``, a new ``reset_at``) is
+        newer, so it applies. Each window is ordered on its own, and the update
+        is atomic: a thread reading :meth:`pace` never sees half of one response.
+        Ordering follows the system clock, so a clock stepped backwards drops
+        observations until it catches up with ``observed_at``.
+
+        ``now`` is injectable for tests and overrides the transport's stamp; a
+        response that did not come through a governed transport has no stamp, and
+        the wall clock (UTC) at the call is used.
 
         A semantic-cache **hit** is a verbatim replay with no provider round-trip
         and no fresh spend (docs/verified-apis.md §2, #587) — so it never advances
@@ -319,15 +319,15 @@ class Budget(_Window):
             if reset_ms is None:
                 reset_ms = p_reset
 
-        ts = now if now is not None else _utcnow()
-        _record(self, limit, remaining, reset_ms, ts)
-        _record(
-            self.requests,
+        ts = now if now is not None else (_received_at(response) or _utcnow())
+        requests = (
             _parse_int(headers.get(REQUEST_LIMIT_HEADER)),
             _parse_int(headers.get(REQUEST_REMAINING_HEADER)),
             _parse_int(headers.get(REQUEST_RESET_HEADER)),
-            ts,
         )
+        with self._state_lock:
+            _record(self, limit, remaining, reset_ms, ts)
+            _record(self.requests, *requests, ts)
 
     @asynccontextmanager
     async def pace(
@@ -387,25 +387,28 @@ class Budget(_Window):
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")
         self._raise_if_killed()
         current = now if now is not None else _utcnow()
-        reached = [
-            (name, window, used)
-            for name, window in (("tokens", self), ("requests", self.requests))
-            if (used := _reached(window, reserve, current)) is not None
-        ]
+        # One snapshot of both windows: a sync-client thread observing between
+        # the two reads cannot mix two responses into one decision (#311).
+        with self._state_lock:
+            reached: list[tuple[str, _Window, float, datetime | None]] = []
+            for label, candidate in (("tokens", self), ("requests", self.requests)):
+                fraction = _reached(candidate, reserve, current)
+                if fraction is not None:
+                    reached.append((label, candidate, fraction, candidate.reset_at))
+            if reached:
+                # The window that releases last: an unknown reset outranks any time.
+                name, window, used, reset_at = max(
+                    reached, key=lambda r: (r[3] is None, r[3] or current)
+                )
+                self._tripped = window
         if reached:
-            # The window that releases last: an unknown reset outranks any time.
-            name, window, used = max(
-                reached,
-                key=lambda r: (r[1].reset_at is None, r[1].reset_at or current),
-            )
-            self._tripped = window
             unit = "token" if name == "tokens" else "request"
             raise BudgetReserveReached(
                 f"Budget reserve reached: {used:.1%} of the {unit} window used, "
                 f"reserve is {reserve:.1%} (trips at {1.0 - reserve:.1%}).",
                 fraction_used=used,
                 reserve=reserve,
-                reset_at=window.reset_at,
+                reset_at=reset_at,
                 window=name,
             )
         yield

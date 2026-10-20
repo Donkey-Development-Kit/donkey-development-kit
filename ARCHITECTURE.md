@@ -143,7 +143,7 @@ Beside it:
   cachecontrol | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
   `_policy_spec` → `errors` → `_refusal_body | lastcall | masking` → `_verify` →
-  `_wire | _response`.
+  `_wire | _response | _budget_headers`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
   through it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
   sans-IO, it decides each next step and the clients sleep and send.
@@ -158,7 +158,10 @@ Beside it:
   from core, so the transport reaches it without telemetry exposing its provider.
   `_refusal_body` holds the refusal-body parsers (`errors`' JSON
   envelope and PII-span helpers), split out to keep `errors` under its size
-  ceiling. `classifier` holds the `classify.register()` registry (#210, ADR
+  ceiling. `_budget_headers` holds `budget`'s header parsers and the
+  receive-time stamp the governed transports put on each response (#311), so
+  concurrent responses are ordered by arrival at the wire; it imports nothing
+  from core, and is split out to keep `budget` under the size budget. `classifier` holds the `classify.register()` registry (#210, ADR
   0012) over `_policy_spec`, its match-spec checks; it fills a hook slot in
   `errors`, so `errors` never imports it. This contract is exhaustive too.
 

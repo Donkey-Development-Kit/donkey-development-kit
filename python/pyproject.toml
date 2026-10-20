@@ -605,7 +605,8 @@ type = "layers"
 # verification placeholders name wire headers. A sibling group with `|` is
 # independent: its members never import each other. `exhaustive` makes a new
 # core module fail until it is placed. _response (the structural response
-# Protocols, #933) imports nothing from core, so it sits at the bottom.
+# Protocols, #933) imports nothing from core, so it sits at the bottom, as does
+# _budget_headers (budget's header parsers and receive-time stamp, #311).
 containers = ["donkey_kit.core"]
 exhaustive = true
 layers = [
@@ -619,7 +620,7 @@ layers = [
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",
-    "_wire | _response",
+    "_wire | _response | _budget_headers",
 ]
 
 [[tool.importlinter.contracts]]
