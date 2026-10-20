@@ -168,6 +168,20 @@ def test_row8_google_model_armor_variant_is_content_safety_blocked() -> None:
     assert err.remediation  # required, non-empty
 
 
+def test_row8_crowdstrike_aidr_variant_is_content_safety_blocked() -> None:
+    # The CrowdStrike AIDR sibling of row 8: the x-llm-proxy-crowdstrike-aidr-*
+    # header family, read from the policy source (crowdstrike-aidr-guardrails-policy
+    # 1.0.0), not live-captured (#1176; the capture is #1184). The categories are
+    # the triggered detectors. A classify()-contract fixture, absent from
+    # fixtures.lock like the other siblings.
+    err = classify(_response(REJECTIONS, "content-safety-crowdstrike-aidr", 403))
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.policy == "content-safety"
+    assert err.categories == ["malicious_prompt", "pii"]
+    assert "CrowdStrike AIDR" in str(err)
+    assert err.remediation  # required, non-empty
+
+
 def test_row9_agent_kill_switch_is_agent_killed_not_upstream_or_auth() -> None:
     # docs/verified-apis.md §4, live capture 2026-09-29 (#694): the kill switch
     # rejects with a 403 whose nested error carries `code: agent_killed` and no

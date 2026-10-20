@@ -489,7 +489,7 @@ is raised.
 | `AuthError` | `DonkeyError` | Rejected credentials on the Anypoint control plane or LLM-proxy data plane. |
 | `BudgetReserveReached` | `DonkeyError` | Raised by `Budget.pace` *before* it lets a request through that would cross the caller's reserve. |
 | `ConfigError` | `DonkeyError` | Configuration is missing or invalid, or an endpoint may not receive the credentials that would be sent to it (see `DonkeyConfig.check_endpoints`). Raised locally before any request; reports ALL missing fields at once. The transport also raises it, with its own remediation, for a send on a closed client or from a closed event loop. |
-| `ContentSafetyBlocked` | `PolicyViolation` | A provider-backed content-moderation policy (Azure Content Safety, Amazon Bedrock Guardrails or Google Model Armor) blocked the request or response. |
+| `ContentSafetyBlocked` | `PolicyViolation` | A provider-backed content-moderation policy (Azure Content Safety, Amazon Bedrock Guardrails, Google Model Armor or CrowdStrike AIDR) blocked the request or response. |
 | `DonkeyError` | `Exception` | Base for all SDK errors. Carries correlation/call/request IDs and the raw response so callers can inspect what actually happened. |
 | `GatewayUnavailable` | `DonkeyError` | The gateway could not be reached at all — a transport-level failure (DNS, refused connection, TLS error, timeout) with NO HTTP response behind it. |
 | `ModelNotRoutable` | `DonkeyError` | The gateway could not pick a provider for the requested model, so it rejected the request before any upstream call. |
