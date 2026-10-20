@@ -178,6 +178,19 @@ Run it locally with `donkey mock --scenario request_limit:limit=3,window=60s`.
 The refusal itself is `RequestRateLimitExceeded`, terminal like
 `TokenBudgetExceeded`.
 
+### Concurrent calls
+
+A parallel fan-out (`asyncio.gather`, parallel graph nodes, threads on the sync
+client) shares one `donkey.budget`. Responses can be handled in any order, but
+the budget never moves backwards: each window keeps the **freshest**
+observation, ordered by when that response's headers arrived, not by when its
+hooks finished. `pace()` decides on one consistent snapshot, so tasks entering
+it together get the same answer.
+
+`pace()` is an admission check, not a reservation. It cannot see what calls
+already in flight will spend, so a fan-out that enters together is admitted
+together. Size `reserve` to cover the width of your fan-out.
+
 **Learn more:** [Budget & pacing](https://docs.donkey-kit.dev/budget.md)
 
 **Source:**

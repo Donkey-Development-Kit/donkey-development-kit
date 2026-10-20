@@ -551,6 +551,15 @@ function, and concurrent runs never leak into each other. It works with or
 without OpenTelemetry installed. `donkey.run(...)` is a **dual sync/async**
 context manager (plain `with` works too); nested blocks rebind then restore.
 
+**Concurrent fan-out.** Every call in a fan-out started inside `donkey.run()`
+(`asyncio.gather`, parallel nodes, tool calls on child tasks) carries exactly
+one correlation id. Each task copies the context when it is created, so this
+holds even for a task that outlives the block, and a task that opens its own
+`donkey.run()` changes only its own id, never its parent's or a sibling's.
+Threads do not inherit the context: run them under `contextvars.copy_context()`
+or open a `donkey.run()` inside the thread. **Outside** a run nothing is
+grouped. Each call gets its own fresh id, so N concurrent calls send N ids.
+
 A refusal leaving the block is re-raised as its typed `DonkeyError`, whichever
 framework wrapped it on the way out, so `except PIIDetected` works the same
 around every framework. See
