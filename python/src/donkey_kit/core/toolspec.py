@@ -16,11 +16,19 @@ httpx, no pydantic, no agent framework.
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-__all__ = ["TOOL_MARKER", "ToolSpec", "register_tool", "registered_tools", "tool_spec"]
+__all__ = [
+    "TOOL_MARKER",
+    "ToolSpec",
+    "register_tool",
+    "registered_tools",
+    "tool_spec",
+    "validate_service_id",
+]
 
 # The attribute ``@donkey.tool`` attaches to a marked callable. Reading
 # ``getattr(fn, TOOL_MARKER, None)`` (or :func:`tool_spec`) is how a scanner or
@@ -40,8 +48,11 @@ class ToolSpec:
     decorator returned: the original (identity preserved), or for an
     approval-gated tool the gate that wraps it, so a consumer calling it gets the
     approval too. ``approval`` and ``risk`` are the ``@donkey.tool(...)``
-    arguments (BG §2.3, #211). This is the shape the Phase 2 scanner and the A2A
-    card generator read (#200).
+    arguments (BG §2.3, #211). ``server`` is the service ID of the MCP server the
+    tool belongs to (``@donkey.tool(server=...)``, #503), or ``None`` when the
+    author has not attributed it; a scanner reports that as unattributed rather
+    than guessing. This is the shape the Phase 2 scanner and the A2A card
+    generator read (#200).
     """
 
     name: str
@@ -52,6 +63,31 @@ class ToolSpec:
     func: Callable[..., Any]
     approval: str | None = None
     risk: str | None = None
+    server: str | None = None
+
+
+# A service ID names an MCP server (and, for #217, an agent) in the registry. It
+# is permanent: the self-managed scanner keys a service on it forever (#1104) and
+# the duplicate guard matches on it (#1107), so it is always set by the author
+# and never inferred from a path or function name, which change on refactor
+# (#503). Lowercase kebab-case is a conservative SDK-side rule; the platforms'
+# own limits are unconfirmed (#1101).
+_SERVICE_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def validate_service_id(value: object, *, what: str = "server") -> str:
+    """Return ``value`` when it is a valid service ID, else raise ``ValueError``.
+
+    A service ID is lowercase kebab-case (``sku-manager``): letters, digits and
+    single hyphens, starting and ending with a letter or digit (#503).
+    """
+    if not isinstance(value, str) or _SERVICE_ID.fullmatch(value) is None:
+        raise ValueError(
+            f"{what} must be a lowercase kebab-case service ID such as 'sku-manager', "
+            f"not {value!r}. It names the service permanently, so it is set by you and "
+            "never inferred (#503)."
+        )
+    return value
 
 
 # Process-global, in decoration order. Tools are a process-wide concept (a
@@ -61,12 +97,18 @@ class ToolSpec:
 _REGISTRY: list[ToolSpec] = []
 
 
-def register_tool(func: _F, *, approval: str | None = None, risk: str | None = None) -> _F:
+def register_tool(
+    func: _F,
+    *,
+    approval: str | None = None,
+    risk: str | None = None,
+    server: str | None = None,
+) -> _F:
     """Implementation behind ``@donkey.tool`` (#200).
 
     Returns ``func`` unchanged (identity preserved) after attaching a
-    :data:`TOOL_MARKER` and recording a :class:`ToolSpec` with ``approval`` and
-    ``risk`` (BG §2.3). Raises
+    :data:`TOOL_MARKER` and recording a :class:`ToolSpec` with ``approval``,
+    ``risk`` (BG §2.3) and ``server`` (#503). Raises
     :class:`ValueError` when ``func`` has no docstring — an undescribed tool is
     useless to a model and to the registry, so it is rejected rather than
     recorded blank (#200).
@@ -88,6 +130,7 @@ def register_tool(func: _F, *, approval: str | None = None, risk: str | None = N
         func=func,
         approval=approval,
         risk=risk,
+        server=server,
     )
     setattr(func, TOOL_MARKER, spec)
     _REGISTRY.append(spec)

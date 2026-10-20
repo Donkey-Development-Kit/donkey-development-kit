@@ -56,6 +56,13 @@ human decision: a call raises `ApprovalRequired` instead of running, and
 `donkey.approvals.resolve(...)` runs it once someone approves. The approval is
 client-side and advisory. See [Human-in-the-loop](/hitl).
 
+`@donkey.tool(server="sku-manager")` attributes the tool to the MCP server it
+belongs to, by that server's **service ID**: lowercase kebab-case, recorded as
+`ToolSpec.server`. The ID is permanent once a service is registered, so it is
+always set by you and never inferred from a module path or function name. A
+tool without `server=` is reported as **unattributed**, not guessed. Anything
+else raises `ValueError` at decoration time.
+
 The same markers are what the planned [scanner](/publishing) and
 [A2A](/a2a) agent-card generator read, so marking tools now carries forward.
 

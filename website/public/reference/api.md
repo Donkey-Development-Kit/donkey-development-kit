@@ -195,6 +195,7 @@ donkey.tool(
     approval: ApprovalMode | None = None,
     risk: str | None = None,
     approval_timeout: Duration = '15m',
+    server: str | None = None,
 ) -> Callable | Callable[[Callable], Callable]
 ```
 
