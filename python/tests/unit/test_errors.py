@@ -248,6 +248,8 @@ def test_model_armor_response_phase_403_is_content_safety_blocked() -> None:
         ("model-armor", "timeout"),
         ("azure-content-safety", "service_unavailable"),
         ("bedrock-guardrail", "service_unavailable"),
+        ("crowdstrike-aidr", "auth_failed"),
+        ("crowdstrike-aidr", "indeterminate"),
     ],
 )
 def test_content_safety_fail_closed_503_is_an_outage_not_a_block(prefix: str, reason: str) -> None:
@@ -278,6 +280,62 @@ def test_model_armor_allow_with_skip_detection_is_not_a_block() -> None:
             {
                 "x-llm-proxy-model-armor-action": "allow",
                 "x-llm-proxy-model-armor-reason": "skip_detection",
+            },
+        )
+    )
+    assert not isinstance(err, ContentSafetyBlocked)
+
+
+def test_crowdstrike_aidr_response_phase_403_is_content_safety_blocked() -> None:
+    """#1176: a response-phase CrowdStrike AIDR block (the policy rewrites the
+    completion, streamed or not, to a JSON 403) is typed by its vendor header,
+    with every triggered detector as a category."""
+    err = classify(
+        _json_resp(
+            403,
+            {
+                "detectors": ["secrets", "topic"],
+                "error": "Content blocked by CrowdStrike Falcon AIDR",
+                "message": "",
+            },
+            {
+                "x-llm-proxy-crowdstrike-aidr-action": "reject",
+                "x-llm-proxy-crowdstrike-aidr-phase": "response",
+                "x-llm-proxy-crowdstrike-aidr-reason": "secrets,topic",
+            },
+        )
+    )
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.categories == ["secrets", "topic"]
+    assert "CrowdStrike AIDR" in str(err)
+
+
+def test_crowdstrike_aidr_reject_without_reason_has_no_categories() -> None:
+    """#1176: the policy omits the ``-reason`` header when no detector is named
+    (e.g. a reject from the verdict alone); still a block, with no categories."""
+    err = classify(
+        _resp(
+            403,
+            {
+                "x-llm-proxy-crowdstrike-aidr-action": "reject",
+                "x-llm-proxy-crowdstrike-aidr-phase": "request",
+            },
+        )
+    )
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.categories == []
+
+
+@pytest.mark.parametrize("action", ["allow", "transform"])
+def test_crowdstrike_aidr_allow_and_transform_are_not_blocks(action: str) -> None:
+    """#1176: ``allow`` (including report-only detections) and ``transform``
+    (redacted content forwarded) never block, whatever the status."""
+    err = classify(
+        _resp(
+            403,
+            {
+                "x-llm-proxy-crowdstrike-aidr-action": action,
+                "x-llm-proxy-crowdstrike-aidr-reason": "pii",
             },
         )
     )

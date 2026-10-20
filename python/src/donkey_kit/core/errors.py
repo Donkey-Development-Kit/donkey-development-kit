@@ -220,8 +220,8 @@ class PolicyViolation(DonkeyError):
         "(429), prompt-injection (the x-injection-protection "
         "header or the regex prompt guard's matched_patterns) and "
         "content-safety (Azure Content Safety, Amazon Bedrock Guardrails, "
-        "Google Model Armor) rejections are identified specifically; only "
-        "federated-guardrail verdicts and otherwise-unrecognised shapes fall "
+        "Google Model Armor, CrowdStrike AIDR) rejections are identified specifically; "
+        "only federated-guardrail verdicts and otherwise-unrecognised shapes fall "
         "through to here. Inspect .response for the raw body."
     )
 
@@ -396,19 +396,19 @@ class PromptInjectionBlocked(PolicyViolation):
 
 
 class ContentSafetyBlocked(PolicyViolation):
-    """A provider-backed content-moderation policy (Azure Content Safety, Amazon
-    Bedrock Guardrails or Google Model Armor) blocked the request or response.
+    """A provider-backed content-moderation policy (Azure Content Safety, Amazon Bedrock
+    Guardrails, Google Model Armor or CrowdStrike AIDR) blocked the request or response.
 
     ``categories`` carries the flagged reasons the gateway reports in its
     ``x-llm-proxy-<vendor>-...-reason`` header (e.g. ``severity_hate``,
-    ``blocklist``, ``denied_topic``) — the moderation analog of
+    ``blocklist``, ``denied_topic``, ``malicious_prompt``) — the moderation analog of
     :attr:`PIIDetected.entities`. Empty when the gateway reported no reason."""
 
     policy = "content-safety"
     remediation: str = (
-        "A content-moderation policy (Azure Content Safety, Bedrock Guardrails or Model "
-        "Armor) blocked this request. Revise the flagged content, or adjust the policy's "
-        "categories / severity thresholds in API Manager (Model Armor: the template's filters)."
+        "A content-moderation policy (Azure Content Safety, Bedrock Guardrails, Model Armor or "
+        "CrowdStrike AIDR) blocked this request. Revise the flagged content, or adjust its "
+        "categories / thresholds (API Manager; Model Armor template; AIDR policy in Falcon)."
     )
 
     def __init__(self, message: str, *, categories: list[str] | None = None, **kw: Any) -> None:
@@ -704,7 +704,7 @@ def classify(
       (``policy="regex-prompt-guard"``). Keyed on ``matched_patterns`` and checked
       BEFORE the 401/403→auth rule so a deny-list block is not mis-typed as auth.
     * **Content safety / guardrails** (Azure Content Safety, Amazon Bedrock
-      Guardrails, Google Model Armor) reject with **403** and a vendor header
+      Guardrails, Google Model Armor, CrowdStrike AIDR) reject with **403** and a vendor header
       ``x-llm-proxy-<vendor>-...-action: reject`` → :class:`ContentSafetyBlocked`
       (flagged reasons parsed from the sibling ``...-reason`` header). Also
       checked before the auth rule; on a fail-closed 503 it is a 5xx outage.
@@ -829,9 +829,9 @@ def _match_agent_killed(s: _Shape) -> DonkeyError | None:
 
 def _match_content_safety(s: _Shape) -> DonkeyError | None:
     """Content safety / guardrails: 403 + a vendor ``...-action: reject`` header
-    (Azure Content Safety / Bedrock Guardrails / Google Model Armor, docs/verified-apis.md
-    §4, #253/#568/#1178). Keyed on the header, so a reject with an unexpected or absent
-    body is still caught; ahead of the auth rule. A fail-closed 503 is not one (#1178).
+    (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR,
+    docs/verified-apis.md §4, #253/#568/#1178/#1176). Keyed on the header, so a reject with
+    an unexpected or absent body is still caught; ahead of the auth rule. Not a fail-closed 503.
     The message names the vendor; the remediation is the class default."""
     cs = content_safety_reject(s.response)
     if cs is None:

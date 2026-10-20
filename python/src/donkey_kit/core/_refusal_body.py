@@ -216,7 +216,7 @@ MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the know
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
 # ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
-# #253/#568/#1178). Each policy also sends ``action: reject`` on its fail-closed
+# #253/#568/#1178/#1176). Each policy also sends ``action: reject`` on its fail-closed
 # ``503`` (the moderation service was unreachable), so only a ``403`` is a block.
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
     (
@@ -233,6 +233,11 @@ _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
         _wire.MODEL_ARMOR_ACTION_HEADER,
         _wire.MODEL_ARMOR_REASON_HEADER,
         "Google Model Armor",
+    ),
+    (
+        _wire.CROWDSTRIKE_AIDR_ACTION_HEADER,
+        _wire.CROWDSTRIKE_AIDR_REASON_HEADER,
+        "CrowdStrike AIDR",
     ),
 )
 
