@@ -1,7 +1,7 @@
 """The CLI's command set after the legacy quarantine (#730, ADR 0008 in docs/adr/).
 
-Four commands are visible: ``init``, ``doctor``, ``mock`` and ``test``. Three
-hidden ones (``status``, ``publish``, ``verify``, BG §2.5) are
+Five commands are visible: ``init``, ``doctor``, ``mock``, ``test`` and ``scan``
+(#217). Three hidden ones (``status``, ``publish``, ``verify``, BG §2.5) are
 verification-blocked and exit 3 with a ``blocked on verification`` message
 (§0.3). The refused provisioning control plane's commands were removed, so
 typer rejects them as unknown (exit 2), not as blocked (exit 3).
@@ -18,11 +18,11 @@ from donkey_kit.cli import app
 runner = CliRunner()
 
 
-def test_visible_commands_are_init_doctor_mock_test() -> None:
+def test_visible_commands_are_init_doctor_mock_test_scan() -> None:
     commands = typer.main.get_command(app).commands
     visible = {name for name, command in commands.items() if not command.hidden}
 
-    assert visible == {"init", "doctor", "mock", "test"}
+    assert visible == {"init", "doctor", "mock", "test", "scan"}
 
 
 def test_hidden_commands_are_only_the_blocked_platform_ones() -> None:

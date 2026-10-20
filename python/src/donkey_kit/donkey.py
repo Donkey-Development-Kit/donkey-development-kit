@@ -20,7 +20,7 @@ import inspect
 import os
 import sys
 import warnings
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
@@ -46,7 +46,7 @@ from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.reactions import Duration, OnRefusal
 from .core.runtime import Runtime
 from .core.telemetry import RunScope, run_scope
-from .core.toolspec import register_tool, validate_service_id
+from .core.toolspec import register_agent, register_tool, validate_service_id
 from .core.transport import (
     DonkeyAsyncClient,
     DonkeyAsyncClientView,
@@ -806,6 +806,50 @@ class Donkey:
         # decorator to be applied next.
         if func is not None:
             return decorate(func)
+        return decorate
+
+    @staticmethod
+    def agent(*, name: str, skills: Sequence[str] = ()) -> Callable[[_Callable], _Callable]:
+        """Mark a callable as an agent entry point, recording its name, skills
+        and docstring in an introspectable registry (#217).
+
+        Like ``@donkey.tool``, it returns the **same** callable with an
+        ``__donkey_agent__`` marker attached and appends an
+        :class:`~donkey_kit.core.toolspec.AgentSpec` to the process-global
+        registry read by :func:`~donkey_kit.core.toolspec.registered_agents`::
+
+            @donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
+            async def handle(task): ...
+
+        ``donkey scan`` reads the marker statically (BG §2.5), and the A2A card
+        generator behind ``donkey.serve()`` (BG §2.9, #224) reads the same
+        record, so the two cannot drift. It changes nothing about how the
+        callable runs.
+
+        Args:
+            name: The agent's service ID: lowercase kebab-case, permanent, and
+                never inferred (#503).
+            skills: The skill IDs the agent advertises, such as ``"triage"``.
+
+        Raises:
+            ValueError: ``name`` is not a kebab-case service ID, a skill is
+                blank or repeated, or the callable has no docstring (it is the
+                agent's description).
+
+        Docs: https://docs.donkey-kit.dev/a2a
+        """
+        validate_service_id(name, what="name")
+        if isinstance(skills, str):
+            raise ValueError(f"skills must be a list of skill IDs, not the string {skills!r}")
+        recorded = tuple(skills)
+        if any(not isinstance(s, str) or not s.strip() for s in recorded):
+            raise ValueError(f"every skill must be a non-empty string, not {list(recorded)!r}")
+        if len(set(recorded)) != len(recorded):
+            raise ValueError(f"skills must not repeat, not {list(recorded)!r}")
+
+        def decorate(fn: _Callable) -> _Callable:
+            return register_agent(fn, name=name, skills=recorded)
+
         return decorate
 
     @property

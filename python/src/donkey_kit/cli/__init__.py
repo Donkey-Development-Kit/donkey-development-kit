@@ -1,7 +1,7 @@
-"""The ``donkey`` CLI: ``init``, ``doctor``, ``mock`` and ``test``.
+"""The ``donkey`` CLI: ``init``, ``doctor``, ``mock``, ``test`` and ``scan``.
 
 The console script is ``donkey = "donkey_kit.cli:main"``. Each command lives in
-its own module (:mod:`.init`, :mod:`.doctor`, :mod:`.mock`, :mod:`.test`) and
+its own module (:mod:`.init`, :mod:`.doctor`, :mod:`.mock`, :mod:`.test`, :mod:`.scan`) and
 registers on the shared app in :mod:`._app`. The CLI is a front end over the
 library: it may import any layer, and no layer imports it (an import-linter
 contract enforces that). Why it lives here, and why the old ``provisioning/``
@@ -28,6 +28,6 @@ from __future__ import annotations
 # `import typer` raises a bare one. The command modules are then imported for
 # their registration side effect.
 from ._app import app, main  # isort: skip
-from . import _blocked, doctor, init, mock, test  # noqa: F401  # isort: skip
+from . import _blocked, doctor, init, mock, scan, test  # noqa: F401  # isort: skip
 
 __all__ = ["app", "main"]

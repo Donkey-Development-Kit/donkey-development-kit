@@ -195,12 +195,23 @@ donkey.tool(
     approval: ApprovalMode | None = None,
     risk: str | None = None,
     approval_timeout: Duration = '15m',
+    server: str | None = None,
 ) -> Callable | Callable[[Callable], Callable]
 ```
 
 Mark a callable as a governed tool, recording its name, signature and docstring in an introspectable registry, and optionally gate it behind a human approval.
 
 Guide: [`/hitl`](https://docs.donkey-kit.dev/hitl.md)
+
+### `donkey.agent()`
+
+```python nocheck
+donkey.agent(*, name: str, skills: Sequence[str] = ()) -> Callable[[Callable], Callable]
+```
+
+Mark a callable as an agent entry point, recording its name, skills and docstring in an introspectable registry.
+
+Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
 
 ### `donkey.approvals`
 
@@ -523,6 +534,7 @@ is raised.
 
 | Name | Kind | Meaning |
 |---|---|---|
+| `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
 | `Approval` | class | One call of an approval-gated tool, waiting for a human. |
 | `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |
 | `AttributionScope` | class | A **dual sync/async** context manager that attributes the governed calls in its block to a business group and cost tags, without starting a run. |
@@ -550,5 +562,6 @@ is raised.
 | `ToolsFacade` | class | `donkey.tools` — discovery + lock. |
 | `TypedRefusals` | class | Re-raise a refusal from the block as its typed `DonkeyError`. |
 | `classify` | callable object | `classify`: call it to map an error response to a typed `DonkeyError`; register a custom policy's refusal shape on it. |
+| `registered_agents` | function | Every entry point marked with `@donkey.agent` in this process, in decoration order. |
 | `registered_tools` | function | Every callable marked with `@donkey.tool` in this process, in decoration order. The introspection entry point for the scanner / card generator. |
 | `typed_refusals` | function | Re-raise a governance refusal from the block as its typed `DonkeyError`. |

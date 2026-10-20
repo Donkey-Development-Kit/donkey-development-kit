@@ -3,8 +3,8 @@
 Status: Live. Shipped, and verified against a real governed gateway.
 
 Two on-ramps to the SDK: decorators that govern a function in one line, and a
-four-command CLI for setup, diagnosis, local simulation, and conformance
-testing.
+five-command CLI for setup, diagnosis, local simulation, conformance testing,
+and scanning your code for agents and tools.
 
 ## Decorators
 
@@ -50,8 +50,33 @@ human decision: a call raises `ApprovalRequired` instead of running, and
 `donkey.approvals.resolve(...)` runs it once someone approves. The approval is
 client-side and advisory. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md).
 
-The same markers are what the planned [scanner](https://docs.donkey-kit.dev/publishing.md) and
-[A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator read, so marking tools now carries forward.
+`@donkey.tool(server="sku-manager")` attributes the tool to the MCP server it
+belongs to, by that server's **service ID**: lowercase kebab-case, recorded as
+`ToolSpec.server`. The ID is permanent once a service is registered, so it is
+always set by you and never inferred from a module path or function name. A
+tool without `server=` is reported as **unattributed**, not guessed. Anything
+else raises `ValueError` at decoration time.
+
+### `@donkey.agent`
+
+```python
+@donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
+async def handle(task):
+    """Triage a support ticket and draft a reply for a human to send."""
+    ...
+```
+
+Marks an agent entry point, again **without changing how it's called**. It
+returns the same function with a `__donkey_agent__` marker and records an
+`AgentSpec` (name, qualname, docstring, skills, `is_async`) that you read with
+`registered_agents()`; both are exported from `donkey_kit`. `name` is the
+agent's service ID, with the same kebab-case rule as `server=`. The docstring is
+required, because it is the agent's description. A blank or repeated skill
+raises `ValueError`.
+
+[`donkey scan`](#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
+markers today. The planned [A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator will read the same
+records, so marking your code now carries forward.
 
 ## The CLI
 
@@ -64,6 +89,7 @@ donkey init          # writes a commented .donkey-kit.toml, names every missing 
 donkey doctor        # checks creds, reaches the gateway, reports budget state
 donkey mock          # the local simulator — --scenario scripts failures
 donkey test          # a thin front end to pytest --donkey-conformance
+donkey scan          # finds your agents, tools and MCP servers, without running your code
 ```
 
 ### Global flags
@@ -130,6 +156,13 @@ Global options go before the command (`donkey --json init`):
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
 | `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+
+`donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--json` | off | Emit the canonical scan model as JSON. |
 
 `donkey test`: Run the conformance suite against your agent.
 
@@ -273,13 +306,55 @@ donkey test --agent my.pkg:make_agent -k governance -x
 
 See [Testing & conformance](https://docs.donkey-kit.dev/testing.md) for what the suite checks.
 
+### `donkey scan`
+
+Reads your repository's source and reports every `@donkey.agent`, every
+`@donkey.tool`, and the MCP servers those tools name with `server=`. The scan is
+**static**: it parses each `.py` file and never imports or runs it, so a module
+with side effects at import time is safe to scan. It needs no extra and no
+credentials, and it writes no file.
+
+```
+$ donkey scan .
+  agent  support-triage  (app/main.py:13)
+  mcp    sku-manager  (1 tool: lookup_sku)
+  unattributed  issue_refund  (set @donkey.tool(server=...))
+found 1 agent, 2 tools, 1 MCP server
+1 issue
+  app/main.py:9  tautological  tool issue_refund: description equals identifier 'issue_refund'
+```
+
+- A marker counts only when its receiver is a `Donkey`: the class imported from
+  `donkey_kit`, an instance built with `Donkey(...)` or `Donkey.from_env()`, or
+  such an instance imported from another module in the repository. Other
+  frameworks' `@mcp.tool()` decorators are ignored.
+- Decorator arguments are read only when they are **literals**.
+  `server=SERVER_ID` is reported as a `non-literal-argument` issue rather than
+  guessed.
+- A tool without `server=` is listed as **unattributed**. Scan never infers a
+  server from a module or function name.
+- Issues cover a missing, tautological or too-short description, an invalid
+  service ID or skill list, a service ID used twice, two tools with the same
+  name on one server, and a file that fails to parse. `donkey scan` exits `1`
+  when it finds any of them, so it works as a CI gate, `0` when there are none,
+  and `2` when the path does not exist.
+
+`donkey scan --json` (or the global `donkey --json scan`) prints the model as
+canonical JSON: keys and entries are sorted and paths are relative, so the same
+code always gives the same bytes and a CI diff shows only real changes. The
+`digest` field hashes what would be published and leaves out file paths and
+line numbers, so moving code around does not change it.
+
+Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the model it builds is
+the input publishing will read.
+
 ## Planned commands Roadmap
 
 These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
-- `donkey scan` and `donkey publish` — derive a manifest and agent card from
-  your code and register them with Exchange. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md).
+- `donkey publish` — register what `donkey scan` finds with Exchange. See
+  [Scan & publish](https://docs.donkey-kit.dev/publishing.md).
 - `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
   A2A and expose it through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 

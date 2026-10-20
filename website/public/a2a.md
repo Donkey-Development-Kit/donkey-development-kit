@@ -35,8 +35,10 @@ donkey.serve(handle)      # A2A server on 127.0.0.1:8000, card auto-generated
 ```
 
 - **The card is generated from your code** — the same `@donkey.tool` /
-  `@donkey.agent` markers the [scanner](https://docs.donkey-kit.dev/publishing.md) reads — so there is no
-  second description of your agent to keep in sync.
+  `@donkey.agent` markers that [`donkey scan`](https://docs.donkey-kit.dev/publishing.md) reads — so there is
+  no second description of your agent to keep in sync. The
+  [`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) marker is live today; `serve` is the
+  planned part.
 - **It binds to localhost by default**, so your agent is never the public face;
   the gateway is.
 - **Inbound calls are governed.** Every call arriving over A2A gets the same
