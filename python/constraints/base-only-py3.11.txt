@@ -6,7 +6,7 @@
 annotated-doc==0.0.5
 anyio==4.15.1
 ast-serialize==0.13.1
-certifi==2026.10.18
+certifi==2026.10.19
 click==8.5.0
 coverage==7.16.2
 grimp==3.17
