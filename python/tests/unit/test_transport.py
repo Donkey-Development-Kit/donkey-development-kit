@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import warnings
+from pathlib import Path
 
 import httpx
 import pytest
@@ -36,6 +37,7 @@ from donkey_kit.core.transport import (
     effective_cost_tags,
     proxy_auth_headers,
 )
+from donkey_kit.simulator.fixtures import parse_headers
 
 
 def _client(handler, cfg=None, auth=None) -> DonkeyAsyncClient:
@@ -1512,7 +1514,51 @@ async def test_pii_refusal_span_has_refuse_decision_and_error_status(monkeypatch
     attrs = dict(span.attributes)
     assert attrs["donkey.policy.decision"] == "refuse"
     assert attrs["donkey.policy.type"] == "pii_detected"
+    # Not a provider-backed refusal: no provider or categories on the span (#1183).
+    assert "donkey.policy.provider" not in attrs
+    assert "donkey.policy.categories" not in attrs
     assert span.status.status_code is StatusCode.ERROR
+
+
+_REJECTIONS = Path(__file__).resolve().parents[2] / "src/donkey_kit/simulator/_fixtures/rejections"
+
+
+@pytest.mark.parametrize(
+    ("slug", "provider", "categories"),
+    [
+        ("content-safety", "azure-content-safety", ("severity_hate", "severity_violence")),
+        ("content-safety-bedrock", "bedrock-guardrails", ("content_filter",)),
+        (
+            "content-safety-model-armor",
+            "google-model-armor",
+            ("rai_harassment", "rai_dangerous", "pi_and_jailbreak"),
+        ),
+        ("content-safety-crowdstrike-aidr", "crowdstrike-aidr", ("malicious_prompt", "pii")),
+    ],
+)
+async def test_content_safety_refusal_span_names_the_provider_and_categories(
+    monkeypatch, slug: str, provider: str, categories: tuple[str, ...]
+) -> None:
+    # #1183: the refusal span says which vendor blocked the call and why, from the
+    # same reject.content-safety-* fixtures the classify() contract reads.
+    exporter = _use_tracer(monkeypatch)
+    headers = parse_headers((_REJECTIONS / f"reject.{slug}.headers.txt").read_text())
+    body = _REJECTIONS / f"reject.{slug}.body.json"
+    content = body.read_bytes() if body.exists() else b""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, headers=headers, content=content)
+
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["donkey.policy.decision"] == "refuse"
+    assert attrs["donkey.policy.type"] == "content_safety"
+    assert attrs["donkey.policy.provider"] == provider
+    assert tuple(attrs["donkey.policy.categories"]) == categories
 
 
 async def test_transport_error_span_has_error_status(monkeypatch) -> None:

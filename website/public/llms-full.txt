@@ -2718,7 +2718,7 @@ specific headers.
 | Agent kill switch | `403` | nested `{"error":{code:"agent_killed"}}`, **no** `type`, **no** `www-authenticate` | `AgentKilled` |
 | Injection protection | `400` | header `x-injection-protection: blocked` (**not** the status) | `PromptInjectionBlocked` |
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
-| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR). The same header on a `503` is the policy failing closed (its moderation service was unreachable): an `UpstreamModelError` | `ContentSafetyBlocked` (parses `categories`) |
+| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR). The same header on a `503` is the policy failing closed (its moderation service was unreachable): an `UpstreamModelError` | `ContentSafetyBlocked` (sets `provider`, parses `categories`) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
 | Request rate limit | `429` | body `{"error":"Too Many Requests"}`; `x-ratelimit-limit`/`-remaining`/`-reset` headers (ms), **no** `x-token-*`, **no** `retry-after` | `RequestRateLimitExceeded` (`retry_after` derived) |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
@@ -2803,7 +2803,7 @@ DonkeyError                     # base of the whole tree
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
-│  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR 403 reject header; .categories
+│  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR 403 reject header; .provider, .categories
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 ├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
@@ -2961,6 +2961,13 @@ Request blocked: personally identifiable information detected (403): 1 entity (E
 `str()` or `repr()`. Both carry the blocked content, so handle them like the
 prompt itself. The other refusal messages are built from status codes,
 headers, category names and policy pattern names, never from the request.
+
+`ContentSafetyBlocked.provider` names the moderation provider that blocked the
+call, as a stable slug: `azure-content-safety`, `bedrock-guardrails`,
+`google-model-armor` or `crowdstrike-aidr`. `.categories` lists what it flagged
+(`["rai_dangerous"]`). The refusal's span carries the same two values as
+`donkey.policy.provider` and `donkey.policy.categories`
+([Telemetry](https://docs.donkey-kit.dev/telemetry.md#opentelemetry-genai-spans)).
 
 A traceback also prints every chained exception, and a framework's own error
 usually repeats the gateway's text. So when the SDK maps a framework error to
@@ -4423,7 +4430,9 @@ for the governance layer that generic instrumentation cannot know about:
 
 ```
 donkey.policy.decision      = allow | refuse
-donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | …
+donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | content_safety | …
+donkey.policy.provider      = google-model-armor  # who blocked it (provider-backed refusals only)
+donkey.policy.categories    = [rai_dangerous]     # why: the provider's flagged categories
 donkey.budget.remaining     = 18450
 donkey.correlation_id       = …
 donkey.cost.team            = support
@@ -4443,6 +4452,17 @@ donkey.usage.reasoning_tokens     = 96
 A refusal typed by a [custom policy registration](https://docs.donkey-kit.dev/custom-policies.md) records its
 slug verbatim as `donkey.policy.type`, for example `acme_salary_block`, so the
 span and your policy's own logs share one string.
+
+A refusal made by an external moderation provider also says **who** blocked the
+call and **why**. `donkey.policy.provider` is the provider's stable slug
+(`azure-content-safety`, `bedrock-guardrails`, `google-model-armor` or
+`crowdstrike-aidr`), and `donkey.policy.categories` is a string array of the
+categories it flagged. They are the same values as `ContentSafetyBlocked.provider`
+and `.categories` on the [exception](https://docs.donkey-kit.dev/errors.md). Both are omitted on every other
+refusal, such as a PII block or a budget refusal. The categories are the
+provider's fixed filter names, not request content, so they are safe to export.
+Group refusals by `donkey.policy.provider` to compare how often each provider
+blocks you, and by `donkey.policy.categories` to see which categories trip most.
 
 The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
 semantic conventions have no pinned key for — cached / cache-write prompt tokens

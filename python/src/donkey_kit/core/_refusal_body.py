@@ -218,40 +218,46 @@ MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the know
 # ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
 # #253/#568/#1178/#1176). Each policy also sends ``action: reject`` on its fail-closed
 # ``503`` (the moderation service was unreachable), so only a ``403`` is a block.
-_CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str], ...] = (
+_CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str, str], ...] = (
     (
         _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
         _wire.AZURE_CONTENT_SAFETY_REASON_HEADER,
+        "azure-content-safety",
         "Azure Content Safety",
     ),
     (
         _wire.BEDROCK_GUARDRAIL_ACTION_HEADER,
         _wire.BEDROCK_GUARDRAIL_REASON_HEADER,
+        "bedrock-guardrails",
         "Amazon Bedrock Guardrails",
     ),
     (
         _wire.MODEL_ARMOR_ACTION_HEADER,
         _wire.MODEL_ARMOR_REASON_HEADER,
+        "google-model-armor",
         "Google Model Armor",
     ),
     (
         _wire.CROWDSTRIKE_AIDR_ACTION_HEADER,
         _wire.CROWDSTRIKE_AIDR_REASON_HEADER,
+        "crowdstrike-aidr",
         "CrowdStrike AIDR",
     ),
 )
 
 
-def content_safety_reject(response: ResponseLike) -> tuple[str, list[str]] | None:
-    """``(vendor, categories)`` when a content-safety policy header reports
+def content_safety_reject(response: ResponseLike) -> tuple[str, str, list[str]] | None:
+    """``(provider, vendor, categories)`` when a content-safety policy header reports
     ``action: reject`` on a ``403``, else ``None`` (the same header on the
-    fail-closed ``503`` is an outage, #1178). Categories are the comma-separated
-    flagged reasons from the sibling ``...-reason`` header (empty list if absent)."""
+    fail-closed ``503`` is an outage, #1178). ``provider`` is the stable slug that
+    ``ContentSafetyBlocked.provider`` and ``donkey.policy.provider`` carry (#1183);
+    ``vendor`` is the display name. Categories are the comma-separated flagged
+    reasons from the sibling ``...-reason`` header (empty list if absent)."""
     if response.status_code != 403:
         return None
-    for action_h, reason_h, vendor in _CONTENT_SAFETY_VENDORS:
+    for action_h, reason_h, provider, vendor in _CONTENT_SAFETY_VENDORS:
         if response.headers.get(action_h) == "reject":
             reason = response.headers.get(reason_h, "")
             categories = [c.strip() for c in reason.split(",") if c.strip()]
-            return vendor, categories
+            return provider, vendor, categories
     return None

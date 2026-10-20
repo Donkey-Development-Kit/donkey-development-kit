@@ -23,7 +23,9 @@ for the governance layer that generic instrumentation cannot know about:
 
 ```
 donkey.policy.decision      = allow | refuse
-donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | …
+donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | content_safety | …
+donkey.policy.provider      = google-model-armor  # who blocked it (provider-backed refusals only)
+donkey.policy.categories    = [rai_dangerous]     # why: the provider's flagged categories
 donkey.budget.remaining     = 18450
 donkey.correlation_id       = …
 donkey.cost.team            = support
@@ -43,6 +45,17 @@ donkey.usage.reasoning_tokens     = 96
 A refusal typed by a [custom policy registration](/custom-policies) records its
 slug verbatim as `donkey.policy.type`, for example `acme_salary_block`, so the
 span and your policy's own logs share one string.
+
+A refusal made by an external moderation provider also says **who** blocked the
+call and **why**. `donkey.policy.provider` is the provider's stable slug
+(`azure-content-safety`, `bedrock-guardrails`, `google-model-armor` or
+`crowdstrike-aidr`), and `donkey.policy.categories` is a string array of the
+categories it flagged. They are the same values as `ContentSafetyBlocked.provider`
+and `.categories` on the [exception](/errors). Both are omitted on every other
+refusal, such as a PII block or a budget refusal. The categories are the
+provider's fixed filter names, not request content, so they are safe to export.
+Group refusals by `donkey.policy.provider` to compare how often each provider
+blocks you, and by `donkey.policy.categories` to see which categories trip most.
 
 The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
 semantic conventions have no pinned key for — cached / cache-write prompt tokens
