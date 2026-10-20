@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from .core.cachecontrol import CacheControls, CacheScope
     from .core.classifier import Classifier, PolicyRegistration, classify
     from .core.config import ConfigOverrides, DonkeyConfig, Region
+    from .core.correlation import AttributionScope
     from .core.cost import CostTags
     from .core.errors import (
         AgentKilled,
@@ -82,6 +83,7 @@ _LAZY = {
     "ApprovalRejected": ".core.approvals",
     "ApprovalTimedOut": ".core.approvals",
     "Approvals": ".core.approvals",
+    "AttributionScope": ".core.correlation",
     "AuthError": ".core.errors",
     "Budget": ".core.budget",
     "BudgetReserveReached": ".core.errors",
@@ -189,6 +191,7 @@ __all__ = [
     "ApprovalRequired",
     "ApprovalTimedOut",
     "Approvals",
+    "AttributionScope",
     "AuthError",
     "Budget",
     "BudgetReserveReached",

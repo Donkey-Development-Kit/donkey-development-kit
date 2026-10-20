@@ -56,6 +56,7 @@ trust_env  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 limits  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 http2  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 _.discover  # unused method (src/donkey_kit/donkey.py)
+_.attribution  # unused method (src/donkey_kit/donkey.py): public API, #310
 domain  # unused variable (src/donkey_kit/donkey.py)
 locked  # unused variable (src/donkey_kit/donkey.py)
 _.lock  # unused method (src/donkey_kit/donkey.py)

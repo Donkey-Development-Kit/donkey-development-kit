@@ -252,6 +252,11 @@ The gateway attributes traffic to the `client_id` credential (or, in `jwt`
 mode, the JWT's `client_id` claim), so you don't need either value for
 attribution.
 
+To set the business group per request rather than per `Donkey`, wrap the calls
+in `donkey.attribution(business_group=…)` or pass `business_group=` to
+`donkey.run(...)`. The scoped value wins over this field for its block. See
+[Per-request attribution](https://docs.donkey-kit.dev/telemetry.md#per-request-attribution).
+
   Both header names are unconfirmed guesses. The gateway hasn't been seen
   reading them (see §3 of the
   [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)).
@@ -530,13 +535,14 @@ never carry them.
 | `X-Correlation-Id` (`correlation_header`) | The run ID | Always | Both planes |
 | `X-Donkey-Request-Id` (`call_id_header`) | A per-call ID | Always | Both planes |
 | `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy only |
-| `X-Anypoint-Business-Group` | `business_group` | When set | The LLM proxy only |
+| `X-Anypoint-Business-Group` | `business_group`, or the group from an enclosing `donkey.attribution(...)` / `donkey.run(business_group=…)` block | When set | The LLM proxy only |
 | `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
 | `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache only |
 
 CrewAI, which gets only a header snapshot, sends the auth headers, the
 attribution headers and, with `send_cost_headers`, the configured cost tags. It
-doesn't send per-run values or cache controls.
+doesn't send per-run values, a per-request business group or cache controls: it
+always sends the configured `business_group`.
 
 ## Config files, secrets and trust
 

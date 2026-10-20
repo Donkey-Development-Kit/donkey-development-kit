@@ -123,6 +123,7 @@ donkey.run(
     project: str | None = None,
     env: str | None = None,
     enduser_id: str | None = None,
+    business_group: str | None = None,
     typed_refusals: bool = True,
 ) -> RunScope
 ```
@@ -136,6 +137,21 @@ donkey.run_context(run_id: str | None = None) -> RunScope
 ```
 
 Deprecated alias for `run`: use `donkey.run(id=…)`. Emits a `DeprecationWarning`.
+
+### `donkey.attribution()`
+
+```python nocheck
+donkey.attribution(
+    *,
+    business_group: str | None = None,
+    team: str | None = None,
+    project: str | None = None,
+    env: str | None = None,
+    enduser_id: str | None = None,
+) -> AttributionScope
+```
+
+Attribute every governed call in the block to a business group and cost tags, per request, without starting a run.
 
 ### `donkey.cache()`
 
@@ -162,6 +178,7 @@ donkey.governed(
     project: str | None = None,
     env: str | None = None,
     enduser_id: str | None = None,
+    business_group: str | None = None,
     typed_refusals: bool = True,
 ) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]
 ```
@@ -508,6 +525,7 @@ is raised.
 |---|---|---|
 | `Approval` | class | One call of an approval-gated tool, waiting for a human. |
 | `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |
+| `AttributionScope` | class | A **dual sync/async** context manager that attributes the governed calls in its block to a business group and cost tags, without starting a run. |
 | `Budget` | class | The token-budget window for one `Donkey`, updated in-band from each response's budget headers (numeric `x-token-*` or the prose `x-llm-proxy-ratelimit` fallback). Its request-count sibling is `requests`. |
 | `CacheControls` | class | The per-request semantic-cache steering controls. |
 | `CacheScope` | class | A **dual sync/async** context manager that applies `CacheControls` to the governed calls made in its block. |

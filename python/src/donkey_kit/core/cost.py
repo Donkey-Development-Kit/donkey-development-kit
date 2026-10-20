@@ -25,7 +25,7 @@ from dataclasses import dataclass, fields, replace
 
 from .errors import ConfigError
 
-__all__ = ["CostTags"]
+__all__ = ["CostTags", "validate_tag_value"]
 
 # The fixed external key names (what a user writes in ``[donkey.cost]`` toml or a
 # mapping) → the Python field. ``enduser.id`` keeps the OTel-style dotted name
@@ -43,24 +43,25 @@ _KEY_TO_FIELD: dict[str, str] = {
 _MAX_VALUE_LEN = 256
 
 
-def _validate(field: str, value: str) -> None:
+def validate_tag_value(field: str, value: str, *, kind: str = "Cost tag") -> None:
     """Reject a value that could not be a legitimate attribution tag: empty,
     over-long, or carrying a control character (a newline is header injection;
     any control char has no place in a dimension value). Raises
-    :class:`ConfigError` naming the offending field."""
+    :class:`ConfigError` naming the offending field. ``kind`` labels it, so the
+    per-request business group (#310) is refused by the same rule."""
     if value == "":
         raise ConfigError(
-            f"Cost tag {field!r} is empty. Omit it, or give it a value — an "
+            f"{kind} {field!r} is empty. Omit it, or give it a value — an "
             f"empty tag is a config mistake, not 'no tag' (that is unset)."
         )
     if len(value) > _MAX_VALUE_LEN:
         raise ConfigError(
-            f"Cost tag {field!r} is {len(value)} chars; the maximum is "
+            f"{kind} {field!r} is {len(value)} chars; the maximum is "
             f"{_MAX_VALUE_LEN}. A cost dimension is a short label, not a payload."
         )
     if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
         raise ConfigError(
-            f"Cost tag {field!r} contains a control character. Tags are emitted "
+            f"{kind} {field!r} contains a control character. Tags are emitted "
             f"as request headers, so a newline or control char would corrupt the "
             f"request — use a plain short label."
         )
@@ -84,7 +85,7 @@ class CostTags:
         for f in fields(self):
             value = getattr(self, f.name)
             if value is not None:
-                _validate(f.name, value)
+                validate_tag_value(f.name, value)
 
     # ---------------------------------------------------------------- factory
     @classmethod
