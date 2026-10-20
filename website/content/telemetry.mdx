@@ -680,6 +680,52 @@ something of your own reads them.
   attribute in your collector, or turn spans off with `DONKEY_TELEMETRY=false`.
 </Callout>
 
+### Per-request attribution
+
+One process often serves several tenants or teams: a shared agent platform, a
+multi-tenant SaaS agent, or one job that spans two cost centres. Keep one
+`Donkey` (one client, pool, auth cache and budget) and say per request which
+group a call belongs to:
+
+```python
+async def handle(tenant: str, prompt: str):
+    with donkey.attribution(business_group=tenant):
+        return await model.ainvoke(prompt)
+```
+
+`donkey.attribution(business_group=…, team=…, project=…, env=…, enduser_id=…)`
+attributes every governed call in its block, on both the async and the blocking
+client. The business group replaces the configured `business_group` for the
+block. The precedence is this scope, then the `Donkey` config, then
+`DONKEY_BUSINESS_GROUP`, then the config file. The cost tags merge per field
+over any already bound by an enclosing block.
+
+It doesn't start a run, so the correlation ID stays the same and one run can
+span two cost centres:
+
+```python
+async with donkey.run(id=job.id):
+    with donkey.attribution(business_group="risk-eu"):
+        await score(job)
+    with donkey.attribution(business_group="risk-us"):
+        await score(job)
+```
+
+`donkey.run(business_group=…)` and `@donkey.governed(business_group=…)` take
+the same argument when the group belongs to the whole run. Like the run ID, the
+binding is contextvar-based: it reaches framework-spawned tasks, concurrent
+tasks never see each other's group, and nested blocks restore the outer value
+on exit. The value is validated like a cost tag, and an invalid one raises
+`ConfigError` where you set it.
+
+<Callout type="info">
+  **Adapters that get only a `default_headers` snapshot don't follow the
+  scope.** They captured the configured business group when they were built, so
+  they keep sending it. Adapters with transport injection send the scoped value.
+  The header name, `X-Anypoint-Business-Group`, is still an unverified
+  placeholder; see [Configuration](/reference/configuration#optional-attribution).
+</Callout>
+
 ### The question this answers
 
 Finance asks what the support agent cost last month versus the HR bot. Without

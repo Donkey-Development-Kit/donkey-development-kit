@@ -16,6 +16,7 @@ from .. import _verify
 from ..cachecontrol import current_cache_controls
 from ..config import TOKEN_AUTH_MODES, DonkeyConfig
 from ..correlation import (
+    current_business_group,
     current_correlation_id,
     current_cost_tags,
     new_call_id,
@@ -110,7 +111,8 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
     snapshot cannot see a later ``donkey.run(...)`` override — that binding is a
     contextvar the live client reads per send — so the snapshot path carries the
     set-once tags only, a documented degradation (like the per-run correlation
-    ID, BG §1.8)."""
+    ID, BG §1.8). The same holds for a per-request business group (#310): the
+    snapshot carries the configured one."""
 
     headers: dict[str, str] = {}
     if cfg.application_name:
@@ -276,6 +278,9 @@ def _apply_base_headers(
     run-scope dimension wins for its block (#196). Disabled (the default), no
     cost header is sent; the span attributes still carry every tag.
 
+    A per-request business group (#310) is applied the same way, over the
+    configured one.
+
     On a ``control_plane`` client only the correlation ID is set: the
     attribution, cost-tag and ``x-cache-*`` headers are meant for the LLM proxy
     (docs/verified-apis.md §3) and no Anypoint platform API reads them
@@ -289,6 +294,12 @@ def _apply_base_headers(
         return
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
+    # A business group bound by ``donkey.run(...)`` / ``donkey.attribution(...)``
+    # replaces the configured one for its block (#310), read per send like the
+    # cost tags below. The header name stays the Unverified placeholder (#21).
+    group = current_business_group()
+    if group is not None:
+        request.headers[_verify.ATTRIBUTION_BUSINESS_GROUP_HEADER.get()] = group
     run = current_cost_tags()
     if run is not None and cfg.send_cost_headers:
         for name, value in cost_headers(cfg, run).items():

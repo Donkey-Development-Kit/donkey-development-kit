@@ -40,6 +40,7 @@ from .core.cachecontrol import CacheControls, CacheScope, cache_scope
 from .core.classifier import Classifier
 from .core.classifier import classify as _classify
 from .core.config import ConfigOverrides, DonkeyConfig
+from .core.correlation import AttributionScope, attribution_scope
 from .core.cost import CostTags
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.reactions import Duration, OnRefusal
@@ -418,6 +419,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        business_group: str | None = None,
         typed_refusals: bool = True,
     ) -> RunScope:
         """Group one logical agent run under a shared correlation id (BG §1.7, #195).
@@ -451,6 +453,9 @@ class Donkey:
         env=..., enduser_id=...)`` wins per field for every call inside, and the
         rest fall back to the configured tags. Like the run id, the binding rides
         the contextvar, so it reaches framework-spawned tasks and restores on exit.
+        ``business_group=`` (#310) does the same for the business group: it
+        replaces the configured one for every call in the block. To attribute
+        part of a run without starting a new one, use :meth:`attribution`.
 
         **Typed refusals** (BG §1.2, #724): a governance refusal or a transport
         failure leaving the block is re-raised as its typed
@@ -466,6 +471,7 @@ class Donkey:
             id,
             override if not override.is_empty else None,
             _typed_refusals() if typed_refusals else None,
+            business_group,
         )
 
     def run_context(self, run_id: str | None = None) -> RunScope:
@@ -477,6 +483,57 @@ class Donkey:
             stacklevel=2,
         )
         return self.run(run_id)
+
+    def attribution(
+        self,
+        *,
+        business_group: str | None = None,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> AttributionScope:
+        """Attribute every governed call in the block to a business group and
+        cost tags, per request, without starting a run (#310).
+
+        One process serving several tenants or teams keeps one client,
+        connection pool, auth cache and budget, and states which group each
+        call belongs to::
+
+            async def handle(tenant: str, prompt: str):
+                with donkey.attribution(business_group=tenant):
+                    return await model.ainvoke(prompt)
+
+        The business group replaces the configured ``business_group`` for the
+        block (precedence: this scope, then the ``Donkey`` config, then env,
+        then file). The cost tags merge per field over any already bound by an
+        enclosing :meth:`run` or ``attribution()`` block. The correlation ID is
+        left alone, so it composes with :meth:`run` and one run can span two
+        cost centres::
+
+            async with donkey.run(id=job.id):
+                with donkey.attribution(business_group="risk-eu"):
+                    await score(job)
+                with donkey.attribution(business_group="risk-us"):
+                    await score(job)
+
+        A **dual sync/async** context manager. The binding is a contextvar, so
+        it reaches framework-spawned ``asyncio`` tasks, concurrent tasks never
+        see each other's group, and nesting restores the outer value on exit.
+        Both the async and the blocking client honour it. Invalid values raise
+        :class:`~donkey_kit.core.errors.ConfigError` here, not on the first
+        request.
+
+        The same documented degradation as :meth:`run` applies (BG §1.8): an
+        adapter handed only a ``default_headers`` snapshot
+        (``connection_kwargs()``) captured the configured group when it was
+        built and does not follow this scope. The header name is still an
+        unverified placeholder (``docs/verified-apis.md`` §3, #21).
+        """
+        return attribution_scope(
+            CostTags(team=team, project=project, env=env, enduser_id=enduser_id),
+            business_group,
+        )
 
     def cache(
         self,
@@ -545,6 +602,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        business_group: str | None = None,
         typed_refusals: bool = True,
     ) -> Callable[_P, _R]: ...
 
@@ -557,6 +615,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        business_group: str | None = None,
         typed_refusals: bool = True,
     ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
 
@@ -568,6 +627,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        business_group: str | None = None,
         typed_refusals: bool = True,
     ) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]:
         """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
@@ -609,6 +669,7 @@ class Donkey:
                         project=project,
                         env=env,
                         enduser_id=enduser_id,
+                        business_group=business_group,
                         typed_refusals=typed_refusals,
                     ):
                         return await coro_fn(*args, **kwargs)
@@ -622,6 +683,7 @@ class Donkey:
                     project=project,
                     env=env,
                     enduser_id=enduser_id,
+                    business_group=business_group,
                     typed_refusals=typed_refusals,
                 ):
                     return fn(*args, **kwargs)

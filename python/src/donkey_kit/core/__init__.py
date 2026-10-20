@@ -12,6 +12,7 @@ from .cache import TTLCache
 from .cachecontrol import CacheControls, CacheScope, cache_scope, current_cache_controls
 from .classifier import Classifier, PolicyRegistration, classify
 from .config import ConfigOverrides, DonkeyConfig, Region
+from .correlation import AttributionScope, current_business_group
 from .cost import CostTags
 from .errors import (
     AgentKilled,
@@ -56,6 +57,7 @@ from .transport import (
 __all__ = [
     "AgentKilled",
     "AnypointConnectedApp",
+    "AttributionScope",
     "AuthError",
     "AuthProvider",
     "Budget",
@@ -101,6 +103,7 @@ __all__ = [
     "cache_scope",
     "classify",
     "cost_headers",
+    "current_business_group",
     "current_cache_controls",
     "current_correlation_id",
     "current_cost_tags",
