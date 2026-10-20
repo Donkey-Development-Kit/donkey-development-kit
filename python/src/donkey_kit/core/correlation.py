@@ -91,6 +91,17 @@ class RunScope:
     Enter and exit happen in the same task/context for both protocols, so the
     ``reset(token)`` is always valid.
 
+    **Concurrency contract (#311).** A fan-out started inside the block
+    (``asyncio.gather``, LangGraph parallel nodes, tool calls on child tasks)
+    sends exactly one correlation ID on every call: each task copies the context
+    when it is created, so it sees the block's ID. That includes a task that
+    outlives the block. A task binding its own scope changes only its copy, never
+    its parent's or a sibling's. A thread does not inherit the context: run it
+    under :func:`contextvars.copy_context` or bind a scope inside it. Without a
+    scope, nothing is grouped. Every logical request gets its own fresh ID
+    (:func:`request_correlation_id`), so N concurrent calls send N IDs, and
+    which task happened to call first changes nothing.
+
     Cost-attribution overrides (#196) layer on as additional bound state:
     ``donkey.run(team=..., project=..., env=..., enduser_id=...)`` binds a
     :class:`~donkey_kit.core.cost.CostTags` for the block, merged over the
