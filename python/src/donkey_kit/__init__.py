@@ -65,7 +65,7 @@ if TYPE_CHECKING:
     from .core.reactions import OnRefusal, RefusalContext
     from .core.refusals import TypedRefusals
     from .core.telemetry import RunScope
-    from .core.toolspec import ToolSpec, registered_tools
+    from .core.toolspec import AgentSpec, ToolSpec, registered_agents, registered_tools
     from .core.transport import DonkeyAsyncClientView, DonkeyClientView
     from .donkey import Donkey, ToolsFacade
     from .integrations import typed_refusals
@@ -118,11 +118,13 @@ _LAZY = {
     "RunScope": ".core.telemetry",
     "TokenBudgetExceeded": ".core.errors",
     "ToolSpec": ".core.toolspec",
+    "AgentSpec": ".core.toolspec",
     "ToolsFacade": ".donkey",
     "TypedRefusals": ".core.refusals",
     "UpstreamModelError": ".core.errors",
     "UpstreamRequestError": ".core.errors",
     "classify": ".core.classifier",
+    "registered_agents": ".core.toolspec",
     "registered_tools": ".core.toolspec",
     "typed_refusals": ".integrations",
 }
@@ -186,6 +188,7 @@ __version__ = "0.2.0.dev1"
 
 __all__ = [
     "AgentKilled",
+    "AgentSpec",
     "Approval",
     "ApprovalRejected",
     "ApprovalRequired",
@@ -232,6 +235,7 @@ __all__ = [
     "UpstreamRequestError",
     "__version__",
     "classify",
+    "registered_agents",
     "registered_tools",
     "typed_refusals",
 ]

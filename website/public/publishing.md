@@ -2,22 +2,55 @@
 
 Status: Roadmap. Planned design; not shipped yet.
 
-This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
+`donkey scan` is live. Publishing is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md): the sections
+after the `donkey scan` section show its planned design.
 
-`donkey scan` walks your repository, finds everything marked
-[`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus MCP server definitions and agent entry
-points, and produces a manifest and A2A agent card. `donkey publish` registers
-them with Exchange / Agent Registry. A GitHub Action runs both on every merge to
-`main`.
+`donkey scan` walks your repository and finds every
+[`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
+the MCP servers those tools name with `server=`. It produces one deterministic
+model of them. Publishing will register that model with Exchange / Agent
+Registry, and a GitHub Action will run both on every merge to `main`.
 
 **The registry becomes a consequence of the code, not a chore.** A support agent
 with six tools registered by hand has a stale tool list within a week; with the
 Action, every merge updates it.
 
   **This complements MuleSoft's Agent Scanners.** Agent Scanners discover agents
-  from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan &
-  publish is the **design-time / CI** complement: it registers agents built in
-  plain Python that no cloud scanner can see.
+  from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan is
+  the **design-time / CI** source for the agents you build in plain Python,
+  which no cloud scanner can see. Its model is planned to feed both direct
+  Exchange publishing and the platform's self-managed scanner, so the platform
+  stays the system of record.
+
+## `donkey scan` — the model of your code Live
+
+```bash
+donkey scan .           # a summary, and any issues
+donkey scan . --json    # the canonical model, for a CI diff
+```
+
+Scan is **static**: it parses your source and never imports or runs it. It
+needs no credentials and writes no file. The model lists:
+
+- **agents**: each `@donkey.agent`, with its name (a service ID), skills and
+  description,
+- **tools**: each `@donkey.tool`, with its parameters, description, `server`,
+  `approval` and `risk`,
+- **MCP servers**: each distinct `server=` ID and the tools that name it,
+- **unattributed** tools that have no `server=`. Scan reports them and never
+  guesses a server.
+
+The model is deterministic: the same code always gives the same JSON, and its
+`digest` leaves out file paths and line numbers, so moving code does not look
+like a change. Scan also reports **issues** and exits `1` when it finds one:
+a missing or tautological description, an invalid service ID, a non-literal
+decorator argument it cannot read, or a service ID used twice. That way CI
+fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) for
+the full rules.
+
+  A service ID (`@donkey.agent(name=...)`, `@donkey.tool(server=...)`) names a
+  service in the registry **permanently**, so choose it deliberately. Renaming
+  it later would register a second service rather than rename the first.
 
 ## Scope: code-first assets
 

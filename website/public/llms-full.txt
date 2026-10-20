@@ -289,12 +289,13 @@ Omni Gateway later is an environment change, not a code change.
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
 | Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `test`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| CLI (`init`, `doctor`, `mock`, `test`, `scan`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
 | Governed tool access (MCP) | Roadmap | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
 | A2A agents (`serve`, `expose`, `dev`) | Roadmap | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
 | On-behalf-of identity | Roadmap | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
-| Scan & publish to the registry | Roadmap | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| `donkey scan` (agents, tools and MCP servers from code) | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| Publish to the registry | Roadmap | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
 ## Your first governed call
@@ -690,8 +691,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     **Advantage:** the PII branch is tested before production, not in it.
   
   
-    **Purpose:** `donkey init`, `doctor`, `mock` and `test`, plus
-    `@donkey.governed` and `@donkey.tool`. **Advantage:** `doctor` tells wrong
+    **Purpose:** `donkey init`, `doctor`, `mock`, `test` and `scan`, plus
+    `@donkey.governed`, `@donkey.tool` and `@donkey.agent`. **Advantage:** `doctor` tells wrong
     credentials from wrong URL from model-not-allowed; one decorator gives a
     function a run scope, span and typed refusals.
   
@@ -714,9 +715,9 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     governed with the same correlation, spans and refusals.
   
   
-    **Purpose:** derive a manifest and agent card from your code and register
-    them in the Agent Fabric registry. **Advantage:** the catalog stays in sync
-    from CI, not by hand.
+    **Purpose:** `donkey scan` (live) derives a model of your agents, tools and
+    MCP servers from code; publishing registers it in the Agent Fabric
+    registry. **Advantage:** the catalog stays in sync from CI, not by hand.
   
 
 ## What DDK leaves to the platform
@@ -5604,8 +5605,8 @@ Source: https://docs.donkey-kit.dev/cli.md
 Status: Live. Shipped, and verified against a real governed gateway.
 
 Two on-ramps to the SDK: decorators that govern a function in one line, and a
-four-command CLI for setup, diagnosis, local simulation, and conformance
-testing.
+five-command CLI for setup, diagnosis, local simulation, conformance testing,
+and scanning your code for agents and tools.
 
 ## Decorators
 
@@ -5658,8 +5659,26 @@ always set by you and never inferred from a module path or function name. A
 tool without `server=` is reported as **unattributed**, not guessed. Anything
 else raises `ValueError` at decoration time.
 
-The same markers are what the planned [scanner](https://docs.donkey-kit.dev/publishing.md) and
-[A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator read, so marking tools now carries forward.
+### `@donkey.agent`
+
+```python
+@donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
+async def handle(task):
+    """Triage a support ticket and draft a reply for a human to send."""
+    ...
+```
+
+Marks an agent entry point, again **without changing how it's called**. It
+returns the same function with a `__donkey_agent__` marker and records an
+`AgentSpec` (name, qualname, docstring, skills, `is_async`) that you read with
+`registered_agents()`; both are exported from `donkey_kit`. `name` is the
+agent's service ID, with the same kebab-case rule as `server=`. The docstring is
+required, because it is the agent's description. A blank or repeated skill
+raises `ValueError`.
+
+[`donkey scan`](#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
+markers today. The planned [A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator will read the same
+records, so marking your code now carries forward.
 
 ## The CLI
 
@@ -5672,6 +5691,7 @@ donkey init          # writes a commented .donkey-kit.toml, names every missing 
 donkey doctor        # checks creds, reaches the gateway, reports budget state
 donkey mock          # the local simulator — --scenario scripts failures
 donkey test          # a thin front end to pytest --donkey-conformance
+donkey scan          # finds your agents, tools and MCP servers, without running your code
 ```
 
 ### Global flags
@@ -5738,6 +5758,13 @@ Global options go before the command (`donkey --json init`):
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
 | `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+
+`donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--json` | off | Emit the canonical scan model as JSON. |
 
 `donkey test`: Run the conformance suite against your agent.
 
@@ -5881,13 +5908,55 @@ donkey test --agent my.pkg:make_agent -k governance -x
 
 See [Testing & conformance](https://docs.donkey-kit.dev/testing.md) for what the suite checks.
 
+### `donkey scan`
+
+Reads your repository's source and reports every `@donkey.agent`, every
+`@donkey.tool`, and the MCP servers those tools name with `server=`. The scan is
+**static**: it parses each `.py` file and never imports or runs it, so a module
+with side effects at import time is safe to scan. It needs no extra and no
+credentials, and it writes no file.
+
+```
+$ donkey scan .
+  agent  support-triage  (app/main.py:13)
+  mcp    sku-manager  (1 tool: lookup_sku)
+  unattributed  issue_refund  (set @donkey.tool(server=...))
+found 1 agent, 2 tools, 1 MCP server
+1 issue
+  app/main.py:9  tautological  tool issue_refund: description equals identifier 'issue_refund'
+```
+
+- A marker counts only when its receiver is a `Donkey`: the class imported from
+  `donkey_kit`, an instance built with `Donkey(...)` or `Donkey.from_env()`, or
+  such an instance imported from another module in the repository. Other
+  frameworks' `@mcp.tool()` decorators are ignored.
+- Decorator arguments are read only when they are **literals**.
+  `server=SERVER_ID` is reported as a `non-literal-argument` issue rather than
+  guessed.
+- A tool without `server=` is listed as **unattributed**. Scan never infers a
+  server from a module or function name.
+- Issues cover a missing, tautological or too-short description, an invalid
+  service ID or skill list, a service ID used twice, two tools with the same
+  name on one server, and a file that fails to parse. `donkey scan` exits `1`
+  when it finds any of them, so it works as a CI gate, `0` when there are none,
+  and `2` when the path does not exist.
+
+`donkey scan --json` (or the global `donkey --json scan`) prints the model as
+canonical JSON: keys and entries are sorted and paths are relative, so the same
+code always gives the same bytes and a CI diff shows only real changes. The
+`digest` field hashes what would be published and leaves out file paths and
+line numbers, so moving code around does not change it.
+
+Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the model it builds is
+the input publishing will read.
+
 ## Planned commands Roadmap
 
 These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
-- `donkey scan` and `donkey publish` — derive a manifest and agent card from
-  your code and register them with Exchange. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md).
+- `donkey publish` — register what `donkey scan` finds with Exchange. See
+  [Scan & publish](https://docs.donkey-kit.dev/publishing.md).
 - `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
   A2A and expose it through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
@@ -6565,8 +6634,10 @@ donkey.serve(handle)      # A2A server on 127.0.0.1:8000, card auto-generated
 ```
 
 - **The card is generated from your code** — the same `@donkey.tool` /
-  `@donkey.agent` markers the [scanner](https://docs.donkey-kit.dev/publishing.md) reads — so there is no
-  second description of your agent to keep in sync.
+  `@donkey.agent` markers that [`donkey scan`](https://docs.donkey-kit.dev/publishing.md) reads — so there is
+  no second description of your agent to keep in sync. The
+  [`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) marker is live today; `serve` is the
+  planned part.
 - **It binds to localhost by default**, so your agent is never the public face;
   the gateway is.
 - **Inbound calls are governed.** Every call arriving over A2A gets the same
@@ -6614,22 +6685,55 @@ Source: https://docs.donkey-kit.dev/publishing.md
 
 Status: Roadmap. Planned design; not shipped yet.
 
-This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
+`donkey scan` is live. Publishing is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md): the sections
+after the `donkey scan` section show its planned design.
 
-`donkey scan` walks your repository, finds everything marked
-[`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus MCP server definitions and agent entry
-points, and produces a manifest and A2A agent card. `donkey publish` registers
-them with Exchange / Agent Registry. A GitHub Action runs both on every merge to
-`main`.
+`donkey scan` walks your repository and finds every
+[`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
+the MCP servers those tools name with `server=`. It produces one deterministic
+model of them. Publishing will register that model with Exchange / Agent
+Registry, and a GitHub Action will run both on every merge to `main`.
 
 **The registry becomes a consequence of the code, not a chore.** A support agent
 with six tools registered by hand has a stale tool list within a week; with the
 Action, every merge updates it.
 
   **This complements MuleSoft's Agent Scanners.** Agent Scanners discover agents
-  from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan &
-  publish is the **design-time / CI** complement: it registers agents built in
-  plain Python that no cloud scanner can see.
+  from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan is
+  the **design-time / CI** source for the agents you build in plain Python,
+  which no cloud scanner can see. Its model is planned to feed both direct
+  Exchange publishing and the platform's self-managed scanner, so the platform
+  stays the system of record.
+
+## `donkey scan` — the model of your code Live
+
+```bash
+donkey scan .           # a summary, and any issues
+donkey scan . --json    # the canonical model, for a CI diff
+```
+
+Scan is **static**: it parses your source and never imports or runs it. It
+needs no credentials and writes no file. The model lists:
+
+- **agents**: each `@donkey.agent`, with its name (a service ID), skills and
+  description,
+- **tools**: each `@donkey.tool`, with its parameters, description, `server`,
+  `approval` and `risk`,
+- **MCP servers**: each distinct `server=` ID and the tools that name it,
+- **unattributed** tools that have no `server=`. Scan reports them and never
+  guesses a server.
+
+The model is deterministic: the same code always gives the same JSON, and its
+`digest` leaves out file paths and line numbers, so moving code does not look
+like a change. Scan also reports **issues** and exits `1` when it finds one:
+a missing or tautological description, an invalid service ID, a non-literal
+decorator argument it cannot read, or a service ID used twice. That way CI
+fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) for
+the full rules.
+
+  A service ID (`@donkey.agent(name=...)`, `@donkey.tool(server=...)`) names a
+  service in the registry **permanently**, so choose it deliberately. Renaming
+  it later would register a second service rather than rename the first.
 
 ## Scope: code-first assets
 
@@ -12769,6 +12873,16 @@ Mark a callable as a governed tool, recording its name, signature and docstring 
 
 Guide: [`/hitl`](https://docs.donkey-kit.dev/hitl.md)
 
+### `donkey.agent()`
+
+```python nocheck
+donkey.agent(*, name: str, skills: Sequence[str] = ()) -> Callable[[Callable], Callable]
+```
+
+Mark a callable as an agent entry point, recording its name, skills and docstring in an introspectable registry.
+
+Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
+
 ### `donkey.approvals`
 
 ```python nocheck
@@ -13090,6 +13204,7 @@ is raised.
 
 | Name | Kind | Meaning |
 |---|---|---|
+| `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
 | `Approval` | class | One call of an approval-gated tool, waiting for a human. |
 | `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |
 | `AttributionScope` | class | A **dual sync/async** context manager that attributes the governed calls in its block to a business group and cost tags, without starting a run. |
@@ -13117,6 +13232,7 @@ is raised.
 | `ToolsFacade` | class | `donkey.tools` — discovery + lock. |
 | `TypedRefusals` | class | Re-raise a refusal from the block as its typed `DonkeyError`. |
 | `classify` | callable object | `classify`: call it to map an error response to a typed `DonkeyError`; register a custom policy's refusal shape on it. |
+| `registered_agents` | function | Every entry point marked with `@donkey.agent` in this process, in decoration order. |
 | `registered_tools` | function | Every callable marked with `@donkey.tool` in this process, in decoration order. The introspection entry point for the scanner / card generator. |
 | `typed_refusals` | function | Re-raise a governance refusal from the block as its typed `DonkeyError`. |
 

@@ -117,8 +117,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     **Advantage:** the PII branch is tested before production, not in it.
   
   
-    **Purpose:** `donkey init`, `doctor`, `mock` and `test`, plus
-    `@donkey.governed` and `@donkey.tool`. **Advantage:** `doctor` tells wrong
+    **Purpose:** `donkey init`, `doctor`, `mock`, `test` and `scan`, plus
+    `@donkey.governed`, `@donkey.tool` and `@donkey.agent`. **Advantage:** `doctor` tells wrong
     credentials from wrong URL from model-not-allowed; one decorator gives a
     function a run scope, span and typed refusals.
   
@@ -141,9 +141,9 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     governed with the same correlation, spans and refusals.
   
   
-    **Purpose:** derive a manifest and agent card from your code and register
-    them in the Agent Fabric registry. **Advantage:** the catalog stays in sync
-    from CI, not by hand.
+    **Purpose:** `donkey scan` (live) derives a model of your agents, tools and
+    MCP servers from code; publishing registers it in the Agent Fabric
+    registry. **Advantage:** the catalog stays in sync from CI, not by hand.
   
 
 ## What DDK leaves to the platform
