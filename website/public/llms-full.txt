@@ -5919,7 +5919,7 @@ credentials, and it writes no file.
 ```
 $ donkey scan .
   agent  support-triage  (app/main.py:13)
-  mcp    sku-manager  (1 tool: lookup_sku)
+  mcp    sku-manager  (1 tool: lookup_sku)  streamable-http https://sku-manager.acme.com/mcp
   unattributed  issue_refund  (set @donkey.tool(server=...))
 found 1 agent, 2 tools, 1 MCP server
 1 issue
@@ -5935,9 +5935,14 @@ found 1 agent, 2 tools, 1 MCP server
   guessed.
 - A tool without `server=` is listed as **unattributed**. Scan never infers a
   server from a module or function name.
+- How each MCP server is reached, its transport and endpoint, comes from a
+  `[donkey.mcp_servers.<id>]` table in `.donkey-kit.toml`, never from code. A
+  server without one is shown as `transport undeclared`, which is not an issue.
+  See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - Issues cover a missing, tautological or too-short description, an invalid
   service ID or skill list, a service ID used twice, two tools with the same
-  name on one server, and a file that fails to parse. `donkey scan` exits `1`
+  name on one server, a file that fails to parse, and an invalid
+  `[donkey.mcp_servers]` declaration. `donkey scan` exits `1`
   when it finds any of them, so it works as a CI gate, `0` when there are none,
   and `2` when the path does not exist.
 
@@ -6722,6 +6727,8 @@ needs no credentials and writes no file. The model lists:
 - **MCP servers**: each distinct `server=` ID and the tools that name it,
 - **unattributed** tools that have no `server=`. Scan reports them and never
   guesses a server.
+- for each MCP server, the **transport** and **endpoint** you declare for it
+  (see below), or `null` when you declare none.
 
 The model is deterministic: the same code always gives the same JSON, and its
 `digest` leaves out file paths and line numbers, so moving code does not look
@@ -6730,6 +6737,51 @@ a missing or tautological description, an invalid service ID, a non-literal
 decorator argument it cannot read, or a service ID used twice. That way CI
 fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) for
 the full rules.
+
+### Declaring how an MCP server is reached
+
+Publishing an MCP server needs to say how a client reaches it, and that is not
+something scan can read from code: nothing ties a `server=` ID to the object
+that serves it, and the URL a client uses depends on where the server is
+deployed. So you declare it, one table per server ID, in `.donkey-kit.toml`
+beside your code:
+
+```toml
+# .donkey-kit.toml (committed)
+[donkey.mcp_servers.hr-tools]
+transport = "streamable-http"
+endpoint  = "https://hr-tools.acme.com/mcp"
+
+[donkey.mcp_servers.sku-manager]
+transport = "stdio"
+```
+
+- `transport` is one of the MCP transports: `stdio`, `streamable-http`, or
+  `sse` (deprecated by the MCP specification, still accepted).
+- `endpoint` is the `http` or `https` URL a client connects to, normally the
+  gateway-fronted one. A `stdio` server is started as a process and has no
+  endpoint. Don't put credentials in the URL: scan refuses one that carries
+  them.
+- A `.donkey-kit.local.toml` beside it (gitignored) overrides the project file
+  key by key, so each environment can point at its own endpoint without editing
+  the committed file:
+
+  ```toml
+  # .donkey-kit.local.toml
+  [donkey.mcp_servers.hr-tools]
+  endpoint = "http://localhost:8080/mcp"
+  ```
+
+Scan reads only these two files in the scanned directory, not your user-wide
+config file, and parses them without running anything. A server with no table
+is reported with no transport and no endpoint. Scan never guesses one, and this
+is not an issue, so `donkey scan` still exits `0`. An unknown transport, an
+endpoint that is not an `http(s)` URL, an unknown key, or a table for an ID that
+no `@donkey.tool` names is an issue and fails the scan.
+
+The declaration is part of the scan `digest`, because it is part of what would
+be published. Settings outside `[donkey.mcp_servers]` are unaffected:
+`Donkey.from_env()` ignores the table.
 
   A service ID (`@donkey.agent(name=...)`, `@donkey.tool(server=...)`) names a
   service in the registry **permanently**, so choose it deliberately. Renaming
@@ -12356,6 +12408,12 @@ The three files merge key by key: `.donkey-kit.local.toml` over
 one leaves unset. Nested tables such as `[donkey.cost]` merge the same way. A
 scalar or an array in a higher file replaces the lower file's value; it isn't
 appended to. Each key remembers which file it came from.
+
+One table in these files is not a `DonkeyConfig` field: `[donkey.mcp_servers]`
+declares how each MCP server your tools name is reached, and only `donkey scan`
+reads it, from the scanned directory's two project files. `Donkey.from_env()`
+ignores it. See
+[Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
 file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that
