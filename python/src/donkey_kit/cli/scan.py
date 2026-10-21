@@ -3,9 +3,11 @@ MCP servers (BG §2.5, #217).
 
 A front end over :func:`donkey_kit.registry.scan.scan`: static analysis only, so
 it never imports the code it scans. It prints a summary, or with ``--json`` the
-canonical scan model for a CI diff. It writes no file. It exits 1 when scan
-reports an issue (a missing or tautological description, an invalid service
-ID, ...) so CI fails before anything is published.
+canonical scan model for a CI diff. It writes no file. Each MCP server line
+shows the transport and endpoint ``[donkey.mcp_servers]`` declares, or says
+which is undeclared (#1193). It exits 1 when scan reports an issue (a missing
+or tautological description, an invalid service ID, ...) so CI fails before
+anything is published.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from pathlib import Path
 
 import typer
 
-from ..registry.scan import ScanResult
+from ..registry.scan import ScannedMcpServer, ScanResult
 from ..registry.scan import scan as scan_repository
 from ._app import app
 
@@ -45,11 +47,24 @@ def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
+def _reached(server: ScannedMcpServer) -> str:
+    """How the server is reached, or which declaration is missing (#1193)."""
+    where = f"set [donkey.mcp_servers.{server.id}] in .donkey-kit.toml"
+    if server.transport is None:
+        return f"transport undeclared ({where})"
+    if server.transport == "stdio":
+        return "stdio"
+    return f"{server.transport} {server.endpoint or f'endpoint undeclared ({where})'}"
+
+
 def _summary(result: ScanResult) -> None:
     for a in result.agents:
         typer.echo(f"  agent  {a.name}  ({a.path}:{a.line})")
     for s in result.mcp_servers:
-        typer.echo(f"  mcp    {s.id}  ({_plural(len(s.tools), 'tool')}: {', '.join(s.tools)})")
+        typer.echo(
+            f"  mcp    {s.id}  ({_plural(len(s.tools), 'tool')}: {', '.join(s.tools)})"
+            f"  {_reached(s)}"
+        )
     if result.unattributed:
         names = ", ".join(t.qualname for t in result.unattributed)
         typer.echo(f"  unattributed  {names}  (set @donkey.tool(server=...))")

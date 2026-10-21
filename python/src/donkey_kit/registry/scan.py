@@ -17,6 +17,14 @@ Identity follows #503. An MCP server is the set of tools that name it with
 ``server=``; a tool without one is *unattributed*, reported and never guessed.
 Agent names and server IDs are service IDs, checked by
 :func:`~donkey_kit.core.toolspec.validate_service_id`.
+
+How an MCP server is *reached* (its transport and endpoint, #1193) is declared,
+not read from code: nothing ties a ``server=`` ID to the object that serves it,
+and the endpoint a client reaches is a deployment fact. Scan reads it from a
+``[donkey.mcp_servers.<id>]`` table in the scanned root's ``.donkey-kit.toml``,
+with the ``.donkey-kit.local.toml`` beside it overriding key by key, so each
+environment can name its own endpoint. A server with no declaration reports
+``None`` for both, never a guess.
 """
 
 from __future__ import annotations
@@ -24,16 +32,20 @@ from __future__ import annotations
 import ast
 import json
 import os
+import sys
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
+from ..core.config import LOCAL_TOML_NAME, TOML_NAME
 from ..core.toolspec import validate_service_id
 from .publication import check_description_quality, content_digest
 
 __all__ = [
+    "MCP_TRANSPORTS",
     "SCAN_FORMAT",
     "ScanIssue",
     "ScanResult",
@@ -53,7 +65,18 @@ SCAN_FORMAT = 1
 # skipped too (.git, .venv, .tox, ...).
 _SKIPPED_DIRS = frozenset({"__pycache__", "node_modules", "site-packages", "venv"})
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
+    import tomli as tomllib
+
 _FuncDef = ast.FunctionDef | ast.AsyncFunctionDef
+
+# The MCP specification's transports. SSE is deprecated by the spec in favour of
+# streamable HTTP, but servers built on it are still deployed.
+MCP_TRANSPORTS = ("stdio", "streamable-http", "sse")
+
+_SERVER_KEYS = frozenset({"transport", "endpoint"})
 
 
 @dataclass(frozen=True)
@@ -95,10 +118,17 @@ class ScannedAgent:
 
 @dataclass(frozen=True)
 class ScannedMcpServer:
-    """An MCP server, as the tools that name it with ``server=`` (#503)."""
+    """An MCP server, as the tools that name it with ``server=`` (#503).
+
+    ``transport`` and ``endpoint`` are what ``[donkey.mcp_servers.<id>]``
+    declares (#1193), ``None`` when it declares nothing. ``endpoint`` is always
+    ``None`` for ``stdio``, which has no URL.
+    """
 
     id: str
     tools: tuple[str, ...]
+    transport: str | None = None
+    endpoint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -108,7 +138,10 @@ class ScanIssue:
     ``kind`` is one of ``missing``, ``tautological`` or ``too-short`` (the
     description checks, BG §2.5), ``invalid-service-id``, ``invalid-skills``,
     ``non-literal-argument``, ``duplicate-service-id``, ``duplicate-tool``,
-    ``syntax-error`` or ``unreadable``.
+    ``syntax-error`` or ``unreadable``. A ``[donkey.mcp_servers]`` declaration
+    adds ``invalid-mcp-server`` (a malformed entry or an unknown key),
+    ``invalid-transport``, ``invalid-endpoint`` and ``unknown-server`` (an ID no
+    tool names); their ``path`` is the TOML file and their ``line`` is ``0``.
     """
 
     kind: str
@@ -190,7 +223,15 @@ class ScanResult:
             "scan_format": SCAN_FORMAT,
             "agents": [agent(a) for a in self.agents],
             "tools": [tool(t) for t in self.tools],
-            "mcp_servers": [{"id": s.id, "tools": list(s.tools)} for s in self.mcp_servers],
+            "mcp_servers": [
+                {
+                    "id": s.id,
+                    "tools": list(s.tools),
+                    "transport": s.transport,
+                    "endpoint": s.endpoint,
+                }
+                for s in self.mcp_servers
+            ],
             "unattributed": [t.qualname for t in self.unattributed],
             "issues": [
                 {
@@ -257,7 +298,9 @@ def scan(root: str | Path) -> ScanResult:
 
     agents.sort(key=lambda a: (a.path, a.line))
     tools.sort(key=lambda t: (t.path, t.line))
-    servers = _servers(tools)
+    declared = _Declarations(origin)
+    servers = declared.apply(_servers(tools))
+    issues.extend(declared.issues)
     issues.extend(_description_issues(agents, tools))
     issues.extend(_duplicate_issues(agents, tools, servers))
     issues.sort(key=lambda i: (i.path, i.line, i.kind, i.subject))
@@ -521,6 +564,134 @@ def _servers(tools: list[ScannedTool]) -> tuple[ScannedMcpServer, ...]:
     return tuple(
         ScannedMcpServer(sid, tuple(sorted(names))) for sid, names in sorted(by_server.items())
     )
+
+
+class _Declarations:
+    """The ``[donkey.mcp_servers]`` tables beside the scanned code (#1193).
+
+    The project file is read first and the local file merged over it key by
+    key, as ``DonkeyConfig`` merges ``[donkey]`` (#727). Only these two files
+    count: a user-wide file says nothing about one repository's servers.
+    Everything wrong with a declaration is a :class:`ScanIssue`, never a raise.
+    """
+
+    def __init__(self, directory: Path) -> None:
+        self.issues: list[ScanIssue] = []
+        # Server ID -> key -> (value, the file that set it).
+        self.servers: dict[str, dict[str, tuple[object, str]]] = {}
+        self.declared_in: dict[str, str] = {}
+        for name in (TOML_NAME, LOCAL_TOML_NAME):
+            path = directory / name
+            if path.is_file():
+                self._read(path, name)
+
+    def _issue(self, kind: str, subject: str, path: str, detail: str) -> None:
+        self.issues.append(ScanIssue(kind, subject, path, 0, detail))
+
+    def _read(self, path: Path, name: str) -> None:
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError) as exc:
+            self._issue("unreadable", name, name, str(exc))
+            return
+        except tomllib.TOMLDecodeError as exc:
+            self._issue("syntax-error", name, name, str(exc))
+            return
+        donkey = data.get("donkey", {})
+        table = donkey.get("mcp_servers", {}) if isinstance(donkey, dict) else {}
+        if not isinstance(table, dict):
+            self._issue(
+                "invalid-mcp-server",
+                "donkey.mcp_servers",
+                name,
+                "[donkey.mcp_servers] must be a table of server IDs",
+            )
+            return
+        for sid, entry in table.items():
+            subject = f"mcp server {sid}"
+            try:
+                validate_service_id(sid, what="an [donkey.mcp_servers] key")
+            except ValueError as exc:
+                self._issue("invalid-service-id", subject, name, str(exc))
+                continue
+            if not isinstance(entry, dict):
+                self._issue(
+                    "invalid-mcp-server",
+                    subject,
+                    name,
+                    f"[donkey.mcp_servers.{sid}] must be a table with transport and endpoint",
+                )
+                continue
+            merged = self.servers.setdefault(sid, {})
+            self.declared_in.setdefault(sid, name)
+            for key, value in entry.items():
+                if key in _SERVER_KEYS:
+                    merged[key] = (value, name)
+                else:
+                    self._issue(
+                        "invalid-mcp-server",
+                        subject,
+                        name,
+                        f"unknown key {key!r}; the keys are transport and endpoint",
+                    )
+
+    def apply(self, servers: tuple[ScannedMcpServer, ...]) -> tuple[ScannedMcpServer, ...]:
+        """``servers`` with what is declared for each, plus the declaration issues."""
+        named = {s.id for s in servers}
+        for sid in sorted(self.servers):
+            if sid not in named:
+                self._issue(
+                    "unknown-server",
+                    f"mcp server {sid}",
+                    self.declared_in[sid],
+                    f"no @donkey.tool names server={sid!r}, so this declaration describes "
+                    "nothing; fix the ID or remove the table",
+                )
+        return tuple(self._declared(s) for s in servers)
+
+    def _declared(self, server: ScannedMcpServer) -> ScannedMcpServer:
+        entry = self.servers.get(server.id, {})
+        subject = f"mcp server {server.id}"
+        transport: str | None = None
+        if "transport" in entry:
+            value, source = entry["transport"]
+            if isinstance(value, str) and value in MCP_TRANSPORTS:
+                transport = value
+            else:
+                self._issue(
+                    "invalid-transport",
+                    subject,
+                    source,
+                    f"transport must be one of {', '.join(MCP_TRANSPORTS)}, not {value!r}",
+                )
+        endpoint: str | None = None
+        if "endpoint" in entry:
+            value, source = entry["endpoint"]
+            problem = _endpoint_problem(value, transport)
+            if problem is None:
+                endpoint = str(value)
+            else:
+                self._issue("invalid-endpoint", subject, source, problem)
+        return ScannedMcpServer(server.id, server.tools, transport, endpoint)
+
+
+def _endpoint_problem(value: object, transport: str | None) -> str | None:
+    """Why ``value`` is not a usable endpoint, or ``None`` when it is."""
+    if transport == "stdio":
+        return "a stdio server is started as a process and has no endpoint; remove it"
+    if not isinstance(value, str):
+        return f"endpoint must be an http or https URL, not {value!r}"
+    try:
+        parts = urlsplit(value)
+        _ = parts.port  # raises ValueError on a malformed port
+    except ValueError:
+        parts = None
+    if parts is None or parts.scheme not in ("http", "https") or not parts.hostname:
+        return f"endpoint must be an http or https URL, not {value!r}"
+    if parts.username is not None or parts.password is not None:
+        # Never echo the value: it carries a credential.
+        return "endpoint must not carry credentials; the governed transport supplies them"
+    return None
 
 
 def _description_issues(
