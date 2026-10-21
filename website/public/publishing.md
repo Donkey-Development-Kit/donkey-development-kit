@@ -39,6 +39,8 @@ needs no credentials and writes no file. The model lists:
 - **MCP servers**: each distinct `server=` ID and the tools that name it,
 - **unattributed** tools that have no `server=`. Scan reports them and never
   guesses a server.
+- for each MCP server, the **transport** and **endpoint** you declare for it
+  (see below), or `null` when you declare none.
 
 The model is deterministic: the same code always gives the same JSON, and its
 `digest` leaves out file paths and line numbers, so moving code does not look
@@ -47,6 +49,51 @@ a missing or tautological description, an invalid service ID, a non-literal
 decorator argument it cannot read, or a service ID used twice. That way CI
 fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) for
 the full rules.
+
+### Declaring how an MCP server is reached
+
+Publishing an MCP server needs to say how a client reaches it, and that is not
+something scan can read from code: nothing ties a `server=` ID to the object
+that serves it, and the URL a client uses depends on where the server is
+deployed. So you declare it, one table per server ID, in `.donkey-kit.toml`
+beside your code:
+
+```toml
+# .donkey-kit.toml (committed)
+[donkey.mcp_servers.hr-tools]
+transport = "streamable-http"
+endpoint  = "https://hr-tools.acme.com/mcp"
+
+[donkey.mcp_servers.sku-manager]
+transport = "stdio"
+```
+
+- `transport` is one of the MCP transports: `stdio`, `streamable-http`, or
+  `sse` (deprecated by the MCP specification, still accepted).
+- `endpoint` is the `http` or `https` URL a client connects to, normally the
+  gateway-fronted one. A `stdio` server is started as a process and has no
+  endpoint. Don't put credentials in the URL: scan refuses one that carries
+  them.
+- A `.donkey-kit.local.toml` beside it (gitignored) overrides the project file
+  key by key, so each environment can point at its own endpoint without editing
+  the committed file:
+
+  ```toml
+  # .donkey-kit.local.toml
+  [donkey.mcp_servers.hr-tools]
+  endpoint = "http://localhost:8080/mcp"
+  ```
+
+Scan reads only these two files in the scanned directory, not your user-wide
+config file, and parses them without running anything. A server with no table
+is reported with no transport and no endpoint. Scan never guesses one, and this
+is not an issue, so `donkey scan` still exits `0`. An unknown transport, an
+endpoint that is not an `http(s)` URL, an unknown key, or a table for an ID that
+no `@donkey.tool` names is an issue and fails the scan.
+
+The declaration is part of the scan `digest`, because it is part of what would
+be published. Settings outside `[donkey.mcp_servers]` are unaffected:
+`Donkey.from_env()` ignores the table.
 
   A service ID (`@donkey.agent(name=...)`, `@donkey.tool(server=...)`) names a
   service in the registry **permanently**, so choose it deliberately. Renaming

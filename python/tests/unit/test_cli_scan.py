@@ -75,3 +75,39 @@ def test_a_missing_path_exits_2(tmp_path: Path) -> None:
 
     assert result.exit_code == 2
     assert "nothing to scan" in result.output
+
+
+def test_summary_shows_how_each_server_is_reached(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+
+    result = runner.invoke(app, ["scan", str(root)])
+    assert "transport undeclared (set [donkey.mcp_servers.sku-manager] in .donkey-kit.toml)" in (
+        result.output
+    )
+
+    (root / ".donkey-kit.toml").write_text(
+        '[donkey.mcp_servers.sku-manager]\ntransport = "streamable-http"\n', encoding="utf-8"
+    )
+    result = runner.invoke(app, ["scan", str(root)])
+    assert result.exit_code == 0, result.output
+    assert "streamable-http endpoint undeclared" in result.output
+
+    (root / ".donkey-kit.toml").write_text(
+        '[donkey.mcp_servers.sku-manager]\ntransport = "streamable-http"\n'
+        'endpoint = "https://sku.acme.com/mcp"\n',
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["scan", str(root)])
+    assert "(1 tool: lookup_sku)  streamable-http https://sku.acme.com/mcp" in result.output
+
+
+def test_an_invalid_declaration_fails_the_run(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    (root / ".donkey-kit.toml").write_text(
+        '[donkey.mcp_servers.sku-manager]\ntransport = "websocket"\n', encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["scan", str(root)])
+
+    assert result.exit_code == 1
+    assert "invalid-transport" in result.output

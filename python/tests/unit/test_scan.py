@@ -332,3 +332,232 @@ def test_a_single_file_can_be_scanned(tmp_path: Path) -> None:
 def test_a_missing_path_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="nothing to scan"):
         scan(tmp_path / "absent")
+
+
+# How an MCP server is reached is declared in .donkey-kit.toml, never read from
+# code (#1193).
+
+SERVERS = """\
+    from donkey_kit import Donkey
+
+
+    @Donkey.tool(server="hr-tools")
+    def find_employee(email: str):
+        \"\"\"Find an employee by their work email address.\"\"\"
+
+
+    @Donkey.tool(server="sku-manager")
+    def lookup_sku(sku: str):
+        \"\"\"Look up a SKU's price and stock level by its code.\"\"\"
+"""
+
+
+def _servers(result: ScanResult) -> list[tuple[str, str | None, str | None]]:
+    return [(s.id, s.transport, s.endpoint) for s in result.mcp_servers]
+
+
+def test_an_undeclared_server_reports_no_transport_and_no_issue(tmp_path: Path) -> None:
+    result = scan(_write(tmp_path, {"m.py": SERVERS}))
+
+    assert _servers(result) == [("hr-tools", None, None), ("sku-manager", None, None)]
+    assert result.issues == ()
+    data = json.loads(result.to_json())
+    assert data["mcp_servers"][0] == {
+        "id": "hr-tools",
+        "tools": ["find_employee"],
+        "transport": None,
+        "endpoint": None,
+    }
+
+
+def test_declared_transport_and_endpoint_are_read(tmp_path: Path) -> None:
+    root = _write(
+        tmp_path,
+        {
+            "m.py": SERVERS,
+            ".donkey-kit.toml": """\
+                [donkey]
+                llm_proxy_url = "https://gw.example.com/ddk/"
+
+                [donkey.mcp_servers.hr-tools]
+                transport = "streamable-http"
+                endpoint = "https://hr-tools.acme.com/mcp"
+
+                [donkey.mcp_servers.sku-manager]
+                transport = "stdio"
+            """,
+        },
+    )
+    result = scan(root)
+
+    assert _servers(result) == [
+        ("hr-tools", "streamable-http", "https://hr-tools.acme.com/mcp"),
+        ("sku-manager", "stdio", None),
+    ]
+    assert result.issues == ()
+
+
+def test_the_local_file_overrides_the_project_file_key_by_key(tmp_path: Path) -> None:
+    root = _write(
+        tmp_path,
+        {
+            "m.py": SERVERS,
+            ".donkey-kit.toml": """\
+                [donkey.mcp_servers.hr-tools]
+                transport = "streamable-http"
+                endpoint = "https://hr-tools.acme.com/mcp"
+            """,
+            ".donkey-kit.local.toml": """\
+                [donkey.mcp_servers.hr-tools]
+                endpoint = "http://localhost:8080/mcp"
+            """,
+        },
+    )
+    result = scan(root)
+
+    assert _servers(result)[0] == ("hr-tools", "streamable-http", "http://localhost:8080/mcp")
+
+
+def test_the_declaration_is_part_of_the_digest(tmp_path: Path) -> None:
+    root = _write(tmp_path, {"m.py": SERVERS})
+    before = scan(root).digest()
+
+    (root / ".donkey-kit.toml").write_text(
+        '[donkey.mcp_servers.sku-manager]\ntransport = "stdio"\n', encoding="utf-8"
+    )
+
+    assert scan(root).digest() != before
+
+
+def test_a_single_file_scan_reads_the_toml_beside_it(tmp_path: Path) -> None:
+    root = _write(
+        tmp_path,
+        {"m.py": SERVERS, ".donkey-kit.toml": '[donkey.mcp_servers.hr-tools]\ntransport = "sse"\n'},
+    )
+
+    assert _servers(scan(root / "m.py"))[0] == ("hr-tools", "sse", None)
+
+
+@pytest.mark.parametrize(
+    ("entry", "kind", "detail"),
+    [
+        ('transport = "websocket"', "invalid-transport", "one of stdio, streamable-http, sse"),
+        ("transport = 3", "invalid-transport", "not 3"),
+        ('endpoint = "hr-tools.acme.com/mcp"', "invalid-endpoint", "http or https URL"),
+        ('endpoint = "ftp://hr-tools.acme.com"', "invalid-endpoint", "http or https URL"),
+        ('endpoint = "https://h:notaport/mcp"', "invalid-endpoint", "http or https URL"),
+        ('endpoint = ["https://a"]', "invalid-endpoint", "http or https URL"),
+        ('transport = "stdio"\nendpoint = "https://a.com"', "invalid-endpoint", "no endpoint"),
+        ("port = 8080", "invalid-mcp-server", "unknown key 'port'"),
+    ],
+)
+def test_invalid_declarations_are_issues_not_guesses(
+    tmp_path: Path, entry: str, kind: str, detail: str
+) -> None:
+    root = _write(
+        tmp_path, {"m.py": SERVERS, ".donkey-kit.toml": f"[donkey.mcp_servers.hr-tools]\n{entry}\n"}
+    )
+    result = scan(root)
+
+    (issue,) = result.issues
+    assert (issue.kind, issue.subject, issue.path, issue.line) == (
+        kind,
+        "mcp server hr-tools",
+        ".donkey-kit.toml",
+        0,
+    )
+    assert detail in issue.detail
+    hr_tools = result.mcp_servers[0]
+    # The valid half of an entry is kept; the invalid half is never substituted.
+    assert hr_tools.transport in (None, "stdio")
+    assert hr_tools.endpoint is None
+
+
+def test_an_endpoint_with_credentials_is_refused_without_echoing_them(tmp_path: Path) -> None:
+    root = _write(
+        tmp_path,
+        {
+            "m.py": SERVERS,
+            ".donkey-kit.toml": (
+                "[donkey.mcp_servers.hr-tools]\n"
+                'transport = "streamable-http"\n'
+                'endpoint = "https://svc:s3cret@hr-tools.acme.com/mcp"\n'
+            ),
+        },
+    )
+    (issue,) = scan(root).issues
+
+    assert issue.kind == "invalid-endpoint"
+    assert "s3cret" not in issue.detail
+
+
+def test_a_declaration_no_tool_names_is_reported(tmp_path: Path) -> None:
+    root = _write(
+        tmp_path,
+        {
+            "m.py": SERVERS,
+            ".donkey-kit.local.toml": '[donkey.mcp_servers.hr-tool]\ntransport = "stdio"\n',
+        },
+    )
+    (issue,) = scan(root).issues
+
+    assert (issue.kind, issue.subject, issue.path) == (
+        "unknown-server",
+        "mcp server hr-tool",
+        ".donkey-kit.local.toml",
+    )
+
+
+@pytest.mark.parametrize(
+    ("toml", "kind", "subject"),
+    [
+        ("[donkey\n", "syntax-error", ".donkey-kit.toml"),
+        ('[donkey]\nmcp_servers = "hr-tools"\n', "invalid-mcp-server", "donkey.mcp_servers"),
+        ('[donkey.mcp_servers]\nhr-tools = "stdio"\n', "invalid-mcp-server", "mcp server hr-tools"),
+        (
+            '[donkey.mcp_servers.HR_Tools]\ntransport = "stdio"\n',
+            "invalid-service-id",
+            "mcp server HR_Tools",
+        ),
+    ],
+)
+def test_malformed_toml_is_an_issue_not_a_crash(
+    tmp_path: Path, toml: str, kind: str, subject: str
+) -> None:
+    root = _write(tmp_path, {"m.py": SERVERS, ".donkey-kit.toml": toml})
+
+    result = scan(root)
+
+    assert [(i.kind, i.subject) for i in result.issues] == [(kind, subject)]
+    assert _servers(result) == [("hr-tools", None, None), ("sku-manager", None, None)]
+
+
+def test_the_declaration_table_does_not_disturb_donkey_config(tmp_path: Path) -> None:
+    from donkey_kit.core.config import DonkeyConfig
+
+    toml = (
+        _write(
+            tmp_path,
+            {
+                ".donkey-kit.toml": """\
+                [donkey]
+                llm_proxy_url = "https://gw.example.com/ddk/"
+
+                [donkey.mcp_servers.hr-tools]
+                transport = "stdio"
+            """
+            },
+        )
+        / ".donkey-kit.toml"
+    )
+
+    assert DonkeyConfig.resolve(path=toml).llm_proxy_url == "https://gw.example.com/ddk/"
+
+
+def test_an_unreadable_toml_is_an_issue(tmp_path: Path) -> None:
+    root = _write(tmp_path, {"m.py": SERVERS})
+    (root / ".donkey-kit.toml").write_bytes(b'[donkey]\nx = "\xff"\n')
+
+    result = scan(root)
+
+    assert [(i.kind, i.path) for i in result.issues] == [("unreadable", ".donkey-kit.toml")]

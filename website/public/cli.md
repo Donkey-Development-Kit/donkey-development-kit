@@ -317,7 +317,7 @@ credentials, and it writes no file.
 ```
 $ donkey scan .
   agent  support-triage  (app/main.py:13)
-  mcp    sku-manager  (1 tool: lookup_sku)
+  mcp    sku-manager  (1 tool: lookup_sku)  streamable-http https://sku-manager.acme.com/mcp
   unattributed  issue_refund  (set @donkey.tool(server=...))
 found 1 agent, 2 tools, 1 MCP server
 1 issue
@@ -333,9 +333,14 @@ found 1 agent, 2 tools, 1 MCP server
   guessed.
 - A tool without `server=` is listed as **unattributed**. Scan never infers a
   server from a module or function name.
+- How each MCP server is reached, its transport and endpoint, comes from a
+  `[donkey.mcp_servers.<id>]` table in `.donkey-kit.toml`, never from code. A
+  server without one is shown as `transport undeclared`, which is not an issue.
+  See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - Issues cover a missing, tautological or too-short description, an invalid
   service ID or skill list, a service ID used twice, two tools with the same
-  name on one server, and a file that fails to parse. `donkey scan` exits `1`
+  name on one server, a file that fails to parse, and an invalid
+  `[donkey.mcp_servers]` declaration. `donkey scan` exits `1`
   when it finds any of them, so it works as a CI gate, `0` when there are none,
   and `2` when the path does not exist.
 
