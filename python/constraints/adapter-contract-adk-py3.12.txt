@@ -13,8 +13,8 @@ anyio==4.15.1
 ast-serialize==0.13.1
 attrs==26.1.0
 authlib==1.9.1
-boto3==1.43.115
-botocore==1.43.115
+boto3==1.43.117
+botocore==1.43.117
 certifi==2026.10.19
 cffi==2.1.1
 charset-normalizer==3.5.2
@@ -29,7 +29,7 @@ frozenlist==1.8.0
 fsspec==2026.9.0
 google-adk==2.12.0
 google-auth==2.62.0
-google-genai==2.31.0
+google-genai==2.32.0
 graphviz==0.21
 grimp==3.17
 h11==0.16.0
@@ -51,7 +51,7 @@ joserfc==1.7.7
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 librt==0.16.0
-litellm==1.106.0
+litellm==1.106.2
 markdown-it-py==4.2.0
 markupsafe==3.0.4
 mdurl==0.1.2
@@ -71,7 +71,7 @@ pyasn1-modules==0.4.2
 pycparser==3.11
 pydantic==2.14.1
 pydantic-core==2.50.1
-pydantic-settings==2.16.0
+pydantic-settings==2.16.1
 pygments==2.21.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
@@ -107,4 +107,4 @@ vulture==2.16
 watchdog==6.0.0
 websockets==15.0.1
 yarl==1.25.1
-zipp==4.1.1
+zipp==4.1.2
