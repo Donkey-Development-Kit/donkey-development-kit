@@ -770,7 +770,7 @@ in `python/pyproject.toml` is the lowest release where the adapter's kwargs
 behave as its §8 row records (#743). Every row below was installed with
 `uv pip install --resolution lowest-direct -e ".[dev,<extra>]"` on Python 3.10
 (and 3.11 for `langgraph`). That puts httpx 0.27.0, pydantic 2.6.0, pytest
-8.0.0, pytest-asyncio 0.23.1 and typer 0.15.4 at their floors where the extra
+8.0.0, pytest-asyncio 0.23.1 and typer 0.26.0 at their floors where the extra
 allows it. Each row then passed `pytest tests/unit` and
 `verify_frameworks.py --only <fw>` (offline signature check). Like §8, this is
 offline evidence, not a live round-trip.
@@ -786,7 +786,7 @@ offline evidence, not a live round-trip.
 | `crewai` | `crewai>=1.15.3` | 1.15.3 added the `openai/` + explicit `base_url` route to the native `OpenAICompletion`. Earlier releases fall back to LiteLLM for any id that does not look like an OpenAI model, returning `crewai.LLM` and LiteLLM exceptions. Signature check against `OpenAICompletion` passes at 1.15.3. | CrewAI |
 | `llamaindex` | `llama-index-llms-openai-like>=0.8` | The verified release. | LlamaIndex |
 | `strands` | `strands-agents[openai]>=1.57.1` | The verified release, with Strands' own `openai` extra: the bare distribution does not install `openai`, so `model()` raised `ModuleNotFoundError`. `test_strands_real_model_is_built_and_called_through_our_transport` builds and calls the real model with only `[strands]` installed. | Strands |
-| `cli` / dev group | `typer>=0.15.4` | typer below 0.13 rejects `Path \| None` options, and below 0.15.4 it breaks against a fresh click 8.2+ (`make_metavar() missing … 'ctx'`). | — |
+| `cli` / dev group | `typer>=0.26.0`, `rich>=13.8.0` | Every typer up to 0.25.1 drops a `typer.Argument(help=...)` against click 8.5+, so `donkey scan --help` and the CLI reference lose the `PATH` description (#1196, bisected with `click==8.5.0`: 0.15.4–0.25.1 drop it, 0.26.0–0.27.3 keep it). 0.26.0 vendors click (fastapi/typer#1774). Older floors: below 0.15.4 typer breaks against a fresh click 8.2+ (`make_metavar() missing … 'ctx'`), and below 0.13 it rejects `Path \| None` options. rich 13.8.0 is typer 0.26.0's own floor, so `[cli]`'s old `rich>=13.0` could never be installed. | — |
 | `test` / dev group | `pytest>=8.0`, `pytest-asyncio>=0.23.1` | pytest-asyncio 0.23.0 crashes collection (`INTERNALERROR`) on a module-level `importorskip`; 0.23.1 runs the suite. pytest 8.0.0 is fine. | — |
 
 On Python 3.10 the extras pass the full unit suite at their floors. The one

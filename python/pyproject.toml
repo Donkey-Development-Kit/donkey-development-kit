@@ -114,9 +114,12 @@ otel = [
 ]
 
 # --- CLI: `donkey init|doctor|mock|test` (donkey_kit/cli) ---
-# typer 0.15.4 is the first that runs the CLI against a fresh click (8.2+);
-# below 0.13 it also rejects `Path | None` options.
-cli = ["typer>=0.15.4", "rich>=13.0"]
+# typer 0.26.0 is the first that keeps a `typer.Argument(help=...)` against a
+# fresh click: every typer up to 0.25.1 drops it under click 8.5+ (#1196), and
+# 0.26.0 vendors click. Below 0.15.4 typer also breaks against click 8.2+, and
+# below 0.13 it rejects `Path | None` options. rich 13.8.0 is what typer 0.26.0
+# requires, so a lower rich floor could never be installed.
+cli = ["typer>=0.26.0", "rich>=13.8.0"]
 
 # --- Conformance pytest plugin (BG §1.5): `donkey-kit[test]` ---
 # The public, run-it-against-your-own-agent plugin
@@ -166,7 +169,7 @@ dev = [
     "import-linter>=2.3",
     # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
     "vulture>=2.11",
-    "typer>=0.15.4",
+    "typer>=0.26.0",
     "pyyaml>=6.0",
     # Coverage floor (#751): 7.10 is the first release documenting `[run]
     # patch = ["subprocess"]`, which this repo relies on to measure the
