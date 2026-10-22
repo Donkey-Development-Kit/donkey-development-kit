@@ -245,6 +245,43 @@ checkpointer, which has no thread to resume, and, on Python 3.10, a graph run
 with `ainvoke()`, where LangGraph cannot see the run's config from inside the
 tool (see [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md#interrupt-composes-with-typed-refusals)).
 
+## Discovered tools Roadmap
+
+`@donkey.tool` decorates a local function. A governed MCP tool from
+[`donkey.tools.discover()`](https://docs.donkey-kit.dev/tool-access/discovery.md) is not one, so you declare
+its approval once on the `ToolSet` instead. Tool discovery and binding are on
+the [Roadmap](https://docs.donkey-kit.dev/roadmap.md), so this section shows the planned design:
+
+```python
+# `tools` is the ToolSet that donkey.tools.discover() returns, before you bind it.
+tools = tools.require_approval(tools=["issue_refund", "void_invoice"], risk="financial")
+```
+
+A call to a gated tool behaves exactly like a gated `@donkey.tool`: it raises
+`ApprovalRequired`, or pauses a LangGraph graph with `interrupt()`, records the
+same span events, and resolves through `donkey.approvals`. `Approval.arguments`
+holds the tool's arguments by name, taken from its input schema.
+
+| Keyword | Default | Meaning |
+|---|---|---|
+| `tools` | — | Exact tool names to gate. |
+| `risk` | `None` | A label for the reviewer and the span, as on `@donkey.tool`. |
+| `timeout` | `"15m"` | How long a pending approval waits, as `approval_timeout` on `@donkey.tool`. |
+
+- **Names are exact,** like [`filter()`](https://docs.donkey-kit.dev/tool-access/binding.md#mcp-session-management).
+  A bare name such as `"issue_refund"` gates that tool on every server in the
+  set. The server-prefixed name collision resolution exposes, such as
+  `"billing__issue_refund"`, gates only that server's tool.
+- **A typo fails at bind time.** Binding raises `ConfigError` for a name that no
+  server in the set exposes, so a misspelt name can never leave a tool ungated.
+  Removing a gated tool with `filter()` is fine.
+- **Rules accumulate.** Each call returns a new `ToolSet`, `filter()` keeps the
+  rules, and when two rules name the same tool the later one sets its `risk`
+  and `timeout`.
+
+The approval is advisory here too, for the same reason as above: the gateway
+does not know it was needed until step-up routes it through the gateway.
+
 ## Mapped onto what your framework already has
 
 DDK does not introduce a new pause mechanism. The raise-and-resume form above

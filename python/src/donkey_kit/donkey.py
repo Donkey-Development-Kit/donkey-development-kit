@@ -143,7 +143,8 @@ class ToolsFacade:
         raise _verify.blocked(
             "Exchange search + governed-state join (governed-only discovery, the Verification "
             "milestone). ToolSet filtering and binding scaffolding exist; wire discover() once the "
-            "APIs are confirmed and use registry.explain() for the empty-result reason."
+            "APIs are confirmed, use registry.explain() for the empty-result reason, and pass "
+            "ToolSet(_natives=(_langgraph_interrupt,)) so require_approval() can pause a graph."
         )
 
     def lock(self) -> None:

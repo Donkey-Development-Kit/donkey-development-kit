@@ -76,6 +76,10 @@ get you past the check. There is no opt-out: to call an ungoverned server, use
 the framework's own MCP client, without the SDK and without your gateway
 credentials.
 
+To put a human decision in front of a sensitive tool, declare it on the set
+with `require_approval(tools=[...], risk=...)` before you bind (see
+"Discovered tools" in [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md)).
+
 ## Per-framework binding
 
 `ToolSet` exposes one method per installed integration, each returning the
