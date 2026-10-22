@@ -176,6 +176,10 @@ _BLOCKED_ONLY = {
     "ToolInvocationError",
 }
 
+# Blocked-only types added to donkey_kit.experimental after #730. They were never
+# in the stable namespace, so they have no deprecated top-level alias.
+_NEW_IN_EXPERIMENTAL = {"UngovernedMcpServer"}
+
 # Names of the refused provisioning control plane, deleted in #730.
 _REFUSED = {
     "Governance",
@@ -187,7 +191,7 @@ _REFUSED = {
 
 
 def test_top_level_exports_no_blocked_or_refused_type() -> None:
-    leaked = (_BLOCKED_ONLY | _REFUSED) & set(donkey_kit.__all__)
+    leaked = (_BLOCKED_ONLY | _NEW_IN_EXPERIMENTAL | _REFUSED) & set(donkey_kit.__all__)
     assert not leaked, f"blocked/refused types in donkey_kit.__all__: {sorted(leaked)}"
     for name in _REFUSED:
         assert not hasattr(donkey_kit, name), name
@@ -206,6 +210,6 @@ def test_moved_names_keep_a_deprecated_top_level_alias(name: str) -> None:
 def test_experimental_is_exactly_the_blocked_only_types() -> None:
     from donkey_kit import experimental
 
-    assert set(experimental.__all__) == _BLOCKED_ONLY
+    assert set(experimental.__all__) == _BLOCKED_ONLY | _NEW_IN_EXPERIMENTAL
     for name in experimental.__all__:
         assert getattr(experimental, name) is not None

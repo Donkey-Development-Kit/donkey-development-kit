@@ -852,6 +852,11 @@ Conformance-tested.
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
 | Strands | `MCPClient(lambda: streamablehttp_client(...))` | UNVERIFIED | — |
 
+Which MCP transports Omni Gateway can front (streamable HTTP, SSE, stdio) is
+UNVERIFIED (#1150). §5 verifies only the shape of a gateway MCP endpoint. The
+binding guard (ADR 0013) does not depend on the answer: it binds a server only
+when its `registry.explain()` verdict is governed, whatever its transport.
+
 ## 10. Descriptor-derivation attributes (BG §2.5) — semi-public, put in nightly matrix
 
 | Framework | Attributes read | Status | Source |

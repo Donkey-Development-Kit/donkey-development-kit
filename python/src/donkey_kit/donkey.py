@@ -132,6 +132,9 @@ class ToolsFacade:
         ``governed`` defaults to ``None`` (no filtering) in v1, with a startup
         log line stating discovery is unfiltered (governed-only discovery). Flipping the default
         to ``True`` is a breaking change reserved for a later major version.
+        Unfiltered discovery still *lists* an ungoverned server, with its
+        ``registry.explain()`` verdict on ``McpServerHandle.governance``, but the
+        ``ToolSet`` binding methods refuse it with ``UngovernedMcpServer`` (ADR 0013).
 
         Blocked until Exchange search + the governed-state join are verified
         (verification discipline / the Verification milestone).

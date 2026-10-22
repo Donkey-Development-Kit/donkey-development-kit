@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from .criteria import GovernanceReport
+
 __all__ = ["AgentHandle", "AssetRef", "AssetType", "McpServerHandle"]
 
 AssetType = Literal["mcp", "a2a-agent", "agent", "api"]
@@ -54,7 +56,12 @@ class AssetRef:
 @dataclass(frozen=True)
 class McpServerHandle:
     """A resolved MCP server. Carries connection info; does NOT open a
-    connection (BG §2.7 — connect on first tool use)."""
+    connection (BG §2.7 — connect on first tool use).
+
+    ``governance`` is the ``registry.explain()`` verdict for the server, attached
+    by discovery so an unfiltered ``ToolSet`` can still list an ungoverned server
+    with its reason. ``None`` means it was never evaluated. ``ToolSet`` binds a
+    server only when ``governance.governed`` is true (#1150, ADR 0013)."""
 
     ref: AssetRef
     endpoint_url: str
@@ -62,6 +69,7 @@ class McpServerHandle:
     auth_required: bool = True
     #: if exposed without a live connection
     tool_descriptors: tuple[dict[str, object], ...] | None = None
+    governance: GovernanceReport | None = None
 
 
 @dataclass(frozen=True)

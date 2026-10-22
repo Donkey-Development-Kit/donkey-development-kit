@@ -22,7 +22,7 @@ import pytest
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.experimental import AssetRef, AssetType, Publication, PublicationAssetType
-from donkey_kit.registry.criteria import GovernanceCriteria
+from donkey_kit.registry.criteria import GovernanceCriteria, GovernanceReport
 from donkey_kit.registry.exchange import ExchangeRegistry
 from donkey_kit.registry.introspect import derive_descriptor
 from donkey_kit.registry.models import McpServerHandle
@@ -39,7 +39,16 @@ _REGISTRY = ExchangeRegistry(
     DonkeyConfig(client_id="client", client_secret="secret", org_id="org"),
     cast(DonkeyAsyncClient, object()),
 )
-_TOOL_SET = ToolSet([McpServerHandle(ref=_REF, endpoint_url="https://example.test/mcp")])
+# Governed, so binding gets past the ADR 0013 guard to the verification block.
+_TOOL_SET = ToolSet(
+    [
+        McpServerHandle(
+            ref=_REF,
+            endpoint_url="https://example.test/mcp",
+            governance=GovernanceReport(governed=True, checks=[]),
+        )
+    ]
+)
 _PUBLICATION = Publication(
     asset_type=PublicationAssetType.MCP_SERVER,
     group_id=_REF.group_id,

@@ -2,7 +2,7 @@
 
 Every name here belongs to a surface whose platform API is not yet confirmed
 against a real sandbox: Exchange discovery and governed-state checks (BG §2.7),
-code-first publication (BG §2.5), and MCP tool calls. Each surface currently
+code-first publication (BG §2.5), and MCP tool calls and binding. Each surface currently
 raises ``NotImplementedError("blocked on verification: …")``. The types are
 importable so code can be written against them, but they are not part of the
 stable ``donkey_kit`` namespace. A name moves up to ``donkey_kit`` when its
@@ -29,6 +29,7 @@ from .registry import (
     Publication,
     PublicationAssetType,
 )
+from .tools.session import UngovernedMcpServer
 
 __all__ = [
     "STRICT",
@@ -41,4 +42,5 @@ __all__ = [
     "PublicationDrift",
     "RegistryError",
     "ToolInvocationError",
+    "UngovernedMcpServer",
 ]

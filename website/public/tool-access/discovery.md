@@ -129,6 +129,11 @@ message points you to `explain()`.
 - **Unfiltered by default.** `governed` defaults to `None`, and a startup
   log line states that discovery is unfiltered. Changing the default to `True`
   is reserved for a future major version.
+- **Listed is not bindable.** Unfiltered discovery still lists a server the
+  gateway does not govern, and attaches its `explain()` report to the handle
+  (`McpServerHandle.governance`). Binding refuses it with
+  `UngovernedMcpServer` (see [Only governed servers are bound](https://docs.donkey-kit.dev/tool-access/binding.md#only-governed-servers-are-bound)).
+  Pass `governed=True` to get a set you can bind as a whole.
 - **Warm the index.** The governance join is a bulk operation, not one API call
   per asset. A long-running agent can build the index at startup with
   `donkey.registry.warm(environment=...)` so the first discovery is fast.
