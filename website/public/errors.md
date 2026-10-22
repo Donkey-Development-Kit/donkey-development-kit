@@ -96,7 +96,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`, along with `classify`, except the three Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
+All importable from `donkey_kit`, along with `classify`, except the four Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -118,7 +118,7 @@ DonkeyError                     # base of the whole tree
 ├─ ApprovalRequired             # client-side: an approval-gated tool was called, not run; .approval
 ├─ ApprovalRejected             # client-side: a reviewer refused a LangGraph-paused tool; .approval
 ├─ ApprovalTimedOut             # client-side: nobody decided before approval_timeout; .approval
-└─ ToolInvocationError, RegistryError, PublicationDrift
+└─ ToolInvocationError, UngovernedMcpServer, RegistryError, PublicationDrift
                                 # tool access, registry and publishing (Roadmap surfaces;
                                 # import them from donkey_kit.experimental)
 ```

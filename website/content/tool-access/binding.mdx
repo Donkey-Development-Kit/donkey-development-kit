@@ -51,6 +51,38 @@ filtered = tools.filter(predicate=lambda t: t.name.startswith("get_"))
   model does. See [Debug logging](/telemetry#debug-logging) to turn it on.
 </Callout>
 
+## Only governed servers are bound
+
+Binding refuses a set that holds any MCP server the gateway does not govern,
+with `UngovernedMcpServer` (in `donkey_kit.experimental`). That covers a server
+registered in Exchange but not fronted by the gateway, and one whose governance
+was never evaluated. The refusal happens before any connection opens, so:
+
+- **No credentials leak.** The SDK attaches your gateway credentials to every
+  governed request. It never sends them to a server the gateway does not front.
+- **No ungoverned tool calls.** Gateway policies, access profiles and the kill
+  switch apply to every tool the agent can call.
+
+The error names each refused server (`.servers`) and each governance check it
+failed (`.reasons`, from [`explain()`](/tool-access/discovery)):
+
+```python
+from donkey_kit.experimental import UngovernedMcpServer
+
+ts = await donkey.tools.discover(domain="crm")  # unfiltered: lists everything
+try:
+    tools = ts.langgraph()
+except UngovernedMcpServer as e:
+    print(e.servers)  # ('com.acme/fastmcp-crm/1.0.0',)
+    print(e.reasons)  # ('com.acme/fastmcp-crm/1.0.0: deployed: no gateway in Sandbox',)
+```
+
+To fix it, front the server with the gateway, or leave it out with
+`discover(governed=True)`. `filter()` narrows tools, not servers, so it does not
+get you past the check. There is no opt-out: to call an ungoverned server, use
+the framework's own MCP client, without the SDK and without your gateway
+credentials.
+
 ## Per-framework binding
 
 `ToolSet` exposes one method per installed integration, each returning the
@@ -82,7 +114,8 @@ docstring calls out the difference.
 | Strands | `MCPClient(lambda: streamablehttp_client(url, headers=...))` — implements `ToolProvider`, so it can be passed directly into `Agent(tools=[...])` with automatic lifecycle management. |
 
 A binding failure or a `401` surfaces as a typed exception from the
-[error taxonomy](/errors).
+[error taxonomy](/errors), and so does an ungoverned server
+(`UngovernedMcpServer`, above).
 
 ## Related
 

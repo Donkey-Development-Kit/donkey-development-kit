@@ -84,3 +84,4 @@ is not rewritten.
 | [0010](0010-no-hidden-global-side-effects.md) | No hidden global side effects: the OTel provider | Accepted | #732 |
 | [0011](0011-nightly-lock-refresh-pr.md) | A green nightly opens the lock-refresh PR, and the release toolchain is locked too | Accepted | #763 |
 | [0012](0012-custom-policy-registry.md) | Customer-registered refusal shapes, in one process-wide registry behind a hook slot | Accepted | #210 |
+| [0013](0013-ungoverned-mcp-binding.md) | Binding refuses an MCP server that is not governed, with no opt-out | Accepted | #1150 |
