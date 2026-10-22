@@ -19,9 +19,9 @@ griffelib==2.4.0
 grimp==3.17
 h11==0.16.0
 httpcore==1.0.9
-httpcore2==2.15.1
+httpcore2==2.16.0
 httpx==0.28.1
-httpx2==2.15.1
+httpx2==2.16.0
 idna==3.20
 import-linter==2.15
 iniconfig==2.3.1
@@ -35,7 +35,7 @@ mcp-types==2.3.0
 mdurl==0.1.2
 mypy==2.4.0
 mypy-extensions==1.1.0
-openai==3.35.1
+openai==3.36.1
 openai-agents==0.24.0
 opentelemetry-api==1.45.1
 opentelemetry-exporter-http-transport==0.66b1

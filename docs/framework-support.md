@@ -32,14 +32,14 @@ install takes each framework's newest release.
 |---|---|---|---|---|---|---|
 | LangGraph | **Conformance-tested** | `[langgraph]` | `langgraph` | 0.4 | 1.2.16 | `langgraph==0.5.0` with `langchain-core>=1.0` |
 |  |  |  | `langchain-openai` | 0.3.9 | 1.7.2 |  |
-|  |  |  | `langchain-core` | 0.3.45 | 1.6.12 |  |
+|  |  |  | `langchain-core` | 0.3.45 | 1.6.13 |  |
 | Google ADK | `connection_kwargs()` | `[adk]` | `google-adk` | 2.4 | 2.12.0 | None known |
-|  |  |  | `litellm` | 1.84 | 1.106.0 |  |
-| Strands | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.61.1 | None known |
+|  |  |  | `litellm` | 1.84 | 1.106.2 |  |
+| Strands | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.62.0 | None known |
 | MS Agent Framework | `connection_kwargs()` | `[agent_framework]` | `agent-framework` | 1.13 | 1.22.0 | None known |
 | OpenAI Agents SDK | **Conformance-tested** | `[openai-agents]` | `openai-agents` | 0.20 | 0.24.0 | None known |
-|  |  |  | `openai` | 2.45 | 3.35.1 |  |
-| Anthropic SDK | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 1.15.0 | None known |
+|  |  |  | `openai` | 2.45 | 3.36.1 |  |
+| Anthropic SDK | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 2.1.0 | None known |
 | CrewAI | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.28 | None known |
 | LlamaIndex | `connection_kwargs()` | `[llamaindex]` | `llama-index-llms-openai-like` | 0.8 | 0.8.1 | None known |
 
