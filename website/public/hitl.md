@@ -253,9 +253,8 @@ its approval once on the `ToolSet` instead. Tool discovery and binding are on
 the [Roadmap](https://docs.donkey-kit.dev/roadmap.md), so this section shows the planned design:
 
 ```python
-tools = await donkey.tools.discover(domain="billing", governed=True)
+# `tools` is the ToolSet that donkey.tools.discover() returns, before you bind it.
 tools = tools.require_approval(tools=["issue_refund", "void_invoice"], risk="financial")
-agent_tools = tools.langgraph()
 ```
 
 A call to a gated tool behaves exactly like a gated `@donkey.tool`: it raises
