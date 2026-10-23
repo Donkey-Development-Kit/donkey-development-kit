@@ -13,13 +13,13 @@ anyio==4.15.1
 ast-serialize==0.13.1
 attrs==26.1.0
 authlib==1.9.1
-boto3==1.43.117
-botocore==1.43.117
+boto3==1.43.118
+botocore==1.43.118
 certifi==2026.10.19
 cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
-coverage==7.16.2
+coverage==7.17.0
 cryptography==50.0.2
 distro==1.9.0
 fastapi==0.141.1
@@ -29,7 +29,7 @@ frozenlist==1.8.0
 fsspec==2026.9.0
 google-adk==2.12.0
 google-auth==2.62.0
-google-genai==2.32.0
+google-genai==2.33.0
 graphviz==0.21
 grimp==3.17
 h11==0.16.0
@@ -68,7 +68,7 @@ pluggy==1.7.0
 propcache==0.5.4
 pyasn1==0.6.4
 pyasn1-modules==0.4.2
-pycparser==3.11
+pycparser==3.12
 pydantic==2.14.1
 pydantic-core==2.50.1
 pydantic-settings==2.16.1
@@ -88,7 +88,7 @@ requests==2.34.2
 respx==0.23.1
 rich==15.0.0
 rpds-py==2026.9.1
-ruff==0.17.1
+ruff==0.17.2
 s3transfer==0.19.3
 shellingham==1.5.4
 six==1.17.0
