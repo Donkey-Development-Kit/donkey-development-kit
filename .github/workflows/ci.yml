@@ -240,12 +240,13 @@ jobs:
       # green without starlette/uvicorn). [otel] likewise: the GenAI-span
       # assertions (BG §1.6, #192) importorskip opentelemetry.sdk, so they only
       # actually execute in this job — the typecheck job stays [llm,cli] and
-      # relies on the absence-only opentelemetry mypy override.
+      # relies on the absence-only opentelemetry mypy override. [a2a] the same
+      # way: donkey.serve()'s round-trip tests (#224) importorskip a2a.
       # -c locks the resolve per Python version (ADR 0007 rule 3, #948);
       # refresh with scripts/compile_constraints.py (combo "test").
       - run: >-
           python -m pip install --upgrade pip &&
-          pip install -e ".[llm,cli,local,otel]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
+          pip install -e ".[llm,cli,local,otel,a2a]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

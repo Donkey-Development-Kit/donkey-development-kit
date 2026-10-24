@@ -99,7 +99,7 @@ CI_INSTALLS: dict[str, str | None] = {
     "commit-identities": None,
     "test": (
         "python -m pip install --upgrade pip && "
-        'pip install -e ".[llm,cli,local,otel]" --group dev '
+        'pip install -e ".[llm,cli,local,otel,a2a]" --group dev '
         '-c "constraints/test-py${PYTHON_VERSION}.txt"'
     ),
     "openai-1x": (

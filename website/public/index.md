@@ -111,8 +111,9 @@ framework client your agent already uses and adds:
   joined to the gateway's audit record through the correlation ID.
 - **Registry and agent-to-agent** Roadmap —
   planned, not shipped: scanning your code to publish tools and agent cards
-  to the control plane, discovering governed MCP tools, and serving or
-  exposing your agent to other agents over A2A.
+  to the control plane, discovering governed MCP tools, and exposing your agent to other agents
+  over A2A through the gateway. Serving it over A2A, `donkey.serve()`, ships
+  today: see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK

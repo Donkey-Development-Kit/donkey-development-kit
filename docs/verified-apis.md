@@ -786,6 +786,7 @@ offline evidence, not a live round-trip.
 | `crewai` | `crewai>=1.15.3` | 1.15.3 added the `openai/` + explicit `base_url` route to the native `OpenAICompletion`. Earlier releases fall back to LiteLLM for any id that does not look like an OpenAI model, returning `crewai.LLM` and LiteLLM exceptions. Signature check against `OpenAICompletion` passes at 1.15.3. | CrewAI |
 | `llamaindex` | `llama-index-llms-openai-like>=0.8` | The verified release. | LlamaIndex |
 | `strands` | `strands-agents[openai]>=1.57.1` | The verified release, with Strands' own `openai` extra: the bare distribution does not install `openai`, so `model()` raised `ModuleNotFoundError`. `test_strands_real_model_is_built_and_called_through_our_transport` builds and calls the real model with only `[strands]` installed. | Strands |
+| `a2a` | `a2a-sdk[http-server]>=1.2.0`, `uvicorn>=0.30` | 1.2.0 is the first a2a-sdk with `DefaultRequestHandler.aclose()`, which `build_app()`'s lifespan calls so a shutdown drains the SDK's per-task asyncio tasks (1.0.3 and 1.1.0 serve tasks but have no `aclose()`; without it, the tasks are still pending when the loop closes). Below 1.0.3, 1.0.1–1.0.2 lack `a2a.helpers.new_text_part` and 1.0.0 fails to import without `grpc`. Lowest-direct on Python 3.10.21 installs a2a-sdk 1.2.0 and uvicorn 0.30.0 and passes `pytest tests/unit`, including `test_a2a_serve.py` (#224). | §8.5 |
 | `cli` / dev group | `typer>=0.26.0`, `rich>=13.8.0` | Every typer up to 0.25.1 drops a `typer.Argument(help=...)` against click 8.5+, so `donkey scan --help` and the CLI reference lose the `PATH` description (#1196, bisected with `click==8.5.0`: 0.15.4–0.25.1 drop it, 0.26.0–0.27.3 keep it). 0.26.0 vendors click (fastapi/typer#1774). Older floors: below 0.15.4 typer breaks against a fresh click 8.2+ (`make_metavar() missing … 'ctx'`), and below 0.13 it rejects `Path \| None` options. rich 13.8.0 is typer 0.26.0's own floor, so `[cli]`'s old `rich>=13.0` could never be installed. | — |
 | `test` / dev group | `pytest>=8.0`, `pytest-asyncio>=0.23.1` | pytest-asyncio 0.23.0 crashes collection (`INTERNALERROR`) on a module-level `importorskip`; 0.23.1 runs the suite. pytest 8.0.0 is fine. | — |
 
@@ -838,6 +839,32 @@ Conformance-tested.
 | CrewAI | `donkey.crewai.llm()` | CrewAI | `/frameworks/crewai` |
 | LlamaIndex | `donkey.llamaindex.llm()` | LlamaIndex | `/frameworks/llamaindex` |
 <!-- END ROSTER: framework-status -->
+
+### 8.5 A2A server classes (BG §2.9.1)
+
+`donkey.serve()` wraps these `a2a-sdk` names and reimplements none of them
+(#224). Each name below was read from the installed `a2a-sdk` 1.2.3, and the
+whole path was run twice. First, in process over `httpx.ASGITransport`
+(`tests/unit/test_a2a_serve.py`, also at the 1.2.0 floor). Second, on a real
+port: `donkey.serve()` under uvicorn 0.54.0 on `127.0.0.1:8765`, called with
+plain `curl` and no SDK on the caller side, which got back the generated card
+and a `TASK_STATE_COMPLETED` task with its text artifact. That round trip is
+local; no gateway fronted the agent.
+
+| Symbol | Used for | Status | Source |
+|---|---|---|---|
+| `a2a.server.agent_execution.AgentExecutor` (`execute`, `cancel`) | The base class of the executor that runs the handler | VERIFIED (local round-trip) | a2a-sdk 1.2.3, 2026-10-24, #224 |
+| `a2a.server.agent_execution.RequestContext` (`.message`, `.current_task`, `.task_id`, `.context_id`) | Reading the caller's message and IDs | VERIFIED (local round-trip) | same |
+| `a2a.server.events.EventQueue` | Passed to `TaskUpdater`; the executor enqueues a `Task` before any status update, or the SDK rejects the event | VERIFIED (local round-trip) | same |
+| `a2a.server.tasks.TaskUpdater` (`start_work`, `add_artifact`, `complete`, `failed`, `cancel`) | The task lifecycle | VERIFIED (local round-trip) | same |
+| `a2a.server.tasks.InMemoryTaskStore` | The task store | VERIFIED (local round-trip) | same |
+| `a2a.server.request_handlers.DefaultRequestHandler(agent_executor=, task_store=, agent_card=)`, `.aclose()` | The JSON-RPC request handler; `aclose()` (1.2.0+) runs on lifespan shutdown | VERIFIED (local round-trip) | same |
+| `a2a.server.routes.create_agent_card_routes(card)`, `create_jsonrpc_routes(handler, "/")` | The card at `/.well-known/agent-card.json` and JSON-RPC at `/` (method `SendMessage`, header `A2A-Version: 1.0`) | VERIFIED (local round-trip) | same |
+| `a2a.types.AgentCard` | The card, built from the `@donkey.agent` record | VERIFIED (local round-trip) | same |
+| `a2a.helpers` (`new_task_from_user_message`, `new_text_part`, `new_data_part`, `new_text_message`, `get_text_parts`, `get_data_parts`) | Building and reading message parts | VERIFIED (local round-trip) | same |
+
+Which A2A traffic Omni Gateway can front, and how, is not covered here: that is
+`donkey expose` (#226).
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 

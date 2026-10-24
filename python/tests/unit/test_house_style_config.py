@@ -66,6 +66,7 @@ _EXTRA_IMPORTS = {
     "llamaindex": "llama_index",
     "strands": "strands",
     "local": "starlette",
+    "a2a": "a2a",
     "otel": "opentelemetry",
     "cli": "typer",
     "test": "pytest",

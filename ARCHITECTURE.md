@@ -117,8 +117,14 @@ bottom:
 cli                                 the `donkey` console script (#730)
 conformance → simulator → _testing  dev-only siblings
 donkey | experimental               experimental: non-first-class names (ADR 0008)
-integrations → tools → registry → llm → core
+integrations | a2a → tools → registry → llm → core
 ```
+
+`a2a` (`donkey.serve()`, BG §2.9.1, #224) sits beside `integrations`, not in
+it: it is the inbound A2A listener, not a framework adapter. It wraps the
+official `a2a-sdk` (the `[a2a]` extra). The layers contract lists the two as
+independent siblings (`integrations | a2a`), so neither may import the other
+(ADR 0014).
 
 It is `exhaustive`, so a new top-level module fails `lint-imports` until it is
 placed. Its one ignored import is `Donkey.simulate()`'s lazy import of

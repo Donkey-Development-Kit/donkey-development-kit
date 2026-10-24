@@ -112,10 +112,10 @@ pip install -e ".[llm,cli]" --group dev
 
 Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
 `openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `otel`, `cli`, `local`,
-`test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
+`a2a` (the official `a2a-sdk`, for `donkey.serve()`), `test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
 `pytest --donkey-conformance --donkey-agent=my_app.agent:build`), and `all`. `all` is
 everything a user runs that installs together — `llm`, `langgraph`, `otel`, `cli`,
-`local` — with no test runner, so add `test` for the conformance plugin:
+`local`, `a2a` — with no test runner, so add `test` for the conformance plugin:
 `donkey-kit[all,test]`. It leaves out the seven other framework extras, because
 whether they install together depends on their upstream releases. The generated
 [co-installability table](docs/co-installability.md) shows which combinations resolve, re-checked

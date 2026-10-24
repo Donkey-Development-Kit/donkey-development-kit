@@ -53,7 +53,7 @@
 
 ## Registry & catalog
 
-- [A2A agents](https://docs.donkey-kit.dev/a2a.md): (status: roadmap) Make your agent callable by other agents over A2A — serve it locally, expose it through the gateway, and develop against a gateway on your laptop.
+- [A2A agents](https://docs.donkey-kit.dev/a2a.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
 - [Scan & publish](https://docs.donkey-kit.dev/publishing.md): (status: roadmap) donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
 
 ## Scenarios

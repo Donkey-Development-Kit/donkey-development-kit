@@ -85,3 +85,4 @@ is not rewritten.
 | [0011](0011-nightly-lock-refresh-pr.md) | A green nightly opens the lock-refresh PR, and the release toolchain is locked too | Accepted | #763 |
 | [0012](0012-custom-policy-registry.md) | Customer-registered refusal shapes, in one process-wide registry behind a hook slot | Accepted | #210 |
 | [0013](0013-ungoverned-mcp-binding.md) | Binding refuses an MCP server that is not governed, with no opt-out | Accepted | #1150 |
+| [0014](0014-a2a-server-package.md) | `donkey.serve()` wraps the official a2a-sdk, in a top-level `a2a` package beside `integrations` | Proposed | #224 |

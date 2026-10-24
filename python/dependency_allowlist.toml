@@ -82,8 +82,14 @@ reason = "[local]: the pure-Python ASGI app donkey mock serves."
 reviewed = 2026-10-03
 
 [packages.uvicorn]
-reason = "[local]: serves the simulator's ASGI app (plain uvicorn, no C extensions)."
+reason = "[local] and [a2a]: serves the simulator's and donkey.serve()'s ASGI apps (plain uvicorn, no C extensions)."
 reviewed = 2026-10-03
+
+# --- [a2a]: donkey.serve(), the inbound A2A listener (BG §2.9.1, #224) ---
+
+[packages.a2a-sdk]
+reason = "[a2a]: the official A2A protocol SDK donkey.serve() wraps; its request handler, task store and routes do the A2A work (ADR 0014)."
+reviewed = 2026-10-24
 
 # --- [otel]: GenAI spans and zero-config export (BG §1.6) ---
 

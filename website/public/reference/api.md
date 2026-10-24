@@ -213,6 +213,23 @@ Mark a callable as an agent entry point, recording its name, skills and docstrin
 
 Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
 
+### `donkey.serve()`
+
+```python nocheck
+donkey.serve(
+    handler: Callable[..., Any],
+    *,
+    host: str = '127.0.0.1',
+    port: int = 8000,
+    url: str | None = None,
+    version: str = '0.0.0',
+) -> None
+```
+
+Serve a `@donkey.agent` handler over A2A on `host:port`, blocking until the server stops.
+
+Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
+
 ### `donkey.approvals`
 
 ```python nocheck
@@ -534,6 +551,8 @@ is raised.
 
 | Name | Kind | Meaning |
 |---|---|---|
+| `A2AResult` | class | What a handler returns when a plain string is not enough. |
+| `A2ATask` | class | One A2A task handed to a `donkey.serve()` handler. |
 | `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
 | `Approval` | class | One call of an approval-gated tool, waiting for a human. |
 | `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |

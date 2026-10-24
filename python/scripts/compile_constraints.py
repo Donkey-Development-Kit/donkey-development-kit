@@ -106,7 +106,7 @@ _COMBOS: tuple[Combo, ...] = (
     Combo("typecheck-and-lint", ("llm", "cli"), True, ("3.11",), "typecheck-and-lint"),
     Combo(
         "test",
-        ("llm", "cli", "local", "otel"),
+        ("llm", "cli", "local", "otel", "a2a"),
         True,
         ("3.10", "3.11", "3.12", "3.13", "3.14"),
         "test (matrix)",

@@ -75,8 +75,8 @@ required, because it is the agent's description. A blank or repeated skill
 raises `ValueError`.
 
 [`donkey scan`](#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
-markers today. The planned [A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator will read the same
-records, so marking your code now carries forward.
+markers, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) generates its A2A agent card from the same
+`@donkey.agent` record, so the scan and the card can't drift.
 
 ## The CLI
 

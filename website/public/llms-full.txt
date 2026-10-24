@@ -121,8 +121,9 @@ framework client your agent already uses and adds:
   joined to the gateway's audit record through the correlation ID.
 - **Registry and agent-to-agent** Roadmap —
   planned, not shipped: scanning your code to publish tools and agent cards
-  to the control plane, discovering governed MCP tools, and serving or
-  exposing your agent to other agents over A2A.
+  to the control plane, discovering governed MCP tools, and exposing your agent to other agents
+  over A2A through the gateway. Serving it over A2A, `donkey.serve()`, ships
+  today: see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK
@@ -291,7 +292,8 @@ Omni Gateway later is an environment change, not a code change.
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
 | CLI (`init`, `doctor`, `mock`, `test`, `scan`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
 | Governed tool access (MCP) | Roadmap | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
-| A2A agents (`serve`, `expose`, `dev`) | Roadmap | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| A2A agents: `donkey.serve()` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| A2A agents: `expose`, `dev` | Roadmap | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
 | On-behalf-of identity | Roadmap | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
 | `donkey scan` (agents, tools and MCP servers from code) | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
@@ -710,9 +712,11 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     lockfile — only governed tools reach your agent.
   
   
-    **Purpose:** `serve`, `expose` and `dev` make your agent callable by other
-    agents, on the official `a2a-sdk`. **Advantage:** inbound tasks are
-    governed with the same correlation, spans and refusals.
+    **Purpose:** `donkey.serve()` makes your agent callable by other agents in
+    one line, on the official `a2a-sdk`; `expose` and `dev` are on the
+    Roadmap. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are to be governed with the same correlation, spans and
+    refusals.
   
   
     **Purpose:** `donkey scan` (live) derives a model of your agents, tools and
@@ -5714,8 +5718,8 @@ required, because it is the agent's description. A blank or repeated skill
 raises `ValueError`.
 
 [`donkey scan`](#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
-markers today. The planned [A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator will read the same
-records, so marking your code now carries forward.
+markers, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) generates its A2A agent card from the same
+`@donkey.agent` record, so the scan and the card can't drift.
 
 ## The CLI
 
@@ -6664,9 +6668,9 @@ learning the A2A protocol. Under the hood, `as_tool()` uses the official
 
 ## Install
 
-There is nothing to install yet. The `donkey-kit[a2a]` extra was removed in
-0.1.2 because no code used it (#744); it returns, carrying `a2a-sdk`, in the
-release that ships `as_tool()`.
+There is nothing to install for `as_tool()` yet. The `donkey-kit[a2a]` extra
+carrying `a2a-sdk` exists today for the server side,
+[`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md); `as_tool()` will use the same extra when it ships.
 
 ## Where this fits
 
@@ -6683,14 +6687,140 @@ Source: https://docs.donkey-kit.dev/a2a.md
 
 # A2A agents
 
-Status: Roadmap. Planned design; not shipped yet.
-
-This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
-gateway locally. The protocol is the official `a2a-sdk`, wrapped; the SDK adds
-the governance around it.
+gateway locally. `donkey.serve()` ships today. `donkey expose` and `donkey dev`
+are on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
+
+## The setup it replaces
+
+Today, accepting a task from a partner agent means:
+
+1. writing a server
+2. writing an agent card
+3. adding logging and tracing
+4. getting a certificate, opening a port and registering the agent by hand
+
+`donkey.serve()` takes care of the first two today. Logging and tracing come
+with governed inbound, and `donkey expose` hands the fourth to the gateway; both
+are on the Roadmap.
+
+## Why not have users call the a2a-sdk directly?
+
+They could, but they'd get a bare server. The wrapper adds four things:
+
+| Raw a2a-sdk | `donkey.serve()` |
+|---|---|
+| You write the agent card by hand | The card is generated from the same `@donkey.agent` / `@donkey.tool` markers `donkey scan` reads, so they can't drift |
+| Incoming tasks arrive anonymous and untracked | They get the same correlation ID, cost tags and tracing span as outgoing calls Roadmap (#225) |
+| A blocked downstream call becomes a generic error | It becomes a typed refusal the caller understands Roadmap (#225) |
+| It binds wherever you configure it | It binds to localhost by default, behind the gateway |
+
+> The differentiator is governed inbound and one-command exposure, not the protocol.
+
+In short, the a2a-sdk handles the protocol and DDK adds the governance.
+`donkey.serve()` runs the official `a2a-sdk` (its request handler, task store
+and routes) and never reimplements the protocol, so any A2A client can call
+your agent.
+
+## `donkey.serve()` — the listener, in one line
+
+### Install the extra
+
+```bash
+pip install "donkey-kit[a2a]"
+```
+
+The `[a2a]` extra brings the official `a2a-sdk` and `uvicorn`. `import donkey_kit`
+never loads them, and calling `donkey.serve()` without the extra raises an
+`ImportError` that names this command.
+
+### Mark the agent and serve it
+
+```python
+from donkey_kit import A2AResult, A2ATask, Donkey
+
+donkey = Donkey()
+
+@donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
+async def handle(task: A2ATask) -> A2AResult:
+    """Triages a support ticket and drafts a reply."""
+    return A2AResult(text=f"triaged: {task.input}", data={"priority": "high"})
+
+donkey.serve(handle)  # A2A server on 127.0.0.1:8000, card generated
+```
+
+### Call it from any A2A client
+
+The card is served at `/.well-known/agent-card.json`, and tasks arrive as
+JSON-RPC at `/`. Plain `curl` is enough:
+
+```bash
+curl -s http://127.0.0.1:8000/ \
+  -H 'A2A-Version: 1.0' -H 'content-type: application/json' \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "SendMessage",
+       "params": {"message": {"messageId": "m1", "role": "ROLE_USER",
+                              "parts": [{"text": "printer on fire"}]}}}'
+```
+
+### What the card says
+
+The card is built from your `@donkey.agent` marker and nothing else, so there is
+no second description of your agent to keep in sync:
+
+| Card field | Comes from |
+|---|---|
+| `name` | `@donkey.agent(name=...)`, the agent's service ID |
+| `description` | the handler's docstring, which `@donkey.agent` requires |
+| `skills` | `@donkey.agent(skills=...)` |
+| `version` | `donkey.serve(version=...)`, `"0.0.0"` by default |
+| `supportedInterfaces[0].url` | `donkey.serve(url=...)`, or `http://{host}:{port}/` |
+
+[`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) reads the same marker, which is why the two
+can't drift. A handler without `@donkey.agent` is rejected with a `TypeError`.
+
+### What the handler gets and returns
+
+The handler takes an `A2ATask`:
+
+| Field | Holds |
+|---|---|
+| `input` | the text parts of the caller's message, joined by newlines |
+| `data` | the structured (data) parts, in order |
+| `task_id`, `context_id` | the A2A task and conversation IDs |
+| `message` | the native `a2a-sdk` message, for anything else (files, metadata) |
+
+It returns a `str`, or an `A2AResult(text=..., data=...)` when it has structured
+output. Each field that is set becomes one artifact on the completed task. A
+sync handler works too: it runs in a worker thread.
+
+If the handler raises, the task fails and the caller sees only
+`the agent failed: `. The exception's message can hold internal
+detail, so it goes to your logs (the `donkey_kit.a2a` logger), never to the
+caller. The server keeps serving.
+
+### Where it listens
+
+`donkey.serve()` binds to `127.0.0.1:8000`, so your agent is never the public
+face; the gateway is. Pass `host=` and `port=` to change that. When a gateway
+fronts the agent, pass its public URL as `url=` so the card advertises the
+gateway, not your laptop:
+
+```python
+donkey.serve(handle, port=9000, url="https://gw.example.com/agents/support-triage/")
+```
+
+`donkey.serve()` blocks until the server stops. To mount the agent in your own
+ASGI server, or to test it in process, build the same app with
+`donkey_kit.a2a.build_app(handle)` and run it inside its ASGI lifespan, as
+uvicorn does, so shutdown drains in-flight tasks.
+
+  **What "Offline-verified" means here.** `donkey.serve()` has been run end to
+  end on a real port: a plain `curl` fetched the generated card and got a
+  completed task back. It has not yet been run behind a governed gateway, which
+  is what `donkey expose` adds.
 
 ## Why the agent still runs a listener
 
@@ -6707,28 +6837,14 @@ a separate process in front of your agent, not as a library inside it.
   lived inside the agent, the agent's own code could bypass it. The gateway's
   value depends on being outside the thing it governs.
 
-## `donkey serve` — the listener, in one line
+## Governed inbound Roadmap
 
-```python
-@donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
-async def handle(task: A2ATask) -> A2AResult:
-    return await graph.ainvoke(task.input)
+Every call arriving over A2A will get the same treatment as an outgoing one: a
+correlation ID, cost tags, an OTel span, and typed refusals when the agent's own
+downstream calls are blocked. Today a served task is untracked, and a handler
+failure reaches the caller as the generic `the agent failed: `.
 
-donkey.serve(handle)      # A2A server on 127.0.0.1:8000, card auto-generated
-```
-
-- **The card is generated from your code** — the same `@donkey.tool` /
-  `@donkey.agent` markers that [`donkey scan`](https://docs.donkey-kit.dev/publishing.md) reads — so there is
-  no second description of your agent to keep in sync. The
-  [`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) marker is live today; `serve` is the
-  planned part.
-- **It binds to localhost by default**, so your agent is never the public face;
-  the gateway is.
-- **Inbound calls are governed.** Every call arriving over A2A gets the same
-  treatment as an outgoing one: correlation ID, cost tags, an OTel span, and
-  typed refusals when the agent's own downstream calls are blocked.
-
-## `donkey expose` — the ingress, registered from code
+## `donkey expose` — the ingress, registered from code Roadmap
 
 ```
 $ donkey expose --env prod
@@ -6741,17 +6857,17 @@ The gateway does the work — provisioning the A2A proxy, attaching the policy
 set, and registering the card. `donkey expose` turns that console session into
 one command that runs in CI.
 
-## `donkey dev` — a gateway in front of your laptop
+## `donkey dev` — a gateway in front of your laptop Roadmap
 
-`donkey dev` puts a gateway in front of `donkey serve` on your machine, so you
+`donkey dev` puts a gateway in front of `donkey.serve()` on your machine, so you
 can call your agent over A2A through governance before deploying. Two modes are
 planned:
 
 - **A real gateway.** Where a self-managed Omni Gateway image is available for
-  local development, `donkey dev` runs it alongside `donkey serve`, so A2A calls
-  pass through real policies.
+  local development, `donkey dev` runs it alongside `donkey.serve()`, so A2A
+  calls pass through real policies.
 - **Simulated ingress.** The [local simulator](https://docs.donkey-kit.dev/simulator.md) gains an A2A ingress
-  mode: a local fake gateway in front of `donkey serve`, replaying the same
+  mode: a local fake gateway in front of `donkey.serve()`, replaying the same
   rejection fixtures. A plain A2A client sees byte-identical responses, and
   every response carries `x-donkey-simulator: true`.
 
@@ -6760,6 +6876,7 @@ planned:
 - [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — call *other* A2A agents as tools.
 - [Scan & publish](https://docs.donkey-kit.dev/publishing.md) — register your agent card with Agent Registry.
 - [Local simulator](https://docs.donkey-kit.dev/simulator.md) — the fixture-replay server behind simulated ingress.
+- [API reference](https://docs.donkey-kit.dev/reference/api.md#donkeyserve) — every `donkey.serve()` argument.
 
 ---
 
@@ -13020,6 +13137,23 @@ Mark a callable as an agent entry point, recording its name, skills and docstrin
 
 Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
 
+### `donkey.serve()`
+
+```python nocheck
+donkey.serve(
+    handler: Callable[..., Any],
+    *,
+    host: str = '127.0.0.1',
+    port: int = 8000,
+    url: str | None = None,
+    version: str = '0.0.0',
+) -> None
+```
+
+Serve a `@donkey.agent` handler over A2A on `host:port`, blocking until the server stops.
+
+Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
+
 ### `donkey.approvals`
 
 ```python nocheck
@@ -13341,6 +13475,8 @@ is raised.
 
 | Name | Kind | Meaning |
 |---|---|---|
+| `A2AResult` | class | What a handler returns when a plain string is not enough. |
+| `A2ATask` | class | One A2A task handed to a `donkey.serve()` handler. |
 | `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
 | `Approval` | class | One call of an approval-gated tool, waiting for a human. |
 | `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |
