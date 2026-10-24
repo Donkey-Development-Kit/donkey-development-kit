@@ -14,13 +14,19 @@ adapters that hand the framework the SDK's shared client (``BG §1.1``,
 * The OpenAI Agents SDK ``Runner`` sends a run's first turn from a task of its
   own, and ADK's ``Runner`` runs the whole agent in one. Neither runs anything
   the adapter controls in the caller's context, so there is nowhere to open a
-  :class:`~donkey_kit.core.lastcall.LastCallBridge`. Bridging the whole run
-  instead would break hazard #2, since a run can fan out (agents as tools, ADK's
-  ``ParallelAgent``). The gap is documented on the framework pages, with the
-  in-task hook that reads the record (``RunHooks.on_llm_end``,
+  :class:`~donkey_kit.core.lastcall.LastCallBridge` for the caller. Bridging the
+  whole run instead would break hazard #2, since a run can fan out (agents as
+  tools, ADK's ``ParallelAgent``). The gap is documented on the framework pages,
+  with the in-task hook that reads the record (``RunHooks.on_llm_end``,
   ``after_model_callback``). The ``UNOBSERVED`` assertions below pin that
   documented behaviour: if one starts failing, the framework changed where it
   sends the call, and the page needs updating.
+* From google-adk 2.13.0, ADK's flow iterates the model's response generator in
+  a copy of its own context, so both ADK factories return a model subclass that
+  bridges each model call back to the flow, where ``after_model_callback`` runs
+  (#1207). The callback tests below pin that for both factories. The bridge
+  closes before a complete response, so a task started on one (as ADK starts
+  tool calls) records in its own context (hazard #2).
 
 Framework-free at module level (the base-only job); each test skips unless its
 framework is installed. CI runs this file in the jobs that install them.
@@ -28,6 +34,7 @@ framework is installed. CI runs this file in the jobs that install them.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -252,3 +259,112 @@ async def test_adk_runner_is_unobserved_but_after_model_callback_sees_it() -> No
         # Documented gap: ADK's Runner runs the agent in a task of its own.
         assert donkey.last_call.status is LastCallStatus.UNOBSERVED
     assert in_callback == [LastCallStatus.OBSERVED]
+
+
+async def test_adk_model_runner_is_unobserved_but_after_model_callback_sees_it() -> None:
+    pytest.importorskip("google.adk")
+    pytest.importorskip("litellm")
+    from google.adk.agents import LlmAgent
+    from google.adk.runners import InMemoryRunner
+
+    donkey = _donkey()
+    in_callback: list[str | None] = []
+
+    def after_model(callback_context: Any, llm_response: Any) -> None:
+        in_callback.append(donkey.last_call.request_id)
+
+    async with donkey:
+        agent = LlmAgent(
+            name="a",
+            model=donkey.adk.model("gpt-4o"),
+            after_model_callback=after_model,
+        )
+        runner = InMemoryRunner(agent=agent, app_name="app")
+        session = await runner.session_service.create_session(app_name="app", user_id="u")
+        async for _ in runner.run_async(
+            user_id="u", session_id=session.id, new_message=_gemini_message()
+        ):
+            pass
+        # Documented gap: ADK's Runner runs the agent in a task of its own.
+        assert donkey.last_call.status is LastCallStatus.UNOBSERVED
+    assert in_callback == ["rid-answer"]
+
+
+def _gemini_stream(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(
+        200,
+        content=(GEMINI_FIXTURES / "responses.stream.body.txt").read_bytes(),
+        headers=parse_headers((GEMINI_FIXTURES / "responses.stream.headers.txt").read_text()),
+    )
+
+
+async def test_adk_streamed_run_after_model_callback_sees_every_response() -> None:
+    """The bridge stays open across partial responses and its record survives
+    the close, so each callback, the final complete one included, reads it."""
+    pytest.importorskip("google.adk")
+    from google.adk.agents import LlmAgent
+    from google.adk.agents.run_config import RunConfig, StreamingMode
+    from google.adk.runners import InMemoryRunner
+
+    donkey = _donkey(_gemini_stream)
+    in_callback: list[tuple[bool, LastCallStatus]] = []
+
+    def after_model(callback_context: Any, llm_response: Any) -> None:
+        in_callback.append((bool(llm_response.partial), donkey.last_call.status))
+
+    async with donkey:
+        agent = LlmAgent(
+            name="a",
+            model=donkey.adk.gemini("gemini-2.5-flash"),
+            after_model_callback=after_model,
+        )
+        runner = InMemoryRunner(agent=agent, app_name="app")
+        session = await runner.session_service.create_session(app_name="app", user_id="u")
+        async for _ in runner.run_async(
+            user_id="u",
+            session_id=session.id,
+            new_message=_gemini_message(),
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
+        ):
+            pass
+    observed = LastCallStatus.OBSERVED
+    assert in_callback == [(True, observed)] * 3 + [(False, observed)]
+
+
+async def test_adk_factories_return_the_adk_classes() -> None:
+    pytest.importorskip("google.adk")
+    pytest.importorskip("litellm")
+    from google.adk.models import Gemini
+    from google.adk.models.lite_llm import LiteLlm
+
+    donkey = _donkey()
+    async with donkey:
+        assert isinstance(donkey.adk.gemini("gemini-2.5-flash"), Gemini)
+        assert isinstance(donkey.adk.model("gpt-4o"), LiteLlm)
+
+
+async def test_adk_bridge_closes_before_a_complete_response() -> None:
+    """A task started while ADK handles a complete response, as ADK starts a tool
+    call, records in its own context and not through the model call's bridge."""
+    pytest.importorskip("google.adk")
+    from google.adk.models.llm_request import LlmRequest
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/chat/completions"):
+            return _answer(request)
+        return _gemini(request)
+
+    donkey = _donkey(handler)
+
+    async def sibling() -> None:
+        await donkey.llm.client().chat.completions.create(
+            model="gpt-4o", messages=[{"role": "user", "content": "hi"}]
+        )
+
+    async with donkey:
+        request = LlmRequest(model="gemini-2.5-flash", contents=[_gemini_message()])
+        model = donkey.adk.gemini("gemini-2.5-flash")
+        async for response in model.generate_content_async(request):
+            if not response.partial:
+                await asyncio.create_task(sibling())
+        assert donkey.last_call.requested_model == "gemini-2.5-flash"
