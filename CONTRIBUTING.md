@@ -761,8 +761,11 @@ build plan has the rationale behind each rule:
   ```bash
   cd python
   python scripts/compile_constraints.py   # needs `uv` on PATH (dev-time only; CI still uses plain pip)
-  git diff constraints/                   # review before committing
+  git diff constraints/ ../.pre-commit-config.yaml   # review before committing
   ```
+  The script also moves the pre-commit hooks' ruff `rev:` and `import-linter`
+  pin to the new typecheck-and-lint lock, which `tests/unit/test_noxfile.py`
+  holds them equal to (#1206); commit that file with the lock.
   `python scripts/compile_constraints.py --check` recompiles every combo and
   exits 1 without writing if any file would change; because each combo is
   compiled on its own, a clean `--check` run also proves every committed file
