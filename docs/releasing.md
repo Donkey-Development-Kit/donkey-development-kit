@@ -124,7 +124,8 @@ version of its own again.
 Bump it on `develop`, in the PR that finishes a version's work, **before** the
 promotion PR — so the code on `main` already reads the version its tag will
 carry. `scripts/bump-version.sh` does the bump: it asks for the issue that
-tracks it (`--issue N`), names the branch `chore/<issue#>-bump-version-<version>`
+tracks it (`--issue N`) or, given none, files one (`chore(release): bump
+version to <version>`, reusing an open issue with that title), names the branch `chore/<issue#>-bump-version-<version>`
 per the branch convention, edits `__version__`, and opens the PR that closes
 that issue. It links the PR to the release's milestone (`--milestone`, else the
 issue's milestone, else the open milestone titled for the new version, else it
