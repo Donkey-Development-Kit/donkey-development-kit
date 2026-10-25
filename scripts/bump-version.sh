@@ -10,7 +10,11 @@
 # The bump is tracked by an issue like any other change: the branch is named
 # chore/<issue#>-bump-version-<version> per the <type>/<issue#>-<slug>
 # convention, and the PR body closes the issue. Pass it with --issue N, or the
-# script asks for it.
+# script asks for it; Enter (or --yes) files one instead, titled
+# "chore(release): bump version to <version>", labelled chore, area:release,
+# priority/p2, size/xs, in the resolved milestone, and assigned to you. It is
+# filed only after the final confirm, and an open issue with that exact title
+# (from an earlier run that didn't finish) is reused rather than duplicated.
 #
 # The PR is linked to a milestone, the release the bump ships in. Pass it with
 # --milestone "<title>" or --milestone <number>. Without the flag the script
@@ -40,11 +44,12 @@
 # behind your back. Nothing lands until CI is green.
 #
 # Usage:
-#   bash scripts/bump-version.sh                # interactive
+#   bash scripts/bump-version.sh                # interactive (Enter at the issue prompt files one)
 #   bash scripts/bump-version.sh --issue 1234   # the issue tracking this bump
 #   bash scripts/bump-version.sh --milestone 21 # the milestone (title or number)
 #   bash scripts/bump-version.sh --dry-run      # show every action, mutate nothing
-#   bash scripts/bump-version.sh --yes          # skip the final confirm prompt
+#   bash scripts/bump-version.sh --yes          # skip the final confirm prompt (and file the issue
+#                                               # without asking when --issue is absent)
 #
 set -uo pipefail
 
@@ -205,24 +210,39 @@ PY
 fi
 
 # --- The issue this bump closes (branch naming: <type>/<issue#>-<slug>) -------
-if [ -z "$ISSUE" ]; then
-  read -r -p "Issue number tracking this bump: " ISSUE
+ISSUE_TITLE="chore(release): bump version to ${NEW}"
+NEW_ISSUE=0
+if [ -z "$ISSUE" ] && [ "$ASSUME_YES" -eq 0 ]; then
+  read -r -p "Issue number tracking this bump (Enter = file one): " ISSUE
+  ISSUE="$(printf '%s' "$ISSUE" | tr -d '[:space:]')"
 fi
-ISSUE="${ISSUE#\#}"
-[[ "$ISSUE" =~ ^[1-9][0-9]*$ ]] || die "not an issue number: '$ISSUE'"
+if [ -z "$ISSUE" ]; then
+  # NEW is validated above (digits, dots, dev/a/b/rc), so it is safe in a jq literal.
+  ISSUE=$(gh issue list --repo "$REPO" --state open --search "\"${ISSUE_TITLE}\" in:title" \
+    --json number,title --jq ".[] | select(.title == \"${ISSUE_TITLE}\") | .number" 2>/dev/null | head -1)
+  if [ -n "$ISSUE" ]; then
+    info "issue: reusing open #$ISSUE \"$ISSUE_TITLE\""
+  else
+    NEW_ISSUE=1
+  fi
+fi
 # Read-only lookups still run under --dry-run (best-effort) so it can show the
 # milestone it would use; a real run fails hard instead.
 ISSUE_MILESTONE=""
-if issue_info=$(gh issue view "$ISSUE" --repo "$REPO" --json state,milestone \
-     --jq '[.state, (.milestone.title // "")] | @tsv' 2>/dev/null); then
-  IFS=$'\t' read -r issue_state ISSUE_MILESTONE <<<"$issue_info"
-  if [ "$DRY_RUN" -eq 0 ] && [ "$issue_state" != "OPEN" ]; then
-    die "issue #$ISSUE is $issue_state; a bump closes an open issue"
+if [ "$NEW_ISSUE" -eq 0 ]; then
+  ISSUE="${ISSUE#\#}"
+  [[ "$ISSUE" =~ ^[1-9][0-9]*$ ]] || die "not an issue number: '$ISSUE'"
+  if issue_info=$(gh issue view "$ISSUE" --repo "$REPO" --json state,milestone \
+       --jq '[.state, (.milestone.title // "")] | @tsv' 2>/dev/null); then
+    IFS=$'\t' read -r issue_state ISSUE_MILESTONE <<<"$issue_info"
+    if [ "$DRY_RUN" -eq 0 ] && [ "$issue_state" != "OPEN" ]; then
+      die "issue #$ISSUE is $issue_state; a bump closes an open issue"
+    fi
+  elif [ "$DRY_RUN" -eq 0 ]; then
+    die "issue #$ISSUE not found in $REPO"
+  else
+    info "note: could not look up issue #$ISSUE (dry run, continuing)"
   fi
-elif [ "$DRY_RUN" -eq 0 ]; then
-  die "issue #$ISSUE not found in $REPO"
-else
-  info "note: could not look up issue #$ISSUE (dry run, continuing)"
 fi
 
 # --- The milestone the bump ships in -----------------------------------------
@@ -289,18 +309,22 @@ if [ -z "$MILESTONE" ] && [ -z "$ISSUE_MILESTONE" ]; then
 fi
 
 # --- Confirm ------------------------------------------------------------------
-# The slug is kebab-case with no punctuation: 0.1.3.dev0 -> 0-1-3-dev0.
-BRANCH="chore/${ISSUE}-bump-version-${NEW//./-}"
 printf '\n'
 printf '  version:  \033[1m%s\033[0m  →  \033[1m%s\033[0m\n' "$CURRENT" "$NEW"
-printf '  issue:    #%s\n' "$ISSUE"
+if [ "$NEW_ISSUE" -eq 1 ]; then
+  printf '  issue:    new: "%s" (filed on proceed)\n' "$ISSUE_TITLE"
+else
+  printf '  issue:    #%s\n' "$ISSUE"
+fi
 if [ -n "$MILESTONE" ]; then
   printf '  milestone: %s\n' "$MILESTONE"
-  [ -z "$ISSUE_MILESTONE" ] && printf '            (also set on issue #%s, which has none)\n' "$ISSUE"
+  [ "$NEW_ISSUE" -eq 0 ] && [ -z "$ISSUE_MILESTONE" ] \
+    && printf '            (also set on issue #%s, which has none)\n' "$ISSUE"
 else
   printf '  milestone: none\n'
 fi
-printf '  branch:   %s  (off %s)\n' "$BRANCH" "$BASE_BRANCH"
+# The slug is kebab-case with no punctuation: 0.1.3.dev0 -> 0-1-3-dev0.
+printf '  branch:   chore/%s-bump-version-%s  (off %s)\n' "${ISSUE:-<new>}" "${NEW//./-}" "$BASE_BRANCH"
 printf '  file:     %s\n' "$INIT_PY"
 printf '  merge:    squash into %s, auto-merge when CI is green\n' "$BASE_BRANCH"
 [ "$DRY_RUN" -eq 1 ] && printf '  \033[33mmode:     DRY RUN — nothing will be changed\033[0m\n'
@@ -314,6 +338,35 @@ if [ "$ASSUME_YES" -eq 0 ]; then
     *) info "aborted; nothing changed"; exit 0 ;;
   esac
 fi
+
+# --- File the tracking issue when none was given -----------------------------
+if [ "$NEW_ISSUE" -eq 1 ]; then
+  ISSUE_BODY="## Summary
+Bump \`__version__\` \`${CURRENT} → ${NEW}\` in \`${INIT_PY}\`, its one source (\`pyproject.toml\` reads it from there), ahead of the next \`${BASE_BRANCH} → main\` promotion.
+
+## Proposal
+- \`scripts/bump-version.sh\` edits \`${INIT_PY}\` only and opens the squash PR into \`${BASE_BRANCH}\` with auto-merge.
+
+No source behavior changes.
+
+## Done when
+- [ ] \`${BASE_BRANCH}\` reads \`__version__ = \"${NEW}\"\`."
+  ISSUE_ARGS=(--repo "$REPO" --title "$ISSUE_TITLE" --body "$ISSUE_BODY" --assignee "@me"
+    --label chore --label area:release --label priority/p2 --label size/xs)
+  [ -n "$MILESTONE" ] && ISSUE_ARGS+=(--milestone "$MILESTONE")
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '\033[33m[dry-run]\033[0m would run: gh issue create --repo %s --title %q --assignee @me --label chore --label area:release --label priority/p2 --label size/xs%s --body <…>\n' \
+      "$REPO" "$ISSUE_TITLE" "${MILESTONE:+ --milestone \"$MILESTONE\"}"
+    ISSUE="<new>"
+  else
+    info "filing the tracking issue"
+    issue_url=$(gh issue create "${ISSUE_ARGS[@]}") || die "gh issue create failed"
+    ISSUE="${issue_url##*/}"
+    [[ "$ISSUE" =~ ^[1-9][0-9]*$ ]] || die "could not read the issue number from: $issue_url"
+    info "filed issue #$ISSUE: $issue_url"
+  fi
+fi
+BRANCH="chore/${ISSUE}-bump-version-${NEW//./-}"
 
 # --- Cut the branch off the latest develop ------------------------------------
 info "fetching latest $BASE_BRANCH"
@@ -357,8 +410,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
     "$REPO" "$BASE_BRANCH" "$BRANCH" "$PR_TITLE"
   if [ -n "$MILESTONE" ]; then
     printf '\033[33m[dry-run]\033[0m   … with --milestone "%s"\n' "$MILESTONE"
-    [ -z "$ISSUE_MILESTONE" ] && printf '\033[33m[dry-run]\033[0m would run: gh issue edit %s --repo %s --milestone "%s"\n' \
-      "$ISSUE" "$REPO" "$MILESTONE"
+    [ "$NEW_ISSUE" -eq 0 ] && [ -z "$ISSUE_MILESTONE" ] \
+      && printf '\033[33m[dry-run]\033[0m would run: gh issue edit %s --repo %s --milestone "%s"\n' \
+        "$ISSUE" "$REPO" "$MILESTONE"
   fi
   printf '\033[33m[dry-run]\033[0m would run: gh pr merge --repo %s --squash --auto --delete-branch --subject %q --head %s\n' \
     "$REPO" "chore: bump version to ${NEW}" "$BRANCH"
@@ -383,7 +437,7 @@ PR_NUM=$(gh pr view "$BRANCH" --repo "$REPO" --json number --jq .number) \
   || die "could not resolve the PR number just created"
 info "opened PR #$PR_NUM"
 
-if [ -n "$MILESTONE" ] && [ -z "$ISSUE_MILESTONE" ]; then
+if [ -n "$MILESTONE" ] && [ "$NEW_ISSUE" -eq 0 ] && [ -z "$ISSUE_MILESTONE" ]; then
   info "setting milestone \"$MILESTONE\" on issue #$ISSUE"
   gh issue edit "$ISSUE" --repo "$REPO" --milestone "$MILESTONE" >/dev/null \
     || printf '\033[33mwarning:\033[0m could not set the milestone on issue #%s; set it by hand\n' "$ISSUE" >&2
