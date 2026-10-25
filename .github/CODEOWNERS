@@ -10,19 +10,19 @@
 
 # Workflows, Dependabot, release-note config and this file: CI runs these
 # with repository tokens, and the publish workflows hold the PyPI identity.
-/.github/                         @tbolis-at-mulesoft @amirkhan-ak-sf
+/.github/                         @tommasobolis @amirkhan-ak-sf
 
 # Package metadata: dependencies, extras, the build backend, tool config.
-/python/pyproject.toml            @tbolis-at-mulesoft @amirkhan-ak-sf
+/python/pyproject.toml            @tommasobolis @amirkhan-ak-sf
 
 # CI gate scripts (dependency allowlist, fixture scrubbing, verification
 # claims, constraints lock, commit identities) and the fixture capture tool.
-/python/scripts/                  @tbolis-at-mulesoft @amirkhan-ak-sf
+/python/scripts/                  @tommasobolis @amirkhan-ak-sf
 
 # The framework-free core (§1.1), including the verification registry
 # (core/_verify.py, §0.3).
-/python/src/donkey_kit/core/      @tbolis-at-mulesoft @amirkhan-ak-sf
+/python/src/donkey_kit/core/      @tommasobolis @amirkhan-ak-sf
 
 # Captured gateway fixtures and their lock (§2): tests trust these as ground
 # truth, and the scrubber keeps tenant data out of them.
-/python/tests/fixtures/           @tbolis-at-mulesoft @amirkhan-ak-sf
+/python/tests/fixtures/           @tommasobolis @amirkhan-ak-sf
