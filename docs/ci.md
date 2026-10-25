@@ -116,7 +116,10 @@ issue once the nightly is green again.
 
 After every green nightly on `develop`, and on manual dispatch, this workflow
 reruns `python scripts/compile_constraints.py` on `develop` (#763,
-[ADR 0011](adr/0011-nightly-lock-refresh-pr.md)). When any file under
+[ADR 0011](adr/0011-nightly-lock-refresh-pr.md)). The script also moves the
+ruff-pre-commit `rev:` and the lint-imports hook's `import-linter` pin in
+`.pre-commit-config.yaml` to the new typecheck-and-lint lock, so a ruff release
+doesn't fail `tests/unit/test_noxfile.py` on the bump PR (#1206). When any file under
 `python/constraints/` changed, it regenerates the docs that restate the lock
 (`python scripts/generate_docs.py`, which writes the
 [framework version pages](framework-support.md), #1068) and the site's llms

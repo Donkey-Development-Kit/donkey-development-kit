@@ -43,6 +43,12 @@ CONTRIBUTING.md):
     python scripts/compile_constraints.py          # refresh constraints/*.txt
     python scripts/compile_constraints.py --check   # exit 1 if refreshing would change a file
 
+The repository's `.pre-commit-config.yaml` restates two pins of the
+typecheck-and-lint lock: the ruff-pre-commit `rev:` and the lint-imports hook's
+`import-linter==` dependency (`tests/unit/test_noxfile.py` holds them equal).
+Every refresh rewrites those two from the lock it just compiled, so a ruff or
+import-linter release reaches the hooks in the same bump PR (#1206).
+
 `--check` recompiles every combo and diffs against the committed file. Because
 each combo is compiled on its own (never merged), a successful `--check` run
 also proves every committed file is still satisfiable for its own combo: an
@@ -53,6 +59,7 @@ diff), not produce a file this script could silently accept.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 import tempfile
@@ -61,6 +68,16 @@ from pathlib import Path
 
 _PYTHON_ROOT = Path(__file__).resolve().parents[1]
 _CONSTRAINTS_DIR = _PYTHON_ROOT / "constraints"
+_PRE_COMMIT = _PYTHON_ROOT.parent / ".pre-commit-config.yaml"
+#: The typecheck-and-lint job's lock: the ruff and import-linter the hooks run.
+_LINT_LOCK = _CONSTRAINTS_DIR / "typecheck-and-lint-py3.11.txt"
+#: The ruff-pre-commit repo's `rev:` line (its tags are `v<ruff version>`).
+_RUFF_REV = re.compile(
+    r"^(\s*- repo: https://github\.com/astral-sh/ruff-pre-commit\n\s+rev: )v\S+$",
+    re.MULTILINE,
+)
+#: The lint-imports hook's pinned dependency.
+_IMPORT_LINTER_DEP = re.compile(r"(?<![\w-])(import-linter==)[^\s,\]]+")
 
 
 @dataclass(frozen=True)
@@ -290,6 +307,42 @@ def _compile_one(combo: Combo, python_version: str, out_file: Path) -> str:
     return header + compiled
 
 
+class PreCommitSyncError(RuntimeError):
+    """The lint lock or `.pre-commit-config.yaml` lacks a pin the sync rewrites."""
+
+
+def _lock_pin(lock_text: str, package: str) -> str:
+    for line in lock_text.splitlines():
+        if line.startswith(f"{package}=="):
+            return line.split("==", 1)[1].strip()
+    raise PreCommitSyncError(f"{package} is not pinned in {_LINT_LOCK.name}")
+
+
+def sync_pre_commit_pins(config_text: str, lint_lock_text: str) -> str:
+    """Return ``config_text`` with its ruff and import-linter pins taken from the lock.
+
+    Rewrites the ruff-pre-commit ``rev:`` to ``v<ruff pin>`` and the
+    lint-imports hook's ``import-linter==`` dependency to the import-linter
+    pin, and leaves every other byte alone (a YAML round trip would drop the
+    comments). Raises :class:`PreCommitSyncError` when either pin or either
+    line is missing, so a renamed hook fails the refresh instead of leaving the
+    hooks behind the lock.
+    """
+    ruff = _lock_pin(lint_lock_text, "ruff")
+    import_linter = _lock_pin(lint_lock_text, "import-linter")
+    synced, revs = _RUFF_REV.subn(lambda m: f"{m.group(1)}v{ruff}", config_text)
+    synced, deps = _IMPORT_LINTER_DEP.subn(lambda m: f"{m.group(1)}{import_linter}", synced)
+    if revs != 1:
+        raise PreCommitSyncError(
+            f"expected one astral-sh/ruff-pre-commit `rev:` in {_PRE_COMMIT.name}, found {revs}"
+        )
+    if deps != 1:
+        raise PreCommitSyncError(
+            f"expected one import-linter== pin in {_PRE_COMMIT.name}, found {deps}"
+        )
+    return synced
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -301,6 +354,7 @@ def main(argv: list[str]) -> int:
 
     _CONSTRAINTS_DIR.mkdir(exist_ok=True)
     changed: list[str] = []
+    lint_lock_text = ""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         for combo in _COMBOS:
@@ -310,6 +364,8 @@ def main(argv: list[str]) -> int:
                 # committed path — a --check run must not mutate it.
                 scratch = tmp_dir / combo.file_name(python_version)
                 content = _compile_one(combo, python_version, scratch)
+                if target == _LINT_LOCK:
+                    lint_lock_text = content
                 if args.check:
                     existing = target.read_text(encoding="utf-8") if target.is_file() else ""
                     if existing != content:
@@ -323,9 +379,19 @@ def main(argv: list[str]) -> int:
                     )
                     print(f"wrote {target.relative_to(_PYTHON_ROOT)} ({pins} pins)")
 
+    # The hooks follow the lint lock just compiled (written, or only diffed under --check).
+    config = _PRE_COMMIT.read_text(encoding="utf-8")
+    synced = sync_pre_commit_pins(config, lint_lock_text)
+    if synced != config:
+        if args.check:
+            changed.append(_PRE_COMMIT.name)
+        else:
+            _PRE_COMMIT.write_text(synced, encoding="utf-8")
+            print(f"wrote {_PRE_COMMIT.name} (ruff and import-linter pins from {_LINT_LOCK.name})")
+
     if args.check and changed:
         names = ", ".join(changed)
-        print(f"::error::stale constraints files, run scripts/compile_constraints.py: {names}")
+        print(f"::error::stale lock files, run scripts/compile_constraints.py: {names}")
         return 1
     return 0
 
