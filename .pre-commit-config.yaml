@@ -10,7 +10,8 @@
 # them: python/pyproject.toml's [tool.ruff.format] exclude covers ruff format,
 # and the `exclude:` below covers both ruff hooks.
 # tests/unit/test_noxfile.py keeps the ruff and import-linter versions below
-# equal to the typecheck-and-lint job's lock.
+# equal to the typecheck-and-lint job's lock, and python/scripts/
+# compile_constraints.py rewrites both whenever it refreshes that lock.
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
