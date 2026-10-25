@@ -145,7 +145,7 @@ Beside it:
   allowlist twin is `test_core_depends_only_on_httpx_and_the_stdlib`
   (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
   level, plus the optional `opentelemetry` lazily.
-- **core is layered too:** `runtime` → `transport | approvals` → `budget | cache |
+- **core is layered too:** `runtime` → `transport | approvals | inbound` → `budget | cache |
   cachecontrol | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
   `_policy_spec` → `errors` → `_refusal_body | lastcall | masking` → `_verify` →
@@ -160,6 +160,10 @@ Beside it:
   a refusal. Inside a LangGraph graph the gate pauses with `interrupt()` instead
   (#212): `donkey.py` passes the LangGraph adapter's hook into `gate(natives=...)`,
   so core still imports no framework.
+  `inbound` binds the run for one inbound A2A task (#225): it adopts the
+  caller's `X-Correlation-Id` or mints one, enters `run_scope`, and opens the
+  `donkey.a2a.task` span. It takes headers as a plain mapping, so it imports no
+  `a2a-sdk` or `starlette`; `a2a` calls it, and so could another inbound surface.
   `spanflush` flushes the span providers on a kill (#220); it imports nothing
   from core, so the transport reaches it without telemetry exposing its provider.
   `_refusal_body` holds the refusal-body parsers (`errors`' JSON

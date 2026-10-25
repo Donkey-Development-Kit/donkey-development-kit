@@ -878,7 +878,14 @@ class Donkey:
         The official ``a2a-sdk`` serves the protocol; the card is generated from
         the ``@donkey.agent`` marker, so it matches what ``donkey scan`` reads.
         It binds to localhost by default: the agent sits behind the gateway and
-        is never the public face. :func:`donkey_kit.a2a.build_app` returns the
+        is never the public face.
+
+        Each task is governed (#225): its downstream calls share one run whose
+        correlation ID is the caller's ``X-Correlation-Id`` (or a fresh one) and
+        carry this client's cost tags, a ``donkey.a2a.task`` span parents their
+        spans, and a governance refusal fails the task with its typed name in a
+        structured ``error`` part, never a stack trace.
+        :func:`donkey_kit.a2a.build_app` returns the
         same server as an ASGI app, and :func:`donkey_kit.a2a.serve` is this
         method as a function.
 
@@ -902,7 +909,16 @@ class Donkey:
         """
         from .a2a import serve
 
-        serve(handler, host=host, port=port, url=url, version=version)
+        serve(
+            handler,
+            host=host,
+            port=port,
+            url=url,
+            version=version,
+            telemetry=self._cfg.telemetry,
+            correlation_header=self._cfg.correlation_header,
+            refusals=_typed_refusals(),
+        )
 
     @property
     def approvals(self) -> Approvals:

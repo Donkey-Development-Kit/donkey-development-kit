@@ -19,12 +19,16 @@ from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Protocol
 
+from ..core.errors import DonkeyError, PolicyViolation
+from ..core.inbound import InboundRun, inbound_task
+from ..core.refusals import TypedRefusals
 from ..core.toolspec import AgentSpec, agent_spec
 from .types import A2AResult, A2ATask
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
     from a2a.server.events import EventQueue
+    from a2a.types import Message
 
 __all__ = ["build_app", "serve"]
 
@@ -88,10 +92,48 @@ def _card_fields(spec: AgentSpec, *, url: str, version: str) -> dict[str, Any]:
     }
 
 
-async def _run(spec: AgentSpec, task: A2ATask) -> object:
+async def _run(spec: AgentSpec, task: A2ATask) -> A2AResult:
     if spec.is_async:
-        return await spec.func(task)
-    return await asyncio.to_thread(spec.func, task)
+        result = await spec.func(task)
+    else:
+        # to_thread copies the context, so the bound run and span reach the thread.
+        result = await asyncio.to_thread(spec.func, task)
+    if isinstance(result, str):
+        return A2AResult(text=result)
+    if not isinstance(result, A2AResult):
+        raise TypeError(
+            f"an A2A handler returns a str or an A2AResult, not {type(result).__name__}"
+        )
+    return result
+
+
+def _headers(context: RequestContext) -> dict[str, str]:
+    """The inbound HTTP request's headers: the ``a2a-sdk``'s default call-context
+    builder copies them into ``call_context.state["headers"]``."""
+    headers = context.call_context.state.get("headers")
+    return dict(headers) if isinstance(headers, dict) else {}
+
+
+def _failure(exc: Exception, run: InboundRun | None) -> tuple[str, dict[str, Any]]:
+    """The text and the structured ``error`` part a failed task carries.
+
+    The exception's type name and the ids only: its message and a refusal's
+    remediation are for the agent's operator and go to the log, since either may
+    repeat request content or name internal configuration.
+    """
+    name = type(exc).__name__
+    refused = isinstance(exc, PolicyViolation)
+    text = (
+        f"the agent's downstream call was refused: {name}"
+        if refused
+        else f"the agent failed: {name}"
+    )
+    error: dict[str, Any] = {"type": name, "refusal": refused}
+    if run is not None:
+        error["correlation_id"] = run.correlation_id
+    if isinstance(exc, DonkeyError) and exc.call_id is not None:
+        error["call_id"] = exc.call_id
+    return text, {"error": error}
 
 
 def build_app(
@@ -99,6 +141,9 @@ def build_app(
     *,
     url: str = "http://127.0.0.1:8000/",
     version: str = "0.0.0",
+    telemetry: bool = True,
+    correlation_header: str | None = None,
+    refusals: TypedRefusals | None = None,
 ) -> _ASGIApp:
     """Build the A2A server for a ``@donkey.agent`` handler as an ASGI app.
 
@@ -108,14 +153,32 @@ def build_app(
 
     The handler takes an :class:`~donkey_kit.a2a.A2ATask` and returns a ``str``
     or an :class:`~donkey_kit.a2a.A2AResult`; a sync handler runs in a worker
-    thread. If it raises, the task fails with the exception's type name only:
-    the message, which may hold internal detail, goes to this module's logger.
+    thread.
+
+    Each task is governed (#225): it runs in a ``donkey.run()`` scope whose
+    correlation ID is the caller's ``X-Correlation-Id`` when it sent one and a
+    fresh ID when not (:attr:`A2ATask.correlation_id`), so every downstream call
+    sends it along with the configured cost tags. A ``donkey.a2a.task`` span wraps
+    the handler, parenting its calls' spans. If the handler raises, the task fails
+    with a text part naming the exception type and an ``error`` data part
+    (``type``, ``refusal``, ``correlation_id``, and the failed call's ``call_id``
+    for a ``DonkeyError``); a governance refusal is re-raised as its typed
+    ``DonkeyError`` first, so ``type`` is ``PIIDetected``, not the framework's
+    wrapper. The message and stack trace go to this module's logger only.
 
     Args:
         handler: A callable marked with ``@donkey.agent``.
         url: The URL the card advertises for the JSON-RPC endpoint. When a
             gateway fronts the agent, pass the gateway's URL.
         version: The agent version the card advertises.
+        telemetry: Open the per-task span; ``Donkey.serve()`` passes the
+            ``telemetry`` setting.
+        correlation_header: The inbound correlation header's name;
+            ``Donkey.serve()`` passes the ``correlation_header`` setting.
+            ``None`` reads ``X-Correlation-Id``.
+        refusals: The typed-refusal bridge applied to a handler's exception.
+            ``Donkey.serve()`` passes ``donkey_kit.typed_refusals()``, which knows
+            every imported framework's wrapper; ``None`` applies the core bridge.
 
     Returns:
         A Starlette application serving the agent card at
@@ -135,8 +198,8 @@ def build_app(
             get_data_parts,
             get_text_parts,
             new_data_part,
+            new_message,
             new_task_from_user_message,
-            new_text_message,
             new_text_part,
         )
         from a2a.server.agent_execution import AgentExecutor
@@ -148,6 +211,16 @@ def build_app(
     except ImportError as exc:
         raise _missing_extra(exc) from exc
 
+    bridge = refusals if refusals is not None else TypedRefusals()
+
+    def _failed_message(exc: Exception, run: InboundRun | None, context: RequestContext) -> Message:
+        text, error = _failure(exc, run)
+        return new_message(
+            [new_text_part(text), new_data_part(error)],
+            context_id=context.context_id,
+            task_id=context.task_id,
+        )
+
     class _Executor(AgentExecutor):
         async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
             message = context.message
@@ -156,30 +229,36 @@ def build_app(
             updater = TaskUpdater(event_queue, context.task_id, context.context_id)
             await updater.start_work()
             parts = list(message.parts) if message is not None else []
-            task = A2ATask(
-                input="\n".join(get_text_parts(parts)),
-                data=tuple(get_data_parts(parts)),
-                task_id=context.task_id,
-                context_id=context.context_id,
-                message=message,
-            )
+            run: InboundRun | None = None
             try:
-                result = await _run(spec, task)
-                if isinstance(result, str):
-                    result = A2AResult(text=result)
-                if not isinstance(result, A2AResult):
-                    raise TypeError(
-                        f"an A2A handler returns a str or an A2AResult, not {type(result).__name__}"
-                    )
-            except Exception as exc:  # noqa: BLE001 — any handler failure fails the task, never the server
-                _log.exception("A2A agent %r failed task %s", spec.name, context.task_id)
-                await updater.failed(
-                    new_text_message(
-                        f"the agent failed: {type(exc).__name__}",
-                        context_id=context.context_id,
+                with inbound_task(
+                    _headers(context),
+                    telemetry=telemetry,
+                    refusals=bridge,
+                    header=correlation_header,
+                    attributes={
+                        "donkey.a2a.agent": spec.name,
+                        "donkey.a2a.task_id": context.task_id,
+                        "donkey.a2a.context_id": context.context_id,
+                    },
+                ) as run:
+                    task = A2ATask(
+                        input="\n".join(get_text_parts(parts)),
+                        data=tuple(get_data_parts(parts)),
                         task_id=context.task_id,
+                        context_id=context.context_id,
+                        message=message,
+                        correlation_id=run.correlation_id,
                     )
+                    result = await _run(spec, task)
+            except Exception as exc:  # noqa: BLE001 — any handler failure fails the task, never the server
+                _log.exception(
+                    "A2A agent %r failed task %s (correlation id %s)",
+                    spec.name,
+                    context.task_id,
+                    run.correlation_id if run is not None else None,
                 )
+                await updater.failed(_failed_message(exc, run, context))
                 return
             if result.text is not None:
                 await updater.add_artifact([new_text_part(result.text)])
@@ -215,9 +294,14 @@ def serve(
     port: int = 8000,
     url: str | None = None,
     version: str = "0.0.0",
+    telemetry: bool = True,
+    correlation_header: str | None = None,
+    refusals: TypedRefusals | None = None,
 ) -> None:
     """Serve a ``@donkey.agent`` handler over A2A on ``host:port`` via uvicorn,
-    blocking until the server stops. ``Donkey.serve()`` documents the arguments.
+    blocking until the server stops. ``Donkey.serve()`` documents the first four
+    arguments and :func:`build_app` the governance ones; ``Donkey.serve()`` fills
+    those from its configuration.
 
     Raises:
         TypeError: ``handler`` is not marked with ``@donkey.agent``.
@@ -225,7 +309,14 @@ def serve(
 
     Docs: https://docs.donkey-kit.dev/a2a
     """
-    app = build_app(handler, url=url or f"http://{host}:{port}/", version=version)
+    app = build_app(
+        handler,
+        url=url or f"http://{host}:{port}/",
+        version=version,
+        telemetry=telemetry,
+        correlation_header=correlation_header,
+        refusals=refusals,
+    )
     try:
         import uvicorn
     except ImportError as exc:
