@@ -28,22 +28,32 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   work. The default DDK proxies are
   ``Format=OpenAI``, so point ``base_url`` at a ``Format=Gemini`` proxy.
 
+Both factories return a subclass of the ADK class that carries
+``donkey.last_call`` back to the context that started the model call (#1207).
+google-adk 2.13.0 runs each step of the model's response generator in a copy of
+the flow's context, so without it the record stays in that copy and an
+``after_model_callback`` reads ``UNOBSERVED``.
+
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
 
 from __future__ import annotations
 
 import functools
+from contextlib import aclosing
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
+from ..core.lastcall import LastCallBridge, open_last_call_bridge
 from ..core.masking import masked
 from ..core.refusals import capture_refusals
 from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from google.adk.models import Gemini
     from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
 
@@ -116,7 +126,8 @@ class ADKAdapter(Adapter):
         yourself, bound to a ``Format=Gemini`` proxy (``base_url``, default the
         configured proxy URL).
 
-        ADK replaces its own ``http_options`` with ``client_kwargs``, so every
+        ADK builds its client from ``client_kwargs`` (from google-adk 2.13.0 it
+        adds its tracking headers and fills only the fields left unset), so every
         governed value rides there: the shared http client (header injection,
         retries, last_call), the consumer-auth headers, the ``api_key`` slot
         google-genai requires for the Gemini API backend, and the SDK timeout —
@@ -149,7 +160,11 @@ class ADKAdapter(Adapter):
         Its ``llm_client`` is a ``LiteLLMClient`` subclass that lets a gateway
         refusal reach ``donkey.run()`` as its typed class (#969, see the module
         docstring). An ``llm_client`` you pass replaces it, and the refusal
-        then stays LiteLLM's error."""
+        then stays LiteLLM's error.
+
+        The object is a ``LiteLlm`` subclass that carries ``donkey.last_call``
+        back to the context that started each model call, so an
+        ``after_model_callback`` reads it (#1207)."""
         self._allow_endpoints(kw, "api_base", "base_url")
         with self._native_import():
             from google.adk.models.lite_llm import (  # VERIFY name/path: docs/verified-apis.md §8
@@ -163,13 +178,18 @@ class ADKAdapter(Adapter):
             # LiteLLM sends to the client's own base URL, so rebuild it there.
             conn["client"] = self._proxy_openai_client(str(override))
         conn["llm_client"] = _governed_llm_client_class(LiteLLMClient)()
+        governed: type[LiteLlm] = _last_call_bridged_class(LiteLlm)
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
-        return LiteLlm(model=f"openai/{model}", **{**conn, **kw})
+        return governed(model=f"openai/{model}", **{**conn, **kw})
 
     def gemini(self, model: str, *, base_url: str | None = None, **kw: Any) -> Gemini:
         """Return ADK's native ``google.adk.models.Gemini`` bound to a
         ``Format=Gemini`` proxy, with the shared http client injected (#691).
-        Pass the bare model id (``"gemini-2.5-flash"``) — no provider prefix."""
+        Pass the bare model id (``"gemini-2.5-flash"``) — no provider prefix.
+
+        The object is a ``Gemini`` subclass that carries ``donkey.last_call``
+        back to the context that started each model call, so an
+        ``after_model_callback`` reads it (#1207, see the module docstring)."""
         conn = self.gemini_connection_kwargs(base_url=base_url)
         with self._native_import():
             from google.adk.models import Gemini  # VERIFY name/path: docs/verified-apis.md §8
@@ -189,7 +209,59 @@ class ADKAdapter(Adapter):
                 "older versions ADK drops the governed client without an error. "
                 "Upgrade with: pip install -U 'donkey-kit[adk]'"
             )
-        return Gemini(model=model, **{**conn, **kw})
+        governed: type[Gemini] = _last_call_bridged_class(Gemini)
+        return governed(model=model, **{**conn, **kw})
+
+
+@functools.cache
+def _last_call_bridged_class(base: Any) -> Any:
+    """The subclass of an ADK model class (``base``: ``Gemini`` or ``LiteLlm``)
+    that :meth:`ADKAdapter.gemini` and :meth:`ADKAdapter.model` build, defined
+    on first use so ``google.adk`` is imported lazily (§1.1).
+
+    Only the public ``BaseLlm.generate_content_async`` is overridden. ADK's flow
+    calls it in its own context and then iterates the generator it returns.
+    From google-adk 2.13.0 it iterates that generator in a copy of the context
+    (``_stream_in_caller_scope``), so the record the transport sets stays in the
+    copy, and the ``after_model_callback`` that ADK runs in the flow's context
+    reads ``UNOBSERVED`` (docs/verified-apis.md §8). The override is a plain
+    ``def``, so it opens a :class:`~donkey_kit.core.lastcall.LastCallBridge`
+    in the flow's context before ADK takes the copy. The copy inherits the
+    bridge, and the transport records through it.
+
+    The bridge serves one model call in one task, so hazard #2 holds: a
+    ``ParallelAgent`` branch runs in a task of its own and opens its own bridge.
+    It closes before the generator yields a complete (non-partial) response,
+    because ADK runs that response's function calls before it resumes the
+    generator, and a tool that ADK runs in a task of its own must not write
+    through the bridge. A partial response keeps it open, since ADK runs no
+    function calls for one."""
+
+    class LastCallBridged(base):
+        """An ADK model whose ``donkey.last_call`` reaches the context that
+        started the call (#1207)."""
+
+        def generate_content_async(self, *args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            bridge = open_last_call_bridge()
+            return _bridged_responses(super().generate_content_async(*args, **kwargs), bridge)
+
+    LastCallBridged.__name__ = LastCallBridged.__qualname__ = f"Governed{base.__name__}"
+    return LastCallBridged
+
+
+async def _bridged_responses(
+    responses: AsyncGenerator[Any, None], bridge: LastCallBridge
+) -> AsyncGenerator[Any, None]:
+    """Yield ``responses`` and close ``bridge`` before the first complete
+    response, or when the call ends early (see :func:`_last_call_bridged_class`)."""
+    try:
+        async with aclosing(responses):
+            async for response in responses:
+                if not getattr(response, "partial", False):
+                    bridge.close()
+                yield response
+    finally:
+        bridge.close()
 
 
 @functools.cache
