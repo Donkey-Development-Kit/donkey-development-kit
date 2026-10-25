@@ -24,6 +24,9 @@ class A2ATask:
         context_id: The A2A context (conversation) ID the task belongs to.
         message: The native ``a2a.types.Message``, for any part this view
             leaves out (files, URLs, metadata).
+        correlation_id: The run correlation ID the task is bound to (#225): the
+            caller's ``X-Correlation-Id`` when it sent one, a fresh ID when not.
+            Every governed call the handler makes sends it.
     """
 
     input: str
@@ -31,6 +34,7 @@ class A2ATask:
     task_id: str
     context_id: str
     message: Any
+    correlation_id: str = ""
 
 
 @dataclass(frozen=True)

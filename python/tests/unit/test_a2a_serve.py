@@ -119,8 +119,11 @@ async def test_a_raising_handler_fails_the_task_with_the_type_name_only(
     with caplog.at_level(logging.ERROR, logger="donkey_kit.a2a._server"):
         task = await _call(broken, _send("hi"))
     assert task["status"]["state"] == "TASK_STATE_FAILED"
-    reply = task["status"]["message"]["parts"][0]["text"]
-    assert reply == "the agent failed: RuntimeError"
+    text, error = task["status"]["message"]["parts"]
+    assert text["text"] == "the agent failed: RuntimeError"
+    assert error["data"]["error"]["type"] == "RuntimeError"
+    assert error["data"]["error"]["refusal"] is False
+    assert "hunter2" not in str(task)
     assert "hunter2" in caplog.text  # the detail goes to the log, never the caller
 
 
@@ -165,16 +168,29 @@ def test_serve_binds_to_localhost_by_default(monkeypatch: pytest.MonkeyPatch) ->
     assert calls == [{"host": "127.0.0.1", "port": 8000}]
 
 
-def test_donkey_serve_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_donkey_serve_delegates_with_its_governance_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import donkey_kit.a2a
+    from donkey_kit.core.config import DonkeyConfig
+    from donkey_kit.core.refusals import TypedRefusals
 
     calls: list[tuple[Any, dict[str, Any]]] = []
     monkeypatch.setattr(donkey_kit.a2a, "serve", lambda h, **kw: calls.append((h, kw)))
     handler = _echo()
-    Donkey.__new__(Donkey).serve(handler, port=9001)
-    assert calls == [
-        (handler, {"host": "127.0.0.1", "port": 9001, "url": None, "version": "0.0.0"})
-    ]
+    donkey = Donkey(DonkeyConfig(telemetry=False, correlation_header="X-Run-Id"))
+    donkey.serve(handler, port=9001)
+    ((got, kwargs),) = calls
+    assert got is handler
+    assert isinstance(kwargs.pop("refusals"), TypedRefusals)
+    assert kwargs == {
+        "host": "127.0.0.1",
+        "port": 9001,
+        "url": None,
+        "version": "0.0.0",
+        "telemetry": False,
+        "correlation_header": "X-Run-Id",
+    }
 
 
 def test_importing_donkey_kit_does_not_load_the_a2a_sdk() -> None:

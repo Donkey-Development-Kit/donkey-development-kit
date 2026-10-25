@@ -16,9 +16,10 @@ Today, accepting a task from a partner agent means:
 3. adding logging and tracing
 4. getting a certificate, opening a port and registering the agent by hand
 
-`donkey.serve()` takes care of the first two today. Logging and tracing come
-with governed inbound, and `donkey expose` hands the fourth to the gateway; both
-are on the Roadmap.
+`donkey.serve()` takes care of the first three today:
+[governed inbound](#governed-inbound) gives every task a correlation ID and a
+tracing span. `donkey expose`, which hands the fourth to the gateway, is on the
+Roadmap.
 
 ## Why not have users call the a2a-sdk directly?
 
@@ -27,8 +28,8 @@ They could, but they'd get a bare server. The wrapper adds four things:
 | Raw a2a-sdk | `donkey.serve()` |
 |---|---|
 | You write the agent card by hand | The card is generated from the same `@donkey.agent` / `@donkey.tool` markers `donkey scan` reads, so they can't drift |
-| Incoming tasks arrive anonymous and untracked | They get the same correlation ID, cost tags and tracing span as outgoing calls Roadmap (#225) |
-| A blocked downstream call becomes a generic error | It becomes a typed refusal the caller understands Roadmap (#225) |
+| Incoming tasks arrive anonymous and untracked | They get the same correlation ID, cost tags and tracing span as outgoing calls |
+| A blocked downstream call becomes a generic error | It becomes a typed refusal the caller understands |
 | It binds wherever you configure it | It binds to localhost by default, behind the gateway |
 
 > The differentiator is governed inbound and one-command exposure, not the protocol.
@@ -103,16 +104,17 @@ The handler takes an `A2ATask`:
 | `input` | the text parts of the caller's message, joined by newlines |
 | `data` | the structured (data) parts, in order |
 | `task_id`, `context_id` | the A2A task and conversation IDs |
+| `correlation_id` | the run ID every governed call in the task sends ([governed inbound](#governed-inbound)) |
 | `message` | the native `a2a-sdk` message, for anything else (files, metadata) |
 
 It returns a `str`, or an `A2AResult(text=..., data=...)` when it has structured
 output. Each field that is set becomes one artifact on the completed task. A
 sync handler works too: it runs in a worker thread.
 
-If the handler raises, the task fails and the caller sees only
-`the agent failed: `. The exception's message can hold internal
-detail, so it goes to your logs (the `donkey_kit.a2a` logger), never to the
-caller. The server keeps serving.
+If the handler raises, the task fails and the caller sees only the exception's
+type, in the shape [governed inbound](#governed-inbound) describes. The
+exception's message can hold internal detail, so it goes to your logs (the
+`donkey_kit.a2a` logger), never to the caller. The server keeps serving.
 
 ### Where it listens
 
@@ -150,12 +152,78 @@ a separate process in front of your agent, not as a library inside it.
   lived inside the agent, the agent's own code could bypass it. The gateway's
   value depends on being outside the thing it governs.
 
-## Governed inbound Roadmap
+## Governed inbound
 
-Every call arriving over A2A will get the same treatment as an outgoing one: a
-correlation ID, cost tags, an OTel span, and typed refusals when the agent's own
-downstream calls are blocked. Today a served task is untracked, and a handler
-failure reaches the caller as the generic `the agent failed: `.
+A task that arrives over A2A gets the same governance as a call your agent makes.
+`donkey.serve()` wraps each task's handler in a `donkey.run()` scope, so the
+downstream calls it makes are grouped and attributed with no code in the handler.
+
+**One correlation ID per task.** If the caller sends `X-Correlation-Id`, the task
+adopts it. If the header is missing or malformed, the task gets a fresh ID.
+Malformed means anything other than 1 to 128 letters, digits, `.`, `_`, `:` or
+`-`. Every governed call in the handler sends that ID, so the gateway joins the
+caller's request and your agent's model calls on one key. The handler reads it as
+`task.correlation_id`. If you renamed the header with the `correlation_header`
+setting, the renamed header is the one read.
+
+**Cost tags.** The client's configured cost tags ride every downstream call, as
+the `donkey.cost.*` span attributes, and as headers when `send_cost_headers` is
+on. A `donkey.run(team=...)` or `donkey.attribution(...)` block inside the
+handler layers on top for its block. The caller's own cost headers are never
+adopted: who pays is your agent's configuration, not the caller's claim.
+
+**One span per task.** A `donkey.a2a.task` SERVER span wraps the handler, so the
+`donkey.llm.chat` spans of its model calls are its children. If the caller sends
+a W3C `traceparent`, the task span joins the caller's trace. The span carries:
+
+| Attribute | Value |
+|---|---|
+| `donkey.correlation_id` | the task's run ID |
+| `donkey.correlation_id.source` | `adopted` (the caller sent it) or `minted` |
+| `donkey.a2a.agent` | the `@donkey.agent` name |
+| `donkey.a2a.task_id`, `donkey.a2a.context_id` | the A2A IDs |
+| `error.type` | the exception type, on a failed task only |
+
+A failed task marks the span as an error with the exception's type only, never
+its message. With `telemetry` off, no span is opened, but the run is still bound.
+
+**Typed refusals, as a well-formed A2A failure.** When a downstream call is
+refused, the framework's wrapped error is re-raised as its typed `DonkeyError`
+first (the [typed-refusal bridge](https://docs.donkey-kit.dev/errors.md)). The task then fails with a status
+message of two parts: a text part, and an `error` data part the caller can
+branch on:
+
+```json
+{
+  "state": "TASK_STATE_FAILED",
+  "message": {
+    "parts": [
+      {"text": "the agent's downstream call was refused: PIIDetected"},
+      {"data": {"error": {
+        "type": "PIIDetected",
+        "refusal": true,
+        "correlation_id": "caller-run-42",
+        "call_id": "9f1c0e…"
+      }}}
+    ]
+  }
+}
+```
+
+`refusal` is `true` for a governance refusal (a `PolicyViolation`), and `false`
+for any other failure. Any other failure reads `the agent failed: `
+and carries the same `error` part. `call_id` appears when the failure was a
+governed call's. The refusal's `remediation` and the gateway's response body go
+to your logs, not to the caller: they name your configuration and can repeat
+the request's content.
+
+`donkey_kit.a2a.build_app()` does the same for an app you mount yourself. Pass
+`telemetry=`, `correlation_header=` and `refusals=donkey_kit.typed_refusals()` to
+match `donkey.serve()`, which fills them from the client's configuration.
+
+  **Not inbound enforcement.** Nothing here blocks an inbound task. Inbound
+  policy (auth, rate limits, PII screening of the caller's message) is the
+  gateway's job, in front of the agent.
 
 ## `donkey expose` — the ingress, registered from code Roadmap
 
