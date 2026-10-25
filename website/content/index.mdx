@@ -107,7 +107,7 @@ is on the [Roadmap](/roadmap).
 
 <Figure
   src="/img/gateway-sdk-architecture.jpg"
-  alt="Architecture: the AI Control Plane (agent registry, cost control, gateway federation, govern and observe) is connected to the Omni Gateway, which fronts APIs, MCP, LLM and agent traffic with policies and enforcement — auth and identity, token budgets and rate limits, PII detection, content safety and guardrails, model routing and fallback, audit trails, contract drift and tool-poisoning checks — and manages upstream APIs, MCP servers, LLM providers and AI apps. DDK, inside the agent, makes governed calls and receives typed refusals and emits OpenTelemetry spans to the observability stack; scanning code and publishing assets to the control plane, and serving and exposing A2A agents, are on the roadmap."
+  alt="Architecture: the AI Control Plane (agent registry, cost control, gateway federation, govern and observe) is connected to the Omni Gateway, which fronts APIs, MCP, LLM and agent traffic with policies and enforcement — auth and identity, token budgets and rate limits, PII detection, content safety and guardrails, model routing and fallback, audit trails, contract drift and tool-poisoning checks — and manages upstream APIs, MCP servers, LLM providers and AI apps. DDK, inside the agent, makes governed calls and receives typed refusals and emits OpenTelemetry spans to the observability stack; scanning code and publishing assets to the control plane, and exposing A2A agents, are on the roadmap."
   width={1800}
   height={1012}
 />
@@ -142,8 +142,9 @@ framework client your agent already uses and adds:
   joined to the gateway's audit record through the correlation ID.
 - **Registry and agent-to-agent** <Badge tone="roadmap">Roadmap</Badge> —
   planned, not shipped: scanning your code to publish tools and agent cards
-  to the control plane, discovering governed MCP tools, and serving or
-  exposing your agent to other agents over A2A.
+  to the control plane, discovering governed MCP tools, and exposing your agent to other agents
+  over A2A through the gateway. Serving it over A2A, `donkey.serve()`, ships
+  today: see [A2A agents](/a2a).
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK

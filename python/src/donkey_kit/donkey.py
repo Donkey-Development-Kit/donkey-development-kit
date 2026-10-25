@@ -856,6 +856,54 @@ class Donkey:
 
         return decorate
 
+    def serve(
+        self,
+        handler: Callable[..., Any],
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8000,
+        url: str | None = None,
+        version: str = "0.0.0",
+    ) -> None:
+        """Serve a ``@donkey.agent`` handler over A2A on ``host:port``, blocking
+        until the server stops (`BG §2.9.1`, #224)::
+
+            @donkey.agent(name="support-triage", skills=["triage"])
+            async def handle(task: A2ATask) -> str:
+                \"\"\"Triage a support ticket.\"\"\"
+                return await graph.ainvoke(task.input)
+
+            donkey.serve(handle)   # card at /.well-known/agent-card.json
+
+        The official ``a2a-sdk`` serves the protocol; the card is generated from
+        the ``@donkey.agent`` marker, so it matches what ``donkey scan`` reads.
+        It binds to localhost by default: the agent sits behind the gateway and
+        is never the public face. :func:`donkey_kit.a2a.build_app` returns the
+        same server as an ASGI app, and :func:`donkey_kit.a2a.serve` is this
+        method as a function.
+
+        Args:
+            handler: A callable marked with ``@donkey.agent``. It takes an
+                :class:`~donkey_kit.a2a.A2ATask` and returns a ``str`` or an
+                :class:`~donkey_kit.a2a.A2AResult`.
+            host: The interface to bind. Pass ``"0.0.0.0"`` only when the
+                gateway reaches the agent over the network.
+            port: The port to bind.
+            url: The URL the card advertises; defaults to
+                ``http://<host>:<port>/``. Pass the gateway's URL when one
+                fronts the agent.
+            version: The agent version the card advertises.
+
+        Raises:
+            TypeError: ``handler`` is not marked with ``@donkey.agent``.
+            ImportError: The ``[a2a]`` extra is not installed.
+
+        Docs: https://docs.donkey-kit.dev/a2a
+        """
+        from .a2a import serve
+
+        serve(handler, host=host, port=port, url=url, version=version)
+
     @property
     def approvals(self) -> Approvals:
         """The pending tool approvals of this process (`BG §2.3`): resolve or

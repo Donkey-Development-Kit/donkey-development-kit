@@ -160,3 +160,7 @@ _.require_approval  # unused method (src/donkey_kit/tools/session.py)
 _._bind_tool  # unused method (src/donkey_kit/tools/session.py)
 _._check_approvals  # unused method (src/donkey_kit/tools/session.py)
 _.__signature__  # unused attribute (src/donkey_kit/tools/approval.py)
+# The a2a-sdk calls AgentExecutor.execute (BG §2.9.1, #224); a served handler
+# reads A2ATask.input.
+_.execute  # unused method (src/donkey_kit/a2a/_server.py)
+input  # unused variable (src/donkey_kit/a2a/types.py)

@@ -1,0 +1,233 @@
+"""The A2A server behind ``donkey.serve()`` (`BG §2.9.1`, #224).
+
+Every A2A behaviour here is the official ``a2a-sdk``'s: ``DefaultRequestHandler``
+runs the task lifecycle over an ``InMemoryTaskStore``, ``TaskUpdater`` publishes
+the status and artifact events, and ``create_agent_card_routes`` /
+``create_jsonrpc_routes`` serve the card and the JSON-RPC endpoint. Never
+reimplement any of it here (the build plan's *Do not build* list). The class
+names were read from the installed ``a2a-sdk`` (``docs/verified-apis.md`` §8.5).
+
+The ``a2a-sdk`` is imported inside :func:`build_app`, so importing this module
+needs no ``[a2a]`` extra; only building the server does.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any, Protocol
+
+from ..core.toolspec import AgentSpec, agent_spec
+from .types import A2AResult, A2ATask
+
+if TYPE_CHECKING:
+    from a2a.server.agent_execution import RequestContext
+    from a2a.server.events import EventQueue
+
+__all__ = ["build_app", "serve"]
+
+_log = logging.getLogger(__name__)
+
+# The media types a served agent accepts and produces: text parts and data parts,
+# the two A2ATask and A2AResult carry.
+_MODES = ("text/plain", "application/json")
+
+
+class _ASGIApp(Protocol):
+    """The ASGI callable :func:`build_app` returns, so callers
+    (``httpx.ASGITransport``, ``uvicorn.run``, your own server) and ``mypy``
+    never see a ``starlette`` or ``a2a-sdk`` type."""
+
+    async def __call__(
+        self,
+        scope: MutableMapping[str, Any],
+        receive: Callable[[], Awaitable[MutableMapping[str, Any]]],
+        send: Callable[[MutableMapping[str, Any]], Awaitable[None]],
+    ) -> None:
+        """Handle one ASGI connection."""
+        ...
+
+
+def _missing_extra(exc: ImportError) -> ImportError:
+    detail = f" (no module named {exc.name!r})" if exc.name else ""
+    return ImportError(
+        f"donkey.serve() needs the 'a2a' extra{detail}. Install it with:\n"
+        '    pip install "donkey-kit[a2a]"'
+    )
+
+
+def _spec_of(handler: Callable[..., Any]) -> AgentSpec:
+    spec = agent_spec(handler)
+    if spec is None:
+        name = getattr(handler, "__qualname__", repr(handler))
+        raise TypeError(
+            f"{name} is not marked with @donkey.agent. The agent card is generated "
+            'from that marker, so add it: @donkey.agent(name="my-agent", skills=[...]).'
+        )
+    return spec
+
+
+def _card_fields(spec: AgentSpec, *, url: str, version: str) -> dict[str, Any]:
+    """The agent card, from the ``@donkey.agent`` record and nothing else."""
+    return {
+        "name": spec.name,
+        "description": spec.docstring,
+        "version": version,
+        "supported_interfaces": [
+            {"url": url, "protocol_binding": "JSONRPC", "protocol_version": "1.0"}
+        ],
+        "capabilities": {"streaming": False},
+        "default_input_modes": list(_MODES),
+        "default_output_modes": list(_MODES),
+        "skills": [
+            {"id": skill, "name": skill, "description": skill, "tags": [skill]}
+            for skill in spec.skills
+        ],
+    }
+
+
+async def _run(spec: AgentSpec, task: A2ATask) -> object:
+    if spec.is_async:
+        return await spec.func(task)
+    return await asyncio.to_thread(spec.func, task)
+
+
+def build_app(
+    handler: Callable[..., Any],
+    *,
+    url: str = "http://127.0.0.1:8000/",
+    version: str = "0.0.0",
+) -> _ASGIApp:
+    """Build the A2A server for a ``@donkey.agent`` handler as an ASGI app.
+
+    ``Donkey.serve()`` runs this app on a port; call it directly to mount the
+    agent in your own ASGI server or to test it in process with
+    ``httpx.ASGITransport``.
+
+    The handler takes an :class:`~donkey_kit.a2a.A2ATask` and returns a ``str``
+    or an :class:`~donkey_kit.a2a.A2AResult`; a sync handler runs in a worker
+    thread. If it raises, the task fails with the exception's type name only:
+    the message, which may hold internal detail, goes to this module's logger.
+
+    Args:
+        handler: A callable marked with ``@donkey.agent``.
+        url: The URL the card advertises for the JSON-RPC endpoint. When a
+            gateway fronts the agent, pass the gateway's URL.
+        version: The agent version the card advertises.
+
+    Returns:
+        A Starlette application serving the agent card at
+        ``/.well-known/agent-card.json`` and JSON-RPC at ``/``. Run it inside
+        its ASGI lifespan, as ``uvicorn`` does, so shutdown drains in-flight
+        tasks.
+
+    Raises:
+        TypeError: ``handler`` is not marked with ``@donkey.agent``.
+        ImportError: The ``[a2a]`` extra is not installed.
+
+    Docs: https://docs.donkey-kit.dev/a2a
+    """
+    spec = _spec_of(handler)
+    try:
+        from a2a.helpers import (
+            get_data_parts,
+            get_text_parts,
+            new_data_part,
+            new_task_from_user_message,
+            new_text_message,
+            new_text_part,
+        )
+        from a2a.server.agent_execution import AgentExecutor
+        from a2a.server.request_handlers import DefaultRequestHandler
+        from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+        from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+        from a2a.types import AgentCard
+        from starlette.applications import Starlette
+    except ImportError as exc:
+        raise _missing_extra(exc) from exc
+
+    class _Executor(AgentExecutor):
+        async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+            message = context.message
+            if context.current_task is None:
+                await event_queue.enqueue_event(new_task_from_user_message(message))
+            updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+            await updater.start_work()
+            parts = list(message.parts) if message is not None else []
+            task = A2ATask(
+                input="\n".join(get_text_parts(parts)),
+                data=tuple(get_data_parts(parts)),
+                task_id=context.task_id,
+                context_id=context.context_id,
+                message=message,
+            )
+            try:
+                result = await _run(spec, task)
+                if isinstance(result, str):
+                    result = A2AResult(text=result)
+                if not isinstance(result, A2AResult):
+                    raise TypeError(
+                        f"an A2A handler returns a str or an A2AResult, not {type(result).__name__}"
+                    )
+            except Exception as exc:  # noqa: BLE001 — any handler failure fails the task, never the server
+                _log.exception("A2A agent %r failed task %s", spec.name, context.task_id)
+                await updater.failed(
+                    new_text_message(
+                        f"the agent failed: {type(exc).__name__}",
+                        context_id=context.context_id,
+                        task_id=context.task_id,
+                    )
+                )
+                return
+            if result.text is not None:
+                await updater.add_artifact([new_text_part(result.text)])
+            if result.data is not None:
+                await updater.add_artifact([new_data_part(result.data)])
+            await updater.complete()
+
+        async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
+            updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+            await updater.cancel()
+
+    card = AgentCard(**_card_fields(spec, url=url, version=version))
+    handler_ = DefaultRequestHandler(
+        agent_executor=_Executor(), task_store=InMemoryTaskStore(), agent_card=card
+    )
+    routes = [*create_agent_card_routes(card), *create_jsonrpc_routes(handler_, "/")]
+
+    @asynccontextmanager
+    async def lifespan(_app: object) -> AsyncIterator[None]:
+        # The a2a-sdk keeps per-task asyncio tasks alive past the response;
+        # draining them on shutdown leaves none pending when the loop closes.
+        yield
+        await handler_.aclose()
+
+    app: _ASGIApp = Starlette(routes=routes, lifespan=lifespan)
+    return app
+
+
+def serve(
+    handler: Callable[..., Any],
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    url: str | None = None,
+    version: str = "0.0.0",
+) -> None:
+    """Serve a ``@donkey.agent`` handler over A2A on ``host:port`` via uvicorn,
+    blocking until the server stops. ``Donkey.serve()`` documents the arguments.
+
+    Raises:
+        TypeError: ``handler`` is not marked with ``@donkey.agent``.
+        ImportError: The ``[a2a]`` extra is not installed.
+
+    Docs: https://docs.donkey-kit.dev/a2a
+    """
+    app = build_app(handler, url=url or f"http://{host}:{port}/", version=version)
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise _missing_extra(exc) from exc
+    uvicorn.run(app, host=host, port=port)

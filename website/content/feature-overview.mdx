@@ -156,10 +156,12 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     native framework tools. **Advantage:** allow/deny filtering, pinning and a
     lockfile — only governed tools reach your agent.
   </Card>
-  <Card title="A2A agents" href="/a2a" icon="⇄" badge="Roadmap" badgeTone="roadmap">
-    **Purpose:** `serve`, `expose` and `dev` make your agent callable by other
-    agents, on the official `a2a-sdk`. **Advantage:** inbound tasks are
-    governed with the same correlation, spans and refusals.
+  <Card title="A2A agents" href="/a2a" icon="⇄" badge="Offline-verified" badgeTone="neutral">
+    **Purpose:** `donkey.serve()` makes your agent callable by other agents in
+    one line, on the official `a2a-sdk`; `expose` and `dev` are on the
+    Roadmap. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are to be governed with the same correlation, spans and
+    refusals.
   </Card>
   <Card title="Scan & publish" href="/publishing" icon="⇧" badge="Roadmap" badgeTone="roadmap">
     **Purpose:** `donkey scan` (live) derives a model of your agents, tools and

@@ -98,6 +98,14 @@ strands = ["strands-agents[openai]>=1.57.1"]
 # pure-Python promise. Floors only, no upper pins.
 local = ["starlette>=0.37", "uvicorn>=0.30"]
 
+# --- A2A server (BG §2.9.1): `donkey.serve()` ---
+# The official a2a-sdk serves the protocol, never a home-grown one (#224). Its
+# `http-server` extra brings starlette and sse-starlette; uvicorn runs the app,
+# plain as in [local]. 1.2.0 is the lowest release with
+# DefaultRequestHandler.aclose(), which build_app()'s lifespan calls to drain
+# in-flight tasks on shutdown; see docs/verified-apis.md §8.3.
+a2a = ["a2a-sdk[http-server]>=1.2.0", "uvicorn>=0.30"]
+
 # --- Telemetry (BG §1.6) ---
 # The OTLP exporter is what makes zero-config export real (#194): with it and
 # `OTEL_EXPORTER_OTLP_ENDPOINT` set, spans flow to the customer's own sink with no
@@ -142,7 +150,7 @@ test = ["pytest>=8.0", "pytest-asyncio>=0.23.1"]
 # docs/co-installability.md table, re-checked nightly (#769). See
 # docs/verified-apis.md §8.1.
 all = [
-    "donkey-kit[llm,langgraph,otel,cli,local]",
+    "donkey-kit[llm,langgraph,otel,cli,local,a2a]",
 ]
 
 # Contributor tooling is a PEP 735 dependency group, not an extra, so it stays
@@ -287,6 +295,9 @@ module = [
     # public return type is a framework-free Protocol, so no Any leaks out.
     "starlette.*",
     "uvicorn.*",
+    # [a2a] — the same: build_app() imports the a2a-sdk inside its body and
+    # returns Any, so none of its types leak into the public signatures.
+    "a2a.*",
     # Never imported by src/, but reachable through a framework's own imports.
     "numpy.*",
 ]
@@ -316,6 +327,7 @@ ignore_missing_imports = true
 # The Strands adapter's model subclasses the OpenAIModel class it is handed (#951),
 # and the ADK adapter's llm_client the LiteLLMClient class it is handed (#969).
 module = [
+    "donkey_kit.a2a._server",
     "donkey_kit.core.transport.httpx2",
     "donkey_kit.integrations.adk",
     "donkey_kit.integrations.crewai",
@@ -498,7 +510,10 @@ type = "layers"
 # directly or indirectly (#729). The production stack is donkey → integrations →
 # tools → registry → llm → core, with experimental (#730) beside donkey: it
 # re-exports registry and core names that are not first-class API (ADR 0008,
-# docs/adr/0008-*.md), and neither of the two imports the other. Above it:
+# docs/adr/0008-*.md), and neither of the two imports the other. a2a (the
+# donkey.serve() A2A server, ADR 0014) sits beside integrations: it wraps a
+# third-party protocol library like an adapter does, and the two are
+# independent. Above it:
 # - cli: the `donkey` console script (#730). It may import any layer, and being
 #   on top means no library module imports it back (typer stays off the base
 #   install).
@@ -514,7 +529,7 @@ layers = [
     "simulator",
     "_testing",
     "donkey | experimental",
-    "integrations",
+    "integrations | a2a",
     "tools",
     "registry",
     "llm",
@@ -566,6 +581,7 @@ type = "forbidden"
 # package import (pinned by test_import_donkey_kit_loads_only_the_production_layers).
 source_modules = ["donkey_kit.core"]
 forbidden_modules = [
+    "a2a",
     "agent_framework",
     "agents",
     "anthropic",

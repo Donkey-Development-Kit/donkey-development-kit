@@ -136,9 +136,11 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     lockfile — only governed tools reach your agent.
   
   
-    **Purpose:** `serve`, `expose` and `dev` make your agent callable by other
-    agents, on the official `a2a-sdk`. **Advantage:** inbound tasks are
-    governed with the same correlation, spans and refusals.
+    **Purpose:** `donkey.serve()` makes your agent callable by other agents in
+    one line, on the official `a2a-sdk`; `expose` and `dev` are on the
+    Roadmap. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are to be governed with the same correlation, spans and
+    refusals.
   
   
     **Purpose:** `donkey scan` (live) derives a model of your agents, tools and
