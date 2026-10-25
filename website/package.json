@@ -14,7 +14,8 @@
     "test": "node --test lib/analytics.test.mjs lib/repo.test.mjs lib/site.test.mjs lib/status.test.mjs lib/version.test.mjs",
     "lint": "node scripts/lint.mjs",
     "typecheck": "tsc --noEmit",
-    "check:links": "node scripts/check-links.mjs"
+    "check:links": "node scripts/check-links.mjs",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "next": "^16.4.3",
@@ -27,10 +28,11 @@
     "@types/node": "^22.20.5",
     "@types/react": "^19.0.0",
     "pagefind": "^1.5.2",
+    "patch-package": "8.0.1",
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "zod": "4.3.6",
+    "zod": "4.6.7",
     "@xmldom/xmldom": "0.9.12",
     "katex": "0.18.10"
   },
