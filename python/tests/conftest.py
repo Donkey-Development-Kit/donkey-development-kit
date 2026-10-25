@@ -68,6 +68,13 @@ _HARNESS_VARS = frozenset({"DONKEY_CONTRACT_EXTRA", "DONKEY_BENCHMARK_JSON"})
 # copy bundled in the wheel instead. It is read once at import, so it is set
 # here at conftest load, before any test can import litellm.
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+# CrewAI exports anonymous usage telemetry from a background thread. Under a
+# test's dead proxy that thread opens a socket while ``no_sockets`` patches
+# ``socket.connect`` process-wide, so an offline-seam test failed on CrewAI's
+# traffic, not ours, whenever the export landed in its window (#1202).
+# ``OTEL_SDK_DISABLED`` would also work but is cleared per test with the other
+# ``OTEL_*`` vars; this switch is CrewAI's own and is read on every export.
+os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
