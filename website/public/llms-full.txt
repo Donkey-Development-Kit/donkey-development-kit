@@ -1412,7 +1412,9 @@ from donkey_kit.integrations.adk import model
 llm = model("gpt-4o")
 ```
 
-`llm` is a real `google.adk.models.lite_llm.LiteLlm` instance. The model string
+`llm` is a real `google.adk.models.lite_llm.LiteLlm` instance (a subclass that
+carries `donkey.last_call` to your callbacks; see
+[Native Gemini](#native-gemini)). The model string
 is prefixed with `openai/` before it reaches LiteLLM (`openai/gpt-4o`), which
 is the prefix LiteLLM's OpenAI-compatible route expects — you don't add it
 yourself.
@@ -1563,8 +1565,10 @@ llm = Gemini(
 )
 ```
 
-`client_kwargs` replaces ADK's default HTTP options wholesale, so all five
-`http_options` keys are passed together. `google-genai` requires an API key and
+All five `http_options` keys are passed together, because ADK builds its client
+from `client_kwargs`. The `base_url`, `api_version` and `headers` you set are
+kept, and ADK adds its own `x-goog-api-client` and `user-agent` tracking values
+to the headers. `google-genai` requires an API key and
 always sends it as `x-goog-api-key`; the gateway authenticates on the
 `client_id`/`client_secret` pair and ignores it.
 
@@ -1579,7 +1583,10 @@ populated.
 
 `last_call` is contextvar-scoped, and ADK's `Runner` makes the model call in a
 task of its own, so the caller of `runner.run_async(...)` reads `UNOBSERVED`.
-Read it in an `after_model_callback`, which runs in the same task as the call:
+Read it in an `after_model_callback`. Both `gemini()` and `model()` return a
+subclass of the ADK class that carries the record from the model call to the
+callback, including on `google-adk` 2.13 and later, which runs the model call in
+a copy of the agent's context:
 
 ```python
 from google.adk.agents import LlmAgent
@@ -1625,7 +1632,10 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   correlation ID bound by `donkey.run()` reaches every request.
 - **`donkey.last_call` is set in the context that made the call.** ADK's
   `Runner` calls the model in a task of its own, so read it in an
-  `after_model_callback` (see [Native Gemini](#native-gemini)). A cold read on
+  `after_model_callback` (see [Native Gemini](#native-gemini)). The factories'
+  models carry the record to that callback. A `LiteLlm` or `Gemini` you build
+  from `connection_kwargs()` or `gemini_connection_kwargs()` does not, so on
+  `google-adk` 2.13 and later its callback reads `UNOBSERVED`. A cold read on
   a `Donkey` that resolved only ADK reports `UNOBSERVED`, and `OBSERVED` after
   a call, for `model()` as well as `gemini()`.
 - **Refusals on the `model()` path are typed inside `donkey.run()` and
