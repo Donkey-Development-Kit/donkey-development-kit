@@ -26,10 +26,18 @@ things for you:
   servers expose a tool with the same name, the collision is resolved by
   prefixing the server's short name — for example `hr__get_employee` — and the
   mapping is available on `ToolSet.name_map`, so you can see exactly why the
-  model called that name.
+  model called that name. A name that would still be exposed twice, for
+  example because two servers share a short name, raises `ConfigError` rather
+  than dropping one of the tools.
 - **Filtering.** Enterprise MCP servers can expose dozens of tools. Handing 60
   tool descriptors to a model degrades it and inflates token cost, so filter
-  before you bind:
+  before you bind.
+
+## Filtering
+
+`filter()` takes an allow-list, a deny-list and a predicate, and deny wins.
+Allow and deny entries are exact names or glob patterns, matched against the
+bare tool name and the server-qualified one (`hr__get_employee`, `hr__*`):
 
 ```python
 tools = await donkey.tools.discover(domain="hr")
@@ -37,8 +45,39 @@ filtered = tools.filter(allow=["get_employee", "search_employees"])
 # or:
 filtered = tools.filter(deny=["delete_*"])
 # or a predicate over the tool descriptor:
-filtered = tools.filter(predicate=lambda t: t.name.startswith("get_"))
+filtered = tools.filter(predicate=lambda t: t.description and len(t.description) > 40)
 ```
+
+Each call returns a new `ToolSet`, and chained calls narrow through every
+filter. A later call can never bring back a tool an earlier one removed:
+
+```python
+final = (tools
+         .filter(allow=["get_*", "search_*"])
+         .filter(deny=["get_ssn"])
+         .filter(predicate=lambda t: "internal" not in t.tags))
+```
+
+Filtering only narrows. It removes tools from what the model sees. It never
+adds a tool the servers did not expose, and it never widens what the gateway
+allows: gateway policies still apply to every call.
+
+An allow or deny entry that matches no tool on any server raises `ConfigError`.
+A typo then can't empty the set or leave a tool you meant to deny exposed.
+
+### What the tool list costs
+
+Every model call carries the descriptors of the tools it can call.
+`descriptor_tokens()` estimates that cost for the set after filtering:
+
+```python
+print(f"{tools.descriptor_tokens()} -> {final.descriptor_tokens()} descriptor tokens per call")
+# 9120 -> 812 descriptor tokens per call
+```
+
+It counts each descriptor's name, description and input schema as an
+OpenAI-style function tool, at about four characters per token. Tokenizers
+differ by model, so use it to compare tool sets, not as a bill.
 
   The SDK logs how many tool descriptors a `ToolSet` exposes out of the total
   at debug level, so you can see the cost of skipping `filter()` before a
