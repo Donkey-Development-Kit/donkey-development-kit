@@ -913,7 +913,7 @@ jobs:
           python -m pip install --require-hashes --no-deps -r "$RUNNER_TEMP/zizmor.txt"
       # The two installs above are this job's alone (tests/unit/test_noxfile.py
       # lists them as CI-only); the session runs the tools on PATH.
-      - name: actionlint and zizmor over .github/ (nox -s workflow-lint)
+      - name: actionlint over .github/, zizmor over .github/ and action/ (nox -s workflow-lint)
         env:
           # Read-only token for zizmor's online audits (impostor commits,
           # known-vulnerable actions); the session withholds it from actionlint.

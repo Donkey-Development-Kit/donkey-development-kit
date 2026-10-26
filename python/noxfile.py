@@ -316,6 +316,11 @@ def typecheck_and_lint(session: nox.Session) -> None:
         session.run("mypy", "-p", f"examples.{example.name}")
     session.run("ruff", "check", ".")
     session.run("ruff", "format", "--check", ".")
+    # #219: the scan-and-publish action's runner lives beside python/, under
+    # the same config.
+    session.run("mypy", "../action/run.py")
+    session.run("ruff", "check", "--config", "pyproject.toml", "../action")
+    session.run("ruff", "format", "--check", "--config", "pyproject.toml", "../action")
     session.run("lint-imports")  # framework-free core, §1.1
     session.run("python", "scripts/check_verification_claims.py")  # #718
     session.run("python", "scripts/check_doc_links.py")  # #785
@@ -664,7 +669,7 @@ def dependency_review(session: nox.Session) -> None:
 
 @nox.session(name="workflow-lint", venv_backend="none")
 def workflow_lint(session: nox.Session) -> None:
-    """actionlint and zizmor over .github/ (#757).
+    """actionlint over .github/, and zizmor over .github/ and the action (#757, #219).
 
     Runs the tools on PATH: in CI, the copies the job fetched and verified by
     sha256; locally, install the ``ACTIONLINT_VERSION`` and ``ZIZMOR_VERSION``
@@ -673,4 +678,4 @@ def workflow_lint(session: nox.Session) -> None:
     """
     session.chdir(_PYTHON_DIR.parent)
     session.run("actionlint", "-color", env={"GH_TOKEN": None}, external=True)
-    session.run("zizmor", "--format=github", ".github/", external=True)
+    session.run("zizmor", "--format=github", ".github/", "action/", external=True)

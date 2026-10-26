@@ -30,6 +30,8 @@ _REPO = Path(__file__).resolve().parents[3]
 _GITHUB = _REPO / ".github"
 _WORKFLOWS = _GITHUB / "workflows"
 _FILES = sorted(_WORKFLOWS.glob("*.yml")) if _WORKFLOWS.is_dir() else []
+# The scan-and-publish action (#219) runs in users' jobs, with their secrets.
+_ACTION = _REPO / "action" / "action.yml"
 
 pytestmark = pytest.mark.skipif(not _FILES, reason="not a repo checkout (no .github/workflows)")
 
@@ -59,14 +61,25 @@ def workflow(request: pytest.FixtureRequest) -> Path:
     return path
 
 
-def test_every_action_is_pinned_to_a_full_sha_with_a_version_comment(workflow: Path) -> None:
+def _unpinned(path: Path) -> list[str]:
     bad = []
-    for number, line in enumerate(workflow.read_text(encoding="utf-8").splitlines(), 1):
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         match = _USES.match(line)
         if not match or match["ref"].startswith("./"):
             continue
         if not _PINNED.match(match["ref"]) or not _VERSION_COMMENT.match(match["rest"]):
-            bad.append(f"{workflow.name}:{number}: {line.strip()}")
+            bad.append(f"{path.name}:{number}: {line.strip()}")
+    return bad
+
+
+def test_every_action_is_pinned_to_a_full_sha_with_a_version_comment(workflow: Path) -> None:
+    bad = _unpinned(workflow)
+    assert not bad, "uses: not pinned as <action>@<40-hex sha> # vX.Y.Z:\n" + "\n".join(bad)
+
+
+def test_the_scan_and_publish_action_pins_its_actions_too() -> None:
+    assert _ACTION.is_file()
+    bad = _unpinned(_ACTION)
     assert not bad, "uses: not pinned as <action>@<40-hex sha> # vX.Y.Z:\n" + "\n".join(bad)
 
 
@@ -109,16 +122,19 @@ def test_docs_build_job_cannot_publish() -> None:
 
 def test_dependabot_covers_actions_npm_and_pip() -> None:
     config = _load(_GITHUB / "dependabot.yml")
-    updates = {(u["package-ecosystem"], u["directory"]): u for u in config["updates"]}
+    updates = {
+        (u["package-ecosystem"], u.get("directory") or tuple(u["directories"])): u
+        for u in config["updates"]
+    }
     assert set(updates) == {
-        ("github-actions", "/"),
+        ("github-actions", ("/", "/action")),  # the workflows and the action (#219)
         ("npm", "/website"),
         ("pip", "/python"),
     }
     for (ecosystem, _), update in updates.items():
         assert update["target-branch"] == "develop", ecosystem
         assert update["schedule"]["interval"] == "weekly", ecosystem
-    for key in (("github-actions", "/"), ("npm", "/website")):
+    for key in (("github-actions", ("/", "/action")), ("npm", "/website")):
         assert updates[key].get("groups"), f"{key[0]} updates are not grouped"
     # python/pyproject.toml holds floors, never ceilings (§8.4): a scheduled bump
     # there would raise a floor. Version updates belong to the dev/release lock
