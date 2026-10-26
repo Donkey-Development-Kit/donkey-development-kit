@@ -122,5 +122,16 @@
   "anypoint/semantic_cache/responses.no-store.headers.txt": "sha256:b206d95ed941041bb307bc51cc21538250aefba89a1dd856ec01694f3cf93f55",
   "anypoint/semantic_cache/responses.principal-id.headers.txt": "sha256:431d6bba6f219c21de71b79ea98128107efaf2250f8a1fe783de6b792a9d91fa",
   "anypoint/semantic_cache/responses.threshold-override.headers.txt": "sha256:6012cd81f4102be2ca4091d5c704c8c06a8ea509ce07601843f6e6a36540dab0",
-  "anypoint/semantic_cache/responses.ttl-override.headers.txt": "sha256:1ff0dddcfb2399f32310f4aef6413593c40225c9e00be74d4ce683e3b54f2932"
+  "anypoint/semantic_cache/responses.ttl-override.headers.txt": "sha256:1ff0dddcfb2399f32310f4aef6413593c40225c9e00be74d4ce683e3b54f2932",
+  "descriptor/README.md": "sha256:4d7082cdb07934fc700a0387302c93bcd1224ae0e173cb9f9d37423e3d5e4a0e",
+  "descriptor/adk.json": "sha256:c461f2f7b01aa96033d615c07f57e7f582f8cbdfeb648bd743638aedc72cf5d8",
+  "descriptor/agent_framework.json": "sha256:c29e2c41be0ccf7951b861ddf3c0267ac7cd939edf6ee677093883d892405124",
+  "descriptor/anthropic.json": "sha256:31bbd4fb68ab9a6fd3a1c7682d24f779072d5461f217616e60f52a23ec695858",
+  "descriptor/crewai.json": "sha256:abc653f6769a6719afaeaed12730db82c3d82c6209aa1d61dfbd69d1f91b77f4",
+  "descriptor/langchain.json": "sha256:edaee86531c223dfe44899e3dcf9a4f47d88e60c90d19491dd772c3132d3e830",
+  "descriptor/llamaindex.json": "sha256:613e7e7166dcd0e6fd40fc5e76f14080d4c381f3e627ec904dd8c29e9a170f55",
+  "descriptor/mcp-1.json": "sha256:61c1bb7d1ff898b99711cdd7401a3e373861f11fdedc924aa15218bcd6c6d98b",
+  "descriptor/mcp-2.json": "sha256:0d75170a1538031b9184f07dd6e58c503c2e80ba31016fb1051e351a17eb5214",
+  "descriptor/openai_agents.json": "sha256:20bf20b4663ac7a0f9ea066533b5cf8e2c273a210415a02f976b1adf8a44f9a5",
+  "descriptor/strands.json": "sha256:91aee6e5a117dbc93ce503cb361d096bf24f0906aa3f0e22b4eb76fc73090a70"
 }

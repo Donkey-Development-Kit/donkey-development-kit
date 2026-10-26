@@ -1,0 +1,55 @@
+{
+  "framework": "strands",
+  "distribution": "strands-agents",
+  "version": "1.62.0",
+  "python": "3.12",
+  "captured": "2026-10-26",
+  "capture": "python scripts/capture_descriptor_fixtures.py --write",
+  "object": "strands.tools.decorator.DecoratedFunctionTool",
+  "reads": {
+    ".tool_spec['name']": "lookup_employee",
+    ".tool_spec['description']": "Look up an employee record by ID.",
+    ".tool_spec['inputSchema']['json']": {
+      "properties": {
+        "employee_id": {
+          "description": "The employee's ID.",
+          "type": "string"
+        },
+        "include_manager": {
+          "default": false,
+          "description": "Whether to include the manager.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "employee_id"
+      ],
+      "type": "object"
+    }
+  },
+  "descriptor": {
+    "tools": [
+      {
+        "name": "lookup_employee",
+        "description": "Look up an employee record by ID.",
+        "inputSchema": {
+          "properties": {
+            "employee_id": {
+              "description": "The employee's ID.",
+              "type": "string"
+            },
+            "include_manager": {
+              "default": false,
+              "description": "Whether to include the manager.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "employee_id"
+          ],
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

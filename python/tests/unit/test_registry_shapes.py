@@ -78,7 +78,10 @@ _BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
     ("publication.preview", lambda: _PUBLICATION.preview(object())),
     ("publication.export", _PUBLICATION.export),
     ("publication.verify", lambda: _PUBLICATION.verify(object())),
-    ("registry.derive_descriptor", lambda: derive_descriptor("example:asset")),
+    (
+        "registry.derive_descriptor(auto:static)",
+        lambda: derive_descriptor("json:dumps", mode="auto:static"),
+    ),
 )
 
 

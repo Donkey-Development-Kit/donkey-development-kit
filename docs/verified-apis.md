@@ -34,7 +34,8 @@
 > events with no `delta` and no `[DONE]`. This is an upstream gap. Still
 > `UNVERIFIED`: any other unrecognised content-moderation shape (§4, the
 > fall-through; federated-guardrail verdicts are tracked in #305), and the **framework
-> constructor/binding names** (§§8–10). §11
+> constructor/binding names** (§§8–9; the §10 descriptor-derivation reads were
+> `VERIFIED (local capture)` on 2026-10-26, #1024). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
 > code path was wired to them.
@@ -46,7 +47,11 @@
 > request was not additionally replayed). `VERIFIED (build)` = read from an
 > artifact produced by `agent-network project build`. `VERIFIED-SHAPE-ONLY` =
 > data shape confirmed from an Anypoint-adjacent source (A2D), not the direct
-> contract. `UNVERIFIED` = not yet confirmed; its code guard stays in place.
+> contract. `VERIFIED (local capture)` = read off a real object of the
+> installed framework at the pinned version, committed as a fixture and
+> re-asserted by the nightly matrix (no Anypoint involved). `UNSUPPORTED` = a
+> deliberate gap, with its reason; its code guard stays. `UNVERIFIED` = not
+> yet confirmed; its code guard stays in place.
 >
 > This is the verification ledger. For any row still `UNVERIFIED`, the
 > implementing engineer must, against a **real Anypoint sandbox**, confirm the
@@ -890,17 +895,32 @@ when its `registry.explain()` verdict is governed, whatever its transport.
 
 ## 10. Descriptor-derivation attributes (BG §2.5) — semi-public, put in nightly matrix
 
+Read off one real bound tool per framework, built from the same reference
+function by `python/scripts/capture_descriptor_fixtures.py` at the version the
+adapter-contract lock pins. Each read is committed under
+`python/tests/fixtures/descriptor/`, and `tests/unit/test_descriptor_derivation.py`
+holds `registry/introspect.py`'s `derive_descriptor()` to it in every
+adapter-contract leg (pinned) and every nightly-matrix leg (latest). 2026-10-26, #1024.
+
 | Framework | Attributes read | Status | Source |
 |---|---|---|---|
-| FastMCP | `.name` `.description` `.inputSchema` | UNVERIFIED | — |
-| LangChain | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED | — |
-| Strands | tool spec input schema | UNVERIFIED | — |
-| ADK | `FunctionTool` declaration params | UNVERIFIED | — |
-| LlamaIndex | `.metadata.name` `.description` `.fn_schema` | UNVERIFIED | — |
-| OpenAI Agents SDK | `.name` `.description` `.params_json_schema` | UNVERIFIED | — |
-| Anthropic SDK | tool param dict `name`/`description`/`input_schema` | UNVERIFIED | — |
-| CrewAI | `.name` `.description` `.args_schema.model_json_schema()` | UNVERIFIED (signature confirmed offline) | `crewai==1.15.22`: `crewai.tools.BaseTool.model_fields` has `name`, `description`, `args_schema: type[pydantic.BaseModel]` — `.args_schema.model_json_schema()` is a real call on that field's type. No bound tool actually inspected end to end. 2026-09-27, #640 |
-| MS Agent Framework | `AIFunction` declaration + JSON schema | UNVERIFIED | — |
+| MCP Python SDK 1.x (`mcp.server.fastmcp.FastMCP`) | `(await server.list_tools())[i]` → wire `Tool` `.name` `.description` `.inputSchema` | VERIFIED (local capture) | `mcp==1.30.0`, `descriptor/mcp-1.json` |
+| MCP Python SDK 2.x (`mcp.server.mcpserver.MCPServer`, FastMCP's 2.x name) | `(await server.list_tools())[i]` → wire `Tool` `.name` `.description` `.input_schema` (alias `inputSchema`) | VERIFIED (local capture) | `mcp==2.3.0`, `descriptor/mcp-2.json` |
+| MCP, `auto:live` | initialize + `tools/list` over the SDK's in-memory transport: `mcp.Client(server)` (2.x), `mcp.shared.memory.create_connected_server_and_client_session(server)` (1.x) | VERIFIED (local round-trip) | Equal to the object read above on both majors (`test_live_mcp_tools_list_equals_object_introspection`) |
+| Standalone `fastmcp` package | — | UNSUPPORTED | `fastmcp==4.1.4` has a different object shape and no adapter-contract leg installs it, so it raises `_verify.blocked(...)` |
+| LangChain (`langchain_core.tools.StructuredTool`) | `.name` `.description` `.tool_call_schema` (a pydantic class or a dict) | VERIFIED (local capture) | `langchain-core==1.7.0`, `descriptor/langchain.json`. Not `.args_schema`: `tool_call_schema` drops `InjectedToolArg` parameters, which the model never sees |
+| Strands (`strands.tools.decorator.DecoratedFunctionTool`) | `.tool_spec['name']` `['description']` `['inputSchema']['json']` | VERIFIED (local capture) | `strands-agents==1.62.0`, `descriptor/strands.json` |
+| ADK (`google.adk.tools.FunctionTool`) | `._get_declaration()` → `FunctionDeclaration` `.name` `.description` `.parameters_json_schema` | VERIFIED (local capture) — **private method** | `google-adk==2.13.0`, `descriptor/adk.json`. The only place ADK exposes the schema it sends; a declaration without `parameters_json_schema` stays blocked |
+| LlamaIndex (`llama_index.core.tools.FunctionTool`) | `.metadata.name` `.metadata.description` `.metadata.get_parameters_dict()` | VERIFIED (local capture) | `llama-index-core==0.14.25`, `descriptor/llamaindex.json`. The description is prefixed with the function signature, as the model sees it |
+| OpenAI Agents SDK (`agents.FunctionTool`) | `.name` `.description` `.params_json_schema` | VERIFIED (local capture) | `openai-agents==0.24.0`, `descriptor/openai_agents.json` (the strict schema) |
+| Anthropic SDK (`beta_tool` → `BetaFunctionTool`, or a `ToolParam` dict) | `.to_dict()` (or the dict) `name` / `description` / `input_schema` | VERIFIED (local capture) | `anthropic==2.3.0`, `descriptor/anthropic.json` |
+| CrewAI (`crewai.tools.base_tool.Tool`) | `.name` `.description` `.args_schema.model_json_schema()` | VERIFIED (local capture) | `crewai==1.15.30`, `descriptor/crewai.json`. CrewAI post-processes this for the model (`convert_tools_to_openai_schema`: title stripped, strict); the descriptor records the tool's own schema |
+| MS Agent Framework (`agent_framework.tool` → `FunctionTool`, not `AIFunction`) | `.name` `.description` `.parameters()` | VERIFIED (local capture) | `agent-framework-core==1.23.0`, `descriptor/agent_framework.json` |
+
+`auto:static` stays blocked: an AST pass can name a tool but cannot produce its
+schema without the type-hint→JSON-Schema converter BG §2.5 forbids (deferred
+from #1024). The Exchange descriptor read behind `Publication.verify()` and
+`donkey verify` stays blocked on #218.
 
 ## 11. A2D platform MCP tools — shapes captured 2026-08-28 (NOT the direct Anypoint REST API)
 

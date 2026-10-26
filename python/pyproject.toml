@@ -298,6 +298,9 @@ module = [
     # [a2a] — the same: build_app() imports the a2a-sdk inside its body and
     # returns Any, so none of its types leak into the public signatures.
     "a2a.*",
+    # The `mcp` SDK, which no extra installs but several frameworks pull in:
+    # registry/introspect.py imports it inside _live_mcp_tools() only (#1024).
+    "mcp.*",
     # Never imported by src/, but reachable through a framework's own imports.
     "numpy.*",
 ]
@@ -456,7 +459,6 @@ ignore-variadic-names = true
 # verified. Remove the entry when the module's stubs are implemented.
 "src/donkey_kit/donkey.py" = ["ARG002"]
 "src/donkey_kit/registry/exchange.py" = ["ARG002"]
-"src/donkey_kit/registry/introspect.py" = ["ARG001"]
 "src/donkey_kit/registry/publication.py" = ["ARG001", "ARG002"]
 # The one sanctioned seam module: the dev-only simulator and conformance siblings
 # reach Donkey's and its clients' private members only through it (#719). Its
@@ -471,6 +473,7 @@ ignore-variadic-names = true
 "src/donkey_kit/simulator/app.py" = ["ANN401"]
 "src/donkey_kit/core/telemetry.py" = ["ANN401"]
 "src/donkey_kit/core/inbound.py" = ["ANN401"]
+"src/donkey_kit/registry/introspect.py" = ["ANN401"]
 # White-box tests inspect and swap private state by design (#719); docstring
 # rules apply to the shipped package only (#722). Tests also request fixtures for
 # their side effects and write doubles that mirror third-party signatures, so
@@ -478,6 +481,9 @@ ignore-variadic-names = true
 "tests/**" = ["SLF001", "D101", "D102", "D103", "ARG", "ANN401"]
 "examples/**" = ["D101", "D102", "D103"]
 "scripts/**" = ["D101", "D102", "D103"]
+# The §10 capture reads framework objects the way a user would, private ADK
+# method included, and its reference function is a schema, not logic (#1024).
+"scripts/capture_descriptor_fixtures.py" = ["ANN401", "ARG001", "SLF001"]
 
 # --- vulture: dead-code check in CI (#720) ---
 # Reads src/ only, so code that only the tests use is reported as dead; names
