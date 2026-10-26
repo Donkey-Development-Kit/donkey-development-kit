@@ -136,6 +136,7 @@ def test_test_lock_covers_every_test_fixture_directory() -> None:
     for expected in (
         "a2d",
         "anypoint/anthropic_inbound",
+        "anypoint/exchange_publish",
         "anypoint/gemini_inbound",
         "anypoint/model_wallet",
         "anypoint/openai_gemini_stream",

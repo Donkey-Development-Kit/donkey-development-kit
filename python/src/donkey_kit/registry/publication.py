@@ -15,7 +15,10 @@ Verbs (BG §2.5):
 
 The CI side of ``donkey publish --if-changed`` is here too: :func:`content_digest`
 (pure, implemented) and :func:`publish_if_changed` (blocked). They moved from the
-removed ``provisioning/`` package (#730).
+removed ``provisioning/`` package (#730). ``donkey publish`` itself publishes a
+scanned repository's MCP servers through
+:mod:`~donkey_kit.registry.exchange_publish` (#218), not through a
+:class:`Publication`.
 """
 
 from __future__ import annotations
@@ -43,7 +46,8 @@ __all__ = [
 
 
 class PublicationAssetType(Enum):
-    """SDK publication categories; exact Exchange token strings are UNVERIFIED."""
+    """SDK publication categories. The ledger records ``mcp`` as an Exchange
+    type (docs/verified-apis.md §7); the other token strings are UNVERIFIED."""
 
     MCP_SERVER = "mcp"
     A2A_AGENT = "a2a-agent"
@@ -184,10 +188,13 @@ def content_digest(descriptor: dict[str, Any], metadata: dict[str, Any]) -> str:
 
 async def publish_if_changed(publication: Publication, donkey: object) -> str:
     """CI default (BG §2.5): compare digest against the latest published version;
-    if identical, skip and exit zero. Blocked on the verified publication
-    mechanism + digest-metadata support (BG §2.5)."""
+    if identical, skip and exit zero. Blocked: a :class:`Publication`'s
+    descriptor derivation is unverified (see :meth:`Publication.preview`). The
+    publish mechanism and digest storage are verified, and ``donkey publish``
+    uses them for scanned MCP servers (#218)."""
     raise _verify.blocked(
-        "Exchange publication mechanism (REST/CLI/Maven) + digest metadata support "
-        "(BG §2.5). content_digest() is implemented; wire publish once the "
-        "mechanism is confirmed. Never delete/overwrite; deprecate via metadata (BG §2.5)."
+        "descriptor derivation for a Publication (BG §2.5). The Exchange publish and "
+        "digest read-back are verified (docs/verified-apis.md §7); `donkey publish` "
+        "publishes scanned MCP servers through donkey_kit.registry.exchange_publish. "
+        "Never delete/overwrite; deprecate via metadata (BG §2.5)."
     )

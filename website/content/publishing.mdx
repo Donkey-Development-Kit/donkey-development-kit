@@ -8,9 +8,11 @@ import { Badge } from '../components'
 
 # Scan & publish
 
-`donkey scan` is live, and so is `donkey publish --dry-run`, which plans a
-publish without sending anything. Publishing itself is on the
-[Roadmap](/roadmap): the sections after the dry run show its planned design.
+`donkey scan` is live, and so is `donkey publish` for MCP servers: it plans a
+publish (`--dry-run` sends nothing) and registers each MCP server in Exchange
+from CI. Publishing agents, and the sections after
+[Publishing MCP servers](#publishing-mcp-servers), are on the
+[Roadmap](/roadmap) and show their planned design.
 
 `donkey scan` walks your repository and finds every
 [`@donkey.agent`](/cli#donkeyagent) and [`@donkey.tool`](/cli#donkeytool), plus
@@ -121,9 +123,7 @@ The dry run scans your code the way `donkey scan` does, then prints one
 Exchange asset per MCP server (type `mcp`) and per agent (type `agent`), with
 its group ID, asset ID and version, and the digest a publish would compare
 with the latest published version's. It makes **no network call** and needs no
-credentials. Without `--dry-run`, `donkey publish` still exits `3` with a
-"blocked on verification" message: how Exchange treats a republished version,
-and where it stores the digest, are not yet confirmed against a live sandbox.
+credentials.
 
 Exchange coordinates aren't in your code, so you declare them in a
 `[donkey.publication]` table in `.donkey-kit.toml` beside your code:
@@ -154,6 +154,54 @@ The dry run exits `1` on any issue, so CI can run it on every pull request:
 every issue `donkey scan` reports, plus a missing group ID or version, a
 version that isn't semantic, an unknown key, or an `assets` table for a
 service ID your code doesn't define.
+
+## Publishing MCP servers
+
+```bash
+donkey publish .            # publish what changed (--if-changed is the default)
+donkey publish . --always   # publish even when the digest matches the latest version
+```
+
+Without `--dry-run`, `donkey publish` registers each MCP server in the plan as
+an Exchange asset of type `mcp`, in the group and at the version you declared.
+It runs from CI with the control-plane credentials: `ANYPOINT_CLIENT_ID`,
+`ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID`. The connected app needs
+permission to publish to Exchange in that business group (the Exchange
+Contributor permission). Publishing has been checked against a live sandbox,
+but only with a user's session, not with a connected app's token.
+
+Each asset is published with:
+
+- its name and description,
+- the digest, stored with the asset so the next run can compare it,
+- an `mcp-metadata` file: the transport, the tools with their descriptions and
+  an input schema from their parameters, and the asset's coordinates. A
+  parameter annotated `str`, `int`, `float`, `bool`, `list` or `dict` gets that
+  JSON Schema type; any other parameter accepts any value. No parameter is
+  marked required, because scan does not record defaults.
+- the endpoint you declared in `[donkey.mcp_servers]`, if any, registered as an
+  external instance. Exchange keeps instances per minor version, so a new patch
+  version reuses the existing one.
+
+A publish is safe to repeat:
+
+- With `--if-changed`, an asset whose latest published version has the same
+  digest is left alone. A merge that changes nothing, or that only bumps the
+  version, publishes nothing.
+- Exchange never overwrites a version. If you change an MCP server without
+  bumping its version, `donkey publish` stops before sending and tells you to
+  bump it. The same happens if the version is already published with other
+  content.
+
+Agents are listed as skipped: publishing them is not supported yet, because
+scan doesn't capture the protocol and interface an agent asset needs. The
+command is still hidden from `donkey --help` while publishing covers MCP servers
+only.
+
+`donkey publish` exits `0` when everything was published or left unchanged. It
+exits `1` when the plan has an issue (nothing is sent) or Exchange refuses a
+publish, and `2` when the path doesn't exist, the config is invalid, or the
+control-plane credentials are missing.
 
 ## Scope: code-first assets
 
