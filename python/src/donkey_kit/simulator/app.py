@@ -144,6 +144,12 @@ class SimulatorConfig:
     token_limit: int = 100_000
     token_step: int = 500
     token_reset_ms: int = 60_000
+    # Whether the happy path carries the synthesised budget window above. False
+    # serves the success exactly as captured, with no ``x-llm-proxy-ratelimit``:
+    # a proxy without the ``llm-token-rate-limit`` policy (the conformance kit's
+    # "works without budget headers" scenario, #322). A ``budget`` scenario still
+    # owns its own header either way.
+    budget_window: bool = True
     # Scripted fault-injection rules applied per model call (#188), on both
     # POST /responses and POST /chat/completions (#895). Parsed
     # from the CLI's repeatable --scenario flag. Stateful and single-use: one set
@@ -260,7 +266,7 @@ class _Simulator:
                 return self._response(load(hit.shape), extra=hit.extra_headers)
             # Budget passed: it owns the happy-path prose ratelimit header.
             window_headers.update(self._budget.happy_path_headers())
-        else:
+        elif self._config.budget_window:
             window_headers.update(await self._synth_ratelimit_header())
         return self._happy(payload, route, window_headers)
 

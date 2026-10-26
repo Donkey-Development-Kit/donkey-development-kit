@@ -5904,9 +5904,35 @@ client"*, never passes by default. That covers an agent that makes no call, one
 that builds its own `httpx` or OpenAI client, and an adapter that sends calls
 outside the shared transport (CrewAI, LlamaIndex, Microsoft Agent Framework,
 and ADK `model()`). The finding names the adapter. If the gap is expected,
-record an asserted exemption for it. The run never reaches the network: the
+record an asserted exemption for it. The run never reaches a real gateway: the
 harness replaces the configured proxy URL and every credential with
 placeholders, and it refuses any request that would leave the process.
+
+### In-process and server modes
+
+`--donkey-mode` picks how the suite reaches your agent's calls. The scenarios,
+the verdicts and the printed table are the same in both modes.
+
+```bash
+pytest --donkey-conformance --donkey-agent=my_app.agent:build                       # in-process (default)
+pytest --donkey-conformance --donkey-agent=my_app.agent:build --donkey-mode server  # needs donkey-kit[local]
+```
+
+- **`in-process`** (the default) swaps a counting transport onto the `Donkey`'s
+  HTTP client. It opens no socket, which makes it the fastest mode.
+- **`server`** starts the [local simulator](https://docs.donkey-kit.dev/simulator.md), the same app
+  `donkey mock` serves, on an ephemeral `127.0.0.1` port. Each scenario's
+  `Donkey` points at that URL, so every call makes a real HTTP hop through your
+  agent's actual transport stack. Each scenario re-arms the simulator for its
+  own refusal, and sends are counted from the **server's** request log. Use this
+  mode to check that your agent behaves the same over a socket. Requests to any
+  other host are still refused.
+
+Server mode replays captured gateway responses only. A scenario that needs a
+type you registered with [`classify.register()`](https://docs.donkey-kit.dev/custom-policies.md) has no
+captured response, so the run stops with a usage error that points you back to
+`--donkey-mode in-process`. Choosing server mode without the `[local]` extra
+fails at startup with the `pip install` to run.
 
 The factory is called once per scenario and receives the `donkey` fixture if it
 declares one. With `--donkey-conformance`, the plugin runs the suite
@@ -6299,6 +6325,7 @@ straight through; pytest's exit code becomes `donkey test`'s own. Needs the
 
 ```bash
 donkey test --agent my.pkg:make_agent -k governance -x
+donkey test --agent my.pkg:make_agent --donkey-mode server   # over a real port; needs [local]
 ```
 
 See [Testing & conformance](https://docs.donkey-kit.dev/testing.md) for what the suite checks.
