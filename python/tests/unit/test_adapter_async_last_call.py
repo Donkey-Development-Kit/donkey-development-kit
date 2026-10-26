@@ -43,6 +43,7 @@ import httpx
 import pytest
 from _anthropic_wire import BASE_URL as ANTHROPIC_BASE_URL
 from _anthropic_wire import BODY as ANTHROPIC_BODY
+from _anthropic_wire import Chunks
 from _anthropic_wire import success_response as anthropic_success
 
 from donkey_kit import Donkey, DonkeyConfig
@@ -290,45 +291,82 @@ async def test_adk_model_runner_is_unobserved_but_after_model_callback_sees_it()
     assert in_callback == ["rid-answer"]
 
 
+def _sse_chunks(body: bytes, headers: dict[str, str]) -> httpx.Response:
+    """An SSE body delivered one event at a time, as from the network. A
+    ``content=`` body is read when the response is built, so the transport's
+    stream wrapper never scans it and usage stays ``None`` (#1219)."""
+    events = [event + b"\n\n" for event in body.split(b"\n\n") if event.strip()]
+    return httpx.Response(200, headers=headers, stream=Chunks(events))
+
+
 def _gemini_stream(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(
-        200,
-        content=(GEMINI_FIXTURES / "responses.stream.body.txt").read_bytes(),
-        headers=parse_headers((GEMINI_FIXTURES / "responses.stream.headers.txt").read_text()),
+    return _sse_chunks(
+        (GEMINI_FIXTURES / "responses.stream.body.txt").read_bytes(),
+        parse_headers((GEMINI_FIXTURES / "responses.stream.headers.txt").read_text()),
     )
 
 
-async def test_adk_streamed_run_after_model_callback_sees_every_response() -> None:
-    """The bridge stays open across partial responses and its record survives
-    the close, so each callback, the final complete one included, reads it."""
-    pytest.importorskip("google.adk")
+def _chat_stream(request: httpx.Request) -> httpx.Response:
+    """A streamed chat completion whose last event carries the usage."""
+    chunk = {"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "gpt-4o"}
+    events = [
+        {**chunk, "choices": [{"index": 0, "delta": {"role": "assistant", "content": "PO"}}]},
+        {**chunk, "choices": [{"index": 0, "delta": {"content": "NG"}, "finish_reason": "stop"}]},
+        {
+            **chunk,
+            "choices": [],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        },
+    ]
+    body = b"".join(f"data: {json.dumps(e)}\n\n".encode() for e in events) + b"data: [DONE]\n\n"
+    return _sse_chunks(body, {"content-type": "text/event-stream", "x-request-id": "rid-stream"})
+
+
+async def _streamed_callbacks(donkey: Donkey, model: Any) -> list[tuple[bool, int | None]]:
+    """``(partial, donkey.last_call.total_tokens)`` in each ``after_model_callback``
+    of one streamed Runner run, after checking every callback reads ``OBSERVED``."""
     from google.adk.agents import LlmAgent
     from google.adk.agents.run_config import RunConfig, StreamingMode
     from google.adk.runners import InMemoryRunner
 
-    donkey = _donkey(_gemini_stream)
-    in_callback: list[tuple[bool, LastCallStatus]] = []
+    in_callback: list[tuple[bool, int | None]] = []
 
     def after_model(callback_context: Any, llm_response: Any) -> None:
-        in_callback.append((bool(llm_response.partial), donkey.last_call.status))
+        assert donkey.last_call.status is LastCallStatus.OBSERVED
+        in_callback.append((bool(llm_response.partial), donkey.last_call.total_tokens))
 
+    agent = LlmAgent(name="a", model=model, after_model_callback=after_model)
+    runner = InMemoryRunner(agent=agent, app_name="app")
+    session = await runner.session_service.create_session(app_name="app", user_id="u")
+    async for _ in runner.run_async(
+        user_id="u",
+        session_id=session.id,
+        new_message=_gemini_message(),
+        run_config=RunConfig(streaming_mode=StreamingMode.SSE),
+    ):
+        pass
+    return in_callback
+
+
+async def test_adk_streamed_run_after_model_callback_sees_every_response() -> None:
+    """The bridge stays open across partial responses and its record survives
+    the close, so each callback, the final complete one included, reads it. The
+    usage lands once the stream ends, so only the complete response's callback
+    reads it (#1219): the fixture's last event reports 38 tokens."""
+    pytest.importorskip("google.adk")
+    donkey = _donkey(_gemini_stream)
     async with donkey:
-        agent = LlmAgent(
-            name="a",
-            model=donkey.adk.gemini("gemini-2.5-flash"),
-            after_model_callback=after_model,
-        )
-        runner = InMemoryRunner(agent=agent, app_name="app")
-        session = await runner.session_service.create_session(app_name="app", user_id="u")
-        async for _ in runner.run_async(
-            user_id="u",
-            session_id=session.id,
-            new_message=_gemini_message(),
-            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
-        ):
-            pass
-    observed = LastCallStatus.OBSERVED
-    assert in_callback == [(True, observed)] * 3 + [(False, observed)]
+        in_callback = await _streamed_callbacks(donkey, donkey.adk.gemini("gemini-2.5-flash"))
+    assert in_callback == [(True, None)] * 3 + [(False, 38)]
+
+
+async def test_adk_model_streamed_run_usage_lands_on_the_complete_response() -> None:
+    pytest.importorskip("google.adk")
+    pytest.importorskip("litellm")
+    donkey = _donkey(_chat_stream)
+    async with donkey:
+        in_callback = await _streamed_callbacks(donkey, donkey.adk.model("gpt-4o"))
+    assert in_callback == [(True, None)] * 2 + [(False, 5)]
 
 
 async def test_adk_hand_built_models_reach_after_model_callback_when_bridged() -> None:

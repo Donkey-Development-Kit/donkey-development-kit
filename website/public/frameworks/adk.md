@@ -244,8 +244,10 @@ agent = LlmAgent(
 )
 ```
 
-When streaming, the callback runs once per partial response; usage lands on the
-last one.
+When streaming, the callback runs once per partial response and once more for
+the complete response. The token counts land when the stream ends, so only the
+complete response's callback reads them. In the partial callbacks they are
+`None`.
 
 **Errors.** `google-genai` raises its own `google.genai.errors.APIError`
 (`ClientError` for a 4xx) and the SDK does not wrap it. The error's `.response`
