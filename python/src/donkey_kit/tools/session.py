@@ -29,7 +29,13 @@ from ..core.errors import DonkeyError
 from ..core.reactions import Duration
 from ..registry.models import McpServerHandle
 from .approval import ApprovalRule, check_rules, gated_tool, rule_for
-from .filter import ToolDescriptor, ToolFilter, resolve_collisions
+from .filter import (
+    ToolDescriptor,
+    ToolFilter,
+    check_patterns,
+    descriptor_tokens,
+    resolve_collisions,
+)
 
 __all__ = ["ToolSet", "UngovernedMcpServer"]
 
@@ -72,8 +78,9 @@ class UngovernedMcpServer(DonkeyError):
 class ToolSet:
     """A governed set of MCP tools, from ``donkey.tools.discover()`` (BG §2.7).
 
-    :meth:`filter` narrows it, :meth:`require_approval` gates named tools behind
-    a human decision, and :attr:`name_map` explains collision renames.
+    :meth:`filter` narrows it, :meth:`descriptor_tokens` estimates what its
+    descriptors cost a model call, :meth:`require_approval` gates named tools
+    behind a human decision, and :attr:`name_map` explains collision renames.
     The per-framework binding methods (:meth:`langgraph`, :meth:`adk`, ...)
     return each framework's native tool objects; they raise
     ``NotImplementedError`` for now (docs/verified-apis.md §9). Each first raises
@@ -87,12 +94,14 @@ class ToolSet:
         self,
         servers: list[McpServerHandle],
         *,
-        _filter: ToolFilter | None = None,
+        _filters: tuple[ToolFilter, ...] = (),
         _approvals: tuple[ApprovalRule, ...] = (),
         _natives: tuple[NativePause, ...] = (),
     ) -> None:
         self._servers = list(servers)
-        self._filter = _filter if _filter is not None else ToolFilter()
+        # Every filter() call so far: a tool is exposed only if all accept it,
+        # so a later call can narrow the set but never widen it (#222).
+        self._filters = _filters
         self._approvals = _approvals
         # Framework pauses for a gated call, such as the LangGraph interrupt()
         # hook. Passed in by discovery: tools/ cannot import integrations/.
@@ -101,12 +110,12 @@ class ToolSet:
     def _with(
         self,
         *,
-        _filter: ToolFilter | None = None,
+        _filters: tuple[ToolFilter, ...] | None = None,
         _approvals: tuple[ApprovalRule, ...] | None = None,
     ) -> ToolSet:
         return ToolSet(
             self._servers,
-            _filter=_filter if _filter is not None else self._filter,
+            _filters=_filters if _filters is not None else self._filters,
             _approvals=_approvals if _approvals is not None else self._approvals,
             _natives=self._natives,
         )
@@ -119,17 +128,56 @@ class ToolSet:
         deny: list[str] | None = None,
         predicate: Callable[[ToolDescriptor], bool] | None = None,
     ) -> ToolSet:
-        """Return a filtered view. Enterprise MCP servers can expose dozens of
+        """Return a narrower view. Enterprise MCP servers can expose dozens of
         tools; handing 60 descriptors to a model degrades it and inflates token
-        cost (BG §2.7)."""
+        cost (BG §2.7).
 
-        return self._with(
-            _filter=ToolFilter(
-                allow=frozenset(allow) if allow is not None else None,
-                deny=frozenset(deny or ()),
-                predicate=predicate,
-            ),
+        ``allow`` and ``deny`` take exact names or glob patterns (``get_*``),
+        matched against the bare tool name and the server-qualified one
+        (``hr__get_employee``, ``hr__*``); deny wins. Calls chain and only
+        narrow: ``tools.filter(allow=["get_*"]).filter(deny=["get_ssn"])``
+        exposes the ``get_`` tools except ``get_ssn``, and no call can bring
+        back a tool an earlier one removed (#222).
+
+        Args:
+            allow: Keep only the tools that match an entry.
+            deny: Drop the tools that match an entry.
+            predicate: Keep only the tools it returns true for.
+
+        Raises:
+            ValueError: ``allow`` or ``deny`` is a string, not a list.
+            ConfigError: An ``allow`` or ``deny`` entry matches no tool any
+                server exposes, so a typo never empties the set or leaves a
+                tool exposed. Checked when every server's descriptors are
+                known.
+        """
+        for arg, value in (("allow", allow), ("deny", deny)):
+            if isinstance(value, str):
+                raise ValueError(f"{arg} must be a list of tool names, not the string {value!r}")
+        new = ToolFilter(
+            allow=frozenset(allow) if allow is not None else None,
+            deny=frozenset(deny or ()),
+            predicate=predicate,
         )
+        if all(s.tool_descriptors is not None for s in self._servers):
+            check_patterns(new, self._descriptors(filtered=False))
+        return self._with(_filters=(*self._filters, new))
+
+    def descriptor_tokens(self) -> int:
+        """Estimate the prompt tokens this set's tool descriptors cost on every
+        model call, after filtering and collision renames (#222).
+
+        Each descriptor is counted as the JSON of an OpenAI-style function tool
+        (name, description, input schema), at about four characters per token.
+        Tokenizers differ by model, so use it to compare tool sets, not as a
+        bill. A server whose descriptors are not known yet counts as zero.
+
+        Raises:
+            ConfigError: Two tools would be exposed under one name (see
+                :attr:`name_map`).
+        """
+        exposed, _ = resolve_collisions(self._descriptors())
+        return descriptor_tokens(exposed)
 
     # ---- approval (pure, implemented; applied by binding, #1153) ------------
     def require_approval(
@@ -196,8 +244,13 @@ class ToolSet:
     @property
     def name_map(self) -> dict[str, str]:
         """``exposed_name -> original_name`` so a developer can debug why the
-        model called ``hr__get_employee`` (BG §2.7)."""
-        exposed, name_map = resolve_collisions(self._descriptors())
+        model called ``hr__get_employee`` (BG §2.7).
+
+        Raises:
+            ConfigError: Two tools would still be exposed under one name, such
+                as two servers that share a short name.
+        """
+        _, name_map = resolve_collisions(self._descriptors())
         return name_map
 
     def _descriptors(self, *, filtered: bool = True) -> list[ToolDescriptor]:
@@ -207,6 +260,7 @@ class ToolSet:
             for raw in server.tool_descriptors or ():
                 description = raw.get("description")
                 raw_tags = raw.get("tags")
+                schema = raw.get("inputSchema")
                 descs.append(
                     ToolDescriptor(
                         server=short,
@@ -215,11 +269,12 @@ class ToolSet:
                         tags=tuple(str(t) for t in raw_tags)
                         if isinstance(raw_tags, (list, tuple))
                         else (),
+                        input_schema=schema if isinstance(schema, Mapping) else None,
                     )
                 )
         if not filtered:
             return descs
-        kept = [d for d in descs if self._filter.accepts(d)]
+        kept = [d for d in descs if all(f.accepts(d) for f in self._filters)]
         _log.debug("ToolSet exposes %d of %d tool descriptors", len(kept), len(descs))
         return kept
 
