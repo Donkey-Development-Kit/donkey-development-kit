@@ -94,4 +94,8 @@ runs:
         INPUT_CLIENT_ID: ${{ inputs.client-id }}
         INPUT_CLIENT_SECRET: ${{ inputs.client-secret }}
         INPUT_ORG_ID: ${{ inputs.org-id }}
-      run: '"$PYTHON" "$RUN_PY"'
+      # A secret passed from `secrets.*` is masked already; one passed from a
+      # variable or another step's output is not, so mask it before donkey runs.
+      run: |
+        if [ -n "$INPUT_CLIENT_SECRET" ]; then echo "::add-mask::$INPUT_CLIENT_SECRET"; fi
+        "$PYTHON" "$RUN_PY"

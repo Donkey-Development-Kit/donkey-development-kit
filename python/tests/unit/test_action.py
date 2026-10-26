@@ -64,7 +64,7 @@ def _donkey(
 
 
 def test_a_publish_writes_the_summary_and_the_outputs(
-    github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    github: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("INPUT_PATH", "services")
     monkeypatch.setenv("INPUT_CLIENT_ID", "cid")
@@ -85,7 +85,6 @@ def test_a_publish_writes_the_summary_and_the_outputs(
     assert call["env"]["ANYPOINT_CLIENT_ID"] == "cid"
     assert call["env"]["ANYPOINT_CLIENT_SECRET"] == "s3cret"
     assert "ANYPOINT_ORG_ID" not in call["env"]
-    assert "::add-mask::s3cret" in capsys.readouterr().out
     summary = github["summary"].read_text()
     assert "| published | mcp | `org-1:sku-manager:1.0.0` | published 1.0.0 |" in summary
     assert github["output"].read_text().splitlines()[:3] == [

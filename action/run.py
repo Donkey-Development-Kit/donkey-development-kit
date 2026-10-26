@@ -37,11 +37,6 @@ STATUSES = ("published", "unchanged", "skipped")
 def main() -> int:
     """Run donkey publish with the action's inputs; return its exit code."""
     env = os.environ
-    secret = env.get("INPUT_CLIENT_SECRET", "")
-    if secret:
-        # A secret passed from `secrets.*` is masked already; one passed from
-        # a variable or another step's output is not.
-        print(f"::add-mask::{secret}", flush=True)
     try:
         dry_run = _flag(env, "INPUT_DRY_RUN", default=False)
         if_changed = _flag(env, "INPUT_IF_CHANGED", default=True)
