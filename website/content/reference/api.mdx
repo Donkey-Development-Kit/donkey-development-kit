@@ -136,6 +136,33 @@ donkey.run(
 
 Group one logical agent run under a shared correlation id.
 
+### `donkey.run_from_headers()`
+
+```python nocheck
+donkey.run_from_headers(
+    headers: Mapping[str, str],
+    *,
+    team: str | None = None,
+    project: str | None = None,
+    env: str | None = None,
+    enduser_id: str | None = None,
+    business_group: str | None = None,
+    typed_refusals: bool = True,
+) -> RunScope
+```
+
+Join the caller's run: `run`, with the id read from an inbound request's headers.
+
+Guide: [`/telemetry`](/telemetry)
+
+### `donkey.correlation_headers()`
+
+```python nocheck
+donkey.correlation_headers() -> dict[str, str]
+```
+
+The bound run's correlation header, for an outbound hop the governed transport does not carry.
+
 ### `donkey.run_context()`
 
 ```python nocheck

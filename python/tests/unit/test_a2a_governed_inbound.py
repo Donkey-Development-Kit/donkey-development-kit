@@ -331,3 +331,39 @@ async def test_the_run_reaches_a_sync_handlers_worker_thread() -> None:
 
     task = await _call(build_app(sync_id), {"X-Correlation-Id": "threaded-run"})
     assert _artifact_text(task) == "threaded-run"
+
+
+# --- multi-hop: a supervisor's run reaches its sub-agent's calls (#308) -----
+
+
+async def test_a_supervisors_run_id_reaches_the_sub_agents_downstream_calls() -> None:
+    """Supervisor → A2A → sub-agent → model: one correlation ID end to end. The
+    supervisor's A2A client is not the governed transport, so it sends the ID via
+    ``correlation_headers()``; the served sub-agent adopts it."""
+    pytest.importorskip("openai")
+    seen: list[httpx.Request] = []
+    sub_agent = _donkey(seen)
+    supervisor = Donkey(DonkeyConfig())
+    try:
+        async with supervisor.run(id="supervisor-run-1"):
+            task = await _call(build_app(_calling(sub_agent)), supervisor.correlation_headers())
+    finally:
+        await sub_agent.aclose()
+    assert _artifact_text(task) == "done"
+    (request,) = seen
+    assert request.headers["X-Correlation-Id"] == "supervisor-run-1"
+
+
+async def test_the_sub_agents_model_span_records_the_adopted_id(spans: Any) -> None:
+    pytest.importorskip("openai")
+    seen: list[httpx.Request] = []
+    donkey = _donkey(seen)
+    try:
+        await _call(build_app(_calling(donkey)), {"X-Correlation-Id": "caller-run-11"})
+        await _call(build_app(_calling(donkey)))
+    finally:
+        await donkey.aclose()
+    adopted, minted = (s for s in spans.get_finished_spans() if s.name == "donkey.llm.chat")
+    assert adopted.attributes["donkey.correlation_id"] == "caller-run-11"
+    assert adopted.attributes["donkey.correlation_id.source"] == "adopted"
+    assert minted.attributes["donkey.correlation_id.source"] == "minted"

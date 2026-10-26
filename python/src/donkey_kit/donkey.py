@@ -521,6 +521,82 @@ class Donkey:
             business_group,
         )
 
+    def run_from_headers(
+        self,
+        headers: Mapping[str, str],
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+        business_group: str | None = None,
+        typed_refusals: bool = True,
+    ) -> RunScope:
+        """Join the caller's run: :meth:`run`, with the id read from an inbound
+        request's headers (#308).
+
+        An agent or service that serves HTTP receives its caller's correlation
+        ID in a header. Binding it makes every governed call the handler makes
+        send the caller's ID, so a supervisor and the sub-agents it calls share
+        one run end to end instead of each minting its own::
+
+            @app.post("/task")
+            async def handle(request: Request):
+                async with donkey.run_from_headers(request.headers):
+                    return await agent.run(await request.json())
+
+        The ID is read from the ``correlation_header`` setting's header
+        (``X-Correlation-Id`` by default), case-insensitively. It is adopted
+        when it is 1-128 of ``[A-Za-z0-9._:-]``; when it is missing or
+        malformed a fresh one is minted, never forwarded. The rule is the one a
+        served A2A task uses (``donkey.serve()``, #225). Every ``donkey.llm.chat``
+        span in the block records ``donkey.correlation_id.source`` as
+        ``"adopted"`` or ``"minted"``, so a broken chain is visible in the trace
+        rather than silently plausible. The block yields the bound ID.
+
+        It takes the keyword arguments of :meth:`run` and binds them the same
+        way. To send the bound ID on an outbound hop the governed transport
+        does not carry, such as your own MCP or A2A client, pass it
+        :meth:`correlation_headers`.
+
+        Docs: https://docs.donkey-kit.dev/telemetry
+        """
+        from .core.inbound import correlation_id_from_headers
+
+        inbound = correlation_id_from_headers(headers, self._cfg.correlation_header)
+        override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
+        return run_scope(
+            inbound.correlation_id,
+            override if not override.is_empty else None,
+            _typed_refusals() if typed_refusals else None,
+            business_group,
+            inbound.source,
+        )
+
+    def correlation_headers(self) -> dict[str, str]:
+        """The bound run's correlation header, for an outbound hop the governed
+        transport does not carry (#308).
+
+        Every request through this client's transport (model calls, registry
+        lookups, ``donkey.http_client()``) already sends the run's ID. A call
+        made with another HTTP client, such as your MCP client or a call to
+        another agent over A2A, does not, so pass it these headers::
+
+            async with donkey.run(id=ticket.id):
+                await agents.post(url, json=task, headers=donkey.correlation_headers())
+
+        Returns ``{name: id}``, named by the ``correlation_header`` setting
+        (``X-Correlation-Id`` by default) inside a :meth:`run` or
+        :meth:`run_from_headers` block, and ``{}`` outside one: a call outside a
+        run is its own run, so there is nothing to join.
+        """
+        from .core.correlation import current_correlation_id
+
+        rid = current_correlation_id()
+        if rid is None:
+            return {}
+        return {self._cfg.correlation_header or _verify.CORRELATION_ID_HEADER: rid}
+
     def run_context(self, run_id: str | None = None) -> RunScope:
         """Deprecated alias for :meth:`run` (BG §1.7): use ``donkey.run(id=…)``.
         Emits a :class:`DeprecationWarning` (#720)."""

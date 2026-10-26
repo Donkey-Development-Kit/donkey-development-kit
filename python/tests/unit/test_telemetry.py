@@ -62,6 +62,7 @@ def test_donkey_keys_are_the_stable_public_literal_strings() -> None:
     # These are PUBLIC API (AC #4): renaming one is a breaking change, and this
     # test is the tripwire that makes that break loud.
     assert telemetry.DONKEY_CORRELATION_ID == "donkey.correlation_id"
+    assert telemetry.DONKEY_CORRELATION_SOURCE == "donkey.correlation_id.source"
     assert telemetry.DONKEY_POLICY_DECISION == "donkey.policy.decision"
     assert telemetry.DONKEY_POLICY_TYPE == "donkey.policy.type"
     assert telemetry.DONKEY_BUDGET_REMAINING == "donkey.budget.remaining"
@@ -110,6 +111,7 @@ def test_build_genai_attributes_emits_every_key_when_all_present() -> None:
         cost_env="prod",
         cost_enduser_id="user-42",
         correlation_id="run-7f3a",
+        correlation_source="adopted",
     )
     assert attrs == {
         "gen_ai.system": "openai",
@@ -127,6 +129,7 @@ def test_build_genai_attributes_emits_every_key_when_all_present() -> None:
         "donkey.cost.env": "prod",
         "donkey.cost.enduser.id": "user-42",
         "donkey.correlation_id": "run-7f3a",
+        "donkey.correlation_id.source": "adopted",
     }
 
 
