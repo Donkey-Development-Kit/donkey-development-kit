@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -37,6 +38,166 @@ agents = pytest.importorskip("agents")
 from donkey_kit.integrations import openai_agents as ddk_agents  # noqa: E402
 
 _RUN = agents.RunConfig(tracing_disabled=True)
+
+
+class _ResponsesModel(agents.Model):
+    """A scripted Responses model: namespace calls never pass through Chat Completions."""
+
+    def __init__(self, calls: list[tuple[str, str | None]]) -> None:
+        self.calls = calls
+        self.inputs: list[Any] = []
+
+    async def get_response(self, *args: Any, **kwargs: Any) -> Any:
+        from openai.types.responses import (
+            ResponseFunctionToolCall,
+            ResponseOutputMessage,
+            ResponseOutputText,
+        )
+
+        self.inputs.append(kwargs.get("input", args[1] if len(args) > 1 else None))
+        if len(self.inputs) == 1:
+            output = [
+                ResponseFunctionToolCall(
+                    type="function_call",
+                    name=name,
+                    namespace=namespace,
+                    call_id=f"call-{index}",
+                    arguments='{"ticket_id":"T-1"}',
+                )
+                for index, (name, namespace) in enumerate(self.calls)
+            ]
+        else:
+            output = [
+                ResponseOutputMessage(
+                    id="message-1",
+                    type="message",
+                    role="assistant",
+                    status="completed",
+                    content=[ResponseOutputText(type="output_text", text="done", annotations=[])],
+                )
+            ]
+        return agents.ModelResponse(output=output, usage=agents.Usage(), response_id=None)
+
+    async def stream_response(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        raise NotImplementedError
+        yield
+
+
+@pytest.mark.parametrize("namespace", ["billing", "issue_refund"])
+@pytest.mark.parametrize("restore", [False, True], ids=["same-state", "restored-state"])
+async def test_responses_approval_resumes_namespaced_and_deferred_tools(
+    namespace: str, restore: bool
+) -> None:
+    ran: list[str] = []
+
+    @Donkey.tool(approval="required", risk="financial")
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a support ticket."""
+        ran.append(ticket_id)
+        return "refunded"
+
+    deferred = namespace == "issue_refund"
+    tool = ddk_agents.function_tool(issue_refund, defer_loading=deferred)
+    if not deferred:
+        (tool,) = agents.tool_namespace(name=namespace, description="Billing tools.", tools=[tool])
+    model = _ResponsesModel([("issue_refund", namespace)])
+    agent = agents.Agent(name="refunds", model=model, tools=[tool])
+    result = await agents.Runner.run(agent, "refund", run_config=_RUN)
+    assert ran == []
+    (approval,) = ddk_agents.pending_approvals(result)
+    assert approval.risk == "financial"
+    state = result.to_state()
+    if restore:
+        state = await agents.RunState.from_string(agent, state.to_string())
+        assert ddk_agents.pending_approvals(state)[0].id == approval.id
+    ddk_agents.approve(state, approval.id, by="reviewer")
+    done = await agents.Runner.run(agent, state, run_config=_RUN)
+    assert done.final_output == "done"
+    assert ran == ["T-1"]
+    with pytest.raises(KeyError, match="already decided"):
+        ddk_agents.approve(state, approval, by="another-reviewer")
+
+
+@pytest.mark.parametrize("deferred", [False, True], ids=["namespace", "deferred"])
+async def test_responses_same_name_tools_resolve_their_own_specs(deferred: bool) -> None:
+    ran: list[str] = []
+
+    @Donkey.tool(approval="required", risk="billing")
+    def bill(ticket_id: str, amount: int = 100) -> str:
+        """Bill a ticket."""
+        ran.append("billing")
+        return ticket_id
+
+    @Donkey.tool(approval="required", risk="shipping")
+    def ship(ticket_id: str, address: str = "warehouse") -> str:
+        """Ship a ticket."""
+        ran.append("shipping")
+        return ticket_id
+
+    billing = ddk_agents.function_tool(bill, name_override="process")
+    shipping = ddk_agents.function_tool(ship, name_override="process", defer_loading=deferred)
+    if deferred:
+        tools = [billing, shipping]
+        namespaces = [None, "process"]
+    else:
+        tools = [
+            *agents.tool_namespace(name="billing", description="Billing.", tools=[billing]),
+            *agents.tool_namespace(name="shipping", description="Shipping.", tools=[shipping]),
+        ]
+        namespaces = ["billing", "shipping"]
+    model = _ResponsesModel([("process", namespace) for namespace in namespaces])
+    agent = agents.Agent(name="orders", model=model, tools=tools)
+    paused = await agents.Runner.run(agent, "process", run_config=_RUN)
+    assert ran == []
+    first, second = ddk_agents.pending_approvals(paused)
+    assert (first.tool, first.risk, dict(first.arguments)) == (
+        "bill",
+        "billing",
+        {"ticket_id": "T-1", "amount": 100},
+    )
+    assert (second.tool, second.risk, dict(second.arguments)) == (
+        "ship",
+        "shipping",
+        {"ticket_id": "T-1", "address": "warehouse"},
+    )
+    assert first.id != second.id
+    state = await agents.RunState.from_string(agent, paused.to_state().to_string())
+    ddk_agents.reject(state, first, by="reviewer", message="Do not bill.")
+    ddk_agents.approve(state, second, by="reviewer")
+    done = await agents.Runner.run(agent, state, run_config=_RUN)
+    assert done.final_output == "done"
+    assert ran == ["shipping"]
+    outputs = [item for item in model.inputs[-1] if item.get("type") == "function_call_output"]
+    assert {item["call_id"]: item["output"] for item in outputs} == {
+        "call-0": "Do not bill.",
+        "call-1": "T-1",
+    }
+
+
+@pytest.mark.parametrize("namespace", ["billing", "issue_refund"])
+async def test_responses_unapproved_namespaced_and_deferred_tools_stay_gated(
+    namespace: str,
+) -> None:
+    ran: list[str] = []
+
+    @Donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a support ticket."""
+        ran.append(ticket_id)
+        return ticket_id
+
+    tool = ddk_agents.function_tool(issue_refund, defer_loading=namespace == "issue_refund")
+    if namespace == "billing":
+        (tool,) = agents.tool_namespace(name=namespace, description="Billing.", tools=[tool])
+    tool.needs_approval = False
+    model = _ResponsesModel([("issue_refund", namespace)])
+    agent = agents.Agent(name="refunds", model=model, tools=[tool])
+    async with Donkey(_cfg()) as donkey:
+        with pytest.raises(ApprovalRequired):
+            async with donkey.run():
+                await agents.Runner.run(agent, "refund", run_config=_RUN)
+    assert ran == []
+    assert len(model.inputs) == 1
 
 
 def _cfg() -> DonkeyConfig:

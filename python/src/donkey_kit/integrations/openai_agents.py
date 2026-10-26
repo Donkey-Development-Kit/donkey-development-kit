@@ -193,7 +193,7 @@ def function_tool(tool: Callable[..., Any], **kw: Any) -> FunctionTool:
     # Re-class the SDK's own tool as its public FunctionTool subclass, the way the
     # SDK's FunctionTool.__copy__ rebuilds one, so __wrapped__ still reaches tool.
     native.__class__ = _gated_tool_class()
-    native.on_invoke_tool = _GatedInvoker(native.on_invoke_tool, spec, tool)
+    native.on_invoke_tool = _GatedInvoker(native.on_invoke_tool, spec, tool, native)
     return native
 
 
@@ -215,15 +215,38 @@ class _GatedInvoker:
         inner: Callable[[ToolContext[Any], str], Awaitable[Any]],
         spec: ToolSpec,
         wrapped: Callable[..., Any],
+        native: FunctionTool,
     ) -> None:
         self._inner = inner
         self._spec = spec
+        self._native = native
         self.__wrapped__ = wrapped
         setattr(self, TOOL_MARKER, spec)  # how pending_approvals() finds the tool
 
     async def __call__(self, ctx: ToolContext[Any], arguments: str) -> Any:
+        from agents import ToolApprovalItem
+
+        # The execution query needs the invocation's agent as well as its name
+        # (docs/verified-apis.md §8). Deferred calls may already be normalized.
+        deferred = self._native.defer_loading and self._native.qualified_name == self._native.name
+        invocation = ToolApprovalItem(
+            agent=ctx.agent,
+            raw_item=ctx.tool_call,
+            tool_name=ctx.tool_name,
+            tool_namespace=ctx.tool_name if deferred else ctx.tool_namespace,
+            tool_lookup_key=("deferred_top_level", ctx.tool_name) if deferred else None,
+        )
         approved = None
-        if ctx.is_tool_approved(ctx.tool_name, ctx.tool_call_id) is True:
+        if (
+            ctx.get_approval_status(
+                ctx.tool_name,
+                ctx.tool_call_id,
+                tool_namespace=invocation.tool_namespace,
+                tool_lookup_key=invocation.tool_lookup_key,
+                current_invocation=invocation,
+            )
+            is True
+        ):
             approved = _approval(self._spec, ctx.tool_call_id, arguments)
         token = _APPROVED.set(approved)
         try:
@@ -236,9 +259,7 @@ class _GatedInvoker:
         if not callable(bind):
             return self
         inner = bind(function_tool)
-        if inner is self._inner:
-            return self
-        return _GatedInvoker(inner, self._spec, self.__wrapped__)
+        return _GatedInvoker(inner, self._spec, self.__wrapped__, function_tool)
 
     def __getattr__(self, name: str) -> Any:
         if name == "_inner":  # not set yet, e.g. while copying: no recursion
@@ -419,7 +440,13 @@ def _gated_spec(item: ToolApprovalItem) -> ToolSpec | None:
     """The ``@donkey.tool`` behind a paused call, when :func:`function_tool`
     built the agent's tool for it."""
     for tool in getattr(item.agent, "tools", ()):
-        if getattr(tool, "name", None) == item.name:
+        if getattr(tool, "qualified_name", None) == item.qualified_name:
+            # Deferred top-level calls use a synthetic namespace equal to the
+            # name, but their public qualified_name is still the bare name (§8).
+            if tool.qualified_name == tool.name and bool(tool.defer_loading) != (
+                item.tool_namespace == item.name
+            ):
+                continue
             spec = tool_spec(getattr(tool, "on_invoke_tool", None))  # type: ignore[arg-type]
             if spec is not None and spec.approval is not None:
                 return spec

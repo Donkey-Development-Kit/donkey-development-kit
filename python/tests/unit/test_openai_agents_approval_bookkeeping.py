@@ -51,7 +51,16 @@ def _native(fn: Any, name: str | None = None) -> Any:
         return await _invoke(ctx, arguments)
 
     setattr(invoke, TOOL_MARKER, tool_spec(fn))
-    return type("FunctionTool", (), {"name": name or fn.__name__, "on_invoke_tool": invoke})()
+    return type(
+        "FunctionTool",
+        (),
+        {
+            "name": name or fn.__name__,
+            "qualified_name": name or fn.__name__,
+            "defer_loading": False,
+            "on_invoke_tool": invoke,
+        },
+    )()
 
 
 @dataclass
@@ -62,6 +71,11 @@ class _Item:
     call_id: str | None
     arguments: str | None
     agent: Any
+    tool_namespace: str | None = None
+
+    @property
+    def qualified_name(self) -> str:
+        return self.name
 
 
 @dataclass
