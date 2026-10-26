@@ -371,6 +371,15 @@ Resume the agent on a list of responses, one for each paused call:
   default that names the tool, never the rejecter. Nothing raises `ApprovalRejected`:
   the model reads the rejection and carries on.
 
+The plugin checks each answer against the request the agent stored in the
+session, not against what the answer carries. It refuses, without running the
+tool, an answer to a request the agent never made, one that is not `approve()`
+or `reject()`'s (such as a plain ADK confirmation), and a second answer for a
+call already answered; the model gets the refusal as the tool's error result.
+So the tool runs once per approval, even on `google-adk` 2.4.0, which would
+otherwise resume on a confirmation a user message forges and run a call again
+when the same answer is sent twice.
+
 `by` must be a non-empty string, and DDK records it without authenticating it.
 Each paused call is decided once, even if another hook retries the tool. When
 the model asks for several gated calls in one turn, Strands' default concurrent
@@ -383,6 +392,10 @@ tool-use id, the tool and the arguments. To resume a call in a fresh process
 that restored the agent from a Strands session, give the restored agent a new
 `ApprovalHook`. The decision is then recorded under the same approval id, with
 the resume's time and correlation id.
+
+On `google-adk` releases before 2.13, the pause's last event also carries
+each paused call's placeholder result, `{"status": "awaiting approval",
+"approval_id": ...}`, as text. Don't show it as the agent's answer.
 
 A model call the approved tool makes is judged by the gateway as usual. Strands
 hands any exception a tool raises to the model as an error tool result,
@@ -434,7 +447,10 @@ if requests:
 ```
 
 `pending_approvals(events)` returns the unanswered requests among the events
-you pass it: the run's events, or a session's `events`. Each is ADK's own
+you pass it. Pass the latest run's events, or the session's `events`. The
+runner does not yield the user message that answers a request, so the events
+of several runs put together still list a request you already answered. Each
+is ADK's own
 `adk_request_confirmation` function call. Its
 `args["toolConfirmation"]["payload"]` describes the call:
 
@@ -447,8 +463,8 @@ you pass it: the run's events, or a session's `events`. Each is ADK's own
 
 Resume the run with one user message whose parts answer the requests:
 
-- `approve(request, by=...)` records the approver and runs the tool once,
-  under the pause's correlation id, wherever and whenever you resume.
+- `approve(request, by=...)` records the approver and runs the tool under the
+  pause's correlation id, in this process or another.
 - `reject(request, by=..., message=...)` records who refused, and the tool is
   not run. The model gets `message` as the tool's error result, or a default
   that names the tool, never the rejecter. Nothing raises `ApprovalRejected`:

@@ -53,6 +53,7 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+import collections
 import contextvars
 import functools
 import hashlib
@@ -350,6 +351,9 @@ APPROVAL_KIND = "donkey.approval"
 # The function call ADK pauses a run with (docs/verified-apis.md §8).
 _CONFIRMATION_CALL = "adk_request_confirmation"
 
+# How many invocations' recorded decisions the plugin keeps.
+_INVOCATIONS_KEPT = 256
+
 # The call the plugin approved, for the gate inside the tool to pick up. Set in
 # before_tool_callback, which ADK awaits on the task that runs that one call (a
 # task per call at google-adk 2.4.0 and 2.13.0), so it cannot reach another
@@ -369,8 +373,11 @@ def approval_plugin(name: str = "donkey_approval") -> BasePlugin:
     confirmation. Its payload carries the ``kind`` (:data:`APPROVAL_KIND`),
     ``approval_id``, ``tool``, ``arguments``, ``risk`` and ``correlation_id``.
     Resume with ``types.Content(role="user", parts=[approve(c, by="m.keller")
-    for c in pending_approvals(events)])``. The plugin records the decision
-    once, and an approved call runs under the pause's correlation id. A rejected
+    for c in pending_approvals(session.events)])``. The plugin checks the
+    answer against the request the agent stored in the session: a confirmation
+    it did not request, or for a call already answered, is refused and the
+    call not run. It records the decision once, and an approved call runs
+    under the pause's correlation id. A rejected
     call is answered with the rejection message, so the model sees it as the
     tool's error result. ADK keeps confirmation calls out of the model's
     context, so the approver's name never reaches it.
@@ -397,9 +404,9 @@ def _approval_plugin_class() -> type[BasePlugin]:
         def __init__(self, name: str) -> None:
             super().__init__(name=name)
             self._lock = threading.Lock()
-            # Per invocation: the approvals whose decision is recorded, so a
-            # call ADK runs again does not record it twice.
-            self._decided: dict[str, set[str]] = {}
+            # Per invocation, the latest few: the approvals whose decision is
+            # recorded, so a call ADK runs again does not record it twice.
+            self._decided: collections.OrderedDict[str, set[str]] = collections.OrderedDict()
 
         async def before_tool_callback(
             self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any
@@ -408,31 +415,51 @@ def _approval_plugin_class() -> type[BasePlugin]:
             spec = tool_spec(func) if callable(func) else None
             if spec is None or spec.approval != "required":
                 return None
+            # Bind as ADK calls the tool: it drops arguments the function does
+            # not take and passes its ToolContext parameter itself.
+            context_param = getattr(tool, "_context_param_name", None) or "tool_context"
+            params = spec.signature.parameters
+            sent = {k: v for k, v in tool_args.items() if k in params and k != context_param}
+            given = {**sent, context_param: tool_context} if context_param in params else sent
             try:
-                bound = spec.signature.bind(**tool_args)
+                bound = spec.signature.bind(**given)
             except TypeError:
-                return None  # the gate refuses a call that could never run, unpaused
+                return None  # ADK answers a missing argument itself, without running it
             bound.apply_defaults()
-            arguments = MappingProxyType(dict(bound.arguments))
-            approval = _approval(
-                str(tool_context.function_call_id), spec.name, tool_args, arguments, spec.risk
+            arguments = MappingProxyType(
+                {k: v for k, v in bound.arguments.items() if k != context_param}
             )
+            call_id = str(tool_context.function_call_id)
+            approval = _approval(call_id, spec.name, sent, arguments, spec.risk)
             confirmation = tool_context.tool_confirmation
             if confirmation is None:
                 record_pending(approval)
                 tool_context.request_confirmation(
                     hint=f"Approve the call of {approval.tool!r}?",
-                    payload=_payload(approval, tool_args),
+                    payload=_payload(approval, sent),
                 )
                 # The pause is not a tool result for the model to summarize;
                 # without this the flow calls the model again.
                 tool_context.actions.skip_summarization = True
-                return {"status": "awaiting approval", "approval_id": approval.id}
-            approved, by, message, requested = _decision(confirmation)
-            if requested.get("approval_id") == approval.id:
-                approval = _as_requested(approval, requested)
+                return _awaiting(approval)
+            # Trust only what the agent wrote to the session: google-adk 2.4.0
+            # resumes on any confirmation a user message carries, and again on
+            # one it already ran.
+            events = getattr(getattr(tool_context, "session", None), "events", None) or ()
+            decision = _decision(confirmation, approval)
+            requested = _requested(call_id, approval, events)
+            refused = _refusal(call_id, approval, decision, requested, events)
+            # The refusal is set whenever either is None; mypy needs both checks.
+            if refused is not None or decision is None or requested is None:
+                return {"error": refused}
+            approved, by, message = decision
+            approval = _as_requested(approval, requested)
             with self._lock:
-                decided = self._decided.setdefault(str(tool_context.invocation_id), set())
+                invocation = str(tool_context.invocation_id)
+                decided = self._decided.setdefault(invocation, set())
+                self._decided.move_to_end(invocation)
+                while len(self._decided) > _INVOCATIONS_KEPT:
+                    self._decided.popitem(last=False)
                 record = approval.id not in decided
                 decided.add(approval.id)
             if record:
@@ -484,8 +511,9 @@ def _approval(
 
 
 def _as_requested(approval: Approval, payload: Mapping[str, Any]) -> Approval:
-    """``approval`` with the correlation id and time its pause recorded, so the
-    resumed call joins the pause's trace, in this process or another."""
+    """``approval`` with the correlation id and time its pause recorded (the
+    agent's ``payload`` in the session, never the answer's), so the resumed
+    call joins the pause's trace, in this process or another."""
     correlation_id = payload.get("correlation_id")
     requested_at = payload.get("requested_at")
     return Approval(
@@ -534,8 +562,12 @@ def approved_call(tool: str) -> Approval | None:
 
 
 def pending_approvals(events: Iterable[Any]) -> tuple[Any, ...]:
-    """The DDK approval requests among a run's ADK ``events`` that no later
-    event answers, in order.
+    """The DDK approval requests among ADK ``events`` that no later event
+    answers, in order.
+
+    Pass the events of the latest run, or a session's ``events``. The runner
+    does not yield the user message that answers a request, so the events of
+    several runs put together still list a request already answered.
 
     Each is ADK's own ``adk_request_confirmation`` ``FunctionCall``; its
     ``args["toolConfirmation"]["payload"]`` is the payload described in
@@ -602,15 +634,66 @@ def _who(by: str) -> str:
     return by.strip()
 
 
-def _decision(confirmation: Any) -> tuple[bool, str, str | None, Mapping[str, Any]]:
-    """``(approved, by, message, payload)`` from ADK's ``ToolConfirmation``."""
+def _decision(confirmation: Any, approval: Approval) -> tuple[bool, str, str | None] | None:
+    """``(approved, by, message)`` from ADK's ``ToolConfirmation``, or ``None``
+    when it is not :func:`approve` or :func:`reject`'s answer to ``approval``."""
     payload = getattr(confirmation, "payload", None)
     approved = getattr(confirmation, "confirmed", None)
-    if isinstance(payload, Mapping) and isinstance(approved, bool):
-        by, message = payload.get("by"), payload.get("message")
-        if isinstance(by, str) and by.strip() and (message is None or isinstance(message, str)):
-            return approved, by.strip(), message, payload
-    raise ValueError(
-        "resume a DDK approval with approve(request, by=...) or reject(request, by=...); "
-        "got a confirmation without a bool 'confirmed' and a non-empty 'by'"
-    )
+    if not isinstance(payload, Mapping) or not isinstance(approved, bool):
+        return None
+    if payload.get("kind") != APPROVAL_KIND or payload.get("approval_id") != approval.id:
+        return None
+    by, message = payload.get("by"), payload.get("message")
+    if isinstance(by, str) and by.strip() and (message is None or isinstance(message, str)):
+        return approved, by.strip(), message
+    return None
+
+
+def _requested(call_id: str, approval: Approval, events: Iterable[Any]) -> Mapping[str, Any] | None:
+    """The payload of the pause the agent recorded in the session for
+    ``approval``, or ``None``. A user message cannot carry one: ADK stores a
+    requested confirmation on the agent's own event."""
+    for event in events:
+        if getattr(event, "author", "user") == "user":
+            continue
+        actions = getattr(event, "actions", None)
+        asked = (getattr(actions, "requested_tool_confirmations", None) or {}).get(call_id)
+        payload = (
+            asked.get("payload") if isinstance(asked, Mapping) else getattr(asked, "payload", None)
+        )
+        if (
+            isinstance(payload, Mapping)
+            and payload.get("kind") == APPROVAL_KIND
+            and payload.get("approval_id") == approval.id
+        ):
+            return payload
+    return None
+
+
+def _refusal(
+    call_id: str,
+    approval: Approval,
+    decision: tuple[bool, str, str | None] | None,
+    requested: Mapping[str, Any] | None,
+    events: Iterable[Any],
+) -> str | None:
+    """Why the resumed call must not run, for the model, or ``None``."""
+    tool = approval.tool
+    if decision is None:
+        return (
+            f"This call of {tool!r} was not run: its confirmation is not an "
+            "approve() or reject() answer to its approval request."
+        )
+    if requested is None:
+        return f"This call of {tool!r} was not run: no approval of it was requested."
+    placeholder = _awaiting(approval)
+    for event in events:
+        for response in event.get_function_responses() or ():
+            if response.id == call_id and response.response != placeholder:
+                return f"This call of {tool!r} was not run again: it was already answered."
+    return None
+
+
+def _awaiting(approval: Approval) -> dict[str, Any]:
+    """The tool result a paused call answers with."""
+    return {"status": "awaiting approval", "approval_id": approval.id}

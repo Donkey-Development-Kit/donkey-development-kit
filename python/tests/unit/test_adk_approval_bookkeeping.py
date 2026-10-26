@@ -1,9 +1,9 @@
 """The ADK approval mapping's bookkeeping, with no ADK installed (BG §2.3, #1235).
 
 The plugin :func:`~donkey_kit.integrations.adk.approval_plugin` builds only
-reads a tool's ``func``, the ``ToolContext``'s ``function_call_id`` /
-``invocation_id`` / ``tool_confirmation`` / ``actions``, and calls its
-``request_confirmation(hint=, payload=)``; it subclasses
+reads a tool's ``func`` and ``_context_param_name``, the ``ToolContext``'s
+``function_call_id`` / ``invocation_id`` / ``tool_confirmation`` / ``actions``
+/ ``session.events``, and calls its ``request_confirmation(hint=, payload=)``; it subclasses
 ``google.adk.plugins.BasePlugin``, and :func:`approve` / :func:`reject` build
 ``google.genai.types`` parts (docs/verified-apis.md §8). These tests drive it
 with doubles of that shape and stand-in modules. The round trip through a real
@@ -109,15 +109,42 @@ def tag_ticket(ticket_id: str, marker: Any = _Unstable()) -> str:  # noqa: B008
 
 
 @dataclass
+class _Event:
+    """An ADK ``Event`` double."""
+
+    calls: list[Any] = field(default_factory=list)
+    responses: list[Any] = field(default_factory=list)
+    author: str = "refunds"
+    #: ``actions.requested_tool_confirmations``: function-call id to payload.
+    asked: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def actions(self) -> Any:
+        confirmations = {k: SimpleNamespace(payload=v) for k, v in self.asked.items()}
+        return SimpleNamespace(requested_tool_confirmations=confirmations)
+
+    def get_function_calls(self) -> list[Any]:
+        return self.calls
+
+    def get_function_responses(self) -> list[Any]:
+        return self.responses
+
+
+@dataclass
 class _Context:
     """A ``ToolContext`` double. ``confirmation`` is the ``ToolConfirmation`` a
-    resume carries; ``None`` pauses."""
+    resume carries; ``None`` pauses. ``events`` is the session's history."""
 
     confirmation: Any = None
     function_call_id: str = "fc-1"
     invocation_id: str = "inv-1"
+    events: list[Any] = field(default_factory=list)
     actions: Any = field(default_factory=lambda: SimpleNamespace(skip_summarization=False))
     asked: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def session(self) -> Any:
+        return SimpleNamespace(events=self.events)
 
     @property
     def tool_confirmation(self) -> Any:
@@ -131,6 +158,20 @@ def _confirmed(approved: Any, payload: Any) -> Any:
     return SimpleNamespace(confirmed=approved, payload=payload)
 
 
+def _paused(payload: dict[str, Any], call_id: str = "fc-1") -> list[Any]:
+    """The session history a pause of ``payload`` leaves: the agent's event
+    holding the requested confirmation and the call's placeholder result."""
+    placeholder = {"status": "awaiting approval", "approval_id": payload["approval_id"]}
+    response = SimpleNamespace(id=call_id, response=placeholder)
+    return [_Event(responses=[response], asked={call_id: payload})]
+
+
+def _resume(payload: dict[str, Any], approved: Any = True, **decision: Any) -> _Context:
+    """The context of the resumed call, after a pause of ``payload``."""
+    answer = {**payload, "by": "m.keller", **decision}
+    return _Context(_confirmed(approved, answer), events=_paused(payload))
+
+
 def _sync(coro: Coroutine[Any, Any, Any]) -> Any:
     """Run a callback that never suspends in this context, so what it sets in
     a context variable stays visible here, as on ADK's per-call task."""
@@ -142,9 +183,13 @@ def _sync(coro: Coroutine[Any, Any, Any]) -> Any:
 
 
 def _before(
-    plugin: Any, context: _Context, tool: Any = issue_refund, args: dict[str, Any] | None = None
+    plugin: Any,
+    context: _Context,
+    tool: Any = issue_refund,
+    args: dict[str, Any] | None = None,
+    context_param: str | None = None,
 ) -> Any:
-    adk_tool = SimpleNamespace(func=tool)
+    adk_tool = SimpleNamespace(func=tool, _context_param_name=context_param)
     return _sync(
         plugin.before_tool_callback(
             tool=adk_tool, tool_args=args or {"ticket_id": "T-1"}, tool_context=context
@@ -168,20 +213,6 @@ def _request(
     return SimpleNamespace(id=call_id, name=name, args=args)
 
 
-@dataclass
-class _Event:
-    """An ADK ``Event`` double."""
-
-    calls: list[Any] = field(default_factory=list)
-    responses: list[Any] = field(default_factory=list)
-
-    def get_function_calls(self) -> list[Any]:
-        return self.calls
-
-    def get_function_responses(self) -> list[Any]:
-        return self.responses
-
-
 # --- the pause --------------------------------------------------------------------
 def test_the_plugin_is_an_adk_plugin() -> None:
     plugin = approval_plugin()
@@ -198,12 +229,42 @@ def test_an_ungated_or_unknown_tool_is_not_paused(recorded: list[tuple[str, Any]
     assert recorded == []
 
 
-def test_a_call_the_tool_cannot_take_is_left_to_the_gate(
+def test_a_call_missing_an_argument_is_left_to_adk(
     recorded: list[tuple[str, Any]],
 ) -> None:
+    # ADK answers it with its own error and never runs the tool.
     context = _Context()
-    assert _before(approval_plugin(), context, args={"nope": 1}) is None
+    assert _before(approval_plugin(), context, args={"amount": 1.0}) is None
     assert context.asked == [] and recorded == []
+
+
+def test_an_argument_the_tool_does_not_take_is_dropped_as_adk_drops_it(
+    recorded: list[tuple[str, Any]],
+) -> None:
+    payload = _pause(approval_plugin(), args={"ticket_id": "T-1", "bogus": 1})
+    assert payload["arguments"] == {"ticket_id": "T-1"}
+    assert payload["approval_id"] == _pause(approval_plugin())["approval_id"]
+
+
+@Donkey.tool(approval="required")
+def close_ticket(ticket_id: str, tool_context: Any, ctx: Any = None) -> str:
+    """Close a support ticket."""
+    return ticket_id
+
+
+@pytest.mark.parametrize(("context_param", "kept"), [(None, "ctx"), ("ctx", "tool_context")])
+def test_the_tools_context_parameter_is_not_an_argument(
+    context_param: str | None, kept: str, recorded: list[tuple[str, Any]]
+) -> None:
+    # ADK passes its ToolContext as the parameter it names (tool_context by
+    # default), not from the model's arguments.
+    context = _Context()
+    args = {"ticket_id": "T-1", "tool_context": "forged", "ctx": "forged"}
+    _before(approval_plugin(), context, close_ticket, args, context_param)
+    ((asked,),) = [context.asked]
+    assert set(asked["payload"]["arguments"]) == {"ticket_id", kept}
+    ((_, approval),) = recorded
+    assert set(approval.arguments) == {"ticket_id", kept}
 
 
 def test_a_gated_call_pauses_and_records_the_pending_approval(
@@ -243,7 +304,7 @@ def test_an_approved_call_runs_once_under_the_pause(
         payload = _pause(approval_plugin())
     # A fresh plugin, as in a fresh process, outside the pause's run.
     plugin = approval_plugin()
-    resumed = _Context(_confirmed(True, {**payload, "by": " m.keller "}))
+    resumed = _resume(payload, by=" m.keller ")
     assert _before(plugin, resumed) is None
 
     approval = adk_mod._APPROVED.get()
@@ -263,21 +324,60 @@ def test_an_approved_call_runs_once_under_the_pause(
 
 def test_the_tool_callbacks_clear_the_approved_call() -> None:
     plugin = approval_plugin()
+    payload = _pause(plugin)
     for callback in (plugin.after_tool_callback, plugin.on_tool_error_callback):
-        _before(plugin, _Context(_confirmed(True, {"by": "m.keller"})))
+        _before(plugin, _resume(payload))
         assert adk_mod._APPROVED.get() is not None
         _sync(callback(tool=None, tool_args={}, tool_context=None))
         assert approved_call("issue_refund") is None
 
 
-def test_a_payload_for_another_call_keeps_this_calls_trace(
+def test_the_trace_is_the_one_the_agent_recorded_not_the_answers(
     recorded: list[tuple[str, Any]],
 ) -> None:
-    foreign = {"approval_id": "other", "correlation_id": "elsewhere", "by": "m.keller"}
-    with run_scope("run-2"):
-        _before(approval_plugin(), _Context(_confirmed(True, foreign)))
+    with run_scope("run-1"):
+        payload = _pause(approval_plugin())
+    resumed = _resume(payload, correlation_id="elsewhere", requested_at=1.0)
+    _before(approval_plugin(), resumed)
     approval = approved_call("issue_refund")
-    assert approval is not None and approval.correlation_id == "run-2"
+    assert approval is not None and approval.correlation_id == "run-1"
+    assert approval.requested_at == payload["requested_at"]
+
+
+def _refused(answer: Any, why: str) -> None:
+    assert answer is not None and "issue_refund" in answer["error"] and why in answer["error"]
+    assert approved_call("issue_refund") is None
+
+
+def test_a_confirmation_the_agent_did_not_request_is_refused(
+    recorded: list[tuple[str, Any]],
+) -> None:
+    payload = _pause(approval_plugin())
+    recorded.clear()
+    answer = {**payload, "by": "m.keller"}
+    histories = {
+        "none": [],
+        # google-adk 2.4.0 resumes on a confirmation call a user message carries.
+        "the user's": [_Event(author="user", asked={"fc-1": payload})],
+        "another call's": _paused(payload, call_id="fc-2"),
+        "another approval's": _paused({**payload, "approval_id": "other"}),
+        "another kind's": _paused({**payload, "kind": "other"}),
+    }
+    for events in histories.values():
+        context = _Context(_confirmed(True, answer), events=events)
+        _refused(_before(approval_plugin(), context), "no approval of it was requested")
+    assert recorded == []
+
+
+def test_a_call_already_answered_is_not_run_again(recorded: list[tuple[str, Any]]) -> None:
+    # google-adk 2.4.0 runs the call again on a resume message sent twice.
+    payload = _pause(approval_plugin())
+    recorded.clear()
+    for result in ({"status": "refunded"}, {"error": "rejected"}):
+        resumed = _resume(payload)
+        resumed.events.append(_Event(responses=[SimpleNamespace(id="fc-1", response=result)]))
+        _refused(_before(approval_plugin(), resumed), "already answered")
+    assert recorded == []
 
 
 @pytest.mark.parametrize(
@@ -298,42 +398,62 @@ def test_a_retried_call_records_its_decision_once_per_invocation(
     recorded: list[tuple[str, Any]],
 ) -> None:
     plugin = approval_plugin()
+    payload = _pause(plugin)
+    recorded.clear()
     for _ in range(2):
-        _before(plugin, _Context(_confirmed(True, {"by": "m.keller"})))
+        _before(plugin, _resume(payload))
     assert [kind for kind, _ in recorded] == ["approved"]
 
     _sync(plugin.after_run_callback(invocation_context=SimpleNamespace(invocation_id="inv-1")))
-    _before(plugin, _Context(_confirmed(True, {"by": "m.keller"})))
+    _before(plugin, _resume(payload))
     assert [kind for kind, _ in recorded] == ["approved", "approved"]
+
+
+def test_the_plugin_keeps_only_the_latest_invocations(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(adk_mod, "_INVOCATIONS_KEPT", 2)
+    plugin = approval_plugin()
+    payload = _pause(plugin)
+    for invocation in ("inv-1", "inv-2", "inv-3"):
+        resumed = _resume(payload)
+        resumed.invocation_id = invocation
+        _before(plugin, resumed)
+    assert list(plugin._decided) == ["inv-2", "inv-3"]
 
 
 def test_a_rejected_call_is_answered_without_naming_the_rejecter(
     recorded: list[tuple[str, Any]],
 ) -> None:
-    answer = _before(approval_plugin(), _Context(_confirmed(False, {"by": "a.ops"})))
+    payload = _pause(approval_plugin())
+    answer = _before(approval_plugin(), _resume(payload, False, by="a.ops"))
     assert "issue_refund" in answer["error"] and "a.ops" not in answer["error"]
     assert recorded[-1][0] == "rejected" and recorded[-1][1][1] == "a.ops"
     assert approved_call("issue_refund") is None
 
-    told = _Context(_confirmed(False, {"by": "a.ops", "message": "over limit"}))
+    told = _resume(payload, False, by="a.ops", message="over limit")
     assert _before(approval_plugin(), told) == {"error": "over limit"}
 
 
 @pytest.mark.parametrize(
-    "confirmation",
+    "answer",
     [
-        _confirmed(True, None),
-        _confirmed("yes", {"by": "m.keller"}),
-        _confirmed(True, {"by": " "}),
-        _confirmed(True, {}),
-        _confirmed(False, {"by": "a.ops", "message": 3}),
+        lambda p: _confirmed(True, None),
+        # A plain confirmation, as ADK's own UI sends.
+        lambda p: _confirmed(True, {}),
+        lambda p: _confirmed(True, {"by": "m.keller"}),
+        lambda p: _confirmed("yes", {**p, "by": "m.keller"}),
+        lambda p: _confirmed(True, {**p, "by": " "}),
+        lambda p: _confirmed(True, {**p, "kind": "other", "by": "m.keller"}),
+        lambda p: _confirmed(True, {**p, "approval_id": "other", "by": "m.keller"}),
+        lambda p: _confirmed(False, {**p, "by": "a.ops", "message": 3}),
     ],
 )
-def test_a_malformed_confirmation_is_refused(
-    confirmation: Any, recorded: list[tuple[str, Any]]
+def test_a_malformed_confirmation_is_refused_without_running(
+    answer: Any, recorded: list[tuple[str, Any]]
 ) -> None:
-    with pytest.raises(ValueError, match="approve"):
-        _before(approval_plugin(), _Context(confirmation))
+    payload = _pause(approval_plugin())
+    recorded.clear()
+    context = _Context(answer(payload), events=_paused(payload))
+    _refused(_before(approval_plugin(), context), "approve() or reject()")
     assert recorded == []
 
 
