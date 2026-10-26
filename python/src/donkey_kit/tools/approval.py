@@ -50,7 +50,7 @@ class ApprovalRule:
 
     def matches(self, tool: ToolDescriptor) -> bool:
         """True when this rule gates ``tool``."""
-        return tool.name in self.tools or f"{tool.server}__{tool.name}" in self.tools
+        return tool.name in self.tools or tool.qualified_name in self.tools
 
 
 def rule_for(rules: Sequence[ApprovalRule], tool: ToolDescriptor) -> ApprovalRule | None:
@@ -72,7 +72,7 @@ def check_rules(rules: Sequence[ApprovalRule], tools: Sequence[ToolDescriptor]) 
     Raises:
         ConfigError: A name in a rule matches no tool.
     """
-    known = {t.name for t in tools} | {f"{t.server}__{t.name}" for t in tools}
+    known = {t.name for t in tools} | {t.qualified_name for t in tools}
     unknown = sorted({name for rule in rules for name in rule.tools} - known)
     if unknown:
         raise ConfigError(
