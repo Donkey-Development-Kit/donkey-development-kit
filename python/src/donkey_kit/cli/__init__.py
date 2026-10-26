@@ -15,7 +15,8 @@ to your own sink with no SDK-specific env var; opt out entirely with
 
 Three hidden commands (``status``, ``publish``, ``verify``, BG §2.5) are
 verification-blocked: they print a "blocked on verification" message and exit
-3 rather than fabricating calls (§0.3). The refused provisioning control plane
+3 rather than fabricating calls (§0.3); only ``publish --dry-run``, which plans
+the Exchange assets offline (#218), runs. The refused provisioning control plane
 (``plan``/``apply``/``drift``/``lint``/``generate``/``validate``) was removed.
 
 Needs the ``[cli]`` extra; importing this package without it raises an
@@ -28,6 +29,6 @@ from __future__ import annotations
 # `import typer` raises a bare one. The command modules are then imported for
 # their registration side effect.
 from ._app import app, main  # isort: skip
-from . import _blocked, doctor, init, mock, scan, test  # noqa: F401  # isort: skip
+from . import _blocked, doctor, init, mock, publish, scan, test  # noqa: F401  # isort: skip
 
 __all__ = ["app", "main"]

@@ -371,8 +371,11 @@ the input publishing will read.
 These commands are part of the [Roadmap](/roadmap) and are not available in the
 CLI yet:
 
-- `donkey publish` — register what `donkey scan` finds with Exchange. See
-  [Scan & publish](/publishing).
+- `donkey publish` — register what `donkey scan` finds with Exchange. Only
+  `donkey publish --dry-run` runs today: it prints the Exchange assets a
+  publish would register and makes no network call. The command is hidden
+  from `donkey --help` until publishing itself ships. See
+  [Planning a publish](/publishing#planning-a-publish).
 - `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
   A2A and expose it through the gateway. See [A2A agents](/a2a).
 

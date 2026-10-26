@@ -610,11 +610,17 @@ one leaves unset. Nested tables such as `[donkey.cost]` merge the same way. A
 scalar or an array in a higher file replaces the lower file's value; it isn't
 appended to. Each key remembers which file it came from.
 
-One table in these files is not a `DonkeyConfig` field: `[donkey.mcp_servers]`
-declares how each MCP server your tools name is reached, and only `donkey scan`
-reads it, from the scanned directory's two project files. `Donkey.from_env()`
-ignores it. See
-[Declaring how an MCP server is reached](/publishing#declaring-how-an-mcp-server-is-reached).
+Two tables in these files are not `DonkeyConfig` fields, and
+`Donkey.from_env()` ignores both:
+
+- `[donkey.mcp_servers]` declares how each MCP server your tools name is
+  reached. `donkey scan` reads it from the scanned directory's two project
+  files. See
+  [Declaring how an MCP server is reached](/publishing#declaring-how-an-mcp-server-is-reached).
+- `[donkey.publication]` declares the Exchange group ID, asset IDs and version
+  to publish under. `donkey publish --dry-run` reads it from the same two
+  files. See
+  [Planning a publish](/publishing#planning-a-publish).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
 file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that

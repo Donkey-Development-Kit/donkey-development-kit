@@ -2,8 +2,9 @@
 
 Status: Roadmap. Planned design; not shipped yet.
 
-`donkey scan` is live. Publishing is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md): the sections
-after the `donkey scan` section show its planned design.
+`donkey scan` is live, and so is `donkey publish --dry-run`, which plans a
+publish without sending anything. Publishing itself is on the
+[Roadmap](https://docs.donkey-kit.dev/roadmap.md): the sections after the dry run show its planned design.
 
 `donkey scan` walks your repository and finds every
 [`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
@@ -98,6 +99,51 @@ be published. Settings outside `[donkey.mcp_servers]` are unaffected:
   A service ID (`@donkey.agent(name=...)`, `@donkey.tool(server=...)`) names a
   service in the registry **permanently**, so choose it deliberately. Renaming
   it later would register a second service rather than rename the first.
+
+## Planning a publish
+
+```bash
+donkey publish --dry-run .          # the assets a publish would register
+donkey publish --dry-run . --json   # the same plan as canonical JSON
+```
+
+The dry run scans your code the way `donkey scan` does, then prints one
+Exchange asset per MCP server (type `mcp`) and per agent (type `agent`), with
+its group ID, asset ID and version, and the digest a publish would compare
+with the latest published version's. It makes **no network call** and needs no
+credentials. Without `--dry-run`, `donkey publish` still exits `3` with a
+"blocked on verification" message: how Exchange treats a republished version,
+and where it stores the digest, are not yet confirmed against a live sandbox.
+
+Exchange coordinates aren't in your code, so you declare them in a
+`[donkey.publication]` table in `.donkey-kit.toml` beside your code:
+
+```toml
+# .donkey-kit.toml (committed)
+[donkey.publication]
+version  = "1.3.0"     # required, a semantic version
+group_id = "acme"      # optional: defaults to your org_id (ANYPOINT_ORG_ID)
+
+[donkey.publication.assets.hr-tools]   # a service ID; every key is optional
+asset_id    = "hr-tools-mcp"           # default: the service ID
+name        = "HR Tools"               # default: the service ID
+description = "Look up employees and their managers."
+version     = "1.4.0"                  # default: the table's version
+```
+
+- An MCP server has no description in code, so give it one here. An agent
+  defaults to its own description.
+- A `.donkey-kit.local.toml` beside it overrides the project file key by key,
+  as for `[donkey.mcp_servers]`.
+- The digest covers what would be published for that asset: its tools, their
+  descriptions and parameters, how the server is reached, and the asset's name
+  and description. It leaves out file paths, line numbers and the version, so
+  moving code or bumping the version alone does not look like a change.
+
+The dry run exits `1` on any issue, so CI can run it on every pull request:
+every issue `donkey scan` reports, plus a missing group ID or version, a
+version that isn't semantic, an unknown key, or an `assets` table for a
+service ID your code doesn't define.
 
 ## Scope: code-first assets
 
