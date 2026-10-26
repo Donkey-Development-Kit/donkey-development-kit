@@ -332,6 +332,16 @@ resumes the run, or the approval's own outside a run. A model call the approved
 tool makes is judged by the gateway as usual, and its refusal leaves
 `Runner.run` typed instead of becoming a tool result.
 
+The same approval helpers work with `agents.tool_namespace(...)` and
+`function_tool(..., defer_loading=True)` on a Responses model you construct
+yourself. Calls are matched to the tool's namespace and deferred identity, so
+tools with the same routed name in different namespaces keep their own risk
+labels, argument defaults and decisions. `Approval.tool` still names the
+underlying `@donkey.tool`; decide using the approval object or its id, not a
+bare routed name. These paths are tested offline at `openai-agents` 0.20.0 and
+0.24.0, not live against a gateway. DDK's `model()` returns a Chat Completions
+model, which the Agents SDK does not allow to use namespaced or deferred tools.
+
 Wrap a gated tool with the DDK `function_tool`, not the SDK's own
 `agents.function_tool`. The SDK's own wrapper does not pause: the gate raises
 `ApprovalRequired`, and the SDK hands it to the model as a tool-result string.
