@@ -150,6 +150,7 @@ service ID your code doesn't define.
 ```bash
 donkey publish .            # publish what changed (--if-changed is the default)
 donkey publish . --always   # publish even when the digest matches the latest version
+donkey publish . --json     # the plan as JSON, each asset with its status and detail
 ```
 
 Without `--dry-run`, `donkey publish` registers each MCP server in the plan as

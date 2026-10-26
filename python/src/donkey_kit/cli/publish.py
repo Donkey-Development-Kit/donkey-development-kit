@@ -13,6 +13,10 @@ asset is published over the control plane (see
 default, an asset whose latest published version has the same digest is left
 alone. Agents are listed as skipped; publishing them is not supported yet.
 
+``--json`` prints the plan as JSON; after a publish, each asset also carries
+the ``status`` (``published``, ``unchanged`` or ``skipped``) and ``detail`` of
+its outcome. Issues and errors still go to stderr.
+
 Exit codes: 1 when the scan or the declaration reports an issue (nothing is
 sent) or Exchange refuses a publish, 2 when there is nothing at the path or the
 config is invalid or lacks the control-plane credentials.
@@ -21,6 +25,7 @@ config is invalid or lacks the control-plane credentials.
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import typer
@@ -49,7 +54,9 @@ def publish(
         "--if-changed/--always",
         help="skip an asset whose latest published version has the same digest",
     ),
-    as_json: bool = typer.Option(False, "--json", help="emit the plan as JSON (with --dry-run)"),
+    as_json: bool = typer.Option(
+        False, "--json", help="emit the plan, or what was published, as JSON"
+    ),
 ) -> None:
     """Publish code-first assets to Exchange (CI-only, BG §2.5)."""
     as_json = as_json or bool((ctx.obj or {}).get("json"))
@@ -68,6 +75,8 @@ def publish(
             _summary(plan)
         raise typer.Exit(1 if plan.issues else 0)
     if plan.issues:
+        if as_json:
+            typer.echo(plan.to_json(), nl=False)
         _issues(plan)
         typer.secho("nothing was published", fg="red", err=True)
         raise typer.Exit(1)
@@ -82,6 +91,9 @@ def publish(
         typer.secho(str(exc), fg="red", err=True)
         typer.secho(exc.remediation, err=True)
         raise typer.Exit(1) from exc
+    if as_json:
+        typer.echo(_outcomes_json(plan, outcomes), nl=False)
+        return
     for o in outcomes:
         a = o.asset
         line = f"  {o.status:<9} {a.type:<6} {a.group_id}:{a.asset_id}:{a.version}  {o.detail}"
@@ -111,6 +123,14 @@ async def _publish(
         )
     finally:
         await runtime.aclose()
+
+
+def _outcomes_json(plan: PublishPlan, outcomes: tuple[PublishOutcome, ...]) -> str:
+    """The plan's JSON with each asset's outcome; outcomes are in plan order."""
+    data = plan.to_dict()
+    for asset, outcome in zip(data["assets"], outcomes, strict=True):
+        asset["status"], asset["detail"] = outcome.status, outcome.detail
+    return json.dumps(data, sort_keys=True, indent=2) + "\n"
 
 
 def _summary(plan: PublishPlan) -> None:
