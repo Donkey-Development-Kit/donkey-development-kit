@@ -2178,11 +2178,13 @@ factory has exactly this shape: it wraps `Runner.run` in `typed_refusals()`.
 [Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md)
 walks through it end to end. See [Testing](https://docs.donkey-kit.dev/testing.md).
 
-One scenario of the SDK's internal conformance matrix is an asserted exemption:
-**approval round trip**. Under `Runner.run`, an exception raised inside a
-`function_tool` becomes a tool-result string for the model, so an
-`@donkey.tool(approval="required")` gate never pauses the run. Mapping DDK
-approvals onto the Agents SDK's own `needs_approval` interruptions is #213.
+The SDK's internal conformance matrix records no exemption for the Agents SDK,
+**approval round trip** included. An `@donkey.tool(approval="required")` wrapped
+with `donkey_kit.integrations.openai_agents.function_tool` sets the Agents SDK's
+own `needs_approval`, so `Runner.run` pauses with the call in
+`result.interruptions`. `pending_approvals`, `approve` and `reject` record the
+decision on the `RunState`, and `Runner.run(agent, state)` resumes (#213). See
+[Human approval](https://docs.donkey-kit.dev/hitl.md#in-an-openai-agents-sdk-run).
 
 ## Notes
 
@@ -4252,7 +4254,7 @@ read, so `DONKEY_TELEMETRY=false` does not stop them reaching a
 The registry is in-process memory. A restart forgets every pending approval,
 and resolving one after a restart raises `KeyError`. When a pause has to
 survive a restart, use a framework's own durable pause, such as LangGraph's
-checkpointer (see below).
+checkpointer or the OpenAI Agents SDK's serialised `RunState` (see below).
 
 ## In a LangGraph graph
 
@@ -4335,6 +4337,77 @@ checkpointer, which has no thread to resume, and, on Python 3.10, a graph run
 with `ainvoke()`, where LangGraph cannot see the run's config from inside the
 tool (see [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md#interrupt-composes-with-typed-refusals)).
 
+## In an OpenAI Agents SDK run
+
+The OpenAI Agents SDK has its own tool approval: a `FunctionTool` with
+`needs_approval` stops `Runner.run` before the tool runs and returns the call in
+`result.interruptions`. Build the agent's tool with
+`donkey_kit.integrations.openai_agents.function_tool`, and a gated
+`@donkey.tool` sets it for you:
+
+```python
+from agents import Agent, Runner
+from donkey_kit import Donkey
+from donkey_kit.integrations import openai_agents
+
+donkey = Donkey()
+
+@donkey.tool(approval="required", risk="financial")
+def issue_refund(ticket_id: str, amount: float) -> str:
+    """Refund a support ticket."""
+    return f"refunded {ticket_id}"
+
+agent = Agent(
+    name="refunds",
+    model=donkey.openai_agents.model("gpt-4o"),
+    tools=[openai_agents.function_tool(issue_refund)],
+)
+
+async with donkey.run(id="ticket-T-1"):
+    result = await Runner.run(agent, "Refund ticket T-1")
+    (approval,) = openai_agents.pending_approvals(result)  # show this to a reviewer
+
+state = result.to_state()
+async with donkey.run(id=approval.correlation_id):
+    openai_agents.approve(state, approval, by="m.keller")
+    done = await Runner.run(agent, state)
+```
+
+`pending_approvals(result)` returns an `Approval` for each paused call to a
+gated tool and records its pending span event. It skips interruptions it did
+not gate, so your own `needs_approval` tools are left to you. `approve(state,
+approval, by=...)` records the approver and approves the call on the
+`RunState`, and the next `Runner.run(agent, state)` runs the tool once.
+`approve` and `reject` also take the approval's id, and raise `KeyError` for an
+id with no paused call in the state. `by` must be a non-empty string, and DDK
+records it without authenticating it.
+
+`reject(state, approval, by=..., message=None)` records the rejecter and
+rejects the call. The tool does not run, and the run goes on: the Agents SDK
+hands the model `message`, or a default that names the tool, as the tool's
+result. It does not raise `ApprovalRejected`, and the rejecter's name never
+reaches the model.
+
+The pause lives in the `RunState`, not in `donkey.approvals`. It survives
+`state.to_string()` and `RunState.from_string(agent, ...)`, and the approval id
+joins the pending and approved events because DDK derives it from the call id,
+the tool and the arguments. Decide through `approve` and `reject`: calling
+`RunState.approve` yourself runs the tool with no approver on record, and DDK
+does not offer the SDK's `always_approve` or `always_reject`, which would let
+later calls run with no decision recorded.
+
+The resumed tool runs under the correlation id of the `donkey.run()` that
+resumes the run, or the approval's own outside a run. A model call the approved
+tool makes is judged by the gateway as usual, and its refusal leaves
+`Runner.run` typed instead of becoming a tool result.
+
+Wrap a gated tool with the DDK `function_tool`, not the SDK's own
+`agents.function_tool`. The SDK's own wrapper does not pause: the gate raises
+`ApprovalRequired`, and the SDK hands it to the model as a tool-result string.
+The DDK `function_tool` refuses a `needs_approval` keyword for a gated tool, and
+if the SDK's approval is switched off on the built tool, `ApprovalRequired`
+leaves `donkey.run()` typed and the tool does not run.
+
 ## Discovered tools Roadmap
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
@@ -4375,14 +4448,15 @@ does not know it was needed until step-up routes it through the gateway.
 ## Mapped onto what your framework already has
 
 DDK does not introduce a new pause mechanism. The raise-and-resume form above
-works in any Python code, and LangGraph's own `interrupt()` is mapped. Mapping
-the same vocabulary onto the other frameworks' primitives is planned:
+works in any Python code, and LangGraph's own `interrupt()` and the OpenAI
+Agents SDK's `needs_approval` are mapped. Mapping the same vocabulary onto the
+other frameworks' primitives is planned:
 
 | Framework / protocol | Native primitive | Status |
 |---|---|---|
 | Any Python code | `ApprovalRequired` + `donkey.approvals.resolve(...)` | Live |
 | LangGraph | `interrupt()` / `Command(resume=…)` | Live |
-| OpenAI Agents SDK | tool-approval / guardrail hooks | Roadmap |
+| OpenAI Agents SDK | `needs_approval` / `RunState.approve(…)` | Live |
 | Google ADK | before/after tool callbacks | Roadmap |
 | Strands | hooks | Roadmap |
 | MCP | elicitation | Roadmap |
@@ -7457,12 +7531,11 @@ CI runs both the demo and this conformance pass on every pull request (the
 `openai-agents-demo` job), and the nightly matrix re-runs them against the
 newest Agents SDK release.
 
-  **One asserted exemption: approval round trip.** Under `Runner.run`, the
-  Agents SDK turns an exception raised inside a `function_tool` into a
-  tool-result string for the model, so an `@donkey.tool(approval="required")`
-  gate never pauses the run. It is a documented, test-pinned exemption, not a
-  silent skip; mapping DDK approvals onto the SDK's own `needs_approval`
-  interruptions is tracked in #213. Every other conformance scenario passes.
+  **No asserted exemption.** Every conformance scenario passes, approval round
+  trip included: an `@donkey.tool(approval="required")` wrapped with
+  `openai_agents.function_tool` pauses `Runner.run` on the SDK's own
+  `needs_approval` and resumes from the `RunState` (#213). See
+  [Human approval](https://docs.donkey-kit.dev/hitl.md#in-an-openai-agents-sdk-run).
 
   **Honest note on the block.** The simulator triggers on the request *count*
   (`every=5`), not by scanning content — it replays a captured fixture, it is

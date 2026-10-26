@@ -81,10 +81,11 @@ CONFORMANCE_SCENARIOS = [
     # happens in our transport, so CrewAI records an asserted exemption below.
     "agent_killed_stops_cleanly",
     # An approval-gated tool pauses with the framework's own primitive (the raw
-    # client raises ApprovalRequired; LangGraph calls interrupt()), sends nothing
-    # while paused, records the approver on resume, and its resumed model call is
-    # still judged by the gateway: a refusal comes back typed, under the decision
-    # event's correlation id (BG §2.3, #211, #212). The resumed call needs our
+    # client raises ApprovalRequired; LangGraph calls interrupt(); the OpenAI
+    # Agents SDK stops on needs_approval), sends nothing while paused, records
+    # the approver on resume, and its resumed model call is still judged by the
+    # gateway: a refusal comes back typed, under the decision event's
+    # correlation id (BG §2.3, #211, #212, #213). The resumed call needs our
     # transport, so CrewAI records an asserted exemption below.
     "approval_round_trip",
 ]
@@ -227,20 +228,6 @@ _CREWAI_APPROVAL_EXEMPTION = (
     "pause and the approver's span event work as for any Python code (#211)."
 )
 
-# approval_round_trip for the OpenAI Agents SDK: the Agents SDK runs a
-# function_tool under its own failure_error_function, which by default turns any
-# exception the tool raises into a fixed tool-result string for the model. The
-# gate's ApprovalRequired is such an exception, so it never reaches user code and
-# the run carries on. Mapping a DDK approval onto the SDK's native needs_approval
-# interruption is #213. test_approval_round_trip.py pins the swallowed pause, so
-# this entry fails loudly once #213 changes it.
-_AGENTS_APPROVAL_EXEMPTION = (
-    "The Agents SDK turns an exception raised inside a function_tool into a "
-    "tool-result string for the model (its default failure_error_function), so "
-    "ApprovalRequired never reaches user code and there is no pause to resume; "
-    "the native needs_approval mapping is #213."
-)
-
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # CrewAI raises a framework error the bridge cannot type. ADK records no
     # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
@@ -255,8 +242,6 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "agent_killed_stops_cleanly": _CREWAI_KILL_EXEMPTION,
         "approval_round_trip": _CREWAI_APPROVAL_EXEMPTION,
     },
-    # Deep since #223: every other scenario runs against a Runner.run surface.
-    "openai_agents": {
-        "approval_round_trip": _AGENTS_APPROVAL_EXEMPTION,
-    },
+    # The OpenAI Agents SDK records no exemption: deep since #223, every scenario
+    # runs against a Runner.run surface, approval_round_trip since #213.
 }

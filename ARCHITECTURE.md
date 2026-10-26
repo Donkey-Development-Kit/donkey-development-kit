@@ -674,10 +674,10 @@ entire supported surface for six of the eight. A framework is promoted to deep
 support from demand evidence, one at a time — never guessed up front. The
 demotion landed in #197 and deepening LangGraph in #198; the OpenAI Agents SDK
 was promoted second, on Phase 1 demand (#223), and the next promotion is #244.
-Its one asserted exemption is `approval_round_trip`: under `Runner.run` the
-Agents SDK turns an exception raised inside a `function_tool` into a
-tool-result string, so the approval gate never pauses (#213 owns the native
-`needs_approval` mapping).
+It records no asserted exemption: an approval-gated `@donkey.tool` wrapped by
+`openai_agents.function_tool` sets the SDK's own `needs_approval`, so
+`Runner.run` pauses into `RunState` interruptions, and `approve` / `reject`
+record the decision before the run resumes (#213).
 
 **Conformance is how "supported" is proven, not asserted.** One suite
 (`python/tests/conformance/suite.py`) runs identically against every adapter. A

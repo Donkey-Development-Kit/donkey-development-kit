@@ -46,11 +46,10 @@ client the adapter builds itself — correct base URL (no `/v1`),
 the SDK's shared transport (retry/telemetry hooks). It is the Agents SDK's own
 class, not a wrapper, so it drops straight into `agents.Agent(model=...)`.
 
-**One asserted exemption.** Under `Runner.run`, an exception raised inside a
-`function_tool` becomes a tool-result string for the model, so an
-`@donkey.tool(approval="required")` gate never pauses the run. It is recorded in
-the conformance kit's `KNOWN_LIMITATIONS` and pinned by a test; mapping DDK
-approvals onto the SDK's own `needs_approval` interruptions is #213.
+**No asserted exemption.** An `@donkey.tool(approval="required")` wrapped with
+`donkey_kit.integrations.openai_agents.function_tool` pauses `Runner.run` on the
+SDK's own `needs_approval`; `pending_approvals`, `approve` and `reject` record the
+decision on the `RunState` before the run resumes (#213).
 
 > 📖 **Prefer reading to running?** The canonical walkthrough is in the docs:
 > **[Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk)**,

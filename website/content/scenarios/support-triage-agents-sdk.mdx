@@ -118,13 +118,12 @@ CI runs both the demo and this conformance pass on every pull request (the
 `openai-agents-demo` job), and the nightly matrix re-runs them against the
 newest Agents SDK release.
 
-<Callout type="warning">
-  **One asserted exemption: approval round trip.** Under `Runner.run`, the
-  Agents SDK turns an exception raised inside a `function_tool` into a
-  tool-result string for the model, so an `@donkey.tool(approval="required")`
-  gate never pauses the run. It is a documented, test-pinned exemption, not a
-  silent skip; mapping DDK approvals onto the SDK's own `needs_approval`
-  interruptions is tracked in #213. Every other conformance scenario passes.
+<Callout type="info">
+  **No asserted exemption.** Every conformance scenario passes, approval round
+  trip included: an `@donkey.tool(approval="required")` wrapped with
+  `openai_agents.function_tool` pauses `Runner.run` on the SDK's own
+  `needs_approval` and resumes from the `RunState` (#213). See
+  [Human approval](/hitl#in-an-openai-agents-sdk-run).
 </Callout>
 
 <Callout type="info">

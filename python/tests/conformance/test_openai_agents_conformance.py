@@ -28,8 +28,8 @@ import pytest
 from donkey_kit.conformance import run_conformance
 
 # The four public scenarios, all expected to pass: full-transport injection
-# means none is exempt. The adapter's one asserted exemption,
-# approval_round_trip, is internal-only (tests/conformance/suite.py).
+# means none is exempt. Neither is the internal-only approval_round_trip
+# (tests/conformance/suite.py): the adapter maps it onto needs_approval (#213).
 _EXPECTED_SCENARIOS = {
     "retries_token_budget",
     "swallows_pii_as_generic",
