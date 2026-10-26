@@ -44,6 +44,12 @@ the gateway sends it on every ``200`` as well as on its ``429`` (when the policy
 sets ``exposeHeaders: true``, docs/verified-apis.md §4). :meth:`Budget.pace`
 refuses when *either* window has reached the reserve.
 
+A third source is the **upstream provider's** own quota (#1025),
+``donkey.budget.upstream.requests`` and ``.tokens`` (each an
+:class:`UpstreamWindow`), from the suffixed ``x-ratelimit-*-requests`` /
+``-tokens`` headers the gateway passes through. It is labelled apart and never
+mixed into the gateway's windows, and :meth:`Budget.pace` does not guard on it.
+
 A gateway kill ends pacing for good (BG §2.6, #220). The transport hands every
 :class:`~donkey_kit.core.errors.AgentKilled` refusal to
 :meth:`Budget.observe_refusal`, after which :meth:`Budget.pace` and
@@ -61,14 +67,18 @@ import copy
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import httpx
 
 from . import _wire
+from ._budget_headers import parse_go_duration as _parse_go_duration
 from ._budget_headers import parse_int as _parse_int
 from ._budget_headers import parse_ratelimit_prose as _parse_ratelimit_prose
 from ._budget_headers import received_at as _received_at
+from ._window import Window as _Window
+from ._window import reached as _reached
+from ._window import record as _record
 from .errors import AgentKilled, BudgetReserveReached, DonkeyError
 from .lastcall import is_cache_hit
 
@@ -82,6 +92,8 @@ __all__ = [
     "RESET_HEADER",
     "Budget",
     "RequestWindow",
+    "UpstreamQuota",
+    "UpstreamWindow",
 ]
 
 # The three numeric budget headers of the token-rate-limit policy
@@ -103,6 +115,19 @@ REQUEST_LIMIT_HEADER = _wire.REQUEST_LIMIT_HEADER
 REQUEST_REMAINING_HEADER = _wire.REQUEST_REMAINING_HEADER
 REQUEST_RESET_HEADER = _wire.REQUEST_RESET_HEADER
 
+# The upstream provider's passthrough (docs/verified-apis.md §4, "Upstream
+# provider window", #1025): suffixed names, Go-duration resets.
+_UPSTREAM_REQUESTS = (
+    _wire.UPSTREAM_REQUEST_LIMIT_HEADER,
+    _wire.UPSTREAM_REQUEST_REMAINING_HEADER,
+    _wire.UPSTREAM_REQUEST_RESET_HEADER,
+)
+_UPSTREAM_TOKENS = (
+    _wire.UPSTREAM_TOKEN_LIMIT_HEADER,
+    _wire.UPSTREAM_TOKEN_REMAINING_HEADER,
+    _wire.UPSTREAM_TOKEN_RESET_HEADER,
+)
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -112,62 +137,6 @@ def _wake(future: asyncio.Future[None]) -> None:
     """End a :meth:`Budget.wait_for_reset` sleep, at most once."""
     if not future.done():
         future.set_result(None)
-
-
-class _Window:
-    """One rate-limit window's observed state: the five fields both windows
-    share."""
-
-    def __init__(self) -> None:
-        self.limit: int | None = None
-        self.remaining: int | None = None
-        self.reset_at: datetime | None = None
-        self.observed_at: datetime | None = None
-
-    @property
-    def fraction_used(self) -> float | None:
-        """Fraction of the window consumed, ``0.0``-``1.0``, or ``None`` while
-        unobserved or when ``limit`` is non-positive (no window to divide by).
-        Clamped: a ``remaining`` above ``limit`` (a window that reset between
-        calls) reports ``0.0`` rather than a negative fraction."""
-        if self.limit is None or self.remaining is None or self.limit <= 0:
-            return None
-        used = (self.limit - self.remaining) / self.limit
-        return min(1.0, max(0.0, used))
-
-
-def _record(
-    window: _Window,
-    limit: int | None,
-    remaining: int | None,
-    reset_ms: int | None,
-    ts: datetime,
-) -> None:
-    """Apply whichever fields resolved to ``window``. All ``None`` is a no-op, so
-    a response without this window's signal leaves ``observed_at`` untouched. So
-    is an observation older than the window's ``observed_at``: the fresher state
-    stays (#311)."""
-    if limit is None and remaining is None and reset_ms is None:
-        return
-    if window.observed_at is not None and ts < window.observed_at:
-        return
-    window.observed_at = ts
-    if limit is not None:
-        window.limit = limit
-    if remaining is not None:
-        window.remaining = remaining
-    if reset_ms is not None:
-        window.reset_at = ts + timedelta(milliseconds=reset_ms)
-
-
-def _reached(window: _Window, reserve: float, current: datetime) -> float | None:
-    """``window``'s used fraction if it has reached ``1.0 - reserve`` and has not
-    yet reset, else ``None``."""
-    used = window.fraction_used
-    expired = window.reset_at is not None and current >= window.reset_at
-    if used is not None and used >= 1.0 - reserve and not expired:
-        return used
-    return None
 
 
 class RequestWindow(_Window):
@@ -182,8 +151,58 @@ class RequestWindow(_Window):
     the trio; the policy sends it only with ``exposeHeaders: true``.
 
     The upstream provider's own ``x-ratelimit-*-requests`` headers are a
-    different window (the provider's quota, not the gateway's) and are not read.
+    different window (the provider's quota, not the gateway's), read into
+    :attr:`Budget.upstream` instead (#1025).
     """
+
+
+class UpstreamWindow(_Window):
+    """One window of the upstream provider's own quota, as the gateway passes it
+    through (#1025): ``donkey.budget.upstream.requests`` or ``.tokens``.
+
+    Read from the suffixed ``x-ratelimit-{limit,remaining,reset}-requests``
+    headers (or ``-tokens``), which OpenAI and Azure OpenAI send. The five fields
+    mean what they mean on :class:`Budget`; :attr:`provider` names the upstream.
+    The reset is a Go duration (``12ms``, ``1m30s``); one with no unit, like Azure
+    OpenAI's ``0``, is not read. Each observation replaces the whole window, so a
+    routed proxy never pairs one provider's reset with another's count.
+
+    This is the provider key's quota, shared by everything the gateway sends
+    through it, not this client's allowance, so :meth:`Budget.pace` does not
+    guard on it. Read :attr:`fraction_used` to act on it yourself.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        #: The upstream the last observation came from, e.g. ``"openai"``.
+        self.provider: str | None = None
+
+
+class UpstreamQuota:
+    """The upstream provider's quota windows, ``donkey.budget.upstream`` (#1025),
+    kept apart from the gateway's so neither source overwrites the other."""
+
+    def __init__(self) -> None:
+        #: Requests per window (``x-ratelimit-*-requests``).
+        self.requests = UpstreamWindow()
+        #: Tokens per window (``x-ratelimit-*-tokens``).
+        self.tokens = UpstreamWindow()
+
+
+def _observe_upstream(
+    window: UpstreamWindow, headers: httpx.Headers, names: tuple[str, str, str], ts: datetime
+) -> None:
+    """Replace ``window`` with this response's upstream signal, if it has one that
+    is not older than the last (#311)."""
+    limit, remaining = (_parse_int(headers.get(name)) for name in names[:2])
+    reset_ms = _parse_go_duration(headers.get(names[2]))
+    if limit is None and remaining is None and reset_ms is None:
+        return
+    if window.observed_at is not None and ts < window.observed_at:
+        return
+    window.limit = window.remaining = window.reset_at = None
+    _record(window, limit, remaining, reset_ms, ts)
+    window.provider = headers.get(_wire.LLM_PROVIDER_HEADER)
 
 
 class Budget(_Window):
@@ -216,6 +235,8 @@ class Budget(_Window):
         super().__init__()
         #: The gateway's request-count window (``x-ratelimit-*``).
         self.requests = RequestWindow()
+        #: The upstream provider's own quota, passed through (#1025).
+        self.upstream = UpstreamQuota()
         # The window the last pace() refusal named; wait_for_reset() waits on it.
         # Sticky: a later pass through pace() leaves it alone, so a concurrent
         # task's success cannot redirect another task's pending wait.
@@ -277,6 +298,8 @@ class Budget(_Window):
 
         The same response also fills :attr:`requests` from the ``x-ratelimit-*``
         trio, independently: either window can be observed without the other.
+        The upstream provider's suffixed ``x-ratelimit-*-requests`` / ``-tokens``
+        headers fill :attr:`upstream` the same way, and touch neither (#1025).
 
         **Ordering (#311): the freshest observation wins, not the last to
         arrive.** A response's observation time is when its headers came back
@@ -328,6 +351,8 @@ class Budget(_Window):
         with self._state_lock:
             _record(self, limit, remaining, reset_ms, ts)
             _record(self.requests, *requests, ts)
+            _observe_upstream(self.upstream.requests, headers, _UPSTREAM_REQUESTS, ts)
+            _observe_upstream(self.upstream.tokens, headers, _UPSTREAM_TOKENS, ts)
 
     @asynccontextmanager
     async def pace(

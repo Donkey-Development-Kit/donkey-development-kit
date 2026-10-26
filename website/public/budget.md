@@ -48,6 +48,30 @@ donkey.budget.requests.fraction_used  # 0.0–1.0
 All of them are `None` until a response carrying the trio is observed. Unlike
 the token trio, the gateway sends this one on every `200` as well as the `429`.
 
+The upstream provider's own quota, which OpenAI and Azure OpenAI pass through
+the gateway as `x-ratelimit-{limit,remaining,reset}-requests` (and `-tokens`), is
+a separate source: `donkey.budget.upstream.requests` and
+`donkey.budget.upstream.tokens`, each an `UpstreamWindow` with the same five
+fields plus `provider` (the upstream it came from):
+
+```python
+donkey.budget.upstream.requests.remaining      # e.g. 4999 of 5000
+donkey.budget.upstream.requests.reset_at       # from a Go duration such as "12ms"
+donkey.budget.upstream.requests.provider       # "openai"
+donkey.budget.upstream.tokens.fraction_used
+```
+
+- It is **observe-only**: `pace()` does not guard on it. It is the provider
+  key's quota, shared by everything the gateway sends through that key, not
+  your allowance, and on a routed proxy the next call can go to another
+  upstream. Read `fraction_used` if you want to act on it.
+- Each response replaces the whole window, so one upstream's reset is never
+  paired with another's count.
+- The reset is a Go duration (`12ms`, `0s`, `1m30s`). Azure OpenAI sends a bare
+  `0` with no unit even while the window is part-spent, so its `reset_at` stays
+  `None`.
+- Bedrock and Gemini send no such headers, so the window stays `None`.
+
 And two helpers that use it:
 
 ```python
@@ -191,7 +215,8 @@ transport does not see the context variable, so its calls are not steered.
 - A semantic-cache hit does not update either window. Whether a hit counts
   against the gateway's request limit is `UNVERIFIED`.
 - The upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens`
-  headers are a different window and are not read.
+  headers are a different window. They fill `donkey.budget.upstream` (below),
+  never `donkey.budget.requests` or the token window.
 
 ## Behaviour guarantees
 

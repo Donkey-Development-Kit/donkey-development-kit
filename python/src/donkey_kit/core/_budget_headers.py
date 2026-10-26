@@ -10,7 +10,13 @@ from datetime import datetime, timezone
 
 import httpx
 
-__all__ = ["parse_int", "parse_ratelimit_prose", "received_at", "stamp_received"]
+__all__ = [
+    "parse_go_duration",
+    "parse_int",
+    "parse_ratelimit_prose",
+    "received_at",
+    "stamp_received",
+]
 
 # Matches `… 10000 tokens remaining of 10000 limit. Reset in 56711ms.`. Requires
 # all three values: a partial or reworded sentence fails to match and is treated
@@ -22,6 +28,22 @@ _RATELIMIT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# A Go duration (``time.ParseDuration``): one or more decimal numbers, each with a
+# unit, e.g. ``12ms``, ``0s``, ``1m30s``, ``1.5h`` (#1025). Go's "µs" is accepted in
+# both its micro sign (U+00B5) and Greek mu (U+03BC) spellings, as Go does.
+_GO_UNIT_MS = {
+    "ns": 1e-6,
+    "us": 1e-3,
+    "µs": 1e-3,
+    "μs": 1e-3,
+    "ms": 1.0,
+    "s": 1e3,
+    "m": 60e3,
+    "h": 3600e3,
+}
+_GO_PART = r"(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)"
+_GO_DURATION_RE = re.compile(rf"(?:{_GO_PART})+")
+_GO_PART_RE = re.compile(_GO_PART)
 
 # The response extension holding when its headers arrived (#311). The governed
 # transport sets it as the response comes back from the wire, before the body is
@@ -52,6 +74,23 @@ def parse_int(raw: str | None) -> int | None:
         return int(raw)
     except ValueError:
         return None
+
+
+def parse_go_duration(raw: str | None) -> float | None:
+    """A Go duration string (``12ms``, ``0s``, ``1m30s``) as milliseconds, or
+    ``None`` if absent or not that shape (#1025).
+
+    The upstream provider's ``x-ratelimit-reset-*`` passthrough uses this form,
+    not the gateway's ms count. A unit is required: a bare number (Azure OpenAI
+    sends ``0`` even while the window is part-spent) has no stated unit, so it is
+    no signal rather than a guessed one. Like :func:`parse_int` it never raises.
+    A leading sign is not accepted: a time *until* reset is never negative."""
+    if raw is None:
+        return None
+    value = raw.strip()
+    if _GO_DURATION_RE.fullmatch(value) is None:
+        return None
+    return sum(float(n) * _GO_UNIT_MS[unit] for n, unit in _GO_PART_RE.findall(value))
 
 
 def parse_ratelimit_prose(raw: str | None) -> tuple[int | None, int | None, int | None]:

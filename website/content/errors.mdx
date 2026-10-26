@@ -90,7 +90,8 @@ A `429` carrying `x-ratelimit-limit` and `x-ratelimit-remaining` and no
 and is classified as `TokenBudgetExceeded`. `retry_after` comes from
 `retry-after` if present, else from `x-ratelimit-reset` (milliseconds). The
 upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens` headers are
-a different window and are not read.
+a different window: they fill `donkey.budget.upstream` and play no part in
+classification.
 
 Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the ten
 policy-rejection rows.

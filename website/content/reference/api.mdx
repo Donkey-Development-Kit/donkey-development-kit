@@ -586,6 +586,8 @@ is raised.
 | `ToolSpec` | class | An introspectable record of a `@donkey.tool`-marked callable. |
 | `ToolsFacade` | class | `donkey.tools` — discovery + lock. |
 | `TypedRefusals` | class | Re-raise a refusal from the block as its typed `DonkeyError`. |
+| `UpstreamQuota` | class | The upstream provider's quota windows, `donkey.budget.upstream`, kept apart from the gateway's so neither source overwrites the other. |
+| `UpstreamWindow` | class | One window of the upstream provider's own quota, as the gateway passes it through: `donkey.budget.upstream.requests` or `.tokens`. |
 | `classify` | callable object | `classify`: call it to map an error response to a typed `DonkeyError`; register a custom policy's refusal shape on it. |
 | `registered_agents` | function | Every entry point marked with `@donkey.agent` in this process, in decoration order. |
 | `registered_tools` | function | Every callable marked with `@donkey.tool` in this process, in decoration order. The introspection entry point for the scanner / card generator. |

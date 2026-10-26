@@ -7,7 +7,7 @@ HARD RULE (the layered architecture): nothing in this package may import from
 from __future__ import annotations
 
 from .auth import AnypointConnectedApp, AuthProvider, ChainedAuth, StaticToken
-from .budget import Budget, RequestWindow
+from .budget import Budget, RequestWindow, UpstreamQuota, UpstreamWindow
 from .cache import TTLCache
 from .cachecontrol import CacheControls, CacheScope, cache_scope, current_cache_controls
 from .classifier import Classifier, PolicyRegistration, classify
@@ -96,7 +96,9 @@ __all__ = [
     "TokenBudgetExceeded",
     "ToolInvocationError",
     "UpstreamModelError",
+    "UpstreamQuota",
     "UpstreamRequestError",
+    "UpstreamWindow",
     "attribution_headers",
     "build_http_client",
     "build_sync_http_client",

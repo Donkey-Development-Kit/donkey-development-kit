@@ -38,7 +38,7 @@ if TYPE_CHECKING:
         Approvals,
         ApprovalTimedOut,
     )
-    from .core.budget import Budget, RequestWindow
+    from .core.budget import Budget, RequestWindow, UpstreamQuota, UpstreamWindow
     from .core.cachecontrol import CacheControls, CacheScope
     from .core.classifier import Classifier, PolicyRegistration, classify
     from .core.config import ConfigOverrides, DonkeyConfig, Region
@@ -91,6 +91,8 @@ _LAZY = {
     "Budget": ".core.budget",
     "BudgetReserveReached": ".core.errors",
     "RequestWindow": ".core.budget",
+    "UpstreamQuota": ".core.budget",
+    "UpstreamWindow": ".core.budget",
     "CacheControls": ".core.cachecontrol",
     "CacheScope": ".core.cachecontrol",
     "ConfigError": ".core.errors",
@@ -237,7 +239,9 @@ __all__ = [
     "ToolsFacade",
     "TypedRefusals",
     "UpstreamModelError",
+    "UpstreamQuota",
     "UpstreamRequestError",
+    "UpstreamWindow",
     "__version__",
     "classify",
     "registered_agents",
