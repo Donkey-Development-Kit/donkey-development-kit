@@ -329,6 +329,6 @@ def test_the_scoped_otlp_provider_is_kept_for_the_flush(
     monkeypatch.setattr(telemetry, "_host_provider_set", lambda: False)
     try:
         telemetry.configure_otlp_export(DonkeyConfig())
-        assert spanflush._scoped is scoped
+        assert spanflush._owned is scoped
     finally:
         scoped.shutdown()

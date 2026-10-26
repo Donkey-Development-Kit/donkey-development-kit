@@ -272,6 +272,16 @@ donkey.simulate(
 
 Inject a real gateway refusal in-process, no server.
 
+### `donkey.flush_telemetry()`
+
+```python nocheck
+donkey.flush_telemetry(timeout_s: float = 2.0) -> bool
+```
+
+Export the spans DDK's own `TracerProvider` still holds, waiting up to `timeout_s`, before a serverless runtime freezes the process or a script exits.
+
+Guide: [`/telemetry`](https://docs.donkey-kit.dev/telemetry.md)
+
 ### `donkey.aclose()`
 
 ```python nocheck
