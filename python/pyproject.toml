@@ -630,7 +630,8 @@ type = "layers"
 # independent: its members never import each other. `exhaustive` makes a new
 # core module fail until it is placed. _response (the structural response
 # Protocols, #933) imports nothing from core, so it sits at the bottom, as does
-# _budget_headers (budget's header parsers and receive-time stamp, #311).
+# _budget_headers (budget's header parsers and receive-time stamp, #311) and
+# _window (the window state every budget window shares, #1025).
 containers = ["donkey_kit.core"]
 exhaustive = true
 layers = [
@@ -644,7 +645,7 @@ layers = [
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",
-    "_wire | _response | _budget_headers",
+    "_wire | _response | _budget_headers | _window",
 ]
 
 [[tool.importlinter.contracts]]

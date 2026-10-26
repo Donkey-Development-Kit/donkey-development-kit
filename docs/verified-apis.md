@@ -522,9 +522,38 @@ The `x-ratelimit-limit-tokens` / `x-ratelimit-remaining-tokens` /
 are the **upstream provider's** own quota, passed straight through — not the
 gateway's budget. Their reset values are Go-style **duration strings** (`0s`,
 `12ms`), **not** integer milliseconds, so they must not be parsed with the
-`x-token-*` / `ms` rule. The SDK does not read them. They are also not the
-gateway's request window below, which uses the **unsuffixed** names
-`x-ratelimit-limit` / `-remaining` / `-reset`.
+`x-token-*` / `ms` rule. They are also not the gateway's request window below,
+which uses the **unsuffixed** names `x-ratelimit-limit` / `-remaining` /
+`-reset`. The SDK reads them into their own source, below.
+
+**Upstream provider window (LIVE-VERIFIED 2026-10-08, #1025).** Which upstream
+sends the passthrough, and in what shape, from the per-upstream route captures
+(`tests/fixtures/anypoint/routes/`, #894) and the request-rate-limit captures
+(`tests/fixtures/anypoint/request_rate_limit/`, #974):
+
+| Upstream | `x-ratelimit-{limit,remaining}-{requests,tokens}` | `x-ratelimit-reset-{requests,tokens}` | Read as | Status |
+|---|---|---|---|---|
+| `openai` | integers (`5000` / `4999`; `2000000` / `1999990`) | Go duration with a unit: `12ms`, `24ms`, `0s`, `2ms`, `6ms` | `reset_at` = `observed_at` + the duration | VERIFIED (LIVE) |
+| `azureopenai` | integers (`250` / `249`; `250000` / `249987`) | bare `0`, no unit, sent while `remaining < limit`; plus `x-ratelimit-renewalperiod-*: 60` and `x-ratelimit-key` | counts only; `reset_at` stays `None` | VERIFIED (LIVE) (shape); reset meaning UNVERIFIED |
+| `bedrockanthropic`, `gemini` | not sent | not sent | window stays unobserved | VERIFIED (LIVE) (absent) |
+
+`Budget.observe()` fills `donkey.budget.upstream.requests` / `.tokens` (each an
+`UpstreamWindow`, with `provider` from `x-llm-proxy-llm-provider`). Each
+response replaces the whole window. The source never writes the gateway's
+token window or `donkey.budget.requests`, and they never write it.
+`tests/unit/test_budget_upstream.py` pins that on a capture carrying both. The
+reset parser (`core/_budget_headers.parse_go_duration`) takes Go's
+`time.ParseDuration` grammar with a unit required. Only `ms` and `s` appear in
+the captures, and the other units come from Go's grammar, not a capture.
+
+`Budget.pace()` **does not** guard on this window. It is the provider key's
+quota, shared by every consumer of the proxy, not the caller's allowance. It
+also depends on the route: a model-based or semantic route can send the next
+call to another upstream, or to one that sends no such header. Azure gives no
+reset time it states a unit for. Still **UNVERIFIED**: what Azure's bare `0`
+means, whether `x-ratelimit-renewalperiod-*` (not read) is in seconds, and the
+shape of an upstream-quota `429` passed through the gateway (not captured, so
+`classify()` treats it as any other `429`).
 
 **Request window emission (LIVE-VERIFIED 2026-10-07, #974).** The stock
 `rate-limiting` policy counts requests per window. With `exposeHeaders: true`

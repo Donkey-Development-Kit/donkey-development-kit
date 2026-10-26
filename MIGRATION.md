@@ -387,7 +387,9 @@ typed-refusal bridge is new as `donkey_kit.typed_refusals` and
 `donkey_kit.TypedRefusals` (#724), and `donkey_kit.integrations` exports
 `AdapterProtocol` and `AdapterCapabilities` (#726). `RequestRateLimitExceeded`
 and `RequestWindow` (the type of `donkey.budget.requests`) are new in
-`donkey_kit` (#974).
+`donkey_kit` (#974). `UpstreamQuota` and `UpstreamWindow` (`donkey.budget.upstream`, the
+upstream provider's own passthrough quota, read but never paced on) are new in
+`donkey_kit` (#1025).
 
 ### LlamaIndex, Agent Framework and ADK `model()` report `last_call` (not breaking)
 
