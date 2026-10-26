@@ -463,8 +463,16 @@ vocabulary onto the other frameworks' primitives is planned:
 | OpenAI Agents SDK | `needs_approval` / `RunState.approve(…)` | <Badge tone="live">Live</Badge> |
 | Google ADK | before/after tool callbacks | <Badge tone="roadmap">Roadmap</Badge> |
 | Strands | `BeforeToolCallEvent` interrupt, via `ApprovalHook` | <Badge tone="live">Live</Badge> |
-| MCP | elicitation | <Badge tone="roadmap">Roadmap</Badge> |
+| MCP | elicitation | <Badge tone="neutral">Not supported</Badge> |
 | Omni Gateway | Trusted Agent Identity step-up (MFA) | <Badge tone="roadmap">Roadmap</Badge> |
+
+MCP elicitation is not a client-side approval, so DDK does not map onto it. A
+server sends `elicitation/create` to ask the user something while it handles a
+request. The direction is server to client, so a client cannot use it to hold a
+call it is about to send, and there is nothing for it to pause or resume.
+Governed MCP tools get their approval from
+[`require_approval()`](#discovered-tools-roadmap) on the `ToolSet` instead, which gates
+the call before it leaves the client once binding ships.
 
 ## What DDK does not build
 

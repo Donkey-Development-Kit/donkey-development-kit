@@ -12,6 +12,11 @@ through the same native hook (#212).
 
 The approval is client-side and advisory, as for ``@donkey.tool``: the gateway
 never learns that an approval was needed. Gateway step-up is #214.
+
+MCP elicitation is not used, and is not a mapping target (#1236). A server
+sends ``elicitation/create`` to the client while it handles a request, so it
+cannot hold a call the client has not sent yet; the gate here holds it before
+the binding's invoker sends it.
 """
 
 from __future__ import annotations
