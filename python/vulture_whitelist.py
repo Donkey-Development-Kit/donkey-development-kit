@@ -169,3 +169,10 @@ input  # unused variable (src/donkey_kit/a2a/types.py)
 # BeforeToolCallEvent.cancel_tool (BG §2.3, #1234).
 _.register_hooks  # unused method (src/donkey_kit/integrations/strands.py)
 _.cancel_tool  # unused attribute (src/donkey_kit/integrations/strands.py)
+# ADK calls a BasePlugin's tool and run callbacks and reads
+# ToolContext.actions.skip_summarization (BG §2.3, #1235).
+_.before_tool_callback  # unused method (src/donkey_kit/integrations/adk.py)
+_.after_tool_callback  # unused method (src/donkey_kit/integrations/adk.py)
+_.on_tool_error_callback  # unused method (src/donkey_kit/integrations/adk.py)
+_.after_run_callback  # unused method (src/donkey_kit/integrations/adk.py)
+_.skip_summarization  # unused attribute (src/donkey_kit/integrations/adk.py)

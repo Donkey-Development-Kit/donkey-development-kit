@@ -277,6 +277,11 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   place, with LiteLLM's error on `framework_error`. Outside those scopes, and
   without `typed_refusals()`, you get LiteLLM's error unchanged; see the
   [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
+- **Approval-gated tools pause the run.** Add `approval_plugin()` from
+  `donkey_kit.integrations.adk` to the `App`'s `plugins`, and a
+  `@donkey.tool(approval="required")` call pauses with ADK's own tool
+  confirmation. Resume it with `approve(...)` or `reject(...)`. See
+  [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-google-adk-app).
 - **`gemini()` needs the `adk` extra's minimum `google-adk`** (see
   [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)), the first release whose
   `Gemini` accepts `client_kwargs`. On an older

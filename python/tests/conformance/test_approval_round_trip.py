@@ -21,6 +21,11 @@ an agent whose ``ApprovalHook`` pauses the call with Strands' interrupt, using a
 scripted Strands model so only the tool's own model call reaches the gateway.
 Strands hands a tool's exception to the model as an error tool result, outside
 any typed-refusal bridge, so the refusal is asserted where the tool catches it.
+Google ADK is supported at ``connection_kwargs()`` only too (#1235):
+:func:`test_an_adk_agent_pauses_with_its_own_tool_confirmation` pauses the call
+with ADK's tool confirmation through ``approval_plugin()`` and resumes it with
+a fresh plugin and runner on the same session, as a new process would, with
+the refusal asserted the same way.
 """
 
 from __future__ import annotations
@@ -340,6 +345,105 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
     assert approved_attrs["donkey.approval.id"] == pending_attrs["donkey.approval.id"]
     # The resumed call went to the gateway under the decision's correlation id,
     # and the gateway refused it: the approval did not lift it.
+    (refused,) = refusals
+    assert isinstance(refused, PIIDetected)
+    assert refused.correlation_id == approved_attrs["donkey.correlation_id"] == _PAUSE_RUN
+
+
+async def test_an_adk_agent_pauses_with_its_own_tool_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The round trip under an ADK app with the approval plugin (#1235), resumed
+    by a fresh plugin and runner on the same session, as a new process would."""
+    pytest.importorskip("openai")
+    pytest.importorskip("google.adk")
+    from google.adk.agents import LlmAgent
+    from google.adk.apps import App
+    from google.adk.models import BaseLlm, LlmResponse
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+
+    from donkey_kit.integrations.adk import approval_plugin, approve, pending_approvals
+
+    class AsksForRefund(BaseLlm):
+        """Asks for ``issue_refund`` once, then answers. Never calls a gateway."""
+
+        async def generate_content_async(self, llm_request: Any, stream: bool = False) -> Any:
+            answered = any(
+                part.function_response is not None
+                for content in llm_request.contents
+                for part in content.parts or ()
+            )
+            if answered:
+                part = types.Part(text="done")
+            else:
+                call = types.FunctionCall(id="fc-1", name="issue_refund", args={"ticket_id": "T-1"})
+                part = types.Part(function_call=call)
+            yield LlmResponse(content=types.Content(role="model", parts=[part]))
+
+    exporter = _exporter(monkeypatch)
+    refusals: list[DonkeyError | None] = []
+    sessions = InMemorySessionService()
+
+    async with Donkey(_cfg()) as donkey:
+        client = donkey.openai()
+
+        @donkey.tool(approval="required", risk="financial")
+        async def issue_refund(ticket_id: str) -> dict[str, str]:
+            """Refund a ticket, after asking the model to word the reply."""
+            try:
+                await client.chat.completions.create(
+                    model="gpt-4o", messages=[{"role": "user", "content": ticket_id}]
+                )
+            except Exception as exc:  # noqa: BLE001 - asserted below, typed
+                refusals.append(translate(exc))
+                return {"status": "refused"}
+            return {"status": "refunded"}
+
+        def runner() -> Any:
+            agent = LlmAgent(
+                name="refunds", model=AsksForRefund(model="scripted"), tools=[issue_refund]
+            )
+            app = App(name="refunds", root_agent=agent, plugins=[approval_plugin()])
+            return Runner(app=app, session_service=sessions)
+
+        session = await sessions.create_session(app_name="refunds", user_id="u")
+
+        async def send(message: types.Content) -> list[Any]:
+            run = runner().run_async(user_id="u", session_id=session.id, new_message=message)
+            return [event async for event in run]
+
+        async with donkey.run(id=_PAUSE_RUN):
+            paused = await send(types.Content(role="user", parts=[types.Part(text="refund T-1")]))
+        (request,) = pending_approvals(paused)
+
+        # The pause sent nothing: the only span is the pending approval.
+        assert {s.name for s in exporter.get_finished_spans()} == {_APPROVAL_SPAN}
+        ((pending, pending_attrs),) = _approval_events(exporter)
+        assert pending == "donkey.approval.pending"
+        assert pending_attrs["donkey.approval.risk"] == "financial"
+        assert pending_attrs["donkey.correlation_id"] == _PAUSE_RUN
+
+        with donkey.simulate(PIIDetected):
+            # A fresh run: the resumed call still runs under the pause's.
+            async with donkey.run():
+                resumed = await send(
+                    types.Content(role="user", parts=[approve(request, by="m.keller")])
+                )
+
+    assert resumed[-1].content.parts[0].text == "done"
+    # The session holds the user's answer too, so nothing is left pending.
+    stored = await sessions.get_session(app_name="refunds", user_id="u", session_id=session.id)
+    assert stored is not None
+    assert not pending_approvals(stored.events)
+    decisions = [(n, a) for n, a in _approval_events(exporter) if n != pending]
+    ((approved, approved_attrs),) = decisions
+    assert approved == "donkey.approval.approved"
+    assert approved_attrs["donkey.approval.approved_by"] == "m.keller"
+    assert approved_attrs["donkey.approval.id"] == pending_attrs["donkey.approval.id"]
+    # The resumed call went to the gateway under the pause's correlation id, and
+    # the gateway refused it: the approval did not lift it.
     (refused,) = refusals
     assert isinstance(refused, PIIDetected)
     assert refused.correlation_id == approved_attrs["donkey.correlation_id"] == _PAUSE_RUN
