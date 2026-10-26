@@ -1,0 +1,57 @@
+{
+  "framework": "crewai",
+  "distribution": "crewai",
+  "version": "1.15.30",
+  "python": "3.12",
+  "captured": "2026-10-26",
+  "capture": "python scripts/capture_descriptor_fixtures.py --write",
+  "object": "crewai.tools.base_tool.Tool",
+  "reads": {
+    ".name": "lookup_employee",
+    ".description": "Look up an employee record by ID.\n\n    Args:\n        employee_id: The employee's ID.\n        include_manager: Whether to include the manager.\n    ",
+    ".args_schema.model_json_schema()": {
+      "properties": {
+        "employee_id": {
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "include_manager": {
+          "default": false,
+          "title": "Include Manager",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "employee_id"
+      ],
+      "title": "Lookup_Employee",
+      "type": "object"
+    }
+  },
+  "descriptor": {
+    "tools": [
+      {
+        "name": "lookup_employee",
+        "description": "Look up an employee record by ID.\n\n    Args:\n        employee_id: The employee's ID.\n        include_manager: Whether to include the manager.\n    ",
+        "inputSchema": {
+          "properties": {
+            "employee_id": {
+              "title": "Employee Id",
+              "type": "string"
+            },
+            "include_manager": {
+              "default": false,
+              "title": "Include Manager",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "employee_id"
+          ],
+          "title": "Lookup_Employee",
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

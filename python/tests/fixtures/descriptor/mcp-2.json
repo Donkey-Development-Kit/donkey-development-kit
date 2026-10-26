@@ -1,0 +1,57 @@
+{
+  "framework": "mcp",
+  "distribution": "mcp",
+  "version": "2.3.0",
+  "python": "3.12",
+  "captured": "2026-10-26",
+  "capture": "python scripts/capture_descriptor_fixtures.py --write",
+  "object": "mcp.server.mcpserver.server.MCPServer",
+  "reads": {
+    "(await list_tools())[0].name": "lookup_employee",
+    "(await list_tools())[0].description": "Look up an employee record by ID.\n\n    Args:\n        employee_id: The employee's ID.\n        include_manager: Whether to include the manager.\n    ",
+    "(await list_tools())[0].inputSchema": {
+      "properties": {
+        "employee_id": {
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "include_manager": {
+          "default": false,
+          "title": "Include Manager",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "employee_id"
+      ],
+      "title": "lookup_employeeArguments",
+      "type": "object"
+    }
+  },
+  "descriptor": {
+    "tools": [
+      {
+        "name": "lookup_employee",
+        "description": "Look up an employee record by ID.\n\n    Args:\n        employee_id: The employee's ID.\n        include_manager: Whether to include the manager.\n    ",
+        "inputSchema": {
+          "properties": {
+            "employee_id": {
+              "title": "Employee Id",
+              "type": "string"
+            },
+            "include_manager": {
+              "default": false,
+              "title": "Include Manager",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "employee_id"
+          ],
+          "title": "lookup_employeeArguments",
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

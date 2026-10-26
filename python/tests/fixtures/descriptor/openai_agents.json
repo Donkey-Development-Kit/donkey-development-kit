@@ -1,0 +1,65 @@
+{
+  "framework": "openai_agents",
+  "distribution": "openai-agents",
+  "version": "0.24.0",
+  "python": "3.12",
+  "captured": "2026-10-26",
+  "capture": "python scripts/capture_descriptor_fixtures.py --write",
+  "object": "agents.tool.FunctionTool",
+  "reads": {
+    ".name": "lookup_employee",
+    ".description": "Look up an employee record by ID.",
+    ".params_json_schema": {
+      "properties": {
+        "employee_id": {
+          "description": "The employee's ID.",
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "include_manager": {
+          "default": false,
+          "description": "Whether to include the manager.",
+          "title": "Include Manager",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "employee_id",
+        "include_manager"
+      ],
+      "title": "lookup_employee_args",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  "descriptor": {
+    "tools": [
+      {
+        "name": "lookup_employee",
+        "description": "Look up an employee record by ID.",
+        "inputSchema": {
+          "properties": {
+            "employee_id": {
+              "description": "The employee's ID.",
+              "title": "Employee Id",
+              "type": "string"
+            },
+            "include_manager": {
+              "default": false,
+              "description": "Whether to include the manager.",
+              "title": "Include Manager",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "employee_id",
+            "include_manager"
+          ],
+          "title": "lookup_employee_args",
+          "type": "object",
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}

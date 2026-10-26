@@ -1,0 +1,59 @@
+{
+  "framework": "langchain",
+  "distribution": "langchain-core",
+  "version": "1.7.0",
+  "python": "3.12",
+  "captured": "2026-10-26",
+  "capture": "python scripts/capture_descriptor_fixtures.py --write",
+  "object": "langchain_core.tools.structured.StructuredTool",
+  "reads": {
+    ".name": "lookup_employee",
+    ".description": "Look up an employee record by ID.\n\n    Args:\n        employee_id: The employee's ID.\n        include_manager: Whether to include the manager.",
+    ".tool_call_schema.model_json_schema()": {
+      "description": "Look up an employee record by ID.\n\nArgs:\n    employee_id: The employee's ID.\n    include_manager: Whether to include the manager.",
+      "properties": {
+        "employee_id": {
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "include_manager": {
+          "default": false,
+          "title": "Include Manager",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "employee_id"
+      ],
+      "title": "lookup_employee",
+      "type": "object"
+    }
+  },
+  "descriptor": {
+    "tools": [
+      {
+        "name": "lookup_employee",
+        "description": "Look up an employee record by ID.\n\n    Args:\n        employee_id: The employee's ID.\n        include_manager: Whether to include the manager.",
+        "inputSchema": {
+          "description": "Look up an employee record by ID.\n\nArgs:\n    employee_id: The employee's ID.\n    include_manager: Whether to include the manager.",
+          "properties": {
+            "employee_id": {
+              "title": "Employee Id",
+              "type": "string"
+            },
+            "include_manager": {
+              "default": false,
+              "title": "Include Manager",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "employee_id"
+          ],
+          "title": "lookup_employee",
+          "type": "object"
+        }
+      }
+    ]
+  }
+}
