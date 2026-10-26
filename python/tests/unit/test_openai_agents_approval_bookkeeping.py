@@ -150,8 +150,9 @@ def test_the_id_depends_on_the_call_the_tool_and_the_arguments() -> None:
     assert one(_state()) == first
     assert one(_state(call_id="call-2")) != first
     assert one(_state({"ticket_id": "T-2"})) != first
-    # A default the model left out and one it sent are the same call.
-    assert one(_state({"ticket_id": "T-1", "amount": 140.0})) == first
+    # The id is taken from the call as the model sent it, which the pause and the
+    # resumed call share, so a default sent explicitly is a different call.
+    assert one(_state({"ticket_id": "T-1", "amount": 140.0})) != first
 
 
 @pytest.mark.parametrize(
@@ -169,6 +170,30 @@ def test_arguments_the_tool_cannot_bind_are_shown_as_sent(
 ) -> None:
     (approval,) = ddk_agents.pending_approvals(_state(raw))  # type: ignore[arg-type]
     assert dict(approval.arguments) == expected
+
+
+class _Unstable:
+    """A default whose repr changes on every call, as an address-bearing repr
+    changes from one process to the next."""
+
+    calls = 0
+
+    def __repr__(self) -> str:
+        _Unstable.calls += 1
+        return f"<_Unstable {_Unstable.calls}>"
+
+
+@Donkey.tool(approval="required")
+def tag_ticket(ticket_id: str, marker: Any = _Unstable()) -> str:  # noqa: B008
+    """Tag a support ticket."""
+    return ticket_id
+
+
+def test_the_approval_id_does_not_depend_on_a_default_s_repr() -> None:
+    item = _Item("tag_ticket", "call-1", '{"ticket_id": "T-1"}', _agent(_native(tag_ticket)))
+    first = ddk_agents.pending_approvals(_State([item]))  # type: ignore[arg-type]
+    again = ddk_agents.pending_approvals(_State([item]))  # type: ignore[arg-type]
+    assert first[0].id == again[0].id
 
 
 # --- approve / reject -------------------------------------------------------------
@@ -193,7 +218,7 @@ def test_reject_sends_a_default_message_without_the_rejecter(
 
     ((item, told),) = state.rejected
     assert item is state.items[0]
-    assert told is not None and "issue_refund" in told and approval.id in told
+    assert told is not None and "issue_refund" in told and approval.id not in told
     assert "a.ops" not in told
     assert recorded[-1][0] == "rejected" and recorded[-1][1][1] == "a.ops"
 

@@ -394,7 +394,9 @@ def refusal_translator(exc: BaseException) -> DonkeyError | None:
     from agents.exceptions import UserError
 
     if isinstance(exc, UserError) and exc.__cause__ is not None:
-        return translate(exc.__cause__, (refusal_translator,))
+        from . import refusal_translators
+
+        return translate(exc.__cause__, refusal_translators())
     return None
 
 
@@ -437,8 +439,9 @@ def _approval(spec: ToolSpec, call_id: str | None, raw: str | None) -> Approval:
         arguments = dict(bound.arguments)
     except TypeError:  # the model sent arguments the tool does not take
         pass
-    canonical = json.dumps(arguments, sort_keys=True, default=repr)
-    digest = hashlib.sha256(repr((call_id, spec.name, canonical)).encode())
+    # The SDK's raw argument string, not the bound arguments: a default's repr
+    # can hold a memory address, which would change the id between processes.
+    digest = hashlib.sha256(repr((call_id, spec.name, raw or "")).encode())
     approval_id = digest.hexdigest()[:32]
     return Approval(
         id=approval_id,
@@ -515,7 +518,4 @@ def _identity(value: str) -> str:
 
 
 def _rejected(approval: Approval) -> str:
-    return (
-        f"A human rejected this call of {approval.tool!r} (approval {approval.id}), "
-        "so it was not run."
-    )
+    return f"A human rejected this call of {approval.tool!r}, so it was not run."
