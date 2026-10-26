@@ -417,9 +417,13 @@ On `google-adk` releases before 2.13, the pause's last event also carries
 each paused call's placeholder result, `{"status": "awaiting approval",
 "approval_id": ...}`, as text. Don't show it as the agent's answer.
 
-A model call the approved tool makes is judged by the gateway as usual. Strands
-hands any exception a tool raises to the model as an error tool result,
-refusals included, so a refusal from inside the tool does not leave the agent.
+A model call the approved tool makes is judged by the gateway as usual.
+`ApprovalHook` re-raises a governed refusal from inside a tool before Strands
+can retry the tool or send the refusal text to the model. Wrap the invocation
+in `donkey.run()` or `@donkey.governed` to receive the typed error rather than
+Strands' event-loop exception. This also applies to ungated tools on the same
+agent. Ordinary tool failures remain error tool results for the model, as do
+human rejections.
 
 Without the hook, nothing pauses. The gate raises `ApprovalRequired` inside the
 tool, Strands turns it into an error tool result, and the call waits in

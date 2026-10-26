@@ -1809,6 +1809,11 @@ Strands forwards to its internal OpenAI client.
   `hooks`, and a `@donkey.tool(approval="required")` call stops the agent with
   Strands' own interrupt. Resume it with `approve(...)` or `reject(...)`. See
   [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
+- **Refusals inside tools stop the agent.** With `ApprovalHook()` installed,
+  a governed refusal inside an approved or ungated tool leaves the tool loop
+  before a retry or another model turn. Use `donkey.run()` or `@donkey.governed`
+  around the invocation to recover its typed error from Strands' event-loop
+  wrapper. Ordinary tool errors still go to the model as error tool results.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
@@ -4499,9 +4504,13 @@ On `google-adk` releases before 2.13, the pause's last event also carries
 each paused call's placeholder result, `{"status": "awaiting approval",
 "approval_id": ...}`, as text. Don't show it as the agent's answer.
 
-A model call the approved tool makes is judged by the gateway as usual. Strands
-hands any exception a tool raises to the model as an error tool result,
-refusals included, so a refusal from inside the tool does not leave the agent.
+A model call the approved tool makes is judged by the gateway as usual.
+`ApprovalHook` re-raises a governed refusal from inside a tool before Strands
+can retry the tool or send the refusal text to the model. Wrap the invocation
+in `donkey.run()` or `@donkey.governed` to receive the typed error rather than
+Strands' event-loop exception. This also applies to ungated tools on the same
+agent. Ordinary tool failures remain error tool results for the model, as do
+human rejections.
 
 Without the hook, nothing pauses. The gate raises `ApprovalRequired` inside the
 tool, Strands turns it into an error tool result, and the call waits in

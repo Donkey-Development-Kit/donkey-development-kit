@@ -133,6 +133,11 @@ Strands forwards to its internal OpenAI client.
   `hooks`, and a `@donkey.tool(approval="required")` call stops the agent with
   Strands' own interrupt. Resume it with `approve(...)` or `reject(...)`. See
   [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
+- **Refusals inside tools stop the agent.** With `ApprovalHook()` installed,
+  a governed refusal inside an approved or ungated tool leaves the tool loop
+  before a retry or another model turn. Use `donkey.run()` or `@donkey.governed`
+  around the invocation to recover its typed error from Strands' event-loop
+  wrapper. Ordinary tool errors still go to the model as error tool results.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.

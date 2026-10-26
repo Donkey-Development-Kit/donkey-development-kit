@@ -16,12 +16,12 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass, field
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 
-from donkey_kit import ApprovalRequired, Donkey
+from donkey_kit import ApprovalRequired, Donkey, PIIDetected
 from donkey_kit.core.correlation import run_scope
 from donkey_kit.integrations import strands as strands_mod
 from donkey_kit.integrations.strands import (
@@ -168,6 +168,20 @@ def test_the_hook_registers_its_three_callbacks() -> None:
     hook = ApprovalHook()
     hook.register_hooks(registry)
     assert [e for e, _ in added] == [_BeforeToolCall, _AfterToolCall, _AfterInvocation]
+
+
+def test_a_refusal_clears_the_approval_before_it_leaves_the_hook() -> None:
+    hook = ApprovalHook()
+    hook._before_tool(_event(response={"approved": True, "by": "reviewer"}))
+    refusal = PIIDetected("refused")
+    with pytest.raises(PIIDetected) as caught:
+        hook._after_tool(SimpleNamespace(exception=refusal))
+    assert caught.value is refusal
+    assert approved_call("issue_refund") is None
+
+
+def test_an_ordinary_exception_is_not_re_raised() -> None:
+    ApprovalHook()._after_tool(SimpleNamespace(exception=ValueError("ordinary tool error")))
 
 
 # --- the pause --------------------------------------------------------------------

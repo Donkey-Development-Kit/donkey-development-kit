@@ -269,7 +269,7 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
     from donkey_kit.integrations.strands import ApprovalHook, approve, pending_approvals
 
     class AsksForRefund(Model):
-        """Asks for ``issue_refund`` once, then answers. Never calls a gateway."""
+        """Asks for ``issue_refund`` once. Never calls a gateway."""
 
         turns = 0
 
@@ -285,21 +285,16 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
 
         async def stream(self, *args: Any, **kwargs: Any) -> Any:
             self.turns += 1
+            assert self.turns == 1, "a tool refusal must stop before the next model turn"
             yield {"messageStart": {"role": "assistant"}}
-            if self.turns == 1:
-                start = {"toolUse": {"toolUseId": "tu-1", "name": "issue_refund"}}
-                yield {"contentBlockStart": {"start": start}}
-                delta = {"toolUse": {"input": json.dumps({"ticket_id": "T-1"})}}
-                yield {"contentBlockDelta": {"delta": delta}}
-                yield {"contentBlockStop": {}}
-                yield {"messageStop": {"stopReason": "tool_use"}}
-                return
-            yield {"contentBlockDelta": {"delta": {"text": "done"}}}
+            start = {"toolUse": {"toolUseId": "tu-1", "name": "issue_refund"}}
+            yield {"contentBlockStart": {"start": start}}
+            delta = {"toolUse": {"input": json.dumps({"ticket_id": "T-1"})}}
+            yield {"contentBlockDelta": {"delta": delta}}
             yield {"contentBlockStop": {}}
-            yield {"messageStop": {"stopReason": "end_turn"}}
+            yield {"messageStop": {"stopReason": "tool_use"}}
 
     exporter = _exporter(monkeypatch)
-    refusals: list[DonkeyError | None] = []
 
     async with Donkey(_cfg()) as donkey:
         client = donkey.openai()
@@ -307,13 +302,9 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
         @donkey.tool(approval="required", risk="financial")
         async def issue_refund(ticket_id: str) -> None:
             """Refund a ticket, after asking the model to word the reply."""
-            try:
-                await client.chat.completions.create(
-                    model="gpt-4o", messages=[{"role": "user", "content": ticket_id}]
-                )
-            except Exception as exc:
-                refusals.append(translate(exc))
-                raise
+            await client.chat.completions.create(
+                model="gpt-4o", messages=[{"role": "user", "content": ticket_id}]
+            )
 
         agent = strands.Agent(
             model=AsksForRefund(),
@@ -333,11 +324,10 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
         assert pending_attrs["donkey.approval.risk"] == "financial"
         assert pending_attrs["donkey.correlation_id"] == _PAUSE_RUN
 
-        with donkey.simulate(PIIDetected):
+        with donkey.simulate(PIIDetected), pytest.raises(PIIDetected) as caught:
             async with donkey.run():
-                resumed = await agent.invoke_async([approve(interrupt, by="m.keller")])
+                await agent.invoke_async([approve(interrupt, by="m.keller")])
 
-    assert resumed.stop_reason == "end_turn"
     decisions = [(n, a) for n, a in _approval_events(exporter) if n != pending]
     ((approved, approved_attrs),) = decisions
     assert approved == "donkey.approval.approved"
@@ -345,9 +335,7 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
     assert approved_attrs["donkey.approval.id"] == pending_attrs["donkey.approval.id"]
     # The resumed call went to the gateway under the decision's correlation id,
     # and the gateway refused it: the approval did not lift it.
-    (refused,) = refusals
-    assert isinstance(refused, PIIDetected)
-    assert refused.correlation_id == approved_attrs["donkey.correlation_id"] == _PAUSE_RUN
+    assert caught.value.correlation_id == approved_attrs["donkey.correlation_id"] == _PAUSE_RUN
 
 
 async def test_an_adk_agent_pauses_with_its_own_tool_confirmation(
