@@ -100,6 +100,16 @@ async with Donkey.from_env() as donkey:
     llm = LiteLlm(model="openai/gpt-4o", **donkey.adk.connection_kwargs())
 ```
 
+To read `donkey.last_call` in an `after_model_callback` on `google-adk` 2.13
+and later, build it from `last_call_bridged(LiteLlm)` instead (see
+[Native Gemini](#native-gemini)):
+
+```python
+from donkey_kit.integrations.adk import last_call_bridged
+
+llm = last_call_bridged(LiteLlm)(model="openai/gpt-4o", **donkey.adk.connection_kwargs())
+```
+
 ## Manual equivalent
 
 ```python
@@ -215,7 +225,9 @@ task of its own, so the caller of `runner.run_async(...)` reads `UNOBSERVED`.
 Read it in an `after_model_callback`. Both `gemini()` and `model()` return a
 subclass of the ADK class that carries the record from the model call to the
 callback, including on `google-adk` 2.13 and later, which runs the model call in
-a copy of the agent's context:
+a copy of the agent's context. For a model you build yourself,
+`last_call_bridged(...)` returns that subclass of any ADK model class, your own
+subclass included:
 
 ```python
 from google.adk.agents import LlmAgent
@@ -263,8 +275,10 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   `Runner` calls the model in a task of its own, so read it in an
   `after_model_callback` (see [Native Gemini](#native-gemini)). The factories'
   models carry the record to that callback. A `LiteLlm` or `Gemini` you build
-  from `connection_kwargs()` or `gemini_connection_kwargs()` does not, so on
-  `google-adk` 2.13 and later its callback reads `UNOBSERVED`. A cold read on
+  from `connection_kwargs()` or `gemini_connection_kwargs()` carries it only
+  when its class is `last_call_bridged(LiteLlm)` or `last_call_bridged(Gemini)`.
+  Built from the plain class, its callback reads `UNOBSERVED` on `google-adk`
+  2.13 and later. A cold read on
   a `Donkey` that resolved only ADK reports `UNOBSERVED`, and `OBSERVED` after
   a call, for `model()` as well as `gemini()`.
 - **Refusals on the `model()` path are typed inside `donkey.run()` and

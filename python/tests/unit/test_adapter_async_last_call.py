@@ -331,6 +331,70 @@ async def test_adk_streamed_run_after_model_callback_sees_every_response() -> No
     assert in_callback == [(True, observed)] * 3 + [(False, observed)]
 
 
+async def test_adk_hand_built_models_reach_after_model_callback_when_bridged() -> None:
+    """A model built from the governed kwargs reads ``UNOBSERVED`` in its
+    callback on google-adk >= 2.13 unless its class is bridged (#1218)."""
+    pytest.importorskip("google.adk")
+    pytest.importorskip("litellm")
+    from google.adk.agents import LlmAgent
+    from google.adk.models import Gemini
+    from google.adk.models.lite_llm import LiteLlm
+    from google.adk.runners import InMemoryRunner
+
+    from donkey_kit.integrations.adk import last_call_bridged
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/chat/completions"):
+            return _answer(request)
+        return _gemini(request)
+
+    donkey = _donkey(handler)
+    in_callback: list[LastCallStatus] = []
+
+    def after_model(callback_context: Any, llm_response: Any) -> None:
+        in_callback.append(donkey.last_call.status)
+
+    async def run(llm: Any) -> None:
+        agent = LlmAgent(name="a", model=llm, after_model_callback=after_model)
+        runner = InMemoryRunner(agent=agent, app_name="app")
+        session = await runner.session_service.create_session(app_name="app", user_id="u")
+        async for _ in runner.run_async(
+            user_id="u", session_id=session.id, new_message=_gemini_message()
+        ):
+            pass
+
+    async with donkey:
+        lite = last_call_bridged(LiteLlm)
+        await run(lite(model="openai/gpt-4o", **donkey.adk.connection_kwargs()))
+        gemini = last_call_bridged(Gemini)
+        await run(gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs()))
+    assert in_callback == [LastCallStatus.OBSERVED] * 2
+    assert issubclass(lite, LiteLlm) and issubclass(gemini, Gemini)
+
+
+def test_last_call_bridged_builds_one_class_and_takes_only_adk_models() -> None:
+    pytest.importorskip("google.adk")
+    from google.adk.models import Gemini
+
+    from donkey_kit.integrations.adk import last_call_bridged
+
+    bridged = last_call_bridged(Gemini)
+    assert last_call_bridged(Gemini) is bridged
+    # Already bridged, as the factories' classes are: not bridged twice.
+    assert last_call_bridged(bridged) is bridged
+    donkey = _donkey(_gemini)
+    assert last_call_bridged(type(donkey.adk.gemini("gemini-2.5-flash"))) is bridged
+
+    class Mine(Gemini):
+        pass
+
+    mine = last_call_bridged(Mine)
+    assert issubclass(mine, Mine) and mine is not bridged
+    for wrong in (object, "Gemini", Gemini(model="gemini-2.5-flash")):
+        with pytest.raises(TypeError, match="BaseLlm"):
+            last_call_bridged(wrong)  # type: ignore[arg-type]
+
+
 async def test_adk_factories_return_the_adk_classes() -> None:
     pytest.importorskip("google.adk")
     pytest.importorskip("litellm")
