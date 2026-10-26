@@ -558,3 +558,113 @@ def test_a_refusal_is_not_reshaped_on_a_chat_completions_route() -> None:
 def test_an_unexpected_success_body_is_served_as_captured() -> None:
     assert harness_module._as_chat_completion(b"not json") == b"not json"
     assert harness_module._as_chat_completion(b'{"output": 3}') == b'{"output": 3}'
+
+
+# --- server mode: the same suite against the live local simulator (#322) ------
+# Server mode boots the local gateway simulator on an ephemeral port, points each
+# scenario's Donkey at it and counts sends from the simulator's request log. The
+# verdicts must match in-process mode agent for agent. These tests bind a real
+# TCP port, so they are `local_gateway` (deselected by default) and skip without
+# the [local] extra.
+
+_SAME_VERDICT_AS_IN_PROCESS = [
+    (GoodAgent, None),
+    (SyncGoodAgent, None),
+    (RetriesBudgetAgent, "retries_token_budget"),
+    (SwallowsPiiAgent, "swallows_pii_as_generic"),
+    (DropsCorrelationAgent, "correlation_id_propagated"),
+    (CrashesWithoutBudgetAgent, "works_without_budget_headers"),
+]
+
+
+def _requires_local_extra() -> None:
+    pytest.importorskip("uvicorn")
+    pytest.importorskip("starlette")
+
+
+@pytest.mark.local_gateway
+@pytest.mark.parametrize(("agent", "failing"), _SAME_VERDICT_AS_IN_PROCESS)
+async def test_server_mode_gives_the_in_process_verdicts(agent: type, failing: str | None) -> None:
+    _requires_local_extra()
+    results = await run_conformance(agent, mode="server")
+    expected = {s.name: ("fail" if s.name == failing else "pass") for s in SCENARIOS}
+    assert _statuses(results) == expected
+
+
+@pytest.mark.local_gateway
+async def test_server_mode_counts_retries_from_the_server_log() -> None:
+    # No in-process transport to count: the 3 sends are the simulator's own log.
+    _requires_local_extra()
+    results = await run_conformance(RetriesBudgetAgent, mode="server")
+    assert "3×" in _detail(results, "retries_token_budget")
+
+
+@pytest.mark.local_gateway
+async def test_server_mode_sends_over_a_real_hop_without_a_swapped_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The Donkey is pointed at the simulator's URL, and its transport is never
+    # swapped: the request reaches the real httpx transport, then the simulator.
+    _requires_local_extra()
+    swapped: list[object] = []
+    monkeypatch.setattr(harness_module, "swap_transport", lambda *a: swapped.append(a))
+    seen: list[str] = []
+
+    class RecordsItsProxyUrl(GoodAgent):
+        def __init__(self, donkey: Donkey) -> None:
+            super().__init__(donkey)
+            seen.append(donkey.config.llm_proxy_url or "")
+
+    results = await run_conformance(RecordsItsProxyUrl, mode="server")
+    assert _statuses(results) == {s.name: "pass" for s in SCENARIOS}
+    assert swapped == []
+    assert seen and all(url.startswith("http://127.0.0.1:") for url in seen)
+
+
+@pytest.mark.local_gateway
+@pytest.mark.parametrize("agent", [NoCallAgent, OwnHttpxAgent, OwnOpenAIAgent])
+async def test_server_mode_still_fails_and_blocks_a_bypassing_agent(agent: type) -> None:
+    # Only the simulator's origin is let through to a real transport; a client
+    # the agent built for any other host is still refused (and counted).
+    _requires_local_extra()
+    results = await run_conformance(agent, mode="server")
+    assert _statuses(results) == {s.name: "fail" for s in SCENARIOS}
+    for r in results:
+        assert r.detail.startswith(NO_MODEL_CALL), r.detail
+
+
+async def test_unknown_mode_is_rejected_before_anything_runs() -> None:
+    with pytest.raises(ValueError, match="mode must be one of"):
+        await run_conformance(GoodAgent, mode="docker")  # type: ignore[arg-type]
+
+
+class _UnusedGateway:
+    """Stands in for a running simulator where only arming is under test."""
+
+    url = "http://127.0.0.1:9"
+
+    def configure(self, config: object = None) -> None:
+        raise AssertionError("must not arm the simulator")
+
+    def reset(self) -> None:
+        raise AssertionError("must not arm the simulator")
+
+
+def test_server_mode_refuses_a_registered_type_with_no_captured_shape() -> None:
+    # A classify.register() type has a synthesised example, not a captured
+    # shape, and the simulator replays captured shapes only: a usage error that
+    # names the in-process mode, never a silently different response.
+    from donkey_kit import PolicyViolation
+    from donkey_kit._testing import isolated_classify
+
+    class SalaryLeakBlocked(PolicyViolation):
+        remediation = "Salary figures may not leave HR."
+        policy = "acme_salary_block"
+
+    harness = harness_module.ConformanceHarness(GoodAgent, gateway=_UnusedGateway())  # type: ignore[arg-type]
+    with isolated_classify() as registry:
+        registry.register(
+            match={"status": 403, "error_type": "acme_salary_block"}, raises=SalaryLeakBlocked
+        )
+        with pytest.raises(ConformanceUsageError, match="--donkey-mode in-process"):
+            harness.serve_refusal(SalaryLeakBlocked)

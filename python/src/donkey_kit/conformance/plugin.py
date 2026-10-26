@@ -25,19 +25,26 @@ follows without exception:
 When the flag is set, ``--donkey-conformance`` runs the conformance suite
 *exclusively* (it replaces normal collection), turning each scenario into one
 pytest item and printing the scenario→status table in the terminal summary.
+
+``--donkey-mode`` picks how the run is observed (#322): ``in-process`` (the
+default) swaps a counting transport onto the agent's ``Donkey``; ``server``
+points it at the local gateway simulator on a real port — the integration-test
+complement, with the SDK's own transport untouched. Server mode needs the
+``[local]`` extra, checked at collection time.
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from .report import render_report
-from .suite import SCENARIOS, Result, Scenario, validate_known_limitations
+from .suite import MODES, SCENARIOS, Mode, Result, Scenario, validate_known_limitations
 
 if TYPE_CHECKING:  # keep the heavy import out of the auto-loaded module body
     from .harness import AgentFactory
@@ -55,6 +62,7 @@ __all__ = [
 # module globals (pytest recommends config.stash over ad-hoc attributes).
 _FACTORY_KEY = pytest.StashKey[Callable[..., Any]]()
 _KNOWN_KEY = pytest.StashKey[dict[str, str]]()
+_MODE_KEY = pytest.StashKey[Mode]()
 _RESULTS_KEY = pytest.StashKey[list[Result]]()
 
 
@@ -64,7 +72,7 @@ class _ConformanceFailure(AssertionError):
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Register the ``--donkey-conformance`` and ``--donkey-agent`` pytest options.
+    """Register the ``--donkey-conformance``, ``--donkey-agent`` and related options.
 
     Every option is ``--donkey-``-prefixed: pytest refuses to start when two
     plugins register the same option, and this plugin loads on every run.
@@ -100,6 +108,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Import path to a KNOWN_LIMITATIONS dict of {scenario: reason}. "
         "Defaults to a KNOWN_LIMITATIONS attribute in the --donkey-agent module "
         "if present.",
+    )
+    group.addoption(
+        "--donkey-mode",
+        action="store",
+        default="in-process",
+        choices=MODES,
+        dest="donkey_mode",
+        help="How the suite observes your agent: in-process (default) swaps a "
+        "counting transport onto its Donkey; server runs it against the local "
+        "gateway simulator on a real port (needs donkey-kit[local]).",
     )
     if "--agent" in _registered_options(parser):
         return  # another plugin owns --agent; --donkey-agent still works
@@ -188,6 +206,26 @@ def _resolve_agent(config: pytest.Config) -> tuple[AgentFactory, dict[str, str]]
     return factory, known
 
 
+# What server mode boots: the simulator's ASGI app and the server that runs it.
+_LOCAL_MODULES = ("starlette", "uvicorn")
+
+
+def _resolve_mode(config: pytest.Config) -> Mode:
+    """The ``--donkey-mode``, checked **now** (collection time): server mode
+    without the ``[local]`` extra is a clean usage error naming the install,
+    not an ``ImportError`` on every scenario item."""
+    mode: Mode = config.getoption("donkey_mode")
+    if mode == "server":
+        missing = [m for m in _LOCAL_MODULES if importlib.util.find_spec(m) is None]
+        if missing:
+            raise pytest.UsageError(
+                "--donkey-mode server runs your agent against the local gateway "
+                f"simulator, which needs {' and '.join(missing)}. Install it with:\n"
+                '    pip install "donkey-kit[local]"'
+            )
+    return mode
+
+
 class _ScenarioItem(pytest.Item):
     """One conformance scenario as a pytest item. All scenarios share a single
     :func:`~donkey_kit.conformance.harness.run_conformance` pass (memoised on
@@ -236,6 +274,7 @@ def pytest_collection(session: pytest.Session) -> bool | None:
     factory, known = _resolve_agent(config)  # UsageError here aborts cleanly
     config.stash[_FACTORY_KEY] = factory
     config.stash[_KNOWN_KEY] = known
+    config.stash[_MODE_KEY] = _resolve_mode(config)
     collector = _ConformanceCollector.from_parent(session, name="donkey-conformance")
     session.items = list(session.genitems(collector))
     session.testscollected = len(session.items)
@@ -254,7 +293,8 @@ def _result_for(config: pytest.Config, scenario_name: str) -> Result:
 
         factory = config.stash[_FACTORY_KEY]
         known = config.stash[_KNOWN_KEY]
-        results = asyncio.run(run_conformance(factory, known_limitations=known))
+        mode = config.stash[_MODE_KEY]
+        results = asyncio.run(run_conformance(factory, known_limitations=known, mode=mode))
         config.stash[_RESULTS_KEY] = results
     for result in results:
         if result.scenario == scenario_name:

@@ -302,6 +302,7 @@ straight through; pytest's exit code becomes `donkey test`'s own. Needs the
 
 ```bash
 donkey test --agent my.pkg:make_agent -k governance -x
+donkey test --agent my.pkg:make_agent --donkey-mode server   # over a real port; needs [local]
 ```
 
 See [Testing & conformance](https://docs.donkey-kit.dev/testing.md) for what the suite checks.

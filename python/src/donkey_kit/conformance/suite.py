@@ -43,10 +43,12 @@ if TYPE_CHECKING:
     from ..core.errors import DonkeyError
 
 __all__ = [
+    "MODES",
     "NO_MODEL_CALL",
     "PROBE_CORRELATION_ID",
     "SCENARIOS",
     "SCENARIO_NAMES",
+    "Mode",
     "Observation",
     "Outcome",
     "Result",
@@ -62,6 +64,14 @@ __all__ = [
 PROBE_CORRELATION_ID = "donkey-conformance-correlation-probe"
 
 Status = Literal["pass", "fail", "exempt"]
+
+# How the harness observes a run (#322): ``in-process`` swaps a counting
+# transport onto the agent's ``Donkey`` (#191, the default); ``server`` points it
+# at the local gateway simulator on a real port and counts from its request log.
+# Defined here, not in the harness, so the plugin can offer the choices without
+# importing the harness.
+Mode = Literal["in-process", "server"]
+MODES: tuple[Mode, ...] = ("in-process", "server")
 
 
 @dataclass(frozen=True)

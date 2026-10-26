@@ -238,6 +238,64 @@ def test_retry_bug_agent_fails_the_retry_scenario(pytester: pytest.Pytester) -> 
     result.stdout.fnmatch_lines(["*retried*"])
 
 
+def test_mode_option_is_registered_and_defaults_to_in_process(
+    pytester: pytest.Pytester,
+) -> None:
+    # #322: --donkey-mode is offered beside the other options, and an absent flag
+    # keeps the #191 in-process behaviour.
+    result = pytester.runpytest_subprocess("--help")
+    result.stdout.fnmatch_lines(["*--donkey-mode*"])
+    assert pytester.parseconfig().getoption("donkey_mode") == "in-process"
+
+
+def test_unknown_mode_is_a_usage_error(pytester: pytest.Pytester) -> None:
+    result = pytester.runpytest_subprocess(
+        "--donkey-conformance", "--donkey-agent=goodagent:build", "--donkey-mode=docker"
+    )
+    assert result.ret == _EXIT_USAGE_ERROR
+    result.stderr.fnmatch_lines(["*invalid choice*"])
+
+
+def test_server_mode_without_the_local_extra_names_the_install(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Choosing server mode without starlette/uvicorn is a misuse with a fix, not
+    # an ImportError traceback mid-run.
+    from donkey_kit.conformance import plugin
+
+    server = pytester.parseconfig("--donkey-mode=server")
+    default = pytester.parseconfig()
+    monkeypatch.setattr(plugin.importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(pytest.UsageError, match=r"donkey-kit\[local\]"):
+        plugin._resolve_mode(server)
+    # In-process mode never needs the extra.
+    assert plugin._resolve_mode(default) == "in-process"
+
+
+@pytest.mark.local_gateway
+def test_server_mode_runs_the_suite_against_a_live_simulator(
+    pytester: pytest.Pytester,
+) -> None:
+    # Same table, same verdicts as in-process, but each scenario's Donkey talks to
+    # a real simulator over a socket; the retry is counted from the server's log.
+    pytest.importorskip("openai")
+    pytest.importorskip("uvicorn")
+    pytest.importorskip("starlette")
+    pytester.makepyfile(goodagent=_GOOD_AGENT, retryagent=_RETRY_BUG_AGENT)
+    good = pytester.runpytest_subprocess(
+        "--donkey-conformance", "--donkey-agent=goodagent:build", "--donkey-mode=server", "-v"
+    )
+    assert good.ret == _EXIT_OK
+    good.assert_outcomes(passed=len(_scenario_names()))
+    good.stdout.fnmatch_lines(["*Retries a budget refusal*"])
+    bad = pytester.runpytest_subprocess(
+        "--donkey-conformance", "--donkey-agent=retryagent:build", "--donkey-mode=server", "-v"
+    )
+    assert bad.ret == _EXIT_TESTS_FAILED
+    bad.stdout.fnmatch_lines(["*retries_token_budget*FAIL*"])
+    bad.stdout.fnmatch_lines(["*retried*"])
+
+
 def _scenario_names() -> list[str]:
     # Imported lazily so the module stays import-safe under base-only (the import
     # is framework-free, but keeping it out of module top mirrors the plugin).

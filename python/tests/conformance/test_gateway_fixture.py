@@ -64,6 +64,24 @@ def test_scenarios_are_configurable_per_test(gateway: object) -> None:
     assert gateway.requests_received == 1  # type: ignore[attr-defined]
 
 
+def test_configure_swaps_the_simulator_on_the_same_port_and_keeps_the_log(
+    gateway: object,
+) -> None:
+    # #322: server-mode conformance re-arms the one running simulator per
+    # scenario. The port and request log survive; the old config does not.
+    from donkey_kit.simulator.app import SimulatorConfig
+
+    url = gateway.url  # type: ignore[attr-defined]
+    gateway.configure(SimulatorConfig(budget_window=False))  # type: ignore[attr-defined]
+    quiet = httpx.post(f"{url}/responses", json={"model": "gpt-5.1", "input": "hi"})
+    assert "x-llm-proxy-ratelimit" not in quiet.headers
+    gateway.configure()  # type: ignore[attr-defined]
+    default = httpx.post(f"{url}/responses", json={"model": "gpt-5.1", "input": "hi"})
+    assert "x-llm-proxy-ratelimit" in default.headers
+    assert gateway.url == url  # type: ignore[attr-defined]
+    assert gateway.requests_received == 2  # type: ignore[attr-defined]
+
+
 def test_reset_clears_the_request_log(gateway: object) -> None:
     url = gateway.url  # type: ignore[attr-defined]
     httpx.post(f"{url}/responses", json={"model": "gpt-5.1", "input": "hi"})
