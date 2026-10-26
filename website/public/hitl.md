@@ -368,7 +368,7 @@ Resume the agent on a list of responses, one for each paused call:
   under the approval's correlation id, wherever and whenever you resume.
 - `reject(request, by=..., message=...)` records who refused, and the tool is
   not run. Strands sends the model `message` as an error tool result, or a
-  default message that names the approver. Nothing raises `ApprovalRejected`:
+  default that names the tool, never the rejecter. Nothing raises `ApprovalRejected`:
   the model reads the rejection and carries on.
 
 `by` must be a non-empty string, and DDK records it without authenticating it.

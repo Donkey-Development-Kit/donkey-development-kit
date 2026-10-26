@@ -214,7 +214,7 @@ async def test_a_rejected_call_is_not_run_and_the_model_is_told(
     assert [(k, by) for k, _, by in recorded] == [("pending", None), ("rejected", "m.keller")]
 
 
-async def test_a_rejection_without_a_message_names_the_approver(
+async def test_a_rejection_without_a_message_does_not_name_the_approver(
     recorded: list[tuple[str, Approval, str | None]],
 ) -> None:
     model = _ScriptedModel(_REFUND)
@@ -224,7 +224,7 @@ async def test_a_rejection_without_a_message_names_the_approver(
     await agent.invoke_async([reject(interrupt, by="m.keller")])
 
     (text,) = model.tool_results()["tu-1"]["content"]
-    assert "m.keller" in text["text"] and "issue_refund" in text["text"]
+    assert "m.keller" not in text["text"] and "issue_refund" in text["text"]
 
 
 @pytest.mark.parametrize("executor", [ConcurrentToolExecutor, SequentialToolExecutor])

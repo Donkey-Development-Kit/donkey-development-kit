@@ -50,6 +50,7 @@ from __future__ import annotations
 import contextvars
 import functools
 import hashlib
+import json
 import math
 import threading
 import time
@@ -294,7 +295,10 @@ class ApprovalHook:
             return  # the gate refuses a call that could never run, unpaused
         bound.apply_defaults()
         arguments = MappingProxyType(dict(bound.arguments))
-        approval = self._approval(str(event.tool_use["toolUseId"]), spec.name, arguments, spec.risk)
+        sent = json.dumps(event.tool_use.get("input") or {}, sort_keys=True, default=repr)
+        approval = self._approval(
+            str(event.tool_use["toolUseId"]), spec.name, sent, arguments, spec.risk
+        )
         try:
             response = event.interrupt(APPROVAL_INTERRUPT, reason=_reason(approval))
         except InterruptException:
@@ -315,8 +319,10 @@ class ApprovalHook:
         if approved:
             _APPROVED.set(approval)
         else:
-            event.cancel_tool = message or (
-                f"A human ({by}) rejected this call to {approval.tool}, so it was not run."
+            # The rejecter's name stays out of the model's context, as on the
+            # OpenAI Agents SDK (#213); the decision span event records it.
+            event.cancel_tool = (
+                message or f"A human rejected this call of {approval.tool!r}, so it was not run."
             )
 
     def _after_tool(self, event: Any) -> None:  # noqa: ARG002
@@ -327,9 +333,17 @@ class ApprovalHook:
             self._decided.pop(event.agent, None)
 
     def _approval(
-        self, tool_use_id: str, tool: str, arguments: Mapping[str, Any], risk: str | None
+        self,
+        tool_use_id: str,
+        tool: str,
+        sent: str,
+        arguments: Mapping[str, Any],
+        risk: str | None,
     ) -> Approval:
-        digest = hashlib.sha256(repr((tool_use_id, tool, sorted(arguments.items()))).encode())
+        # Hash the input as the model sent it, not the bound arguments: a
+        # default's repr can hold a memory address, which would change the id
+        # between processes (a restored session).
+        digest = hashlib.sha256(repr((tool_use_id, tool, sent)).encode())
         approval_id = digest.hexdigest()[:32]
         with self._lock:
             known = self._requested.get(approval_id)
@@ -378,8 +392,8 @@ def approve(interrupt: Any, *, by: str) -> dict[str, Any]:
 
 def reject(interrupt: Any, *, by: str, message: str | None = None) -> dict[str, Any]:
     """The ``interruptResponse`` that rejects ``interrupt``. On resume the call
-    is not run, and the model gets ``message`` (or a default naming ``by``) as
-    an error tool result.
+    is not run, and the model gets ``message`` (or a default that names the
+    tool, never ``by``) as an error tool result.
 
     Raises:
         ValueError: ``by`` is empty.
