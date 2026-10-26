@@ -321,6 +321,77 @@ The DDK `function_tool` refuses a `needs_approval` keyword for a gated tool, and
 if the SDK's approval is switched off on the built tool, `ApprovalRequired`
 leaves `donkey.run()` typed and the tool does not run.
 
+## In a Strands agent
+
+A Strands agent pauses a gated tool with Strands' own interrupt once you give
+it an `ApprovalHook`. The hook raises the interrupt from `BeforeToolCallEvent`,
+before the tool runs, and the agent stops with `stop_reason == "interrupt"`.
+Wrap the gated function in Strands' `tool()` as you would any other:
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.integrations.strands import ApprovalHook, approve, pending_approvals, reject
+from strands import Agent, tool
+
+donkey = Donkey()
+
+@donkey.tool(approval="required", risk="financial")
+def issue_refund(ticket_id: str, amount: float) -> str:
+    """Refund a support ticket."""
+    return f"refunded {ticket_id}"
+
+agent = Agent(
+    model=donkey.strands.model("gpt-4o"),
+    tools=[tool(issue_refund)],
+    hooks=[ApprovalHook()],
+)
+
+result = await agent.invoke_async("Refund ticket T-1, 140 euros")
+if result.stop_reason == "interrupt":
+    requests = pending_approvals(result)  # show each one's .reason to a reviewer
+    result = await agent.invoke_async([approve(r, by="m.keller") for r in requests])
+```
+
+`pending_approvals(result)` returns the paused calls, which are Strands' own
+`Interrupt` objects named `"donkey.approval"`. Each one's `reason` describes the
+call:
+
+| Key | What it holds |
+|---|---|
+| `approval_id` | The approval's id, the same one on its span events. |
+| `tool`, `arguments`, `risk` | As on an `Approval`. `arguments` is a plain `dict`. |
+| `correlation_id` | The enclosing `donkey.run()` id, or a fresh one outside a run. |
+
+Resume the agent on a list of responses, one for each paused call:
+
+- `approve(request, by=...)` records the approver and runs the tool once,
+  under the approval's correlation id, wherever and whenever you resume.
+- `reject(request, by=..., message=...)` records who refused, and the tool is
+  not run. Strands sends the model `message` as an error tool result, or a
+  default message that names the approver. Nothing raises `ApprovalRejected`:
+  the model reads the rejection and carries on.
+
+`by` must be a non-empty string, and DDK records it without authenticating it.
+Each paused call is decided once, even if another hook retries the tool. When
+the model asks for several gated calls in one turn, Strands' default concurrent
+executor pauses them together, and a `SequentialToolExecutor` pauses on each in
+turn.
+
+Strands holds the pause, not `donkey.approvals`: `pending()` does not list it,
+and `approval_timeout` does not apply. The approval id is derived from Strands'
+tool-use id, the tool and the arguments. To resume a call in a fresh process
+that restored the agent from a Strands session, give the restored agent a new
+`ApprovalHook`. The decision is then recorded under the same approval id, with
+the resume's time and correlation id.
+
+A model call the approved tool makes is judged by the gateway as usual. Strands
+hands any exception a tool raises to the model as an error tool result,
+refusals included, so a refusal from inside the tool does not leave the agent.
+
+Without the hook, nothing pauses. The gate raises `ApprovalRequired` inside the
+tool, Strands turns it into an error tool result, and the call waits in
+`donkey.approvals` like any other.
+
 ## Discovered tools Roadmap
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
@@ -361,9 +432,9 @@ does not know it was needed until step-up routes it through the gateway.
 ## Mapped onto what your framework already has
 
 DDK does not introduce a new pause mechanism. The raise-and-resume form above
-works in any Python code, and LangGraph's own `interrupt()` and the OpenAI
-Agents SDK's `needs_approval` are mapped. Mapping the same vocabulary onto the
-other frameworks' primitives is planned:
+works in any Python code, and LangGraph's own `interrupt()`, the OpenAI Agents
+SDK's `needs_approval` and Strands' interrupt hooks are mapped. Mapping the same
+vocabulary onto the other frameworks' primitives is planned:
 
 | Framework / protocol | Native primitive | Status |
 |---|---|---|
@@ -371,7 +442,7 @@ other frameworks' primitives is planned:
 | LangGraph | `interrupt()` / `Command(resume=…)` | Live |
 | OpenAI Agents SDK | `needs_approval` / `RunState.approve(…)` | Live |
 | Google ADK | before/after tool callbacks | Roadmap |
-| Strands | hooks | Roadmap |
+| Strands | `BeforeToolCallEvent` interrupt, via `ApprovalHook` | Live |
 | MCP | elicitation | Roadmap |
 | Omni Gateway | Trusted Agent Identity step-up (MFA) | Roadmap |
 
