@@ -124,6 +124,20 @@ def test_publish_then_rerun_publishes_once(repo: Path, exchange: FakeExchange) -
     assert list(exchange.assets[(ORG, "sku-manager")]) == ["1.0.0"]
 
 
+def test_publish_json_reports_each_assets_outcome(repo: Path, exchange: FakeExchange) -> None:
+    runner.invoke(app, ["publish", str(repo)])
+
+    result = runner.invoke(app, ["--json", "publish", str(repo)])
+
+    assert result.exit_code == 0, result.output
+    (asset,) = json.loads(result.stdout)["assets"]
+    assert (asset["asset_id"], asset["status"], asset["detail"]) == (
+        "sku-manager",
+        "unchanged",
+        "1.0.0 is already published",
+    )
+
+
 def test_new_content_under_a_published_version_exits_1(repo: Path, exchange: FakeExchange) -> None:
     runner.invoke(app, ["publish", str(repo)])
     (repo / "app.py").write_text(
@@ -145,6 +159,16 @@ def test_a_plan_with_issues_publishes_nothing(repo: Path, exchange: FakeExchange
     assert result.exit_code == 1
     assert "missing-version" in result.output
     assert "nothing was published" in result.output
+    assert exchange.requests == []
+
+
+def test_publish_json_with_issues_prints_the_plan(repo: Path, exchange: FakeExchange) -> None:
+    (repo / ".donkey-kit.toml").write_text("[donkey.publication]\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["publish", "--json", str(repo)])
+
+    assert result.exit_code == 1
+    assert [i["kind"] for i in json.loads(result.stdout)["issues"]] == ["missing-version"]
     assert exchange.requests == []
 
 

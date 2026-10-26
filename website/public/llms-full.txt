@@ -7418,8 +7418,9 @@ from CI. Publishing agents, and the sections after
 `donkey scan` walks your repository and finds every
 [`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
 the MCP servers those tools name with `server=`. It produces one deterministic
-model of them. Publishing will register that model with Exchange / Agent
-Registry, and a GitHub Action will run both on every merge to `main`.
+model of them. Publishing registers that model with Exchange / Agent
+Registry, and the [GitHub Action](#from-github-actions) runs both on every merge
+to `main`.
 
 **The registry becomes a consequence of the code, not a chore.** A support agent
 with six tools registered by hand has a stale tool list within a week; with the
@@ -7557,6 +7558,7 @@ service ID your code doesn't define.
 ```bash
 donkey publish .            # publish what changed (--if-changed is the default)
 donkey publish . --always   # publish even when the digest matches the latest version
+donkey publish . --json     # the plan as JSON, each asset with its status and detail
 ```
 
 Without `--dry-run`, `donkey publish` registers each MCP server in the plan as
@@ -7599,6 +7601,62 @@ only.
 exits `1` when the plan has an issue (nothing is sent) or Exchange refuses a
 publish, and `2` when the path doesn't exist, the config is invalid, or the
 control-plane credentials are missing.
+
+### From GitHub Actions
+
+The scan-and-publish action runs `donkey publish` in a workflow. It lives in
+the SDK repository's `action/` folder, so you pin it like any action, to a
+release tag or a commit SHA. The action at a ref installs donkey-kit from the
+same ref, into its own virtual environment. Your job's Python is left as it
+was.
+
+```yaml
+# .github/workflows/publish.yml
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Donkey-Development-Kit/donkey-development-kit/action@<ref>
+        with:
+          # On a pull request: plan only, with no credentials.
+          dry-run: ${{ github.event_name == 'pull_request' }}
+          client-id: ${{ secrets.ANYPOINT_CLIENT_ID }}
+          client-secret: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+          org-id: ${{ secrets.ANYPOINT_ORG_ID }}
+```
+
+A dry run needs no credentials, so it works on pull requests from forks, which
+get no secrets. Set `group_id` in `[donkey.publication]` so the plan doesn't
+need the org ID either. The action passes the credentials to `donkey` only
+through the environment, and masks the client secret in the log. A credential
+input left empty keeps the `ANYPOINT_*` variable your job already sets.
+
+| Input | Default | |
+| --- | --- | --- |
+| `path` | `.` | The directory (or one `.py` file) to scan and publish. |
+| `dry-run` | `false` | `true` plans and sends nothing (`--dry-run`). |
+| `if-changed` | `true` | `false` publishes even when the digest matches (`--always`). |
+| `client-id`, `client-secret`, `org-id` | empty | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, `ANYPOINT_ORG_ID`. |
+| `python-version` | `3.12` | The Python that runs donkey-kit (3.10 or later). |
+| `donkey-kit` | empty | A pip requirement to install instead, such as `donkey-kit[cli]==X.Y.Z`. |
+
+The job summary shows a table of the assets: each one's digest on a dry run,
+and each one's status and detail after a publish. The step's outputs are the
+`published`, `unchanged` and `skipped` counts, and `result`, the path of the
+JSON that `donkey publish --json` printed. A failed publish fails the step with
+`donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
+annotation, so the fix shows on the run's page.
 
 ## Scope: code-first assets
 

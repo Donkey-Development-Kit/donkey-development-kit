@@ -88,7 +88,7 @@ The jobs, grouped by what they protect:
   and of `.[all]` for known vulnerabilities, blocking (#757).
   `dependency-review` flags a PR that adds a vulnerable dependency or one
   under a GPL/AGPL licence, and runs on PRs only. `workflow-lint` runs
-  actionlint and zizmor over `.github/` (convention 7).
+  actionlint and zizmor over `.github/`, and zizmor over `action/` (convention 7).
 - **The gate itself.** `ci-ok` needs every other job and fails unless each one
   succeeded or was skipped. It is the one required status check (convention 2).
 
@@ -540,7 +540,8 @@ into a `run:` body. In place:
   `python/scripts/`, `python/src/donkey_kit/core/` and `python/tests/fixtures/`.
   The owners' review is required once the branch rules turn on
   "Require review from Code Owners".
-- `ci.yml`'s `workflow-lint` runs actionlint and zizmor over `.github/`.
+- `ci.yml`'s `workflow-lint` runs actionlint and zizmor over `.github/`, and zizmor
+  over `action/` (#219).
 - `tests/unit/test_workflow_supply_chain.py` fails on an unpinned `uses:`, a
   checkout that keeps the token, an OIDC or Pages grant outside the publish
   and deploy jobs, or a missing Dependabot, CODEOWNERS or binary-image rule.
@@ -623,7 +624,7 @@ The same rules apply in every Donkey-Development-Kit repo:
 - A new `uses:` is pinned to the full commit SHA of a release, with the
   release's `# vX.Y.Z` as a trailing comment, and a new checkout sets
   `persist-credentials: false` (convention 7). Run `actionlint` and
-  `zizmor .github/` locally before pushing a workflow change; `workflow-lint`
+  `zizmor .github/ action/` locally before pushing a workflow change; `workflow-lint`
   runs both on the PR.
 - A change to which tests run where updates the test-surface table in
   [`CONTRIBUTING.md` §2](../CONTRIBUTING.md#2-testing-strategy).

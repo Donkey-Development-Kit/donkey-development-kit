@@ -1,0 +1,101 @@
+# The scan-and-publish GitHub Action (#219): `donkey publish` from CI.
+#
+#   - uses: Donkey-Development-Kit/donkey-development-kit/action@<ref>  # a release tag or a commit SHA
+#     with:
+#       client-id: ${{ secrets.ANYPOINT_CLIENT_ID }}
+#       client-secret: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+#       org-id: ${{ secrets.ANYPOINT_ORG_ID }}
+#
+# It installs donkey-kit from this checkout of the repository, so the action at
+# a ref always runs the SDK at the same ref, into its own virtual environment:
+# the job's Python, PATH and environment are left as they were. run.py runs the command and
+# writes the job summary and the outputs. Inputs reach the scripts only through
+# env, never through ${{ }} in a run: body.
+name: Donkey scan and publish
+description: Scan a repository's MCP servers and publish what changed to Anypoint Exchange.
+author: Donkey Development Kit
+branding:
+  icon: upload-cloud
+  color: orange
+
+inputs:
+  path:
+    description: The repository directory (or one .py file) to scan and publish.
+    default: "."
+  dry-run:
+    description: Print the plan in the job summary and send nothing. Needs no credentials; use it on pull requests.
+    default: "false"
+  if-changed:
+    description: Skip an asset whose latest published version has the same digest. "false" publishes anyway (--always).
+    default: "true"
+  client-id:
+    description: The connected app's client ID (ANYPOINT_CLIENT_ID). Leave empty to use the job's environment.
+    default: ""
+  client-secret:
+    description: The connected app's client secret (ANYPOINT_CLIENT_SECRET). Pass it from a secret.
+    default: ""
+  org-id:
+    description: The business group's organization ID (ANYPOINT_ORG_ID), also the default Exchange group ID.
+    default: ""
+  python-version:
+    description: The Python that runs donkey-kit (3.10 or later).
+    default: "3.12"
+  donkey-kit:
+    description: A pip requirement to install instead of this checkout's donkey-kit, for example "donkey-kit[cli]==0.2.0".
+    default: ""
+
+outputs:
+  published:
+    description: How many assets were published.
+    value: ${{ steps.publish.outputs.published }}
+  unchanged:
+    description: How many assets were left unchanged.
+    value: ${{ steps.publish.outputs.unchanged }}
+  skipped:
+    description: How many assets were skipped (agents, for now).
+    value: ${{ steps.publish.outputs.skipped }}
+  result:
+    description: The path of the JSON that donkey publish --json printed.
+    value: ${{ steps.publish.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - id: python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: ${{ inputs.python-version }}
+        update-environment: false
+    - id: install
+      name: Install donkey-kit
+      shell: bash
+      env:
+        PYTHON: ${{ steps.python.outputs.python-path }}
+        REQUIREMENT: ${{ inputs.donkey-kit }}
+        SOURCE: ${{ github.action_path }}/../python
+      run: |
+        "$PYTHON" -m venv "$RUNNER_TEMP/donkey-kit"
+        if [ -x "$RUNNER_TEMP/donkey-kit/bin/python" ]; then
+          venv_python="$RUNNER_TEMP/donkey-kit/bin/python"
+        else
+          venv_python="$RUNNER_TEMP/donkey-kit/Scripts/python.exe"
+        fi
+        "$venv_python" -m pip install --quiet --disable-pip-version-check "${REQUIREMENT:-$SOURCE[cli]}"
+        echo "python=$venv_python" >> "$GITHUB_OUTPUT"
+    - id: publish
+      name: donkey publish
+      shell: bash
+      env:
+        PYTHON: ${{ steps.install.outputs.python }}
+        RUN_PY: ${{ github.action_path }}/run.py
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        INPUT_IF_CHANGED: ${{ inputs.if-changed }}
+        INPUT_CLIENT_ID: ${{ inputs.client-id }}
+        INPUT_CLIENT_SECRET: ${{ inputs.client-secret }}
+        INPUT_ORG_ID: ${{ inputs.org-id }}
+      # A secret passed from `secrets.*` is masked already; one passed from a
+      # variable or another step's output is not, so mask it before donkey runs.
+      run: |
+        if [ -n "$INPUT_CLIENT_SECRET" ]; then echo "::add-mask::$INPUT_CLIENT_SECRET"; fi
+        "$PYTHON" "$RUN_PY"
