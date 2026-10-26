@@ -31,7 +31,7 @@ greenlet==3.5.6
 griffe==2.4.1
 griffecli==2.4.1
 griffelib==2.4.1
-grimp==3.17
+grimp==3.18
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
@@ -69,7 +69,7 @@ pydantic==2.14.1
 pydantic-core==2.50.1
 pygments==2.21.0
 pytest==9.1.1
-pytest-asyncio==1.4.0
+pytest-asyncio==1.4.1
 pytest-randomly==5.0.0
 pytest-socket==0.8.1
 pytest-timeout==2.4.0
