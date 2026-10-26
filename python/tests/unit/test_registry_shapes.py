@@ -24,7 +24,6 @@ from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.experimental import AssetRef, AssetType, Publication, PublicationAssetType
 from donkey_kit.registry.criteria import GovernanceCriteria, GovernanceReport
 from donkey_kit.registry.exchange import ExchangeRegistry
-from donkey_kit.registry.introspect import derive_descriptor
 from donkey_kit.registry.models import McpServerHandle
 from donkey_kit.tools.filter import ToolDescriptor, resolve_collisions
 from donkey_kit.tools.session import ToolSet
@@ -78,10 +77,6 @@ _BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
     ("publication.preview", lambda: _PUBLICATION.preview(object())),
     ("publication.export", _PUBLICATION.export),
     ("publication.verify", lambda: _PUBLICATION.verify(object())),
-    (
-        "registry.derive_descriptor(auto:static)",
-        lambda: derive_descriptor("json:dumps", mode="auto:static"),
-    ),
 )
 
 
