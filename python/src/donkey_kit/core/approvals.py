@@ -23,10 +23,11 @@ that pause the call with the framework's own primitive instead: inside a
 LangGraph graph, the LangGraph adapter's hook calls ``interrupt()`` (#212), and
 ``Command(resume=...)`` carries the decision; under the OpenAI Agents SDK the
 tool's ``needs_approval`` pauses ``Runner.run`` and ``RunState.approve`` /
-``RunState.reject`` carry it (#213). A rejection differs between the two:
-LangGraph raises :class:`ApprovalRejected` from the resumed tool, while the
-Agents SDK raises nothing and hands the model the rejection message
-(``rejection_message``) as the tool's result. Core never imports a framework:
+``RunState.reject`` carry it (#213); Strands' ``ApprovalHook`` raises its
+interrupt (#1234), and ADK's plugin requests a tool confirmation (#1235). A
+rejection differs between them: LangGraph raises :class:`ApprovalRejected` from
+the resumed tool, while the others raise nothing and hand the model the
+rejection message as the tool's result. Core never imports a framework:
 the hooks are passed in from the top-level ``donkey`` module.
 """
 

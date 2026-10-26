@@ -442,7 +442,8 @@ def anthropic_stacks(session: nox.Session, spec: str) -> None:
 @nox.session(name="adk-stacks", python="3.12")
 @nox.parametrize("spec", ADK_SPECS, ids=ADK_SPECS)
 def adk_stacks(session: nox.Session, spec: str) -> None:
-    """google-adk at its floor and its newest release (#735)."""
+    """google-adk at its floor and its newest release (#735), approvals included
+    (#1235)."""
     _install(session, "adk-stacks", ADK_SPEC=spec)
     _framework_tests(
         session,
@@ -451,7 +452,9 @@ def adk_stacks(session: nox.Session, spec: str) -> None:
         "tests/unit/test_framework_redirects.py",
         "tests/unit/test_adapter_async_last_call.py",
         "tests/unit/test_transport_injection.py",
+        "tests/unit/test_adk_approvals.py",
         "tests/conformance/test_typed_refusal_bridge.py",
+        "tests/conformance/test_approval_round_trip.py",
     )
 
 

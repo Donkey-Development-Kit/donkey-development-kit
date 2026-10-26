@@ -412,6 +412,91 @@ Without the hook, nothing pauses. The gate raises `ApprovalRequired` inside the
 tool, Strands turns it into an error tool result, and the call waits in
 `donkey.approvals` like any other.
 
+## In a Google ADK app
+
+An ADK app pauses a gated tool with ADK's own tool confirmation once you add
+the plugin `approval_plugin()` builds. Before the tool runs, the plugin asks
+ADK for a confirmation, and the run ends its turn with an
+`adk_request_confirmation` call. List the gated function in the agent's
+`tools` as you would any other:
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.integrations.adk import approval_plugin, approve, pending_approvals, reject
+from google.adk.agents import LlmAgent
+from google.adk.apps import App
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+donkey = Donkey()
+
+
+@donkey.tool(approval="required", risk="financial")
+def issue_refund(ticket_id: str, amount: float) -> str:
+    """Refund a support ticket."""
+    return f"refunded {ticket_id}"
+
+
+agent = LlmAgent(name="refunds", model=donkey.adk.model("gpt-4o"), tools=[issue_refund])
+app = App(name="refunds", root_agent=agent, plugins=[approval_plugin()])
+sessions = InMemorySessionService()
+runner = Runner(app=app, session_service=sessions)
+session = await sessions.create_session(app_name="refunds", user_id="u")
+
+
+async def send(message: types.Content) -> list:
+    run = runner.run_async(user_id="u", session_id=session.id, new_message=message)
+    return [event async for event in run]
+
+
+events = await send(types.Content(role="user", parts=[types.Part(text="Refund T-1, 140 euros")]))
+requests = pending_approvals(events)  # show each one's payload to a reviewer
+if requests:
+    answer = types.Content(role="user", parts=[approve(r, by="m.keller") for r in requests])
+    events = await send(answer)
+```
+
+`pending_approvals(events)` returns the unanswered requests among the events
+you pass it: the run's events, or a session's `events`. Each is ADK's own
+`adk_request_confirmation` function call. Its
+`args["toolConfirmation"]["payload"]` describes the call:
+
+| Key | What it holds |
+|---|---|
+| `kind` | `"donkey.approval"`, so you can tell a DDK approval from other confirmations. |
+| `approval_id` | The approval's id, the same one on its span events. |
+| `tool`, `arguments`, `risk` | As on an `Approval`. `arguments` holds the arguments as the model sent them. |
+| `correlation_id` | The enclosing `donkey.run()` id, or a fresh one outside a run. |
+
+Resume the run with one user message whose parts answer the requests:
+
+- `approve(request, by=...)` records the approver and runs the tool once,
+  under the pause's correlation id, wherever and whenever you resume.
+- `reject(request, by=..., message=...)` records who refused, and the tool is
+  not run. The model gets `message` as the tool's error result, or a default
+  that names the tool, never the rejecter. Nothing raises `ApprovalRejected`:
+  the model reads the rejection and carries on.
+
+`by` must be a non-empty string, and DDK records it without authenticating it.
+ADK keeps the confirmation calls and their answers out of the model's context,
+so the approver's name never reaches the model.
+
+ADK holds the pause, not `donkey.approvals`: `pending()` does not list it, and
+`approval_timeout` does not apply. The pause lives in the session's events, so
+a fresh process with a fresh plugin can resume it from any persistent
+`SessionService`. The approval id is derived from ADK's function-call id, the
+tool and the arguments as sent, so the decision is recorded under the same id
+and joins the pause's correlation id.
+
+A model call the approved tool makes is judged by the gateway as usual. An
+exception the tool raises, a refusal included, leaves the runner as any tool
+exception does in ADK.
+
+Without the plugin, nothing pauses. The gate raises `ApprovalRequired` inside
+the tool, which leaves the runner, and the call waits in `donkey.approvals`
+like any other.
+
 ## Discovered tools <Badge tone="roadmap">Roadmap</Badge>
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
@@ -453,15 +538,15 @@ does not know it was needed until step-up routes it through the gateway.
 
 DDK does not introduce a new pause mechanism. The raise-and-resume form above
 works in any Python code, and LangGraph's own `interrupt()`, the OpenAI Agents
-SDK's `needs_approval` and Strands' interrupt hooks are mapped. Mapping the same
-vocabulary onto the other frameworks' primitives is planned:
+SDK's `needs_approval`, Strands' interrupt hooks and Google ADK's tool
+confirmation are mapped. Gateway step-up is planned:
 
 | Framework / protocol | Native primitive | Status |
 |---|---|---|
 | Any Python code | `ApprovalRequired` + `donkey.approvals.resolve(...)` | <Badge tone="live">Live</Badge> |
 | LangGraph | `interrupt()` / `Command(resume=…)` | <Badge tone="live">Live</Badge> |
 | OpenAI Agents SDK | `needs_approval` / `RunState.approve(…)` | <Badge tone="live">Live</Badge> |
-| Google ADK | before/after tool callbacks | <Badge tone="roadmap">Roadmap</Badge> |
+| Google ADK | tool confirmation, via `approval_plugin()` | <Badge tone="live">Live</Badge> |
 | Strands | `BeforeToolCallEvent` interrupt, via `ApprovalHook` | <Badge tone="live">Live</Badge> |
 | MCP | elicitation | <Badge tone="neutral">Not supported</Badge> |
 | Omni Gateway | Trusted Agent Identity step-up (MFA) | <Badge tone="roadmap">Roadmap</Badge> |

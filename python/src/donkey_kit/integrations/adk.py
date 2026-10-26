@@ -34,20 +34,44 @@ google-adk 2.13.0 runs each step of the model's response generator in a copy of
 the flow's context, so without it the record stays in that copy and an
 ``after_model_callback`` reads ``UNOBSERVED``.
 
+APPROVALS (BG §2.3, #1235): an approval-gated tool
+(``@donkey.tool(approval="required")`` in an agent's ``tools``) pauses the run
+with ADK's own tool confirmation once the app has the plugin
+:func:`approval_plugin` builds: ``App(..., plugins=[approval_plugin()])``.
+Before the call runs, the plugin records the pending approval and calls
+``tool_context.request_confirmation``, and ADK ends the turn with an
+``adk_request_confirmation`` call. :func:`pending_approvals` reads those calls
+off the run's events, and the run resumes on a user message whose parts are
+:func:`approve` / :func:`reject` responses. An approved call runs once, under
+the pause's correlation id. A rejected call is not run: the model gets the
+rejection as the tool's error result, and nothing raises ``ApprovalRejected``.
+The pause lives in the session's events, so a fresh process can resume it.
+Without the plugin the gate raises ``ApprovalRequired`` inside the tool.
+
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
 
 from __future__ import annotations
 
+import contextvars
 import functools
+import hashlib
+import json
+import math
+import threading
+import time
+from collections.abc import Iterable, Mapping
 from contextlib import aclosing
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..core import _verify
+from ..core.approvals import Approval, record_decision, record_pending
+from ..core.correlation import current_correlation_id
 from ..core.lastcall import LastCallBridge, open_last_call_bridge
 from ..core.masking import masked
 from ..core.refusals import capture_refusals
+from ..core.toolspec import tool_spec
 from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
@@ -56,8 +80,20 @@ if TYPE_CHECKING:
 
     from google.adk.models import Gemini
     from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
+    from google.adk.plugins import BasePlugin
+    from google.genai import types
 
-__all__ = ["ADKAdapter", "gemini", "model"]
+__all__ = [
+    "APPROVAL_KIND",
+    "ADKAdapter",
+    "approval_plugin",
+    "approve",
+    "approved_call",
+    "gemini",
+    "model",
+    "pending_approvals",
+    "reject",
+]
 
 
 class ADKAdapter(Adapter):
@@ -305,3 +341,276 @@ def gemini(model: str, *, base_url: str | None = None, **kw: Any) -> Gemini:
     using a cached default env-configured Donkey. Equivalent to
     ``Donkey.from_env().adk.gemini(model, base_url=..., **kw)``."""
     return default_adapter(ADKAdapter).gemini(model, base_url=base_url, **kw)
+
+
+#: The ``kind`` in a DDK approval's confirmation payload, so a caller reading the
+#: run's ``adk_request_confirmation`` calls can tell it from other confirmations.
+APPROVAL_KIND = "donkey.approval"
+
+# The function call ADK pauses a run with (docs/verified-apis.md §8).
+_CONFIRMATION_CALL = "adk_request_confirmation"
+
+# The call the plugin approved, for the gate inside the tool to pick up. Set in
+# before_tool_callback, which ADK awaits on the task that runs that one call (a
+# task per call at google-adk 2.4.0 and 2.13.0), so it cannot reach another
+# call. ADK runs a sync tool in a thread pool on a copy of that task's context.
+_APPROVED: contextvars.ContextVar[Approval | None] = contextvars.ContextVar(
+    "donkey_adk_approved", default=None
+)
+
+
+def approval_plugin(name: str = "donkey_approval") -> BasePlugin:
+    """An ADK plugin that pauses approval-gated tool calls with ADK's own tool
+    confirmation (BG §2.3, #1235).
+
+    Add it to the app: ``App(name=..., root_agent=agent,
+    plugins=[approval_plugin()])``. Before a ``@donkey.tool(approval="required")``
+    call runs, the plugin records the pending approval and requests a
+    confirmation. Its payload carries the ``kind`` (:data:`APPROVAL_KIND`),
+    ``approval_id``, ``tool``, ``arguments``, ``risk`` and ``correlation_id``.
+    Resume with ``types.Content(role="user", parts=[approve(c, by="m.keller")
+    for c in pending_approvals(events)])``. The plugin records the decision
+    once, and an approved call runs under the pause's correlation id. A rejected
+    call is answered with the rejection message, so the model sees it as the
+    tool's error result. ADK keeps confirmation calls out of the model's
+    context, so the approver's name never reaches it.
+
+    The approval id is derived from ADK's function-call id, the tool and its
+    arguments as the model sent them, so it is the same in any process. ADK
+    holds the pause, so ``approval_timeout`` does not apply.
+
+    Raises:
+        ImportError: ``google-adk`` is not installed.
+    """
+    return _approval_plugin_class()(name=name)
+
+
+@functools.cache
+def _approval_plugin_class() -> type[BasePlugin]:
+    """The ``BasePlugin`` subclass :func:`approval_plugin` builds, defined on
+    first use so ``google.adk`` is imported lazily (§1.1)."""
+    from google.adk.plugins import BasePlugin
+
+    class ApprovalPlugin(BasePlugin):
+        """Pauses approval-gated tool calls with ADK's tool confirmation."""
+
+        def __init__(self, name: str) -> None:
+            super().__init__(name=name)
+            self._lock = threading.Lock()
+            # Per invocation: the approvals whose decision is recorded, so a
+            # call ADK runs again does not record it twice.
+            self._decided: dict[str, set[str]] = {}
+
+        async def before_tool_callback(
+            self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any
+        ) -> dict[str, Any] | None:
+            func = getattr(tool, "func", None)
+            spec = tool_spec(func) if callable(func) else None
+            if spec is None or spec.approval != "required":
+                return None
+            try:
+                bound = spec.signature.bind(**tool_args)
+            except TypeError:
+                return None  # the gate refuses a call that could never run, unpaused
+            bound.apply_defaults()
+            arguments = MappingProxyType(dict(bound.arguments))
+            approval = _approval(
+                str(tool_context.function_call_id), spec.name, tool_args, arguments, spec.risk
+            )
+            confirmation = tool_context.tool_confirmation
+            if confirmation is None:
+                record_pending(approval)
+                tool_context.request_confirmation(
+                    hint=f"Approve the call of {approval.tool!r}?",
+                    payload=_payload(approval, tool_args),
+                )
+                # The pause is not a tool result for the model to summarize;
+                # without this the flow calls the model again.
+                tool_context.actions.skip_summarization = True
+                return {"status": "awaiting approval", "approval_id": approval.id}
+            approved, by, message, requested = _decision(confirmation)
+            if requested.get("approval_id") == approval.id:
+                approval = _as_requested(approval, requested)
+            with self._lock:
+                decided = self._decided.setdefault(str(tool_context.invocation_id), set())
+                record = approval.id not in decided
+                decided.add(approval.id)
+            if record:
+                record_decision(approval, approved=approved, by=by)
+            if approved:
+                _APPROVED.set(approval)
+                return None
+            # The rejecter's name stays out of the model's context, as on the
+            # other frameworks (#213, #1234); the decision span event records it.
+            return {
+                "error": message
+                or f"A human rejected this call of {approval.tool!r}, so it was not run."
+            }
+
+        async def after_tool_callback(self, **kwargs: Any) -> None:
+            _APPROVED.set(None)
+
+        async def on_tool_error_callback(self, **kwargs: Any) -> None:
+            _APPROVED.set(None)
+
+        async def after_run_callback(self, *, invocation_context: Any) -> None:
+            with self._lock:
+                self._decided.pop(str(invocation_context.invocation_id), None)
+
+    return ApprovalPlugin
+
+
+def _approval(
+    call_id: str,
+    tool: str,
+    sent: Mapping[str, Any],
+    arguments: Mapping[str, Any],
+    risk: str | None,
+) -> Approval:
+    # Hash the arguments as the model sent them, not the bound ones: a default's
+    # repr can hold a memory address, which would change the id between
+    # processes (a restored session).
+    encoded = json.dumps(dict(sent), sort_keys=True, default=repr)
+    approval_id = hashlib.sha256(repr((call_id, tool, encoded)).encode()).hexdigest()[:32]
+    return Approval(
+        id=approval_id,
+        tool=tool,
+        arguments=arguments,
+        risk=risk,
+        correlation_id=current_correlation_id() or approval_id,
+        requested_at=time.time(),
+        expires_at=math.inf,
+    )
+
+
+def _as_requested(approval: Approval, payload: Mapping[str, Any]) -> Approval:
+    """``approval`` with the correlation id and time its pause recorded, so the
+    resumed call joins the pause's trace, in this process or another."""
+    correlation_id = payload.get("correlation_id")
+    requested_at = payload.get("requested_at")
+    return Approval(
+        id=approval.id,
+        tool=approval.tool,
+        arguments=approval.arguments,
+        risk=approval.risk,
+        correlation_id=(
+            correlation_id
+            if isinstance(correlation_id, str) and correlation_id
+            else approval.correlation_id
+        ),
+        requested_at=(
+            float(requested_at)
+            if isinstance(requested_at, (int, float)) and not isinstance(requested_at, bool)
+            else approval.requested_at
+        ),
+        expires_at=approval.expires_at,
+    )
+
+
+def _payload(approval: Approval, sent: Mapping[str, Any]) -> dict[str, Any]:
+    # The arguments as sent: the session stores the payload as JSON, and a bound
+    # default need not serialize.
+    return {
+        "kind": APPROVAL_KIND,
+        "approval_id": approval.id,
+        "tool": approval.tool,
+        "arguments": json.loads(json.dumps(dict(sent), default=repr)),
+        "risk": approval.risk,
+        "correlation_id": approval.correlation_id,
+        "requested_at": approval.requested_at,
+    }
+
+
+def approved_call(tool: str) -> Approval | None:
+    """The approval :func:`approval_plugin`'s plugin granted for the ``tool``
+    call running now, or ``None``. The gate's ADK hook (BG §2.3): it lets the
+    approved call run instead of raising ``ApprovalRequired``. One approval runs
+    one call."""
+    approval = _APPROVED.get()
+    if approval is None or approval.tool != tool:
+        return None
+    _APPROVED.set(None)
+    return approval
+
+
+def pending_approvals(events: Iterable[Any]) -> tuple[Any, ...]:
+    """The DDK approval requests among a run's ADK ``events`` that no later
+    event answers, in order.
+
+    Each is ADK's own ``adk_request_confirmation`` ``FunctionCall``; its
+    ``args["toolConfirmation"]["payload"]`` is the payload described in
+    :func:`approval_plugin`. Pass it to :func:`approve` or :func:`reject`."""
+    calls: dict[str, Any] = {}
+    for event in events:
+        for call in event.get_function_calls() or ():
+            if call.name == _CONFIRMATION_CALL and _kind(call) == APPROVAL_KIND:
+                calls[call.id] = call
+        for response in event.get_function_responses() or ():
+            calls.pop(response.id, None)
+    return tuple(calls.values())
+
+
+def approve(request: Any, *, by: str) -> types.Part:
+    """The user-message part that approves ``request`` (from
+    :func:`pending_approvals`), recording ``by`` as the approver once the run
+    resumes on it.
+
+    Raises:
+        ValueError: ``by`` is empty, or ``request`` is not a DDK approval request.
+    """
+    return _response(request, {"by": _who(by)}, confirmed=True)
+
+
+def reject(request: Any, *, by: str, message: str | None = None) -> types.Part:
+    """The user-message part that rejects ``request``. On resume the call is not
+    run, and the model gets ``message`` (or a default that names the tool, never
+    ``by``) as the tool's error result.
+
+    Raises:
+        ValueError: ``by`` is empty, or ``request`` is not a DDK approval request.
+    """
+    decision: dict[str, Any] = {"by": _who(by)}
+    if message is not None:
+        decision["message"] = message
+    return _response(request, decision, confirmed=False)
+
+
+def _kind(call: Any) -> object:
+    confirmation = (getattr(call, "args", None) or {}).get("toolConfirmation")
+    payload = confirmation.get("payload") if isinstance(confirmation, Mapping) else None
+    return payload.get("kind") if isinstance(payload, Mapping) else None
+
+
+def _response(request: Any, decision: dict[str, Any], *, confirmed: bool) -> types.Part:
+    if getattr(request, "name", None) != _CONFIRMATION_CALL or _kind(request) != APPROVAL_KIND:
+        raise ValueError("not a DDK approval request; use pending_approvals(events) to find them")
+    from google.genai import types
+
+    payload = {**request.args["toolConfirmation"]["payload"], **decision}
+    return types.Part(
+        function_response=types.FunctionResponse(
+            id=request.id,
+            name=_CONFIRMATION_CALL,
+            response={"confirmed": confirmed, "payload": payload},
+        )
+    )
+
+
+def _who(by: str) -> str:
+    if not isinstance(by, str) or not by.strip():
+        raise ValueError(f"by must name who decided, not {by!r}")
+    return by.strip()
+
+
+def _decision(confirmation: Any) -> tuple[bool, str, str | None, Mapping[str, Any]]:
+    """``(approved, by, message, payload)`` from ADK's ``ToolConfirmation``."""
+    payload = getattr(confirmation, "payload", None)
+    approved = getattr(confirmation, "confirmed", None)
+    if isinstance(payload, Mapping) and isinstance(approved, bool):
+        by, message = payload.get("by"), payload.get("message")
+        if isinstance(by, str) and by.strip() and (message is None or isinstance(message, str)):
+            return approved, by.strip(), message, payload
+    raise ValueError(
+        "resume a DDK approval with approve(request, by=...) or reject(request, by=...); "
+        "got a confirmation without a bool 'confirmed' and a non-empty 'by'"
+    )
