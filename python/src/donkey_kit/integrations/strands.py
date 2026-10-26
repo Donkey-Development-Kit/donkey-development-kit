@@ -260,6 +260,12 @@ class ApprovalHook:
     cancelled, so Strands hands the model the rejection message as an error tool
     result.
 
+    The hook also re-raises a governed tool refusal from ``AfterToolCallEvent``
+    before Strands can retry the tool or send its error text to the model
+    (BG §1.2, #1237). ``donkey.run()`` / ``@donkey.governed`` unwrap Strands'
+    event-loop exception to recover the typed error. Ordinary tool failures
+    remain error tool results.
+
     The approval id is derived from Strands' tool-use id, the tool and its
     arguments. Strands holds the pause, so ``approval_timeout`` does not apply,
     and an approval resumed by a fresh hook (a restored session) is recorded
@@ -325,8 +331,17 @@ class ApprovalHook:
                 message or f"A human rejected this call of {approval.tool!r}, so it was not run."
             )
 
-    def _after_tool(self, event: Any) -> None:  # noqa: ARG002
+    def _after_tool(self, event: Any) -> None:
         _APPROVED.set(None)
+        exception = getattr(event, "exception", None)
+        if isinstance(exception, Exception):
+            typed = translate(exception, (refusal_translator,))
+            if typed is not None:
+                # Strands preserves the tool exception on the after-event. It
+                # catches a hook failure once and fires this hook again; the
+                # second raise escapes the executor without a retry (#1237).
+                del exception, event
+                raise typed from typed.__cause__
 
     def _after_invocation(self, event: Any) -> None:
         with self._lock:

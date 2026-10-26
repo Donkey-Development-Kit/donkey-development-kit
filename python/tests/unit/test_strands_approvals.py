@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import ApprovalRequired, Donkey, DonkeyConfig, PIIDetected, TokenBudgetExceeded
 from donkey_kit.core import approvals as approvals_mod
 from donkey_kit.core import telemetry
 from donkey_kit.core.approvals import Approval
@@ -307,6 +307,104 @@ async def test_a_retried_call_records_its_decision_once(
 
     assert len(ran) == 2  # the retry ran the approved call again
     assert [k for k, _, _ in recorded] == ["pending", "approved"]
+
+
+@pytest.mark.parametrize("is_async", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize("executor", [ConcurrentToolExecutor, SequentialToolExecutor])
+@pytest.mark.parametrize("error", [TokenBudgetExceeded, PIIDetected])
+async def test_a_tool_refusal_stops_the_agent_without_retrying(
+    is_async: bool, executor: type[Any], error: type[Exception]
+) -> None:
+    refusal = error("governed tool refused")
+    calls: list[str] = []
+
+    if is_async:
+
+        @Donkey.tool(approval="required")
+        async def issue_refund(ticket_id: str) -> str:
+            """Refund a ticket."""
+            calls.append(ticket_id)
+            raise refusal
+
+    else:
+
+        @Donkey.tool(approval="required")
+        def issue_refund(ticket_id: str) -> str:
+            """Refund a ticket."""
+            calls.append(ticket_id)
+            raise refusal
+
+    class RetryErrors(HookProvider):
+        retried = False
+
+        def register_hooks(self, registry: Any, **kwargs: Any) -> None:
+            registry.add_callback(AfterToolCallEvent, self.after)
+
+        def after(self, event: AfterToolCallEvent) -> None:
+            if event.exception is not None and not self.retried:
+                event.retry = True
+                self.retried = True
+
+    model = _ScriptedModel(_REFUND)
+    agent = _agent(
+        model, tool(issue_refund), hooks=(ApprovalHook(), RetryErrors()), tool_executor=executor()
+    )
+    (interrupt,) = pending_approvals(await _paused(agent))
+
+    async with Donkey(_cfg()) as donkey:
+        with pytest.raises(error) as caught:
+            async with donkey.run():
+                await agent.invoke_async([approve(interrupt, by="m.keller")])
+
+    assert caught.value is refusal
+    assert calls == ["T-1"]
+    assert len(model.turns) == 1  # no refusal text or subsequent model request
+    assert approved_call("issue_refund") is None
+    # A failed approved call must not leak its approval into the next call.
+    with pytest.raises(ApprovalRequired):
+        if is_async:
+            await issue_refund("T-2")
+        else:
+            issue_refund("T-2")
+    assert calls == ["T-1"]
+
+
+@pytest.mark.parametrize("executor", [ConcurrentToolExecutor, SequentialToolExecutor])
+async def test_an_ungated_tool_refusal_also_stops_the_agent(executor: type[Any]) -> None:
+    refusal = PIIDetected("governed tool refused")
+
+    @tool
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a ticket."""
+        raise refusal
+
+    model = _ScriptedModel(_REFUND)
+    agent = _agent(model, issue_refund, hooks=(ApprovalHook(),), tool_executor=executor())
+    async with Donkey(_cfg()) as donkey:
+        with pytest.raises(PIIDetected) as caught:
+            async with donkey.run():
+                await agent.invoke_async("refund T-1")
+
+    assert caught.value is refusal
+    assert len(model.turns) == 1
+    assert approved_call("issue_refund") is None
+
+
+async def test_an_ordinary_tool_failure_still_reaches_the_model() -> None:
+    @Donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a ticket."""
+        raise ValueError("ticket not found")
+
+    model = _ScriptedModel(_REFUND)
+    agent = _agent(model, tool(issue_refund), hooks=(ApprovalHook(),))
+    (interrupt,) = pending_approvals(await _paused(agent))
+    result = await agent.invoke_async([approve(interrupt, by="m.keller")])
+
+    assert result.stop_reason == "end_turn"
+    assert model.tool_results()["tu-1"]["status"] == "error"
+    assert "ticket not found" in model.tool_results()["tu-1"]["content"][0]["text"]
+    assert approved_call("issue_refund") is None
 
 
 async def test_a_fresh_hook_still_resumes_a_paused_call(
