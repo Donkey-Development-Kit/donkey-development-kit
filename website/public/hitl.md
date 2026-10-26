@@ -287,8 +287,13 @@ not gate, so your own `needs_approval` tools are left to you. `approve(state,
 approval, by=...)` records the approver and approves the call on the
 `RunState`, and the next `Runner.run(agent, state)` runs the tool once.
 `approve` and `reject` also take the approval's id, and raise `KeyError` for an
-id with no paused call in the state. `by` must be a non-empty string, and DDK
-records it without authenticating it.
+id with no paused call in the state. A call is decided once: a second `approve`
+or `reject` of it on the same `RunState` raises `KeyError` and records nothing.
+DDK remembers the decisions on each `RunState` object, so decide on the state you
+resume, because each `result.to_state()` builds a new one. Passed an `Approval`,
+the decision keeps its correlation id, so it joins the pending event even when
+you decide outside the `donkey.run()` that paused. `by` must be a non-empty
+string, and DDK records it without authenticating it.
 
 `reject(state, approval, by=..., message=None)` records the rejecter and
 rejects the call. The tool does not run, and the run goes on: the Agents SDK

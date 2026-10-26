@@ -12,6 +12,7 @@ covered on the legs that do not install ``openai-agents``.
 
 from __future__ import annotations
 
+import gc
 import json
 import math
 import sys
@@ -218,6 +219,94 @@ def test_a_blank_decider_decides_nothing(decide: Any, by: Any) -> None:
 def test_an_approval_with_no_paused_call_is_a_key_error(decide: Any) -> None:
     with pytest.raises(KeyError, match="no paused call"):
         decide(_state(), "not-an-approval", by="m.keller")
+
+
+# --- one decision per paused call --------------------------------------------------
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (ddk_agents.approve, ddk_agents.approve),
+        (ddk_agents.approve, ddk_agents.reject),
+        (ddk_agents.reject, ddk_agents.approve),
+        (ddk_agents.reject, ddk_agents.reject),
+    ],
+)
+def test_a_call_is_decided_once_per_state(
+    first: Any, second: Any, recorded: list[tuple[str, Any]]
+) -> None:
+    """The SDK still lists a decided call in ``get_interruptions()``, so a second
+    decision would record a contradicting audit event: it is a ``KeyError``."""
+    state = _state()
+    (approval,) = ddk_agents.pending_approvals(state)  # type: ignore[arg-type]
+    first(state, approval, by="alice")
+    with pytest.raises(KeyError, match="already decided"):
+        second(state, approval.id, by="bob")
+
+    assert len(state.approved) + len(state.rejected) == 1
+    decisions = [by for kind, (_, by) in recorded[1:]]
+    assert decisions == ["alice"]
+
+
+def test_another_state_decides_on_its_own(recorded: list[tuple[str, Any]]) -> None:
+    one, two = _state(), _state()
+    (approval,) = ddk_agents.pending_approvals(one)  # type: ignore[arg-type]
+    ddk_agents.approve(one, approval, by="alice")  # type: ignore[arg-type]
+    ddk_agents.approve(two, approval, by="alice")  # type: ignore[arg-type]
+    assert len(one.approved) == len(two.approved) == 1
+
+
+def test_a_decision_the_state_refuses_can_be_made_again(
+    recorded: list[tuple[str, Any]],
+) -> None:
+    state = _state()
+    (approval,) = ddk_agents.pending_approvals(state)  # type: ignore[arg-type]
+
+    def broken(item: _Item) -> None:
+        raise RuntimeError("state refused")
+
+    state.approve = broken  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="state refused"):
+        ddk_agents.approve(state, approval, by="alice")  # type: ignore[arg-type]
+    assert [kind for kind, _ in recorded] == ["pending"]  # nothing recorded
+    del state.approve  # back to the class's own method
+    ddk_agents.approve(state, approval, by="alice")  # type: ignore[arg-type]
+    assert state.approved == state.items
+
+
+def test_a_collected_state_is_forgotten() -> None:
+    state = _state()
+    (approval,) = ddk_agents.pending_approvals(state)  # type: ignore[arg-type]
+    ddk_agents.approve(state, approval, by="alice")  # type: ignore[arg-type]
+    key = id(state)
+    assert key in ddk_agents._DECIDED
+    del state
+    gc.collect()
+    assert key not in ddk_agents._DECIDED
+
+
+# --- the decision keeps the approval's correlation -------------------------------
+@pytest.mark.parametrize("decide", [ddk_agents.approve, ddk_agents.reject])
+def test_a_decision_outside_the_run_keeps_the_pauses_correlation(
+    decide: Any, recorded: list[tuple[str, Any]]
+) -> None:
+    state = _state()
+    with run_scope("run-X"):
+        (approval,) = ddk_agents.pending_approvals(state)  # type: ignore[arg-type]
+    decided = decide(state, approval, by="alice")
+
+    assert decided is approval
+    assert (decided.correlation_id, decided.requested_at) == ("run-X", approval.requested_at)
+    assert recorded[-1][1][0].correlation_id == "run-X"
+
+
+def test_a_decision_by_id_is_the_approval_as_of_now(recorded: list[tuple[str, Any]]) -> None:
+    state = _state()
+    with run_scope("run-X"):
+        (approval,) = ddk_agents.pending_approvals(state)  # type: ignore[arg-type]
+    decided = ddk_agents.approve(state, approval.id, by="alice")  # type: ignore[arg-type]
+    # An id carries no correlation: outside a run, the approval is its own.
+    assert decided.id == approval.id
+    assert decided.correlation_id == approval.id
 
 
 # --- the gate's hook ----------------------------------------------------------------

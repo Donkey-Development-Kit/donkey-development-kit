@@ -33,11 +33,15 @@ Class names / kwargs: docs/verified-apis.md §8.
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import hashlib
 import json
 import math
+import threading
 import time
-from collections.abc import Callable, Mapping
+import weakref
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextvars import ContextVar
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -186,21 +190,81 @@ def function_tool(tool: Callable[..., Any], **kw: Any) -> FunctionTool:
         native: FunctionTool = agents.function_tool(tool, **kw)
         return native
     native = agents.function_tool(tool, needs_approval=True, **kw)
-    inner = native.on_invoke_tool
+    # Re-class the SDK's own tool as its public FunctionTool subclass, the way the
+    # SDK's FunctionTool.__copy__ rebuilds one, so __wrapped__ still reaches tool.
+    native.__class__ = _gated_tool_class()
+    native.on_invoke_tool = _GatedInvoker(native.on_invoke_tool, spec, tool)
+    return native
 
-    async def invoke(ctx: ToolContext[Any], arguments: str) -> Any:
+
+class _GatedInvoker:
+    """The ``on_invoke_tool`` of a gated :func:`function_tool`: it runs the SDK's
+    own invoker under the approval of a call the run state approved.
+
+    It honours the SDK's invoker protocol, which ``FunctionTool.__post_init__``
+    and ``FunctionTool.__copy__`` read with ``getattr`` (in every supported
+    release): ``__agents_bind_function_tool__`` rebinds the SDK invoker to a
+    copied tool (``copy.copy``, ``agents.tool_namespace()``,
+    ``dataclasses.replace``), so the copy keeps the gate and its own failure
+    handling. Other attributes the SDK reads off an invoker, such as its
+    sync-tool marker, come from the SDK invoker.
+    """
+
+    def __init__(
+        self,
+        inner: Callable[[ToolContext[Any], str], Awaitable[Any]],
+        spec: ToolSpec,
+        wrapped: Callable[..., Any],
+    ) -> None:
+        self._inner = inner
+        self._spec = spec
+        self.__wrapped__ = wrapped
+        setattr(self, TOOL_MARKER, spec)  # how pending_approvals() finds the tool
+
+    async def __call__(self, ctx: ToolContext[Any], arguments: str) -> Any:
         approved = None
         if ctx.is_tool_approved(ctx.tool_name, ctx.tool_call_id) is True:
-            approved = _approval(spec, ctx.tool_call_id, arguments)
+            approved = _approval(self._spec, ctx.tool_call_id, arguments)
         token = _APPROVED.set(approved)
         try:
-            return await inner(ctx, arguments)
+            return await self._inner(ctx, arguments)
         finally:
             _APPROVED.reset(token)
 
-    setattr(invoke, TOOL_MARKER, spec)  # how pending_approvals() finds the tool
-    native.on_invoke_tool = invoke
-    return native
+    def __agents_bind_function_tool__(self, function_tool: FunctionTool) -> _GatedInvoker:
+        bind = getattr(self._inner, "__agents_bind_function_tool__", None)
+        if not callable(bind):
+            return self
+        inner = bind(function_tool)
+        if inner is self._inner:
+            return self
+        return _GatedInvoker(inner, self._spec, self.__wrapped__)
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "_inner":  # not set yet, e.g. while copying: no recursion
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+
+@functools.cache
+def _gated_tool_class() -> type[FunctionTool]:
+    """``agents.FunctionTool`` with ``__wrapped__`` read from a gated invoker.
+
+    The SDK's own ``__wrapped__`` only answers for its own invoker class, which
+    the gate wraps. Built on first use, so the module imports without
+    ``openai-agents``.
+    """
+    from agents import FunctionTool
+
+    class _GatedFunctionTool(FunctionTool):
+        @property  # replaces the SDK's read-only __wrapped__ descriptor
+        def __wrapped__(self) -> Callable[..., Any]:
+            wrapped: Callable[..., Any] | None = getattr(self.on_invoke_tool, "__wrapped__", None)
+            if wrapped is None:
+                raise AttributeError("FunctionTool has no wrapped Python callable")
+            return wrapped
+
+    return _GatedFunctionTool
 
 
 def approved_call(tool: str, arguments: Mapping[str, Any], risk: str | None) -> Approval | None:  # noqa: ARG001
@@ -260,13 +324,29 @@ def approve(state: RunState[Any, Any], approval: Approval | str, *, by: str) -> 
     resumed calls on the pause's correlation id. Approving through
     ``RunState.approve`` directly also runs the tool, but records no approver.
 
+    A call is decided once: a second :func:`approve` or :func:`reject` of it on
+    the same ``state`` raises ``KeyError`` and records nothing. Given an
+    :class:`~donkey_kit.core.approvals.Approval`, the decision keeps its
+    ``correlation_id`` and ``requested_at``, so it joins the pending event even
+    when decided outside the ``donkey.run()`` that paused.
+
+    The SDK keeps a decided call in ``state.get_interruptions()`` and offers no
+    public way to ask whether it was decided, so DDK remembers the calls it
+    decided on each ``state`` object, for as long as that object lives. It cannot
+    see a decision made on another object: each ``result.to_state()`` builds a
+    new state, as does ``RunState.from_string()``, so decide on the state you
+    resume. Nor can it see a decision made with ``RunState.approve`` or
+    ``RunState.reject`` directly.
+
     Raises:
-        KeyError: ``state`` has no paused :func:`function_tool` call with this id.
+        KeyError: ``state`` has no paused :func:`function_tool` call with this id,
+            or the call was already decided on ``state``.
         ValueError: ``by`` is empty.
     """
     who = _identity(by)
     item, decided = _paused(state, approval)
-    state.approve(item)
+    with _decision(state, decided):
+        state.approve(item)
     record_decision(decided, approved=True, by=who)
     return decided
 
@@ -283,14 +363,19 @@ def reject(
     native rejection, where LangGraph raises ``ApprovalRejected``. Returns the
     rejected approval.
 
+    A call is decided once, and an :class:`~donkey_kit.core.approvals.Approval`
+    keeps its correlation, as for :func:`approve` (with the same limits).
+
     Raises:
-        KeyError: ``state`` has no paused :func:`function_tool` call with this id.
+        KeyError: ``state`` has no paused :func:`function_tool` call with this id,
+            or the call was already decided on ``state``.
         ValueError: ``by`` is empty.
     """
     who = _identity(by)
     item, decided = _paused(state, approval)
     text = message if message is not None else _rejected(decided)
-    state.reject(item, rejection_message=text)
+    with _decision(state, decided):
+        state.reject(item, rejection_message=text)
     record_decision(decided, approved=False, by=who)
     return decided
 
@@ -369,18 +454,58 @@ def _approval(spec: ToolSpec, call_id: str | None, raw: str | None) -> Approval:
 def _paused(
     state: RunState[Any, Any], approval: Approval | str
 ) -> tuple[ToolApprovalItem, Approval]:
-    """The interruption on ``state`` for ``approval``, with the approval as of now."""
+    """The interruption on ``state`` for ``approval``, with the approval to
+    record: the one given, or for an id the approval as of now."""
     wanted = approval if isinstance(approval, str) else approval.id
     for item in state.get_interruptions():
         spec = _gated_spec(item)
         if spec is not None:
             found = _approval(spec, item.call_id, item.arguments)
             if found.id == wanted:
-                return item, found
+                return item, found if isinstance(approval, str) else approval
     raise KeyError(
         f"no paused call for approval {wanted!r} in this run state: it was already "
         "decided, or the run did not stop on a donkey function_tool"
     )
+
+
+# The approval ids decided on each live RunState, keyed by id(state) because a
+# RunState is an unhashable dataclass; the weakref drops the entry with the state.
+_DECIDED: dict[int, tuple[weakref.ref[Any], set[str]]] = {}
+_DECIDED_LOCK = threading.RLock()
+
+
+@contextlib.contextmanager
+def _decision(state: object, approval: Approval) -> Iterator[None]:
+    """Claim ``approval`` as decided on ``state`` for the ``with`` body: raise
+    ``KeyError`` if it was already decided there, and release the claim if the
+    body raises."""
+    key = id(state)
+    with _DECIDED_LOCK:
+        entry = _DECIDED.get(key)
+        if entry is None or entry[0]() is not state:  # new, or a reused id
+            entry = (weakref.ref(state, functools.partial(_forget, key)), set())
+            _DECIDED[key] = entry
+        if approval.id in entry[1]:
+            raise KeyError(
+                f"approval {approval.id!r} was already decided on this run state; "
+                "a call is approved or rejected once"
+            )
+        entry[1].add(approval.id)
+    try:
+        yield
+    except BaseException:
+        with _DECIDED_LOCK:
+            entry[1].discard(approval.id)
+        raise
+
+
+def _forget(key: int, ref: weakref.ref[Any]) -> None:
+    """Drop a collected state's entry, unless a newer state reused its id."""
+    with _DECIDED_LOCK:  # re-entrant: a collection can run while this thread holds it
+        entry = _DECIDED.get(key)
+        if entry is not None and entry[0] is ref:
+            del _DECIDED[key]
 
 
 def _identity(value: str) -> str:

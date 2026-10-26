@@ -11,6 +11,8 @@ model call gets is raised typed instead of becoming a tool result.
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import json
 from typing import Any
 
@@ -28,6 +30,7 @@ from donkey_kit._testing import http_clients, swap_transport
 from donkey_kit.core import approvals as approvals_mod
 from donkey_kit.core import telemetry
 from donkey_kit.core.telemetry import current_correlation_id
+from donkey_kit.core.toolspec import tool_spec
 
 agents = pytest.importorskip("agents")
 
@@ -99,7 +102,12 @@ def _tool_results(request: dict[str, Any]) -> list[str]:
 class _Refunds:
     """A Donkey on a scripted gateway, with a gated refund tool on an agent."""
 
-    def __init__(self, donkey: Donkey, arguments: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        donkey: Donkey,
+        arguments: dict[str, Any] | None = None,
+        tool: Any = None,
+    ) -> None:
         self.sent: list[dict[str, Any]] = []
         self.ran: list[tuple[str, float, str | None]] = []
         for client in http_clients(donkey):
@@ -112,7 +120,10 @@ class _Refunds:
             ran.append((ticket_id, amount, current_correlation_id()))
             return f"refunded {ticket_id}"
 
+        self.refund = issue_refund
         self.tool = ddk_agents.function_tool(issue_refund)
+        if tool is not None:  # build the agent's tool from the DDK one
+            self.tool = tool(self.tool)
         self.agent = agents.Agent(
             name="refunds", model=donkey.openai_agents.model("gpt-4o"), tools=[self.tool]
         )
@@ -274,6 +285,124 @@ async def test_an_unknown_approval_is_a_key_error() -> None:
         result = await refunds.pause()
         with pytest.raises(KeyError, match="no paused call"):
             ddk_agents.approve(result.to_state(), "not-an-approval", by="m.keller")
+
+
+# --- one decision per paused call ------------------------------------------------
+async def test_a_second_approval_of_the_call_is_a_key_error(spans: Any) -> None:
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey)
+        result = await refunds.pause()
+        (approval,) = ddk_agents.pending_approvals(result)
+        state = result.to_state()
+        ddk_agents.approve(state, approval, by="alice")
+        # The SDK still lists the decided call in state.get_interruptions().
+        assert len(state.get_interruptions()) == 1
+        with pytest.raises(KeyError, match="already decided"):
+            ddk_agents.approve(state, approval, by="bob")
+        await refunds.resume(state)
+
+    assert [r[:2] for r in refunds.ran] == [("T-1", 140.0)]
+    decided = [a.get("donkey.approval.approved_by") for n, a in _events(spans)[1:]]
+    assert decided == ["alice"]
+
+
+async def test_a_rejection_after_the_approval_is_a_key_error(spans: Any) -> None:
+    """approve(by=alice) then reject(by=bob) would leave two audit events that
+    contradict each other, while the SDK runs the tool: the reject raises."""
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey)
+        result = await refunds.pause()
+        (approval,) = ddk_agents.pending_approvals(result)
+        state = result.to_state()
+        ddk_agents.approve(state, approval, by="alice")
+        with pytest.raises(KeyError, match="already decided"):
+            ddk_agents.reject(state, approval.id, by="bob")
+        await refunds.resume(state)
+
+    assert [r[:2] for r in refunds.ran] == [("T-1", 140.0)]
+    assert [n for n, _ in _events(spans)] == ["donkey.approval.pending", "donkey.approval.approved"]
+
+
+async def test_a_decision_outside_the_run_keeps_the_pauses_correlation(spans: Any) -> None:
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey)
+        async with donkey.run(id="run-X"):
+            result = await refunds.pause()
+            (approval,) = ddk_agents.pending_approvals(result)
+        decided = ddk_agents.approve(result.to_state(), approval, by="alice")
+
+    assert decided.correlation_id == "run-X"
+    assert decided.requested_at == approval.requested_at
+    name, attrs = _events(spans)[-1]
+    assert (name, attrs["donkey.correlation_id"]) == ("donkey.approval.approved", "run-X")
+
+
+# --- a gated tool is still the SDK's FunctionTool ----------------------------------
+def test_a_gated_tool_keeps_its_wrapped_function() -> None:
+    @Donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a support ticket."""
+        return ticket_id
+
+    tool = ddk_agents.function_tool(issue_refund)
+    assert isinstance(tool, agents.FunctionTool)
+    assert tool.__wrapped__ is issue_refund
+    assert copy.copy(tool).__wrapped__ is issue_refund
+
+
+@pytest.mark.parametrize(
+    "rebuild",
+    [
+        copy.copy,
+        lambda tool: dataclasses.replace(tool, description="Refund a ticket."),
+        lambda tool: agents.tool_namespace(
+            name="billing", description="Billing tools.", tools=[tool]
+        )[0],
+    ],
+    ids=["copy", "replace", "tool_namespace"],
+)
+def test_a_rebuilt_gated_tool_keeps_the_gate(rebuild: Any) -> None:
+    @Donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a support ticket."""
+        return ticket_id
+
+    tool = ddk_agents.function_tool(issue_refund)
+    rebuilt = rebuild(tool)
+    assert rebuilt is not tool
+    assert rebuilt.needs_approval is True
+    # Bound to the rebuilt tool, not the original's invoker, and still the gate.
+    assert rebuilt.on_invoke_tool is not tool.on_invoke_tool
+    assert tool_spec(rebuilt.on_invoke_tool) is tool_spec(issue_refund)
+    assert rebuilt.__wrapped__ is issue_refund
+
+
+async def test_a_copied_gated_tool_pauses_and_runs_once_approved(spans: Any) -> None:
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey, tool=copy.copy)
+        result = await refunds.pause()
+        assert refunds.ran == []
+        (approval,) = ddk_agents.pending_approvals(result)
+        state = result.to_state()
+        ddk_agents.approve(state, approval, by="alice")
+        done = await refunds.resume(state)
+
+    assert done.final_output == "done"
+    assert [r[:2] for r in refunds.ran] == [("T-1", 140.0)]
+    assert _tool_results(refunds.sent[-1]) == ["refunded T-1"]
+
+
+async def test_a_copied_gated_tool_the_sdk_did_not_approve_raises() -> None:
+    """The copy's invoker is the gate, so with the SDK's approval off the call
+    still raises ``ApprovalRequired`` rather than running."""
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey, tool=copy.copy)
+        refunds.tool.needs_approval = False
+        with pytest.raises(ApprovalRequired):
+            async with donkey.run(id="run-c"):
+                await refunds.pause()
+
+    assert refunds.ran == []
 
 
 # --- where the native pause does not apply ------------------------------------

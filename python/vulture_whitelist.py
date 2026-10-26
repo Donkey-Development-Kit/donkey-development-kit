@@ -81,6 +81,7 @@ messages  # unused variable (src/donkey_kit/integrations/langgraph.py)
 _.on_llm_end  # unused method (src/donkey_kit/integrations/langgraph.py)
 _.on_llm_error  # unused method (src/donkey_kit/integrations/langgraph.py)
 _.framework_error  # unused attribute (src/donkey_kit/integrations/langgraph.py)
+_.__class__  # unused attribute (src/donkey_kit/integrations/openai_agents.py): re-classes the SDK's FunctionTool, read by Python on every attribute lookup
 function_calling  # unused variable (src/donkey_kit/llm/catalog.py)
 vision  # unused variable (src/donkey_kit/llm/catalog.py)
 json_output  # unused variable (src/donkey_kit/llm/catalog.py)
