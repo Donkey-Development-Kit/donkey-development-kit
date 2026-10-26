@@ -14,6 +14,7 @@ import httpx
 
 from .._wire import LLM_MODEL_HEADER, LLM_PROVIDER_HEADER, ROUTING_TYPE_HEADER
 from ..budget import Budget
+from ..correlation import current_correlation_source
 from ..cost import CostTags
 from ..errors import PolicyViolation
 from ..lastcall import (
@@ -147,6 +148,9 @@ def _record_response(
             policy_categories=policy_categories,
             budget_remaining=budget.remaining if budget is not None else None,
             correlation_id=request.headers.get(correlation_header),
+            # Adopted from an inbound request or minted for it (#308); None for
+            # any other run, so the span claims a source only when it knows one.
+            correlation_source=current_correlation_source(),
             # donkey.cost.* carries the FULL tag value regardless of the
             # (unverified) request-header name — the SDK owns the span end to end
             # (#196 AC #4). Merged config⊕run tags, so a run-scope override shows.

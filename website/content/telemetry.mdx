@@ -28,6 +28,7 @@ donkey.policy.provider      = google-model-armor  # who blocked it (provider-bac
 donkey.policy.categories    = [rai_dangerous]     # why: the provider's flagged categories
 donkey.budget.remaining     = 18450
 donkey.correlation_id       = …
+donkey.correlation_id.source = adopted       # adopted | minted, inside donkey.run_from_headers() only
 donkey.cost.team            = support
 donkey.cost.project         = triage-v2
 donkey.cost.env             = prod
@@ -623,6 +624,37 @@ framework wrapped it on the way out, so `except PIIDetected` works the same
 around every framework. See
 [Typed refusals at the framework boundary](/errors#typed-refusals-at-the-framework-boundary);
 `donkey.run(typed_refusals=False)` turns it off.
+
+### Across agent hops
+
+An agent that serves requests can **join** its caller's run instead of starting
+a fresh one. `donkey.run_from_headers()` reads the configured correlation header
+from the inbound request, adopts the caller's id when it is well-formed
+(`[A-Za-z0-9._:-]`, at most 128 characters), and mints a fresh one otherwise. A
+malformed id is never forwarded. Every governed call in the block then carries
+it, exactly as inside `donkey.run(id=…)`.
+
+```python nocheck
+@app.post("/tasks")
+async def handle(request: Request, task: Task):
+    async with donkey.run_from_headers(request.headers):
+        return await agent.run(task)
+```
+
+For an outbound hop the governed transport does not carry, such as another
+agent's endpoint or an MCP server reached on your own HTTP client, pass
+`donkey.correlation_headers()`. It returns the bound run id under the configured
+header, or `{}` outside a run, and never the gateway credentials.
+
+```python nocheck
+async with donkey.run(id=ticket.id):
+    await agents.post(sub_agent_url, json=task, headers=donkey.correlation_headers())
+```
+
+The sub-agent's spans and the gateway's record then share one id end to end. The
+GenAI span inside `run_from_headers()` records `donkey.correlation_id.source`:
+`adopted` when the caller supplied the id, `minted` when it did not. A served
+[A2A task](/tool-access/a2a) applies the same rule on its own.
 
 ### The decorator form
 

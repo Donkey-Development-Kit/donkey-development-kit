@@ -29,11 +29,11 @@ import contextlib
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from . import _verify
-from .correlation import new_correlation_id, run_scope
-from .telemetry import DONKEY_CORRELATION_ID
+from .correlation import CorrelationSource, new_correlation_id, run_scope
+from .telemetry import DONKEY_CORRELATION_ID, DONKEY_CORRELATION_SOURCE
 
 if TYPE_CHECKING:
     from .refusals import TypedRefusals
@@ -49,11 +49,6 @@ __all__ = [
 
 #: The span one inbound A2A task opens around its handler.
 SPAN_A2A_TASK = "donkey.a2a.task"
-#: Whether the task's correlation id came from the caller or was minted here.
-DONKEY_CORRELATION_SOURCE = "donkey.correlation_id.source"
-
-#: ``"adopted"``: the caller sent the id. ``"minted"``: this process made it.
-CorrelationSource = Literal["adopted", "minted"]
 
 # What an adopted id may look like. It is sent on as a request header on every
 # downstream call, so it must be header-safe, and it is the gateway's join key, so
@@ -102,7 +97,8 @@ def inbound_task(
     """Bind the run for one inbound task and open its span.
 
     Yields the :class:`InboundRun`. The block runs inside ``run_scope`` with the
-    adopted or minted id, so every governed call in it sends that id, and inside
+    adopted or minted id and its source, so every governed call in it sends that
+    id and its span records where the id came from (#308), and inside
     the ``donkey.a2a.task`` span when ``telemetry`` is on and OpenTelemetry is
     installed. An exception leaving the block marks the span as an error with its
     type name only, never its message, which may repeat request content.
@@ -120,7 +116,7 @@ def inbound_task(
 
     tracer = _tracer() if telemetry else None
     if tracer is None:
-        with run_scope(run.correlation_id, refusals=refusals):
+        with run_scope(run.correlation_id, refusals=refusals, source=run.source):
             yield run
         return
     with tracer.start_as_current_span(
@@ -137,7 +133,7 @@ def inbound_task(
         set_status_on_exception=False,
     ) as span:
         try:
-            with run_scope(run.correlation_id, refusals=refusals):
+            with run_scope(run.correlation_id, refusals=refusals, source=run.source):
                 yield run
         except Exception as exc:
             _mark_failed(span, exc)

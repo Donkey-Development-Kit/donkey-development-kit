@@ -12,11 +12,8 @@ gets DDK's spans. This is what makes the zero-config promise hold: set the stand
 endpoint env var and spans flow to your sink with **no SDK-specific env var**. Opt out of
 telemetry entirely with the single flag ``DONKEY_TELEMETRY=false``.
 
-The correlation ID lives in a ``contextvar`` so a single agent run's fan-out of model calls and
-tool calls shares one trace ID end to end — letting a developer correlate their local trace with
-what the platform team sees in Omni Gateway's observability view (a headline feature, BG §1.6).
-That state is defined in :mod:`donkey_kit.core.correlation`, which the transport's header policy
-reads directly, and is re-exported here so these import paths are unchanged (#728).
+The run correlation ID (BG §1.6) lives in :mod:`donkey_kit.core.correlation`, which the
+transport reads directly; its names are re-exported here, unchanged (#728).
 """
 
 from __future__ import annotations
@@ -28,8 +25,6 @@ import warnings
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
-# The run-scoped correlation state lives in ``core.correlation`` (#728); these
-# names are re-exported so ``donkey_kit.core.telemetry.<name>`` keeps working.
 from . import spanflush
 from .correlation import (
     RunScope,
@@ -53,6 +48,7 @@ __all__ = [
     "DONKEY_CACHE_SCORE",
     "DONKEY_CACHE_STATUS",
     "DONKEY_CORRELATION_ID",
+    "DONKEY_CORRELATION_SOURCE",
     "DONKEY_COST_ENDUSER",
     "DONKEY_COST_ENV",
     "DONKEY_COST_PROJECT",
@@ -148,6 +144,7 @@ GEN_AI_COMPLETION = "gen_ai.completion"
 
 # donkey.* — stable public API (renaming a value here is a breaking change).
 DONKEY_CORRELATION_ID = "donkey.correlation_id"
+DONKEY_CORRELATION_SOURCE = "donkey.correlation_id.source"  # adopted | minted (#225, #308)
 DONKEY_POLICY_DECISION = "donkey.policy.decision"
 DONKEY_POLICY_TYPE = "donkey.policy.type"
 # Who blocked a refusal and why (#1183): the provider's slug and flagged categories (strings).
@@ -441,6 +438,7 @@ def build_genai_attributes(
     cost_env: str | None = None,
     cost_enduser_id: str | None = None,
     correlation_id: str | None = None,
+    correlation_source: str | None = None,
     prompt: str | None = None,
     completion: str | None = None,
 ) -> dict[str, Any]:
@@ -512,6 +510,8 @@ def build_genai_attributes(
         attrs[DONKEY_COST_ENDUSER] = cost_enduser_id
     if correlation_id is not None:
         attrs[DONKEY_CORRELATION_ID] = correlation_id
+    if correlation_source is not None:
+        attrs[DONKEY_CORRELATION_SOURCE] = correlation_source
     if prompt is not None:
         attrs[GEN_AI_PROMPT] = prompt
     if completion is not None:
