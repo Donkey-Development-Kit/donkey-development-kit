@@ -54,13 +54,15 @@ _CI = yaml.safe_load((_REPO / ".github" / "workflows" / "ci.yml").read_text())
 #: The OpenAI Agents SDK's approval mapping (#213) adds ``function_tool`` (wraps a
 #: ``@donkey.tool``), its pause hook ``approved_call`` and the decision helpers;
 #: Strands (#1234) adds the same decision helpers and ``approved_call``, and ADK
-#: (#1235) those plus ``approval_plugin`` (builds its ``BasePlugin``).
+#: (#1235) those plus ``approval_plugin`` (builds its ``BasePlugin``). ADK's
+#: ``last_call_bridged`` (#1218) returns a model class, not a governed object.
 _HELPERS = {
     "approval_interrupt",
     "approval_plugin",
     "approve",
     "approved_call",
     "function_tool",
+    "last_call_bridged",
     "pending_approvals",
     "refusal_translator",
     "reject",

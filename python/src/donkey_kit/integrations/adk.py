@@ -32,7 +32,9 @@ Both factories return a subclass of the ADK class that carries
 ``donkey.last_call`` back to the context that started the model call (#1207).
 google-adk 2.13.0 runs each step of the model's response generator in a copy of
 the flow's context, so without it the record stays in that copy and an
-``after_model_callback`` reads ``UNOBSERVED``.
+``after_model_callback`` reads ``UNOBSERVED``. :func:`last_call_bridged` returns
+that subclass for a model built from ``connection_kwargs()`` or
+``gemini_connection_kwargs()`` (#1218).
 
 APPROVALS (BG §2.3, #1235): an approval-gated tool
 (``@donkey.tool(approval="required")`` in an agent's ``tools``) pauses the run
@@ -64,7 +66,7 @@ import time
 from collections.abc import Iterable, Mapping
 from contextlib import aclosing
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from ..core import _verify
 from ..core.approvals import Approval, record_decision, record_pending
@@ -79,10 +81,12 @@ from ._base import Adapter, default_adapter
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
-    from google.adk.models import Gemini
+    from google.adk.models import BaseLlm, Gemini
     from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
     from google.adk.plugins import BasePlugin
     from google.genai import types
+
+_M = TypeVar("_M", bound="BaseLlm")
 
 __all__ = [
     "APPROVAL_KIND",
@@ -91,6 +95,7 @@ __all__ = [
     "approve",
     "approved_call",
     "gemini",
+    "last_call_bridged",
     "model",
     "pending_approvals",
     "reject",
@@ -250,11 +255,42 @@ class ADKAdapter(Adapter):
         return governed(model=model, **{**conn, **kw})
 
 
+def last_call_bridged(model_class: type[_M]) -> type[_M]:
+    """The subclass of an ADK model class that carries ``donkey.last_call`` back
+    to the context that started each model call, so an ``after_model_callback``
+    reads it (#1218). For a model you build yourself from
+    :meth:`ADKAdapter.connection_kwargs` or
+    :meth:`ADKAdapter.gemini_connection_kwargs`::
+
+        llm = last_call_bridged(LiteLlm)(model="openai/gpt-4o", **donkey.adk.connection_kwargs())
+
+    ``model_class`` is any ``google.adk.models.BaseLlm`` subclass, your own
+    included. The subclass is built once per class, and a class that already
+    bridges is returned as is. :meth:`ADKAdapter.model` and
+    :meth:`ADKAdapter.gemini` already return one.
+
+    Raises:
+        TypeError: ``model_class`` is not a ``BaseLlm`` subclass.
+        ImportError: ``google-adk`` is not installed.
+    """
+    from google.adk.models import BaseLlm
+
+    if not (isinstance(model_class, type) and issubclass(model_class, BaseLlm)):
+        raise TypeError(f"expected a google.adk.models.BaseLlm subclass, got {model_class!r}")
+    if getattr(model_class, "_donkey_last_call_bridged", False):
+        return model_class
+    # A class hashes by identity; mypy reads pydantic's unhashable instances.
+    base: Any = model_class
+    bridged: type[_M] = _last_call_bridged_class(base)
+    return bridged
+
+
 @functools.cache
 def _last_call_bridged_class(base: Any) -> Any:
-    """The subclass of an ADK model class (``base``: ``Gemini`` or ``LiteLlm``)
-    that :meth:`ADKAdapter.gemini` and :meth:`ADKAdapter.model` build, defined
-    on first use so ``google.adk`` is imported lazily (§1.1).
+    """The subclass of an ADK model class (``base``: ``Gemini``, ``LiteLlm`` or
+    another ``BaseLlm``) that :meth:`ADKAdapter.gemini`, :meth:`ADKAdapter.model`
+    and :func:`last_call_bridged` build, defined on first use so ``google.adk``
+    is imported lazily (§1.1).
 
     Only the public ``BaseLlm.generate_content_async`` is overridden. ADK's flow
     calls it in its own context and then iterates the generator it returns.
@@ -277,6 +313,8 @@ def _last_call_bridged_class(base: Any) -> Any:
     class LastCallBridged(base):
         """An ADK model whose ``donkey.last_call`` reaches the context that
         started the call (#1207)."""
+
+        _donkey_last_call_bridged = True
 
         def generate_content_async(self, *args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
             bridge = open_last_call_bridge()
