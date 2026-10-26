@@ -13,6 +13,14 @@ correlation id the decision event recorded. The approval never overrides it.
 ``importorskip``-guarded per framework and for the OTel SDK. CrewAI is exempt
 (``KNOWN_LIMITATIONS``): its provider owns the transport, so the resumed call
 carries neither the approval's correlation id nor a typed refusal.
+
+Strands is supported at ``connection_kwargs()`` only (BG §1.8), so it is not on
+the roster and needs no exemption. Its native pause still gets the same round
+trip (#1234): :func:`test_a_strands_agent_pauses_with_its_own_interrupt` drives
+an agent whose ``ApprovalHook`` pauses the call with Strands' interrupt, using a
+scripted Strands model so only the tool's own model call reaches the gateway.
+Strands hands a tool's exception to the model as an error tool result, outside
+any typed-refusal bridge, so the refusal is asserted where the tool catches it.
 """
 
 from __future__ import annotations
@@ -27,9 +35,10 @@ import pytest
 # Sibling data module (tests/conformance/ is not a package).
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS
 
-from donkey_kit import ApprovalRequired, Donkey, DonkeyConfig, PIIDetected
+from donkey_kit import ApprovalRequired, Donkey, DonkeyConfig, DonkeyError, PIIDetected
 from donkey_kit._testing import http_clients, swap_transport
 from donkey_kit.core import telemetry
+from donkey_kit.core.refusals import translate
 
 _SCENARIO = "approval_round_trip"
 _APPROVAL_SPAN = "donkey.tool.approval"
@@ -242,3 +251,95 @@ async def test_an_approved_tool_resumes_and_is_still_judged_by_the_gateway(
     # The resumed call went to the gateway under the decision's correlation id,
     # and its refusal came back typed: the approval did not lift it.
     assert refused.value.correlation_id == approved_attrs["donkey.correlation_id"] == _PAUSE_RUN
+
+
+async def test_a_strands_agent_pauses_with_its_own_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The round trip under a Strands agent with an ``ApprovalHook`` (#1234)."""
+    pytest.importorskip("openai")
+    strands = pytest.importorskip("strands")
+    from strands.models.model import Model
+
+    from donkey_kit.integrations.strands import ApprovalHook, approve, pending_approvals
+
+    class AsksForRefund(Model):
+        """Asks for ``issue_refund`` once, then answers. Never calls a gateway."""
+
+        turns = 0
+
+        def update_config(self, **model_config: Any) -> None:
+            pass
+
+        def get_config(self) -> Any:
+            return {}
+
+        async def structured_output(self, *args: Any, **kwargs: Any) -> Any:
+            raise NotImplementedError
+            yield
+
+        async def stream(self, *args: Any, **kwargs: Any) -> Any:
+            self.turns += 1
+            yield {"messageStart": {"role": "assistant"}}
+            if self.turns == 1:
+                start = {"toolUse": {"toolUseId": "tu-1", "name": "issue_refund"}}
+                yield {"contentBlockStart": {"start": start}}
+                delta = {"toolUse": {"input": json.dumps({"ticket_id": "T-1"})}}
+                yield {"contentBlockDelta": {"delta": delta}}
+                yield {"contentBlockStop": {}}
+                yield {"messageStop": {"stopReason": "tool_use"}}
+                return
+            yield {"contentBlockDelta": {"delta": {"text": "done"}}}
+            yield {"contentBlockStop": {}}
+            yield {"messageStop": {"stopReason": "end_turn"}}
+
+    exporter = _exporter(monkeypatch)
+    refusals: list[DonkeyError | None] = []
+
+    async with Donkey(_cfg()) as donkey:
+        client = donkey.openai()
+
+        @donkey.tool(approval="required", risk="financial")
+        async def issue_refund(ticket_id: str) -> None:
+            """Refund a ticket, after asking the model to word the reply."""
+            try:
+                await client.chat.completions.create(
+                    model="gpt-4o", messages=[{"role": "user", "content": ticket_id}]
+                )
+            except Exception as exc:
+                refusals.append(translate(exc))
+                raise
+
+        agent = strands.Agent(
+            model=AsksForRefund(),
+            tools=[strands.tool(issue_refund)],
+            hooks=[ApprovalHook()],
+            callback_handler=None,
+        )
+        async with donkey.run(id=_PAUSE_RUN):
+            paused = await agent.invoke_async("refund T-1")
+        assert paused.stop_reason == "interrupt"
+        (interrupt,) = pending_approvals(paused)
+
+        # The pause sent nothing: the only span is the pending approval.
+        assert {s.name for s in exporter.get_finished_spans()} == {_APPROVAL_SPAN}
+        ((pending, pending_attrs),) = _approval_events(exporter)
+        assert pending == "donkey.approval.pending"
+        assert pending_attrs["donkey.approval.risk"] == "financial"
+        assert pending_attrs["donkey.correlation_id"] == _PAUSE_RUN
+
+        with donkey.simulate(PIIDetected):
+            async with donkey.run():
+                resumed = await agent.invoke_async([approve(interrupt, by="m.keller")])
+
+    assert resumed.stop_reason == "end_turn"
+    decisions = [(n, a) for n, a in _approval_events(exporter) if n != pending]
+    ((approved, approved_attrs),) = decisions
+    assert approved == "donkey.approval.approved"
+    assert approved_attrs["donkey.approval.approved_by"] == "m.keller"
+    assert approved_attrs["donkey.approval.id"] == pending_attrs["donkey.approval.id"]
+    # The resumed call went to the gateway under the decision's correlation id,
+    # and the gateway refused it: the approval did not lift it.
+    (refused,) = refusals
+    assert isinstance(refused, PIIDetected)
+    assert refused.correlation_id == approved_attrs["donkey.correlation_id"] == _PAUSE_RUN

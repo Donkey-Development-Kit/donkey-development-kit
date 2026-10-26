@@ -126,9 +126,22 @@ def _openai_agents_approval(
     return approved_call(tool, arguments, risk)
 
 
+def _strands_approval(tool: str, arguments: Mapping[str, Any], risk: str | None) -> Approval | None:  # noqa: ARG001
+    """The Strands native pause for a gated tool (#1234): the approval a
+    Strands ``ApprovalHook`` granted for this call, which paused the agent with
+    Strands' interrupt before the tool ran. A no-op until the process has
+    imported Strands."""
+    if "strands" not in sys.modules:
+        return None
+    from .integrations.strands import approved_call
+
+    return approved_call(tool)
+
+
 # The framework pauses a gated tool tries before raising ApprovalRequired. The
-# Agents hook only answers inside a call its function_tool() is running.
-_NATIVES = (_openai_agents_approval, _langgraph_interrupt)
+# Agents hook only answers inside a call its function_tool() is running, and the
+# Strands hook only for a call its ApprovalHook approved.
+_NATIVES = (_openai_agents_approval, _strands_approval, _langgraph_interrupt)
 
 
 class ToolsFacade:

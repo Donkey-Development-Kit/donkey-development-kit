@@ -165,3 +165,7 @@ _.__signature__  # unused attribute (src/donkey_kit/tools/approval.py)
 # reads A2ATask.input.
 _.execute  # unused method (src/donkey_kit/a2a/_server.py)
 input  # unused variable (src/donkey_kit/a2a/types.py)
+# Strands calls HookProvider.register_hooks and reads
+# BeforeToolCallEvent.cancel_tool (BG §2.3, #1234).
+_.register_hooks  # unused method (src/donkey_kit/integrations/strands.py)
+_.cancel_tool  # unused attribute (src/donkey_kit/integrations/strands.py)
