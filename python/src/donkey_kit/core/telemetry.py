@@ -405,7 +405,7 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
         _log.debug("OTLP export: keeping the host's TracerProvider; spans ride it")
         return
     if config.telemetry_install_global:
-        trace.set_tracer_provider(provider)
+        trace.set_tracer_provider(spanflush.keep(provider))  # flushed on a kill
         _log.debug("OTLP export installed as the global provider (protocol %s)", _otlp_protocol())
         return
     _scoped_tracer = spanflush.keep(provider).get_tracer("donkey_kit")  # flushed on a kill

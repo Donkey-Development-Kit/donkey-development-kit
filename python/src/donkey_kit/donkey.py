@@ -24,7 +24,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
-from .core import _verify
+from .core import _verify, spanflush
 from .core.approvals import (
     APPROVAL_TIMEOUT,
     Approval,
@@ -1074,6 +1074,30 @@ class Donkey:
 
     def _sync_http_client(self) -> DonkeyClient:
         return self._runtime.sync_http()
+
+    def flush_telemetry(self, timeout_s: float = 2.0) -> bool:
+        """Export the spans DDK's own ``TracerProvider`` still holds, waiting up to
+        ``timeout_s``, before a serverless runtime freezes the process or a script
+        exits.
+
+        DDK's provider is process-wide, shared by every ``Donkey``: the DDK-scoped
+        one built from an OTLP endpoint, or the one installed as the global with
+        ``telemetry_install_global``. Spans riding a provider your process set are
+        yours to flush, so it is left alone. This call blocks; from async code,
+        ``await asyncio.to_thread(donkey.flush_telemetry)``.
+
+        Returns ``True`` once the spans are exported, or when DDK built no
+        provider; ``False`` if the flush timed out or failed. It never raises for
+        an export failure.
+
+        Raises:
+            ValueError: if ``timeout_s`` is not positive.
+
+        Docs: https://docs.donkey-kit.dev/telemetry
+        """
+        if not timeout_s > 0:
+            raise ValueError(f"timeout_s must be positive, got {timeout_s!r}")
+        return spanflush.flush_owned(max(1, round(timeout_s * 1000)))
 
     async def aclose(self) -> None:
         """Close every transport this Donkey owns: the data-plane and
