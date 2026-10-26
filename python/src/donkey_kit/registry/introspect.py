@@ -12,10 +12,6 @@ Modes, by fidelity (BG §2.5):
   * ``auto:live``   — highest fidelity: run the server, MCP initialize +
     tools/list. Captures dynamic registration. An in-process MCP server object
     only: the protocol runs over the MCP SDK's in-memory transport.
-  * ``auto:static`` — AST only, lower fidelity: MUST emit a completeness warning
-    on unresolved dynamic registration; never the default. Still blocked: an
-    AST pass can name a tool but cannot produce its schema without the
-    converter the key insight forbids (#1248).
   * ``auto:check``  — generate (as ``auto``), diff against a committed
     descriptor, fail on mismatch. The CI-friendly mode.
 
@@ -44,9 +40,12 @@ from ..core import _verify
 
 __all__ = ["DerivationMode", "DescriptorMismatch", "derive_descriptor"]
 
-DerivationMode = str  # "auto" | "auto:live" | "auto:static" | "auto:check"
+DerivationMode = str  # "auto" | "auto:live" | "auto:check"
 
-_MODES = ("auto", "auto:live", "auto:static", "auto:check")
+# No AST-only mode: an AST pass can name a tool but cannot produce its schema
+# without the converter the key insight forbids. `donkey scan` is the
+# no-execution view of the code (#1248).
+_MODES = ("auto", "auto:live", "auto:check")
 
 # One derived tool: the MCP tool-manifest triple (docs/verified-apis.md §11).
 _Tool = dict[str, Any]
@@ -79,7 +78,7 @@ async def derive_descriptor(
     protocol (initialize + ``tools/list``) instead of reading the object.
     ``mode="auto:check"`` derives as ``auto`` and raises
     :class:`DescriptorMismatch` unless the result equals the JSON file at
-    ``against``. ``mode="auto:static"`` is still blocked on verification.
+    ``against``.
 
     Raises ``NotImplementedError`` ("blocked on verification") for a tool
     object from a framework whose attributes are not verified
@@ -89,12 +88,6 @@ async def derive_descriptor(
         raise ValueError(f"mode must be one of {', '.join(_MODES)}, not {mode!r}.")
     if (mode == "auto:check") != (against is not None):
         raise ValueError("against= is required with mode='auto:check' and only with it.")
-    if mode == "auto:static":
-        raise _verify.blocked(
-            "descriptor derivation mode 'auto:static' (docs/verified-apis.md §10): an AST "
-            "pass cannot produce a tool's schema without re-deriving it, which BG §2.5 "
-            "forbids (#1248). Use mode='auto'."
-        )
     target = _resolve(entrypoint)
     if mode == "auto:live":
         if not _is_mcp_server(target):

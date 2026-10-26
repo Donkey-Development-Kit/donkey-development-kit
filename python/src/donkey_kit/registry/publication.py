@@ -96,7 +96,7 @@ class Publication:
     tags: list[str] = field(default_factory=list)
     categories: dict[str, str] = field(default_factory=dict)
     contact: Contact | None = None
-    descriptor: str = "auto"  # "auto" | "auto:live" | "auto:static" | "auto:check"
+    descriptor: str = "auto"  # "auto" | "auto:live" | "auto:check"
     docs: list[tuple[str, str]] = field(default_factory=list)
     endpoint: str | None = None
     governance: Any | None = None

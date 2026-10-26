@@ -7486,7 +7486,6 @@ re-deriving it, so the catalog documents exactly the schema the model sees.
 ```python
 descriptor="auto"          # object introspection — the default
 descriptor="auto:live"     # live protocol introspection — highest fidelity
-descriptor="auto:static"   # AST only — lowest fidelity, no code execution
 descriptor="auto:check"    # generate, diff against committed file, fail on mismatch
 ```
 
@@ -7504,14 +7503,12 @@ descriptor="auto:check"    # generate, diff against committed file, fail on mism
   "hr-agent"     = "acme.hr.agent:build_agent" # a zero-arg factory also works
   ```
 
-- **`auto:static`** parses decorators, signatures, and docstrings via AST
-  without executing anything — for environments where importing user code is
-  unacceptable. It cannot see tools registered in a loop, from config or a
-  database, behind a feature flag, attached dynamically at startup, or built
-  from imported/generated pydantic models, so it emits a completeness warning
-  whenever it hits a pattern it cannot resolve. It is never the default.
 - **`auto:check`** generates the descriptor, diffs it against the committed
   file, and fails on mismatch — useful as a CI gate.
+
+There is no AST-only mode. Parsing source can name a tool but cannot produce
+its schema without re-deriving it. Where importing your code is not acceptable,
+`donkey scan` (above) is the static, no-execution view.
 
 `donkey publish --cross-check` runs `auto` and `auto:live` and diffs them. A
 disagreement means either dynamic registration the object graph does not

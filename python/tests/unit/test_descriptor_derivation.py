@@ -203,6 +203,8 @@ async def test_check_fails_on_drift(user_module: str, tmp_path: Path) -> None:
         ({"mode": "auto:check"}, "against= is required"),
         ({"against": "descriptor.json"}, "against= is required"),
         ({"mode": "auto:nope"}, "mode must be one of"),
+        # AST-only derivation was dropped: it cannot produce a schema (#1248).
+        ({"mode": "auto:static"}, "mode must be one of"),
     ],
 )
 async def test_argument_errors(user_module: str, kwargs: dict[str, Any], match: str) -> None:
@@ -219,8 +221,3 @@ async def test_malformed_entrypoint(user_module: str, entrypoint: str) -> None:
 async def test_live_needs_an_mcp_server(user_module: str) -> None:
     with pytest.raises(TypeError, match="needs an MCP server"):
         await derive_descriptor(f"{user_module}:TOOLS", mode="auto:live")
-
-
-async def test_static_stays_blocked() -> None:
-    with pytest.raises(NotImplementedError, match=r"^blocked on verification:.*auto:static"):
-        await derive_descriptor("json:dumps", mode="auto:static")
