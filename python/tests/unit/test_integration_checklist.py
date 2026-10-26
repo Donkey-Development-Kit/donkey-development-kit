@@ -52,7 +52,8 @@ _CI = yaml.safe_load((_REPO / ".github" / "workflows" / "ci.yml").read_text())
 #: Module-level names in an adapter's ``__all__`` that are helpers, not factories.
 #: ``approval_interrupt`` is the gate's LangGraph pause hook (#212), not a factory.
 #: The OpenAI Agents SDK's approval mapping (#213) adds ``function_tool`` (wraps a
-#: ``@donkey.tool``), its pause hook ``approved_call`` and the decision helpers.
+#: ``@donkey.tool``), its pause hook ``approved_call`` and the decision helpers;
+#: Strands (#1234) adds the same decision helpers and ``approved_call``.
 _HELPERS = {
     "approval_interrupt",
     "approve",

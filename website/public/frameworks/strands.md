@@ -128,6 +128,11 @@ Strands forwards to its internal OpenAI client.
   retry either, and the SDK's transport handles the transient `5xx`. An
   `OpenAIModel` you build yourself from `connection_kwargs()` doesn't get this:
   build its agent with `Agent(model=..., retry_strategy=None)`.
+- **Approval-gated tools pause the agent.** Add
+  `ApprovalHook()` from `donkey_kit.integrations.strands` to the agent's
+  `hooks`, and a `@donkey.tool(approval="required")` call stops the agent with
+  Strands' own interrupt. Resume it with `approve(...)` or `reject(...)`. See
+  [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
