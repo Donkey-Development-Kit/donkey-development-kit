@@ -12497,6 +12497,7 @@ This table is generated from the field table in `core/config.py`.
 | `DONKEY_LLM_PROXY_CLIENT_ID` | `llm_proxy_client_id` | `llm_proxy_client_id` | unset |
 | `DONKEY_LLM_PROXY_CLIENT_SECRET` | `llm_proxy_client_secret` | `llm_proxy_client_secret` | unset |
 | `DONKEY_LLM_PROXY_KEY` | `llm_proxy_key` | `llm_proxy_key` | unset |
+| `DONKEY_LLM_PROXY_KEY_HEADER` | `llm_proxy_key_header` | `llm_proxy_key_header` | unset |
 | `DONKEY_LLM_PROXY_AUTH` | `llm_proxy_auth` | `llm_proxy_auth` | `client-id` |
 | `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` | `llm_proxy_wallet_client_id` | `llm_proxy_wallet_client_id` | unset |
 | `DONKEY_APP_NAME` | `application_name` | `application_name` | unset |
@@ -12547,6 +12548,34 @@ so you can fix configuration in a single pass.
 | Optional env var | `DonkeyConfig` field | Meaning |
 |---|---|---|
 | `DONKEY_LLM_PROXY_KEY` | `llm_proxy_key` | Value for the client's API-key slot, sent to the LLM proxy: `Authorization: Bearer <key>` from OpenAI-compatible clients, `x-api-key` from the Anthropic client, `x-goog-api-key` from ADK's `gemini()`. Unset, the SDK sends the placeholder `client-id-enforced`. A client-id proxy ignores this value, so leave it unset unless your proxy authenticates on an API key. |
+| `DONKEY_LLM_PROXY_KEY_HEADER` | `llm_proxy_key_header` | A header that also carries `llm_proxy_key`, for a route that reads the provider key from a request header. See [Bring your own provider key](#bring-your-own-provider-key). |
+
+## Bring your own provider key
+
+A model proxy route whose API key is set to **Dynamic** reads the *provider's*
+key from the request, through a DataWeave expression the proxy admin writes.
+There is no fixed header: Anypoint's `#[attributes.headers['X-API-KEY']]` is
+only an example. Set `llm_proxy_key_header` to the header your route's
+expression reads, and `llm_proxy_key` to the provider key:
+
+```bash
+export DONKEY_LLM_PROXY_KEY_HEADER=X-API-KEY   # the header the route's expression reads
+export DONKEY_LLM_PROXY_KEY=sk-…               # your provider key
+```
+
+Every request to the LLM proxy then carries `X-API-KEY: <key>`, from every
+adapter, next to the usual consumer credentials. The key still fills the
+client's API-key slot<sup>1</sup> too.
+
+- Both fields must be set. With either one unset, nothing changes.
+- `jwt` mode never sends the header: a model wallet holds its own provider keys.
+- The name may be any header except one that routes the request, one the SDK
+  already sets, or one that carries the consumer's own credentials: `client_id`,
+  `client_secret`, `Authorization`, `X-Client-Id`, `Proxy-Authorization`,
+  `Cookie` and `apikey`. The proxy reads `apikey` as the packed
+  `client_id:client_secret` consumer credential, not a provider key.
+- Like the other credentials, the header is removed from any request to an
+  origin other than the LLM proxy, and printed headers show `***` for it.
 
 ## JWT / model-wallet auth mode
 
@@ -12901,7 +12930,7 @@ rides the other plane's requests:
 
 | Destination | Client-id mode (default) | `jwt` mode | `bearer` mode | Never sent here |
 |---|---|---|---|---|
-| **LLM proxy** (`llm_proxy_url`) | `client_id: <llm_proxy_client_id>` and `client_secret: <llm_proxy_client_secret>` headers. The API-key slot<sup>1</sup> carries `llm_proxy_key`, or the placeholder `client-id-enforced`. | `X-Client-Id: <llm_proxy_wallet_client_id>` and `Authorization: Bearer `<sup>2</sup>. No `client_secret`. | `Authorization: Bearer <token from llm_auth>`<sup>2</sup>. The API-key slot<sup>1</sup> as in client-id mode. No `X-Client-Id`, no `client_secret`. | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, the connected-app token, anything from `Donkey(auth=…)` |
+| **LLM proxy** (`llm_proxy_url`) | `client_id: <llm_proxy_client_id>` and `client_secret: <llm_proxy_client_secret>` headers. The API-key slot<sup>1</sup> carries `llm_proxy_key`, or the placeholder `client-id-enforced`, and so does the [`llm_proxy_key_header`](#bring-your-own-provider-key) header when set. | `X-Client-Id: <llm_proxy_wallet_client_id>` and `Authorization: Bearer `<sup>2</sup>. No `client_secret`. | `Authorization: Bearer <token from llm_auth>`<sup>2</sup>. The API-key slot<sup>1</sup> and `llm_proxy_key_header` as in client-id mode. No `X-Client-Id`, no `client_secret`. | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, the connected-app token, anything from `Donkey(auth=…)` |
 | **Anypoint token endpoint** (`<base_url>/accounts/api/v2/oauth2/token`) | Form body: `grant_type=client_credentials`, `client_id`, `client_secret` (the `ANYPOINT_*` values). | Same. | Same. | Every `llm_proxy_*` value, the JWT or bearer token, `X-Client-Id` |
 | **Registry and tools** (`base_url`) | `Authorization: Bearer <connected-app token>` (or the token from `Donkey(auth=…)`). | Same. No `X-Client-Id`. | Same. | Every `llm_proxy_*` value, the JWT or bearer token, `X-Client-Id` |
 
