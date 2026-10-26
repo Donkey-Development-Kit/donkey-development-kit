@@ -152,11 +152,13 @@ factory has exactly this shape: it wraps `Runner.run` in `typed_refusals()`.
 [Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md)
 walks through it end to end. See [Testing](https://docs.donkey-kit.dev/testing.md).
 
-One scenario of the SDK's internal conformance matrix is an asserted exemption:
-**approval round trip**. Under `Runner.run`, an exception raised inside a
-`function_tool` becomes a tool-result string for the model, so an
-`@donkey.tool(approval="required")` gate never pauses the run. Mapping DDK
-approvals onto the Agents SDK's own `needs_approval` interruptions is #213.
+The SDK's internal conformance matrix records no exemption for the Agents SDK,
+**approval round trip** included. An `@donkey.tool(approval="required")` wrapped
+with `donkey_kit.integrations.openai_agents.function_tool` sets the Agents SDK's
+own `needs_approval`, so `Runner.run` pauses with the call in
+`result.interruptions`. `pending_approvals`, `approve` and `reject` record the
+decision on the `RunState`, and `Runner.run(agent, state)` resumes (#213). See
+[Human approval](https://docs.donkey-kit.dev/hitl.md#in-an-openai-agents-sdk-run).
 
 ## Notes
 

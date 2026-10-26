@@ -1,21 +1,18 @@
-"""The ``approval_round_trip`` scenario (BG §2.3, #211, #212).
+"""The ``approval_round_trip`` scenario (BG §2.3, #211, #212, #213).
 
 An approval-gated tool that calls the model pauses, is approved, and resumes,
 under each framework's own pause primitive: the raw client raises
 ``ApprovalRequired`` and resumes on ``donkey.approvals.resolve(...)``; LangGraph
-pauses with ``interrupt()`` and resumes on ``Command(resume=...)``. The pause
-sends nothing to the gateway, the approver lands on the approval's span event,
-and the resumed tool's model call is still judged by the gateway: an armed
-refusal reaches user code typed, under the correlation id the decision event
-recorded. The approval never overrides it.
+pauses with ``interrupt()`` and resumes on ``Command(resume=...)``; the OpenAI
+Agents SDK stops ``Runner.run`` on ``needs_approval`` and resumes on
+``RunState.approve``. The paused tool sends nothing to the gateway, the approver
+lands on the approval's span event, and the resumed tool's model call is still
+judged by the gateway: an armed refusal reaches user code typed, under the
+correlation id the decision event recorded. The approval never overrides it.
 
 ``importorskip``-guarded per framework and for the OTel SDK. CrewAI is exempt
 (``KNOWN_LIMITATIONS``): its provider owns the transport, so the resumed call
-carries neither the approval's correlation id nor a typed refusal. The OpenAI
-Agents SDK is exempt too: it turns the gate's ``ApprovalRequired`` into a
-tool-result string for the model, so there is no pause to resume (#213).
-:func:`test_the_agents_sdk_swallows_the_pause` pins that, so the exemption
-cannot outlive the behaviour it records.
+carries neither the approval's correlation id nor a typed refusal.
 """
 
 from __future__ import annotations
@@ -113,9 +110,77 @@ async def _langgraph(donkey: Donkey) -> Callable[[], Awaitable[None]]:
     return resume
 
 
-# The conformance-tested roster (BG §1.8) minus its asserted exemption: the raw
-# client and LangGraph. The OpenAI Agents SDK's case is the test at the end.
-SURFACES: dict[str, Pause] = {"openai": _openai, "langgraph": _langgraph}
+def _scripted_tool_call(sent: list[dict[str, Any]]) -> httpx.MockTransport:
+    """A gateway whose model asks for ``issue_refund`` once, then answers."""
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        if len(sent) == 1:
+            call = {"name": "issue_refund", "arguments": json.dumps({"ticket_id": "T-1"})}
+            message: dict[str, Any] = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call-1", "type": "function", "function": call}],
+            }
+        else:
+            message = {"role": "assistant", "content": "done"}
+        choice = {"index": 0, "message": message, "finish_reason": "stop"}
+        usage = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        body = {"id": "c", "object": "chat.completion", "created": 0, "model": "gpt-4o"}
+        return httpx.Response(200, json={**body, "choices": [choice], "usage": usage})
+
+    return httpx.MockTransport(reply)
+
+
+async def _openai_agents(donkey: Donkey) -> Callable[[], Awaitable[None]]:
+    agents = pytest.importorskip("agents")
+    from donkey_kit.integrations.openai_agents import approve, function_tool, pending_approvals
+
+    # The model asks for the tool once; the resumed tool's own call is refused.
+    for http in http_clients(donkey):
+        swap_transport(http, _scripted_tool_call([]))
+    client = donkey.openai()
+
+    @donkey.tool(approval="required", risk="financial")
+    async def issue_refund(ticket_id: str) -> None:
+        """Refund a ticket, after asking the model to word the reply."""
+        await client.chat.completions.create(
+            model="gpt-4o", messages=[{"role": "user", "content": ticket_id}]
+        )
+
+    agent = agents.Agent(
+        name="refunds",
+        model=donkey.openai_agents.model("gpt-4o"),
+        tools=[function_tool(issue_refund)],
+    )
+    run_config = agents.RunConfig(tracing_disabled=True)
+    async with donkey.run(id=_PAUSE_RUN):
+        paused = await agents.Runner.run(agent, "refund T-1", run_config=run_config)
+        (approval,) = pending_approvals(paused)
+    state = paused.to_state()
+
+    async def resume() -> None:
+        # The run state holds the pause; resume under the approval's run id to
+        # join the decision and the resumed call to it.
+        async with donkey.run(id=approval.correlation_id):
+            approve(state, approval, by="m.keller")
+            await agents.Runner.run(agent, state, run_config=run_config)
+
+    return resume
+
+
+# The conformance-tested roster (BG §1.8): the raw client, LangGraph and the
+# OpenAI Agents SDK. CrewAI's asserted exemption is in suite.py.
+SURFACES: dict[str, Pause] = {
+    "openai": _openai,
+    "langgraph": _langgraph,
+    "openai_agents": _openai_agents,
+}
+
+#: The model calls a surface makes before the pause, to have the model choose
+#: the tool. The Agents SDK runs the agent's model turn first; the others call
+#: the tool directly.
+_TOOL_CHOICE_CALLS = {"openai": 0, "langgraph": 0, "openai_agents": 1}
 
 
 def _exporter(monkeypatch: pytest.MonkeyPatch) -> Any:
@@ -144,7 +209,7 @@ def _approval_events(exporter: Any) -> list[tuple[str, dict[str, Any]]]:
 def test_scenario_is_registered() -> None:
     assert _SCENARIO in CONFORMANCE_SCENARIOS
     exempt = {a for a, limits in KNOWN_LIMITATIONS.items() if _SCENARIO in limits}
-    assert exempt == {"crewai", "openai_agents"}
+    assert exempt == {"crewai"}
 
 
 @pytest.mark.parametrize("surface", SURFACES)
@@ -156,8 +221,11 @@ async def test_an_approved_tool_resumes_and_is_still_judged_by_the_gateway(
     async with Donkey(_cfg()) as donkey:
         resume = await SURFACES[surface](donkey)
 
-        # The pause sent nothing: the only span is the pending approval.
-        assert {s.name for s in exporter.get_finished_spans()} == {_APPROVAL_SPAN}
+        # The paused tool sent nothing: besides the pending approval, the only
+        # spans are the model calls that chose the tool.
+        names = [s.name for s in exporter.get_finished_spans()]
+        assert names.count(_APPROVAL_SPAN) == 1
+        assert len(names) - 1 == _TOOL_CHOICE_CALLS[surface]
         ((pending, pending_attrs),) = _approval_events(exporter)
         assert pending == "donkey.approval.pending"
         assert pending_attrs["donkey.approval.risk"] == "financial"
@@ -174,65 +242,3 @@ async def test_an_approved_tool_resumes_and_is_still_judged_by_the_gateway(
     # The resumed call went to the gateway under the decision's correlation id,
     # and its refusal came back typed: the approval did not lift it.
     assert refused.value.correlation_id == approved_attrs["donkey.correlation_id"] == _PAUSE_RUN
-
-
-def _scripted_tool_call(sent: list[dict[str, Any]]) -> httpx.MockTransport:
-    """A gateway whose model asks for ``issue_refund`` once, then answers."""
-
-    def reply(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content))
-        if len(sent) == 1:
-            call = {"name": "issue_refund", "arguments": json.dumps({"ticket_id": "T-1"})}
-            message: dict[str, Any] = {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [{"id": "call-1", "type": "function", "function": call}],
-            }
-        else:
-            message = {"role": "assistant", "content": "done"}
-        choice = {"index": 0, "message": message, "finish_reason": "stop"}
-        usage = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
-        body = {"id": "c", "object": "chat.completion", "created": 0, "model": "gpt-4o"}
-        return httpx.Response(200, json={**body, "choices": [choice], "usage": usage})
-
-    return httpx.MockTransport(reply)
-
-
-async def test_the_agents_sdk_swallows_the_pause() -> None:
-    """The OpenAI Agents SDK's asserted exemption, pinned (#213).
-
-    Under ``Runner.run`` the gate raises ``ApprovalRequired`` inside a
-    ``function_tool``, and the SDK's default ``failure_error_function`` hands the
-    model a fixed error string instead: the run completes, the tool never ran,
-    and nothing paused. When #213 maps approvals onto the SDK's native
-    ``needs_approval`` interruption this fails, and the exemption goes."""
-    agents = pytest.importorskip("agents")
-    from agents.tool import default_tool_error_function
-
-    sent: list[dict[str, Any]] = []
-    ran: list[str] = []
-    async with Donkey(_cfg()) as donkey:
-        for client in http_clients(donkey):
-            swap_transport(client, _scripted_tool_call(sent))
-
-        @donkey.tool(approval="required", risk="financial")
-        async def issue_refund(ticket_id: str) -> str:
-            """Refund a ticket."""
-            ran.append(ticket_id)
-            return "refunded"
-
-        agent = agents.Agent(
-            name="refunds",
-            model=donkey.openai_agents.model("gpt-4o"),
-            tools=[agents.function_tool(issue_refund)],
-        )
-        async with donkey.run(id=_PAUSE_RUN):
-            result = await agents.Runner.run(
-                agent, "refund T-1", run_config=agents.RunConfig(tracing_disabled=True)
-            )
-
-    assert result.final_output == "done"
-    assert ran == []
-    tool_results = [m["content"] for m in sent[1]["messages"] if m["role"] == "tool"]
-    # The SDK's fixed text, which never names the error it replaced.
-    assert tool_results == [default_tool_error_function(None, RuntimeError())]

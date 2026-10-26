@@ -113,6 +113,24 @@ def _langgraph_interrupt(
     return approval_interrupt(tool, arguments, risk)
 
 
+def _openai_agents_approval(
+    tool: str, arguments: Mapping[str, Any], risk: str | None
+) -> Approval | None:
+    """The OpenAI Agents SDK's approved call for a gated tool (#213). A no-op
+    until the process has imported the Agents SDK, so ``import donkey_kit``
+    never loads it."""
+    if "agents" not in sys.modules:
+        return None
+    from .integrations.openai_agents import approved_call
+
+    return approved_call(tool, arguments, risk)
+
+
+# The framework pauses a gated tool tries before raising ApprovalRequired. The
+# Agents hook only answers inside a call its function_tool() is running.
+_NATIVES = (_openai_agents_approval, _langgraph_interrupt)
+
+
 class ToolsFacade:
     """``donkey.tools`` — discovery + lock (BG §2.7)."""
 
@@ -144,7 +162,7 @@ class ToolsFacade:
             "Exchange search + governed-state join (governed-only discovery, the Verification "
             "milestone). ToolSet filtering and binding scaffolding exist; wire discover() once the "
             "APIs are confirmed, use registry.explain() for the empty-result reason, and pass "
-            "ToolSet(_natives=(_langgraph_interrupt,)) so require_approval() can pause a graph."
+            "ToolSet(_natives=_NATIVES) so require_approval() can pause a graph or an Agents run."
         )
 
     def lock(self) -> None:
@@ -766,7 +784,10 @@ class Donkey:
         Inside a LangGraph graph run with a checkpointer, the call pauses the
         graph with LangGraph's own ``interrupt()`` instead, and
         ``Command(resume={"approved": True, "by": "m.keller"})`` resumes it (see
-        :func:`donkey_kit.integrations.langgraph.approval_interrupt`).
+        :func:`donkey_kit.integrations.langgraph.approval_interrupt`). Under the
+        OpenAI Agents SDK, build the tool with
+        :func:`donkey_kit.integrations.openai_agents.function_tool`: the run
+        stops on the SDK's own ``needs_approval``, and ``RunState`` approves it.
 
         The approval is client-side and advisory: calling the undecorated
         function bypasses it, and the gateway never learns of it (gateway
@@ -801,8 +822,7 @@ class Donkey:
             validate_service_id(server)
 
         def decorate(fn: _Callable) -> _Callable:
-            natives = (_langgraph_interrupt,)
-            target = gate(fn, risk=risk, timeout=timeout, natives=natives) if approval else fn
+            target = gate(fn, risk=risk, timeout=timeout, natives=_NATIVES) if approval else fn
             return register_tool(target, approval=approval, risk=risk, server=server)
 
         # Bare ``@donkey.tool`` passes the callable positionally; the

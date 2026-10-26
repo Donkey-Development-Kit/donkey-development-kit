@@ -236,6 +236,7 @@ ADAPTERS: dict[str, AdapterSpec] = {
         "openai-agents",
         conformance_tested=True,
         probe=("agents",),
+        refusal_translator="refusal_translator",
     ),
     "anthropic": AdapterSpec(
         "anthropic",

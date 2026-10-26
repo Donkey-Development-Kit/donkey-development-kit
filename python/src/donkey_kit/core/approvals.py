@@ -21,8 +21,13 @@ approvals live in this process's memory, so a restart forgets them; a framework
 checkpointer is the durable form. ``gate(natives=...)`` takes framework hooks
 that pause the call with the framework's own primitive instead: inside a
 LangGraph graph, the LangGraph adapter's hook calls ``interrupt()`` (#212), and
-``Command(resume=...)`` carries the decision. Core never imports a framework:
-the hook is passed in from the top-level ``donkey`` module.
+``Command(resume=...)`` carries the decision; under the OpenAI Agents SDK the
+tool's ``needs_approval`` pauses ``Runner.run`` and ``RunState.approve`` /
+``RunState.reject`` carry it (#213). A rejection differs between the two:
+LangGraph raises :class:`ApprovalRejected` from the resumed tool, while the
+Agents SDK raises nothing and hands the model the rejection message
+(``rejection_message``) as the tool's result. Core never imports a framework:
+the hooks are passed in from the top-level ``donkey`` module.
 """
 
 from __future__ import annotations
@@ -151,10 +156,13 @@ class ApprovalRejected(DonkeyError):
     """A human rejected an approval-gated call that a framework paused natively,
     so the tool was not run (BG §2.3, #212). :attr:`approval` is the call.
 
-    Raised where the framework resumes the call, for example from a LangGraph
-    tool resumed with ``Command(resume={"approved": False, "by": ...})``. The
-    raise-and-resume form needs no error: ``donkey.approvals.reject()`` just
-    drops the call.
+    Raised where the framework resumes the call and reports a rejection by
+    raising: a LangGraph tool resumed with
+    ``Command(resume={"approved": False, "by": ...})`` raises it. The OpenAI
+    Agents SDK does not raise: it reports the rejection to the model as the
+    tool's result (``rejection_message``, #213), and the run carries on. The
+    raise-and-resume form needs no error either: ``donkey.approvals.reject()``
+    just drops the call.
     """
 
     remediation = (

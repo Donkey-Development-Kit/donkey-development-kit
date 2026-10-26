@@ -326,12 +326,14 @@ ignore_missing_imports = true
 # and the LangGraph adapter's last_call handler langchain_core's BaseCallbackHandler.
 # The Strands adapter's model subclasses the OpenAIModel class it is handed (#951),
 # and the ADK adapter's llm_client the LiteLLMClient class it is handed (#969).
+# The OpenAI Agents adapter's gated tool subclasses agents.FunctionTool (#213).
 module = [
     "donkey_kit.a2a._server",
     "donkey_kit.core.transport.httpx2",
     "donkey_kit.integrations.adk",
     "donkey_kit.integrations.crewai",
     "donkey_kit.integrations.langgraph",
+    "donkey_kit.integrations.openai_agents",
     "donkey_kit.integrations.strands",
 ]
 disallow_subclassing_any = false
