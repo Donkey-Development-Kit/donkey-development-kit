@@ -714,11 +714,11 @@ questions this decision resolves as out of scope rather than answered.
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
 | First-class Exchange asset types for MCP servers & AI agents? | BG §2.5 + `asset_types` filter (governed-only discovery) | VERIFIED (CLI) | Yes — Exchange assets named "… MCP Server" and "… Agent Network"/agent, managed as API Manager instances | 2026-08-28: `api-mgr:api:list` |
-| Exact publication / discovery asset-type tokens (`mcp`, `a2a-agent`, `agent`, `api`) | `PublicationAssetType`, `AssetRef.type`, `ExchangeRegistry.search(asset_types=)` | UNVERIFIED | SDK-local assumption only: publication currently reuses the discovery `AssetType` Literal values; the direct publication and search contracts remain blocked pending capture | — |
+| Exact publication / discovery asset-type tokens (`mcp`, `a2a-agent`, `agent`, `api`) | `PublicationAssetType`, `AssetRef.type`, `ExchangeRegistry.search(asset_types=)` | UNVERIFIED | `mcp` and `agent` are in the Exchange Experience API spec's asset-type enum and in the plugin's asset builders (§12.3), and `donkey publish --dry-run` plans with them (#218). Not yet confirmed by a live publish; `a2a-agent` and the discovery search contract remain SDK-local assumptions pending capture | Exchange Experience API spec; plugin `asset-facet.js` |
 | Publication mechanism for non-Mule assets (REST / CLI / Maven)? JVM needed? | §7 CI story | VERIFIED (CLI) | Maven + CLI: `agent-network project publish` publishes the built project to Exchange; **JVM required** (`mvnw`) | 2026-08-28: `agent-network:project:publish --help` |
 | Publication uses Maven GAV coordinates | BG §2.5 | VERIFIED (CLI) | group-id/asset-id/asset-version; groupId defaults to org id | 2026-08-28: `:project:create --help`, `api-mgr:api:describe` |
 | Documentation pages publishable? | BG §2.5 | PARTIAL | `exchange asset page` + `exchange asset resource` topics exist | 2026-08-28: `exchange:asset --help` |
-| Can arbitrary metadata/tags be attached (content digest)? | BG §2.5 | UNVERIFIED | Tags field exists on instances (empty here); attach mechanism pending | — |
+| Can arbitrary metadata/tags be attached (content digest)? | BG §2.5 | UNVERIFIED | Tags field exists on instances (empty here). The multipart publish accepts `properties.{key}` (§12.3), the planned digest store, since tags are scoped to a minor version; whether a property persists and reads back is unconfirmed (#218) | — |
 | Asset lifecycle states (draft/published/deprecated) via API? | `require_lifecycle`, BG §2.5 | PARTIAL | `Deprecated` + `Public` flags on instances; A2D showed `status: draft\|published` | 2026-08-28 |
 | Native descriptor formats (MCP manifest, A2A card) vs file attach? | BG §2.5 output | VERIFIED (plugin) | typed Exchange files w/ fixed classifiers (`agent-metadata`, `mcp-metadata`, `llm-metadata`, `a2a-card`, `schema`, `mule-application`) attached to `agent-network` root asset | 2026-08-28 | §12.7 |
 
@@ -1099,15 +1099,22 @@ Set by the shared axios interceptor on **every** Anypoint-domain request
 |---|---|---|
 | GET | `/exchange/api/v2/assets/{groupId}/{assetId}[/{version}]` | read asset |
 | GET | `/exchange/api/v2/assets/{groupId}/{assetId}/asset` | asset info |
-| POST | `/exchange/api/v2/organizations/{groupId}/assets/{groupId}/{assetId}/{version}` | **publish** (multipart), header `x-sync-publication: true` |
+| PUT | `/api-project/api/v1/registry/{urn}` | **the plugin's publish**: the built project as a zip in multipart field `file`, header `x-sync-publication: true`; `{urn}` is the URL-encoded `urn:ms:{groupId}:api-project::{assetId}/{version}` (`asset-facet.js`) |
+| POST | `/exchange/api/v2/organizations/{orgId}/assets/{groupId}/{assetId}/{version}` | Exchange's own multipart publish. **Not called by the plugin**: its URI helper (`getPublishAssetUri`) is used only by the plugin's tests. Contract from the Exchange Experience API spec, not a capture: `201` with `x-sync-publication: true`, else `202` plus a status link; a republish of an existing version has no documented status (#218) |
 | POST | `/exchange/api/v2/assets/{groupId}/{assetId}/versionGroups/{versionGroup}/instances/external` | create external instance `{name, endpointUri}` |
 | POST | `/graph/api/v2/graphql` | asset metadata GraphQL |
 | GET | `/exchange/api/v2/assets/{groupId}/{policyId}/minorVersions/{minorVersion}` | policy metadata (`dist/helpers/policy-helper.js`) |
 
-Publish multipart fields: `type` (`agent|mcp|llm|app|policy|agent-network`), `name`,
-`description`, `dependencies` (`g:a:v,…`), `tags` (csv), `files.{classifier}`
-(octet-stream blobs), `properties.{key}`, `properties.source`
-(`urn:gav:<g>:<a>:<v>`).
+The plugin's asset builders assemble per-asset fields: `type`
+(`agent|mcp|llm|app|policy|agent-network`), `name`, `description`,
+`dependencies` (`g:a:v,…`), `tags` (csv), `files.{classifier}` (octet-stream
+blobs), `properties.{key}` and `properties.source` (`urn:gav:<g>:<a>:<v>`). Its
+publish path sends them inside the project zip, not as the Exchange multipart
+POST above. The Exchange Experience API spec lists the same multipart fields
+for that POST (plus `keywords`, `fields.*`, `categories.*`, `contactName`,
+`contactEmail`), and its type enum includes `mcp` and `agent`. Corrected in
+#218: an earlier revision of this section said the plugin publishes through the
+POST. Neither path has been exercised live by the SDK.
 
 ### 12.4 Agent Network gateway setup + Private Space (`dist/utils/uris.js`, `gateway.js`)
 

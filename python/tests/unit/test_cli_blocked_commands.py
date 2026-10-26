@@ -3,8 +3,9 @@
 Five commands are visible: ``init``, ``doctor``, ``mock``, ``test`` and ``scan``
 (#217). Three hidden ones (``status``, ``publish``, ``verify``, BG §2.5) are
 verification-blocked and exit 3 with a ``blocked on verification`` message
-(§0.3). The refused provisioning control plane's commands were removed, so
-typer rejects them as unknown (exit 2), not as blocked (exit 3).
+(§0.3); ``publish --dry-run`` alone runs (#218, ``test_cli_publish.py``). The
+refused provisioning control plane's commands were removed, so typer rejects
+them as unknown (exit 2), not as blocked (exit 3).
 """
 
 from __future__ import annotations
