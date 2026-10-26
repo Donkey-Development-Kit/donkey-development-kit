@@ -15,7 +15,7 @@ Modes, by fidelity (BG §2.5):
   * ``auto:static`` — AST only, lower fidelity: MUST emit a completeness warning
     on unresolved dynamic registration; never the default. Still blocked: an
     AST pass can name a tool but cannot produce its schema without the
-    converter the key insight forbids (deferred from #1024).
+    converter the key insight forbids (#1248).
   * ``auto:check``  — generate (as ``auto``), diff against a committed
     descriptor, fail on mismatch. The CI-friendly mode.
 
@@ -93,7 +93,7 @@ async def derive_descriptor(
         raise _verify.blocked(
             "descriptor derivation mode 'auto:static' (docs/verified-apis.md §10): an AST "
             "pass cannot produce a tool's schema without re-deriving it, which BG §2.5 "
-            "forbids (deferred from #1024). Use mode='auto'."
+            "forbids (#1248). Use mode='auto'."
         )
     target = _resolve(entrypoint)
     if mode == "auto:live":
