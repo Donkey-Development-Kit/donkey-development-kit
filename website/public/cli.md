@@ -352,18 +352,18 @@ code always gives the same bytes and a CI diff shows only real changes. The
 line numbers, so moving code around does not change it.
 
 Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the model it builds is
-the input publishing will read.
+the input `donkey publish` reads.
 
 ## Planned commands Roadmap
 
 These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
-- `donkey publish` — register what `donkey scan` finds with Exchange. Only
-  `donkey publish --dry-run` runs today: it prints the Exchange assets a
-  publish would register and makes no network call. The command is hidden
-  from `donkey --help` until publishing itself ships. See
-  [Planning a publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
+- `donkey publish` — register what `donkey scan` finds with Exchange. It
+  publishes MCP servers today, and `--dry-run` prints the plan without sending
+  anything. Agents are not published yet, so the command is hidden from
+  `donkey --help`. See
+  [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers).
 - `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
   A2A and expose it through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 

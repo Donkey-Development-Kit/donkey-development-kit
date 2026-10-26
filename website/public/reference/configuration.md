@@ -546,11 +546,12 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `donkey.registry.search()`, `resolve_mcp()`, `resolve_agent()`, `explain()`, `warm()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()`, `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
-| Hidden commands `donkey status`, `publish`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
+| Hidden command `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers). |
+| Hidden commands `donkey status`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
-So in this release the SDK sends the `ANYPOINT_*` credentials only if your own
-code asks for a connected-app token.
+So in this release the SDK sends the `ANYPOINT_*` credentials only when you run
+`donkey publish`, or when your own code asks for a connected-app token.
 
 ### Other headers
 
@@ -598,8 +599,7 @@ Two tables in these files are not `DonkeyConfig` fields, and
   files. See
   [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - `[donkey.publication]` declares the Exchange group ID, asset IDs and version
-  to publish under. `donkey publish --dry-run` reads it from the same two
-  files. See
+  to publish under. `donkey publish` reads it from the same two files. See
   [Planning a publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named

@@ -1,6 +1,6 @@
 """``donkey publish`` CLI wiring (#218): ``--dry-run`` prints the planned
-Exchange assets offline and exits 1 on an issue; without it the command stays
-blocked on verification (exit 3).
+Exchange assets offline and exits 1 on an issue; without it the command
+publishes to a fake Exchange (``_fake_exchange``) that replays sandbox captures.
 """
 
 from __future__ import annotations
@@ -9,9 +9,14 @@ import json
 from pathlib import Path
 
 import pytest
+from _fake_exchange import ORG, FakeExchange
 from typer.testing import CliRunner
 
 from donkey_kit.cli import app
+from donkey_kit.cli import publish as publish_command
+from donkey_kit.core.auth import StaticToken
+from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.runtime import Runtime
 
 runner = CliRunner()
 
@@ -88,9 +93,69 @@ def test_dry_run_on_a_missing_path_exits_2(repo: Path) -> None:
     assert "nothing to scan" in result.output
 
 
-@pytest.mark.parametrize("flags", [[], ["--if-changed"], ["--always"]])
-def test_publish_without_dry_run_stays_blocked(repo: Path, flags: list[str]) -> None:
-    result = runner.invoke(app, ["publish", *flags, str(repo)])
+@pytest.fixture
+def exchange(repo: Path, monkeypatch: pytest.MonkeyPatch) -> FakeExchange:
+    """A fake Exchange behind the command's control-plane client, with the
+    control-plane credentials set."""
+    monkeypatch.setenv("ANYPOINT_ORG_ID", ORG)
+    monkeypatch.setenv("ANYPOINT_CLIENT_ID", "cid")
+    monkeypatch.setenv("ANYPOINT_CLIENT_SECRET", "secret")
+    fake = FakeExchange()
 
-    assert result.exit_code == 3
-    assert "blocked on verification:" in result.output
+    def runtime(cfg: DonkeyConfig) -> Runtime:
+        rt = Runtime(cfg, auth=StaticToken("tok"))
+        rt.control_http.governed_transport.replace_inner(fake.transport())
+        return rt
+
+    monkeypatch.setattr(publish_command, "_runtime", runtime)
+    return fake
+
+
+def test_publish_then_rerun_publishes_once(repo: Path, exchange: FakeExchange) -> None:
+    first = runner.invoke(app, ["publish", str(repo)])
+    again = runner.invoke(app, ["publish", str(repo)])
+
+    assert first.exit_code == 0, first.output
+    assert f"published mcp    {ORG}:sku-manager:1.0.0  published 1.0.0" in first.output
+    assert "published 1 asset" in first.output
+    assert again.exit_code == 0, again.output
+    assert "unchanged mcp" in again.output
+    assert "published 0 assets" in again.output
+    assert list(exchange.assets[(ORG, "sku-manager")]) == ["1.0.0"]
+
+
+def test_new_content_under_a_published_version_exits_1(repo: Path, exchange: FakeExchange) -> None:
+    runner.invoke(app, ["publish", str(repo)])
+    (repo / "app.py").write_text(
+        SOURCE.replace("price and stock level", "price, stock level and bin"), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["publish", str(repo)])
+
+    assert result.exit_code == 1
+    assert "sku-manager:1.0.0 is already published with other content" in result.output
+    assert "Bump the version" in result.output
+
+
+def test_a_plan_with_issues_publishes_nothing(repo: Path, exchange: FakeExchange) -> None:
+    (repo / ".donkey-kit.toml").write_text("[donkey.publication]\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["publish", str(repo)])
+
+    assert result.exit_code == 1
+    assert "missing-version" in result.output
+    assert "nothing was published" in result.output
+    assert exchange.requests == []
+
+
+def test_publish_without_control_plane_credentials_exits_2(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ANYPOINT_ORG_ID", "org-123")
+    monkeypatch.delenv("ANYPOINT_CLIENT_ID", raising=False)
+    monkeypatch.delenv("ANYPOINT_CLIENT_SECRET", raising=False)
+
+    result = runner.invoke(app, ["publish", str(repo)])
+
+    assert result.exit_code == 2
+    assert "client_id" in result.output

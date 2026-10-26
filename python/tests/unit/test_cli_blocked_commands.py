@@ -1,9 +1,9 @@
 """The CLI's command set after the legacy quarantine (#730, ADR 0008 in docs/adr/).
 
 Five commands are visible: ``init``, ``doctor``, ``mock``, ``test`` and ``scan``
-(#217). Three hidden ones (``status``, ``publish``, ``verify``, BG §2.5) are
-verification-blocked and exit 3 with a ``blocked on verification`` message
-(§0.3); ``publish --dry-run`` alone runs (#218, ``test_cli_publish.py``). The
+(#217). Three are hidden: ``publish`` (#218, ``test_cli_publish.py``), and
+``status`` and ``verify`` (BG §2.5), which are verification-blocked and exit 3
+with a ``blocked on verification`` message (§0.3). The
 refused provisioning control plane's commands were removed, so typer rejects
 them as unknown (exit 2), not as blocked (exit 3).
 """
@@ -26,27 +26,20 @@ def test_visible_commands_are_init_doctor_mock_test_scan() -> None:
     assert visible == {"init", "doctor", "mock", "test", "scan"}
 
 
-def test_hidden_commands_are_only_the_blocked_platform_ones() -> None:
+def test_hidden_commands_are_publish_and_the_blocked_platform_ones() -> None:
     commands = typer.main.get_command(app).commands
     hidden = {name for name, command in commands.items() if command.hidden}
 
     assert hidden == {"status", "publish", "verify"}
 
 
-@pytest.mark.parametrize("command", ["status", "publish", "verify"])
+@pytest.mark.parametrize("command", ["status", "verify"])
 def test_platform_commands_are_honestly_blocked(command: str) -> None:
     result = runner.invoke(app, [command])
 
     assert result.exit_code == 3
     assert "blocked on verification:" in result.output
     assert "See docs/verified-apis.md" in result.output
-
-
-def test_publish_if_changed_is_blocked_too() -> None:
-    result = runner.invoke(app, ["publish", "--if-changed"])
-
-    assert result.exit_code == 3
-    assert "blocked on verification:" in result.output
 
 
 @pytest.mark.parametrize("command", ["plan", "apply", "drift", "lint", "generate", "validate"])

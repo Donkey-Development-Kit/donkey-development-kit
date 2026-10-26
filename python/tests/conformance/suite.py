@@ -20,18 +20,19 @@ loopback gateway. ``attribution_headers_present`` asserts the consumer-auth
 per-agent attribution unit. The application and business-group header names
 are still UNVERIFIED placeholders (docs/verified-apis.md §3).
 
-Thirteen names were **retired, not implemented** (#749): ``single_tool_call``,
-``multi_tool_multi_server``, ``tool_filtering``, ``governed_filter_excludes``,
-``governance_resolve_drift``, ``governance_target_switch``,
-``descriptor_auto_stable``, ``publication_verify_drift``,
-``publication_idempotent``, ``descriptor_matches_framework``,
+Thirteen names were **retired, not implemented** (#749), and twelve still are:
+``single_tool_call``, ``multi_tool_multi_server``, ``tool_filtering``,
+``governed_filter_excludes``, ``governance_resolve_drift``,
+``governance_target_switch``, ``descriptor_auto_stable``,
+``publication_verify_drift``, ``descriptor_matches_framework``,
 ``auto_vs_live_agree``, ``dynamic_tools_detected`` and ``asset_type_detection``.
 Each one needs a per-adapter surface that still raises ``_verify.blocked(...)``
 under the verification discipline. Binding MCP tools into a framework is
 blocked in ``tools/session.py``. Exchange discovery is blocked in
 ``registry/exchange.py``, publication in ``registry/publication.py`` and live
 introspection in ``registry/introspect.py``. No adapter can run a scenario
-against a surface that always refuses. The pure logic beneath them
+against a surface that always refuses. ``publication_idempotent`` came back
+with ``donkey publish`` (#218). The pure logic beneath them
 (``ToolFilter``, collision prefixes, governance criteria, content digests) is
 unit-tested in ``tests/unit/test_pure_logic.py``. A retired name comes back
 only with a body, once its surface is verified and built.
@@ -88,6 +89,12 @@ CONFORMANCE_SCENARIOS = [
     # correlation id (BG §2.3, #211, #212, #213). The resumed call needs our
     # transport, so CrewAI records an asserted exemption below.
     "approval_round_trip",
+    # Publishing the same content twice creates one Exchange version: a re-run,
+    # or a version bump with nothing else changed, publishes nothing, and new
+    # content under a published version fails before sending (BG §2.5, #218).
+    # Publishing goes through the control plane, not a framework, so no adapter
+    # is exempt.
+    "publication_idempotent",
 ]
 
 # Where each scenario runs (#749), as pytest node ids relative to ``python/``.
@@ -130,6 +137,11 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
     ),
     "approval_round_trip": (
         "tests/conformance/test_approval_round_trip.py::test_an_approved_tool_resumes_and_is_still_judged_by_the_gateway",
+    ),
+    "publication_idempotent": (
+        "tests/unit/test_cli_publish.py::test_publish_then_rerun_publishes_once",
+        "tests/unit/test_exchange_publish.py::test_a_version_bump_alone_publishes_nothing_unless_always",
+        "tests/unit/test_exchange_publish.py::test_a_published_version_with_other_content_fails_before_sending",
     ),
 }
 

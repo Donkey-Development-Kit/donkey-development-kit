@@ -3,9 +3,8 @@ register, computed offline (BG §2.5, #218).
 
 :func:`plan_publication` turns a :class:`~donkey_kit.registry.scan.ScanResult`
 into one :class:`PlannedAsset` per published service, an ``mcp`` asset per MCP
-server and an ``agent`` asset per agent, and makes **no network call**. The
-publish itself stays blocked: the Exchange write contract, a republish of an
-existing version and where the digest is stored are not verified
+server and an ``agent`` asset per agent, and makes **no network call**.
+:mod:`~donkey_kit.registry.exchange_publish` publishes the ``mcp`` assets
 (docs/verified-apis.md §7, §12.3).
 
 Exchange coordinates are not in code, so they are declared, the way
@@ -67,7 +66,7 @@ class PlannedAsset:
     """One Exchange asset the publish would register.
 
     ``type`` is the Exchange asset type, ``mcp`` or ``agent`` (the Exchange
-    Experience API's type enum; not yet confirmed by a live publish).
+    Experience API's type enum; ``mcp`` is confirmed by a live publish).
     ``group_id`` or ``version`` is ``None`` when it is undeclared, which is
     also reported as an issue. ``digest`` covers what would be published for
     this asset, not its version, so ``--if-changed`` can compare it with the
