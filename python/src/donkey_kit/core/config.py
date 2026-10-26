@@ -66,7 +66,7 @@ from ._verify import REGION_HOSTS
 from .cost import CostTags
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
-from .header_names import header_name_problem
+from .header_names import header_name_problem, key_header_problem
 
 # Imported at runtime, not only for type checking, so ``typing.get_type_hints``
 # resolves the ``**overrides`` of resolve() and with_overrides() (#727).
@@ -128,6 +128,7 @@ class ConfigOverrides(TypedDict, total=False):
     llm_proxy_client_id: str | None
     llm_proxy_client_secret: str | None
     llm_proxy_key: str | None
+    llm_proxy_key_header: str | None
     llm_proxy_auth: LlmProxyAuth
     llm_proxy_wallet_client_id: str | None
     application_name: str | None
@@ -300,21 +301,20 @@ class DonkeyConfig:
     # Anthropic, ``x-goog-api-key`` from ADK's gemini()). A client-id proxy ignores
     # it; leave unset to send a sentinel.
     llm_proxy_key: str | None = field(default=None, repr=False)
+    # Optional: a header that also carries ``llm_proxy_key`` (not in jwt mode), the one
+    # a Dynamic API Key route reads the provider key from (#367). Checked on construction.
+    llm_proxy_key_header: str | None = None
 
     # --- LLM proxy auth mode (BG §1.1, #509) ---
-    # Which data-plane ingress the proxy uses. Default ``"client-id"`` (the
-    # CIE header pair above). ``"jwt"`` selects the model-wallet
-    # ingress: no ``client_secret``, an IdP JWT supplied dynamically via an
-    # ``AuthProvider`` (``Donkey(llm_auth=...)``), and a durable wallet-selector
-    # client ID sent as the ``X-Client-Id`` header (docs/verified-apis.md §2/§3, #372).
-    # ``"bearer"`` sends only ``Authorization: Bearer <token>`` from that provider
-    # (#836).
+    # Which data-plane ingress the proxy uses. Default ``"client-id"`` (the CIE header
+    # pair above). ``"jwt"`` selects the model-wallet ingress: no ``client_secret``, an
+    # IdP JWT from an ``AuthProvider`` (``Donkey(llm_auth=...)``) and a wallet-selector
+    # ``X-Client-Id`` (docs/verified-apis.md §2/§3, #372). ``"bearer"`` sends only
+    # ``Authorization: Bearer <token>`` from that provider (#836).
     llm_proxy_auth: LlmProxyAuth = "client-id"
-    # The wallet-selector client ID sent as ``X-Client-Id`` in JWT mode — the
-    # wallet's system-generated clientId (read from the omni API, see the
-    # ddk-configure-llm-proxy-model-wallet skill). Durable, not rotating, so it IS
-    # a config field (the rotating JWT is not); required in JWT mode. Ignored in
-    # client-id mode.
+    # The wallet's system-generated clientId, sent as ``X-Client-Id`` in JWT mode (see
+    # the ddk-configure-llm-proxy-model-wallet skill). Durable, so it IS a config field
+    # (the rotating JWT is not); required in JWT mode, ignored in client-id mode.
     llm_proxy_wallet_client_id: str | None = None
 
     # --- Attribution (real header names: see docs/verified-apis.md §3) ---
@@ -401,11 +401,13 @@ class DonkeyConfig:
         """Refuse a configurable header name that isn't safe to send, or that
         two keys share (see :mod:`donkey_kit.core.header_names`)."""
         in_use = {key: getattr(self, key) or dflt for key, dflt in _HEADER_KEYS}
-        for key, _ in _HEADER_KEYS:
+        in_use["llm_proxy_key_header"] = self.llm_proxy_key_header or ""
+        for key in in_use:
             name = getattr(self, key)
             if name is None:
                 continue
-            problem = header_name_problem(name)
+            check = key_header_problem if key == "llm_proxy_key_header" else header_name_problem
+            problem = check(name)
             if problem is None:
                 clash = [k for k, n in in_use.items() if k != key and n.lower() == name.lower()]
                 if clash:
@@ -604,12 +606,9 @@ class DonkeyConfig:
             if not self.llm_proxy_url:
                 missing.append(_needs("llm_proxy_url"))
             if self.llm_proxy_auth == "jwt":
-                # Model-wallet ingress (#509): NO client_secret — CIE is disabled
-                # and the caller is identified from the JWT. The rotating JWT is
-                # supplied via an AuthProvider (Donkey(llm_auth=...)), not config,
-                # so it is not a "missing field" here — the provider-attached check
-                # lives where the provider is known (LLMClient.client()). What IS
-                # required here is the durable wallet-selector client ID.
+                # Model-wallet ingress (#509): no client_secret. The JWT comes from an
+                # AuthProvider, checked where it is known (LLMClient.client()); only
+                # the durable wallet-selector client ID is required here.
                 if not self.llm_proxy_wallet_client_id:
                     missing.append(
                         _needs("llm_proxy_wallet_client_id")
@@ -885,6 +884,7 @@ _FIELDS: tuple[_Field, ...] = (
     _Field("llm_proxy_client_id", "DONKEY_LLM_PROXY_CLIENT_ID", _opt),
     _Field("llm_proxy_client_secret", "DONKEY_LLM_PROXY_CLIENT_SECRET", _opt),
     _Field("llm_proxy_key", "DONKEY_LLM_PROXY_KEY", _opt),
+    _Field("llm_proxy_key_header", "DONKEY_LLM_PROXY_KEY_HEADER", _opt),
     _Field(
         "llm_proxy_auth", "DONKEY_LLM_PROXY_AUTH", _as_token, _one_of("client-id", "jwt", "bearer")
     ),

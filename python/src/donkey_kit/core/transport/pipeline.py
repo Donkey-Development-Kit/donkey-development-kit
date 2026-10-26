@@ -43,6 +43,7 @@ from .headers import (
     _CheckedEndpoints,
     _request_correlation_id,
     _resolve_header_names,
+    credential_headers,
     effective_cost_tags,
 )
 from .observe import _log_finish, _log_retry, _record_response
@@ -121,7 +122,11 @@ class _GovernedPipeline(_CheckedEndpoints):
         # nothing: the control plane, and a standalone ``LLMClient``.
         self._reactions = reactions if reactions is not None else RefusalHandlers()
         self._control_plane = control_plane
-        self._init_origins(cfg.control_plane_url if control_plane else cfg.llm_proxy_url, origins)
+        self._init_origins(
+            cfg.control_plane_url if control_plane else cfg.llm_proxy_url,
+            origins,
+            credential_headers(cfg),
+        )
         # The two correlation request-header NAMES, resolved once (config override
         # → UNVERIFIED placeholder). The one-time verification-discipline warning
         # for an un-overridden name fires here, at construction, not per request

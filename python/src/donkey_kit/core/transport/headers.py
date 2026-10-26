@@ -24,7 +24,7 @@ from ..correlation import (
 )
 from ..cost import CostTags
 from ..endpoints import require_secure_url
-from ..masking import SENSITIVE_NAMES, masked
+from ..masking import SENSITIVE_NAMES, Secret, masked
 
 __all__ = [
     "CALL_ID_HEADER",
@@ -34,6 +34,7 @@ __all__ = [
     "Origin",
     "attribution_headers",
     "cost_headers",
+    "credential_headers",
     "effective_cost_tags",
     "origin_of",
     "proxy_api_key",
@@ -143,11 +144,18 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
     * ``bearer`` mode (#836): no consumer-auth header at all. The token is
       injected per-send exactly like the ``jwt`` one, with no wallet selector.
 
+    In ``client-id`` and ``bearer`` mode, ``llm_proxy_key`` also rides in the
+    header ``llm_proxy_key_header`` names, when both are set: the header a
+    Dynamic API Key route reads the provider key from (#367). A model wallet
+    holds its own provider keys, so ``jwt`` mode never sends it.
+
     Returns a :class:`~donkey_kit.core.masking.MaskedDict`: a plain ``dict`` in
-    use, but printing it shows ``'***'`` for the secret header.
+    use, but printing it shows ``'***'`` for the secret headers.
     """
 
     headers = masked(attribution_headers(cfg))
+    if cfg.llm_proxy_key_header and cfg.llm_proxy_key and cfg.llm_proxy_auth != "jwt":
+        headers[cfg.llm_proxy_key_header] = Secret(cfg.llm_proxy_key)
     if cfg.llm_proxy_auth == "jwt":
         if cfg.llm_proxy_wallet_client_id:
             headers[_verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER] = cfg.llm_proxy_wallet_client_id
@@ -196,9 +204,19 @@ def origin_of(url: str | httpx.URL) -> Origin | None:
     return (parsed.scheme, parsed.host.lower(), port)
 
 
-def strip_credential_headers(request: httpx.Request) -> None:
-    """Remove every :data:`CREDENTIAL_HEADERS` header from ``request``."""
-    for name in [n for n in request.headers if n.lower() in CREDENTIAL_HEADERS]:
+def credential_headers(cfg: DonkeyConfig) -> frozenset[str]:
+    """:data:`CREDENTIAL_HEADERS` plus ``cfg``'s provider-key header, if it names
+    one (#367): the lower-cased names a client strips off an unchecked origin."""
+    name = cfg.llm_proxy_key_header
+    return CREDENTIAL_HEADERS | {name.lower()} if name else CREDENTIAL_HEADERS
+
+
+def strip_credential_headers(
+    request: httpx.Request, names: frozenset[str] = CREDENTIAL_HEADERS
+) -> None:
+    """Remove every header in ``names`` (lower-cased) from ``request``: by
+    default :data:`CREDENTIAL_HEADERS`, or a config's :func:`credential_headers`."""
+    for name in [n for n in request.headers if n.lower() in names]:
         del request.headers[name]
 
 
@@ -214,9 +232,16 @@ class _CheckedEndpoints:
     """
 
     _origins: set[Origin]
+    _credential_names: frozenset[str] = CREDENTIAL_HEADERS
 
-    def _init_origins(self, endpoint: str | None, origins: set[Origin] | None) -> None:
+    def _init_origins(
+        self,
+        endpoint: str | None,
+        origins: set[Origin] | None,
+        credential_names: frozenset[str] = CREDENTIAL_HEADERS,
+    ) -> None:
         self._origins = origins if origins is not None else set()
+        self._credential_names = credential_names
         seeded = origin_of(endpoint) if endpoint else None
         if seeded is not None:
             self._origins.add(seeded)
@@ -241,7 +266,7 @@ class _CheckedEndpoints:
         """Whether ``request`` may carry credentials. When not, strip any it has."""
         if origin_of(request.url) in self._origins:
             return True
-        strip_credential_headers(request)
+        strip_credential_headers(request, self._credential_names)
         return False
 
 

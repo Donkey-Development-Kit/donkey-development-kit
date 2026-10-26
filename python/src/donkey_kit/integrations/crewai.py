@@ -61,7 +61,7 @@ import httpx
 from ..core.config import LlmProxyAuth
 from ..core.errors import ConfigError
 from ..core.masking import masked
-from ..core.transport import Origin, origin_of, strip_credential_headers
+from ..core.transport import Origin, credential_headers, origin_of, strip_credential_headers
 from . import AdapterCapabilities
 from ._base import Adapter, default_adapter
 
@@ -151,7 +151,7 @@ class CrewAIAdapter(Adapter):
             cls = _interceptor_class()
         except ImportError:
             return {}
-        return {"interceptor": cls(self._http.checked_origins)}
+        return {"interceptor": cls(self._http.checked_origins, credential_headers(self._cfg))}
 
     def llm(self, model: str, **kw: Any) -> BaseLLM:
         """Return a native CrewAI LLM pointed at the proxy (BG §1.8).
@@ -176,22 +176,24 @@ def _interceptor_class() -> type:
     from crewai.llms.hooks.base import BaseInterceptor
 
     class CheckedEndpointInterceptor(BaseInterceptor[httpx.Request, httpx.Response]):
-        """Removes credential headers from requests to origins outside ``origins``
+        """Removes the ``names`` credential headers (the config's
+        ``credential_headers``) from requests to origins outside ``origins``
         (the shared client's live set of checked endpoints)."""
 
-        def __init__(self, origins: set[Origin]) -> None:
+        def __init__(self, origins: set[Origin], names: frozenset[str]) -> None:
             self._origins = origins
+            self._names = names
 
         def __eq__(self, other: object) -> bool:
             if not isinstance(other, CheckedEndpointInterceptor):
                 return NotImplemented
-            return self._origins == other._origins
+            return self._origins == other._origins and self._names == other._names
 
         __hash__ = object.__hash__
 
         def on_outbound(self, message: httpx.Request) -> httpx.Request:
             if origin_of(message.url) not in self._origins:
-                strip_credential_headers(message)
+                strip_credential_headers(message, self._names)
             return message
 
         def on_inbound(self, message: httpx.Response) -> httpx.Response:

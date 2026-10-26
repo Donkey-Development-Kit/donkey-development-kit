@@ -9,6 +9,10 @@ a pytest diff or a traceback with locals therefore never shows the secret.
 
 ``dict(x)`` is the explicit unmasked view; copies made with ``x.copy()``,
 ``copy.copy``/``copy.deepcopy`` or ``x | other`` stay masked.
+
+A credential under a name only the config knows, such as the
+``llm_proxy_key_header`` (#367), is a :class:`Secret` instead: the value masks
+itself, so it stays masked however the mapping holding it is copied.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from typing import Any, TypeVar, cast
 
 from . import _verify
 
-__all__ = ["MASK", "SENSITIVE_NAMES", "MaskedDict", "is_sensitive", "masked"]
+__all__ = ["MASK", "SENSITIVE_NAMES", "MaskedDict", "Secret", "is_sensitive", "masked"]
 
 V = TypeVar("V")
 
@@ -41,6 +45,17 @@ SENSITIVE_NAMES: frozenset[str] = frozenset(
         "proxy-authorization",
     )
 )
+
+
+class Secret(str):
+    """A ``str`` whose ``repr()`` is the mask. ``str()``, comparison and the wire
+    see the real value; printing a mapping or a traceback that holds it shows
+    ``'***'``."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return repr(MASK)
 
 
 def is_sensitive(name: object) -> bool:
