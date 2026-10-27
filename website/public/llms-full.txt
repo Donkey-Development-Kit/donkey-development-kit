@@ -7423,8 +7423,9 @@ It is planned to stay narrow, so it never turns into a provisioning tool:
   scopes belong to your platform team and its infrastructure-as-code. If one is
   missing, `donkey expose` tells you which one rather than creating it.
 
-The calls it needs are not verified against a live sandbox yet, so the command
-does not ship until they are.
+The calls that create, deploy and delete an A2A instance have been verified
+against a live sandbox. The MCP instance calls and the connected-app scopes
+the command needs have not, so it does not ship until they are.
 
 ## `donkey dev` — a gateway in front of your laptop
 
@@ -14576,6 +14577,17 @@ How each row was established (live capture, plugin test, and so on) is in the
   Roadmap, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.
+- `donkey expose` is Roadmap. The A2A
+  instance it would create was verified live, and two of the calls that takes
+  are experience APIs (`xapi`) with no third-party support commitment:
+  attaching an outbound policy
+  (`POST /apimanager/xapi/v1/…/apis/{id}/policies/outbound-policies`) and
+  deploying the instance to a gateway target
+  (`POST /proxies/xapi/v1/…/apis/{id}/deployments`, then polling its
+  `…/status`). The Anypoint CLI plugins call the same paths. The SDK calls
+  none of them today. If `expose` ships with them, they move to
+  [Undocumented surfaces](#undocumented-surfaces) with a justification and an
+  owner, unless a documented alternative is found first.
 - `LLMClient.list_models(live=True)` does not call `GET /models`: the Model
   Proxy has no model-catalog endpoint.
 - The application and business-group attribution header names are

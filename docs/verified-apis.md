@@ -124,7 +124,7 @@ VERIFIED with a concrete path.
 | Control-plane host (CA Hyperforce) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (LIVE) | `ca1.platform.mulesoft.com` (on `platform.`, **not** `anypoint.`; the previous `ca1.anypoint.mulesoft.com` placeholder does not resolve in DNS, #22). An SDK run with `region="ca"` and no `base_url` against a real ca1 org: `AnypointConnectedApp` minted a client-credentials token at `POST /accounts/api/v2/oauth2/token`, `GET /accounts/api/me` → `200`, `GET /accounts/api/organizations/{org}/environments` → `200` (2 envs). On the same root, `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis` → `403` JSON (connected app lacks the scope) and `GET /exchange/api/v2/assets/{org}/<missing>` → `404` JSON: both services answer there, but neither contract was exercised. `ca1.omni.mulesoft.com` is not a control-plane API host (`405` on the token path). | 2026-10-12 | live probe, ca1 org, connected app (client credentials); [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
 | Control-plane host (JP Hyperforce) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (LIVE) | `jp1.platform.mulesoft.com` (on `platform.`, **not** `anypoint.`; the previous `jp1.anypoint.mulesoft.com` placeholder does not resolve in DNS, #22). An SDK run with `region="jp"` and no `base_url` against a real jp1 org: `AnypointConnectedApp` minted a client-credentials token at `POST /accounts/api/v2/oauth2/token`, `GET /accounts/api/me` → `200`, `GET /accounts/api/organizations/{org}/environments` → `200` (2 envs), `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis` → `200` JSON. `GET /exchange/api/v2/assets/{org}/<missing>` → `404` JSON: Exchange answers on the same root, but its contract was not exercised. Not in the shipping CLI's `validServers`. | 2026-10-12 | live probe, jp1 org, connected app (client credentials); [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
 | Connected-app scopes: Exchange read | `core/auth.py`, docs | UNVERIFIED | — | — | — |
-| Connected-app scopes: API Manager write | provisioning | UNVERIFIED | — | — | — |
+| Connected-app scopes: API Manager write | provisioning, `donkey expose` (#226) | UNVERIFIED | The A2A instance write path itself is VERIFIED (LIVE) (§12.5, #254), but with a username/password session, so no connected-app scope was exercised (#23). | — | — |
 | Connected-app scopes: policy management | provisioning | UNVERIFIED | — | — | — |
 | Which ops require an **admin** connected app w/ user context | `core/auth.py` | UNVERIFIED | — | — | — |
 
@@ -965,10 +965,11 @@ local; no gateway fronted the agent.
 | `a2a.helpers` (`new_task_from_user_message`, `new_text_part`, `new_data_part`, `new_text_message`, `get_text_parts`, `get_data_parts`) | Building and reading message parts | VERIFIED (local round-trip) | same |
 | JSON-RPC methods `SendMessage` and `SendStreamingMessage` (`JsonRpcDispatcher.METHOD_TO_MODEL`) | The calls `donkey dev`'s simulated ingress runs its `--scenario` rules on; the other methods pass through | VERIFIED (local round-trip) | a2a-sdk 1.3.0, 2026-10-27, #1284: `donkey dev` on `127.0.0.1:8931`, called with plain `curl`, returned the card and a completed `SendMessage` task with `x-donkey-simulator: true`, and a scenario-matched `SendMessage` got the 79-byte injection-protection fixture |
 
-Which A2A traffic Omni Gateway can front, and how, is not covered here: that is
-`donkey expose` (#226). `donkey dev`'s simulated ingress (#1284) answers inbound rejections with the
-LLM-proxy fixtures of §4; how the gateway answers a policy rejection on an A2A
-agent instance is not captured (#226/#1278).
+Fronting an agent with an Omni Gateway A2A instance is `donkey expose` (#226);
+the control-plane calls it needs are recorded in §12.5 (#254). `donkey dev`'s
+simulated ingress (#1284) answers inbound rejections with the LLM-proxy fixtures
+of §4; how the gateway answers a policy rejection on an A2A agent instance is
+not captured (#226/#1278).
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 
@@ -1178,6 +1179,27 @@ technology:"flexGateway", instanceLabel, description,
 metadata:{connectionId, source:"urn:gav:…", protectionDirection:"ingress"|"egress"}}`
 — this confirms the exact shape behind the `api_list.sandbox.json` fixture and
 the `McpServerHandle` mapping in `test_governed_state_shapes.py`.
+
+**Live: the A2A instance write path (#254).** On 2026-10-27 one A2A instance
+was created, given an outbound policy, deployed and deleted in the sandbox
+(DDK/Sandbox, managed shared-space Flex target, listener port 8081), for a
+throwaway `agent` asset that was hard-deleted afterwards. The session was a
+username/password login, so connected-app scopes stay UNVERIFIED (§1, #23).
+Captures, scrubbed, are in `python/tests/fixtures/anypoint/a2a_instance/`.
+
+| Call | Status | Observed |
+|---|---|---|
+| `POST /apimanager/api/v1/…/apis` with `endpoint.type: "a2a"` | VERIFIED (LIVE) | `201`, the instance with an `id` and no deployment. Body as above, without `endpointUri`, `description` or `metadata`: `spec`, `endpoint {type, uri, proxyUri: "http://0.0.0.0:8081/<label>", isCloudHub: null, deploymentType: "HY"}`, `instanceLabel`, `technology: "flexGateway"`. The response adds `metadata.assetType: "agent"` from the asset. |
+| `POST /apimanager/api/v1/…/apis/{apiId}/policies` with an outbound-only policy (`credential-injection-api-key` 1.0.1) | VERIFIED (LIVE), refused | `400` `PolicyValidationError`, "This policy can not be applied as inbound". |
+| `GET /apimanager/api/v1/…/apis/{apiId}/upstreams` | VERIFIED (LIVE) | `200`, `{total, upstreams: [{id, uri, …}]}`: one upstream, made from `endpoint.uri`. |
+| `POST /apimanager/xapi/v1/…/apis/{apiId}/policies/outbound-policies` | VERIFIED (LIVE) | `201`, a list with one policy per upstream id sent. Body `{configurationData, groupId, assetId, assetVersion, upstreamIds, apiVersionId}`, as `anypoint-cli-agent-fabric-plugin` 1.0.4 sends it. `GET` on the path is `405`. The policy then shows in `GET …/policies` with `type: "system"` and its secret field left out. |
+| `POST /proxies/xapi/v1/…/apis/{apiId}/deployments` | VERIFIED (LIVE) | `201`, `{id, expectedStatus: "deployed", gatewayVersion, …}`. Body `{type: "HY", gatewayVersion, targetId, targetName, environmentId, environmentName}`; the `gatewayVersion` sent (`1.0.0`) is replaced by the target's. |
+| `GET /proxies/xapi/v1/…/apis/{apiId}/deployments/{id}/status` | VERIFIED (LIVE) | `200`, `applying`/`unregistered`, then `applied`/`active` within about 10 s. |
+| `DELETE /apimanager/api/v1/…/apis/{apiId}` | VERIFIED (LIVE) | `204`; the instance then drops out of the listing. |
+
+Not verified by this run: an `mcp` instance create (#1278), inbound policies
+on an A2A instance, and traffic through the deployed instance (its upstream
+was not reachable).
 
 App deploy (CloudHub 2.0 / RTF): `/amc/application-manager/api/v2/organizations/{org}/environments/{env}/deployments[/{id}]`;
 status poll `/amc/adam/api/organizations/{org}/environments/{env}/deployments/{id}`.

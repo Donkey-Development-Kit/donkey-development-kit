@@ -1,0 +1,13 @@
+{
+  "name": "Method Not Allowed",
+  "headers": {
+    "Allow": "POST"
+  },
+  "errors": [
+    {
+      "path": "/organizations/00000000-0000-4000-8000-4256cc8e6f68/environments/00000000-0000-4000-8000-5c4fd1a49fc3/apis/21259153/policies/outbound-policies",
+      "message": "GET method not allowed"
+    }
+  ],
+  "message": "GET method not allowed"
+}

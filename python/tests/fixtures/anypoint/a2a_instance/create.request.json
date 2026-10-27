@@ -1,0 +1,16 @@
+{
+  "endpoint": {
+    "type": "a2a",
+    "uri": "http://host.docker.internal:8765/a2a/verify254/",
+    "proxyUri": "http://0.0.0.0:8081/ddk-verify254-agent",
+    "isCloudHub": null,
+    "deploymentType": "HY"
+  },
+  "instanceLabel": "ddk-verify254-agent",
+  "technology": "flexGateway",
+  "spec": {
+    "assetId": "ddk-verify254-agent",
+    "version": "0.1.0",
+    "groupId": "00000000-0000-4000-8000-4256cc8e6f68"
+  }
+}

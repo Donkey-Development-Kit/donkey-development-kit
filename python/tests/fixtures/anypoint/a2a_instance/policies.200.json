@@ -1,0 +1,32 @@
+{
+  "policies": [
+    {
+      "policyTemplateId": "433854",
+      "order": 1,
+      "pointcutData": null,
+      "label": null,
+      "implementationAsset": {
+        "assetId": "credential-injection-api-key-flex",
+        "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+        "version": "1.0.0",
+        "technology": "flexGateway",
+        "extensionName": "credential-injection-api-key-wasm",
+        "minRuntimeVersion": "1.10.2"
+      },
+      "upstreamId": "00000000-0000-4000-8000-d3eb17e50bd4",
+      "type": "system",
+      "policyId": 9654823,
+      "configuration": {
+        "authType": "apiKey",
+        "overwrite": true,
+        "customHeader": "X-DDK-Access-Key"
+      },
+      "template": {
+        "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+        "assetId": "credential-injection-api-key",
+        "assetVersion": "1.0.1"
+      },
+      "version": 1793106581591
+    }
+  ]
+}

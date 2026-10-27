@@ -1,0 +1,17 @@
+{
+  "total": 1,
+  "upstreams": [
+    {
+      "audit": {
+        "created": {
+          "date": "2026-10-27T13:08:02.064Z"
+        },
+        "updated": {}
+      },
+      "id": "00000000-0000-4000-8000-d3eb17e50bd4",
+      "label": null,
+      "instanceUpstreamId": "upstream_2bc5d1ed",
+      "uri": "http://host.docker.internal:8765/a2a/verify254/"
+    }
+  ]
+}
