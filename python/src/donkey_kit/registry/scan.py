@@ -25,6 +25,10 @@ and the endpoint a client reaches is a deployment fact. Scan reads it from a
 with the ``.donkey-kit.local.toml`` beside it overriding key by key, so each
 environment can name its own endpoint. A server with no declaration reports
 ``None`` for both, never a guess.
+
+An agent's protocol and endpoint are declared the same way, in a
+``[donkey.agents.<name>]`` table (#1260): ``protocol`` is one of
+:data:`AGENT_PROTOCOLS` and ``endpoint`` the URL the agent is served at.
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -45,6 +49,7 @@ from ..core.toolspec import validate_service_id
 from .publication import check_description_quality, content_digest
 
 __all__ = [
+    "AGENT_PROTOCOLS",
     "MCP_TRANSPORTS",
     "SCAN_FORMAT",
     "ScanIssue",
@@ -78,6 +83,15 @@ MCP_TRANSPORTS = ("stdio", "streamable-http", "sse")
 
 _SERVER_KEYS = frozenset({"transport", "endpoint"})
 
+#: The agent protocols a ``[donkey.agents.<name>]`` table may declare: the
+#: ``protocol`` tokens of Agent Fabric's agent metadata schema that the SDK can
+#: describe. ``a2a_v1`` is A2A 1.0, what ``donkey.serve()`` speaks; ``other`` is
+#: any other protocol, published with no agent card. ``a2a`` (A2A 0.3) is left
+#: out: the SDK builds no 0.3 card.
+AGENT_PROTOCOLS = ("a2a_v1", "other")
+
+_AGENT_KEYS = frozenset({"protocol", "endpoint"})
+
 
 @dataclass(frozen=True)
 class ScannedParameter:
@@ -105,7 +119,11 @@ class ScannedTool:
 
 @dataclass(frozen=True)
 class ScannedAgent:
-    """A ``@donkey.agent`` found in source; ``name`` is its service ID."""
+    """A ``@donkey.agent`` found in source; ``name`` is its service ID.
+
+    ``protocol`` and ``endpoint`` are what ``[donkey.agents.<name>]`` declares
+    (#1260), ``None`` when it declares nothing.
+    """
 
     name: str
     qualname: str
@@ -114,6 +132,8 @@ class ScannedAgent:
     description: str | None
     is_async: bool
     skills: tuple[str, ...]
+    protocol: str | None = None
+    endpoint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -141,7 +161,10 @@ class ScanIssue:
     ``syntax-error`` or ``unreadable``. A ``[donkey.mcp_servers]`` declaration
     adds ``invalid-mcp-server`` (a malformed entry or an unknown key),
     ``invalid-transport``, ``invalid-endpoint`` and ``unknown-server`` (an ID no
-    tool names); their ``path`` is the TOML file and their ``line`` is ``0``.
+    tool names). A ``[donkey.agents]`` declaration adds ``invalid-agent`` (a
+    malformed entry, an unknown key, or ``a2a_v1`` with no endpoint),
+    ``invalid-protocol``, ``invalid-endpoint`` and ``unknown-agent`` (a name no
+    agent has). Their ``path`` is the TOML file and their ``line`` is ``0``.
     """
 
     kind: str
@@ -217,6 +240,8 @@ class ScanResult:
                 "description": a.description,
                 "is_async": a.is_async,
                 "skills": list(a.skills),
+                "protocol": a.protocol,
+                "endpoint": a.endpoint,
             }
 
         return {
@@ -300,6 +325,7 @@ def scan(root: str | Path) -> ScanResult:
     tools.sort(key=lambda t: (t.path, t.line))
     declared = _Declarations(origin)
     servers = declared.apply(_servers(tools))
+    agents = declared.apply_agents(agents)
     issues.extend(declared.issues)
     issues.extend(_description_issues(agents, tools))
     issues.extend(_duplicate_issues(agents, tools, servers))
@@ -567,19 +593,24 @@ def _servers(tools: list[ScannedTool]) -> tuple[ScannedMcpServer, ...]:
 
 
 class _Declarations:
-    """The ``[donkey.mcp_servers]`` tables beside the scanned code (#1193).
+    """The ``[donkey.mcp_servers]`` and ``[donkey.agents]`` tables beside the
+    scanned code (#1193, #1260).
 
     The project file is read first and the local file merged over it key by
     key, as ``DonkeyConfig`` merges ``[donkey]`` (#727). Only these two files
-    count: a user-wide file says nothing about one repository's servers.
+    count: a user-wide file says nothing about one repository's services.
     Everything wrong with a declaration is a :class:`ScanIssue`, never a raise.
     """
 
     def __init__(self, directory: Path) -> None:
         self.issues: list[ScanIssue] = []
-        # Server ID -> key -> (value, the file that set it).
-        self.servers: dict[str, dict[str, tuple[object, str]]] = {}
-        self.declared_in: dict[str, str] = {}
+        # Table -> service ID -> key -> (value, the file that set it).
+        self.entries: dict[str, dict[str, dict[str, tuple[object, str]]]] = {
+            "mcp_servers": {},
+            "agents": {},
+        }
+        # Table -> service ID -> the first file that declares it.
+        self.declared_in: dict[str, dict[str, str]] = {"mcp_servers": {}, "agents": {}}
         for name in (TOML_NAME, LOCAL_TOML_NAME):
             path = directory / name
             if path.is_file():
@@ -598,59 +629,80 @@ class _Declarations:
             self._issue("syntax-error", name, name, str(exc))
             return
         donkey = data.get("donkey", {})
-        table = donkey.get("mcp_servers", {}) if isinstance(donkey, dict) else {}
+        if not isinstance(donkey, dict):
+            return
+        self._read_table(donkey, name, "mcp_servers", "invalid-mcp-server", "mcp server")
+        self._read_table(donkey, name, "agents", "invalid-agent", "agent")
+
+    def _read_table(
+        self, donkey: dict[str, Any], name: str, table_name: str, invalid: str, what: str
+    ) -> None:
+        keys = _SERVER_KEYS if table_name == "mcp_servers" else _AGENT_KEYS
+        listed = " and ".join(sorted(keys))
+        table = donkey.get(table_name, {})
         if not isinstance(table, dict):
             self._issue(
-                "invalid-mcp-server",
-                "donkey.mcp_servers",
+                invalid,
+                f"donkey.{table_name}",
                 name,
-                "[donkey.mcp_servers] must be a table of server IDs",
+                f"[donkey.{table_name}] must be a table of service IDs",
             )
             return
         for sid, entry in table.items():
-            subject = f"mcp server {sid}"
+            subject = f"{what} {sid}"
             try:
-                validate_service_id(sid, what="an [donkey.mcp_servers] key")
+                validate_service_id(sid, what=f"an [donkey.{table_name}] key")
             except ValueError as exc:
                 self._issue("invalid-service-id", subject, name, str(exc))
                 continue
             if not isinstance(entry, dict):
                 self._issue(
-                    "invalid-mcp-server",
+                    invalid,
                     subject,
                     name,
-                    f"[donkey.mcp_servers.{sid}] must be a table with transport and endpoint",
+                    f"[donkey.{table_name}.{sid}] must be a table with {listed}",
                 )
                 continue
-            merged = self.servers.setdefault(sid, {})
-            self.declared_in.setdefault(sid, name)
+            merged = self.entries[table_name].setdefault(sid, {})
+            self.declared_in[table_name].setdefault(sid, name)
             for key, value in entry.items():
-                if key in _SERVER_KEYS:
+                if key in keys:
                     merged[key] = (value, name)
                 else:
                     self._issue(
-                        "invalid-mcp-server",
-                        subject,
-                        name,
-                        f"unknown key {key!r}; the keys are transport and endpoint",
+                        invalid, subject, name, f"unknown key {key!r}; the keys are {listed}"
                     )
 
     def apply(self, servers: tuple[ScannedMcpServer, ...]) -> tuple[ScannedMcpServer, ...]:
         """``servers`` with what is declared for each, plus the declaration issues."""
         named = {s.id for s in servers}
-        for sid in sorted(self.servers):
+        for sid in sorted(self.entries["mcp_servers"]):
             if sid not in named:
                 self._issue(
                     "unknown-server",
                     f"mcp server {sid}",
-                    self.declared_in[sid],
+                    self.declared_in["mcp_servers"][sid],
                     f"no @donkey.tool names server={sid!r}, so this declaration describes "
                     "nothing; fix the ID or remove the table",
                 )
         return tuple(self._declared(s) for s in servers)
 
+    def apply_agents(self, agents: list[ScannedAgent]) -> list[ScannedAgent]:
+        """``agents`` with the protocol and endpoint declared for each (#1260)."""
+        named = {a.name for a in agents}
+        for sid in sorted(self.entries["agents"]):
+            if sid not in named:
+                self._issue(
+                    "unknown-agent",
+                    f"agent {sid}",
+                    self.declared_in["agents"][sid],
+                    f"no @donkey.agent is named {sid!r}, so this declaration describes "
+                    "nothing; fix the name or remove the table",
+                )
+        return [self._declared_agent(a) for a in agents]
+
     def _declared(self, server: ScannedMcpServer) -> ScannedMcpServer:
-        entry = self.servers.get(server.id, {})
+        entry = self.entries["mcp_servers"].get(server.id, {})
         subject = f"mcp server {server.id}"
         transport: str | None = None
         if "transport" in entry:
@@ -673,6 +725,45 @@ class _Declarations:
             else:
                 self._issue("invalid-endpoint", subject, source, problem)
         return ScannedMcpServer(server.id, server.tools, transport, endpoint)
+
+    def _declared_agent(self, agent: ScannedAgent) -> ScannedAgent:
+        entry = self.entries["agents"].get(agent.name, {})
+        if not entry:
+            return agent
+        subject = f"agent {agent.name}"
+        protocol: str | None = None
+        if "protocol" in entry:
+            value, source = entry["protocol"]
+            if isinstance(value, str) and value in AGENT_PROTOCOLS:
+                protocol = value
+            else:
+                hint = (
+                    "; a2a is A2A 0.3, and donkey.serve() speaks A2A 1.0, which is a2a_v1"
+                    if value == "a2a"
+                    else ""
+                )
+                self._issue(
+                    "invalid-protocol",
+                    subject,
+                    source,
+                    f"protocol must be one of {', '.join(AGENT_PROTOCOLS)}, not {value!r}{hint}",
+                )
+        endpoint: str | None = None
+        if "endpoint" in entry:
+            value, source = entry["endpoint"]
+            problem = _endpoint_problem(value, None)
+            if problem is None:
+                endpoint = str(value)
+            else:
+                self._issue("invalid-endpoint", subject, source, problem)
+        elif protocol == "a2a_v1":
+            self._issue(
+                "invalid-agent",
+                subject,
+                entry["protocol"][1],
+                "an a2a_v1 agent needs an endpoint: its agent card names the URL it is served at",
+            )
+        return replace(agent, protocol=protocol, endpoint=endpoint)
 
 
 def _endpoint_problem(value: object, transport: str | None) -> str | None:

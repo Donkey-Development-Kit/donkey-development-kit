@@ -1,7 +1,8 @@
 # Donkey scan and publish
 
 A GitHub Action that runs `donkey publish`. It scans a repository's MCP servers
-and publishes the ones that changed to Anypoint Exchange (#219).
+and agents and publishes the ones that changed to Anypoint Exchange (#219,
+#1260).
 
 ```yaml
 - uses: Donkey-Development-Kit/donkey-development-kit/action@<ref>  # a release tag or a commit SHA

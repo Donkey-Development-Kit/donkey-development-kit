@@ -1,8 +1,11 @@
-"""``donkey publish``: register a plan's MCP servers in Exchange (BG §2.5, #218).
+"""``donkey publish``: register a plan's MCP servers and agents in Exchange
+(BG §2.5, #218, #1260).
 
-:func:`publish_plan` sends each ``mcp`` asset of a
+:func:`publish_plan` sends each asset of a
 :class:`~donkey_kit.registry.publish_plan.PublishPlan` with the Exchange
-multipart publish, over the control-plane client. Every call below is in the
+multipart publish, over the control-plane client: an ``mcp`` asset with its
+:func:`mcp_metadata` file, an ``agent`` asset with its :func:`agent_metadata`
+file and, for an ``a2a_v1`` agent, its :func:`agent_card`. Every call below is in the
 ledger (docs/verified-apis.md §7, §12.3) with the fixtures it was captured as:
 
 * the latest version is the GraphQL ``asset`` query without a version; an
@@ -26,8 +29,7 @@ ledger (docs/verified-apis.md §7, §12.3) with the fixtures it was captured as:
 With ``if_changed`` an asset whose latest published digest equals the planned
 one is left alone, so a merge that changes nothing publishes nothing. A planned
 version that is already published with other content fails before anything is
-sent: bump the version. Agent assets are not published yet: the scan does not
-capture the protocol and interface an agent asset's metadata needs.
+sent: bump the version.
 """
 
 from __future__ import annotations
@@ -49,6 +51,8 @@ __all__ = [
     "DIGEST_PROPERTY",
     "PublishOutcome",
     "PublishedVersion",
+    "agent_card",
+    "agent_metadata",
     "latest_version",
     "mcp_metadata",
     "publish_plan",
@@ -82,6 +86,12 @@ _VERSION_QUERY = (
     "{ asset(groupId: $groupId, assetId: $assetId, version: $version) "
     "{ versionGroup instances { endpointUri } } }"
 )
+# The agent card file's classifier per protocol: the agent-fabric plugin's
+# (docs/verified-apis.md §7). An ``other`` agent has no card.
+_CARD_CLASSIFIERS = {"a2a_v1": "a2a-v1-card"}
+# What ``donkey.serve()`` reads and writes; a2a/_server.py's ``_MODES``, which
+# registry cannot import (the layered-import rule).
+_AGENT_MODES = ("text/plain", "application/json")
 _POM_DIGEST = re.compile(rf"<{DIGEST_PROPERTY}>\s*(sha256:[0-9a-f]{{64}})\s*</{DIGEST_PROPERTY}>")
 
 # The scan's transport names → mcp-metadata ``transport.kind``. An undeclared
@@ -119,13 +129,13 @@ class PublishedVersion:
 class PublishOutcome:
     """What :func:`publish_plan` did with one planned asset.
 
-    ``status`` is ``published`` (a new version was created), ``unchanged`` (the
-    latest version already has this digest) or ``skipped`` (not publishable
-    yet; ``detail`` says why).
+    ``status`` is ``published`` (a new version was created) or ``unchanged``
+    (the latest version already has this digest); ``detail`` says which
+    version.
     """
 
     asset: PlannedAsset
-    status: Literal["published", "unchanged", "skipped"]
+    status: Literal["published", "unchanged"]
     detail: str
 
 
@@ -139,7 +149,7 @@ async def publish_plan(
     if_changed: bool = True,
     source: PageSource | None = None,
 ) -> tuple[PublishOutcome, ...]:
-    """Publish ``plan``'s MCP assets to Exchange, one at a time, in plan order.
+    """Publish ``plan``'s assets to Exchange, one at a time, in plan order.
 
     ``http`` is the control-plane client and ``base_url`` the control plane;
     ``result`` is the scan the plan came from. ``source`` is where the publish
@@ -155,16 +165,6 @@ async def publish_plan(
     exchange = _Exchange(http, base_url)
     outcomes: list[PublishOutcome] = []
     for asset in plan.assets:
-        if asset.type != "mcp":
-            outcomes.append(
-                PublishOutcome(
-                    asset,
-                    "skipped",
-                    "agent assets are not published yet: the scan does not capture "
-                    "the protocol and interface their metadata needs",
-                )
-            )
-            continue
         outcomes.append(
             await _publish_one(
                 asset, result, exchange, org_id=org_id, if_changed=if_changed, source=source
@@ -193,16 +193,17 @@ async def _publish_one(
             return PublishOutcome(
                 asset, "unchanged", f"the latest version, {latest.version}, has this digest"
             )
-    metadata = json.dumps(mcp_metadata(asset, result), sort_keys=True).encode()
+    data, files = _content(asset, result)
     response = await exchange.post(
         _PUBLISH_PATH.format(org=org_id, group=group, asset=asset_id, version=version),
         data={
             "name": asset.name,
             "description": asset.description or "",
-            "type": "mcp",
+            "type": asset.type,
             f"properties.{DIGEST_PROPERTY}": asset.digest,
+            **data,
         },
-        files={"files.mcp-metadata.json": ("mcp-metadata.json", metadata, "application/json")},
+        files=files,
         headers={"x-sync-publication": "true"},
     )
     if response.status_code == 409:
@@ -224,6 +225,28 @@ async def _publish_one(
         await exchange.update_details(group, asset_id, changes)
         detail += f"; updated the asset's {' and '.join(changes)}"
     return PublishOutcome(asset, "published", detail)
+
+
+def _content(
+    asset: PlannedAsset, result: ScanResult
+) -> tuple[dict[str, str], dict[str, tuple[str, bytes, str]]]:
+    """The type's own form fields and files for the multipart publish."""
+
+    def file(classifier: str, body: dict[str, Any]) -> dict[str, tuple[str, bytes, str]]:
+        name = f"{classifier}.json"
+        content = json.dumps(body, sort_keys=True).encode()
+        return {f"files.{name}": (name, content, "application/json")}
+
+    if asset.type == "mcp":
+        return {}, file("mcp-metadata", mcp_metadata(asset, result))
+    metadata = agent_metadata(asset)
+    files = file("agent-metadata", metadata)
+    classifier = _CARD_CLASSIFIERS.get(str(asset.protocol))
+    if classifier is not None:
+        files |= file(classifier, agent_card(asset, result))
+    # The agent-fabric plugin's properties; Exchange keeps them in the POM.
+    fields = {"properties.protocol": metadata["protocol"], "properties.platform": "other"}
+    return fields, files
 
 
 async def latest_version(
@@ -295,6 +318,59 @@ def mcp_metadata(asset: PlannedAsset, result: ScanResult) -> dict[str, Any]:
             "url": asset.provider.url,
         }
     return metadata
+
+
+def agent_metadata(asset: PlannedAsset) -> dict[str, Any]:
+    """The ``agent-metadata`` file published with the agent ``asset``: its
+    protocol, platform, name and ``urn:gav`` provenance, in Agent Fabric's
+    agent metadata schema, as the agent-fabric plugin builds it
+    (docs/verified-apis.md §7). ``platform`` is ``other``: the SDK runs
+    anywhere. ``connections`` is empty, since the scan does not see what an
+    agent calls; the description is added when one is planned.
+    """
+    group, asset_id, version = _gav(asset)
+    metadata: dict[str, Any] = {
+        "protocol": asset.protocol or "other",
+        "platform": "other",
+        "kind": "agent",
+        "name": asset.service_id,
+        "connections": [],
+        "provenance": {"id": f"urn:gav:{group}:{asset_id}:{version}"},
+    }
+    if asset.description:
+        metadata["description"] = asset.description
+    return metadata
+
+
+def agent_card(asset: PlannedAsset, result: ScanResult) -> dict[str, Any]:
+    """The A2A 1.0 agent card published with an ``a2a_v1`` agent ``asset``.
+
+    It is the card ``donkey.serve()`` serves at ``/.well-known/agent-card.json``
+    for the same ``@donkey.agent``, built from the scan rather than the running
+    agent: served at ``asset.endpoint`` and versioned as the asset is.
+
+    Raises:
+        ValueError: ``asset`` has no endpoint; scan reports an ``a2a_v1`` agent
+            without one as an issue.
+    """
+    if not asset.endpoint:
+        raise ValueError(f"agent {asset.service_id!r} has no endpoint for its card")
+    agent = next(a for a in result.agents if a.name == asset.service_id)
+    return {
+        "name": agent.name,
+        "description": agent.description or "",
+        "version": asset.version,
+        "supportedInterfaces": [
+            {"url": asset.endpoint, "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}
+        ],
+        "capabilities": {"streaming": False},
+        "defaultInputModes": list(_AGENT_MODES),
+        "defaultOutputModes": list(_AGENT_MODES),
+        "skills": [
+            {"id": skill, "name": skill, "description": skill, "tags": [skill]}
+            for skill in agent.skills
+        ],
+    }
 
 
 class _Exchange:

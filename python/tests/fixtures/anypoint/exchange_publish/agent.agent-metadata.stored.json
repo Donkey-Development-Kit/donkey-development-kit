@@ -1,0 +1,11 @@
+{
+  "connections": [],
+  "description": "Triage support tickets into queues; throwaway asset for #1260, deleted right after.",
+  "kind": "agent",
+  "name": "ddk-verify-1260-fixture",
+  "platform": "other",
+  "protocol": "a2a_v1",
+  "provenance": {
+    "id": "urn:gav:00000000-0000-4000-8000-306f0858eed3:ddk-verify-1260-fixture:1.0.0"
+  }
+}

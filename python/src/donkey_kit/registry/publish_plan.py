@@ -4,7 +4,7 @@ register, computed offline (BG §2.5, #218).
 :func:`plan_publication` turns a :class:`~donkey_kit.registry.scan.ScanResult`
 into one :class:`PlannedAsset` per published service, an ``mcp`` asset per MCP
 server and an ``agent`` asset per agent, and makes **no network call**.
-:mod:`~donkey_kit.registry.exchange_publish` publishes the ``mcp`` assets
+:mod:`~donkey_kit.registry.exchange_publish` publishes them
 (docs/verified-apis.md §7, §12.3).
 
 Exchange coordinates are not in code, so they are declared, the way
@@ -28,9 +28,11 @@ the ``.donkey-kit.local.toml`` beside it overriding key by key, sets them::
 
 ``protocol_version`` is the MCP protocol revision the server speaks and
 ``provider`` who provides it; both go in the asset's ``mcp-metadata`` file
-(#1269). ``documentation`` is a Markdown file, relative to the scanned root
-and inside it, that opens the asset's Exchange page. Each is part of the
-digest when it is set, so changing one needs a new version.
+(#1269), so they apply to MCP servers only: an agent's table may not set them.
+An agent's protocol is declared with the scan, in ``[donkey.agents]`` (#1260).
+``documentation`` is a Markdown file, relative to the scanned root and inside
+it, that opens the asset's Exchange page. Each is part of the digest when it
+is set, so changing one needs a new version.
 
 Everything wrong with a declaration is a :class:`~donkey_kit.registry.scan.ScanIssue`,
 never a raise, so the dry run reports every problem at once.
@@ -107,7 +109,9 @@ class PlannedAsset:
     this asset, not its version, so ``--if-changed`` can compare it with the
     latest published version's.
 
-    ``protocol_version`` and ``provider`` are ``None`` when undeclared.
+    ``protocol_version`` and ``provider`` are ``None`` when undeclared, and
+    always for an agent. ``protocol`` is an agent's Agent Fabric protocol, its
+    declared one or ``other``, and ``None`` for an MCP server.
     ``documentation`` is the declared Markdown file's path and
     ``documentation_text`` its content, which is not part of :meth:`PublishPlan.to_dict`.
     """
@@ -126,6 +130,7 @@ class PlannedAsset:
     provider: Provider | None = None
     documentation: str | None = None
     documentation_text: str | None = field(default=None, repr=False)
+    protocol: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,7 +141,8 @@ class PublishPlan:
     A declaration adds ``missing-group-id``, ``missing-version``,
     ``invalid-version`` (not semver), ``invalid-publication`` (a malformed
     table, an unknown key, a protocol version or provider the metadata schema
-    rejects, or a documentation file that cannot be read) and
+    rejects, a protocol version or provider on an agent's table, or a
+    documentation file that cannot be read) and
     ``unknown-service`` (an ``assets`` table for a service ID no agent or MCP
     server has); their ``path`` is the TOML file and their ``line`` is ``0``.
     """
@@ -167,6 +173,7 @@ class PublishPlan:
                         else None
                     ),
                     "documentation": a.documentation,
+                    "protocol": a.protocol,
                 }
                 for a in self.assets
             ],
@@ -236,8 +243,21 @@ def plan_publication(
         entry = declared.asset(service_id)
         name = entry.get("name") or service_id
         description = entry.get("description") or content.get("description")
-        protocol_version = entry.get("protocol_version") or declared.protocol_version
-        provider = entry.get("provider") or declared.provider
+        protocol_version: str | None = None
+        provider: Provider | None = None
+        protocol: str | None = None
+        if kind == "mcp":
+            protocol_version = entry.get("protocol_version") or declared.protocol_version
+            provider = entry.get("provider") or declared.provider
+        else:
+            protocol = content.get("protocol") or "other"
+            for key in sorted({"protocol_version", "provider"} & set(entry)):
+                declared.issue(
+                    "invalid-publication",
+                    f"publication asset {service_id}",
+                    f"{key} describes an MCP server, and {service_id!r} is an agent; remove it",
+                    path=declared.declared_in[service_id],
+                )
         documentation = entry.get("documentation")
         text = declared.documentation_text.get(service_id)
         metadata: dict[str, Any] = {
@@ -269,6 +289,7 @@ def plan_publication(
                 provider=provider,
                 documentation=documentation if text is not None else None,
                 documentation_text=text,
+                protocol=protocol,
             )
         )
     for service_id in sorted(set(declared.assets) - known):

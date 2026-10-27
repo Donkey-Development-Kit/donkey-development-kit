@@ -72,7 +72,7 @@ def test_a_publish_writes_the_summary_and_the_outputs(
     body = {
         "assets": [
             {**ASSET, "status": "published", "detail": "published 1.0.0"},
-            {**ASSET, "asset_id": "pricing", "type": "agent", "status": "skipped", "detail": "x"},
+            {**ASSET, "asset_id": "pricing", "type": "agent", "status": "unchanged", "detail": "x"},
         ],
         "issues": [],
     }
@@ -89,8 +89,8 @@ def test_a_publish_writes_the_summary_and_the_outputs(
     assert "| published | mcp | `org-1:sku-manager:1.0.0` | published 1.0.0 |" in summary
     assert github["output"].read_text().splitlines()[:3] == [
         "published=1",
-        "unchanged=0",
-        "skipped=1",
+        "unchanged=1",
+        "skipped=0",
     ]
     assert json.loads(Path(github["output"].read_text().splitlines()[3][7:]).read_text()) == body
 

@@ -171,9 +171,11 @@ def test_protocol_version_provider_and_documentation(tmp_path: Path) -> None:
 
     assert plan.issues == ()
     mcp, agent = plan.assets
-    assert (mcp.protocol_version, agent.protocol_version) == ("2025-11-25", "2025-06-18")
-    assert mcp.provider == agent.provider
+    assert mcp.protocol_version == "2025-11-25"
     assert mcp.provider is not None and mcp.provider.organization == "Acme"
+    # Both describe an MCP server's mcp-metadata, so the table's never reach an agent.
+    assert (agent.protocol_version, agent.provider) == (None, None)
+    assert (mcp.protocol, agent.protocol) == (None, "other")
     assert (mcp.documentation, mcp.documentation_text) == ("docs/sku.md", "Ask it about stock.\n")
     assert agent.documentation is None
     data = plan.to_dict()["assets"][0]
@@ -226,3 +228,31 @@ def test_malformed_metadata_is_an_issue(tmp_path: Path, toml: str, detail: str) 
     (issue,) = plan.issues
     assert issue.kind == "invalid-publication"
     assert detail in issue.detail
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        'protocol_version = "2025-06-18"',
+        'provider = { organization = "Acme", url = "https://acme.example.invalid" }',
+    ],
+)
+def test_mcp_metadata_on_an_agent_is_an_issue(tmp_path: Path, key: str) -> None:
+    plan = _plan(_repo(tmp_path, TABLE + f"[donkey.publication.assets.support-triage]\n{key}\n"))
+
+    (issue,) = plan.issues
+    assert issue.kind == "invalid-publication"
+    assert "describes an MCP server" in issue.detail
+
+
+def test_an_agent_plans_its_declared_protocol_and_endpoint(tmp_path: Path) -> None:
+    toml = TABLE + (
+        "[donkey.agents.support-triage]\n"
+        'protocol = "a2a_v1"\nendpoint = "https://agents.example.invalid/sku/"\n'
+    )
+    before = _plan(_repo(tmp_path)).assets[1]
+
+    agent = _plan(_repo(tmp_path, toml)).assets[1]
+
+    assert (agent.protocol, agent.endpoint) == ("a2a_v1", "https://agents.example.invalid/sku/")
+    assert agent.digest != before.digest

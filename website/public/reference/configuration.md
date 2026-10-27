@@ -546,7 +546,7 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `donkey.registry.search()`, `resolve_mcp()`, `resolve_agent()`, `explain()`, `warm()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()`, `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
-| Hidden command `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers). |
+| `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
 | Hidden commands `donkey status`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
@@ -591,13 +591,16 @@ one leaves unset. Nested tables such as `[donkey.cost]` merge the same way. A
 scalar or an array in a higher file replaces the lower file's value; it isn't
 appended to. Each key remembers which file it came from.
 
-Two tables in these files are not `DonkeyConfig` fields, and
-`Donkey.from_env()` ignores both:
+Three tables in these files are not `DonkeyConfig` fields, and
+`Donkey.from_env()` ignores all three:
 
 - `[donkey.mcp_servers]` declares how each MCP server your tools name is
   reached. `donkey scan` reads it from the scanned directory's two project
   files. See
   [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
+- `[donkey.agents]` declares each agent's protocol and the endpoint it is
+  served at, read the same way. See
+  [Declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
 - `[donkey.publication]` declares the Exchange group ID, asset IDs and version
   to publish under, and each asset's name, description, MCP protocol version,
   provider and documentation file. `donkey publish` reads it from the same two

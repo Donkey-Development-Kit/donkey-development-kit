@@ -2,11 +2,10 @@
 
 Status: Roadmap. Planned design; not shipped yet.
 
-`donkey scan` is live, and so is `donkey publish` for MCP servers: it plans a
-publish (`--dry-run` sends nothing) and registers each MCP server in Exchange
-from CI. Publishing agents, and the sections after
-[Publishing MCP servers](#publishing-mcp-servers), are on the
-[Roadmap](https://docs.donkey-kit.dev/roadmap.md) and show their planned design.
+`donkey scan` is live, and so is `donkey publish`: it plans a publish
+(`--dry-run` sends nothing) and registers each MCP server and agent in Exchange
+from CI. The sections from [Scope: code-first assets](#scope-code-first-assets)
+on are on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and show their planned design.
 
 `donkey scan` walks your repository and finds every
 [`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
@@ -37,7 +36,8 @@ Scan is **static**: it parses your source and never imports or runs it. It
 needs no credentials and writes no file. The model lists:
 
 - **agents**: each `@donkey.agent`, with its name (a service ID), skills and
-  description,
+  description, and the **protocol** and **endpoint** you declare for it (see
+  [Declaring how an agent is reached](#declaring-how-an-agent-is-reached)),
 - **tools**: each `@donkey.tool`, with its parameters, description, `server`,
   `approval` and `risk`,
 - **MCP servers**: each distinct `server=` ID and the tools that name it,
@@ -99,6 +99,30 @@ The declaration is part of the scan `digest`, because it is part of what would
 be published. Settings outside `[donkey.mcp_servers]` are unaffected:
 `Donkey.from_env()` ignores the table.
 
+### Declaring how an agent is reached
+
+An agent's Exchange asset says which protocol it speaks and, for an A2A agent,
+the URL its agent card names. Neither is in the decorator, so you declare them
+the same way, one table per agent name:
+
+```toml
+# .donkey-kit.toml (committed)
+[donkey.agents.support-triage]
+protocol = "a2a_v1"
+endpoint = "https://agents.acme.com/support-triage/"
+```
+
+- `protocol` is `a2a_v1`, for an agent served over A2A 1.0 such as
+  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md), or `other`. `a2a` (A2A 0.3) is refused with a hint,
+  because `donkey.serve()` speaks 1.0.
+- `endpoint` is the `http` or `https` URL the agent is served at, with the same
+  rules as an MCP server's. An `a2a_v1` agent needs one.
+- An agent with no table is published with protocol `other` and no endpoint.
+  This is not an issue.
+- `.donkey-kit.local.toml` overrides the file key by key, and the declaration is
+  part of the digest, as for `[donkey.mcp_servers]`. A table for a name that no
+  `@donkey.agent` uses is an issue.
+
   A service ID (`@donkey.agent(name=...)`, `@donkey.tool(server=...)`) names a
   service in the registry **permanently**, so choose it deliberately. Renaming
   it later would register a second service rather than rename the first.
@@ -144,13 +168,15 @@ documentation = "docs/hr-tools.md"     # Markdown that opens the asset's page
   `2024-11-05`, `2025-03-26`, `2025-06-18` or `2025-11-25`. `provider` is who
   provides it, with both `organization` and `url`. Agent Fabric shows them as
   the asset's protocol version and provider; without `provider` it shows
-  "Other".
+  "Other". Both describe an MCP server, so an agent's `assets` table can't set
+  them; the table-wide ones apply to MCP servers only.
 - `documentation` is a Markdown file, relative to the scanned directory and
   inside it. Its content opens the asset's page (see below).
 - A `.donkey-kit.local.toml` beside it overrides the project file key by key,
   as for `[donkey.mcp_servers]`.
 - The digest covers what would be published for that asset: its tools, their
-  descriptions and parameters, how the server is reached, the asset's name and
+  descriptions and parameters (an agent's skills), how the server or agent is
+  reached, the asset's name and
   description, and the protocol version, provider and documentation content
   when you set them. Editing the documentation file is a change, so it needs a
   new version. The digest leaves out file paths, line numbers and the version, so
@@ -159,7 +185,7 @@ documentation = "docs/hr-tools.md"     # Markdown that opens the asset's page
 The dry run exits `1` on any issue, so CI can run it on every pull request:
 every issue `donkey scan` reports, plus a missing group ID or version, a
 version that isn't semantic, an unknown key, a protocol version or provider
-the metadata can't carry, a documentation file that is missing or outside the
+the metadata can't carry (or one set for an agent), a documentation file that is missing or outside the
 scanned directory, or an `assets` table for a service ID your code doesn't
 define.
 
@@ -216,17 +242,34 @@ A publish is safe to repeat:
   bump it. The same happens if the version is already published with other
   content.
 
-Agents are listed as skipped: publishing them is not supported yet, because
-scan doesn't capture the protocol and interface an agent asset needs. The
-command is still hidden from `donkey --help` while publishing covers MCP servers
-only.
-
 `donkey publish` exits `0` when everything was published or left unchanged. It
 exits `1` when the plan has an issue (nothing is sent) or Exchange refuses a
 publish, and `2` when the path doesn't exist, the config is invalid, or the
 control-plane credentials are missing.
 
-### From GitHub Actions
+## Publishing agents
+
+The same `donkey publish` registers each agent as an Exchange asset of type
+`agent`, with the same credentials, the same digest check and the same
+version-bump rule. Each agent asset is published with:
+
+- its name and description, as for an MCP server. An agent's description
+  defaults to its docstring.
+- the digest, and the protocol you declared (`other` when you declared none),
+  stored with the asset.
+- an `agent-metadata` file: the protocol, the agent's name and description,
+  and its asset coordinates.
+- for an `a2a_v1` agent, an **A2A agent card** (`a2a-v1-card`): the name,
+  description, version, skills, input and output modes and the endpoint, as an
+  A2A 1.0 card. It is built from the same `@donkey.agent` record as the card
+  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) serves, so the two match.
+- the endpoint, if you declared one, registered as an external instance.
+- a Home page with the same Overview and provenance as an MCP server's, the
+  agent's skills, and how to connect (protocol and endpoint).
+
+Publishing agents has been checked against a live sandbox, as for MCP servers.
+
+## From GitHub Actions
 
 The scan-and-publish action runs `donkey publish` in a workflow. It lives in
 the SDK repository's `action/` folder, so you pin it like any action, to a
@@ -277,7 +320,8 @@ input left empty keeps the `ANYPOINT_*` variable your job already sets.
 
 The job summary shows a table of the assets: each one's digest on a dry run,
 and each one's status and detail after a publish. The step's outputs are the
-`published`, `unchanged` and `skipped` counts, and `result`, the path of the
+`published` and `unchanged` counts, a `skipped` count kept for older
+workflows (always `0`), and `result`, the path of the
 JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
 annotation, so the fix shows on the run's page.

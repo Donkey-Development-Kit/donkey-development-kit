@@ -1,5 +1,5 @@
-"""``donkey publish`` — register a repository's MCP servers in Exchange (BG §2.5,
-#218).
+"""``donkey publish`` — register a repository's MCP servers and agents in
+Exchange (BG §2.5, #218, #1260).
 
 It scans the repository the way ``donkey scan`` does, reads the Exchange
 coordinates ``[donkey.publication]`` declares, and plans one asset per MCP
@@ -7,16 +7,17 @@ server and agent, each with a content digest. The group ID defaults to the
 ``org_id`` configured for the scanned root (its ``.donkey-kit.toml`` when it has
 one, else the working directory's).
 
-``--dry-run`` prints the plan and makes no network call. Without it each MCP
+``--dry-run`` prints the plan and makes no network call. Without it each
 asset is published over the control plane (see
 :mod:`donkey_kit.registry.exchange_publish`): with ``--if-changed``, the
 default, an asset whose latest published version has the same digest is left
 alone. Each new version also gets a generated Exchange page; under GitHub
 Actions it links the repository, commit and run it was published from.
-Agents are listed as skipped; publishing them is not supported yet.
+An agent is published with its ``[donkey.agents]`` protocol, ``other`` when
+none is declared, and an ``a2a_v1`` agent with its A2A agent card.
 
 ``--json`` prints the plan as JSON; after a publish, each asset also carries
-the ``status`` (``published``, ``unchanged`` or ``skipped``) and ``detail`` of
+the ``status`` (``published`` or ``unchanged``) and ``detail`` of
 its outcome. Issues and errors still go to stderr.
 
 Exit codes: 1 when the scan or the declaration reports an issue (nothing is
@@ -46,7 +47,7 @@ from ._app import app
 __all__ = ["publish"]
 
 
-@app.command(hidden=True)
+@app.command()
 def publish(
     ctx: typer.Context,
     path: Path = typer.Argument(Path("."), help="The repository (or one .py file) to publish."),
@@ -101,7 +102,7 @@ def publish(
     for o in outcomes:
         a = o.asset
         line = f"  {o.status:<9} {a.type:<6} {a.group_id}:{a.asset_id}:{a.version}  {o.detail}"
-        typer.secho(line, err=o.status == "skipped", fg="yellow" if o.status == "skipped" else None)
+        typer.echo(line)
     published = sum(o.status == "published" for o in outcomes)
     typer.echo(f"published {published} asset{'' if published == 1 else 's'}")
 
