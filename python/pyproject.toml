@@ -75,8 +75,11 @@ llm = ["openai>=1.66"]
 # langchain-core 0.3.45 is what langchain-openai 0.3.9 requires.
 langgraph = ["langgraph>=0.4", "langchain-openai>=0.3.9", "langchain-core>=0.3.45"]
 # 2.4 is the first google-adk whose `Gemini` has `client_kwargs`; below it
-# `gemini()` silently drops the governed client (#735).
-adk = ["google-adk>=2.4", "litellm>=1.84"]
+# `gemini()` silently drops the governed client (#735). litellm's `mcp` extra:
+# from 1.106 a request with tools imports `mcp` at module level, which plain
+# litellm does not install, so `model()` with tools fails without it (#1267,
+# BerriAI/litellm#46045).
+adk = ["google-adk>=2.4", "litellm[mcp]>=1.84"]
 # 1.13 is the first whose `OpenAIChatClient(model=...)` call reaches the proxy:
 # 1.12 builds it but sends elsewhere, and 1.11 and earlier lack the class path.
 agent_framework = ["agent-framework>=1.13"]
@@ -298,8 +301,9 @@ module = [
     # [a2a] — the same: build_app() imports the a2a-sdk inside its body and
     # returns Any, so none of its types leak into the public signatures.
     "a2a.*",
-    # The `mcp` SDK, which no extra installs but several frameworks pull in:
-    # registry/introspect.py imports it inside _live_mcp_tools() only (#1024).
+    # The `mcp` SDK, which [adk] installs (through litellm's `mcp` extra, #1267)
+    # and several frameworks pull in: registry/introspect.py imports it inside
+    # _live_mcp_tools() only (#1024).
     "mcp.*",
     # Never imported by src/, but reachable through a framework's own imports.
     "numpy.*",
