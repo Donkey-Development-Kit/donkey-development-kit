@@ -4,9 +4,8 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
-gateway locally. `donkey.serve()` and `donkey dev` with a simulated gateway ship
-today. `donkey expose` and `donkey dev` with a real gateway are on the
-[Roadmap](https://docs.donkey-kit.dev/roadmap.md).
+gateway locally. `donkey.serve()` and `donkey dev` (with a simulated gateway)
+ship today. `donkey expose` is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
 
 ## The setup it replaces
 
@@ -259,8 +258,8 @@ does not ship until they are.
 ## `donkey dev` — a gateway in front of your laptop
 
 `donkey dev` puts a gateway in front of `donkey.serve()` on your machine, so you
-can call your agent over A2A through governance before deploying. It has two
-modes. The simulated one ships today.
+can call your agent over A2A through governance before deploying. The gateway
+is simulated.
 
 ### Simulated ingress
 
@@ -300,11 +299,11 @@ would advertise the gateway's.
   yet. Like `donkey mock`, `donkey dev` replays and enforces no policy: you
   choose the rejection with a `--scenario` rule.
 
-### A real gateway Roadmap
-
-Where a self-managed Omni Gateway image is available for local development,
-`donkey dev` will run it alongside `donkey.serve()`, so A2A calls pass through
-real policies.
+`donkey dev` doesn't run a real Omni Gateway locally. A self-managed gateway in
+Local Mode doesn't support the A2A policies, and it has to register with an
+Anypoint control plane. See
+[Local Mode is not supported](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#local-mode-is-not-supported).
+To test against real policies, use a hosted gateway.
 
 ## Related
 

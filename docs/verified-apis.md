@@ -684,9 +684,11 @@ deleted in #730 (ADR 0008 in `docs/adr/`); the findings below stay as the record
 
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
-| Can Local Mode run the LLM Proxy? | the Verification milestone | UNVERIFIED | A stock Flex Gateway 1.14.0 Local Mode image rejects `llm-proxy-core`, `model-based-routing`, and `openai-transcoding-policy` as missing extensions; bounded to that image version, not a full-capability verification (#651, #661) | 2026-09-27 |
-| Can Local Mode run MCP Bridge? | the Verification milestone | UNVERIFIED | Same stock image rejects `mcp-support` as a missing extension; bounded to that image version (#651, #661) | 2026-09-27 |
-| Does Local Mode need a control-plane licence/registration artifact? | OSS/CI viability | UNVERIFIED | Yes — the gateway refuses API configuration until registered to a control plane, so OSS contributors/CI without an Anypoint org cannot run it (#651, #661) | 2026-09-27 |
+| Can Local Mode run the LLM Proxy? | the Verification milestone | UNSUPPORTED | No. MuleSoft documents Model Proxy as "supported on Managed Omni Gateway and Self-Managed Omni Gateway running in Connected Mode". This matches the stock Flex Gateway 1.14.0 Local Mode image rejecting `llm-proxy-core`, `model-based-routing`, and `openai-transcoding-policy` as missing extensions (#651, #661, #258) | 2026-10-27: docs.mulesoft.com `general/model-proxy`; 2026-09-27: 1.14.0 image |
+| Can Local Mode run MCP Bridge? | the Verification milestone | UNSUPPORTED | No. The Omni Gateway 1.14 docs mark the MCP Support policy, and every other MCP policy, "isn't supported in Local Mode"; the same stock image rejects `mcp-support` as a missing extension (#651, #661, #258) | 2026-10-27: docs.mulesoft.com `gateway/latest/policies-included-mcp-support`; 2026-09-27: 1.14.0 image |
+| Can Local Mode run the A2A policies? | `donkey dev` Option A (BG §2.9.3, #227) | UNSUPPORTED | No. The Omni Gateway 1.14 docs mark every A2A policy (Agent Card, PII Detector, Prompt Decorator, Quality Evaluation, Schema Validation, Token Based Rate Limit, their v1 forms, the guardrails, and the v1-to-v0.3 transcoder) "isn't supported in Local Mode". Client ID Enforcement isn't either (#258) | 2026-10-27: docs.mulesoft.com `gateway/llms-full.txt` (1.14) |
+| Does Local Mode need a control-plane licence/registration artifact? | OSS/CI viability | UNSUPPORTED | Yes. The docs say a Local Mode gateway "only connects to the control plane for registration and logging usage metrics", so it isn't air-gapped and needs an Anypoint org. The stock image refuses API configuration until it is registered (#651, #661, #258) | 2026-10-27: docs.mulesoft.com `gateway/latest/index`; 2026-09-27: 1.14.0 image |
+| Is a self-managed image available for local dev, and on what terms? | `donkey dev` Option A (BG §2.9.3, #227) | UNSUPPORTED | The image is public: `docker.io/mulesoft/flex-gateway`, latest `1.14.4`, published for `linux/amd64` only. The docs require an x86 processor ("M1 and M2 processors are not supported"). Running it needs registration to an Anypoint org (a Trial org is offered). Running the image locally costs nothing per developer (maintainer-confirmed). Option A is still ruled out by the capability rows above (#258) | 2026-10-27: Docker Hub `mulesoft/flex-gateway` tags API; docs.mulesoft.com `gateway/latest/gateway-getting-started`; cost: maintainer, #258 |
 | Which policies are Connected-Mode-only? (portability table) | the Verification milestone | UNVERIFIED | — | — |
 | Is "deployed to gateway" readable per API instance? | `require_deployed` | VERIFIED (CLI) | Yes — `api-mgr:api:list` (per env) + `:api:describe <id>` returns Endpoint URI, gateway, deployment target | 2026-08-28 |
 | Are applied policies readable per API instance? | governed-state join | VERIFIED (CLI) | Yes — `api-mgr:policy:list <id>` returns `{ID, Template ID, Asset ID, Asset Version, Label, Status, Configuration}` | 2026-08-28 |
@@ -697,17 +699,21 @@ deleted in #730 (ADR 0008 in `docs/adr/`); the findings below stay as the record
 | Governed **LLM proxy** policy stack (live) | governed-state join, the Verification milestone | VERIFIED (LIVE) | on `openai-sdk`: `cors 1.3.2`, `dataweave-headers-transformation 1.0.0`, `client-id-enforcement 1.3.3`, `llm-proxy-core 1.0.5`, `model-based-routing 1.0.3`, `openai-transcoding-policy 1.0.3` — all Enabled | 2026-08-28 |
 
 **Decision (2026-09-27, #661): Donkey Development Kit does not support Omni/Flex
-Gateway Local Mode.** The rows above stay `UNVERIFIED` for full Local Mode
-capability — this is a scope decision, not a completed verification — but the
-bounded findings against a Flex Gateway 1.14.0 stock image are sufficient to
-make the call: the LLM Proxy and MCP Bridge policies this SDK depends on are
-rejected as missing extensions, and the gateway will not accept configuration
-without control-plane registration. The pure-Python local gateway simulator
-(`donkey mock` / `simulate()`, BG §1.4, the `local_gateway` pytest marker) is
-DDK's supported local dev loop; real-gateway behavior is exercised against a
-hosted (Connected Mode) proxy. See the site's `reference/unsupported-boundary` page for the
-consumer-facing statement of this same decision, and #65 for the verification
-questions this decision resolves as out of scope rather than answered.
+Gateway Local Mode.** The decision first rested on bounded findings against a
+Flex Gateway 1.14.0 stock image. That image rejects the LLM Proxy and MCP
+Bridge policies this SDK depends on as missing extensions, and it won't accept
+configuration until it is registered to a control plane. The vendor
+documentation has since confirmed this independently of image version (#258,
+2026-10-27): Model Proxy is Connected Mode only, and every MCP and A2A policy
+is unsupported in Local Mode. So the capability rows above are `UNSUPPORTED`,
+not open questions. This also rules out `donkey dev` Option A (BG §2.9.3), so
+`donkey dev` ships as the simulated-ingress Option B only (#227). The
+pure-Python local gateway simulator (`donkey mock` / `simulate()`, BG §1.4,
+the `local_gateway` pytest marker) is DDK's supported local dev loop, and
+real-gateway behavior is exercised against a hosted (Connected Mode) proxy. See
+the site's `reference/unsupported-boundary` page for the consumer-facing
+statement of this same decision, and #65 for the verification questions this
+decision resolves as out of scope rather than answered.
 
 ## 7. Publication / Exchange (BG §2.5)
 

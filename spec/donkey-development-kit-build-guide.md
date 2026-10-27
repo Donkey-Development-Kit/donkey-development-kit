@@ -591,7 +591,7 @@ $ donkey expose --env prod
 
 Two honest options, depending on what is available internally:
 
-- **Option A — real gateway.** If a self-managed Omni Gateway image is usable for local dev, `donkey dev` starts it alongside `donkey serve` so the developer hits A2A *through real policies* on their machine. Depends on image availability and licensing — verify internally.
+- **Option A — real gateway.** If a self-managed Omni Gateway image is usable for local dev, `donkey dev` starts it alongside `donkey serve` so the developer hits A2A *through real policies* on their machine. Depends on image availability and licensing — verify internally. **Verified dead (#258, 2026-10-27):** Omni Gateway 1.14 documents every A2A policy, Client ID Enforcement and Model Proxy as unsupported in Local Mode, and Local Mode still requires control-plane registration. Option A is not attempted; Option B is `donkey dev`.
 - **Option B — simulated ingress.** If A is blocked, extend the simulator (1.4) with an A2A ingress mode: a local fake gateway in front of `donkey serve` replaying the same rejection fixtures. Fully in our control, same honesty check — a plain A2A client must see byte-identical responses.
 
 Either way the developer experience is one command, and an A2A endpoint that behaves like production.
