@@ -2,14 +2,15 @@
 
 Status: Roadmap. Planned design; not shipped yet.
 
-This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
+`donkey.tools.discover()` is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the
+planned design. [`donkey.registry.search()`](#registry-search) is live.
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance**, domain and tags, so an agent
 binds only the tools it needs rather than the entire catalog. It returns a
 [`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding.md) whose per-framework methods hand back native
-tool objects. Name search, asset type and environment are filters on the
-lower-level [`donkey.registry.search()`](#registry-search).
+tool objects. Name search and asset type are filters on the lower-level
+[`donkey.registry.search()`](#registry-search).
 
 ## The two most common calls
 
@@ -44,22 +45,37 @@ tools = await donkey.tools.discover(
 
 ## Registry search
 
-`discover(...)` is the high-level facade over the registry. When you need name
-search, asset types, an explicit environment or a result limit, call
-`donkey.registry.search()` directly. It returns `AssetRef` handles rather than a
-bindable `ToolSet`:
+`donkey.registry.search()` is Live. `discover(...)`
+is the high-level facade over the registry. When you need name search, asset
+types or a result limit, call `donkey.registry.search()` directly. It returns
+`AssetRef` handles rather than a bindable `ToolSet`:
 
 ```python
 refs = await donkey.registry.search(
-    query="*accounts*",       # glob over asset name + description; None = no text filter
-    asset_types=["mcp"],      # restrict to MCP servers, agents, etc.
-    tags=["approved"],
-    domain="hr",
-    environment="Production", # environment-scoped governance
-    governed=True,
+    query="*accounts*",       # a glob over asset ID, name and description; None = no text filter
+    asset_types=["mcp"],      # "mcp", "agent" or "api"
+    tags=["approved"],        # all tags must be present
     limit=50,                 # max results (default 50)
 )
+for ref in refs:
+    print(ref.coordinates, ref.name, ref.type, ref.tags)
 ```
+
+It searches the business group in `ANYPOINT_ORG_ID` and returns each asset's
+latest version:
+
+- A `query` without `*`, `?` or `[` is matched by Exchange: whole words and
+  word prefixes of the asset ID, name or description, ignoring case. `"sku"`
+  and `"look"` find `SKU Lookup MCP Server`; `"ku-loo"` does not.
+- A `query` with `*`, `?` or `[` is a glob, matched by the SDK against the
+  asset ID, name and description, ignoring case. Exchange does not match
+  inside words, so a glob query reads the group's assets that pass the other
+  filters, 250 at a time, until it has `limit` matches.
+- `asset_types` and `tags` are applied by Exchange. `"api"` covers Exchange's
+  REST, HTTP and SOAP API types. A tag is an Exchange tag.
+- `domain`, `environment`, `governed` and the `"a2a-agent"` type raise
+  `NotImplementedError` for now. Exchange has no domain filter, and
+  `environment` and `governed` need the governed-state join below.
 
 ## "Governed" is a computed predicate
 

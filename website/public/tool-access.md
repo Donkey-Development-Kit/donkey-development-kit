@@ -34,8 +34,8 @@ tools = await donkey.tools.discover(
 )
 ```
 
-Name search, asset type and environment filters live one layer down, on
-`donkey.registry.search()`.
+Name search and asset type filters live one layer down, on
+`donkey.registry.search()`, which is live.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
 Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).

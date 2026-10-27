@@ -545,7 +545,8 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Model calls: `donkey.llm`, `donkey.openai()`, every adapter | None | Available |
 | `donkey doctor` | None. It checks the control-plane settings without sending, and makes one model call to the LLM proxy. | Available |
 | `donkey init`, `donkey mock`, `donkey test`, `donkey.simulate()` | None | Available |
-| Registry: `donkey.registry.search()`, `resolve_mcp()`, `resolve_agent()`, `explain()`, `warm()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
+| Registry search: `donkey.registry.search()` | Token request, then Exchange Graph API reads | Available. Its `domain`, `environment` and `governed` filters raise `NotImplementedError` before sending. See [Registry search](https://docs.donkey-kit.dev/tool-access/discovery.md#registry-search). |
+| Registry: `resolve_mcp()`, `resolve_agent()`, `explain()`, `warm()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()`, `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |

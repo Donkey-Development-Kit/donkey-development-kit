@@ -6790,8 +6790,8 @@ tools = await donkey.tools.discover(
 )
 ```
 
-Name search, asset type and environment filters live one layer down, on
-`donkey.registry.search()`.
+Name search and asset type filters live one layer down, on
+`donkey.registry.search()`, which is live.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
 Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
@@ -6818,14 +6818,15 @@ Source: https://docs.donkey-kit.dev/tool-access/discovery.md
 
 Status: Roadmap. Planned design; not shipped yet.
 
-This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
+`donkey.tools.discover()` is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the
+planned design. [`donkey.registry.search()`](#registry-search) is live.
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance**, domain and tags, so an agent
 binds only the tools it needs rather than the entire catalog. It returns a
 [`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding.md) whose per-framework methods hand back native
-tool objects. Name search, asset type and environment are filters on the
-lower-level [`donkey.registry.search()`](#registry-search).
+tool objects. Name search and asset type are filters on the lower-level
+[`donkey.registry.search()`](#registry-search).
 
 ## The two most common calls
 
@@ -6860,22 +6861,37 @@ tools = await donkey.tools.discover(
 
 ## Registry search
 
-`discover(...)` is the high-level facade over the registry. When you need name
-search, asset types, an explicit environment or a result limit, call
-`donkey.registry.search()` directly. It returns `AssetRef` handles rather than a
-bindable `ToolSet`:
+`donkey.registry.search()` is Live. `discover(...)`
+is the high-level facade over the registry. When you need name search, asset
+types or a result limit, call `donkey.registry.search()` directly. It returns
+`AssetRef` handles rather than a bindable `ToolSet`:
 
 ```python
 refs = await donkey.registry.search(
-    query="*accounts*",       # glob over asset name + description; None = no text filter
-    asset_types=["mcp"],      # restrict to MCP servers, agents, etc.
-    tags=["approved"],
-    domain="hr",
-    environment="Production", # environment-scoped governance
-    governed=True,
+    query="*accounts*",       # a glob over asset ID, name and description; None = no text filter
+    asset_types=["mcp"],      # "mcp", "agent" or "api"
+    tags=["approved"],        # all tags must be present
     limit=50,                 # max results (default 50)
 )
+for ref in refs:
+    print(ref.coordinates, ref.name, ref.type, ref.tags)
 ```
+
+It searches the business group in `ANYPOINT_ORG_ID` and returns each asset's
+latest version:
+
+- A `query` without `*`, `?` or `[` is matched by Exchange: whole words and
+  word prefixes of the asset ID, name or description, ignoring case. `"sku"`
+  and `"look"` find `SKU Lookup MCP Server`; `"ku-loo"` does not.
+- A `query` with `*`, `?` or `[` is a glob, matched by the SDK against the
+  asset ID, name and description, ignoring case. Exchange does not match
+  inside words, so a glob query reads the group's assets that pass the other
+  filters, 250 at a time, until it has `limit` matches.
+- `asset_types` and `tags` are applied by Exchange. `"api"` covers Exchange's
+  REST, HTTP and SOAP API types. A tag is an Exchange tag.
+- `domain`, `environment`, `governed` and the `"a2a-agent"` type raise
+  `NotImplementedError` for now. Exchange has no domain filter, and
+  `environment` and `governed` need the governed-state join below.
 
 ## "Governed" is a computed predicate
 
@@ -13506,7 +13522,8 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Model calls: `donkey.llm`, `donkey.openai()`, every adapter | None | Available |
 | `donkey doctor` | None. It checks the control-plane settings without sending, and makes one model call to the LLM proxy. | Available |
 | `donkey init`, `donkey mock`, `donkey test`, `donkey.simulate()` | None | Available |
-| Registry: `donkey.registry.search()`, `resolve_mcp()`, `resolve_agent()`, `explain()`, `warm()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
+| Registry search: `donkey.registry.search()` | Token request, then Exchange Graph API reads | Available. Its `domain`, `environment` and `governed` filters raise `NotImplementedError` before sending. See [Registry search](https://docs.donkey-kit.dev/tool-access/discovery.md#registry-search). |
+| Registry: `resolve_mcp()`, `resolve_agent()`, `explain()`, `warm()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()`, `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
@@ -14678,9 +14695,10 @@ The SDK can reach two platform destinations: the Model Proxy, for every model
 call, and the Anypoint connected-app token endpoint, only when a control-plane
 feature needs a token. Model calls never request that token. The features that
 would request it are listed in
-[Which features use the control plane](https://docs.donkey-kit.dev/reference/configuration.md#which-features-use-the-control-plane);
-all of them are Roadmap in this release, so the token endpoint is contacted
-only if your own code calls `AnypointConnectedApp.token()`. The rows below
+[Which features use the control plane](https://docs.donkey-kit.dev/reference/configuration.md#which-features-use-the-control-plane).
+In this release they are `donkey publish` and `donkey.registry.search()`,
+which also call Exchange; the rest are Roadmap. Otherwise the token endpoint
+is contacted only if your own code calls `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
 before making a network request, except `donkey.as_user()`, described below.
 
@@ -14696,6 +14714,8 @@ before making a network request, except `donkey.as_user()`, described below.
 | Upstream provider error pass-through: the nested non-`429` `4xx` envelope, and the generic `5xx` status family | `core.errors.classify` | **Documented, no SLA for third-party use** | Classifies the nested envelope as `UpstreamRequestError`; a generic `5xx` becomes `UpstreamModelError` by status only, with no assumed body. The envelope schema belongs to the upstream provider, and MuleSoft's public Model Proxy page states no pass-through compatibility contract. Owner: DDK maintainers; keep the captured provider fixture and classify a changed envelope conservatively. |
 | Successful-response budget window in the `x-llm-proxy-ratelimit` sentence | `core.budget.Budget` | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored, never fatal. Owner: DDK maintainers; re-capture the header when the gateway policy changes. |
 | Gateway identity and routing headers: `x-request-id`, `x-envoy-decorator-operation`, `x-llm-proxy-{routing-type,routing-fallback,llm-provider,llm-model}` | `core.lastcall.LastCall`, `core.transport` | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`, and only an explicit `routing-fallback: true` changes retry behaviour. Owner: DDK maintainers; a contract change needs new fixtures before the parser changes. |
+| Exchange Graph API asset search: `POST /graph/api/v1/graphql`, `assets(query: {searchTerm, organizationIds, tags}, latestVersionsOnly: true)` | `registry.exchange.ExchangeRegistry.search` | **Documented and public** | Searches the business group's assets, at their latest versions. Documented in [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api). A tag filter there also matches the keyed tags Exchange derives, so the SDK keeps only assets whose matching tags are keyless, the kind the page says are set in Exchange or at publish. |
+| The `types`, `limit` and `offset` fields of the Graph API search's `query` input | `registry.exchange.ExchangeRegistry.search` | **Undocumented** | Filters by asset type and pages the results. The Graph API page does not list them; the documented REST search (`GET /exchange/api/v2/assets/search`) takes the same three parameters, but it needs the root organisation's ID and has no text filter. Justification: without them, an `asset_types` filter would read the whole group and a search could not page. Owner: DDK maintainers. A refusal raises `RegistryError`; `tests/fixtures/anypoint/exchange_search/` holds the captures to re-check against. |
 
 How each row was established (live capture, plugin test, and so on) is in the
 [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md), sections 1 to 4.
@@ -14715,8 +14735,8 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Deliberately outside the boundary
 
-- Exchange search and resolution, API Manager governed-state reads, MCP
-  discovery and binding, and Exchange publication are
+- Exchange asset resolution, API Manager governed-state reads, MCP
+  discovery and binding, and `Publication.preview()` / `verify()` are
   Roadmap, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.

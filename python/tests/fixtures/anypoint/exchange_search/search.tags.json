@@ -1,0 +1,44 @@
+{
+  "data": {
+    "assets": [
+      {
+        "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+        "assetId": "ddk-crewai-agent",
+        "version": "0.1.0",
+        "name": "ddk-crewai-agent",
+        "type": "agent",
+        "description": "CrewAI A2A agent that chats through Donkey-governed LLM proxies (picked per message via A2A metadata) under its own identity: an Exchange client app on Client ID Enforcement proxies, a Keycloak JWT + model wallet on JWT proxies.",
+        "tags": [
+          {
+            "key": null,
+            "value": "ddk"
+          },
+          {
+            "key": null,
+            "value": "a2a"
+          },
+          {
+            "key": null,
+            "value": "crewai"
+          },
+          {
+            "key": null,
+            "value": "demo"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "a2a"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "CrewAI"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "v0.3"
+          }
+        ]
+      }
+    ]
+  }
+}

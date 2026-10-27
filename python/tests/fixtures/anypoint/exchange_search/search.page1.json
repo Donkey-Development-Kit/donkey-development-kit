@@ -1,0 +1,176 @@
+{
+  "data": {
+    "assets": [
+      {
+        "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+        "assetId": "ddk-demo-sku-lookup",
+        "version": "1.1.0",
+        "name": "SKU Lookup MCP Server",
+        "type": "mcp",
+        "description": "Looks up a product by its SKU: name, price and stock level.",
+        "tags": [
+          {
+            "key": "exchange-derived",
+            "value": "other"
+          }
+        ]
+      },
+      {
+        "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+        "assetId": "ddk-crewai-agent",
+        "version": "0.1.0",
+        "name": "ddk-crewai-agent",
+        "type": "agent",
+        "description": "CrewAI A2A agent that chats through Donkey-governed LLM proxies (picked per message via A2A metadata) under its own identity: an Exchange client app on Client ID Enforcement proxies, a Keycloak JWT + model wallet on JWT proxies.",
+        "tags": [
+          {
+            "key": null,
+            "value": "ddk"
+          },
+          {
+            "key": null,
+            "value": "a2a"
+          },
+          {
+            "key": null,
+            "value": "crewai"
+          },
+          {
+            "key": null,
+            "value": "demo"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "a2a"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "CrewAI"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "v0.3"
+          }
+        ]
+      },
+      {
+        "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+        "assetId": "ddk-llamaindex-agent",
+        "version": "0.1.0",
+        "name": "ddk-llamaindex-agent",
+        "type": "agent",
+        "description": "LlamaIndex A2A agent that chats through Donkey-governed LLM proxies, picked per message via A2A metadata. It authenticates as itself: its own Exchange client app on Client ID Enforcement proxies, a Keycloak JWT and its own model wallet on JWT proxies.",
+        "tags": [
+          {
+            "key": null,
+            "value": "ddk"
+          },
+          {
+            "key": null,
+            "value": "a2a"
+          },
+          {
+            "key": null,
+            "value": "llamaindex"
+          },
+          {
+            "key": null,
+            "value": "demo"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "a2a"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "LlamaIndex"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "v0.3"
+          }
+        ]
+      },
+      {
+        "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+        "assetId": "ddk-strands-agent",
+        "version": "0.1.0",
+        "name": "ddk-strands-agent",
+        "type": "agent",
+        "description": "Strands Agents A2A agent that chats through Donkey-governed LLM proxies. Every reply routes through a chat-compatible DDK proxy selected via A2A message metadata, as the agent's own identity (Exchange app or Keycloak JWT + wallet); never direct to an LLM.",
+        "tags": [
+          {
+            "key": null,
+            "value": "ddk"
+          },
+          {
+            "key": null,
+            "value": "a2a"
+          },
+          {
+            "key": null,
+            "value": "strands"
+          },
+          {
+            "key": null,
+            "value": "demo"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "a2a"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "Strands Agents"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "v0.3"
+          }
+        ]
+      },
+      {
+        "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+        "assetId": "ddk-adk-agent",
+        "version": "0.1.0",
+        "name": "ddk-adk-agent",
+        "type": "agent",
+        "description": "Google ADK A2A agent that chats through Donkey-governed LLM proxies (picked per message via A2A metadata) under its own identity: an Exchange client app on Client ID Enforcement proxies, a Keycloak JWT + model wallet on JWT proxies.",
+        "tags": [
+          {
+            "key": null,
+            "value": "ddk"
+          },
+          {
+            "key": null,
+            "value": "a2a"
+          },
+          {
+            "key": null,
+            "value": "google-adk"
+          },
+          {
+            "key": null,
+            "value": "adk"
+          },
+          {
+            "key": null,
+            "value": "demo"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "a2a"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "Google ADK"
+          },
+          {
+            "key": "exchange-derived",
+            "value": "v0.3"
+          }
+        ]
+      }
+    ]
+  }
+}
