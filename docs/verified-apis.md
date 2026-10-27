@@ -124,8 +124,8 @@ VERIFIED with a concrete path.
 | Control-plane host (CA Hyperforce) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (LIVE) | `ca1.platform.mulesoft.com` (on `platform.`, **not** `anypoint.`; the previous `ca1.anypoint.mulesoft.com` placeholder does not resolve in DNS, #22). An SDK run with `region="ca"` and no `base_url` against a real ca1 org: `AnypointConnectedApp` minted a client-credentials token at `POST /accounts/api/v2/oauth2/token`, `GET /accounts/api/me` → `200`, `GET /accounts/api/organizations/{org}/environments` → `200` (2 envs). On the same root, `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis` → `403` JSON (connected app lacks the scope) and `GET /exchange/api/v2/assets/{org}/<missing>` → `404` JSON: both services answer there, but neither contract was exercised. `ca1.omni.mulesoft.com` is not a control-plane API host (`405` on the token path). | 2026-10-12 | live probe, ca1 org, connected app (client credentials); [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
 | Control-plane host (JP Hyperforce) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (LIVE) | `jp1.platform.mulesoft.com` (on `platform.`, **not** `anypoint.`; the previous `jp1.anypoint.mulesoft.com` placeholder does not resolve in DNS, #22). An SDK run with `region="jp"` and no `base_url` against a real jp1 org: `AnypointConnectedApp` minted a client-credentials token at `POST /accounts/api/v2/oauth2/token`, `GET /accounts/api/me` → `200`, `GET /accounts/api/organizations/{org}/environments` → `200` (2 envs), `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis` → `200` JSON. `GET /exchange/api/v2/assets/{org}/<missing>` → `404` JSON: Exchange answers on the same root, but its contract was not exercised. Not in the shipping CLI's `validServers`. | 2026-10-12 | live probe, jp1 org, connected app (client credentials); [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
 | Connected-app scopes: Exchange read | `core/auth.py`, docs | UNVERIFIED | — | — | — |
-| Connected-app scopes: API Manager write | provisioning, `donkey expose` (#226) | UNVERIFIED | The A2A instance write path itself is VERIFIED (LIVE) (§12.5, #254), but with a username/password session, so no connected-app scope was exercised (#23). | — | — |
-| Connected-app scopes: policy management | provisioning | UNVERIFIED | — | — | — |
+| Connected-app scopes: API Manager write | provisioning, `donkey expose` (#226) | PARTIAL: a sufficient set VERIFIED (LIVE) | A `client_credentials` token ran the whole A2A instance write path in §12.5 (create, upstreams, outbound policy, deploy, status, delete) and an Exchange hard delete. The app held 57 scopes on the environment, among them `manage:apis`, `manage:api_configuration`, `manage:api_policies`, `manage:api_proxies`, `read:api_configuration`, `read:api_policies` and `view:environment`. Which of them each call needs was not isolated: that takes an app granted one scope at a time (#23). | 2026-10-27 | live run, sandbox, connected app (#254) |
+| Connected-app scopes: policy management | provisioning, `donkey expose` (#226) | PARTIAL: a sufficient set VERIFIED (LIVE) | The outbound-policy POST and the policy listing in §12.5 succeeded with the token above (`manage:api_policies` and `read:api_policies` among its scopes). The minimal set was not isolated (#23). | 2026-10-27 | live run, sandbox, connected app (#254) |
 | Which ops require an **admin** connected app w/ user context | `core/auth.py` | UNVERIFIED | — | — | — |
 
 ## 2. LLM Proxy (data plane) — **LIVE-VERIFIED 2026-08-28**
@@ -1183,8 +1183,10 @@ the `McpServerHandle` mapping in `test_governed_state_shapes.py`.
 **Live: the A2A instance write path (#254).** On 2026-10-27 one A2A instance
 was created, given an outbound policy, deployed and deleted in the sandbox
 (DDK/Sandbox, managed shared-space Flex target, listener port 8081), for a
-throwaway `agent` asset that was hard-deleted afterwards. The session was a
-username/password login, so connected-app scopes stay UNVERIFIED (§1, #23).
+throwaway `agent` asset that was hard-deleted afterwards, first with a
+username/password session, then again end to end with a connected app's
+`client_credentials` token. The scopes that second run had are in §1; the
+minimal set is not isolated (#23).
 Captures, scrubbed, are in `python/tests/fixtures/anypoint/a2a_instance/`.
 
 | Call | Status | Observed |

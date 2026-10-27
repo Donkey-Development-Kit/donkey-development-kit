@@ -2,7 +2,9 @@
 
 Captured 2026-10-27 from the real sandbox org (scrubbed to
 `00000000-0000-4000-8000-…`), environment Sandbox, with a username/password
-session (not a connected app, so no scopes were exercised: #23). A throwaway
+session. The same sequence was then repeated end to end with a connected
+app's `client_credentials` token, for a second throwaway asset; its scopes are
+in `docs/verified-apis.md` §1, and these files are from the first run. A throwaway
 `agent` asset, `ddk-verify254-agent:0.1.0`, was published to Exchange, given an
 A2A instance on a managed shared-space Flex target (listener port 8081),
 deployed, then deleted: the instance with `DELETE …/apis/{id}` (`204`), the

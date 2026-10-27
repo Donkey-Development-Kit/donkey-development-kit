@@ -4,7 +4,7 @@
   "a2d/mcp_server_spec.account_management.json": "sha256:82506a061108f98919143f528fcde096b3361660d0805d69db3dcda9a2396c2a",
   "a2d/mcp_servers.list.json": "sha256:43d15444888b09a0d22e0550cb1261de4e49d2c621acf4ab61e1f8229c518c38",
   "anypoint/README.md": "sha256:3c4d894d72d310e78e8a66b3ddbb4c33b6bbcd65b07e35bbfa2b39340b52d548",
-  "anypoint/a2a_instance/README.md": "sha256:cfe8ded88ba49c9d958f9168c026af9fa302809f5842b3c976f78f697629bac6",
+  "anypoint/a2a_instance/README.md": "sha256:cdb46f363c954ad61791af45c2e345c2f0c838549c979fa0300559d56cdb20da",
   "anypoint/a2a_instance/api_describe.200.json": "sha256:446549ed1f67288e3c41afcd359995076302d84487fbbad575d4092289fece0e",
   "anypoint/a2a_instance/contracts.200.json": "sha256:44c02f404c048cabbbc62cc2badfd58828e65578b7df366afa9d00ea76a5ed05",
   "anypoint/a2a_instance/create.201.json": "sha256:68bba12c55a275589a66f7a59ca874d193e532b6728cb2fde4a08195aa7cf560",
