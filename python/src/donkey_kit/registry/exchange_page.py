@@ -1,10 +1,12 @@
 """The Exchange page ``donkey publish`` writes for an MCP asset (#1269).
 
-:func:`documentation_page` renders it as Markdown from the plan and the scan:
-the asset's name and description, the ``documentation`` file it declares, its
-tools with their parameters, how it is reached, and where it was published
-from. Exchange shows the page as the asset's Home page, and Agent Fabric as the
-Documentation section of its Overview (docs/verified-apis.md §12.3).
+:func:`documentation_page` renders it as Markdown from the plan and the scan,
+so every asset's page has the same sections in the same order: Overview (its
+description, then the ``documentation`` file it declares), Tools (each with its
+parameters and any approval or risk it declares), Connecting (how it is
+reached) and Provenance (where it was published from). Exchange shows the page
+as the asset's Home page, and Agent Fabric as the Documentation section of its
+Overview (docs/verified-apis.md §12.3).
 
 Exchange renders headings one level down and shows inline code in a table cell
 with its backticks, so table cells are plain text. The page never carries a
@@ -38,9 +40,8 @@ def documentation_page(
     asset: PlannedAsset, result: ScanResult, *, source: PageSource | None = None
 ) -> str:
     """The Markdown page for the ``mcp`` asset ``asset``, scanned as ``result``."""
-    lines = [f"# {asset.name}", ""]
-    if asset.description:
-        lines += [asset.description.strip(), ""]
+    lines = [f"# {asset.name}", "", "## Overview", ""]
+    lines += [(asset.description or "").strip() or "No description is declared.", ""]
     if asset.documentation_text and asset.documentation_text.strip():
         lines += [asset.documentation_text.strip(), ""]
 
@@ -52,6 +53,10 @@ def documentation_page(
         lines += [f"### {tool.name}", ""]
         if tool.description:
             lines += [tool.description.strip(), ""]
+        governance = [f"approval: {tool.approval}"] if tool.approval else []
+        governance += [f"risk: {tool.risk}"] if tool.risk else []
+        if governance:
+            lines += [f"Governed with {', '.join(governance)}.", ""]
         if tool.parameters:
             lines += ["| Parameter | Type |", "| --- | --- |"]
             lines += [
