@@ -1,9 +1,11 @@
-"""On-behalf-of identity: ``donkey.as_user(id_token=...)`` (BG §2.4, #215).
+"""On-behalf-of identity: ``donkey.as_user(id_token=...)`` (BG §2.4, #215, #216).
 
 The RFC 8693 exchange (form shape, caching to expiry minus the margin, typed
 failures that never echo a token), the contextvar scope (task isolation,
 nesting), and where the exchanged token rides: data-plane sends on both
-clients, never the control plane or an unchecked origin.
+clients, never the control plane or an unchecked origin. And the hard failure
+(#216): a missing or expired user token is an ``AuthError``, never a request
+sent as the service identity.
 
 Driven with ``httpx.MockTransport``, so no network is touched.
 """
@@ -11,6 +13,7 @@ Driven with ``httpx.MockTransport``, so no network is touched.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from urllib.parse import parse_qs
 
@@ -226,11 +229,6 @@ def test_a_token_mode_with_a_custom_user_header_is_allowed() -> None:
     _exchange(_Exchanger(), llm_proxy_auth="bearer", user_token_header="X-User-Token").check()
 
 
-def test_an_empty_id_token_is_refused_at_the_call_site() -> None:
-    with pytest.raises(ConfigError, match="non-empty id_token"):
-        UserScope(_exchange(_Exchanger()), "  ")
-
-
 def test_user_token_header_names() -> None:
     assert user_token_header_problem("Authorization") is None
     assert user_token_header_problem("X-User-Token") is None
@@ -384,3 +382,81 @@ async def test_as_user_needs_connected_app_credentials() -> None:
     async with Donkey(_cfg(client_id=None, client_secret=None)) as donkey:
         with pytest.raises(ConfigError, match="client_id and client_secret"):
             donkey.as_user(id_token=_ID_TOKEN)
+
+
+# --- no silent fallback to the service identity (#216) ------------------------
+
+
+@pytest.mark.parametrize("id_token", ["", "  ", None])
+def test_a_missing_id_token_is_an_auth_error_that_names_it(id_token: object) -> None:
+    with pytest.raises(AuthError, match="id_token is missing") as info:
+        UserScope(_exchange(_Exchanger()), id_token)  # type: ignore[arg-type]
+    assert "id_token" in info.value.remediation
+
+
+async def test_a_failed_re_exchange_after_expiry_sends_nothing() -> None:
+    clock = _Clock()
+    async with Donkey(_cfg()) as donkey:
+        exchanger = _Exchanger(expires_in=120)
+        proxy = _wire(donkey, exchanger)
+        donkey._runtime.token_exchange()._clock = clock
+        async with donkey.as_user(id_token=_ID_TOKEN):
+            await _model_call(donkey)
+            clock.now += 61
+            exchanger.status = 401  # the id_token has expired upstream
+            with pytest.raises(AuthError, match="no request was sent as the service"):
+                await _model_call(donkey)
+    (request,) = proxy.requests
+    assert request.headers["Authorization"] == f"Bearer user-{_ID_TOKEN}"
+
+
+async def test_no_request_leaves_as_user_with_only_service_credentials() -> None:
+    """Every way a model call can leave the block, through the real OpenAI
+    clients: each request that reaches the proxy carries the user token, and
+    each failure raises ``AuthError`` with nothing sent."""
+    pytest.importorskip("openai")
+    from donkey_kit.core.refusals import translate
+
+    clock = _Clock()
+    messages = [{"role": "user", "content": "hi"}]
+    async with Donkey(_cfg()) as donkey:
+        exchanger = _Exchanger(expires_in=120)
+        proxy = _wire(donkey, exchanger)
+        donkey._runtime.token_exchange()._clock = clock
+        sync_http = donkey._sync_http_client()
+        sync_http.governed_transport.replace_inner(httpx.MockTransport(proxy))
+        openai, openai_sync = donkey.llm.client(), donkey.llm.client(sync=True)
+
+        def create() -> object:
+            return openai_sync.chat.completions.create(model="m", messages=messages)  # type: ignore[arg-type]
+
+        async def acreate() -> object:
+            return await openai.chat.completions.create(model="m", messages=messages)  # type: ignore[arg-type]
+
+        async with donkey.as_user(id_token=_ID_TOKEN):
+            await acreate()
+            create()
+            clock.now += 61  # expired: the blocking client can't exchange again
+            with pytest.raises(Exception) as info:
+                create()
+            assert isinstance(translate(info.value), AuthError)
+            await acreate()  # the async client exchanges again
+            clock.now += 61
+            exchanger.status = 401  # and now the id_token is refused
+            with pytest.raises(Exception) as info:
+                await acreate()
+            assert isinstance(translate(info.value), AuthError)
+
+        with pytest.raises(AuthError):
+            async with donkey.as_user(id_token="id-refused"):
+                pass  # pragma: no cover - entry raises
+    assert len(proxy.requests) == 3
+    for request in proxy.requests:
+        assert request.headers["Authorization"] == f"Bearer user-{_ID_TOKEN}"
+
+
+def test_no_setting_enables_a_fallback_to_the_service_identity() -> None:
+    """Pins the absence: a fallback switch must not be added (#216)."""
+    names = [field.name for field in dataclasses.fields(DonkeyConfig)]
+    words = ("fallback", "service_identity", "downgrade", "allow_service")
+    assert [name for name in names if any(word in name for word in words)] == []

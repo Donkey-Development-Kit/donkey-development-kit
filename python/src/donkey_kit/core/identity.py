@@ -284,17 +284,30 @@ def current_user() -> _UserBinding | None:
 class UserScope:
     """The async context manager ``donkey.as_user(...)`` returns (BG §2.4).
 
-    Entry exchanges the id_token, so a refused or malformed exchange raises
-    :class:`~donkey_kit.core.errors.AuthError` before the block runs, and then
-    binds the user. Exit restores whatever was bound before, so nested scopes
-    shadow and restore like ``donkey.run(...)``.
+    Entry exchanges the id_token, so a missing id_token or a refused or
+    malformed exchange raises :class:`~donkey_kit.core.errors.AuthError` before
+    the block runs, and then binds the user. There is no fallback to the
+    service identity and no setting that enables one (#216): inside the block
+    a data-plane request carries the user token or is not sent. Exit restores
+    whatever was bound before, so nested scopes shadow and restore like
+    ``donkey.run(...)``.
     """
 
     __slots__ = ("_exchange", "_id_token", "_reset")
 
     def __init__(self, exchange: TokenExchange, id_token: str) -> None:
         if not isinstance(id_token, str) or not id_token.strip():
-            raise ConfigError("donkey.as_user() needs a non-empty id_token string.")
+            # An AuthError, not a ConfigError: a request handler that lost the
+            # user's token must stop here, not run the block as the service.
+            raise AuthError(
+                "donkey.as_user() was given no id_token: the user's OIDC id_token is "
+                "missing, so the block can't run as the user and no request was sent "
+                "as the service identity instead.",
+                remediation=(
+                    "Pass the signed-in user's current OIDC id_token. There is no "
+                    "setting that runs the block as the service instead (BG §2.4)."
+                ),
+            )
         exchange.check()
         self._exchange = exchange
         self._id_token = id_token
