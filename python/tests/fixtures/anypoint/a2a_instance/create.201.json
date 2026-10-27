@@ -1,0 +1,48 @@
+{
+  "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+  "instanceLabel": "ddk-verify254-agent",
+  "providerId": null,
+  "technology": "flexGateway",
+  "metadata": {
+    "assetPlatform": "LangGraph",
+    "assetType": "agent"
+  },
+  "assetVersion": "0.1.0",
+  "productVersion": "v0.1",
+  "order": 1,
+  "stage": "release",
+  "audit": {
+    "created": {
+      "date": "2026-10-27T13:08:02.064Z"
+    },
+    "updated": {}
+  },
+  "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+  "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "id": 21259153,
+  "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "assetId": "ddk-verify254-agent",
+  "tags": [],
+  "endpoint": {
+    "deploymentType": "HY",
+    "isCloudHub": null,
+    "muleVersion4OrAbove": null,
+    "referencesUserDomain": null,
+    "responseTimeout": null,
+    "type": "a2a",
+    "uri": "http://host.docker.internal:8765/a2a/verify254/",
+    "proxyUri": "http://0.0.0.0:8081/ddk-verify254-agent",
+    "validation": "NOT_APPLICABLE",
+    "audit": {
+      "created": {
+        "date": "2026-10-27T13:08:02.064Z"
+      },
+      "updated": {}
+    },
+    "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+    "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+    "id": 5660110,
+    "apiId": 21259153
+  },
+  "autodiscoveryInstanceName": "v0.1:21259153"
+}

@@ -1,0 +1,15 @@
+{
+  "configurationData": {
+    "authType": "apiKey",
+    "overwrite": true,
+    "customHeader": "X-DDK-Access-Key",
+    "apiKey": "<redacted>"
+  },
+  "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+  "assetId": "credential-injection-api-key",
+  "assetVersion": "1.0.1",
+  "upstreamIds": [
+    "00000000-0000-4000-8000-d3eb17e50bd4"
+  ],
+  "apiVersionId": 21259153
+}

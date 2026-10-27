@@ -252,8 +252,10 @@ It is planned to stay narrow, so it never turns into a provisioning tool:
   scopes belong to your platform team and its infrastructure-as-code. If one is
   missing, `donkey expose` tells you which one rather than creating it.
 
-The calls it needs are not verified against a live sandbox yet, so the command
-does not ship until they are.
+The calls that create, deploy and delete an A2A instance have been verified
+against a live sandbox, with a connected app as well as a user login. The MCP
+instance calls have not, and neither has the smallest set of scopes the
+connected app needs, so the command does not ship until they are.
 
 ## `donkey dev` — a gateway in front of your laptop
 

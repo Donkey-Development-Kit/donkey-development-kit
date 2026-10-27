@@ -1,0 +1,12 @@
+{
+  "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+  "assetId": "credential-injection-api-key",
+  "assetVersion": "1.0.1",
+  "pointcutData": null,
+  "configurationData": {
+    "authType": "apiKey",
+    "overwrite": true,
+    "customHeader": "X-DDK-Access-Key",
+    "apiKey": "<redacted>"
+  }
+}
