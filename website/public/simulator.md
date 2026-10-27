@@ -250,6 +250,8 @@ guardrailed bot is exercised before it faces a real attack.
 
 ## Related
 
+- [Simulated ingress](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) — `donkey dev`, which replays these
+  rejections on inbound A2A calls to your agent.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
   and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
 - [Error taxonomy](https://docs.donkey-kit.dev/errors.md) — the typed exceptions each shape maps to.

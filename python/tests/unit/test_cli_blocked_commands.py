@@ -1,6 +1,6 @@
 """The CLI's command set after the legacy quarantine (#730, ADR 0008 in docs/adr/).
 
-Five commands are visible: ``init``, ``doctor``, ``mock``, ``test`` and ``scan``
+Six commands are visible: ``init``, ``doctor``, ``mock``, ``dev``, ``test`` and ``scan``
 (#217). Three are hidden: ``publish`` (#218, ``test_cli_publish.py``), and
 ``status`` and ``verify`` (BG §2.5), which are verification-blocked and exit 3
 with a ``blocked on verification`` message (§0.3). The
@@ -19,11 +19,11 @@ from donkey_kit.cli import app
 runner = CliRunner()
 
 
-def test_visible_commands_are_init_doctor_mock_test_scan() -> None:
+def test_visible_commands_are_init_doctor_mock_dev_test_scan() -> None:
     commands = typer.main.get_command(app).commands
     visible = {name for name, command in commands.items() if not command.hidden}
 
-    assert visible == {"init", "doctor", "mock", "test", "scan"}
+    assert visible == {"init", "doctor", "mock", "dev", "test", "scan"}
 
 
 def test_hidden_commands_are_publish_and_the_blocked_platform_ones() -> None:

@@ -963,9 +963,12 @@ local; no gateway fronted the agent.
 | `a2a.server.routes.create_agent_card_routes(card)`, `create_jsonrpc_routes(handler, "/")` | The card at `/.well-known/agent-card.json` and JSON-RPC at `/` (method `SendMessage`, header `A2A-Version: 1.0`) | VERIFIED (local round-trip) | same |
 | `a2a.types.AgentCard` | The card, built from the `@donkey.agent` record | VERIFIED (local round-trip) | same |
 | `a2a.helpers` (`new_task_from_user_message`, `new_text_part`, `new_data_part`, `new_text_message`, `get_text_parts`, `get_data_parts`) | Building and reading message parts | VERIFIED (local round-trip) | same |
+| JSON-RPC methods `SendMessage` and `SendStreamingMessage` (`JsonRpcDispatcher.METHOD_TO_MODEL`) | The calls `donkey dev`'s simulated ingress runs its `--scenario` rules on; the other methods pass through | VERIFIED (local round-trip) | a2a-sdk 1.3.0, 2026-10-27, #1284: `donkey dev` on `127.0.0.1:8931`, called with plain `curl`, returned the card and a completed `SendMessage` task with `x-donkey-simulator: true`, and a scenario-matched `SendMessage` got the 79-byte injection-protection fixture |
 
 Which A2A traffic Omni Gateway can front, and how, is not covered here: that is
-`donkey expose` (#226).
+`donkey expose` (#226). `donkey dev`'s simulated ingress (#1284) answers inbound rejections with the
+LLM-proxy fixtures of §4; how the gateway answers a policy rejection on an A2A
+agent instance is not captured (#226/#1278).
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 

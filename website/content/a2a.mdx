@@ -10,8 +10,8 @@ import { Badge } from '../components'
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
-gateway locally. `donkey.serve()` ships today. `donkey expose` and `donkey dev`
-are on the [Roadmap](/roadmap).
+gateway locally. `donkey.serve()` and `donkey dev` (with a simulated gateway)
+ship today. `donkey expose` is on the [Roadmap](/roadmap).
 
 ## The setup it replaces
 
@@ -273,14 +273,51 @@ It is planned to stay narrow, so it never turns into a provisioning tool:
 The calls it needs are not verified against a live sandbox yet, so the command
 does not ship until they are.
 
-## `donkey dev` — a gateway in front of your laptop <Badge tone="roadmap">Roadmap</Badge>
+## `donkey dev` — a gateway in front of your laptop
 
 `donkey dev` puts a gateway in front of `donkey.serve()` on your machine, so you
-can call your agent over A2A through governance before deploying. It runs
-**simulated ingress**: the [local simulator](/simulator) gains an A2A ingress
-mode, a local fake gateway in front of `donkey.serve()` that replays the same
-rejection fixtures. A plain A2A client sees byte-identical responses, and every
-response carries `x-donkey-simulator: true`.
+can call your agent over A2A through governance before deploying. The gateway
+is simulated.
+
+### Simulated ingress
+
+```bash
+pip install "donkey-kit[cli,a2a,local]"
+donkey dev my_agent:handle --port 8000 \
+  --scenario injection:on-pattern="drop table" \
+  --scenario request_limit:limit=3,window=60s
+```
+
+`TARGET` is the `@donkey.agent` handler as `module:attribute`, imported from the
+current directory. `donkey dev` serves the same app `donkey.serve()` runs, with
+the same [governed inbound](#governed-inbound), and puts a local fake gateway
+in front of it on the same port. The card advertises the ingress URL, as it
+would advertise the gateway's.
+
+- **Calls can be rejected.** A JSON-RPC `SendMessage` or `SendStreamingMessage`
+  is a call. The `--scenario` rules run on its text parts, and a rule that
+  fires answers with a rejection before the agent sees the call. The rules are
+  the [simulator's](/simulator#scenario-scripting) `injection`, `pii_block` and
+  `request_limit`. A call that passes `request_limit` carries the
+  `x-ratelimit-*` headers. `budget` is refused, because it counts model tokens
+  and an inbound call carries none.
+- **Everything else passes through.** The agent card, `GetTask`, `CancelTask`
+  and every call no rule rejects reach the agent. A plain A2A client gets the
+  agent's own bytes.
+- **Rejections are the simulator's fixtures.** A rejection is the same status
+  and bytes `donkey mock` replays and the [error taxonomy](/errors) is tested
+  against, so a caller using `donkey-kit` gets the typed exception, a
+  `PromptInjectionBlocked` rather than a raw `400`.
+- **Every response carries `x-donkey-simulator: true`.** That includes the
+  responses the agent produced.
+
+<Callout type="warning">
+  **The rejection shapes are the LLM proxy's, not captured from an A2A
+  instance.** The fixtures were captured from LLM proxies; how the gateway
+  answers a policy rejection on an A2A agent instance has not been captured
+  yet. Like `donkey mock`, `donkey dev` replays and enforces no policy: you
+  choose the rejection with a `--scenario` rule.
+</Callout>
 
 `donkey dev` doesn't run a real Omni Gateway locally. A self-managed gateway in
 Local Mode doesn't support the A2A policies, and it has to register with an
