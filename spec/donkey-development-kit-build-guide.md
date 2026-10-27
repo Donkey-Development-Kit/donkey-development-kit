@@ -570,7 +570,7 @@ Every call arriving over A2A gets the same treatment as an outgoing call: correl
 
 ### 2.9.2 `donkey expose` — the ingress, registered from code
 
-Provision an A2A proxy on Omni Gateway pointing at the agent's URL, attach the policy set, register the card in Agent Registry. The gateway does the work; the SDK turns a console session into one command.
+Create the API Manager instance on Omni Gateway that fronts the agent's URL, attach the policy set, register the card in Agent Registry. The gateway does the work; the SDK turns a console session into one command. The same command exposes an MCP server: an MCP instance in front of the server's URL, its policies, and its Exchange entry.
 
 ```
 $ donkey expose --env prod
@@ -578,6 +578,14 @@ $ donkey expose --env prod
   ✓ policies   token-budget, pii-detection, trusted-agent-identity
   ✓ registry   support-triage v1.4.0
 ```
+
+**Where it stops (ADR 0015).** `expose` is the SDK's only write path to the control plane, and it is narrow on purpose, so it never becomes the provisioning control plane the closing summary refuses:
+
+- It creates one instance, the one in front of the developer's own agent or MCP server, on a gateway target that already exists.
+- Re-running it is a no-op: an instance whose `instanceLabel` exists is not created again. On an existing instance it only adds a missing policy. It never deletes, never edits a policy's configuration, never moves an instance.
+- `--dry-run` prints what it would create. Each step reports its own outcome, and a step that did not happen is never shown as done.
+- It holds no desired state. There is no spec file, no plan/diff/apply, no drift.
+- Gateways, targets, LLM proxies, org-wide policy and connected-app scopes are the platform's and its IaC's. If one is missing, `expose` says which and where to create it.
 
 ### 2.9.3 `donkey dev` — a gateway in front of your laptop
 
@@ -592,7 +600,7 @@ Either way the developer experience is one command, and an A2A endpoint that beh
 
 **The gap only the gateway can close.** What would make this feel like magic is an agent with *no inbound reachability at all* — a laptop, a private subnet — that is still publishable: the agent dials *out* to the gateway, and the gateway routes inbound A2A traffic back over that connection, the ngrok / Cloudflare Tunnel pattern. That is not in the public Omni Gateway docs. It is upstream gap #6 (see 3.1), and it is the only version that genuinely removes the listener problem rather than hiding it. Until it ships, the truth is: `donkey serve` makes the listener trivial, `donkey expose` makes the ingress one command, and the agent still has to be somewhere the gateway can reach.
 
-**Effort:** `serve` S–M (the `a2a-sdk` exists) · `expose` L, blocked on verifying the A2A proxy provisioning API · `dev` M.
+**Effort:** `serve` S–M (the `a2a-sdk` exists) · `expose` L, blocked on verifying the A2A and MCP instance-creation calls live · `dev` M.
 
 ---
 
@@ -717,4 +725,4 @@ donkey.policies.content_safety.on     # True
 | 3 | Structured output + eval hooks | A | 6–12 mo |
 | 3 | TypeScript SDK | new audience | after PMF |
 
-**Do not build, at any phase:** client-side policy enforcement · client-side semantic caching · a provisioning control plane competing with API Manager / Terraform · re-implementations of Agent Scanners, Kill Switch, or Trusted Agent Identity · an approval UI or queue · an eval framework · the gateway inside the agent process · our own A2A protocol implementation.
+**Do not build, at any phase:** client-side policy enforcement · client-side semantic caching · a provisioning control plane competing with API Manager / Terraform (the line is ADR 0015: `expose` creates one ingress instance, nothing holds desired state) · re-implementations of Agent Scanners, Kill Switch, or Trusted Agent Identity · an approval UI or queue · an eval framework · the gateway inside the agent process · our own A2A protocol implementation.

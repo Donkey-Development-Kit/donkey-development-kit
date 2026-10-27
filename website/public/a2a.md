@@ -234,9 +234,26 @@ $ donkey expose --env prod
   ✓ registry   support-triage v1.4.0
 ```
 
-The gateway does the work — provisioning the A2A proxy, attaching the policy
-set, and registering the card. `donkey expose` turns that console session into
-one command that runs in CI.
+The gateway does the work — creating the A2A proxy, attaching the policy set,
+and registering the card. `donkey expose` turns that console session into one
+command that runs in CI. The same command will put an MCP server behind the
+gateway: an MCP instance in front of it, its policies, and its Exchange entry.
+
+It is planned to stay narrow, so it never turns into a provisioning tool:
+
+- It creates only the instance in front of *your* agent or MCP server, on a
+  gateway target that already exists.
+- Running it again changes nothing that is already there. It adds a missing
+  policy, and it never deletes, edits a policy's configuration, or moves an
+  instance.
+- `--dry-run` prints what it would create, and each step reports its own
+  result.
+- Gateways, targets, LLM proxies, organization-wide policy and connected-app
+  scopes belong to your platform team and its infrastructure-as-code. If one is
+  missing, `donkey expose` tells you which one rather than creating it.
+
+The calls it needs are not verified against a live sandbox yet, so the command
+does not ship until they are.
 
 ## `donkey dev` — a gateway in front of your laptop Roadmap
 
