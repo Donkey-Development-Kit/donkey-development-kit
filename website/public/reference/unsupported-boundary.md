@@ -89,12 +89,16 @@ _(none)_
   Donkey Development Kit does not support Omni/Flex Gateway **Local Mode**.
   The [local simulator](https://docs.donkey-kit.dev/simulator.md) (`donkey mock` / `simulate()`) is the
   supported local dev loop; real-gateway behavior is exercised against a
-  hosted (Connected Mode) proxy instead. A stock Flex Gateway 1.14.0 Local
-  Mode image rejects the LLM Proxy and MCP Bridge policies as missing
-  extensions and refuses configuration until registered to a control plane —
-  enough to make this scope call, bounded to that image version. See the
+  hosted (Connected Mode) proxy instead. MuleSoft documents Model Proxy as
+  supported only on Managed Omni Gateway and Self-Managed Omni Gateway in
+  Connected Mode. It also documents every MCP and A2A policy as unsupported in
+  Local Mode, and a Local Mode gateway still has to register with an Anypoint
+  control plane. A stock Flex Gateway 1.14.0 Local Mode image showed the same
+  behavior. For the same reason, `donkey dev` won't run a real gateway on your
+  machine. It uses simulated ingress instead. See the
   [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md#6-governance--local-mode-the-verification-milestone)
-  and [issue #661](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/661).
+  [issue #661](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/661),
+  and [issue #258](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/258).
 
 ## Support statement
 

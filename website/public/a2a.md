@@ -258,16 +258,17 @@ does not ship until they are.
 ## `donkey dev` — a gateway in front of your laptop Roadmap
 
 `donkey dev` puts a gateway in front of `donkey.serve()` on your machine, so you
-can call your agent over A2A through governance before deploying. Two modes are
-planned:
+can call your agent over A2A through governance before deploying. It runs
+**simulated ingress**: the [local simulator](https://docs.donkey-kit.dev/simulator.md) gains an A2A ingress
+mode, a local fake gateway in front of `donkey.serve()` that replays the same
+rejection fixtures. A plain A2A client sees byte-identical responses, and every
+response carries `x-donkey-simulator: true`.
 
-- **A real gateway.** Where a self-managed Omni Gateway image is available for
-  local development, `donkey dev` runs it alongside `donkey.serve()`, so A2A
-  calls pass through real policies.
-- **Simulated ingress.** The [local simulator](https://docs.donkey-kit.dev/simulator.md) gains an A2A ingress
-  mode: a local fake gateway in front of `donkey.serve()`, replaying the same
-  rejection fixtures. A plain A2A client sees byte-identical responses, and
-  every response carries `x-donkey-simulator: true`.
+`donkey dev` doesn't run a real Omni Gateway locally. A self-managed gateway in
+Local Mode doesn't support the A2A policies, and it has to register with an
+Anypoint control plane. See
+[Local Mode is not supported](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#local-mode-is-not-supported).
+To test against real policies, use a hosted gateway.
 
 ## Related
 
