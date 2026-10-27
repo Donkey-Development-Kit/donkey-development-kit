@@ -203,10 +203,11 @@ Each asset is published with:
   external instance. Exchange keeps instances per minor version, so a new patch
   version reuses the existing one.
 - a Home page, generated in Markdown. Agent Fabric shows it as the asset's
-  Documentation section. It has the name and description, your
-  `documentation` file, each tool with its description and a table of its
-  parameters, how to connect (transport, endpoint, protocol version), and
-  provenance: the asset ID and version, the content digest and, when the
+  Documentation section. Every page has the same sections: an Overview with
+  the description (or "No description is declared.") followed by your
+  `documentation` file; the tools, each with its description, the `approval`
+  and `risk` it declares, and a table of its parameters; how to connect
+  (transport, endpoint, protocol version); and provenance: the asset ID and version, the content digest and, when the
   publish runs in GitHub Actions, the repository, the commit and a link to the
   run. It never includes credentials or your org ID. Only a new version gets a
   page; an unchanged asset keeps the one it has.
