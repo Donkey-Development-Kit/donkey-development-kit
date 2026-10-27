@@ -173,7 +173,12 @@ From the build guide's closing summary. These are refusals, not backlog:
 
 - Client-side policy enforcement — the gateway is the enforcement point.
 - Client-side semantic caching.
-- A provisioning control plane competing with API Manager or Terraform.
+- A provisioning control plane competing with API Manager or Terraform. The
+  line is ADR 0015 (#319): no desired state, ever. The one write path is
+  `donkey expose`, which creates the ingress instance in front of the
+  developer's own agent or MCP server, additively and idempotently. Gateways,
+  targets, LLM proxies, org-wide policy and scopes stay with the platform's
+  IaC.
 - Re-implementations of Agent Scanners, Kill Switch, or Trusted Agent
   Identity.
 - An approval UI or queue.
@@ -356,7 +361,7 @@ Start with the work that needs no verification answer, so Phase 2 has momentum w
   No silent downgrade to service identity. Ship with P2-08.
 - [#214](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/214) **hitl: route escalation through gateway step-up (Trusted Agent Identity)**  
   Gateway step-up routing. Needs V-03 and P2-04.
-- [#226](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/226) **a2a: donkey expose — provision the A2A proxy, policies and registry entry in one command**  
+- [#226](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/226) **a2a: donkey expose — the gateway instance, policies and registry entry for an A2A agent or MCP server**  
   donkey expose. Needs V-02.
 - [#227](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/227) **a2a: donkey dev — a gateway in front of the laptop, real or simulated**  
   donkey dev. Option B ships regardless; Option A needs V-06.
@@ -529,7 +534,7 @@ The authoritative detail for every item below is in its GitHub issue.
   `enhancement` `area:a2a` `priority/p1` `size/m`
 - [#225](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/225) a2a: governance-aware inbound — correlation, tags, spans and typed refusals on served tasks  
   `enhancement` `area:a2a` `area:telemetry` `priority/p1` `size/m`
-- [#226](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/226) a2a: donkey expose — provision the A2A proxy, policies and registry entry in one command  
+- [#226](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/226) a2a: donkey expose — the gateway instance, policies and registry entry for an A2A agent or MCP server  
   `enhancement` `area:a2a` `blocked-on-verification` `priority/p2` `size/l`
 - [#227](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/227) a2a: donkey dev — a gateway in front of the laptop, real or simulated  
   `enhancement` `area:a2a` `area:simulator` `blocked-on-verification` `priority/p2` `size/l`

@@ -180,7 +180,10 @@ reachable and typed, not to reproduce it:
 - Client-side policy enforcement — the gateway is the enforcement point.
 - Client-side semantic caching — DDK steers the gateway's semantic cache and
   reports hits, but never caches responses itself.
-- A provisioning control plane competing with API Manager or Terraform.
+- A provisioning control plane competing with API Manager or Terraform. The
+  one thing DDK will create is the gateway instance in front of your own agent
+  or MCP server (`donkey expose`); everything else stays with your platform's
+  infrastructure-as-code.
 - Re-implementations of Agent Scanners, Kill Switch or Trusted Agent Identity.
 - An approval UI or queue.
 - An evaluation framework.
