@@ -58,7 +58,7 @@ _PUBLICATION = Publication(
 )
 
 _BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
-    ("registry.search", lambda: _REGISTRY.search()),
+    ("registry.search(governed=)", lambda: _REGISTRY.search(governed=True)),
     ("registry.resolve_mcp", lambda: _REGISTRY.resolve_mcp(_REF)),
     ("registry.resolve_agent", lambda: _REGISTRY.resolve_agent(_REF)),
     (

@@ -180,12 +180,12 @@ class ToolsFacade:
         ``registry.explain()`` verdict on ``McpServerHandle.governance``, but the
         ``ToolSet`` binding methods refuse it with ``UngovernedMcpServer`` (ADR 0013).
 
-        Blocked until Exchange search + the governed-state join are verified
+        Blocked until MCP resolution + the governed-state join are verified
         (verification discipline / the Verification milestone).
         """
 
         raise _verify.blocked(
-            "Exchange search + governed-state join (governed-only discovery, the Verification "
+            "MCP resolution + governed-state join (governed-only discovery, the Verification "
             "milestone). ToolSet filtering and binding scaffolding exist; wire discover() once the "
             "APIs are confirmed, use registry.explain() for the empty-result reason, and pass "
             "ToolSet(_natives=_NATIVES) so require_approval() can pause a graph or an Agents run."

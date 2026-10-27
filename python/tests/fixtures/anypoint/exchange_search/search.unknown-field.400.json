@@ -1,0 +1,20 @@
+{
+  "errors": [
+    {
+      "message": "Variable \"$query\" got invalid value { organizationIds: [\"00000000-0000-4000-8000-4256cc8e6f68\"], labels: [\"crewai\"], limit: 50, offset: 0 }; Expected value of type \"SearchAsset\" not to include unknown field \"labels\", found: { organizationIds: [\"00000000-0000-4000-8000-4256cc8e6f68\"], labels: [\"crewai\"], limit: 50, offset: 0 }.",
+      "locations": [
+        {
+          "line": 1,
+          "column": 7
+        }
+      ],
+      "extensions": {
+        "http": {
+          "status": 400
+        },
+        "status": 400
+      },
+      "status": 400
+    }
+  ]
+}
