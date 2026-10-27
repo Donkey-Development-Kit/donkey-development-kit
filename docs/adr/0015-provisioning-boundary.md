@@ -3,8 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-27
 - **Issue:** #319. `donkey expose` (#226) implements the create side, gated
-  by #254 (A2A) and its MCP counterpart; the read-only preflight is its own
-  issue.
+  by #254 (A2A) and #1278 (MCP); the read-only preflight is #1279.
 
 ## Context
 
@@ -100,11 +99,10 @@ desired-state model of the estate.
 - BG §2.9.2 covers MCP servers as well as A2A agents, and states rules 2–5.
   The build plan's *Do not build* entry and `ARCHITECTURE.md` point here.
 - #226 is re-scoped to both instance types. #254 stays the A2A
-  verification; MCP instance creation gets its own verification issue.
-- The read-only preflight (#319's "SDK reads, verifies") is a separate
-  issue, so this ADR can move to Accepted when `expose` ships.
+  verification; MCP instance creation is #1278.
+- The read-only preflight (#319's "SDK reads, verifies") is #1279, so this ADR can move to Accepted when `expose` ships.
 - The connected app that runs `expose` needs API Manager write scope. That
-  is UNVERIFIED today and is part of #254.
+  is UNVERIFIED today (#23) and is part of #254 and #1278.
 - `expose` is the only write path to API Manager in the package. A second
   one needs a new ADR, so the line is argued once rather than per issue.
 - TypeScript parity (Phase 5): the same rules apply. A port that adds an
