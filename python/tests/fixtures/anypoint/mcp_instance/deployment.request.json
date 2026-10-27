@@ -1,0 +1,8 @@
+{
+  "type": "HY",
+  "gatewayVersion": "1.0.0",
+  "targetId": "00000000-0000-4000-8000-d4b0d8dad526",
+  "targetName": "shared-omni-gateway",
+  "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+  "environmentName": "Sandbox"
+}

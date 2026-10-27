@@ -968,7 +968,8 @@ local; no gateway fronted the agent.
 | JSON-RPC methods `SendMessage` and `SendStreamingMessage` (`JsonRpcDispatcher.METHOD_TO_MODEL`) | The calls `donkey dev`'s simulated ingress runs its `--scenario` rules on; the other methods pass through | VERIFIED (local round-trip) | a2a-sdk 1.3.0, 2026-10-27, #1284: `donkey dev` on `127.0.0.1:8931`, called with plain `curl`, returned the card and a completed `SendMessage` task with `x-donkey-simulator: true`, and a scenario-matched `SendMessage` got the 79-byte injection-protection fixture |
 
 Fronting an agent with an Omni Gateway A2A instance is `donkey expose` (#226);
-the control-plane calls it needs are recorded in §12.5 (#254). `donkey dev`'s
+the control-plane calls it needs are recorded in §12.5 (#254, and #1278 for an
+MCP instance). `donkey dev`'s
 simulated ingress (#1284) answers inbound rejections with the LLM-proxy fixtures
 of §4; how the gateway answers a policy rejection on an A2A agent instance is
 not captured (#226/#1278).
@@ -1202,9 +1203,29 @@ Captures, scrubbed, are in `python/tests/fixtures/anypoint/a2a_instance/`.
 | `GET /proxies/xapi/v1/…/apis/{apiId}/deployments/{id}/status` | VERIFIED (LIVE) | `200`, `applying`/`unregistered`, then `applied`/`active` within about 10 s. |
 | `DELETE /apimanager/api/v1/…/apis/{apiId}` | VERIFIED (LIVE) | `204`; the instance then drops out of the listing. |
 
-Not verified by this run: an `mcp` instance create (#1278), inbound policies
-on an A2A instance, and traffic through the deployed instance (its upstream
-was not reachable).
+Not verified by this run: inbound policies on an A2A instance, and traffic
+through the deployed instance (its upstream was not reachable). The `mcp`
+instance is below (#1278).
+
+**Live: the MCP instance write path (#1278).** On 2026-10-27 one MCP instance
+was created, given two inbound policies, deployed and deleted in the same
+sandbox and target, for a throwaway `mcp` asset published with the #218 path
+and hard-deleted afterwards, with a username/password session only. Captures,
+scrubbed, are in `python/tests/fixtures/anypoint/mcp_instance/`.
+
+| Call | Status | Observed |
+|---|---|---|
+| `POST /apimanager/api/v1/…/apis` with `endpoint.type: "mcp"` | VERIFIED (LIVE) | `201`, the instance with an `id` and no deployment. The A2A body with `type: "mcp"`. Unlike A2A, the response's `metadata` is `null`. |
+| `GET /apimanager/api/v1/…/apis?limit=500`, rows by `instanceLabel` | VERIFIED (LIVE) | Right after the create, `assets[].apis[]` holds exactly one row with the new label: a list read finds an existing instance before a create. |
+| The same `POST …/apis` again (same asset version, same `instanceLabel`) | VERIFIED (LIVE), refused | `409` `ConflictError`, "This API (instance label for that product version in that environment) already exists in your organization."; no second instance. |
+| `POST /apimanager/api/v1/…/apis/{apiId}/policies`, inbound `mcp-support` 1.1.1 and `client-id-enforcement` 1.3.3 | VERIFIED (LIVE) | `201` each, body `{groupId, assetId, assetVersion, configurationData, pointcutData: null}`. `GET …/policies` lists both with `type: "system"` and `order` 1, 2 in posting order. No `xapi` call is needed: an MCP instance's policies are inbound. |
+| `POST /proxies/xapi/v1/…/apis/{apiId}/deployments`, then `…/status` | VERIFIED (LIVE) | `201`, then `applying`/`unregistered` → `applied`/`active` in about 40 s. Same body and response as A2A. |
+| `DELETE /apimanager/api/v1/…/apis/{apiId}` | VERIFIED (LIVE) | `204`; the label then has no row in the listing. |
+
+Not verified by this run: traffic through the deployed instance (its upstream
+was not reachable, and no call went through the gateway), how the gateway
+answers an MCP call a policy refuses (#303), and the run with a connected
+app's token, so the scopes in §1 still come from the A2A run (#23).
 
 App deploy (CloudHub 2.0 / RTF): `/amc/application-manager/api/v2/organizations/{org}/environments/{env}/deployments[/{id}]`;
 status poll `/amc/adam/api/organizations/{org}/environments/{env}/deployments/{id}`.

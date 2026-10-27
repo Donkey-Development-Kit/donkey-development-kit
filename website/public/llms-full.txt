@@ -7508,9 +7508,9 @@ It is planned to stay narrow, so it never turns into a provisioning tool:
   missing, `donkey expose` tells you which one rather than creating it.
 
 The calls that create, deploy and delete an A2A instance have been verified
-against a live sandbox, with a connected app as well as a user login. The MCP
-instance calls have not, and neither has the smallest set of scopes the
-connected app needs, so the command does not ship until they are.
+against a live sandbox, with a connected app as well as a user login, and so
+have the MCP instance calls, with a user login. The smallest set of scopes the
+connected app needs has not, so the command does not ship until it is.
 
 ## `donkey dev` — a gateway in front of your laptop
 
@@ -14720,14 +14720,15 @@ How each row was established (live capture, plugin test, and so on) is in the
   Roadmap, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.
-- `donkey expose` is Roadmap. The A2A
-  instance it would create was verified live, and two of the calls that takes
-  are experience APIs (`xapi`) with no third-party support commitment:
-  attaching an outbound policy
+- `donkey expose` is Roadmap. The A2A and MCP
+  instances it would create were verified live, and two of the calls that
+  takes are experience APIs (`xapi`) with no third-party support commitment:
+  attaching an outbound policy to an A2A instance
   (`POST /apimanager/xapi/v1/…/apis/{id}/policies/outbound-policies`) and
-  deploying the instance to a gateway target
+  deploying either instance to a gateway target
   (`POST /proxies/xapi/v1/…/apis/{id}/deployments`, then polling its
-  `…/status`). The Anypoint CLI plugins call the same paths. The SDK calls
+  `…/status`). An MCP instance's inbound policies use the public API Manager
+  path. The Anypoint CLI plugins call the same paths. The SDK calls
   none of them today. If `expose` ships with them, they move to
   [Undocumented surfaces](#undocumented-surfaces) with a justification and an
   owner, unless a documented alternative is found first.

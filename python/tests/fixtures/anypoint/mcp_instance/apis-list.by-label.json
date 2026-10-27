@@ -1,0 +1,51 @@
+[
+  {
+    "audit": {
+      "created": {
+        "date": "2026-10-27T14:33:42.052Z"
+      },
+      "updated": {
+        "date": "2026-10-27T14:33:42.052Z"
+      }
+    },
+    "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+    "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+    "id": 21259411,
+    "instanceLabel": "ddk-verify1278-mcp",
+    "environmentInstanceId": "instance_21259411",
+    "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+    "assetId": "ddk-verify1278-mcp",
+    "assetVersion": "0.1.0",
+    "productVersion": "v0.1",
+    "description": null,
+    "tags": [],
+    "order": 1,
+    "providerId": null,
+    "deprecated": false,
+    "lastActiveDate": null,
+    "endpointUri": null,
+    "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+    "isPublic": false,
+    "stage": "release",
+    "technology": "flexGateway",
+    "status": "unregistered",
+    "approvalMethod": null,
+    "deployment": null,
+    "routing": [
+      {
+        "upstreams": [
+          {
+            "id": "00000000-0000-4000-8000-2adc02d6eb91",
+            "weight": 100
+          }
+        ]
+      }
+    ],
+    "metadata": null,
+    "semanticServiceConfigId": null,
+    "pinned": false,
+    "activeContractsCount": 0,
+    "endpointType": "mcp",
+    "autodiscoveryInstanceName": "v0.1:21259411"
+  }
+]

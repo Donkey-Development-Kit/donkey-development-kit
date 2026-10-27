@@ -1,0 +1,44 @@
+{
+  "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+  "instanceLabel": "ddk-verify1278-mcp",
+  "providerId": null,
+  "technology": "flexGateway",
+  "assetVersion": "0.1.0",
+  "productVersion": "v0.1",
+  "order": 1,
+  "stage": "release",
+  "audit": {
+    "created": {
+      "date": "2026-10-27T14:33:42.052Z"
+    },
+    "updated": {}
+  },
+  "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+  "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "id": 21259411,
+  "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "assetId": "ddk-verify1278-mcp",
+  "tags": [],
+  "endpoint": {
+    "deploymentType": "HY",
+    "isCloudHub": null,
+    "muleVersion4OrAbove": null,
+    "referencesUserDomain": null,
+    "responseTimeout": null,
+    "type": "mcp",
+    "uri": "http://host.docker.internal:8765/mcp/verify1278/",
+    "proxyUri": "http://0.0.0.0:8081/ddk-verify1278-mcp",
+    "validation": "NOT_APPLICABLE",
+    "audit": {
+      "created": {
+        "date": "2026-10-27T14:33:42.052Z"
+      },
+      "updated": {}
+    },
+    "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+    "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+    "id": 5660362,
+    "apiId": 21259411
+  },
+  "autodiscoveryInstanceName": "v0.1:21259411"
+}
