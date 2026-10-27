@@ -62,6 +62,7 @@ if TYPE_CHECKING:
         UpstreamModelError,
         UpstreamRequestError,
     )
+    from .core.identity import UserScope
     from .core.lastcall import LastCall, LastCallStatus
     from .core.reactions import OnRefusal, RefusalContext
     from .core.refusals import TypedRefusals
@@ -93,6 +94,7 @@ _LAZY = {
     "RequestWindow": ".core.budget",
     "UpstreamQuota": ".core.budget",
     "UpstreamWindow": ".core.budget",
+    "UserScope": ".core.identity",
     "CacheControls": ".core.cachecontrol",
     "CacheScope": ".core.cachecontrol",
     "ConfigError": ".core.errors",
@@ -242,6 +244,7 @@ __all__ = [
     "UpstreamQuota",
     "UpstreamRequestError",
     "UpstreamWindow",
+    "UserScope",
     "__version__",
     "classify",
     "registered_agents",

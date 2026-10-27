@@ -24,6 +24,7 @@ from contextlib import AsyncExitStack
 from .auth import AnypointConnectedApp, AuthProvider, EndpointCheckedAuth
 from .budget import Budget
 from .config import TOKEN_AUTH_MODES, DonkeyConfig
+from .identity import TokenExchange
 from .reactions import RefusalHandlers
 from .telemetry import configure_otlp_export
 from .transport import (
@@ -110,6 +111,10 @@ class Runtime:
         # Built only if someone asks for a blocking client, so the common async
         # path never opens a connection pool it will not use.
         self._sync_http: DonkeyClient | None = None
+        # The ``donkey.as_user(...)`` exchange and its control-plane client with
+        # no token provider (BG §2.4), built on the first ``as_user`` call.
+        self._exchange: TokenExchange | None = None
+        self._exchange_http: DonkeyAsyncClient | None = None
 
     @property
     def config(self) -> DonkeyConfig:
@@ -170,18 +175,28 @@ class Runtime:
             )
         return self._sync_http
 
+    def token_exchange(self) -> TokenExchange:
+        """The shared on-behalf-of token exchange (BG §2.4), built on first use."""
+        if self._exchange is None:
+            self._exchange_http = build_http_client(self._cfg, None, control_plane=True)
+            self._exchange = TokenExchange(self._cfg, http_client=self._exchange_http)
+        return self._exchange
+
     async def aclose(self) -> None:
         """Close every transport this runtime owns: the data-plane and
-        control-plane clients, the connected-app token-fetch client it built,
-        and the blocking client. Each one is closed even if an earlier close
+        control-plane clients, the connected-app token-fetch and token-exchange
+        clients it built, and the blocking client. Each one is closed even if an earlier close
         raises."""
         auth_http = self._owned_auth_http
         self._owned_auth_http = None
+        exchange_http, self._exchange_http, self._exchange = self._exchange_http, None, None
         async with AsyncExitStack() as stack:
             # Callbacks unwind last-in, first-out: data plane first, blocking last.
             stack.callback(self.close)
             if auth_http is not None:
                 stack.push_async_callback(auth_http.aclose)
+            if exchange_http is not None:
+                stack.push_async_callback(exchange_http.aclose)
             stack.push_async_callback(self._control_http.aclose)
             stack.push_async_callback(self._http.aclose)
 

@@ -11,6 +11,10 @@ case-insensitively.
 :func:`key_header_problem` lets it be a credential header such as ``x-api-key``
 and drops the ``X-`` rule. It still refuses the headers that carry the
 consumer's own credentials.
+
+``user_token_header`` names the header the ``donkey.as_user()`` token rides in
+(BG §2.4, #215), so :func:`user_token_header_problem` allows ``Authorization``
+and refuses the other consumer-credential headers.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ __all__ = [
     "SDK_HEADERS",
     "header_name_problem",
     "key_header_problem",
+    "user_token_header_problem",
 ]
 
 # RFC 9110 field-name token.
@@ -148,6 +153,23 @@ def key_header_problem(name: str) -> str | None:
     if (problem := _unsafe(name)) is not None:
         return problem
     lowered = name.lower()
+    if lowered in CONSUMER_AUTH_HEADERS:
+        return "it carries the consumer's own credentials"
+    if _sdk_set(lowered):
+        return "the SDK already sets it"
+    return None
+
+
+def user_token_header_problem(name: str) -> str | None:
+    """Why ``name`` can't carry the exchanged user token (``user_token_header``,
+    BG §2.4), or ``None`` if it can. ``Authorization`` is allowed; any other
+    header that carries the consumer's own credentials, routes or frames the
+    request, or that the SDK already sets is not."""
+    if (problem := _unsafe(name)) is not None:
+        return problem
+    lowered = name.lower()
+    if lowered == _verify.USER_TOKEN_HEADER.placeholder.lower():
+        return None
     if lowered in CONSUMER_AUTH_HEADERS:
         return "it carries the consumer's own credentials"
     if _sdk_set(lowered):

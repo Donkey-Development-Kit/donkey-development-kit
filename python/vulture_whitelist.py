@@ -57,6 +57,7 @@ limits  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 http2  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 _.discover  # unused method (src/donkey_kit/donkey.py)
 _.attribution  # unused method (src/donkey_kit/donkey.py): public API, #310
+_.as_user  # unused method (src/donkey_kit/donkey.py): public API, #215
 _.run_from_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
 _.correlation_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
 _.flush_telemetry  # unused method (src/donkey_kit/donkey.py): public API, #954

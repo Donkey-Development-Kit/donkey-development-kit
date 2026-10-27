@@ -42,6 +42,7 @@ from .core.classifier import classify as _classify
 from .core.config import ConfigOverrides, DonkeyConfig
 from .core.correlation import AttributionScope, attribution_scope
 from .core.cost import CostTags
+from .core.identity import UserScope
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.reactions import Duration, OnRefusal
 from .core.runtime import Runtime
@@ -712,6 +713,40 @@ class Donkey:
                 principal_id=principal_id,
             )
         )
+
+    def as_user(self, *, id_token: str) -> UserScope:
+        """Run the governed model calls in the block as the user behind
+        ``id_token``, not as this service (BG §2.4, #215).
+
+        Entering the block trades the user's OIDC ``id_token`` for a
+        gateway-scoped access token with an RFC 8693 token exchange, then every
+        data-plane call in the block carries that token::
+
+            async with donkey.as_user(id_token=request.id_token):
+                await agent.run(task)
+
+        The binding is a contextvar like :meth:`run`: it reaches the ``asyncio``
+        tasks the block spawns and never leaks into a concurrent task, and a
+        nested block restores the outer user on exit. Exchanged tokens are
+        cached per user until shortly before they expire. Control-plane calls
+        stay the service's own.
+
+        The exchange endpoint and the header the token rides in are UNVERIFIED
+        placeholders (docs/verified-apis.md §13): set ``token_exchange_path`` and
+        ``user_token_header`` to the values your gateway uses. The SDK forwards
+        the user's token and makes no authorisation decision of its own.
+
+        The same documented degradation as :meth:`run` applies (BG §1.8): a
+        ``connection_kwargs()``-only adapter that does not route through the
+        shared transport never sees the user.
+
+        Raises:
+            ConfigError: No connected-app credentials, or a config the exchange
+                can't run under (see ``TokenExchange.check``).
+            AuthError: On entry, when the exchange refuses the id_token or
+                returns a malformed response.
+        """
+        return UserScope(self._runtime.token_exchange(), id_token)
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
     # The overloads keep the decorated callable's own signature, for both the

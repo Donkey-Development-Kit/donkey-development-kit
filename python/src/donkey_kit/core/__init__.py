@@ -35,6 +35,7 @@ from .errors import (
     UpstreamModelError,
     UpstreamRequestError,
 )
+from .identity import UserScope
 from .lastcall import LastCall, LastCallStatus
 from .telemetry import (
     RunScope,
@@ -99,6 +100,7 @@ __all__ = [
     "UpstreamQuota",
     "UpstreamRequestError",
     "UpstreamWindow",
+    "UserScope",
     "attribution_headers",
     "build_http_client",
     "build_sync_http_client",

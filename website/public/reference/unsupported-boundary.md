@@ -28,7 +28,7 @@ would request it are listed in
 all of them are Roadmap in this release, so the token endpoint is contacted
 only if your own code calls `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
-before making a network request.
+before making a network request, except `donkey.as_user()`, described below.
 
 | Destination / contract | Module | Classification | SDK use and official docs |
 |---|---|---|---|
@@ -77,6 +77,12 @@ How each row was established (live capture, plugin test, and so on) is in the
   none of them today. If `expose` ships with them, they move to
   [Undocumented surfaces](#undocumented-surfaces) with a justification and an
   owner, unless a documented alternative is found first.
+- `donkey.as_user()` posts an RFC 8693 token exchange to the control-plane
+  host, then sends the exchanged token on model calls. Neither the exchange
+  path nor the header the gateway reads the token from is confirmed yet (see
+  the ledger, section 13). Both are placeholders that warn once and that you
+  override with `token_exchange_path` and `user_token_header`, so they are not
+  classified above. The exchange runs only when your code enters `as_user()`.
 - `LLMClient.list_models(live=True)` does not call `GET /models`: the Model
   Proxy has no model-catalog endpoint.
 - The application and business-group attribution header names are

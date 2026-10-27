@@ -257,12 +257,15 @@ def _default_text(value: object) -> str:
 
 def settings_index() -> str:
     """Every ``DonkeyConfig`` field from the field table, in its order."""
-    from donkey_kit.core import config
+    from donkey_kit.core import _verify, config
 
     defaults = {f.name: _default_text(f.default) for f in dataclasses.fields(config.DonkeyConfig)}
     # ``None`` on a header field means "send the built-in name", not "unset".
     defaults.update((key, f"`{name}`") for key, name in config._HEADER_KEYS)  # noqa: SLF001
     defaults["base_url"] = "from `region`"
+    # The ``as_user()`` placeholders (docs/verified-apis.md §13), read without warning.
+    defaults["token_exchange_path"] = f"`{_verify.TOKEN_EXCHANGE_PATH.placeholder}`"
+    defaults["user_token_header"] = f"`{_verify.USER_TOKEN_HEADER.placeholder}`"
     rows = [
         (
             f"`{spec.env}`",

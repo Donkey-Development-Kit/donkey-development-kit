@@ -24,6 +24,7 @@ from ..correlation import (
 )
 from ..cost import CostTags
 from ..endpoints import require_secure_url
+from ..identity import user_token_header
 from ..masking import SENSITIVE_NAMES, Secret, masked
 
 __all__ = [
@@ -205,10 +206,11 @@ def origin_of(url: str | httpx.URL) -> Origin | None:
 
 
 def credential_headers(cfg: DonkeyConfig) -> frozenset[str]:
-    """:data:`CREDENTIAL_HEADERS` plus ``cfg``'s provider-key header, if it names
-    one (#367): the lower-cased names a client strips off an unchecked origin."""
-    name = cfg.llm_proxy_key_header
-    return CREDENTIAL_HEADERS | {name.lower()} if name else CREDENTIAL_HEADERS
+    """:data:`CREDENTIAL_HEADERS` plus ``cfg``'s provider-key header (#367) and
+    user-token header (BG §2.4), where set: the lower-cased names a client
+    strips off an unchecked origin."""
+    names = (cfg.llm_proxy_key_header, cfg.user_token_header)
+    return CREDENTIAL_HEADERS | {name.lower() for name in names if name}
 
 
 def strip_credential_headers(
@@ -411,3 +413,18 @@ def _apply_auth(
         # Control plane: the OpenAI SDK is not in this path, so yield to any
         # call-site Authorization rather than clobber it.
         request.headers.setdefault(header, value)
+
+
+def _apply_user_token(cfg: DonkeyConfig, request: httpx.Request, token: str) -> None:
+    """Stamp the ``donkey.as_user(...)`` token (BG §2.4, #215) on a data-plane
+    request already cleared by the checked-endpoint guard, after :func:`_apply_auth`.
+
+    In ``Authorization`` (the placeholder default, docs/verified-apis.md §13) it
+    rides as a bearer and OVERRIDES what is there: in client-id mode that is the
+    OpenAI SDK's ``api_key`` sentinel, and yielding to it would send the call as
+    the service identity. A ``user_token_header`` override carries the raw token."""
+    header = user_token_header(cfg)
+    if header.lower() == _verify.LLM_PROXY_WALLET_JWT_HEADER.lower():
+        request.headers[header] = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
+    else:
+        request.headers[header] = token

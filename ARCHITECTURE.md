@@ -156,7 +156,7 @@ Beside it:
   (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
   level, plus the optional `opentelemetry` lazily.
 - **core is layered too:** `runtime` → `transport | approvals | inbound` → `budget | cache |
-  cachecontrol | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
+  cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
   `_policy_spec` → `errors` → `_refusal_body | lastcall | masking` → `_verify` →
   `_wire | _response | _budget_headers`.

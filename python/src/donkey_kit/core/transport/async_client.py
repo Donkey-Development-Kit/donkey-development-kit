@@ -15,11 +15,12 @@ from ..auth import AuthProvider
 from ..budget import Budget
 from ..config import DonkeyConfig
 from ..errors import PolicyViolation
+from ..identity import current_user
 from ..reactions import Invoke, ReactionRun, RefusalHandlers
 from ..telemetry import GenAiSpan, genai_span, start_genai_span
 from .failures import _no_attempts
 from .governed import GovernedTransport, _AsyncMountRouter, _LoopLocalTransport
-from .headers import Origin, _apply_auth, _apply_call_id_header
+from .headers import Origin, _apply_auth, _apply_call_id_header, _apply_user_token
 from .observe import _log_target, _observe_final
 from .pipeline import AsyncClientOptions, SendOptions, _GovernedPipeline
 from .policy import Finish, Retry, _request_model
@@ -152,6 +153,11 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
         provider = self._token_provider
         token = await provider.token() if provider is not None else None
         _apply_auth(self._cfg, request, token, control_plane=self._control_plane)
+        # The user bound by ``donkey.as_user(...)`` rides data-plane sends only
+        # (BG §2.4); the Anypoint platform calls stay the service's own.
+        user = current_user() if not self._control_plane else None
+        if user is not None:
+            _apply_user_token(self._cfg, request, await user.token())
 
     # --- lifecycle hooks (BG §1.1) ------------------------------------------
     # The *logical* per-``send()`` seams, distinct from the per-wire

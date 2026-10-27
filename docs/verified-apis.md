@@ -35,7 +35,8 @@
 > `UNVERIFIED`: any other unrecognised content-moderation shape (§4, the
 > fall-through; federated-guardrail verdicts are tracked in #305), and the **framework
 > constructor/binding names** (§§8–9; the §10 descriptor-derivation reads were
-> `VERIFIED (local capture)` on 2026-10-26, #1024). §11
+> `VERIFIED (local capture)` on 2026-10-26, #1024), and the on-behalf-of token
+> exchange behind `donkey.as_user()` (§13, #255). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
 > code path was wired to them.
@@ -101,6 +102,7 @@ its status here flips to `VERIFIED`.
   - [12.6 LLM proxy — how governance is actually wired](#126-llm-proxy--how-governance-is-actually-wired)
   - [12.7 Agent Network project format (dist/commands/agent-network/project/create.js, templates/)](#127-agent-network-project-format-distcommandsagent-networkprojectcreatejs-templates)
   - [12.8 Unblocking guidance (verification discipline)](#128-unblocking-guidance-verification-discipline)
+- [13. On-behalf-of token exchange (BG §2.4)](#13-on-behalf-of-token-exchange-bg-24)
 <!-- tocstop -->
 
 ## 1. Anypoint control plane
@@ -1276,3 +1278,18 @@ guard is removed. Ordered by confidence:
 3. **Do NOT unblock:** LLM data-plane (§2, §12.6) and §3 token-attribution
    header — the CLI does not exercise them; capturing them needs a deployed
    gateway, not static analysis.
+
+## 13. On-behalf-of token exchange (BG §2.4)
+
+`donkey.as_user(id_token=...)` (#215) trades a user's OIDC `id_token` for a
+gateway-scoped access token with an RFC 8693 token-exchange grant and stamps it
+on every data-plane request in the block. Nothing here has been observed
+against a live gateway; confirming both rows is #255. Until then each is an
+`Unverified` placeholder in `core/_verify.py`, warns once when read, and is
+overridable in config.
+
+| Item | Where used | Status | Verified value | Date | Source |
+|---|---|---|---|---|---|
+| Token-exchange endpoint path | `core/identity.py`, `core/_verify.py` `TOKEN_EXCHANGE_PATH`; override `token_exchange_path` / `DONKEY_TOKEN_EXCHANGE_PATH` | UNVERIFIED | — (placeholder: the verified OAuth2 token path, `POST /accounts/api/v2/oauth2/token` on the control-plane host, §1; form body `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `subject_token`, `subject_token_type=urn:ietf:params:oauth:token-type:id_token`, plus the connected-app `client_id` / `client_secret`; response `access_token`, `expires_in` per RFC 8693 §2.2) | — | — |
+| User-token request header | `core/transport/headers.py` `_apply_user_token`, `core/_verify.py` `USER_TOKEN_HEADER`; override `user_token_header` / `DONKEY_USER_TOKEN_HEADER` | UNVERIFIED | — (placeholder: `Authorization: Bearer <token>`, the header the Omni Gateway [OAuth 2.0 OBO Credential Injection policy](https://docs.mulesoft.com/gateway/latest/policies-outbound-oauth-obo) reads the incoming bearer from; a custom header carries the raw token) | — | — |
+| Exchange parameters beyond the subject token (`audience`, `resource`, `scope`, `requested_token_type`) | — | UNVERIFIED | — (none sent) | — | — |

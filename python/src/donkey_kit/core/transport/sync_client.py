@@ -12,11 +12,12 @@ from .. import spanflush
 from ..budget import Budget
 from ..config import TOKEN_AUTH_MODES, DonkeyConfig
 from ..errors import PolicyViolation
+from ..identity import current_user
 from ..reactions import Invoke, ReactionRun, RefusalHandlers
 from ..telemetry import GenAiSpan, genai_span, start_genai_span
 from .failures import _no_attempts, sync_token_auth_error
 from .governed import GovernedSyncTransport, _SyncMountRouter
-from .headers import Origin, _apply_auth, _apply_call_id_header
+from .headers import Origin, _apply_auth, _apply_call_id_header, _apply_user_token
 from .observe import _observe_final
 from .pipeline import ClientOptions, SendOptions, _GovernedPipeline
 from .policy import Finish, Retry, _request_model
@@ -110,6 +111,11 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
     def _inject_headers(self, request: httpx.Request) -> None:
         if self._stamp(request):
             _apply_auth(self._cfg, request, None, control_plane=False)
+            # Can't await an exchange: stamps the token ``donkey.as_user(...)``
+            # got on entry, and raises once it expires (BG §2.4).
+            user = current_user()
+            if user is not None:
+                _apply_user_token(self._cfg, request, user.cached_token())
 
     # --- lifecycle hooks (BG §1.1) ------------------------------------------
     # Blocking twins of the async seams; internal, not public API.
