@@ -1,0 +1,41 @@
+{
+  "capabilities": {
+    "streaming": false
+  },
+  "defaultInputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "description": "Triage support tickets into queues; throwaway asset for #1260, deleted right after.",
+  "name": "ddk-verify-1260-fixture",
+  "skills": [
+    {
+      "description": "triage",
+      "id": "triage",
+      "name": "triage",
+      "tags": [
+        "triage"
+      ]
+    },
+    {
+      "description": "draft-reply",
+      "id": "draft-reply",
+      "name": "draft-reply",
+      "tags": [
+        "draft-reply"
+      ]
+    }
+  ],
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0",
+      "url": "https://agents.example.invalid/support/"
+    }
+  ],
+  "version": "1.0.0"
+}

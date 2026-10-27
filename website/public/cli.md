@@ -91,6 +91,7 @@ donkey mock          # the local simulator — --scenario scripts failures
 donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
+donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
 ```
 
 ### Global flags
@@ -167,6 +168,15 @@ Global options go before the command (`donkey --json init`):
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
 | `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+
+`donkey publish`: Publish code-first assets to Exchange.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to publish. |
+| `--dry-run` | off | Print the assets and digests it would publish; no network call. |
+| `--if-changed` | on | Skip an asset whose latest published version has the same digest. |
+| `--json` | off | Emit the plan, or what was published, as JSON. |
 
 `donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
 
@@ -365,10 +375,13 @@ found 1 agent, 2 tools, 1 MCP server
   `[donkey.mcp_servers.<id>]` table in `.donkey-kit.toml`, never from code. A
   server without one is shown as `transport undeclared`, which is not an issue.
   See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
+- An agent's protocol and endpoint come the same way from a
+  `[donkey.agents.<name>]` table. See
+  [Declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
 - Issues cover a missing, tautological or too-short description, an invalid
   service ID or skill list, a service ID used twice, two tools with the same
   name on one server, a file that fails to parse, and an invalid
-  `[donkey.mcp_servers]` declaration. `donkey scan` exits `1`
+  `[donkey.mcp_servers]` or `[donkey.agents]` declaration. `donkey scan` exits `1`
   when it finds any of them, so it works as a CI gate, `0` when there are none,
   and `2` when the path does not exist.
 
@@ -381,16 +394,27 @@ line numbers, so moving code around does not change it.
 Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the model it builds is
 the input `donkey publish` reads.
 
+### `donkey publish`
+
+```bash
+donkey publish --dry-run .   # the assets a publish would register; no network call
+donkey publish .             # publish the MCP servers and agents that changed
+```
+
+Registers each MCP server and agent that `donkey scan` finds as an Exchange
+asset, in the group and at the version declared in `[donkey.publication]`. An
+asset whose latest published version has the same digest is left unchanged;
+one changed without a version bump is refused before anything is published. It reads
+the `ANYPOINT_*` control-plane credentials, and exits `0` when everything was
+published or left unchanged, `1` on an issue or a refused publish, and `2` on a
+missing path, invalid config or missing credentials. See
+[Scan & publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
+
 ## Planned commands Roadmap
 
 These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
-- `donkey publish` — register what `donkey scan` finds with Exchange. It
-  publishes MCP servers today, and `--dry-run` prints the plan without sending
-  anything. Agents are not published yet, so the command is hidden from
-  `donkey --help`. See
-  [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers).
 - `donkey serve` and `donkey expose` — serve your agent over A2A and expose it
   through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 

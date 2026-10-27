@@ -561,3 +561,99 @@ def test_an_unreadable_toml_is_an_issue(tmp_path: Path) -> None:
     result = scan(root)
 
     assert [(i.kind, i.path) for i in result.issues] == [("unreadable", ".donkey-kit.toml")]
+
+
+# How an agent is reached, and over which protocol, is declared the same way (#1260).
+
+AGENTS = """\
+    from donkey_kit import Donkey
+
+
+    @Donkey.agent(name="support-triage")
+    def handle(task):
+        \"\"\"Triage a support ticket into the right queue by its content.\"\"\"
+"""
+
+
+def _agent(result: ScanResult) -> tuple[str | None, str | None]:
+    (agent,) = result.agents
+    return agent.protocol, agent.endpoint
+
+
+def test_an_undeclared_agent_reports_no_protocol_and_no_issue(tmp_path: Path) -> None:
+    result = scan(_write(tmp_path, {"m.py": AGENTS}))
+
+    assert _agent(result) == (None, None)
+    assert result.issues == ()
+    data = json.loads(result.to_json())
+    assert (data["agents"][0]["protocol"], data["agents"][0]["endpoint"]) == (None, None)
+
+
+def test_declared_protocol_and_endpoint_are_read_and_digested(tmp_path: Path) -> None:
+    root = _write(tmp_path, {"m.py": AGENTS})
+    before = scan(root).digest()
+    (root / ".donkey-kit.toml").write_text(
+        '[donkey.agents.support-triage]\nprotocol = "a2a_v1"\n'
+        'endpoint = "https://agents.acme.com/support/"\n',
+        encoding="utf-8",
+    )
+    (root / ".donkey-kit.local.toml").write_text(
+        '[donkey.agents.support-triage]\nendpoint = "http://localhost:8000/"\n',
+        encoding="utf-8",
+    )
+    result = scan(root)
+
+    assert _agent(result) == ("a2a_v1", "http://localhost:8000/")
+    assert result.issues == ()
+    assert result.digest() != before
+
+
+@pytest.mark.parametrize(
+    ("entry", "kind", "detail"),
+    [
+        ('protocol = "a2a"', "invalid-protocol", "A2A 0.3"),
+        ('protocol = "mcp"', "invalid-protocol", "one of a2a_v1, other"),
+        ('protocol = "other"\nendpoint = "agents.acme.com"', "invalid-endpoint", "http or https"),
+        ('protocol = "a2a_v1"', "invalid-agent", "needs an endpoint"),
+        ("port = 8080", "invalid-agent", "unknown key 'port'"),
+    ],
+)
+def test_invalid_agent_declarations_are_issues_not_guesses(
+    tmp_path: Path, entry: str, kind: str, detail: str
+) -> None:
+    root = _write(
+        tmp_path,
+        {"m.py": AGENTS, ".donkey-kit.toml": f"[donkey.agents.support-triage]\n{entry}\n"},
+    )
+    result = scan(root)
+
+    (issue,) = result.issues
+    assert (issue.kind, issue.subject, issue.path, issue.line) == (
+        kind,
+        "agent support-triage",
+        ".donkey-kit.toml",
+        0,
+    )
+    assert detail in issue.detail
+    assert _agent(result)[1] is None
+
+
+@pytest.mark.parametrize(
+    ("toml", "kind", "subject"),
+    [
+        (
+            '[donkey.agents.support-triag]\nprotocol = "other"\n',
+            "unknown-agent",
+            "agent support-triag",
+        ),
+        ('[donkey]\nagents = "support-triage"\n', "invalid-agent", "donkey.agents"),
+        ('[donkey.agents]\nsupport-triage = "a2a_v1"\n', "invalid-agent", "agent support-triage"),
+    ],
+)
+def test_a_malformed_or_unknown_agent_table_is_an_issue(
+    tmp_path: Path, toml: str, kind: str, subject: str
+) -> None:
+    result = scan(_write(tmp_path, {"m.py": AGENTS, ".donkey-kit.toml": toml}))
+
+    assert [(i.kind, i.subject) for i in result.issues] == [(kind, subject)]
+    assert _agent(result) == (None, None)

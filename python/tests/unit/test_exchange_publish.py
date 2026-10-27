@@ -19,6 +19,8 @@ from donkey_kit.core.runtime import Runtime
 from donkey_kit.registry.exchange_page import PageSource
 from donkey_kit.registry.exchange_publish import (
     PublishOutcome,
+    agent_card,
+    agent_metadata,
     latest_version,
     mcp_metadata,
     publish_plan,
@@ -27,6 +29,8 @@ from donkey_kit.registry.publish_plan import PublishPlan, plan_publication
 from donkey_kit.registry.scan import ScanResult, scan
 
 ASSET = "sku-manager"
+AGENT = "pricing-agent"
+AGENT_ENDPOINT = "https://agents.example.invalid/pricing/"
 
 SOURCE = '''\
 from donkey_kit import Donkey
@@ -39,7 +43,7 @@ def lookup_sku(sku: str, limit: int, filters: "Filters") -> dict:
     """{description}"""
 
 
-@donkey.agent(name="pricing-agent")
+@donkey.agent(name="pricing-agent", skills=["quote", "discount"])
 def pricing() -> None:
     """Answers pricing questions for the store."""
 '''
@@ -56,11 +60,13 @@ def repo(tmp_path: Path) -> Repo:
         description: str = DESCRIPTION,
         mcp_server: str = 'transport = "streamable-http"\nendpoint = "https://sku.example.invalid/mcp"\n',
         publication: str = "",
+        agent: str = f'protocol = "a2a_v1"\nendpoint = "{AGENT_ENDPOINT}"\n',
     ) -> tuple[PublishPlan, ScanResult]:
         (tmp_path / "app.py").write_text(SOURCE.format(description=description), encoding="utf-8")
         (tmp_path / ".donkey-kit.toml").write_text(
             f'[donkey.publication]\nversion = "{version}"\n{publication}\n'
-            f"[donkey.mcp_servers.{ASSET}]\n{mcp_server}",
+            f"[donkey.mcp_servers.{ASSET}]\n{mcp_server}\n"
+            f"[donkey.agents.{AGENT}]\n{agent}",
             encoding="utf-8",
         )
         result = scan(tmp_path)
@@ -96,8 +102,12 @@ async def _publish(
     return {o.asset.service_id: o for o in outcomes}
 
 
-def _publishes(exchange: FakeExchange) -> list[httpx.Request]:
-    return [r for r in exchange.requests if "/organizations/" in r.url.path]
+def _publishes(exchange: FakeExchange, asset: str = ASSET) -> list[httpx.Request]:
+    return [
+        r
+        for r in exchange.requests
+        if "/organizations/" in r.url.path and f"/{asset}/" in r.url.path
+    ]
 
 
 async def test_first_publish_sends_the_digest_metadata_and_endpoint(
@@ -111,7 +121,7 @@ async def test_first_publish_sends_the_digest_metadata_and_endpoint(
     published = exchange.assets[(ORG, ASSET)]["1.0.0"]
     assert published.digest == built[0].assets[1].digest
     assert published.metadata == mcp_metadata(built[0].assets[1], built[1])
-    assert exchange.instances == {(ORG, ASSET, "v1.0"): ["https://sku.example.invalid/mcp"]}
+    assert exchange.instances[(ORG, ASSET, "v1.0")] == ["https://sku.example.invalid/mcp"]
     (request,) = _publishes(exchange)
     assert request.url.path == f"/exchange/api/v2/organizations/{ORG}/assets/{ORG}/{ASSET}/1.0.0"
 
@@ -225,7 +235,7 @@ async def test_a_new_version_with_new_content_is_published_and_keeps_one_endpoin
     outcomes = await _publish(http, repo(version="1.0.1", description="Look up a SKU's stock."))
 
     assert outcomes[ASSET].status == "published"
-    assert exchange.instances == {(ORG, ASSET, "v1.0"): ["https://sku.example.invalid/mcp"]}
+    assert exchange.instances[(ORG, ASSET, "v1.0")] == ["https://sku.example.invalid/mcp"]
 
 
 @pytest.mark.parametrize("version", ["1.0.0", "0.9.0"])
@@ -270,7 +280,7 @@ async def test_a_409_is_fine_only_when_the_version_has_this_digest(
     def racing(request: httpx.Request) -> httpx.Response:
         # The version appears between the read and the publish, as when an
         # earlier attempt of this request landed before a retry.
-        if "/organizations/" in request.url.path:
+        if "/organizations/" in request.url.path and f"/{ASSET}/" in request.url.path:
             exchange.publish(ORG, ASSET, "1.0.0", digest)
         return handle(request)
 
@@ -367,7 +377,7 @@ async def test_a_new_version_gets_its_page(
     assert page.startswith(f"# {ASSET}\n")
     assert "### lookup_sku" in page
     assert "https://github.example.invalid/acme/sku/commit/" + "a" * 40 in page
-    drafts = [r for r in exchange.requests if "/portal/draft" in r.url.path]
+    drafts = [r for r in exchange.requests if f"/{ASSET}/1.0.0/portal/draft" in r.url.path]
     assert [r.method for r in drafts] == ["GET", "POST", "PUT"]
 
 
@@ -403,14 +413,129 @@ async def test_a_refused_page_is_a_registry_error(
         await _publish(http, repo())
 
 
-async def test_agents_are_skipped_with_a_reason(
+async def test_an_a2a_agent_is_published_with_its_metadata_card_and_endpoint(
     repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
 ) -> None:
-    outcomes = await _publish(http, repo())
+    plan, result = repo()
 
-    assert outcomes["pricing-agent"].status == "skipped"
-    assert "agent assets are not published yet" in outcomes["pricing-agent"].detail
-    assert all(ASSET in r.url.path for r in _publishes(exchange))
+    outcomes = await _publish(http, (plan, result))
+
+    assert outcomes[AGENT].status == "published"
+    planned = plan.assets[0]
+    published = exchange.assets[(ORG, AGENT)]["1.0.0"]
+    assert published.type == "agent"
+    assert published.digest == planned.digest
+    assert published.metadata == agent_metadata(planned)
+    assert published.files["files.a2a-v1-card.json"] == agent_card(planned, result)
+    assert set(published.files) == {"files.agent-metadata.json", "files.a2a-v1-card.json"}
+    assert (published.fields["properties.protocol"], published.fields["properties.platform"]) == (
+        "a2a_v1",
+        "other",
+    )
+    assert exchange.instances[(ORG, AGENT, "v1.0")] == [AGENT_ENDPOINT]
+    page = exchange.pages[(ORG, AGENT, "1.0.0")]
+    assert "## Skills" in page and "- quote" in page and "**Protocol:** a2a_v1" in page
+
+
+async def test_an_undeclared_agent_is_published_as_other_without_a_card(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo(agent=""))
+
+    published = exchange.assets[(ORG, AGENT)]["1.0.0"]
+    assert set(published.files) == {"files.agent-metadata.json"}
+    assert published.metadata["protocol"] == "other"
+    assert published.fields["properties.protocol"] == "other"
+    assert (ORG, AGENT, "v1.0") not in exchange.instances
+
+
+async def test_a_rerun_publishes_no_agent_and_new_agent_content_needs_a_bump(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo())
+
+    rerun = await _publish(http, repo())
+    assert rerun[AGENT].status == "unchanged"
+    with pytest.raises(RegistryError, match=f"{AGENT}:1.0.0 is already published") as err:
+        await _publish(http, repo(agent='protocol = "other"\n'))
+
+    assert "Bump the version" in err.value.remediation
+    assert len(_publishes(exchange, AGENT)) == 1
+
+
+def test_agent_metadata_has_the_plugins_shape(repo: Repo) -> None:
+    plan, _ = repo()
+
+    assert agent_metadata(plan.assets[0]) == {
+        "protocol": "a2a_v1",
+        "platform": "other",
+        "kind": "agent",
+        "name": AGENT,
+        "description": "Answers pricing questions for the store.",
+        "connections": [],
+        "provenance": {"id": f"urn:gav:{ORG}:{AGENT}:1.0.0"},
+    }
+
+
+def test_the_published_card_is_the_card_donkey_serve_serves(repo: Repo) -> None:
+    pytest.importorskip("a2a")
+    from starlette.testclient import TestClient
+
+    from donkey_kit.a2a import build_app
+
+    plan, result = repo()
+    namespace: dict[str, object] = {}
+    exec(SOURCE.format(description=DESCRIPTION), namespace)  # the scanned module, run
+    app = build_app(namespace["pricing"], url=AGENT_ENDPOINT, version="1.0.0")  # type: ignore[arg-type]
+
+    with TestClient(app) as client:  # type: ignore[arg-type]
+        served = client.get("/.well-known/agent-card.json").json()
+
+    assert agent_card(plan.assets[0], result) == served
+
+
+def test_exchange_stores_the_metadata_and_card_as_built(tmp_path: Path) -> None:
+    # The repo the agent.* fixtures were published from (#1260), scrubbed the same way.
+    from _fake_exchange import fixture
+
+    (tmp_path / "app.py").write_text(
+        "from donkey_kit import Donkey\n\ndonkey = Donkey.from_env()\n\n\n"
+        '@donkey.agent(name="ddk-verify-1260-fixture", skills=["triage", "draft-reply"])\n'
+        "def handle(task):\n"
+        '    """Triage support tickets into queues; throwaway asset for #1260, deleted right'
+        ' after."""\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".donkey-kit.toml").write_text(
+        '[donkey.publication]\nversion = "1.0.0"\n\n'
+        "[donkey.agents.ddk-verify-1260-fixture]\n"
+        'protocol = "a2a_v1"\nendpoint = "https://agents.example.invalid/support/"\n',
+        encoding="utf-8",
+    )
+    result = scan(tmp_path)
+    (asset,) = plan_publication(result, tmp_path, default_group_id=ORG).assets
+
+    assert agent_metadata(asset) == json.loads(fixture("agent.agent-metadata.stored.json"))
+    assert agent_card(asset, result) == json.loads(fixture("agent.a2a-v1-card.stored.json"))
+
+
+async def test_an_agents_digest_is_read_back_from_its_pom(
+    exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    exchange.publish(ORG, AGENT, "1.0.0", "sha256:" + "3" * 64, kind="agent")
+
+    latest = await latest_version(http, ORG, AGENT, base_url=BASE_URL)
+
+    assert latest is not None and latest.digest == "sha256:" + "3" * 64
+
+
+def test_an_a2a_card_needs_an_endpoint(repo: Repo) -> None:
+    from dataclasses import replace
+
+    plan, result = repo()
+
+    with pytest.raises(ValueError, match="no endpoint"):
+        agent_card(replace(plan.assets[0], endpoint=None), result)
 
 
 async def test_a_plan_with_issues_is_refused(
@@ -493,3 +618,10 @@ def test_the_captured_bodies_are_the_shapes_the_publisher_reads() -> None:
     assert absent["errors"][0]["extensions"]["status"] == 404
     assert "<ddkDigest>sha256:" in fixture("pom.xml")
     assert json.loads(fixture("publish.409.json"))["code"] == "ASSET_PRE_CONDITIONS_FAILED"
+    agent = json.loads(fixture("agent.graphql.latest.json"))["data"]["asset"]
+    classifiers = {(f["classifier"], f["packaging"]) for f in agent["files"]}
+    assert {("agent-metadata", "json"), ("a2a-v1-card", "json"), (None, "pom")} <= classifiers
+    assert json.loads(fixture("agent.publish.201.json"))["type"] == "agent"
+    pom = fixture("agent.pom.xml")
+    assert "<type>agent</type>" in pom and "<protocol>a2a_v1</protocol>" in pom
+    assert "<ddkDigest>sha256:" in pom

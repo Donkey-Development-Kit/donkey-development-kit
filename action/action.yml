@@ -52,7 +52,7 @@ outputs:
     description: How many assets were left unchanged.
     value: ${{ steps.publish.outputs.unchanged }}
   skipped:
-    description: How many assets were skipped (agents, for now).
+    description: "Always 0: every asset is published or left unchanged since agents are published too (#1260). Kept so workflows that read it keep working."
     value: ${{ steps.publish.outputs.skipped }}
   result:
     description: The path of the JSON that donkey publish --json printed.

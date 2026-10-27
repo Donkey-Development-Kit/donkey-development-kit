@@ -1,9 +1,9 @@
 """The CLI's command set after the legacy quarantine (#730, ADR 0008 in docs/adr/).
 
-Six commands are visible: ``init``, ``doctor``, ``mock``, ``dev``, ``test`` and ``scan``
-(#217). Three are hidden: ``publish`` (#218, ``test_cli_publish.py``), and
-``status`` and ``verify`` (BG §2.5), which are verification-blocked and exit 3
-with a ``blocked on verification`` message (§0.3). The
+Seven commands are visible: ``init``, ``doctor``, ``mock``, ``dev``, ``test``, ``scan``
+(#217) and ``publish`` (#218, unhidden by #1260, ``test_cli_publish.py``). Two are
+hidden: ``status`` and ``verify`` (BG §2.5), which are verification-blocked and
+exit 3 with a ``blocked on verification`` message (§0.3). The
 refused provisioning control plane's commands were removed, so typer rejects
 them as unknown (exit 2), not as blocked (exit 3).
 """
@@ -19,18 +19,18 @@ from donkey_kit.cli import app
 runner = CliRunner()
 
 
-def test_visible_commands_are_init_doctor_mock_dev_test_scan() -> None:
+def test_visible_commands_are_init_doctor_mock_dev_test_scan_publish() -> None:
     commands = typer.main.get_command(app).commands
     visible = {name for name, command in commands.items() if not command.hidden}
 
-    assert visible == {"init", "doctor", "mock", "dev", "test", "scan"}
+    assert visible == {"init", "doctor", "mock", "dev", "test", "scan", "publish"}
 
 
-def test_hidden_commands_are_publish_and_the_blocked_platform_ones() -> None:
+def test_hidden_commands_are_the_blocked_platform_ones() -> None:
     commands = typer.main.get_command(app).commands
     hidden = {name for name, command in commands.items() if command.hidden}
 
-    assert hidden == {"status", "publish", "verify"}
+    assert hidden == {"status", "verify"}
 
 
 @pytest.mark.parametrize("command", ["status", "verify"])

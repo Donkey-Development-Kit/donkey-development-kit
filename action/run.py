@@ -7,8 +7,9 @@ sets them in its own ``env:`` still works), and runs
 ``donkey --json publish``. Then it writes:
 
 * a table of the assets to the job summary (``GITHUB_STEP_SUMMARY``);
-* the ``published``, ``unchanged`` and ``skipped`` counts, and the path of the
-  JSON result, to the step's outputs (``GITHUB_OUTPUT``);
+* the ``published``, ``unchanged`` and ``skipped`` counts (``skipped`` is always
+  0 now that agents are published, #1260), and the path of the JSON result, to
+  the step's outputs (``GITHUB_OUTPUT``);
 * each error line donkey printed as an ``::error::`` annotation when it fails.
 
 It exits with donkey's exit code. Standard library only: it runs before

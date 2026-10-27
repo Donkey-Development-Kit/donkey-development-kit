@@ -3,7 +3,8 @@
 It answers the calls the publisher makes (the multipart publish, the GraphQL
 ``asset`` query, the POM download, the external-instance POST, the portal
 draft, page and draft-publish calls, and the asset PATCH) by replaying the
-bodies captured in ``tests/fixtures/anypoint/exchange_publish/``, with the
+bodies captured in ``tests/fixtures/anypoint/exchange_publish/`` (an ``agent``
+asset's GraphQL and POM from its own ``agent.*`` captures, #1260), with the
 version, digest, name, description, instances and pages of what has been
 published so far. As Exchange does, an asset keeps the name and description of
 its first version until the asset PATCH changes them.
@@ -32,8 +33,14 @@ def fixture(name: str) -> str:
 
 @dataclass
 class Published:
+    """A published version: its digest, its ``mcp-metadata`` or ``agent-metadata``
+    file, and, for one published through the fake, every file and form field."""
+
     digest: str | None
     metadata: dict[str, Any]
+    type: str = "mcp"
+    files: dict[str, Any] = field(default_factory=dict)
+    fields: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -65,9 +72,10 @@ class FakeExchange:
         *,
         name: str | None = None,
         description: str = "",
+        kind: str = "mcp",
     ) -> None:
         self.details.setdefault((group, asset), {"name": name or asset, "description": description})
-        self.assets.setdefault((group, asset), {})[version] = Published(digest, {})
+        self.assets.setdefault((group, asset), {})[version] = Published(digest, {}, kind)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -147,14 +155,21 @@ class FakeExchange:
         if version in self.assets.get((group, asset), {}):
             return httpx.Response(409, text=fixture("publish.409.json"))
         fields, files = _multipart(request)
-        assert fields["type"] == "mcp"
+        kind = fields["type"]
+        assert kind in ("mcp", "agent")
         self.details.setdefault(
             (group, asset), {"name": fields["name"], "description": fields["description"]}
         )
+        parsed = {name: json.loads(body) for name, body in files.items()}
         self.assets.setdefault((group, asset), {})[version] = Published(
-            fields.get("properties.ddkDigest"), json.loads(files["files.mcp-metadata.json"])
+            fields.get("properties.ddkDigest"),
+            parsed[f"files.{kind}-metadata.json"],
+            kind,
+            parsed,
+            fields,
         )
-        return httpx.Response(201, text=fixture("publish.201.json"))
+        prefix = "agent." if kind == "agent" else ""
+        return httpx.Response(201, text=fixture(f"{prefix}publish.201.json"))
 
     def _graphql(self, body: dict[str, Any]) -> httpx.Response:
         variables = body["variables"]
@@ -164,7 +179,9 @@ class FakeExchange:
         version = variables.get("version") or list(versions)[-1]
         if version not in versions:
             return httpx.Response(200, text=fixture("graphql.absent.json"))
-        data = json.loads(fixture("graphql.latest.json"))
+        published = versions[version]
+        prefix = "agent." if published.type == "agent" else ""
+        data = json.loads(fixture(f"{prefix}graphql.latest.json"))
         asset = data["data"]["asset"]
         group_name = "v" + ".".join(version.split(".")[:2])
         asset["version"], asset["versionGroup"] = version, group_name
@@ -183,7 +200,7 @@ class FakeExchange:
         assert "authorization" not in request.headers
         q = request.url.params
         published = self.assets[(q["g"], q["a"])][q["v"]]
-        pom = fixture("pom.xml")
+        pom = fixture("agent.pom.xml" if published.type == "agent" else "pom.xml")
         if published.digest is None:
             pom = re.sub(r"\s*<ddkDigest>.*</ddkDigest>", "", pom)
         else:
