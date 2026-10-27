@@ -7531,27 +7531,43 @@ Exchange coordinates aren't in your code, so you declare them in a
 [donkey.publication]
 version  = "1.3.0"     # required, a semantic version
 group_id = "acme"      # optional: defaults to your org_id (ANYPOINT_ORG_ID)
+protocol_version = "2025-06-18"                                       # optional
+provider = { organization = "Acme HR", url = "https://hr.acme.example" }  # optional
 
 [donkey.publication.assets.hr-tools]   # a service ID; every key is optional
 asset_id    = "hr-tools-mcp"           # default: the service ID
 name        = "HR Tools"               # default: the service ID
 description = "Look up employees and their managers."
 version     = "1.4.0"                  # default: the table's version
+documentation = "docs/hr-tools.md"     # Markdown that opens the asset's page
+# protocol_version and provider can be set here too, overriding the table's
 ```
 
 - An MCP server has no description in code, so give it one here. An agent
-  defaults to its own description.
+  defaults to its own description. Exchange and Agent Fabric show the name as
+  the asset's title and the description under it.
+- `protocol_version` is the MCP protocol revision your server speaks:
+  `2024-11-05`, `2025-03-26`, `2025-06-18` or `2025-11-25`. `provider` is who
+  provides it, with both `organization` and `url`. Agent Fabric shows them as
+  the asset's protocol version and provider; without `provider` it shows
+  "Other".
+- `documentation` is a Markdown file, relative to the scanned directory and
+  inside it. Its content opens the asset's page (see below).
 - A `.donkey-kit.local.toml` beside it overrides the project file key by key,
   as for `[donkey.mcp_servers]`.
 - The digest covers what would be published for that asset: its tools, their
-  descriptions and parameters, how the server is reached, and the asset's name
-  and description. It leaves out file paths, line numbers and the version, so
+  descriptions and parameters, how the server is reached, the asset's name and
+  description, and the protocol version, provider and documentation content
+  when you set them. Editing the documentation file is a change, so it needs a
+  new version. The digest leaves out file paths, line numbers and the version, so
   moving code or bumping the version alone does not look like a change.
 
 The dry run exits `1` on any issue, so CI can run it on every pull request:
 every issue `donkey scan` reports, plus a missing group ID or version, a
-version that isn't semantic, an unknown key, or an `assets` table for a
-service ID your code doesn't define.
+version that isn't semantic, an unknown key, a protocol version or provider
+the metadata can't carry, a documentation file that is missing or outside the
+scanned directory, or an `assets` table for a service ID your code doesn't
+define.
 
 ## Publishing MCP servers
 
@@ -7574,13 +7590,23 @@ Each asset is published with:
 - its name and description,
 - the digest, stored with the asset so the next run can compare it,
 - an `mcp-metadata` file: the transport, the tools with their descriptions and
-  an input schema from their parameters, and the asset's coordinates. A
+  an input schema from their parameters, the capabilities (tools, and no
+  resources, prompts or logging, since scan sees only tools), the protocol
+  version and provider you declared, and the asset's coordinates. A
   parameter annotated `str`, `int`, `float`, `bool`, `list` or `dict` gets that
   JSON Schema type; any other parameter accepts any value. No parameter is
   marked required, because scan does not record defaults.
 - the endpoint you declared in `[donkey.mcp_servers]`, if any, registered as an
   external instance. Exchange keeps instances per minor version, so a new patch
   version reuses the existing one.
+- a Home page, generated in Markdown. Agent Fabric shows it as the asset's
+  Documentation section. It has the name and description, your
+  `documentation` file, each tool with its description and a table of its
+  parameters, how to connect (transport, endpoint, protocol version), and
+  provenance: the asset ID and version, the content digest and, when the
+  publish runs in GitHub Actions, the repository, the commit and a link to the
+  run. It never includes credentials or your org ID. Only a new version gets a
+  page; an unchanged asset keeps the one it has.
 
 A publish is safe to repeat:
 
@@ -13314,7 +13340,9 @@ Two tables in these files are not `DonkeyConfig` fields, and
   files. See
   [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - `[donkey.publication]` declares the Exchange group ID, asset IDs and version
-  to publish under. `donkey publish` reads it from the same two files. See
+  to publish under, and each asset's name, description, MCP protocol version,
+  provider and documentation file. `donkey publish` reads it from the same two
+  files. See
   [Planning a publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named

@@ -11,7 +11,9 @@ one, else the working directory's).
 asset is published over the control plane (see
 :mod:`donkey_kit.registry.exchange_publish`): with ``--if-changed``, the
 default, an asset whose latest published version has the same digest is left
-alone. Agents are listed as skipped; publishing them is not supported yet.
+alone. Each new version also gets a generated Exchange page; under GitHub
+Actions it links the repository, commit and run it was published from.
+Agents are listed as skipped; publishing them is not supported yet.
 
 ``--json`` prints the plan as JSON; after a publish, each asset also carries
 the ``status`` (``published``, ``unchanged`` or ``skipped``) and ``detail`` of
@@ -26,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import typer
@@ -33,6 +36,7 @@ import typer
 from ..core.config import TOML_NAME, DonkeyConfig
 from ..core.errors import ConfigError, DonkeyError
 from ..core.runtime import Runtime
+from ..registry.exchange_page import PageSource
 from ..registry.exchange_publish import PublishOutcome, publish_plan
 from ..registry.publish_plan import PublishPlan, plan_publication
 from ..registry.scan import ScanResult
@@ -120,9 +124,26 @@ async def _publish(
             base_url=cfg.control_plane_url,
             org_id=cfg.org_id,
             if_changed=if_changed,
+            source=_ci_source(),
         )
     finally:
         await runtime.aclose()
+
+
+def _ci_source() -> PageSource | None:
+    """Where this publish runs from, from the GitHub Actions environment."""
+    env = os.environ
+    if env.get("GITHUB_ACTIONS") != "true":
+        return None
+    server, repository = env.get("GITHUB_SERVER_URL"), env.get("GITHUB_REPOSITORY")
+    repository_url = f"{server}/{repository}" if server and repository else None
+    run_id = env.get("GITHUB_RUN_ID")
+    return PageSource(
+        repository_url=repository_url,
+        commit=env.get("GITHUB_SHA") or None,
+        ref=env.get("GITHUB_REF_NAME") or None,
+        run_url=f"{repository_url}/actions/runs/{run_id}" if repository_url and run_id else None,
+    )
 
 
 def _outcomes_json(plan: PublishPlan, outcomes: tuple[PublishOutcome, ...]) -> str:

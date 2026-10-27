@@ -8,7 +8,9 @@ themselves, may record a status or a date.
 
 Rejected outside ``_verify.py``:
 
-* an ISO date (``2026-09-22``) — a verification date belongs in the ledger;
+* an ISO date (``2026-09-22``) — a verification date belongs in the ledger. A
+  date that is a whole string literal (``"2025-06-18"``, an MCP protocol
+  revision) is a value, not a claim, and passes;
 * ``LIVE-VERIFIED`` / ``live-verified`` / ``verified live``;
 * a ledger status label: ``VERIFIED (LIVE)``, ``VERIFIED (plugin)``,
   ``VERIFIED-NEGATIVE``, ``VERIFIED-SHAPE-ONLY``, … and ``(LIVE, …)``.
@@ -31,7 +33,7 @@ _DEFAULT_ROOT = Path(__file__).resolve().parents[1] / "src" / "donkey_kit"
 _ALLOWED = Path("core") / "_verify.py"
 
 _CLAIMS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("dated claim", re.compile(r"\b20\d\d-\d\d-\d\d\b")),
+    ("dated claim", re.compile(r"(?<![\"'])\b20\d\d-\d\d-\d\d\b(?![\"'])")),
     ("LIVE-verified claim", re.compile(r"\blive[- ]verified\b|\bverified[- ]live\b", re.I)),
     ("ledger status label", re.compile(r"\bVERIFIED(?: \(|-NEGATIVE\b|-SHAPE-ONLY\b)|\(LIVE\b")),
 )

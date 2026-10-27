@@ -16,6 +16,7 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import RegistryError
 from donkey_kit.core.runtime import Runtime
+from donkey_kit.registry.exchange_page import PageSource
 from donkey_kit.registry.exchange_publish import (
     PublishOutcome,
     latest_version,
@@ -54,10 +55,11 @@ def repo(tmp_path: Path) -> Repo:
         version: str = "1.0.0",
         description: str = DESCRIPTION,
         mcp_server: str = 'transport = "streamable-http"\nendpoint = "https://sku.example.invalid/mcp"\n',
+        publication: str = "",
     ) -> tuple[PublishPlan, ScanResult]:
         (tmp_path / "app.py").write_text(SOURCE.format(description=description), encoding="utf-8")
         (tmp_path / ".donkey-kit.toml").write_text(
-            f'[donkey.publication]\nversion = "{version}"\n\n'
+            f'[donkey.publication]\nversion = "{version}"\n{publication}\n'
             f"[donkey.mcp_servers.{ASSET}]\n{mcp_server}",
             encoding="utf-8",
         )
@@ -81,11 +83,15 @@ async def http(exchange: FakeExchange) -> AsyncIterator[httpx.AsyncClient]:
 
 
 async def _publish(
-    http: httpx.AsyncClient, built: tuple[PublishPlan, ScanResult], *, if_changed: bool = True
+    http: httpx.AsyncClient,
+    built: tuple[PublishPlan, ScanResult],
+    *,
+    if_changed: bool = True,
+    source: PageSource | None = None,
 ) -> dict[str, PublishOutcome]:
     plan, result = built
     outcomes = await publish_plan(
-        plan, result, http, base_url=BASE_URL, org_id=ORG, if_changed=if_changed
+        plan, result, http, base_url=BASE_URL, org_id=ORG, if_changed=if_changed, source=source
     )
     return {o.asset.service_id: o for o in outcomes}
 
@@ -144,8 +150,29 @@ def test_mcp_metadata_has_the_plugins_shape(repo: Repo) -> None:
                 },
             }
         ],
+        "capabilities": {"tools": True, "resources": False, "prompts": False, "logging": False},
         "provenance": {"id": f"urn:gav:{ORG}:{ASSET}:1.0.0"},
     }
+
+
+def test_mcp_metadata_carries_the_declared_protocol_version_and_provider(repo: Repo) -> None:
+    plan, result = repo(
+        publication='protocol_version = "2025-06-18"\n'
+        'provider = { organization = "Acme", url = "https://acme.example.invalid" }\n'
+    )
+
+    metadata = mcp_metadata(plan.assets[1], result)
+
+    assert metadata["protocolVersion"] == "2025-06-18"
+    assert metadata["provider"] == {"organization": "Acme", "url": "https://acme.example.invalid"}
+
+
+def test_mcp_metadata_leaves_out_what_is_undeclared(repo: Repo) -> None:
+    plan, result = repo()
+
+    metadata = mcp_metadata(plan.assets[1], result)
+
+    assert "protocolVersion" not in metadata and "provider" not in metadata
 
 
 @pytest.mark.parametrize(
@@ -254,6 +281,53 @@ async def test_a_409_is_fine_only_when_the_version_has_this_digest(
     else:
         with pytest.raises(RegistryError, match="already published"):
             await _publish(http, built)
+
+
+async def test_a_new_version_gets_its_page(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    source = PageSource(repository_url="https://github.example.invalid/acme/sku", commit="a" * 40)
+
+    await _publish(http, repo(), source=source)
+
+    page = exchange.pages[(ORG, ASSET, "1.0.0")]
+    assert page.startswith(f"# {ASSET}\n")
+    assert "### lookup_sku" in page
+    assert "https://github.example.invalid/acme/sku/commit/" + "a" * 40 in page
+    drafts = [r for r in exchange.requests if "/portal/draft" in r.url.path]
+    assert [r.method for r in drafts] == ["GET", "POST", "PUT"]
+
+
+async def test_an_unchanged_asset_keeps_its_page(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo())
+    before = len(exchange.requests)
+
+    await _publish(http, repo())
+
+    assert not any("/portal/" in r.url.path for r in exchange.requests[before:])
+
+
+async def test_a_page_that_exists_already_is_rewritten(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    exchange.publish(ORG, ASSET, "0.9.0", None)
+    exchange.pages[(ORG, ASSET, "1.0.0")] = "stale"
+    built = repo()
+
+    await _publish(http, built)
+
+    assert exchange.pages[(ORG, ASSET, "1.0.0")].startswith(f"# {ASSET}\n")
+
+
+async def test_a_refused_page_is_a_registry_error(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    exchange.fail_pages = True
+
+    with pytest.raises(RegistryError, match="writing the page of"):
+        await _publish(http, repo())
 
 
 async def test_agents_are_skipped_with_a_reason(

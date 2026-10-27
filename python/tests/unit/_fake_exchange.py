@@ -1,9 +1,10 @@
 """A stateful fake Exchange for ``donkey publish`` tests (#218).
 
-It answers the four calls the publisher makes (the multipart publish, the
-GraphQL ``asset`` query, the POM download and the external-instance POST) by
-replaying the bodies captured in ``tests/fixtures/anypoint/exchange_publish/``,
-with the version, digest and instances of what has been published so far.
+It answers the calls the publisher makes (the multipart publish, the GraphQL
+``asset`` query, the POM download, the external-instance POST, and the portal
+draft, page and draft-publish calls) by replaying the bodies captured in
+``tests/fixtures/anypoint/exchange_publish/``, with the version, digest,
+instances and pages of what has been published so far.
 """
 
 from __future__ import annotations
@@ -36,11 +37,16 @@ class Published:
 @dataclass
 class FakeExchange:
     """Published versions per ``(group, asset)``, in publish order, plus the
-    endpoints registered per version group. ``requests`` records every call."""
+    endpoints registered per version group and the published Home page per
+    version. ``requests`` records every call; ``fail_pages`` answers the page
+    write with a ``500``."""
 
     assets: dict[tuple[str, str], dict[str, Published]] = field(default_factory=dict)
     instances: dict[tuple[str, str, str], list[str]] = field(default_factory=dict)
+    pages: dict[tuple[str, str, str], str] = field(default_factory=dict)
     requests: list[httpx.Request] = field(default_factory=list)
+    fail_pages: bool = False
+    _drafts: dict[tuple[str, str, str], str | None] = field(default_factory=dict)
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(lambda request: self.handle(request))
@@ -68,7 +74,44 @@ class FakeExchange:
             endpoint = json.loads(request.content)["endpointUri"]
             self.instances.setdefault(instance.groups(), []).append(endpoint)
             return httpx.Response(201, text=fixture("instance.201.json"))
+        portal = re.fullmatch(
+            r"/exchange/api/v2/assets/([^/]+)/([^/]+)/([^/]+)/portal/draft(/pages(?:/home)?)?",
+            path,
+        )
+        if portal:
+            return self._portal(request, (portal[1], portal[2], portal[3]), portal[4])
+        draft = re.fullmatch(r"/exchange/api/v1/assets/([^/]+)/([^/]+)/([^/]+)", path)
+        if draft and request.method == "PATCH":
+            key = (draft[1], draft[2], draft[3])
+            assert key in self._drafts, "PATCH before the draft was opened"
+            content = self._drafts.pop(key)
+            if content is not None:
+                self.pages[key] = content
+            return httpx.Response(204)
         return httpx.Response(404, json={"message": f"unexpected {request.method} {path}"})
+
+    def _portal(
+        self, request: httpx.Request, key: tuple[str, str, str], page: str | None
+    ) -> httpx.Response:
+        assert key[1] in {a for _, a in self.assets} and key[2] in self.assets[key[:2]]
+        if page is None and request.method == "GET":
+            self._drafts.setdefault(key, self.pages.get(key))
+            return httpx.Response(200, text=fixture("portal-draft.200.json"))
+        assert key in self._drafts, "page call before the draft was opened"
+        if page == "/pages" and request.method == "POST":
+            assert json.loads(request.content) == {"pagePath": "home"}
+            if self._drafts[key] is not None:
+                return httpx.Response(409, text=fixture("page.409.json"))
+            self._drafts[key] = ""
+            return httpx.Response(201, text=fixture("page.201.json"))
+        if page == "/pages/home" and request.method == "PUT":
+            if self.fail_pages:
+                return httpx.Response(500, json={"message": "page write failed"})
+            assert request.headers["content-type"] == "text/markdown"
+            assert self._drafts[key] is not None, "PUT before the page was created"
+            self._drafts[key] = request.content.decode()
+            return httpx.Response(204)
+        return httpx.Response(404, json={"message": f"unexpected {request.method} {request.url}"})
 
     def _publish(
         self, request: httpx.Request, group: str, asset: str, version: str
