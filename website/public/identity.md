@@ -56,7 +56,8 @@ reads the user token from.
 
 The blocking client stamps the token obtained when the block was entered,
 because it can't run an exchange itself. Once that token expires, a blocking
-call raises `AuthError` instead of sending without it.
+call raises `AuthError` instead of sending without it (see
+[No silent fallback](#no-silent-fallback-a-deliberate-hard-failure)).
 
 ## The problem this solves
 
@@ -76,16 +77,26 @@ make the call it is already able to make.
   enforcement, and it is on the [will-not-build list](https://docs.donkey-kit.dev/roadmap.md): code in your
   process can be bypassed by code in your process.
 
-## No silent fallback
+## No silent fallback: a deliberate hard failure
 
 The failure mode to design against is a token exchange that quietly fails and
 lets the call proceed under the **service** identity. Per-user policy would stop
 applying while everything still appears to work.
 
-So entering `as_user()` either attaches a user-scoped token or raises
-`AuthError`. A refused or malformed exchange raises on entry, before the block
-runs, and the error never contains the token. It never degrades to the service
-identity without telling you.
+So inside `as_user()` a model call carries the user's token or it is not sent.
+A missing or expired user token is a **deliberate hard failure**: it raises
+`AuthError`, with a `.remediation`, before any request leaves the process.
+
+| What went wrong | When it raises | The error names |
+|---|---|---|
+| No `id_token`: empty, blank or `None` | `donkey.as_user(...)` itself | the missing `id_token` |
+| The exchange refuses the `id_token` (expired, revoked, not valid for the connected app) or returns a malformed response | entering the block | the `id_token`, the status and the exchange path |
+| The exchanged token expires and the re-exchange is refused | the next async model call | the `id_token` and the status |
+| The exchanged token expires on a blocking client | the next blocking model call | the expired exchanged token |
+
+The errors and the SDK's logs never contain the token itself. There is **no
+setting that enables a fallback** to the service identity, and none will be
+added: a block that can't run as the user doesn't run.
 
 Adapters that only take `connection_kwargs()` and don't route through the shared
 transport never see the block, so their calls are not made as the user.

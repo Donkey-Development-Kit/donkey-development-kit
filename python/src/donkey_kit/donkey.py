@@ -743,8 +743,10 @@ class Donkey:
         Raises:
             ConfigError: No connected-app credentials, or a config the exchange
                 can't run under (see ``TokenExchange.check``).
-            AuthError: On entry, when the exchange refuses the id_token or
-                returns a malformed response.
+            AuthError: On entry, when the id_token is missing or the exchange
+                refuses it or returns a malformed response; inside the block,
+                when a re-exchange fails or a blocking call finds the token
+                expired. Never a silent fallback to the service identity.
         """
         return UserScope(self._runtime.token_exchange(), id_token)
 
