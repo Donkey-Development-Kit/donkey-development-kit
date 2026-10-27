@@ -1,10 +1,12 @@
 """A stateful fake Exchange for ``donkey publish`` tests (#218).
 
 It answers the calls the publisher makes (the multipart publish, the GraphQL
-``asset`` query, the POM download, the external-instance POST, and the portal
-draft, page and draft-publish calls) by replaying the bodies captured in
-``tests/fixtures/anypoint/exchange_publish/``, with the version, digest,
-instances and pages of what has been published so far.
+``asset`` query, the POM download, the external-instance POST, the portal
+draft, page and draft-publish calls, and the asset PATCH) by replaying the
+bodies captured in ``tests/fixtures/anypoint/exchange_publish/``, with the
+version, digest, name, description, instances and pages of what has been
+published so far. As Exchange does, an asset keeps the name and description of
+its first version until the asset PATCH changes them.
 """
 
 from __future__ import annotations
@@ -37,21 +39,34 @@ class Published:
 @dataclass
 class FakeExchange:
     """Published versions per ``(group, asset)``, in publish order, plus the
-    endpoints registered per version group and the published Home page per
-    version. ``requests`` records every call; ``fail_pages`` answers the page
-    write with a ``500``."""
+    endpoints registered per version group, the published Home page per
+    version, and each asset's name and description. ``requests`` records every
+    call; ``fail_pages`` and ``fail_details`` answer the page write and the
+    asset PATCH with a ``500``."""
 
     assets: dict[tuple[str, str], dict[str, Published]] = field(default_factory=dict)
     instances: dict[tuple[str, str, str], list[str]] = field(default_factory=dict)
     pages: dict[tuple[str, str, str], str] = field(default_factory=dict)
+    details: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     requests: list[httpx.Request] = field(default_factory=list)
     fail_pages: bool = False
+    fail_details: bool = False
     _drafts: dict[tuple[str, str, str], str | None] = field(default_factory=dict)
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(lambda request: self.handle(request))
 
-    def publish(self, group: str, asset: str, version: str, digest: str | None) -> None:
+    def publish(
+        self,
+        group: str,
+        asset: str,
+        version: str,
+        digest: str | None,
+        *,
+        name: str | None = None,
+        description: str = "",
+    ) -> None:
+        self.details.setdefault((group, asset), {"name": name or asset, "description": description})
         self.assets.setdefault((group, asset), {})[version] = Published(digest, {})
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -80,6 +95,9 @@ class FakeExchange:
         )
         if portal:
             return self._portal(request, (portal[1], portal[2], portal[3]), portal[4])
+        details = re.fullmatch(r"/exchange/api/v2/assets/([^/]+)/([^/]+)", path)
+        if details and request.method == "PATCH":
+            return self._details(request, (details[1], details[2]))
         draft = re.fullmatch(r"/exchange/api/v1/assets/([^/]+)/([^/]+)/([^/]+)", path)
         if draft and request.method == "PATCH":
             key = (draft[1], draft[2], draft[3])
@@ -113,6 +131,15 @@ class FakeExchange:
             return httpx.Response(204)
         return httpx.Response(404, json={"message": f"unexpected {request.method} {request.url}"})
 
+    def _details(self, request: httpx.Request, key: tuple[str, str]) -> httpx.Response:
+        assert key in self.assets, "PATCH of an asset that is not published"
+        if self.fail_details:
+            return httpx.Response(500, json={"message": "asset update failed"})
+        changes = json.loads(request.content)
+        assert changes and set(changes) <= {"name", "description"}
+        self.details[key].update(changes)
+        return httpx.Response(204)
+
     def _publish(
         self, request: httpx.Request, group: str, asset: str, version: str
     ) -> httpx.Response:
@@ -121,6 +148,9 @@ class FakeExchange:
             return httpx.Response(409, text=fixture("publish.409.json"))
         fields, files = _multipart(request)
         assert fields["type"] == "mcp"
+        self.details.setdefault(
+            (group, asset), {"name": fields["name"], "description": fields["description"]}
+        )
         self.assets.setdefault((group, asset), {})[version] = Published(
             fields.get("properties.ddkDigest"), json.loads(files["files.mcp-metadata.json"])
         )
@@ -138,6 +168,7 @@ class FakeExchange:
         asset = data["data"]["asset"]
         group_name = "v" + ".".join(version.split(".")[:2])
         asset["version"], asset["versionGroup"] = version, group_name
+        asset.update(self.details[(variables["groupId"], variables["assetId"])])
         for f in asset["files"]:
             f["externalLink"] = (
                 f"https://{_POM_HOST}/presigned?g={variables['groupId']}"

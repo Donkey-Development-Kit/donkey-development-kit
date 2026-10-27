@@ -283,6 +283,79 @@ async def test_a_409_is_fine_only_when_the_version_has_this_digest(
             await _publish(http, built)
 
 
+def _named(name: str, description: str | None = None) -> str:
+    table = f'[donkey.publication.assets.{ASSET}]\nname = "{name}"\n'
+    return table + (f'description = "{description}"\n' if description else "")
+
+
+def _detail_patches(exchange: FakeExchange) -> list[httpx.Request]:
+    return [r for r in exchange.requests if r.method == "PATCH" and "/api/v2/" in r.url.path]
+
+
+async def test_a_first_publish_names_the_asset_without_a_patch(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    outcomes = await _publish(http, repo(publication=_named("SKU Lookup", "Looks up SKUs.")))
+
+    assert outcomes[ASSET].detail == "published 1.0.0"
+    assert exchange.details[(ORG, ASSET)] == {"name": "SKU Lookup", "description": "Looks up SKUs."}
+    assert _detail_patches(exchange) == []
+
+
+async def test_a_new_version_applies_a_changed_name_and_description(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo())
+
+    outcomes = await _publish(
+        http, repo(version="1.1.0", publication=_named("SKU Lookup", "Looks up SKUs."))
+    )
+
+    assert outcomes[ASSET].status == "published"
+    assert outcomes[ASSET].detail == ("published 1.1.0; updated the asset's name and description")
+    assert exchange.details[(ORG, ASSET)] == {"name": "SKU Lookup", "description": "Looks up SKUs."}
+    (patch,) = _detail_patches(exchange)
+    assert patch.url.path == f"/exchange/api/v2/assets/{ORG}/{ASSET}"
+
+
+async def test_only_what_changed_is_patched(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo(publication=_named("SKU Lookup", "Looks up SKUs.")))
+
+    outcomes = await _publish(
+        http, repo(version="1.1.0", publication=_named("SKU Lookup", "Finds SKUs."))
+    )
+
+    assert outcomes[ASSET].detail == "published 1.1.0; updated the asset's description"
+    (patch,) = _detail_patches(exchange)
+    assert json.loads(patch.content) == {"description": "Finds SKUs."}
+
+
+async def test_an_unchanged_name_and_an_undeclared_description_are_left_alone(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    exchange.publish(ORG, ASSET, "0.9.0", None, name="SKU Lookup", description="Set by hand.")
+
+    outcomes = await _publish(http, repo(publication=_named("SKU Lookup")))
+
+    assert outcomes[ASSET].detail == "published 1.0.0"
+    assert exchange.details[(ORG, ASSET)]["description"] == "Set by hand."
+    assert _detail_patches(exchange) == []
+
+
+async def test_a_refused_name_update_is_a_registry_error(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo())
+    exchange.fail_details = True
+
+    with pytest.raises(RegistryError, match="updating the name and description of") as err:
+        await _publish(http, repo(version="1.1.0", publication=_named("SKU Lookup")))
+
+    assert "re-run donkey publish" in err.value.remediation
+
+
 async def test_a_new_version_gets_its_page(
     repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
 ) -> None:
@@ -404,6 +477,7 @@ async def test_latest_version_reads_the_digest_back(
         "sha256:" + "2" * 64,
         ("1.1.0", "1.0.0"),
     )
+    assert (latest.name, latest.description) == (ASSET, "")
 
 
 def test_the_captured_bodies_are_the_shapes_the_publisher_reads() -> None:
@@ -412,6 +486,8 @@ def test_the_captured_bodies_are_the_shapes_the_publisher_reads() -> None:
     latest = json.loads(fixture("graphql.latest.json"))["data"]["asset"]
     poms = [f for f in latest["files"] if f["packaging"] == "pom" and not f["classifier"]]
     assert len(poms) == 1
+    renamed = json.loads(fixture("graphql.renamed.json"))["data"]["asset"]
+    assert latest["name"] != renamed["name"] and latest["description"] != renamed["description"]
     absent = json.loads(fixture("graphql.absent.json"))
     assert absent["data"] is None
     assert absent["errors"][0]["extensions"]["status"] == 404

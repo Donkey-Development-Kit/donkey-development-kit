@@ -7545,7 +7545,8 @@ documentation = "docs/hr-tools.md"     # Markdown that opens the asset's page
 
 - An MCP server has no description in code, so give it one here. An agent
   defaults to its own description. Exchange and Agent Fabric show the name as
-  the asset's title and the description under it.
+  the asset's title and the description under it. A name or description you
+  change later is applied with the next new version, to every version.
 - `protocol_version` is the MCP protocol revision your server speaks:
   `2024-11-05`, `2025-03-26`, `2025-06-18` or `2025-11-25`. `provider` is who
   provides it, with both `organization` and `url`. Agent Fabric shows them as
@@ -7582,12 +7583,15 @@ an Exchange asset of type `mcp`, in the group and at the version you declared.
 It runs from CI with the control-plane credentials: `ANYPOINT_CLIENT_ID`,
 `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID`. The connected app needs
 permission to publish to Exchange in that business group (the Exchange
-Contributor permission). Publishing has been checked against a live sandbox,
-but only with a user's session, not with a connected app's token.
+Contributor permission). Publishing has been checked against a live sandbox
+with a connected app's token.
 
 Each asset is published with:
 
-- its name and description,
+- its name and description. Exchange keeps the ones an asset's first version
+  was published with, so when a later version declares a different name or
+  description, `donkey publish` sets it on the asset after publishing the
+  version. A description you don't declare leaves the asset's as it is.
 - the digest, stored with the asset so the next run can compare it,
 - an `mcp-metadata` file: the transport, the tools with their descriptions and
   an input schema from their parameters, the capabilities (tools, and no

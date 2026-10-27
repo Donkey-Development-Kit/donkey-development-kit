@@ -17,7 +17,11 @@ ledger (docs/verified-apis.md §7, §12.3) with the fixtures it was captured as:
 * an endpoint is registered as an external instance of the version group,
   once per endpoint URI;
 * a new version's page (:mod:`~donkey_kit.registry.exchange_page`) is written
-  to its portal draft as Markdown and the draft published (#1269).
+  to its portal draft as Markdown and the draft published (#1269);
+* Exchange takes an asset's name and description from its first version and
+  ignores them on later ones, so a new version of an existing asset whose
+  declared name or description differs sets them with the version-less asset
+  PATCH, which applies to every version (#1281).
 
 With ``if_changed`` an asset whose latest published digest equals the planned
 one is left alone, so a merge that changes nothing publishes nothing. A planned
@@ -61,6 +65,8 @@ _INSTANCE_PATH = (
 _PORTAL_DRAFT_PATH = "/exchange/api/v2/assets/{group}/{asset}/{version}/portal/draft"
 _PUBLISH_DRAFT_PATH = "/exchange/api/v1/assets/{group}/{asset}/{version}"
 _HOME_PAGE = "home"
+# The Exchange UI's asset edit: name and description, for every version (#1281).
+_ASSET_PATH = "/exchange/api/v2/assets/{group}/{asset}"
 
 #: The ``properties.*`` key the digest is published under; Exchange writes it to
 #: the generated POM as ``<ddkDigest>`` (docs/verified-apis.md §7).
@@ -68,7 +74,8 @@ DIGEST_PROPERTY = "ddkDigest"
 
 _LATEST_QUERY = (
     "query($groupId: String!, $assetId: String!) { asset(groupId: $groupId, assetId: $assetId) "
-    "{ version files { classifier packaging externalLink } otherVersions { version } } }"
+    "{ version name description files { classifier packaging externalLink } "
+    "otherVersions { version } } }"
 )
 _VERSION_QUERY = (
     "query($groupId: String!, $assetId: String!, $version: String!) "
@@ -97,12 +104,15 @@ class PublishedVersion:
 
     ``digest`` is ``None`` when that version was not published with one, for
     example by hand. ``versions`` holds every published version, this one
-    included.
+    included. ``name`` and ``description`` are the asset's, as Exchange shows
+    them.
     """
 
     version: str
     digest: str | None
     versions: tuple[str, ...]
+    name: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -208,7 +218,12 @@ async def _publish_one(
     await exchange.publish_page(
         group, asset_id, version, documentation_page(asset, result, source=source)
     )
-    return PublishOutcome(asset, "published", f"published {version}")
+    detail = f"published {version}"
+    changes = _changed_details(asset, latest)
+    if changes:
+        await exchange.update_details(group, asset_id, changes)
+        detail += f"; updated the asset's {' and '.join(changes)}"
+    return PublishOutcome(asset, "published", detail)
 
 
 async def latest_version(
@@ -322,6 +337,8 @@ class _Exchange:
             version=version,
             digest=digest,
             versions=(version, *others),
+            name=data.get("name"),
+            description=data.get("description"),
         )
 
     async def register_endpoint(
@@ -364,6 +381,13 @@ class _Exchange:
         )
         _check(response, f"publishing the page of {group}:{asset_id}:{version}")
 
+    async def update_details(self, group: str, asset_id: str, changes: dict[str, str]) -> None:
+        """Set the asset's ``name`` and/or ``description`` on every version."""
+        response = await self._http.patch(
+            self._base + _ASSET_PATH.format(group=group, asset=asset_id), json=changes
+        )
+        _check(response, f"updating the name and description of {group}:{asset_id}")
+
     async def _asset(self, query: str, variables: dict[str, str]) -> dict[str, Any] | None:
         """The ``asset`` the query selects, or ``None`` when Exchange has none."""
         response = await self.post(_GRAPHQL_PATH, json={"query": query, "variables": variables})
@@ -378,6 +402,22 @@ class _Exchange:
             )
         asset = (body.get("data") or {}).get("asset")
         return asset if isinstance(asset, dict) else None
+
+
+def _changed_details(asset: PlannedAsset, latest: PublishedVersion | None) -> dict[str, str]:
+    """The declared name and description that differ from the existing asset's.
+
+    A first publish sets both, so there is nothing to change; an undeclared
+    description leaves the asset's as it is.
+    """
+    if latest is None:
+        return {}
+    changes: dict[str, str] = {}
+    if asset.name != latest.name:
+        changes["name"] = asset.name
+    if asset.description and asset.description != latest.description:
+        changes["description"] = asset.description
+    return changes
 
 
 def _endpoints(data: dict[str, Any]) -> tuple[str, ...]:
