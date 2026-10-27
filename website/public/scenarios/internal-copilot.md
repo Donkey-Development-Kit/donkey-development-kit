@@ -91,9 +91,9 @@ an endpoint:
   job is to make *reachable and typed*, not to reimplement. The kill switch's
   refusal is already typed: a blocked agent surfaces as
   [`AgentKilled`](https://docs.donkey-kit.dev/errors.md), never retried, and the run stops cleanly on it:
-  [`pace()`](https://docs.donkey-kit.dev/budget.md) loops end and spans are flushed. Identity itself is
-  [Phase 2](https://docs.donkey-kit.dev/roadmap.md); see [Identity](https://docs.donkey-kit.dev/identity.md). Until then the SDK does not
-  fabricate a stand-in.
+  [`pace()`](https://docs.donkey-kit.dev/budget.md) loops end and spans are flushed. Acting on behalf of
+  a user is [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md); the SDK does not fabricate an
+  agent identity of its own.
 
 ## Verification status
 

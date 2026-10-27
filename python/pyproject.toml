@@ -647,7 +647,7 @@ exhaustive = true
 layers = [
     "runtime",
     "transport | approvals | inbound",
-    "budget | cache | cachecontrol | telemetry | toolspec",
+    "budget | cache | cachecontrol | identity | telemetry | toolspec",
     "auth | correlation | spanflush",
     "config",
     "classifier | cost | endpoints | header_names | reactions | refusals",

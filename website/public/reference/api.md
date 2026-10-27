@@ -195,6 +195,14 @@ donkey.cache(
 
 Steer the gateway's **semantic cache** for every governed model call in the block.
 
+### `donkey.as_user()`
+
+```python nocheck
+donkey.as_user(*, id_token: str) -> UserScope
+```
+
+Run the governed model calls in the block as the user behind `id_token`, not as this service.
+
 ### `donkey.governed()`
 
 ```python nocheck
@@ -619,6 +627,7 @@ is raised.
 | `TypedRefusals` | class | Re-raise a refusal from the block as its typed `DonkeyError`. |
 | `UpstreamQuota` | class | The upstream provider's quota windows, `donkey.budget.upstream`, kept apart from the gateway's so neither source overwrites the other. |
 | `UpstreamWindow` | class | One window of the upstream provider's own quota, as the gateway passes it through: `donkey.budget.upstream.requests` or `.tokens`. |
+| `UserScope` | class | The async context manager `donkey.as_user(...)` returns. |
 | `classify` | callable object | `classify`: call it to map an error response to a typed `DonkeyError`; register a custom policy's refusal shape on it. |
 | `registered_agents` | function | Every entry point marked with `@donkey.agent` in this process, in decoration order. |
 | `registered_tools` | function | Every callable marked with `@donkey.tool` in this process, in decoration order. The introspection entry point for the scanner / card generator. |

@@ -27,7 +27,7 @@
 - [Refusal handlers](https://docs.donkey-kit.dev/refusal-handlers.md): (status: live) Register a reaction to a typed refusal once, and the transport applies it to every governed call. A handler reacts; it never turns a refusal into a success.
 - [Custom policies](https://docs.donkey-kit.dev/custom-policies.md): (status: live) Map your own gateway policy's refusal to a typed exception with classify.register(), so it reaches your code, handlers and spans like a built-in refusal.
 - [Budget & pacing](https://docs.donkey-kit.dev/budget.md): (status: live) Remaining token budget as a first-class object, with pacing that slows down before it hits the wall.
-- [Identity](https://docs.donkey-kit.dev/identity.md): (status: roadmap) On-behalf-of token exchange, so the gateway can enforce per-user policy instead of seeing only the service.
+- [Identity](https://docs.donkey-kit.dev/identity.md): (status: offline-verified) On-behalf-of token exchange, so the gateway can enforce per-user policy instead of seeing only the service.
 - [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md): (status: live) Declare on the tool that a human must approve the call. DDK pauses it, records who decided, and runs it on approval. The approval is client-side and advisory.
 - [Policy handshake](https://docs.donkey-kit.dev/policies.md): (status: roadmap) Read the in-force policy set to avoid calls that will be refused — advisory only; the gateway always wins.
 
