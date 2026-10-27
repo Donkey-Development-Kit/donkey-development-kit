@@ -15,12 +15,22 @@ the ``.donkey-kit.local.toml`` beside it overriding key by key, sets them::
     [donkey.publication]
     group_id = "<org id>"   # default: the configured org_id (ANYPOINT_ORG_ID)
     version  = "1.3.0"      # semver, required
+    protocol_version = "2025-06-18"                                  # optional
+    provider = { organization = "Acme", url = "https://acme.test" }  # optional
 
     [donkey.publication.assets.hr-tools]   # a service ID; every key is optional
     asset_id    = "hr-tools-mcp"           # default: the service ID
     name        = "HR Tools"               # default: the service ID
     description = "Employee lookup tools." # an agent defaults to its own
     version     = "1.4.0"                  # default: the table's version
+    documentation = "README.md"            # Markdown for the asset's page
+    # protocol_version and provider override the table's, as version does
+
+``protocol_version`` is the MCP protocol revision the server speaks and
+``provider`` who provides it; both go in the asset's ``mcp-metadata`` file
+(#1269). ``documentation`` is a Markdown file, relative to the scanned root
+and inside it, that opens the asset's Exchange page. Each is part of the
+digest when it is set, so changing one needs a new version.
 
 Everything wrong with a declaration is a :class:`~donkey_kit.registry.scan.ScanIssue`,
 never a raise, so the dry run reports every problem at once.
@@ -31,7 +41,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -44,13 +54,26 @@ if sys.version_info >= (3, 11):
 else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
     import tomli as tomllib
 
-__all__ = ["PLAN_FORMAT", "PlannedAsset", "PublishPlan", "plan_publication"]
+__all__ = [
+    "MCP_PROTOCOL_VERSIONS",
+    "PLAN_FORMAT",
+    "PlannedAsset",
+    "Provider",
+    "PublishPlan",
+    "plan_publication",
+]
 
 # Bumped when the JSON shape changes incompatibly, as SCAN_FORMAT is.
 PLAN_FORMAT = 1
 
-_TABLE_KEYS = frozenset({"group_id", "version", "assets"})
-_ASSET_KEYS = frozenset({"asset_id", "name", "description", "version"})
+_TABLE_KEYS = frozenset({"group_id", "version", "protocol_version", "provider", "assets"})
+_ASSET_KEYS = frozenset(
+    {"asset_id", "name", "description", "version", "protocol_version", "provider", "documentation"}
+)
+
+#: The MCP protocol revisions an ``mcp-metadata`` file may name: the
+#: ``protocolVersion`` enum of Agent Fabric's MCP metadata schema (#1269).
+MCP_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25")
 
 # Semantic Versioning 2.0.0's own pattern: Exchange versions are semver
 # (docs/verified-apis.md §7, GAV coordinates).
@@ -59,6 +82,18 @@ _SEMVER = re.compile(
     r"(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
     r"(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?"
 )
+
+
+@dataclass(frozen=True)
+class Provider:
+    """Who provides an MCP server: the ``provider`` of its ``mcp-metadata``.
+
+    Agent Fabric shows ``organization`` as the asset's provider; ``url`` is
+    where Exchange links it. Both are required by the metadata schema.
+    """
+
+    organization: str
+    url: str
 
 
 @dataclass(frozen=True)
@@ -71,6 +106,10 @@ class PlannedAsset:
     also reported as an issue. ``digest`` covers what would be published for
     this asset, not its version, so ``--if-changed`` can compare it with the
     latest published version's.
+
+    ``protocol_version`` and ``provider`` are ``None`` when undeclared.
+    ``documentation`` is the declared Markdown file's path and
+    ``documentation_text`` its content, which is not part of :meth:`PublishPlan.to_dict`.
     """
 
     service_id: str
@@ -83,6 +122,10 @@ class PlannedAsset:
     endpoint: str | None
     tools: tuple[str, ...]
     digest: str
+    protocol_version: str | None = None
+    provider: Provider | None = None
+    documentation: str | None = None
+    documentation_text: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -92,9 +135,10 @@ class PublishPlan:
 
     A declaration adds ``missing-group-id``, ``missing-version``,
     ``invalid-version`` (not semver), ``invalid-publication`` (a malformed
-    table or an unknown key) and ``unknown-service`` (an ``assets`` table for a
-    service ID no agent or MCP server has); their ``path`` is the TOML file and
-    their ``line`` is ``0``.
+    table, an unknown key, a protocol version or provider the metadata schema
+    rejects, or a documentation file that cannot be read) and
+    ``unknown-service`` (an ``assets`` table for a service ID no agent or MCP
+    server has); their ``path`` is the TOML file and their ``line`` is ``0``.
     """
 
     assets: tuple[PlannedAsset, ...] = ()
@@ -116,6 +160,13 @@ class PublishPlan:
                     "endpoint": a.endpoint,
                     "tools": list(a.tools),
                     "digest": a.digest,
+                    "protocol_version": a.protocol_version,
+                    "provider": (
+                        {"organization": a.provider.organization, "url": a.provider.url}
+                        if a.provider
+                        else None
+                    ),
+                    "documentation": a.documentation,
                 }
                 for a in self.assets
             ],
@@ -185,12 +236,23 @@ def plan_publication(
         entry = declared.asset(service_id)
         name = entry.get("name") or service_id
         description = entry.get("description") or content.get("description")
-        metadata = {
+        protocol_version = entry.get("protocol_version") or declared.protocol_version
+        provider = entry.get("provider") or declared.provider
+        documentation = entry.get("documentation")
+        text = declared.documentation_text.get(service_id)
+        metadata: dict[str, Any] = {
             "scan_format": SCAN_FORMAT,
             "type": kind,
             "name": name,
             "description": description,
         }
+        # Only what is set, so an asset that declares none keeps its digest.
+        if protocol_version:
+            metadata["protocol_version"] = protocol_version
+        if provider:
+            metadata["provider"] = {"organization": provider.organization, "url": provider.url}
+        if text is not None:
+            metadata["documentation"] = text
         assets.append(
             PlannedAsset(
                 service_id=service_id,
@@ -203,6 +265,10 @@ def plan_publication(
                 endpoint=content.get("endpoint"),
                 tools=tuple(t["name"] for t in content.get("tools", ())),
                 digest=content_digest(content, metadata),
+                protocol_version=protocol_version,
+                provider=provider,
+                documentation=documentation if text is not None else None,
+                documentation_text=text,
             )
         )
     for service_id in sorted(set(declared.assets) - known):
@@ -231,8 +297,12 @@ class _Declaration:
         self.group_id: str | None = None
         self.version: str | None = None
         self.reported_version = False
-        self.assets: dict[str, dict[str, str]] = {}
+        self.protocol_version: str | None = None
+        self.provider: Provider | None = None
+        self.assets: dict[str, dict[str, Any]] = {}
         self.declared_in: dict[str, str] = {}
+        self.documentation_text: dict[str, str] = {}
+        self._directory = directory
         self._file = TOML_NAME
         for name in (TOML_NAME, LOCAL_TOML_NAME):
             path = directory / name
@@ -242,7 +312,7 @@ class _Declaration:
     def issue(self, kind: str, subject: str, detail: str, *, path: str | None = None) -> None:
         self.issues.append(ScanIssue(kind, subject, path or self._file, 0, detail))
 
-    def asset(self, service_id: str) -> dict[str, str]:
+    def asset(self, service_id: str) -> dict[str, Any]:
         return self.assets.get(service_id, {})
 
     def _read(self, path: Path, name: str) -> None:
@@ -264,7 +334,7 @@ class _Declaration:
             self.issue(
                 "invalid-publication",
                 "donkey.publication",
-                f"unknown key {key!r}; the keys are group_id, version and assets",
+                f"unknown key {key!r}; the keys are {', '.join(sorted(_TABLE_KEYS))}",
                 path=name,
             )
         if "group_id" in table:
@@ -280,6 +350,12 @@ class _Declaration:
                 )
         if "version" in table:
             self.version = self._version(table["version"], "donkey.publication", name)
+        if "protocol_version" in table:
+            self.protocol_version = self._protocol_version(
+                table["protocol_version"], "donkey.publication", name
+            )
+        if "provider" in table:
+            self.provider = self._provider(table["provider"], "donkey.publication", name)
         assets = table.get("assets", {})
         if not isinstance(assets, dict):
             self.issue(
@@ -311,6 +387,19 @@ class _Declaration:
                 version = self._version(value, subject, name)
                 if version is not None:
                     merged[key] = version
+            elif key == "protocol_version":
+                protocol_version = self._protocol_version(value, subject, name)
+                if protocol_version is not None:
+                    merged[key] = protocol_version
+            elif key == "provider":
+                provider = self._provider(value, subject, name)
+                if provider is not None:
+                    merged[key] = provider
+            elif key == "documentation":
+                text = self._documentation(value, subject, name)
+                if text is not None:
+                    merged[key] = value
+                    self.documentation_text[service_id] = text
             elif isinstance(value, str) and value.strip():
                 merged[key] = value
             else:
@@ -320,6 +409,50 @@ class _Declaration:
                     f"{key} must be a non-empty string, not {value!r}",
                     path=name,
                 )
+
+    def _protocol_version(self, value: object, subject: str, name: str) -> str | None:
+        if isinstance(value, str) and value in MCP_PROTOCOL_VERSIONS:
+            return value
+        self.issue(
+            "invalid-publication",
+            subject,
+            f"protocol_version must be one of {', '.join(MCP_PROTOCOL_VERSIONS)}, not {value!r}",
+            path=name,
+        )
+        return None
+
+    def _provider(self, value: object, subject: str, name: str) -> Provider | None:
+        if isinstance(value, dict) and set(value) == {"organization", "url"}:
+            organization, url = value["organization"], value["url"]
+            if (
+                isinstance(organization, str)
+                and organization.strip()
+                and isinstance(url, str)
+                and url.startswith(("https://", "http://"))
+            ):
+                return Provider(organization, url)
+        self.issue(
+            "invalid-publication",
+            subject,
+            "provider must be a table with exactly organization (a non-empty string) "
+            f"and url (an http or https URL), not {value!r}",
+            path=name,
+        )
+        return None
+
+    def _documentation(self, value: object, subject: str, name: str) -> str | None:
+        root = self._directory.resolve()
+        path = (root / value).resolve() if isinstance(value, str) and value.strip() else None
+        if path is None or not path.is_relative_to(root):
+            problem = f"documentation must be a path inside the scanned root, not {value!r}"
+        else:
+            try:
+                return path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                reason = getattr(exc, "strerror", None) or exc
+                problem = f"documentation {value!r} cannot be read: {reason}"
+        self.issue("invalid-publication", subject, problem, path=name)
+        return None
 
     def _version(self, value: object, subject: str, name: str) -> str | None:
         if isinstance(value, str) and _SEMVER.fullmatch(value):

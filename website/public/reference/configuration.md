@@ -599,7 +599,9 @@ Two tables in these files are not `DonkeyConfig` fields, and
   files. See
   [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - `[donkey.publication]` declares the Exchange group ID, asset IDs and version
-  to publish under. `donkey publish` reads it from the same two files. See
+  to publish under, and each asset's name, description, MCP protocol version,
+  provider and documentation file. `donkey publish` reads it from the same two
+  files. See
   [Planning a publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named

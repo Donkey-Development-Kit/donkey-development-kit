@@ -26,6 +26,24 @@ signing parameters.
 - `graphql.absent.json` — the query for an asset the org does not have: a
   `200` whose error carries `extensions.status` `404`.
 
+## The asset page (#1269)
+
+Captured 2026-10-27 with the demos repo's connected app (a `client_credentials`
+token whose app holds Exchange roles on the business group) against the published
+`ddk-demo-sku-lookup:1.0.0`, renamed `ddk-verify-1269-fixture` here, with every
+ID scrubbed. The calls are the ones `anypoint-cli-v4 exchange asset page upload`
+makes (`anypoint-cli-exchange-plugin` 1.0.12, `assetPageUpdate`).
+
+- `portal-draft.200.json` — `GET /exchange/api/v2/assets/{g}/{a}/{v}/portal/draft`,
+  which opens the portal draft.
+- `page.201.json` — `POST …/portal/draft/pages` with `{"pagePath": "home"}`
+  when the version has no page content yet.
+- `page.409.json` — the same POST when the page exists.
+
+`PUT …/portal/draft/pages/home` with `Content-Type: text/markdown` and
+`PATCH /exchange/api/v1/assets/{g}/{a}/{v}` (publishes the draft) answer `204`
+with no body. `GET …/portal/pages/home` then returns the page rendered as HTML.
+
 ## What these verify (docs/verified-apis.md §7, §12.3)
 
 `tests/unit/test_exchange_publish.py` replays them through a stateful fake

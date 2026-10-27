@@ -183,3 +183,25 @@ def test_publish_without_control_plane_credentials_exits_2(
 
     assert result.exit_code == 2
     assert "client_id" in result.output
+
+
+def test_the_page_source_comes_from_github_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert publish_command._ci_source() is None
+
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_SERVER_URL": "https://github.example.invalid",
+        "GITHUB_REPOSITORY": "acme/sku",
+        "GITHUB_SHA": "a" * 40,
+        "GITHUB_REF_NAME": "main",
+        "GITHUB_RUN_ID": "42",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    source = publish_command._ci_source()
+
+    assert source is not None
+    assert source.repository_url == "https://github.example.invalid/acme/sku"
+    assert (source.commit, source.ref) == ("a" * 40, "main")
+    assert source.run_url == "https://github.example.invalid/acme/sku/actions/runs/42"

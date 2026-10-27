@@ -152,3 +152,77 @@ def test_json_is_canonical(tmp_path: Path) -> None:
     assert plan.to_json() == json.dumps(data, sort_keys=True, indent=2) + "\n"
     assert data["plan_format"] == PLAN_FORMAT
     assert [a["asset_id"] for a in data["assets"]] == ["sku-manager", "support-triage"]
+
+
+DECLARED = (
+    TABLE + 'protocol_version = "2025-06-18"\n'
+    'provider = { organization = "Acme", url = "https://acme.example.invalid" }\n\n'
+    "[donkey.publication.assets.sku-manager]\n"
+    'protocol_version = "2025-11-25"\ndocumentation = "docs/sku.md"\n'
+)
+
+
+def test_protocol_version_provider_and_documentation(tmp_path: Path) -> None:
+    root = _repo(tmp_path, DECLARED)
+    (root / "docs").mkdir()
+    (root / "docs" / "sku.md").write_text("Ask it about stock.\n", encoding="utf-8")
+
+    plan = _plan(root)
+
+    assert plan.issues == ()
+    mcp, agent = plan.assets
+    assert (mcp.protocol_version, agent.protocol_version) == ("2025-11-25", "2025-06-18")
+    assert mcp.provider == agent.provider
+    assert mcp.provider is not None and mcp.provider.organization == "Acme"
+    assert (mcp.documentation, mcp.documentation_text) == ("docs/sku.md", "Ask it about stock.\n")
+    assert agent.documentation is None
+    data = plan.to_dict()["assets"][0]
+    assert data["provider"] == {"organization": "Acme", "url": "https://acme.example.invalid"}
+    assert data["documentation"] == "docs/sku.md"
+    assert "documentation_text" not in data
+
+
+def test_undeclared_metadata_keeps_the_digest_and_declared_metadata_changes_it(
+    tmp_path: Path,
+) -> None:
+    before = _plan(_repo(tmp_path)).assets[0]
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "sku.md").write_text("v1\n", encoding="utf-8")
+    declared = _plan(_repo(tmp_path, DECLARED)).assets[0]
+    (tmp_path / "docs" / "sku.md").write_text("v2\n", encoding="utf-8")
+    edited = _plan(_repo(tmp_path, DECLARED)).assets[0]
+
+    assert before.protocol_version is None and before.provider is None
+    assert len({before.digest, declared.digest, edited.digest}) == 3
+
+
+@pytest.mark.parametrize(
+    ("toml", "detail"),
+    [
+        (TABLE + 'protocol_version = "2099-01-01"\n', "protocol_version must be one of"),
+        (TABLE + 'provider = "Acme"\n', "provider must be a table"),
+        (TABLE + 'provider = { organization = "Acme" }\n', "provider must be a table"),
+        (
+            TABLE + 'provider = { organization = "Acme", url = "ftp://acme.invalid" }\n',
+            "provider must be a table",
+        ),
+        (
+            TABLE + '[donkey.publication.assets.sku-manager]\ndocumentation = "../outside.md"\n',
+            "must be a path inside the scanned root",
+        ),
+        (
+            TABLE + '[donkey.publication.assets.sku-manager]\ndocumentation = "missing.md"\n',
+            "'missing.md' cannot be read",
+        ),
+    ],
+)
+def test_malformed_metadata_is_an_issue(tmp_path: Path, toml: str, detail: str) -> None:
+    (tmp_path / "outside.md").write_text("outside\n", encoding="utf-8")
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    plan = _plan(_repo(root, toml))
+
+    (issue,) = plan.issues
+    assert issue.kind == "invalid-publication"
+    assert detail in issue.detail

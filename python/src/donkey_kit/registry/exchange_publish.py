@@ -15,7 +15,9 @@ ledger (docs/verified-apis.md §7, §12.3) with the fixtures it was captured as:
 * a version that already exists is a ``409`` and the published asset is left
   as it was, so a version is never overwritten;
 * an endpoint is registered as an external instance of the version group,
-  once per endpoint URI.
+  once per endpoint URI;
+* a new version's page (:mod:`~donkey_kit.registry.exchange_page`) is written
+  to its portal draft as Markdown and the draft published (#1269).
 
 With ``if_changed`` an asset whose latest published digest equals the planned
 one is left alone, so a merge that changes nothing publishes nothing. A planned
@@ -35,6 +37,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..core.errors import RegistryError
+from .exchange_page import PageSource, documentation_page
 from .publish_plan import PlannedAsset, PublishPlan
 from .scan import ScanResult
 
@@ -53,6 +56,11 @@ _GRAPHQL_PATH = "/graph/api/v2/graphql"
 _INSTANCE_PATH = (
     "/exchange/api/v2/assets/{group}/{asset}/versionGroups/{group_name}/instances/external"
 )
+# The asset portal's draft, its pages, and the v1 PATCH that publishes the
+# draft: what `anypoint-cli-v4 exchange asset page upload` calls (#1269).
+_PORTAL_DRAFT_PATH = "/exchange/api/v2/assets/{group}/{asset}/{version}/portal/draft"
+_PUBLISH_DRAFT_PATH = "/exchange/api/v1/assets/{group}/{asset}/{version}"
+_HOME_PAGE = "home"
 
 #: The ``properties.*`` key the digest is published under; Exchange writes it to
 #: the generated POM as ``<ddkDigest>`` (docs/verified-apis.md §7).
@@ -119,11 +127,13 @@ async def publish_plan(
     base_url: str,
     org_id: str,
     if_changed: bool = True,
+    source: PageSource | None = None,
 ) -> tuple[PublishOutcome, ...]:
     """Publish ``plan``'s MCP assets to Exchange, one at a time, in plan order.
 
     ``http`` is the control-plane client and ``base_url`` the control plane;
-    ``result`` is the scan the plan came from. A plan with issues is refused.
+    ``result`` is the scan the plan came from. ``source`` is where the publish
+    runs from, for each new version's page. A plan with issues is refused.
 
     Raises:
         ValueError: The plan has issues.
@@ -146,7 +156,9 @@ async def publish_plan(
             )
             continue
         outcomes.append(
-            await _publish_one(asset, result, exchange, org_id=org_id, if_changed=if_changed)
+            await _publish_one(
+                asset, result, exchange, org_id=org_id, if_changed=if_changed, source=source
+            )
         )
     return tuple(outcomes)
 
@@ -158,6 +170,7 @@ async def _publish_one(
     *,
     org_id: str,
     if_changed: bool,
+    source: PageSource | None,
 ) -> PublishOutcome:
     group, asset_id, version = _gav(asset)
     latest = await exchange.latest(group, asset_id)
@@ -192,6 +205,9 @@ async def _publish_one(
         _check(response, f"publishing {group}:{asset_id}:{version}")
     if asset.endpoint:
         await exchange.register_endpoint(asset, group, asset_id, version)
+    await exchange.publish_page(
+        group, asset_id, version, documentation_page(asset, result, source=source)
+    )
     return PublishOutcome(asset, "published", f"published {version}")
 
 
@@ -211,7 +227,9 @@ def mcp_metadata(asset: PlannedAsset, result: ScanResult) -> dict[str, Any]:
     """The ``mcp-metadata`` file published with ``asset``: its transport, its
     tools with their descriptions and an input schema derived from the scanned
     parameters, and its ``urn:gav`` provenance (the agent-fabric plugin's
-    shape, docs/verified-apis.md §12.3).
+    shape, docs/verified-apis.md §12.3). Its declared ``protocolVersion`` and
+    ``provider`` are added when set, and ``capabilities`` says it has tools and
+    no resources, prompts or logging: the scan sees only tools (#1269).
 
     A parameter's schema type comes from a bare ``str``/``int``/``float``/
     ``bool``/``list``/``dict`` annotation and is left open otherwise. No
@@ -243,11 +261,25 @@ def mcp_metadata(asset: PlannedAsset, result: ScanResult) -> dict[str, Any]:
             tool["description"] = t.description
         tools.append(tool)
     group, asset_id, version = _gav(asset)
-    return {
+    metadata: dict[str, Any] = {
         "transport": transport,
         "tools": tools,
+        "capabilities": {
+            "tools": bool(tools),
+            "resources": False,
+            "prompts": False,
+            "logging": False,
+        },
         "provenance": {"id": f"urn:gav:{group}:{asset_id}:{version}"},
     }
+    if asset.protocol_version:
+        metadata["protocolVersion"] = asset.protocol_version
+    if asset.provider:
+        metadata["provider"] = {
+            "organization": asset.provider.organization,
+            "url": asset.provider.url,
+        }
+    return metadata
 
 
 class _Exchange:
@@ -311,6 +343,26 @@ class _Exchange:
             json={"name": asset.service_id, "endpointUri": asset.endpoint},
         )
         _check(response, f"registering the endpoint of {group}:{asset_id}:{version}")
+
+    async def publish_page(self, group: str, asset_id: str, version: str, markdown: str) -> None:
+        """Write ``markdown`` as the version's Home page and publish it."""
+        draft = _PORTAL_DRAFT_PATH.format(group=group, asset=asset_id, version=version)
+        action = f"writing the page of {group}:{asset_id}:{version}"
+        # Reading the draft opens one, as the CLI does before editing a page.
+        _check(await self._http.get(self._base + draft), action)
+        created = await self.post(draft + "/pages", json={"pagePath": _HOME_PAGE})
+        if created.status_code != 409:  # 409: the page exists already
+            _check(created, action)
+        response = await self._http.put(
+            f"{self._base}{draft}/pages/{_HOME_PAGE}",
+            content=markdown.encode(),
+            headers={"Content-Type": "text/markdown"},
+        )
+        _check(response, action)
+        response = await self._http.patch(
+            self._base + _PUBLISH_DRAFT_PATH.format(group=group, asset=asset_id, version=version)
+        )
+        _check(response, f"publishing the page of {group}:{asset_id}:{version}")
 
     async def _asset(self, query: str, variables: dict[str, str]) -> dict[str, Any] | None:
         """The ``asset`` the query selects, or ``None`` when Exchange has none."""
