@@ -15,9 +15,9 @@ signing parameters.
 - `publish.409.json` — the same POST again: `ASSET_PRE_CONDITIONS_FAILED`. The
   published version is left as it was.
 - `graphql.latest.json` — `POST /graph/api/v2/graphql`, `asset(groupId, assetId)`
-  with no version: the latest version, its version group, its files and
-  instances. The generated POM is the file with `packaging` `pom` and a null
-  classifier.
+  with no version: the latest version, its name and description, its files
+  and its other versions (recaptured for #1281, see below). The generated POM
+  is the file with `packaging` `pom` and a null classifier.
 - `pom.xml` — that POM, downloaded from its `externalLink` without
   credentials. `properties.ddkDigest` is stored here, as `<ddkDigest>`.
 - `instance.201.json` — `POST /exchange/api/v2/assets/{g}/{a}/versionGroups/{vg}/instances/external`.
@@ -43,6 +43,23 @@ makes (`anypoint-cli-exchange-plugin` 1.0.12, `assetPageUpdate`).
 `PUT …/portal/draft/pages/home` with `Content-Type: text/markdown` and
 `PATCH /exchange/api/v1/assets/{g}/{a}/{v}` (publishes the draft) answer `204`
 with no body. `GET …/portal/pages/home` then returns the page rendered as HTML.
+
+## The asset's name and description (#1281)
+
+Captured 2026-10-27 with the demos repo's connected app by publishing a
+throwaway `mcp` asset, `ddk-verify-1281-fixture:1.0.0`, named
+"DDK verify 1281 fixture", which was hard-deleted right after.
+
+- `graphql.latest.json` — the publisher's latest-version query, right after
+  the publish.
+- `graphql.renamed.json` — the same query after
+  `PATCH /exchange/api/v2/assets/{g}/{a}` with a new `name` and
+  `description`, which answered `204` with no body.
+
+Exchange takes an asset's name and description from its first version only:
+a later version sent with others shows the asset's existing ones. The PATCH
+above changes them for every version (checked on throwaway assets with two
+versions).
 
 ## What these verify (docs/verified-apis.md §7, §12.3)
 
