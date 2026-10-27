@@ -88,6 +88,7 @@ pip install "donkey-kit[cli]"
 donkey init          # writes a commented .donkey-kit.toml, names every missing env var at once
 donkey doctor        # checks creds, reaches the gateway, reports budget state
 donkey mock          # the local simulator — --scenario scripts failures
+donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
 ```
@@ -135,6 +136,16 @@ Global options go before the command (`donkey --json init`):
 | `--config` | none | Where `init` writes .donkey-kit.toml, or the project config file `doctor` reads. |
 | `--env` | none | Anypoint environment `init` writes (e.g. Sandbox). init only. |
 | `--json` | off | Emit machine-readable JSON where the command supports it. |
+
+`donkey dev`: Serve an agent over A2A behind a simulated gateway ingress.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `target` | none | The @donkey.agent handler, as module:attribute. |
+| `--port` | `8000` | TCP port to bind. |
+| `--host` | `127.0.0.1` | Host/interface to bind. |
+| `--version` | `0.0.0` | The agent version the card advertises. |
+| `--scenario` | none | Inbound rejection rule, repeatable. e.g. 'pii_block:every=5', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
 
 `donkey doctor`: Diagnose governed access: config, credentials, gateway, model, budget.
 
@@ -293,6 +304,22 @@ programmatic entry point and the `0.0.0.0` caveat.
 
 An invalid `--scenario` exits with code `2`.
 
+### `donkey dev`
+
+Serves a `@donkey.agent` handler over A2A behind a simulated gateway ingress,
+which rejects inbound calls with the simulator's fixtures. Needs the `[a2a]`
+and `[local]` extras.
+
+```bash
+donkey dev my_agent:handle --port 8000 --scenario pii_block:every=5
+```
+
+`TARGET` is `module:attribute`, imported from the current directory. The
+ingress, the rules it takes and where its rejection shapes come from are in
+[Simulated ingress](https://docs.donkey-kit.dev/a2a.md#simulated-ingress). A target that can't be loaded or
+isn't marked with `@donkey.agent`, and an invalid `--scenario` (including
+`budget`), exit with code `2`.
+
 ### `donkey test`
 
 A thin front end to `pytest --donkey-conformance` — it does not re-implement the
@@ -364,7 +391,7 @@ CLI yet:
   anything. Agents are not published yet, so the command is hidden from
   `donkey --help`. See
   [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers).
-- `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
-  A2A and expose it through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+- `donkey serve` and `donkey expose` — serve your agent over A2A and expose it
+  through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
   Run `donkey --help` to see the commands available in your installed version.

@@ -4,8 +4,9 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
-gateway locally. `donkey.serve()` ships today. `donkey expose` and `donkey dev`
-are on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
+gateway locally. `donkey.serve()` and `donkey dev` with a simulated gateway ship
+today. `donkey expose` and `donkey dev` with a real gateway are on the
+[Roadmap](https://docs.donkey-kit.dev/roadmap.md).
 
 ## The setup it replaces
 
@@ -255,19 +256,55 @@ It is planned to stay narrow, so it never turns into a provisioning tool:
 The calls it needs are not verified against a live sandbox yet, so the command
 does not ship until they are.
 
-## `donkey dev` — a gateway in front of your laptop Roadmap
+## `donkey dev` — a gateway in front of your laptop
 
 `donkey dev` puts a gateway in front of `donkey.serve()` on your machine, so you
-can call your agent over A2A through governance before deploying. Two modes are
-planned:
+can call your agent over A2A through governance before deploying. It has two
+modes. The simulated one ships today.
 
-- **A real gateway.** Where a self-managed Omni Gateway image is available for
-  local development, `donkey dev` runs it alongside `donkey.serve()`, so A2A
-  calls pass through real policies.
-- **Simulated ingress.** The [local simulator](https://docs.donkey-kit.dev/simulator.md) gains an A2A ingress
-  mode: a local fake gateway in front of `donkey.serve()`, replaying the same
-  rejection fixtures. A plain A2A client sees byte-identical responses, and
-  every response carries `x-donkey-simulator: true`.
+### Simulated ingress
+
+```bash
+pip install "donkey-kit[cli,a2a,local]"
+donkey dev my_agent:handle --port 8000 \
+  --scenario injection:on-pattern="drop table" \
+  --scenario request_limit:limit=3,window=60s
+```
+
+`TARGET` is the `@donkey.agent` handler as `module:attribute`, imported from the
+current directory. `donkey dev` serves the same app `donkey.serve()` runs, with
+the same [governed inbound](#governed-inbound), and puts a local fake gateway
+in front of it on the same port. The card advertises the ingress URL, as it
+would advertise the gateway's.
+
+- **Calls can be rejected.** A JSON-RPC `SendMessage` or `SendStreamingMessage`
+  is a call. The `--scenario` rules run on its text parts, and a rule that
+  fires answers with a rejection before the agent sees the call. The rules are
+  the [simulator's](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) `injection`, `pii_block` and
+  `request_limit`. A call that passes `request_limit` carries the
+  `x-ratelimit-*` headers. `budget` is refused, because it counts model tokens
+  and an inbound call carries none.
+- **Everything else passes through.** The agent card, `GetTask`, `CancelTask`
+  and every call no rule rejects reach the agent. A plain A2A client gets the
+  agent's own bytes.
+- **Rejections are the simulator's fixtures.** A rejection is the same status
+  and bytes `donkey mock` replays and the [error taxonomy](https://docs.donkey-kit.dev/errors.md) is tested
+  against, so a caller using `donkey-kit` gets the typed exception, a
+  `PromptInjectionBlocked` rather than a raw `400`.
+- **Every response carries `x-donkey-simulator: true`.** That includes the
+  responses the agent produced.
+
+  **The rejection shapes are the LLM proxy's, not captured from an A2A
+  instance.** The fixtures were captured from LLM proxies; how the gateway
+  answers a policy rejection on an A2A agent instance has not been captured
+  yet. Like `donkey mock`, `donkey dev` replays and enforces no policy: you
+  choose the rejection with a `--scenario` rule.
+
+### A real gateway Roadmap
+
+Where a self-managed Omni Gateway image is available for local development,
+`donkey dev` will run it alongside `donkey.serve()`, so A2A calls pass through
+real policies.
 
 ## Related
 

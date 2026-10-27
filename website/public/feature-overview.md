@@ -117,7 +117,7 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     **Advantage:** the PII branch is tested before production, not in it.
   
   
-    **Purpose:** `donkey init`, `doctor`, `mock`, `test` and `scan`, plus
+    **Purpose:** `donkey init`, `doctor`, `mock`, `dev`, `test` and `scan`, plus
     `@donkey.governed`, `@donkey.tool` and `@donkey.agent`. **Advantage:** `doctor` tells wrong
     credentials from wrong URL from model-not-allowed; one decorator gives a
     function a run scope, span and typed refusals.
