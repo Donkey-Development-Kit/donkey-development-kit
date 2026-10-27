@@ -307,6 +307,11 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
 - The `adk` extra's `litellm` requirement is a floor, not a ceiling (see
   [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)) — pin your own upper
   bound if you need one.
+- The `adk` extra installs `litellm[mcp]`, not plain `litellm`. From litellm
+  1.106, any request that carries tools imports the `mcp` package, which plain
+  `litellm` does not install, so an agent with tools fails with "No module
+  named 'mcp'". If you install `litellm` yourself rather than through the
+  extra, install `litellm[mcp]`.
 
 See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface through
 ADK's `LiteLlm` model, and [Native Gemini](#native-gemini) for `gemini()`.

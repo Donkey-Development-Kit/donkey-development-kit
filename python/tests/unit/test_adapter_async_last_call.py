@@ -291,6 +291,32 @@ async def test_adk_model_runner_is_unobserved_but_after_model_callback_sees_it()
     assert in_callback == ["rid-answer"]
 
 
+async def test_adk_model_runner_with_a_tool_reaches_the_answer() -> None:
+    """A tool-bearing request takes litellm 1.106+ through its MCP handler,
+    which imports ``mcp`` at module level; without it the run fails with "No
+    module named 'mcp'" (#1267)."""
+    pytest.importorskip("google.adk")
+    pytest.importorskip("litellm")
+    from google.adk.agents import LlmAgent
+    from google.adk.runners import InMemoryRunner
+
+    def get_weather() -> str:
+        """The weather."""
+        return "sunny"
+
+    donkey = _donkey(_tool_then_answer)
+    texts: list[str] = []
+    async with donkey:
+        agent = LlmAgent(name="a", model=donkey.adk.model("gpt-4o"), tools=[get_weather])
+        runner = InMemoryRunner(agent=agent, app_name="app")
+        session = await runner.session_service.create_session(app_name="app", user_id="u")
+        async for event in runner.run_async(
+            user_id="u", session_id=session.id, new_message=_gemini_message()
+        ):
+            texts += [p.text for p in (event.content.parts if event.content else []) if p.text]
+    assert texts == ["PONG"]
+
+
 def _sse_chunks(body: bytes, headers: dict[str, str]) -> httpx.Response:
     """An SSE body delivered one event at a time, as from the network. A
     ``content=`` body is read when the response is built, so the transport's
