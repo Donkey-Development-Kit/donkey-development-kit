@@ -1,0 +1,21 @@
+{
+  "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+  "assetId": "mcp-support",
+  "assetVersion": "1.1.1",
+  "configurationData": {
+    "injectMcpNameHeaders": false
+  },
+  "pointcutData": null,
+  "policyTemplateId": "461713",
+  "order": 1,
+  "audit": {
+    "created": {
+      "date": "2026-10-27T14:33:49.655Z"
+    },
+    "updated": {}
+  },
+  "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+  "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "id": 9656265,
+  "apiId": 21259411
+}

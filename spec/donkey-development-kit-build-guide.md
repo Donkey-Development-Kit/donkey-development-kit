@@ -600,7 +600,7 @@ Either way the developer experience is one command, and an A2A endpoint that beh
 
 **The gap only the gateway can close.** What would make this feel like magic is an agent with *no inbound reachability at all* — a laptop, a private subnet — that is still publishable: the agent dials *out* to the gateway, and the gateway routes inbound A2A traffic back over that connection, the ngrok / Cloudflare Tunnel pattern. That is not in the public Omni Gateway docs. It is upstream gap #6 (see 3.1), and it is the only version that genuinely removes the listener problem rather than hiding it. Until it ships, the truth is: `donkey serve` makes the listener trivial, `donkey expose` makes the ingress one command, and the agent still has to be somewhere the gateway can reach.
 
-**Effort:** `serve` S–M (the `a2a-sdk` exists) · `expose` L, A2A instance creation verified live (#254), blocked on the MCP instance calls (#1278) and the minimal connected-app scopes (#23) · `dev` M.
+**Effort:** `serve` S–M (the `a2a-sdk` exists) · `expose` L, A2A and MCP instance creation verified live (#254, #1278), blocked on the minimal connected-app scopes (#23) · `dev` M.
 
 ---
 

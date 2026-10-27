@@ -253,9 +253,9 @@ It is planned to stay narrow, so it never turns into a provisioning tool:
   missing, `donkey expose` tells you which one rather than creating it.
 
 The calls that create, deploy and delete an A2A instance have been verified
-against a live sandbox, with a connected app as well as a user login. The MCP
-instance calls have not, and neither has the smallest set of scopes the
-connected app needs, so the command does not ship until they are.
+against a live sandbox, with a connected app as well as a user login, and so
+have the MCP instance calls, with a user login. The smallest set of scopes the
+connected app needs has not, so the command does not ship until it is.
 
 ## `donkey dev` — a gateway in front of your laptop
 
