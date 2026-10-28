@@ -5,8 +5,10 @@ ONE suite, defined once. Its blocking scope is the conformance-tested roster
 #223) and the raw client. A framework is "supported" only when it passes all of
 it, or records a documented, asserted exemption in ``KNOWN_LIMITATIONS`` (the
 conformance kit) — never a silent skip. The other six frameworks are supported
-at ``connection_kwargs()`` only and are not run here; a demoted framework
-rejoins with its own conformance run when demand promotes it (#223/#244). The
+at ``connection_kwargs()`` only and are not run here, except for the three
+tool-binding scenarios, which run every ``ToolSet`` binding
+(``test_tool_binding.py``). A demoted framework rejoins with its own
+conformance run when demand promotes it (#223/#244). The
 customer-facing pytest plugin (``donkey_kit.conformance``, #191) is the shipped
 deliverable this internal matrix backstops.
 
@@ -20,22 +22,24 @@ loopback gateway. ``attribution_headers_present`` asserts the consumer-auth
 per-agent attribution unit. The application and business-group header names
 are still UNVERIFIED placeholders (docs/verified-apis.md §3).
 
-Thirteen names were **retired, not implemented** (#749), and twelve still are:
-``single_tool_call``, ``multi_tool_multi_server``, ``tool_filtering``,
+Thirteen names were **retired, not implemented** (#749), and nine still are:
 ``governed_filter_excludes``, ``governance_resolve_drift``,
 ``governance_target_switch``, ``descriptor_auto_stable``,
 ``publication_verify_drift``, ``descriptor_matches_framework``,
 ``auto_vs_live_agree``, ``dynamic_tools_detected`` and ``asset_type_detection``.
-Each one needs a per-adapter surface that still raises ``_verify.blocked(...)``
-under the verification discipline. Binding MCP tools into a framework is
-blocked in ``tools/session.py``. Exchange discovery is blocked in
-``registry/exchange.py``, publication in ``registry/publication.py`` and live
-introspection in ``registry/introspect.py``. No adapter can run a scenario
-against a surface that always refuses. ``publication_idempotent`` came back
-with ``donkey publish`` (#218). The pure logic beneath them
-(``ToolFilter``, collision prefixes, governance criteria, content digests) is
-unit-tested in ``tests/unit/test_pure_logic.py``. A retired name comes back
-only with a body, once its surface is verified and built.
+Each one needs a per-adapter surface that is not verified and built yet: Exchange
+discovery is blocked in ``registry/exchange.py``, publication in
+``registry/publication.py``, and descriptor derivation from a framework's tools
+in ``registry/introspect.py``. ``dynamic_tools_detected`` (loop-registered tools
+present in ``auto``, warned in ``auto:static``) belongs with the introspection
+names, not the binding ones: it is about deriving a descriptor, and
+``auto:static`` was dropped as UNSUPPORTED (docs/verified-apis.md §10, #1248).
+``publication_idempotent`` came back with ``donkey publish`` (#218), and
+``single_tool_call``, ``multi_tool_multi_server`` and ``tool_filtering`` with the
+verified ``ToolSet`` bindings (docs/verified-apis.md §9, #991). The pure logic
+beneath the rest (``ToolFilter``, collision prefixes, governance criteria,
+content digests) is unit-tested in ``tests/unit/test_pure_logic.py``. A retired
+name comes back only with a body, once its surface is verified and built.
 """
 
 from __future__ import annotations
@@ -95,12 +99,26 @@ CONFORMANCE_SCENARIOS = [
     # Publishing goes through the control plane, not a framework, so no adapter
     # is exempt.
     "publication_idempotent",
+    # A ToolSet bound with a framework's own MCP class (ToolSet.langgraph() ...
+    # crewai()) lists the server's tools under their own names, and a call goes
+    # through the framework's tool object to the server with the consumer-auth
+    # pair (BG §2.7, docs/verified-apis.md §9, #221, #991). Every binding passes.
+    "single_tool_call",
+    # Two servers exposing the same tool names: a per-tool binding (LangGraph,
+    # LlamaIndex, Anthropic) renames each clash to <server>__<tool> and routes
+    # each call to its own server. The whole-server bindings cannot rename one
+    # tool and record an asserted exemption below.
+    "multi_tool_multi_server",
+    # ToolSet.filter(allow=..., deny=...) decides what the framework itself lists:
+    # a removed tool is never bound (BG §2.7, #222). Every binding passes.
+    "tool_filtering",
 ]
 
 # Where each scenario runs (#749), as pytest node ids relative to ``python/``.
 # test_transport_exemptions.py keeps the keys equal to CONFORMANCE_SCENARIOS and
 # checks that every node id names a test function that exists.
 _CONTRACT = "tests/conformance/test_adapter_contract.py"
+_BINDING = "tests/conformance/test_tool_binding.py"
 SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
     "simple_completion": (
         f"{_CONTRACT}::test_call_sends_governed_headers_and_correlation",
@@ -143,14 +161,22 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
         "tests/unit/test_exchange_publish.py::test_a_version_bump_alone_publishes_nothing_unless_always",
         "tests/unit/test_exchange_publish.py::test_a_published_version_with_other_content_fails_before_sending",
     ),
+    "single_tool_call": (f"{_BINDING}::test_single_tool_call",),
+    "multi_tool_multi_server": (
+        f"{_BINDING}::test_multi_tool_multi_server",
+        f"{_BINDING}::test_the_whole_server_bindings_are_exactly_the_exempt_ones",
+        "tests/unit/test_discover.py::test_a_per_tool_plan_renames_and_gates",
+        "tests/unit/test_discover.py::test_a_whole_server_plan_refuses_a_rename_and_a_gate",
+    ),
+    "tool_filtering": (f"{_BINDING}::test_tool_filtering",),
 }
 
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework
 # that cannot satisfy a scenario records WHY here rather than skipping silently.
 # Every adapter but CrewAI sends through our shared httpx client (#740), so
-# CrewAI is the only one listed, ADK's model() included since its refusals are
-# bridged too (#969). CrewAI's structural reason: the
-# native OpenAI provider builds both its sync OpenAI and its AsyncOpenAI from
+# CrewAI is the only one listed for a transport scenario, ADK's model()
+# included since its refusals are bridged too (#969). CrewAI's structural
+# reason: the native OpenAI provider builds both its sync OpenAI and its AsyncOpenAI from
 # ONE client_params dict, and the openai SDK type-checks http_client per client,
 # so no single value can carry our clients to both. With an interceptor set it
 # overwrites http_client with a fresh httpx client whose transport always sends
@@ -240,6 +266,20 @@ _CREWAI_APPROVAL_EXEMPTION = (
     "pause and the approver's span event work as for any Python code (#211)."
 )
 
+# multi_tool_multi_server: the five whole-server bindings hand the framework one
+# native object per MCP server (ADK McpToolset, Strands MCPClient, OpenAI Agents
+# MCPServerStreamableHttp, Agent Framework MCPStreamableHTTPTool, CrewAI
+# MCPServerAdapter), which takes an allow-list of tool names but has no way to
+# rename one tool. A clash across servers is refused before anything binds, and
+# filter(deny=[...]) keeps one of each (tools/session.py _plan, #221, #991). Not
+# a transport limit, so it mirrors no AdapterCapabilities flag.
+_WHOLE_SERVER_COLLISION = (
+    "{binding} binds each MCP server as one {cls}, which takes an allow-list of "
+    "tool names but cannot rename a single tool, so two servers exposing the same "
+    "name are refused with ConfigError before anything binds; filter(deny=[...]) "
+    "keeps one of each (#221, #991)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # CrewAI raises a framework error the bridge cannot type. ADK records no
     # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
@@ -253,7 +293,31 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "custom_policy_typed": _CREWAI_CUSTOM_POLICY_EXEMPTION,
         "agent_killed_stops_cleanly": _CREWAI_KILL_EXEMPTION,
         "approval_round_trip": _CREWAI_APPROVAL_EXEMPTION,
+        "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
+            binding="ToolSet.crewai()", cls="crewai_tools MCPServerAdapter"
+        ),
     },
-    # The OpenAI Agents SDK records no exemption: deep since #223, every scenario
-    # runs against a Runner.run surface, approval_round_trip since #213.
+    "adk": {
+        "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
+            binding="ToolSet.adk()", cls="McpToolset"
+        ),
+    },
+    "strands": {
+        "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
+            binding="ToolSet.strands()", cls="MCPClient"
+        ),
+    },
+    "agent_framework": {
+        "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
+            binding="ToolSet.agent_framework()", cls="MCPStreamableHTTPTool"
+        ),
+    },
+    # The OpenAI Agents SDK's model calls record no exemption: deep since #223,
+    # every transport scenario runs against a Runner.run surface,
+    # approval_round_trip since #213. Its ToolSet binding is a whole-server one.
+    "openai_agents": {
+        "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
+            binding="ToolSet.openai()", cls="MCPServerStreamableHttp"
+        ),
+    },
 }
