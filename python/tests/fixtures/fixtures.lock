@@ -220,6 +220,7 @@
   "mcp_binding/adk.json": "sha256:697cef730bff4eb2773a865007ff138d799e7b7e6c534e8db5af30240d8ef521",
   "mcp_binding/agent_framework.json": "sha256:0f248f3ca2ce50fc8bcf751742a84d7f31dbc8de0d34733d7f806296771384a6",
   "mcp_binding/anthropic.json": "sha256:23d784c1ce64388778a451d20dfdb08bcd98580f188195c77b747dadca401ab4",
+  "mcp_binding/crewai.json": "sha256:5dd4faa72d277dd44839bb09ae474dbec8d7a679b8f29292b9f4a3ce649f4a6d",
   "mcp_binding/langgraph.json": "sha256:2dbd356355872a44c7376ac99d8faf060a97a21f51298e335dbcab954d55a238",
   "mcp_binding/llamaindex.json": "sha256:cc67f1df86945c05b7ad4c2b4f034a30f56912e3751d30d2b836011e51426033",
   "mcp_binding/mcp_sdk.json": "sha256:b1a12acd6952e049dbf5d0f322d765e2c6976faf27bad30761e2006bf9b7a2f8",

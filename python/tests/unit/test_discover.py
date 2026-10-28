@@ -10,17 +10,19 @@ real bindings against a local server).
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
 from donkey_kit.core.auth import StaticToken
-from donkey_kit.core.errors import AuthError, ConfigError, RegistryError
+from donkey_kit.core.errors import AuthError, ConfigError, RegistryError, ToolInvocationError
 from donkey_kit.registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.tools import discovery as discovery_module
+from donkey_kit.tools import mcp as mcp_module
 from donkey_kit.tools import session as session_module
 from donkey_kit.tools.auth import BearerAuth, ClientIdAuth, gateway_auth
 from donkey_kit.tools.discovery import DISCOVER_LIMIT, Discovery
@@ -278,6 +280,44 @@ async def test_a_refused_credential_is_invalidated_and_retried_once(lister: _Lis
     with pytest.raises(AuthError):
         await ToolSet([_handle("inventory")], _auth=auth).describe()
     assert auth.invalidated == 2
+
+
+async def test_filter_servers_narrows_before_listing(lister: _Lister) -> None:
+    both = ToolSet([_handle("inv-a"), _handle("inv-b")], _auth=_AUTH)
+    described = await both.filter(servers=["inv-b"]).describe()
+    assert [url for url, _ in lister.calls] == ["https://gw.example.test/inv-b"]
+    assert described.name_map == {"add": "add", "lookup": "lookup"}
+    by_coordinates = both.filter(servers=["com.acme/inv-a/*"])
+    assert [s.ref.asset_id for s in by_coordinates.servers] == ["inv-a"]
+
+
+def test_filter_servers_refuses_a_typo_and_a_string() -> None:
+    ts = ToolSet([_handle("inventory")], _auth=_AUTH)
+    with pytest.raises(ConfigError, match="names no server in the set: invntory"):
+        ts.filter(servers=["invntory"])
+    with pytest.raises(ValueError, match="servers must be a list"):
+        ts.filter(servers="inventory")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(("status", "error"), [(401, AuthError), (400, ToolInvocationError)])
+async def test_list_tools_reads_the_status_the_session_recorded(
+    monkeypatch: pytest.MonkeyPatch, status: int, error: type[Exception]
+) -> None:
+    # mcp 2.x raises an MCPError without the HTTP response; the session's hook
+    # recorded the status the gateway answered with.
+    pytest.importorskip("mcp")  # list_tools imports it before opening the session
+
+    @asynccontextmanager
+    async def refused(
+        url: str, headers: Mapping[str, str], *, errors: list[int]
+    ) -> AsyncIterator[Any]:
+        errors.append(status)
+        raise RuntimeError("Server returned an error response")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(mcp_module, "open_session", refused)
+    with pytest.raises(error, match=f"HTTP {status}"):
+        await mcp_module.list_tools("https://gw.example.test/x", {}, server="x")
 
 
 async def test_a_filter_typo_surfaces_at_describe(lister: _Lister) -> None:

@@ -48,12 +48,11 @@ def _server(asset_id: str, governance: GovernanceReport | None) -> McpServerHand
 
 
 async def _bind(tools: ToolSet, method: str) -> object:
-    """Run one binding however it is called: awaited, entered, or (CrewAI) plain."""
-    if method == "anthropic":
-        async with tools.anthropic() as bound:
+    """Run one binding however it is called: awaited or (Anthropic, CrewAI) entered."""
+    if method in ("anthropic", "crewai"):
+        async with getattr(tools, method)() as bound:
             return bound
-    result = getattr(tools, method)()
-    return await result if inspect.isawaitable(result) else result
+    return await getattr(tools, method)()
 
 
 @pytest.fixture
@@ -134,7 +133,7 @@ async def test_filtering_does_not_drop_the_guard() -> None:
         await tools.strands()
 
 
-@pytest.mark.parametrize("method", [m for m in _BINDINGS if m != "crewai"])
+@pytest.mark.parametrize("method", _BINDINGS)
 async def test_a_governed_set_gets_past_the_guard(method: str, sent: list[httpx.Request]) -> None:
     # Past the guard, a binding needs its framework and a gateway credential; with
     # neither it stops there, still before any request.
@@ -145,10 +144,16 @@ async def test_a_governed_set_gets_past_the_guard(method: str, sent: list[httpx.
     assert sent == []
 
 
-def test_crewai_binding_is_still_blocked(sent: list[httpx.Request]) -> None:
-    # CrewAI's binding row is UNVERIFIED (docs/verified-apis.md §9).
-    with pytest.raises(NotImplementedError, match="blocked on verification"):
-        ToolSet([_server("hr", _GOVERNED)]).crewai()
+async def test_filtering_out_the_server_leaves_nothing_to_refuse(
+    sent: list[httpx.Request],
+) -> None:
+    # filter(servers=) drops a server before binding, as discover(governed=True) does.
+    tools = ToolSet([_server("crm", _UNGOVERNED), _server("hr", _GOVERNED)])
+
+    with pytest.raises((ImportError, ConfigError)):
+        await tools.filter(servers=["hr"]).strands()
+    with pytest.raises(UngovernedMcpServer):
+        await tools.filter(servers=["c*"]).strands()
     assert sent == []
 
 

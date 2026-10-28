@@ -3,8 +3,8 @@
 Local round-trip evidence for the "MCP tool binding classes" rows of the
 ledger (#636-#652). Each probe binds one framework's own MCP tool class to a
 real MCP server running on 127.0.0.1, lists the tools, calls one, and writes
-what it observed to `tests/fixtures/mcp_binding/<framework>.json`. Nothing here
-touches Anypoint or a gateway.
+what it observed to `tests/fixtures/mcp_binding/<framework>.json`. Only
+`bind_live.py` touches Anypoint or a gateway.
 
 Files:
 
@@ -19,6 +19,16 @@ Files:
 - `_harness.py` - what the probes import (see the contract below).
 - `probe_mcp_sdk.py` - the baseline: the plain `mcp` client against the server.
 - `probe_<framework>.py` - one per framework.
+- `bind_toolset.py` - the SDK's `ToolSet.<framework>()` bindings against two
+  local servers: filter, collision rename and approval gate (ledger §9).
+- `bind_live.py` - the same bindings through a live gateway:
+  `discover(governed=True)` from the org in `ANYPOINT_*`, then
+  `--bind FRAMEWORK=ASSET` per pair, `--call TOOL JSON --want TEXT`. With
+  `--tokens PATH` (a JSON object of asset ID to bearer token, for instances
+  behind JWT Validation) it also checks that another instance's token raises
+  `AuthError`; without it, the default `DONKEY_LLM_PROXY_CLIENT_ID` /
+  `_CLIENT_SECRET`. Credentials come from the environment or that file, never
+  argv.
 
 ## Running a probe
 
@@ -31,7 +41,9 @@ VIRTUAL_ENV=/tmp/ddk-mcpbind-<fw>/venv uv pip install <framework> mcp
 ```
 
 Install the framework's MCP binding package too where it is separate:
-`langchain-mcp-adapters` for LangGraph, `llama-index-tools-mcp` for LlamaIndex.
+`langchain-mcp-adapters` for LangGraph, `llama-index-tools-mcp` for LlamaIndex,
+`crewai-tools[mcp]` for CrewAI (which also needs `mcp<2`: `mcpadapt` uses the
+1.x `streamablehttp_client`).
 LangGraph also needs `mcp<2`: `langchain-mcp-adapters` 0.3.2 requires it, and
 the 0.3.1 a resolver picks without the pin does not import on `mcp` 2.x. The
 baseline fixture was recorded on `mcp<2`; the probe also passes on `mcp` 2.x,

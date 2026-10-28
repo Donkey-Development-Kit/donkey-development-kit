@@ -1012,37 +1012,37 @@ framework's extra, its MCP binding package where that is separate
 | MS Agent Framework | `agent_framework.MCPStreamableHTTPTool(name, url, *, static_headers=..., header_provider=..., http_client=..., ...)` (defined in `agent_framework._mcp`, subclass of `MCPTool`), used as `async with`; **no `headers=` kwarg** | VERIFIED (local round-trip) | `agent-framework==1.23.0`, `agent-framework-core==1.23.0`, `mcp==2.3.0`: with `static_headers={"client_id": ..., "client_secret": ...}` the headers reached the server. After `__aenter__`, `tool.functions` listed `add` and `lookup_sku` as `agent_framework._tools.FunctionTool` (empty until connected); `FunctionTool.invoke(arguments={"a": 2, "b": 3})` returned `{"result": 5}` (JSON text; the default `tool_result_content='structured_first'` prefers structured content). The probe passes `load_prompts=False` because the reference server has no prompts. Fixture `mcp_binding/agent_framework.json`, probe `probe_agent_framework.py`. 2026-10-28, #652 |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": url, "headers": {...}})`, entered with `async with ... as server`, bound with `Agent(name=..., mcp_servers=[server])` | VERIFIED (local round-trip) | `openai-agents==0.24.0`, `mcp==2.3.0`: `Agent.get_all_tools(RunContextWrapper(None))` listed `add` and `lookup_sku` as `agents.tool.FunctionTool`. `add(2, 3)` through `FunctionTool.on_invoke_tool(ToolContext, json_args)` with a hand-built `ToolContext` (no `Runner.run` turn, which needs a model) returned `{"type": "text", "text": "5"}`, a dict, not a bare string. The server recorded `client_id`/`client_secret` from `params["headers"]`. The server must be entered (or `connect()`ed) before `get_all_tools`. Fixture `mcp_binding/openai_agents.json`, probe `probe_openai_agents.py`. 2026-10-28, #638 |
 | Anthropic SDK | `anthropic.lib.tools.mcp.async_mcp_tool(tool, session)` → `BetaAsyncFunctionTool` (sync twin `mcp_tool` → `BetaFunctionTool`), a client-side helper over an `mcp.ClientSession`. Not the Messages API `mcp_servers` connector, which is a different, server-side path | VERIFIED (local round-trip) | `anthropic==2.3.0`, `mcp==2.3.0`, `httpx2==2.16.0`: over a `ClientSession` on `streamable_http_client(url, http_client=httpx2.AsyncClient(headers=...))`, the listed tools converted to `anthropic.lib.tools._beta_functions.BetaAsyncFunctionTool` (`add`, `lookup_sku`; `.to_dict()` keys `description`, `input_schema`, `name`). `await tool.call({"a": 2, "b": 3})` returned `[{"type": "text", "text": "5"}]`; the sync twin returned the same from a worker thread. The server recorded `client_id`/`client_secret`. The helper opens no transport, so header delivery is the `mcp` client's, as in the baseline row; what this row adds is the conversion and the `.call()` path that `tool_runner` uses. `tool_runner` / `messages.create` were not run (they need the real API). The `mcp_servers` connector (`BetaRequestMCPServerURLDefinitionParam`) was inspected statically only: its fields are `authorization_token`, `name`, `tool_configuration`, `type`, `url`, with no custom-header field, and Anthropic's servers dial the URL, so it cannot carry the gateway's header pair or reach `127.0.0.1`. Fixture `mcp_binding/anthropic.json`, probe `probe_anthropic.py`. 2026-10-28, #639 |
-| CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED (signature confirmed offline) | `crewai_tools==1.15.22`: `inspect.signature(MCPServerAdapter.__init__)` → `(serverparams: StdioServerParameters \| dict[str, Any], *tool_names: str, connect_timeout: int = 30)`. Class path confirmed at `crewai_tools.adapters.mcp_adapter.MCPServerAdapter`, re-exported at top level. No MCP server actually connected/bound. 2026-09-27, #640 |
+| CrewAI | `crewai_tools.MCPServerAdapter(serverparams, *tool_names, connect_timeout=30)` with `serverparams={"url": url, "transport": "streamable-http", "headers": {...}}`, used as a context manager (or `.tools` / `.stop()`) | VERIFIED (local round-trip) | `crewai==1.15.32`, `crewai-tools==1.15.32`, `mcpadapt==0.1.20`, `mcp==1.30.0`: the adapter yielded `add` and `lookup_sku` as `CrewAIMCPTool` (a `crewai.tools.BaseTool` built in `crewai_tools.adapters.mcp_adapter`); `add.run(a=2, b=3)` returned `"5"`, with no model turn. Passing `"add"` as `*tool_names` left only `add`. The server recorded `client_id`/`client_secret` from `serverparams["headers"]`. **Needs `mcp<2`:** `mcpadapt` connects with the 1.x `streamablehttp_client`. The adapter connects in its constructor, on its own thread and event loop. Fixture `mcp_binding/crewai.json`, probe `probe_crewai.py`. 2026-10-28, #640 |
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient(command_or_url, ..., headers=None, http_client=None, ...)` + `llama_index.tools.mcp.McpToolSpec(client).to_tool_list_async()` (defined in `llama_index.tools.mcp.client` and `.base`) | VERIFIED (local round-trip) | `llama-index-tools-mcp==0.6.0`, `llama-index-core==0.14.25`, `mcp==2.3.0`: `to_tool_list_async()` returned `llama_index.core.tools.function_tool.FunctionTool` (`add`, `lookup_sku`). `add(a=2, b=3)` through `FunctionTool.acall` returned a `ToolOutput` whose `.raw_output` is the MCP `CallToolResult` with text `5`; `.content` is the `str()` of that whole result, not `5`. The server recorded `client_id`/`client_secret`. `headers=` builds the client's own `httpx2.AsyncClient`; a caller-supplied `http_client` ignores `headers` and was not tested. A URL is streamable HTTP unless it looks like SSE (`/sse`). `BasicMCPClient` opens a new session per call. Fixture `mcp_binding/llamaindex.json`, probe `probe_llamaindex.py`. 2026-10-28, #641 |
 | Strands | `strands.tools.mcp.MCPClient(url=..., headers={...})`, used as a context manager. The `MCPClient(lambda: streamablehttp_client(...))` form does not work on `mcp` 2.x, which no longer has `streamablehttp_client` | VERIFIED (local round-trip) | `strands-agents==1.62.0`, `mcp==2.1.1`: `list_tools_sync()` returned `add` and `lookup_sku` as `strands.tools.mcp.mcp_agent_tool.MCPAgentTool` (a `PaginatedList`, in server order). `Agent(tools=tools, callback_handler=None).tool.add(a=2, b=3)` returned `status: success` with content text `"5"`, through the direct tool path with no model turn. The server recorded `client_id`/`client_secret` on every request. The `transport_callable` form is still in the signature but rejects `headers`, `auth` and `auth_provider` (`ValueError`); it was not run. Fixture `mcp_binding/strands.json`, probe `probe_strands.py`. 2026-10-28, #637 |
 
 **`VERIFIED (local round-trip)` is not a gateway result.** These rows say that each
 framework's class exists under that name, accepts that construction, can send
 the `client_id`/`client_secret` pair, and yields its native tool type against a
-local reference server. No row was bound through the governed Omni Gateway, so
-the live gateway bind is still `UNVERIFIED` (#221).
+local reference server. The gateway bind is the `VERIFIED (LIVE)` paragraph
+below.
 
 **The SDK's `ToolSet` bindings: `VERIFIED (local round-trip)`, 2026-10-28, #221.**
 `python/scripts/mcp_binding/bind_toolset.py` runs every `ToolSet.<framework>()`
-except `crewai()` (still `_verify.blocked(...)`) against two copies of the
+against two copies of the
 reference server, with a governed handle and a `ClientIdAuth` pair. For each
 framework it checks that `filter(allow=["add"])` binds only `add`, the call
 returns 5 (ADK lists only; its call is the `probe_adk.py` row), and the server
 recorded the pair. With both servers, LangGraph, LlamaIndex and Anthropic
 expose the four `inv-a__*`/`inv-b__*` names, and `require_approval(tools=["add"])`
 makes their `add` raise `ApprovalRequired`. ADK, Strands, OpenAI Agents and
-Agent Framework refuse the clash with `ConfigError`, bind once
+Agent Framework (and CrewAI) refuse the clash with `ConfigError`, bind once
 `filter(deny=["inv-b__*"])` removes it, and refuse the approval rule with
-`_verify.blocked(...)`. It passed in two venvs: LangGraph on `mcp==1.30.0`
-(`langchain-mcp-adapters` needs `mcp<2`), and ADK, Strands, OpenAI Agents,
+`_verify.blocked(...)`. CrewAI's `crewai()` is an async context manager, like
+`anthropic()`. It passed in three venvs: LangGraph on `mcp==1.30.0`
+(`langchain-mcp-adapters` needs `mcp<2`), CrewAI on `mcp==1.30.0` (`mcpadapt`
+needs it too), and ADK, Strands, OpenAI Agents,
 Anthropic, LlamaIndex and Agent Framework on `mcp` 2.x, at the versions in the
 rows above. The SDK's own `tools/list` call (`donkey_kit.tools.mcp.list_tools`,
 `mcp.ClientSession` over `streamable_http_client(url, http_client=...)`, as in
 the baseline row) was also run against the reference server on `mcp==1.24.0`,
 `1.30.0` and `2.1.1`; `mcp==1.23` has no `streamable_http_client`, hence the
-`donkey-kit[mcp]` floor `mcp>=1.24`. These bindings ship, with the docs pages
-marked `offline-verified`; the gateway bind is the remaining step. Two findings
-carry over to that work:
+`donkey-kit[mcp]` floor `mcp>=1.24`. Two findings from the local runs:
 
 - **Tool results differ per framework.** `add(2, 3)` came back as the string `5`
   (Strands, the MCP baseline), a content-block dict or list (OpenAI Agents,
@@ -1056,6 +1056,41 @@ carry over to that work:
   `httpx2.RequestNotRead`, wrapped in an `ExceptionGroup`. This is informational,
   because the governed gateway routes only the trailing-slash form (§6), and every
   probe uses that form.
+
+**The SDK's `ToolSet` bindings through the governed gateway: `VERIFIED (LIVE)`,
+2026-10-28, #221.** `python/scripts/mcp_binding/bind_live.py` ran
+`donkey.tools.discover(governed=True)` against the DDK Sandbox environment. It
+returned the eight `ddk-<key>-mcp` instances, each the `/mcp/<key>/` server of a
+framework agent fronted by Omni Gateway with MCP Support, JWT Validation and
+Credential Injection, and left out an ungoverned MCP asset with its failed
+checks. Each framework was then bound to its own instance with
+`filter(servers=["ddk-<key>-mcp"])` and a Keycloak client-credentials token
+whose audience is that instance (`BearerAuth`). Every bound tool was the one
+`describe()` listed, and `calculate("6*7")` returned `42` through the
+framework's own tool object, for LangGraph, LlamaIndex, Anthropic, Strands,
+OpenAI Agents, Agent Framework and CrewAI. ADK was listed only, as in the local
+run. Another instance's token raised `AuthError` (HTTP 401). The same run against
+`ddk-langgraph-mcp-cid`, the LangGraph server behind MCP Support and Client ID
+Enforcement instead, with the default `gateway_auth` (`DONKEY_LLM_PROXY_CLIENT_ID`
+/ `_CLIENT_SECRET` from a consumer app with an approved contract), passed for all
+eight frameworks, and a wrong client secret raised `AuthError` (HTTP 401). The
+framework versions were those of the local run. One CrewAI run hit a read timeout
+listing the tools and passed on two reruns. Three findings from it:
+
+- **An audience-scoped token is good for one instance.** With more than one
+  instance in the set, listing the others fails with 401. `filter(servers=[...])`
+  narrows the set before any listing, so those servers never get the token.
+- **JWT Validation answers a missing token with 400, a wrong one with 401.**
+  The SDK maps 401 and 403 to `AuthError` and other statuses to
+  `ToolInvocationError`.
+- **`mcp` 2.x drops the HTTP status.** A refused request comes back as
+  `MCPError` (`-32603`) without the response. `donkey_kit.tools.mcp.open_session`
+  records each status of 400 or above with an `httpx` response hook, and
+  `list_tools` reads it from there. On `mcp` 1.x the status is on the
+  `httpx.HTTPStatusError` inside the `ExceptionGroup`.
+
+Collision renaming and the approval gate run in the SDK before any call. They
+were not repeated through the gateway.
 
 Which MCP transports Omni Gateway can front (streamable HTTP, SSE, stdio) is
 UNVERIFIED (#1150). §5 verifies only the shape of a gateway MCP endpoint. The

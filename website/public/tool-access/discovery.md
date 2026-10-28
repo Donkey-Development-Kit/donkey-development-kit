@@ -1,13 +1,13 @@
 # Discovery, search & filter
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 `donkey.tools.discover()` composes three live registry reads:
 [`donkey.registry.search()`](#registry-search),
 [`donkey.registry.explain()`](#explain--why-a-tool-was-included-or-excluded) and
-[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). Binding what it
-returns has been verified against a local MCP server, not yet through the
-governed gateway (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)).
+[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). What it returns
+has been bound and called through the governed gateway with every supported
+framework (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)).
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance** and tags, so an agent

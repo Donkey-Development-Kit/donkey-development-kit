@@ -301,6 +301,7 @@ module = [
     "litellm.*",
     "mcp.*",
     "langchain_mcp_adapters.*",
+    "crewai_tools.*",
     # [local] simulator deps — absent under the typecheck job's [llm,cli]
     # install; build_app()/serve() confine their use to function bodies and the
     # public return type is a framework-free Protocol, so no Any leaks out.

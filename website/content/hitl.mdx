@@ -531,8 +531,9 @@ like any other.
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
 [`donkey.tools.discover()`](/tool-access/discovery) is not one, so you declare
-its approval once on the `ToolSet` instead. Binding through the governed
-gateway has not been verified yet (see [Framework binding](/tool-access/binding)):
+its approval once on the `ToolSet` instead. The gate runs in the SDK, before
+the call leaves the client, and has been run against local MCP servers (see
+[Framework binding](/tool-access/binding)):
 
 ```python
 # `tools` is the ToolSet that donkey.tools.discover() returns, before you bind it.
@@ -556,7 +557,7 @@ holds the tool's arguments by name, taken from its input schema.
   `"billing__issue_refund"`, gates only that server's tool.
 - **Per-tool bindings only.** LangGraph, LlamaIndex and the Anthropic SDK
   gate the call. The whole-server bindings (ADK, Strands, the OpenAI Agents
-  SDK, Agent Framework) raise `NotImplementedError` for a set with a rule; see
+  SDK, Agent Framework, CrewAI) raise `NotImplementedError` for a set with a rule; see
   [Whole-server bindings](/tool-access/binding#whole-server-bindings).
 - **A typo fails at bind time.** Binding raises `ConfigError` for a name that no
   server in the set exposes, so a misspelt name can never leave a tool ungated.

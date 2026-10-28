@@ -9,7 +9,7 @@ The probes next to this file verify each framework's own MCP class
   server saw the ``ClientIdAuth`` pair;
 - with both servers, a per-tool binding (LangGraph, LlamaIndex, Anthropic)
   exposes ``inv-a__add`` and ``inv-b__add``, and a whole-server binding (ADK,
-  Strands, OpenAI Agents, Agent Framework) refuses with ``ConfigError`` until
+  Strands, OpenAI Agents, Agent Framework, CrewAI) refuses with ``ConfigError`` until
   ``filter(deny=["inv-b__*"])`` removes the clash;
 - ``require_approval(tools=["add"])`` makes a per-tool binding's ``add`` raise
   ``ApprovalRequired``, and a whole-server binding refuse.
@@ -54,7 +54,10 @@ MODULES = {
     "strands": "strands",
     "openai": "agents",
     "agent_framework": "agent_framework",
+    "crewai": "crewai_tools",
 }
+#: Bindings entered as an async context manager rather than awaited.
+ENTERED = ("anthropic", "crewai")
 
 
 def toolset(*servers: tuple[str, LocalServer]) -> ToolSet:
@@ -81,23 +84,27 @@ def text(result: Any) -> str:
     return str(result)
 
 
-# Per framework: bind, then return (exposed names, a call of add(2, 3) or None).
-Run = Callable[[ToolSet], Awaitable[tuple[list[str], Callable[[], Awaitable[Any]] | None]]]
+#: The tool each run calls, and its arguments: add(2, 3) on the local server.
+Call = tuple[str, dict[str, Any]]
+ADD: Call = ("add", {"a": 2, "b": 3})
+
+# Per framework: bind, then return (exposed names, a call of the tool or None).
+Run = Callable[[ToolSet, Call], Awaitable[tuple[list[str], Callable[[], Awaitable[Any]] | None]]]
 
 
-async def run_langgraph(ts: ToolSet) -> tuple[list[str], Any]:
+async def run_langgraph(ts: ToolSet, call: Call = ADD) -> tuple[list[str], Any]:
     tools = await ts.langgraph()
-    add = next((t for t in tools if t.name.endswith("add")), None)
-    return [t.name for t in tools], (lambda: add.ainvoke({"a": 2, "b": 3})) if add else None
+    tool = next((t for t in tools if t.name.endswith(call[0])), None)
+    return [t.name for t in tools], (lambda: tool.ainvoke(call[1])) if tool else None
 
 
-async def run_llamaindex(ts: ToolSet) -> tuple[list[str], Any]:
+async def run_llamaindex(ts: ToolSet, call: Call = ADD) -> tuple[list[str], Any]:
     tools = await ts.llamaindex()
-    add = next((t for t in tools if t.metadata.name.endswith("add")), None)
-    return [t.metadata.name for t in tools], (lambda: add.acall(a=2, b=3)) if add else None
+    tool = next((t for t in tools if t.metadata.name.endswith(call[0])), None)
+    return [t.metadata.name for t in tools], (lambda: tool.acall(**call[1])) if tool else None
 
 
-async def run_adk(ts: ToolSet) -> tuple[list[str], Any]:
+async def run_adk(ts: ToolSet, _call: Call = ADD) -> tuple[list[str], Any]:
     names: list[str] = []
     for toolset_ in await ts.adk():
         names += [t.name for t in await toolset_.get_tools()]
@@ -105,14 +112,14 @@ async def run_adk(ts: ToolSet) -> tuple[list[str], Any]:
     return names, None  # the call runs through an ADK Runner; probe_adk.py covers it
 
 
-async def run_strands(ts: ToolSet) -> tuple[list[str], Any]:
+async def run_strands(ts: ToolSet, call: Call = ADD) -> tuple[list[str], Any]:
     names: list[str] = []
     result = None
     for client in await ts.strands():
         with client:
             names += [t.tool_name for t in client.list_tools_sync()]
-            if "add" in names:
-                result = client.call_tool_sync("t1", "add", {"a": 2, "b": 3})
+            if call[0] in names:
+                result = client.call_tool_sync("t1", call[0], call[1])
 
     async def call() -> Any:
         return result
@@ -120,7 +127,7 @@ async def run_strands(ts: ToolSet) -> tuple[list[str], Any]:
     return names, call if result is not None else None
 
 
-async def run_openai(ts: ToolSet) -> tuple[list[str], Any]:
+async def run_openai(ts: ToolSet, call: Call = ADD) -> tuple[list[str], Any]:
     names: list[str] = []
     result = None
     for server in await ts.openai():
@@ -130,8 +137,8 @@ async def run_openai(ts: ToolSet) -> tuple[list[str], Any]:
 
             listed = await server.list_tools(RunContextWrapper(None), Agent(name="probe"))
             names += [t.name for t in listed]
-            if "add" in names:
-                result = await server.call_tool("add", {"a": 2, "b": 3})
+            if call[0] in names:
+                result = await server.call_tool(call[0], call[1])
 
     async def call() -> Any:
         return result
@@ -139,15 +146,15 @@ async def run_openai(ts: ToolSet) -> tuple[list[str], Any]:
     return names, call if result is not None else None
 
 
-async def run_agent_framework(ts: ToolSet) -> tuple[list[str], Any]:
+async def run_agent_framework(ts: ToolSet, call: Call = ADD) -> tuple[list[str], Any]:
     names: list[str] = []
     result = None
     for tool in await ts.agent_framework():
         async with tool:
             names += [f.name for f in tool.functions]
-            add = next((f for f in tool.functions if f.name == "add"), None)
-            if add is not None:
-                result = await add.invoke(arguments={"a": 2, "b": 3})
+            fn = next((f for f in tool.functions if f.name == call[0]), None)
+            if fn is not None:
+                result = await fn.invoke(arguments=call[1])
 
     async def call() -> Any:
         return result
@@ -155,25 +162,30 @@ async def run_agent_framework(ts: ToolSet) -> tuple[list[str], Any]:
     return names, call if result is not None else None
 
 
-async def check_anthropic(ts: ToolSet, expect: list[str], approval: bool) -> list[str]:
-    """Anthropic binds inside a context manager, so its checks run inside it."""
+async def check_entered(
+    fw: str, ts: ToolSet, expect: list[str], approval: bool, call: Call = ADD, want: str = "5"
+) -> list[str]:
+    """Anthropic and CrewAI bind inside a context manager, so their checks run inside it."""
     problems: list[str] = []
-    async with ts.anthropic() as tools:
+    async with getattr(ts, fw)() as tools:
         names = sorted(t.name for t in tools)
         if names != expect:
             problems.append(f"bound {names}, expected {expect}")
-        add = next((t for t in tools if t.name.endswith("add")), None)
-        if add is not None:
+        tool = next((t for t in tools if t.name.endswith(call[0])), None)
+        if tool is not None:
             try:
-                out = await add.call({"a": 2, "b": 3})
+                if fw == "crewai":  # BaseTool.run blocks on the adapter's own loop
+                    out = await asyncio.to_thread(tool.run, **call[1])
+                else:
+                    out = await tool.call(call[1])
             except ApprovalRequired:
                 if not approval:
-                    problems.append("add asked for approval without a rule")
+                    problems.append(f"{call[0]} asked for approval without a rule")
             else:
                 if approval:
-                    problems.append("add ran without the approval its rule requires")
-                elif "5" not in text(out):
-                    problems.append(f"add returned {out!r}")
+                    problems.append(f"{call[0]} ran without the approval its rule requires")
+                elif want not in text(out):
+                    problems.append(f"{call[0]} returned {out!r}")
     return problems
 
 
@@ -187,23 +199,32 @@ RUNS: dict[str, Run] = {
 }
 
 
-async def scenario(fw: str, ts: ToolSet, expect: list[str], *, approval: bool = False) -> list[str]:
-    """Bind ``ts`` with ``fw``; the problems found, empty when it behaved."""
-    if fw == "anthropic":
-        return await check_anthropic(ts, expect, approval)
-    names, call = await RUNS[fw](ts)
+async def scenario(
+    fw: str,
+    ts: ToolSet,
+    expect: list[str],
+    *,
+    approval: bool = False,
+    call: Call = ADD,
+    want: str = "5",
+) -> list[str]:
+    """Bind ``ts`` with ``fw`` and run ``call``, which must return ``want``; the
+    problems found, empty when it behaved."""
+    if fw in ENTERED:
+        return await check_entered(fw, ts, expect, approval, call, want)
+    names, run = await RUNS[fw](ts, call)
     problems = [] if sorted(names) == expect else [f"bound {sorted(names)}, expected {expect}"]
-    if call is not None:
+    if run is not None:
         try:
-            out = await call()
+            out = await run()
         except ApprovalRequired:
             if not approval:
-                problems.append("add asked for approval without a rule")
+                problems.append(f"{call[0]} asked for approval without a rule")
         else:
             if approval:
-                problems.append("add ran without the approval its rule requires")
-            elif "5" not in text(out):
-                problems.append(f"add returned {out!r}")
+                problems.append(f"{call[0]} ran without the approval its rule requires")
+            elif want not in text(out):
+                problems.append(f"{call[0]} returned {out!r}")
     return problems
 
 

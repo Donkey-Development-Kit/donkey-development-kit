@@ -4717,8 +4717,9 @@ like any other.
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
 [`donkey.tools.discover()`](https://docs.donkey-kit.dev/tool-access/discovery.md) is not one, so you declare
-its approval once on the `ToolSet` instead. Binding through the governed
-gateway has not been verified yet (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)):
+its approval once on the `ToolSet` instead. The gate runs in the SDK, before
+the call leaves the client, and has been run against local MCP servers (see
+[Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)):
 
 ```python
 # `tools` is the ToolSet that donkey.tools.discover() returns, before you bind it.
@@ -4742,7 +4743,7 @@ holds the tool's arguments by name, taken from its input schema.
   `"billing__issue_refund"`, gates only that server's tool.
 - **Per-tool bindings only.** LangGraph, LlamaIndex and the Anthropic SDK
   gate the call. The whole-server bindings (ADK, Strands, the OpenAI Agents
-  SDK, Agent Framework) raise `NotImplementedError` for a set with a rule; see
+  SDK, Agent Framework, CrewAI) raise `NotImplementedError` for a set with a rule; see
   [Whole-server bindings](https://docs.donkey-kit.dev/tool-access/binding.md#whole-server-bindings).
 - **A typo fails at bind time.** Binding raises `ConfigError` for a name that no
   server in the set exposes, so a misspelt name can never leave a tool ungated.
@@ -6761,11 +6762,10 @@ Source: https://docs.donkey-kit.dev/tool-access.md
 
 # Tool access
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
-Discovery and binding run end to end against a local MCP server. Binding
-through the governed gateway has not been verified yet; see
-[Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
+Discovery and binding run end to end through the governed gateway, with
+every supported framework; see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 
 Governed tool access lets an agent discover the MCP tools your organisation has
 published and governed, filter them down to what it actually needs, and bind
@@ -6822,14 +6822,14 @@ Source: https://docs.donkey-kit.dev/tool-access/discovery.md
 
 # Discovery, search & filter
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 `donkey.tools.discover()` composes three live registry reads:
 [`donkey.registry.search()`](#registry-search),
 [`donkey.registry.explain()`](#explain--why-a-tool-was-included-or-excluded) and
-[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). Binding what it
-returns has been verified against a local MCP server, not yet through the
-governed gateway (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)).
+[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). What it returns
+has been bound and called through the governed gateway with every supported
+framework (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)).
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance** and tags, so an agent
@@ -7065,11 +7065,13 @@ Source: https://docs.donkey-kit.dev/tool-access/binding.md
 
 # Framework binding
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
-  Every binding below was run end to end against a local MCP server, with the
-  framework's current release. Binding through the governed gateway has not
-  been verified yet, and the CrewAI binding still raises `NotImplementedError`.
+  Every binding below was run through the governed gateway with the
+  framework's current release: discovered from Exchange, then bound and called
+  through an MCP instance behind JWT Validation and one behind Client ID
+  Enforcement. The collision rename and the approval gate run in the SDK, and
+  were run against local MCP servers.
 
 Once [discovery](https://docs.donkey-kit.dev/tool-access/discovery.md) hands you a `ToolSet`, binding turns
 governed MCP servers into a framework's own tool objects — nothing wrapped,
@@ -7139,6 +7141,15 @@ tools = await donkey.tools.discover(tags=["hr"], governed=True, auth=BearerAuth(
 - A `401` or `403` while listing tools drops the cached credential and retries
   once, then raises `AuthError`.
 
+A credential is often good for one instance only, such as a JWT whose audience
+is that instance. Narrow the set to it with `filter(servers=[...])` before you
+bind, so the other servers are never listed and never receive the token:
+
+```python
+tools = await donkey.tools.discover(governed=True, auth=BearerAuth(hr_token))
+hr = tools.filter(servers=["hr-mcp"])   # asset ID, or coordinates such as "<group-id>/hr-mcp/*"
+```
+
 ## Filtering
 
 `filter()` takes an allow-list, a deny-list and a predicate, and deny wins.
@@ -7171,6 +7182,11 @@ allows: gateway policies still apply to every call.
 An allow or deny entry that matches no tool on any server raises `ConfigError`
 once the tools are listed, at `describe()` or at bind time. A typo then can't
 empty the set or leave a tool you meant to deny exposed.
+
+`filter(servers=[...])` narrows the servers instead, by asset ID or
+coordinates, exact or glob. It applies before any tool is listed, so a server
+it drops is never connected to. An entry that matches no server in the set
+raises `ConfigError` straight away.
 
 ### What the tool list costs
 
@@ -7221,8 +7237,9 @@ except UngovernedMcpServer as e:
 ```
 
 To fix it, front the server with the gateway, or leave it out with
-`discover(governed=True)`. `filter()` narrows tools, not servers, so it does not
-get you past the check. There is no opt-out: to call an ungoverned server, use
+`discover(governed=True)` or drop it with `filter(servers=[...])`. A tool
+filter (`allow`, `deny`, `predicate`) does not get you past the check: the
+server is still in the set. There is no opt-out: to call an ungoverned server, use
 the framework's own MCP client, without the SDK and without your gateway
 credentials.
 
@@ -7245,6 +7262,8 @@ await ts.adk()                # -> list[McpToolset], one per server
 await ts.strands()            # -> list[MCPClient], one per server
 await ts.openai()             # -> list[MCPServerStreamableHttp], one per server
 await ts.agent_framework()    # -> list[MCPStreamableHTTPTool], one per server
+async with ts.crewai() as tools:      # -> list[BaseTool]
+    ...
 ```
 
 | Framework | Binding | Install |
@@ -7256,18 +7275,21 @@ await ts.agent_framework()    # -> list[MCPStreamableHTTPTool], one per server
 | Strands | `strands.tools.mcp.MCPClient(url=..., headers=..., tool_filters=...)`, used as a context manager; `list_tools_sync()` yields `MCPAgentTool` objects for `Agent(tools=[...])`. | `donkey-kit[strands,mcp]` |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": ..., "headers": ...}, tool_filter=...)`, entered with `async with` and passed into `Agent(mcp_servers=[...])`. | `donkey-kit[openai-agents,mcp]` |
 | MS Agent Framework | `agent_framework.MCPStreamableHTTPTool(name, url, static_headers=..., allowed_tools=...)`, entered with `async with`. It has no `headers=` argument; the gateway credentials go in `static_headers`. | `donkey-kit[agent_framework,mcp]` |
-| CrewAI | Not bound yet: `crewai()` raises `NotImplementedError`. | — |
+| CrewAI | `crewai_tools.MCPServerAdapter({"url": ..., "transport": "streamable-http", "headers": ...}, *tool_names)`, one per server, for `Agent(tools=...)`. An async context manager: the adapters hold their connections open and stop on exit. `filter()` becomes the `tool_names` allow-list. | `donkey-kit[crewai,mcp]`, `crewai-tools[mcp]` (needs `mcp<2`) |
 
 Each class in this table, and the argument that carries the gateway's
 credential headers, was checked by binding the framework's current release to
-a local MCP server. The SDK's bindings were then run against two local servers
-for the filter, the collision rename and the approval gate described here.
-Binding through the governed gateway has not been verified yet.
+a local MCP server. The SDK's bindings were run against two local servers for
+the filter, the collision rename and the approval gate described here, and
+then through the governed gateway: each one bound an MCP instance discovered
+from Exchange, behind JWT Validation and behind Client ID Enforcement, and
+called a tool on it. Another instance's token, or a wrong client secret, raised
+`AuthError`.
 
 ### Whole-server bindings
 
-ADK, Strands, the OpenAI Agents SDK and Agent Framework bind each MCP server as
-one object. `filter()` becomes that object's allow-list of tool names, but the
+ADK, Strands, the OpenAI Agents SDK, Agent Framework and CrewAI bind each MCP
+server as one object. `filter()` becomes that object's allow-list of tool names, but the
 object cannot rename one tool or gate one call, so:
 
 - a set whose tool names collide across servers raises `ConfigError`. Keep one
@@ -13630,6 +13652,7 @@ rides the other plane's requests:
 | Destination | Client-id mode (default) | `jwt` mode | `bearer` mode | Never sent here |
 |---|---|---|---|---|
 | **LLM proxy** (`llm_proxy_url`) | `client_id: <llm_proxy_client_id>` and `client_secret: <llm_proxy_client_secret>` headers. The API-key slot<sup>1</sup> carries `llm_proxy_key`, or the placeholder `client-id-enforced`, and so does the [`llm_proxy_key_header`](#bring-your-own-provider-key) header when set. | `X-Client-Id: <llm_proxy_wallet_client_id>` and `Authorization: Bearer `<sup>2</sup>. No `client_secret`. | `Authorization: Bearer <token from llm_auth>`<sup>2</sup>. The API-key slot<sup>1</sup> and `llm_proxy_key_header` as in client-id mode. No `X-Client-Id`, no `client_secret`. | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, the connected-app token, anything from `Donkey(auth=…)` |
+| **Governed MCP servers** (the gateway URL `resolve_mcp()` returns) | `client_id: <llm_proxy_client_id>` and `client_secret: <llm_proxy_client_secret>` headers, or the credential passed to `discover(auth=…)`. See [Auth](https://docs.donkey-kit.dev/tool-access/binding.md#auth). | `Authorization: Bearer `, or `discover(auth=…)`. No `X-Client-Id`. | `Authorization: Bearer <token from llm_auth>`, or `discover(auth=…)`. | `llm_proxy_key`, `X-Client-Id`, the attribution headers, `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, the connected-app token |
 | **Anypoint token endpoint** (`<base_url>/accounts/api/v2/oauth2/token`) | Form body: `grant_type=client_credentials`, `client_id`, `client_secret` (the `ANYPOINT_*` values). | Same. | Same. | Every `llm_proxy_*` value, the JWT or bearer token, `X-Client-Id` |
 | **Registry and tools** (`base_url`) | `Authorization: Bearer <connected-app token>` (or the token from `Donkey(auth=…)`). | Same. No `X-Client-Id`. | Same. | Every `llm_proxy_*` value, the JWT or bearer token, `X-Client-Id` |
 
