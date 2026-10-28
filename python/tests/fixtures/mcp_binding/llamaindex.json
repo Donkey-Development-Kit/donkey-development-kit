@@ -1,0 +1,34 @@
+{
+  "binding": {
+    "call": "McpToolSpec(BasicMCPClient(url, headers=...)).to_tool_list_async() -> FunctionTool.acall(a=2, b=3)",
+    "class": "BasicMCPClient + McpToolSpec",
+    "module": "llama_index.tools.mcp"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "llama-index-core": "0.14.25",
+    "llama-index-tools-mcp": "0.6.0",
+    "mcp": "2.3.0"
+  },
+  "framework": "llamaindex",
+  "headers_seen": {
+    "client_id": "probe-id",
+    "client_secret": "probe-secret"
+  },
+  "native_tool_types": [
+    "llama_index.core.tools.function_tool.FunctionTool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": "5"
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}
