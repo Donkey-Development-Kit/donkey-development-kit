@@ -22,7 +22,7 @@ import pytest
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.experimental import AssetRef, AssetType, Publication, PublicationAssetType
-from donkey_kit.registry.criteria import GovernanceCriteria, GovernanceReport
+from donkey_kit.registry.criteria import GovernanceReport
 from donkey_kit.registry.exchange import ExchangeRegistry
 from donkey_kit.registry.models import McpServerHandle
 from donkey_kit.tools.filter import ToolDescriptor, resolve_collisions
@@ -60,10 +60,6 @@ _PUBLICATION = Publication(
 _BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
     ("registry.search(governed=)", lambda: _REGISTRY.search(governed=True)),
     ("registry.resolve_agent", lambda: _REGISTRY.resolve_agent(_REF)),
-    (
-        "registry.explain",
-        lambda: _REGISTRY.explain(_REF, criteria=GovernanceCriteria()),
-    ),
     ("registry.warm", lambda: _REGISTRY.warm()),
     ("tools.langgraph", _TOOL_SET.langgraph),
     ("tools.adk", _TOOL_SET.adk),

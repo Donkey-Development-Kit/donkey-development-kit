@@ -58,7 +58,7 @@ tools = await donkey.tools.discover(domain="hr", locked=True)
 
 ## Registry caching
 
-Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`,
+Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`, `explain()`,
 `resolve_agent()` — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md))
 are cached with a configurable TTL (default 300 seconds):
 

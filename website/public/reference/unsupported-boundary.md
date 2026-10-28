@@ -26,8 +26,10 @@ feature needs a token. Model calls never request that token. The features that
 would request it are listed in
 [Which features use the control plane](https://docs.donkey-kit.dev/reference/configuration.md#which-features-use-the-control-plane).
 In this release they are `donkey publish` and `donkey.registry.search()`,
-which also call Exchange, and `donkey.registry.resolve_mcp()`, which reads
-Access Management, API Manager and Omni Gateway Manager; the rest are Roadmap.
+which also call Exchange, `donkey.registry.resolve_mcp()`, which reads
+Access Management, API Manager and Omni Gateway Manager, and
+`donkey.registry.explain()`, which reads Access Management, API Manager,
+Exchange and API Governance; the rest are Roadmap.
 Otherwise the token endpoint is contacted only if your own code calls
 `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
@@ -47,8 +49,10 @@ before making a network request, except `donkey.as_user()`, described below.
 | Gateway identity and routing headers: `x-request-id`, `x-envoy-decorator-operation`, `x-llm-proxy-{routing-type,routing-fallback,llm-provider,llm-model}` | `core.lastcall.LastCall`, `core.transport` | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`, and only an explicit `routing-fallback: true` changes retry behaviour. Owner: DDK maintainers; a contract change needs new fixtures before the parser changes. |
 | Exchange Graph API asset search: `POST /graph/api/v1/graphql`, `assets(query: {searchTerm, organizationIds, tags}, latestVersionsOnly: true)` | `registry.exchange.ExchangeRegistry.search` | **Documented and public** | Searches the business group's assets, at their latest versions. Documented in [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api). A tag filter there also matches the keyed tags Exchange derives, so the SDK keeps only assets whose matching tags are keyless, the kind the page says are set in Exchange or at publish. |
 | The `types`, `limit` and `offset` fields of the Graph API search's `query` input | `registry.exchange.ExchangeRegistry.search` | **Undocumented** | Filters by asset type and pages the results. The Graph API page does not list them; the documented REST search (`GET /exchange/api/v2/assets/search`) takes the same three parameters, but it needs the root organisation's ID and has no text filter. Justification: without them, an `asset_types` filter would read the whole group and a search could not page. Owner: DDK maintainers. A refusal raises `RegistryError`; `tests/fixtures/anypoint/exchange_search/` holds the captures to re-check against. |
-| Access Management environment list: `GET /accounts/api/organizations/{org}/environments` | `registry.exchange.ExchangeRegistry.resolve_mcp` | **Documented and public** | Finds the id of the environment named by `ANYPOINT_ENV`. Documented in the [Access Management API](https://dev-portal.mulesoft.com/apis/access-management.html) reference. |
-| API Manager instance reads: `GET /apimanager/api/v1/…/environments/{env}/apis?assetId=&groupId=&assetVersion=` and `GET …/apis/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp` | **Documented and public** | Finds the asset version's deployed MCP instance and reads its path and gateway. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference (`listApiInstances` takes the three filters). |
+| Access Management environment list: `GET /accounts/api/organizations/{org}/environments` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain` | **Documented and public** | Finds the id of the environment named by `ANYPOINT_ENV`. Documented in the [Access Management API](https://dev-portal.mulesoft.com/apis/access-management.html) reference. |
+| API Manager instance reads: `GET /apimanager/api/v1/…/environments/{env}/apis?assetId=&groupId=&assetVersion=`, `GET …/apis/{id}` and `GET …/apis/{id}/policies` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain` | **Documented and public** | Finds the asset version's deployed MCP instance and reads its path and gateway. `explain()` also reads each deployed instance's policies and gateway name. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference (`listApiInstances` takes the three filters). |
+| Exchange asset version read: `GET /exchange/api/v2/assets/{group}/{asset}/{version}` | `registry.exchange.ExchangeRegistry.explain` | **Documented and public** | Reads the version's tags (`labels`) and lifecycle `status` for `require_tags` and `require_lifecycle`. Documented in the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`getAssetVersion`). A refused read makes both checks UNKNOWN. |
+| API Governance conformance read: `GET /governance/xapi/api/v1/stats/organization/targets/{group}/{asset}/{version}?organization={org}` | `registry.exchange.ExchangeRegistry.explain` | **Documented, no SLA for third-party use** | Reads the business group's governance reports for the version (`summaryStatus` per ruleset) for `require_governance_pass`. It is the API Governance Experience API, which [Getting Started with API Governance](https://docs.mulesoft.com/api-governance/get-started) points to for retrieving conformance status, and whose spec is published in Exchange as `api-governance-xapi`. As an experience API it has no third-party support commitment, so the SDK reads it fail-open: no report, an unrecognised status or a refused read makes the check UNKNOWN. Owner: DDK maintainers; `tests/fixtures/anypoint/mcp_explain/` holds the captures to re-check against. |
 | Omni Gateway Manager gateway read: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp` | **Documented and public** | Reads the gateway's `configuration.ingress.publicUrl`, the host of the resolved MCP endpoint. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference. |
 
 How each row was established (live capture, plugin test, and so on) is in the
@@ -69,8 +73,7 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Deliberately outside the boundary
 
-- A2A agent resolution, API Manager governed-state reads, MCP
-  discovery and binding, and `Publication.preview()` / `verify()` are
+- A2A agent resolution, MCP discovery and binding, and `Publication.preview()` / `verify()` are
   Roadmap, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.

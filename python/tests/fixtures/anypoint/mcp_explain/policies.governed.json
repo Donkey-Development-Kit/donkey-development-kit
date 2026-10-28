@@ -1,0 +1,54 @@
+{
+  "policies": [
+    {
+      "policyTemplateId": "461713",
+      "order": 1,
+      "pointcutData": null,
+      "label": null,
+      "implementationAsset": {
+        "assetId": "mcp-support-policy-flex",
+        "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+        "version": "1.1.1",
+        "technology": "flexGateway",
+        "minRuntimeVersion": "1.9.3"
+      },
+      "type": "system",
+      "policyId": 9665471,
+      "configuration": {
+        "injectMcpNameHeaders": false
+      },
+      "template": {
+        "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+        "assetId": "mcp-support",
+        "assetVersion": "1.1.1"
+      },
+      "version": 1793173626640
+    },
+    {
+      "policyTemplateId": "433807",
+      "order": 2,
+      "pointcutData": null,
+      "label": null,
+      "implementationAsset": {
+        "assetId": "client-id-enforcement-flex",
+        "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+        "version": "1.2.0",
+        "technology": "flexGateway",
+        "minRuntimeVersion": "1.0.0"
+      },
+      "type": "system",
+      "policyId": 9665472,
+      "configuration": {
+        "credentialsOriginHasHttpBasicAuthenticationHeader": "customExpression",
+        "clientIdExpression": "#[attributes.headers['client_id']]",
+        "clientSecretExpression": "#[attributes.headers['client_secret']]"
+      },
+      "template": {
+        "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+        "assetId": "client-id-enforcement",
+        "assetVersion": "1.3.3"
+      },
+      "version": 1793173626361
+    }
+  ]
+}
