@@ -713,6 +713,13 @@ keeps the table and each adapter's `AdapterCapabilities` equal:
 `typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
 when `transport` is `"framework"`.
 
+The three tool-binding scenarios (`single_tool_call`, `multi_tool_multi_server`,
+`tool_filtering`, #991) run every `ToolSet` binding against two local MCP
+servers (`tests/conformance/test_tool_binding.py`). They record one exemption
+that is not about the transport: the whole-server bindings (ADK, Strands, the
+OpenAI Agents SDK, Agent Framework, CrewAI) cannot rename one tool, so
+`multi_tool_multi_server` is asserted as a `ConfigError` refusal for them.
+
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to the deep adapters, and the deliverable becomes the **customer-facing
 pytest plugin** users run against their own agent (#191).

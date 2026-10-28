@@ -36,6 +36,7 @@ _SCENARIOS = {
     "custom policy typed": "custom_policy_typed",
     "agent kill stops cleanly": "agent_killed_stops_cleanly",
     "approval round trip": "approval_round_trip",
+    "multi-server name collision": "multi_tool_multi_server",
 }
 _PUBLIC_ONLY = {"retries_token_budget"}
 
@@ -43,6 +44,9 @@ _PUBLIC_ONLY = {"retries_token_budget"}
 _FRAMEWORKS = {
     "CrewAI": ("crewai",),
     "OpenAI Agents SDK": ("openai_agents",),
+    "Google ADK": ("adk",),
+    "Strands Agents": ("strands",),
+    "Microsoft Agent Framework": ("agent_framework",),
 }
 
 
