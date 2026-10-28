@@ -1,0 +1,56 @@
+{
+  "environments": {
+    "request": "GET /accounts/api/organizations/{org}/environments",
+    "scope": "view:environment",
+    "status": 401,
+    "body": "Unauthorized"
+  },
+  "api_list": {
+    "request": "GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis",
+    "scope": "read:api_configuration",
+    "status": 403,
+    "body": "{\"name\":\"AuthorizationError\",\"message\":\"Unauthorized\"}"
+  },
+  "api_describe": {
+    "request": "GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis/{id}",
+    "scope": "read:api_configuration",
+    "status": 403,
+    "body": "{\"name\":\"AuthorizationError\",\"message\":\"Unauthorized\"}"
+  },
+  "api_policies": {
+    "request": "GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis/{id}/policies",
+    "scope": "read:api_policies",
+    "status": 403,
+    "body": "{\"name\":\"AuthorizationError\",\"message\":\"Unauthorized\"}"
+  },
+  "gateway": {
+    "request": "GET /gatewaymanager/api/v1/organizations/{org}/environments/{env}/gateways/{id}",
+    "scope": "read:servers",
+    "status": 403,
+    "body": "{\"status\":403,\"message\":\"Forbidden\"}"
+  },
+  "exchange_version": {
+    "request": "GET /exchange/api/v2/assets/{group}/{asset}/{version}",
+    "scope": "read:exchange",
+    "status": 403,
+    "body": "{\"name\":\"ForbiddenError\",\"status\":403,\"message\":\"There was a problem looking for the specified asset.\"}"
+  },
+  "governance": {
+    "request": "GET /governance/xapi/api/v1/stats/organization/targets/{group}/{asset}/{version}?organization={org}",
+    "scope": "read:exchange",
+    "status": 403,
+    "body": "The supplied authentication is not authorized to access this resource"
+  },
+  "exchange_search": {
+    "request": "POST /graph/api/v1/graphql",
+    "scope": "read:exchange",
+    "status": 200,
+    "body": "{\"data\":{\"assets\":[]}}"
+  },
+  "exchange_publish": {
+    "request": "POST /exchange/api/v2/organizations/{org}/assets/{group}/{asset}/{version}",
+    "scope": "manage:exchange",
+    "status": 403,
+    "body": "{\"status\":403,\"message\":\"Forbidden\",\"details\":{}}"
+  }
+}

@@ -182,12 +182,12 @@ class AuthError(DonkeyError):
     connected_app_remediation: str = (
         "Check the configured Anypoint control-plane auth provider. For a connected app, "
         "verify ANYPOINT_CLIENT_ID / ANYPOINT_CLIENT_SECRET and that the app has the scopes "
-        "the operation needs (docs/verified-apis.md §1)."
+        "the operation needs (docs/scopes.md, https://docs.donkey-kit.dev/reference/scopes)."
     )
     provider_chain_remediation: str = (
         "Every configured Anypoint control-plane auth provider failed. Inspect the last "
         "error and verify each provider's credentials or token source. If the chain uses "
-        "a connected app, also verify its required scopes (docs/verified-apis.md §1)."
+        "a connected app, also verify its scopes (https://docs.donkey-kit.dev/reference/scopes)."
     )
 
 

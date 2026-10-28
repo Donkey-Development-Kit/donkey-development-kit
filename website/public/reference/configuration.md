@@ -466,7 +466,11 @@ token at the Anypoint token endpoint and sends only that token to the platform.
 You don't need these values for governed model access. Model calls never use
 them.
 
-  The features that call the Anypoint platform are
+The connected app needs a scope for each platform call: see
+[Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). A `client_credentials` app is
+enough; no feature needs one that acts on behalf of a user.
+
+  Some of the features that call the Anypoint platform are
   Roadmap in this release and stop before sending
   anything. [Which features use the control plane](#which-features-use-the-control-plane)
   lists them.
@@ -557,8 +561,10 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Hidden commands `donkey status`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
-So in this release the SDK sends the `ANYPOINT_*` credentials only when you run
-`donkey publish`, or when your own code asks for a connected-app token.
+So in this release the SDK sends the `ANYPOINT_*` credentials only for the
+Available rows above: `donkey publish`, the registry reads and tool discovery,
+or your own code asking for a connected-app token. The scopes each one needs
+are in [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
 
 ### Other headers
 

@@ -61,6 +61,9 @@ before making a network request, except `donkey.as_user()`, described below.
 | API Governance conformance read: `GET /governance/xapi/api/v1/stats/organization/targets/{group}/{asset}/{version}?organization={org}` | `registry.exchange.ExchangeRegistry.explain` | **Documented, no SLA for third-party use** | Reads the business group's governance reports for the version (`summaryStatus` per ruleset) for `require_governance_pass`. It is the API Governance Experience API, which [Getting Started with API Governance](https://docs.mulesoft.com/api-governance/get-started) points to for retrieving conformance status, and whose spec is published in Exchange as `api-governance-xapi`. As an experience API it has no third-party support commitment, so the SDK reads it fail-open: no report, an unrecognised status or a refused read makes the check UNKNOWN. Owner: DDK maintainers; `tests/fixtures/anypoint/mcp_explain/` holds the captures to re-check against. |
 | Omni Gateway Manager gateway read: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp` | **Documented and public** | Reads the gateway's `configuration.ingress.publicUrl`, the host of the resolved MCP endpoint. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference. |
 
+The connected-app scope each of these calls needs is in
+[Connected-app scopes](/reference/scopes).
+
 How each row was established (live capture, plugin test, and so on) is in the
 [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md), sections 1 to 4.
 

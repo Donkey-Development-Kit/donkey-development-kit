@@ -301,6 +301,10 @@ donkey doctor
 
 `donkey doctor` tells a wrong URL from wrong credentials from a model that is
 not on the proxy's allow-list, instead of one opaque failure.
+The `control plane` line matters only for features that call the Anypoint
+platform (registry reads, tool discovery, `donkey publish`). Their connected
+app needs the scopes in [Connected-app scopes](/reference/scopes); model calls
+don't use it.
 
 If `doctor` reports a `404`, read which line it is on:
 

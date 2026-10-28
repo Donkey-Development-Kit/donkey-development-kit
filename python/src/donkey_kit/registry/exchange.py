@@ -22,8 +22,9 @@ from urllib.parse import urlsplit
 from ..core import _verify
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
-from ..core.errors import RegistryError
+from ..core.errors import AuthError, RegistryError
 from ..core.transport import DonkeyAsyncClient
+from . import _scopes
 from .criteria import Check, GovernanceCriteria, GovernanceReport, evaluate
 from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
 
@@ -102,10 +103,14 @@ class ExchangeRegistry:
         (those have a key). Each asset comes back at its latest version.
         Results are cached for ``registry_cache_ttl_s`` seconds.
 
+        A connected app without the ``read:exchange`` scope gets no assets, not
+        an error: Exchange answers the search with an empty list (docs/scopes.md).
+
         Raises:
             ConfigError: The control-plane settings are missing.
             ValueError: ``limit`` is below 1.
             RegistryError: Exchange refused the query.
+            AuthError: Exchange refused the query with ``401``/``403``.
             NotImplementedError: ``domain``, ``environment``, ``governed`` or the
                 ``a2a-agent`` type was given; see docs/verified-apis.md §7.
         """
@@ -167,6 +172,7 @@ class ExchangeRegistry:
         body = await self._get(
             f"/accounts/api/organizations/{cfg.org_id}/environments",
             what="the organization's environments",
+            scope=_scopes.ENVIRONMENTS,
         )
         envs = [e for e in body.get("data") or () if isinstance(e, dict)]
         for env in envs:
@@ -190,6 +196,7 @@ class ExchangeRegistry:
                 "assetVersion": asset.version,
             },
             what=f"the API Manager instances of {asset.coordinates}",
+            scope=_scopes.API_READ,
         )
         return [
             api
@@ -199,16 +206,21 @@ class ExchangeRegistry:
         ]
 
     async def _get(
-        self, path: str, *, what: str, params: dict[str, str] | None = None
+        self, path: str, *, what: str, scope: str, params: dict[str, str] | None = None
     ) -> dict[str, Any]:
+        """``path``'s JSON body. A ``401``/``403`` is an :class:`AuthError` naming
+        ``scope``, the connected-app scope the read needs (docs/scopes.md)."""
         response = await self._http.get(
             self._cfg.control_plane_url.rstrip("/") + path, params=params
         )
         if not response.is_success:
-            raise RegistryError(
+            message = (
                 f"Anypoint refused the read of {what}: HTTP {response.status_code} "
                 f"{response.text[:300]}"
             )
+            if response.status_code in (401, 403):
+                raise _scopes.missing_scope(response, message, scope=scope, org_id=self._cfg.org_id)
+            raise RegistryError(message)
         body = response.json()
         if not isinstance(body, dict):
             raise RegistryError(f"Anypoint returned an unexpected body for {what}.")
@@ -220,10 +232,15 @@ class ExchangeRegistry:
             json={"query": _SEARCH_QUERY, "variables": {"query": search}},
         )
         if not response.is_success:
-            raise RegistryError(
+            message = (
                 f"Exchange refused the asset search: HTTP {response.status_code} "
                 f"{response.text[:300]}"
             )
+            if response.status_code in (401, 403):
+                raise _scopes.missing_scope(
+                    response, message, scope=_scopes.EXCHANGE_READ, org_id=self._cfg.org_id
+                )
+            raise RegistryError(message)
         body = response.json()
         errors = body.get("errors") or ()
         if errors:
@@ -247,7 +264,9 @@ class ExchangeRegistry:
             ValueError: ``ref`` is not ``group_id/asset_id/version``.
             RegistryError: The environment does not exist, the asset version has
                 no deployed MCP instance there or has several, or an Anypoint
-                read was refused.
+                read failed.
+            AuthError: Anypoint refused a read (``401``/``403``); its
+                ``remediation`` names the connected-app scope the read needs.
         """
         cfg = self._cfg.validated(need="control_plane")
         asset = AssetRef.parse(ref)
@@ -277,12 +296,14 @@ class ExchangeRegistry:
         api = await self._get(
             f"{base}/apis/{instances[0]['id']}",
             what=f"API Manager instance {instances[0]['id']}",
+            scope=_scopes.API_READ,
         )
         target = (api.get("deployment") or {}).get("targetId")
         gateway = await self._get(
             f"/gatewaymanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
             f"/gateways/{target}",
             what=f"gateway {target}",
+            scope=_scopes.GATEWAY_READ,
         )
         public = ((gateway.get("configuration") or {}).get("ingress") or {}).get("publicUrl")
         if not public:
@@ -321,7 +342,10 @@ class ExchangeRegistry:
         Raises:
             ConfigError: The control-plane settings are missing.
             ValueError: ``ref`` is not ``group_id/asset_id/version``.
-            RegistryError: The environment does not exist, or API Manager refused a read.
+            RegistryError: The environment does not exist, or an API Manager read failed.
+            AuthError: Accounts or API Manager refused a read (``401``/``403``); its
+                ``remediation`` names the connected-app scope the read needs. A
+                refused Exchange or API Governance read is an UNKNOWN check instead.
         """
         cfg = self._cfg.validated(need="control_plane")
         asset = AssetRef.parse(ref)
@@ -386,7 +410,9 @@ class ExchangeRegistry:
             label = str(api.get("instanceLabel"))
             if wants_policies:
                 body = await self._get(
-                    f"{base}/apis/{api['id']}/policies", what=f"the policies of instance {label}"
+                    f"{base}/apis/{api['id']}/policies",
+                    what=f"the policies of instance {label}",
+                    scope=_scopes.POLICIES_READ,
                 )
                 policies[label] = {
                     str((policy.get("template") or {}).get("assetId"))
@@ -394,7 +420,9 @@ class ExchangeRegistry:
                     if isinstance(policy, dict)
                 }
             if criteria.require_gateways:
-                body = await self._get(f"{base}/apis/{api['id']}", what=f"instance {label}")
+                body = await self._get(
+                    f"{base}/apis/{api['id']}", what=f"instance {label}", scope=_scopes.API_READ
+                )
                 gateways[label] = str((body.get("deployment") or {}).get("targetName"))
 
         checks: list[Check] = []
@@ -468,9 +496,10 @@ class ExchangeRegistry:
             body = await self._get(
                 f"/exchange/api/v2/assets/{asset.group_id}/{asset.asset_id}/{asset.version}",
                 what=f"Exchange asset {asset.coordinates}",
+                scope=_scopes.EXCHANGE_READ,
             )
-        except RegistryError as exc:
-            return [Check(name, None, f"UNKNOWN: {exc}") for name in names]
+        except (AuthError, RegistryError) as exc:
+            return [Check(name, None, _unknown(exc)) for name in names]
         checks: list[Check] = []
         if criteria.require_tags:
             labels = {str(label).lower() for label in body.get("labels") or ()}
@@ -504,9 +533,10 @@ class ExchangeRegistry:
                 f"{_GOVERNANCE_TARGETS}/{asset.group_id}/{asset.asset_id}/{asset.version}",
                 params={"organization": str(self._cfg.org_id)},
                 what=f"the conformance reports of {asset.coordinates}",
+                scope=_scopes.EXCHANGE_READ,
             )
-        except RegistryError as exc:
-            return Check("governance_pass", None, f"UNKNOWN: {exc}")
+        except (AuthError, RegistryError) as exc:
+            return Check("governance_pass", None, _unknown(exc))
         reports = [r for r in body.get("reports") or () if isinstance(r, dict)]
         if not reports:
             # An asset no profile governs, and one that does not exist, both come
@@ -574,6 +604,13 @@ def _deployed(api: dict[str, Any]) -> bool:
 
 def _labels(apis: list[dict[str, Any]]) -> str:
     return ", ".join(sorted(str(api.get("instanceLabel")) for api in apis))
+
+
+def _unknown(exc: AuthError | RegistryError) -> str:
+    """An UNKNOWN check's detail: the refusal, and the missing scope if it was one."""
+    if isinstance(exc, AuthError):
+        return f"UNKNOWN: {exc} {exc.remediation}"
+    return f"UNKNOWN: {exc}"
 
 
 def _over_instances(

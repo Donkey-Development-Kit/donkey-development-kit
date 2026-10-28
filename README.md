@@ -121,7 +121,9 @@ whether they install together depends on their upstream releases. The generated
 [co-installability table](docs/co-installability.md) shows which combinations resolve, re-checked
 nightly. Add the one framework you use: `donkey-kit[all,crewai]`.
 Configuration and first-agent walkthroughs live on the
-[documentation site](https://docs.donkey-kit.dev/).
+[documentation site](https://docs.donkey-kit.dev/). Features that call the Anypoint
+control plane (registry, tool discovery, `donkey publish`) need a connected app
+with the scopes listed per operation in [`docs/scopes.md`](docs/scopes.md).
 
 ## Framework support
 
