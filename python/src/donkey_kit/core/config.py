@@ -4,26 +4,22 @@ Resolution order (:meth:`DonkeyConfig.resolve`, §2.1, #727), highest first and
 per key: a value set in code (a ``resolve()`` keyword argument, or one changed
 afterwards with ``with_overrides`` or ``dataclasses.replace``) → env var →
 ``.donkey-kit.local.toml`` → ``.donkey-kit.toml`` → the user file
-``$XDG_CONFIG_HOME/.donkey-kit.toml`` (``~/.config/.donkey-kit.toml`` when
-``XDG_CONFIG_HOME`` is unset, empty or relative) → default. The three files merge key by
-key (nested tables such as ``[donkey.cost]`` recursively; scalars and arrays
-replace), so a lower file fills what a higher one leaves unset. ``resolve(path=...)``
-reads the named file in place of the working directory's ``.donkey-kit.toml``.
-``from_env()`` is ``resolve()`` with no arguments. A ``DonkeyConfig(...)``
-built directly reads neither env nor files. We never read ``.env`` implicitly —
-the user calls ``load_dotenv()`` themselves. One declarative table,
-``_FIELDS``, names each field's env var, TOML key, parser and value check.
+``$XDG_CONFIG_HOME/.donkey-kit.toml`` (``~/.config/`` when ``XDG_CONFIG_HOME`` is unset,
+empty or relative) → default. The three files merge key by key (nested tables such as
+``[donkey.cost]`` recursively; scalars and arrays replace). ``resolve(path=...)`` reads
+the named file in place of ``./.donkey-kit.toml``; ``from_env()`` is ``resolve()``. A
+``DonkeyConfig(...)`` built directly reads neither env nor files, and ``.env`` is never
+read implicitly (call ``load_dotenv()``). ``_FIELDS`` names each field's env var, TOML
+key, parser and value check.
 
-Every resolved field records its source (a value changed in code afterwards
-counts as set in code), and :meth:`DonkeyConfig.check_endpoints`
-uses it so an endpoint read from the working directory's files only receives
-credentials read from those same files (``DONKEY_TRUST_PROJECT_CONFIG=1`` opts
-out). Endpoints must be ``https://``, except loopback hosts, or any host when
-``DONKEY_ALLOW_HTTP=1`` is set in the environment.
+Every resolved field records its source (a value changed in code afterwards counts
+as set in code); :meth:`DonkeyConfig.check_endpoints` uses it so an endpoint read from
+the working directory's files only receives credentials read from those same files
+(``DONKEY_TRUST_PROJECT_CONFIG=1`` opts out). Endpoints must be ``https://``, except
+loopback hosts, or any host when ``DONKEY_ALLOW_HTTP=1`` is set in the environment.
 
-``validated()`` reports ALL missing fields in one error, not one per run — the
-one-missing-variable-per-run loop is the most common first-five-minutes
-abandonment (config resolution).
+``validated()`` reports ALL missing fields in one error, not one per run: that loop is
+the most common first-five-minutes abandonment (config resolution).
 """
 
 from __future__ import annotations
@@ -135,6 +131,8 @@ class ConfigOverrides(TypedDict, total=False):
     timeout_s: float
     max_retries: int
     registry_cache_ttl_s: int
+    tool_warn_count: int
+    tool_warn_tokens: int
     telemetry: bool
     telemetry_capture_content: bool
     telemetry_install_global: bool
@@ -319,10 +317,9 @@ class DonkeyConfig:
     business_group: str | None = None
 
     # --- Correlation request-header NAME overrides (BG §1.1, #195) ---
-    # Override the correlation/call-id request-header names (docs/verified-apis.md
-    # §3) without a release. Unset → the defaults in ``core/_verify``.
-    # These and the ``cost_*_header`` names are checked on construction: see
-    # ``core/header_names`` for the names they may not use.
+    # Override the correlation/call-id request-header names (docs/verified-apis.md §3)
+    # without a release; unset → the defaults in ``core/_verify``. These and the
+    # ``cost_*_header`` names are checked on construction (``core/header_names``).
     correlation_header: str | None = None
     call_id_header: str | None = None
 
@@ -341,21 +338,22 @@ class DonkeyConfig:
     timeout_s: float = 60.0
     max_retries: int = 3
     registry_cache_ttl_s: int = 300
+    # Warn when a ToolSet bind exposes more tools or descriptor tokens than these (0 turns
+    # one off). The defaults are published vendor guidance, cited in tools/session.py (#1257).
+    tool_warn_count: int = 20
+    tool_warn_tokens: int = 10_000
     telemetry: bool = True
     # Emit message content (prompts, completions, tool I/O) on OTel spans. Default
     # FALSE: spans are emitted upstream of the gateway, so this would re-export the
     # content the gateway masks to any OTLP collector (#306, BG §1.6).
     telemetry_capture_content: bool = False
-    # Install DDK's OTLP TracerProvider as the process-global OpenTelemetry
-    # provider. Default FALSE: OTel lets the global provider be set once, so a
-    # library that took it implicitly would lock out a host that configures its
-    # own afterwards. Off, DDK exports its own spans through a DDK-scoped
-    # provider and defers to any global provider the host sets (#732,
-    # docs/adr/0010-no-hidden-global-side-effects.md).
+    # Install DDK's OTLP TracerProvider as the process-global OpenTelemetry provider.
+    # Default FALSE: OTel lets the global provider be set once, so a library that took
+    # it implicitly would lock out a host that configures its own afterwards. Off, DDK
+    # exports through a DDK-scoped provider and defers to any global one the host sets
+    # (#732, docs/adr/0010-no-hidden-global-side-effects.md).
     telemetry_install_global: bool = False
-    # What to do when the gateway serves a different model than requested (docs/verified-apis.md §3,
-    # #309). Default "off" — the substitution is surfaced passively on
-    # ``donkey.last_call``; "raise" opts into a hard ``ModelSubstituted`` error.
+    # On a model substitution (see ``OnModelSubstitution``, #309): default "off".
     on_model_substitution: OnModelSubstitution = "off"
     # Send the cost tags as request headers too. Default FALSE: nothing on the
     # gateway reads a cost-tag header (docs/verified-apis.md §3, #522), so the
@@ -899,6 +897,8 @@ _FIELDS: tuple[_Field, ...] = (
     _Field("timeout_s", "DONKEY_TIMEOUT_S", _as_float, _positive_number),
     _Field("max_retries", "DONKEY_MAX_RETRIES", _as_int, _non_negative_int),
     _Field("registry_cache_ttl_s", "DONKEY_REGISTRY_CACHE_TTL_S", _as_int, _non_negative_int),
+    _Field("tool_warn_count", "DONKEY_TOOL_WARN_COUNT", _as_int, _non_negative_int),
+    _Field("tool_warn_tokens", "DONKEY_TOOL_WARN_TOKENS", _as_int, _non_negative_int),
     _Field("telemetry", "DONKEY_TELEMETRY", _as_bool, _is_bool),
     _Field("telemetry_capture_content", "DONKEY_TELEMETRY_CAPTURE_CONTENT", _as_bool, _is_bool),
     _Field("telemetry_install_global", "DONKEY_TELEMETRY_INSTALL_GLOBAL", _as_bool, _is_bool),

@@ -147,9 +147,21 @@ It counts each descriptor's name, description and input schema as an
 OpenAI-style function tool, at about four characters per token. Tokenizers
 differ by model, so use it to compare tool sets, not as a bill.
 
+Every binding logs the number of tools it binds and this estimate at debug
+level, and logs a warning when the set has more than `tool_warn_count` tools
+(default `20`) or costs more than `tool_warn_tokens` (default `10000`):
+
+```text
+WARNING donkey_kit.tools.session: langgraph() binds 34 tool descriptors, about 9120 descriptor tokens per model call (more than tool_warn_count=20). Large tool sets degrade tool selection and cost tokens on every call: narrow the set with filter(), or raise the threshold (0 turns it off).
+```
+
+The defaults follow the model vendors' published guidance on tool count and
+descriptor size; see [Tool-set size warnings](/reference/configuration#tool-set-size-warnings)
+for the sources and how to change or turn off each threshold.
+
 <Callout type="info">
-  The SDK logs how many tool descriptors a `ToolSet` exposes out of the total
-  at debug level, so you can see the cost of skipping `filter()` before a
+  The SDK also logs how many tool descriptors a `ToolSet` exposes out of the
+  total at debug level, so you can see the cost of skipping `filter()` before a
   model does. See [Debug logging](/telemetry#debug-logging) to turn it on.
 </Callout>
 
