@@ -1,0 +1,34 @@
+{
+  "binding": {
+    "call": "McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=...)); await get_tools(); LlmAgent(tools=[toolset]) run by Runner",
+    "class": "McpToolset",
+    "module": "google.adk.tools.mcp_tool"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "google-adk": "2.13.0",
+    "litellm": "1.106.5",
+    "mcp": "2.3.0"
+  },
+  "framework": "adk",
+  "headers_seen": {
+    "client_id": "probe-id",
+    "client_secret": "probe-secret"
+  },
+  "native_tool_types": [
+    "google.adk.tools.mcp_tool.mcp_tool.McpTool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": "5"
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}
