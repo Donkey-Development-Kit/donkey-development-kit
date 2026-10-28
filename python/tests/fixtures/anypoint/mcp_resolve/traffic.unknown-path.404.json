@@ -1,0 +1,8 @@
+{
+  "status": 404,
+  "headers": {
+    "server": "Anypoint Flex Gateway",
+    "content-length": "0"
+  },
+  "body": ""
+}

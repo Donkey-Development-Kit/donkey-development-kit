@@ -1,0 +1,10 @@
+{
+  "status": 401,
+  "headers": {
+    "www-authenticate": "Client-ID-Enforcement",
+    "content-type": "application/json",
+    "content-length": "36",
+    "server": "Anypoint Flex Gateway"
+  },
+  "body": "{\"error\":\"Client ID is not present\"}"
+}

@@ -1,0 +1,131 @@
+{
+  "total": 1,
+  "assets": [
+    {
+      "audit": {
+        "created": {
+          "date": "2026-10-28T06:47:10.222Z"
+        },
+        "updated": {}
+      },
+      "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+      "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+      "id": 213910868,
+      "name": "groupId:00000000-0000-4000-8000-4256cc8e6f68:assetId:ddk-demo-sku-lookup",
+      "exchangeAssetName": "SKU Lookup MCP Server",
+      "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+      "assetId": "ddk-demo-sku-lookup",
+      "apis": [
+        {
+          "audit": {
+            "created": {
+              "date": "2026-10-28T06:47:10.222Z"
+            },
+            "updated": {
+              "date": "2026-10-28T06:47:10.222Z"
+            }
+          },
+          "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+          "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+          "id": 21260919,
+          "instanceLabel": "ddk-verify1297-a",
+          "environmentInstanceId": "instance_21260919",
+          "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+          "assetId": "ddk-demo-sku-lookup",
+          "assetVersion": "1.1.0",
+          "productVersion": "v1.1",
+          "description": null,
+          "tags": [],
+          "order": 1,
+          "providerId": null,
+          "deprecated": false,
+          "lastActiveDate": null,
+          "endpointUri": null,
+          "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+          "isPublic": false,
+          "stage": "release",
+          "technology": "flexGateway",
+          "status": "unregistered",
+          "approvalMethod": null,
+          "deployment": null,
+          "routing": [
+            {
+              "upstreams": [
+                {
+                  "id": "00000000-0000-4000-8000-56efb6fcae9a",
+                  "weight": 100
+                }
+              ]
+            }
+          ],
+          "metadata": null,
+          "semanticServiceConfigId": null,
+          "pinned": false,
+          "activeContractsCount": 0,
+          "endpointType": "mcp",
+          "autodiscoveryInstanceName": "v1.1:21260919"
+        },
+        {
+          "audit": {
+            "created": {
+              "date": "2026-10-28T06:47:10.972Z"
+            },
+            "updated": {
+              "date": "2026-10-28T06:47:10.972Z"
+            }
+          },
+          "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+          "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+          "id": 21260920,
+          "instanceLabel": "ddk-verify1297-b",
+          "environmentInstanceId": "instance_21260920",
+          "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+          "assetId": "ddk-demo-sku-lookup",
+          "assetVersion": "1.1.0",
+          "productVersion": "v1.1",
+          "description": null,
+          "tags": [],
+          "order": 1,
+          "providerId": null,
+          "deprecated": false,
+          "lastActiveDate": null,
+          "endpointUri": null,
+          "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+          "isPublic": false,
+          "stage": "release",
+          "technology": "flexGateway",
+          "status": "active",
+          "approvalMethod": null,
+          "deployment": {
+            "audit": {
+              "created": {},
+              "updated": {}
+            },
+            "applicationId": "00000000-0000-4000-8000-e439f22b4766",
+            "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+            "targetId": "00000000-0000-4000-8000-d4b0d8dad526",
+            "expectedStatus": "deployed"
+          },
+          "routing": [
+            {
+              "upstreams": [
+                {
+                  "id": "00000000-0000-4000-8000-6c58ca1fd377",
+                  "weight": 100
+                }
+              ]
+            }
+          ],
+          "metadata": null,
+          "semanticServiceConfigId": null,
+          "pinned": false,
+          "activeContractsCount": 0,
+          "endpointType": "mcp",
+          "autodiscoveryInstanceName": "v1.1:21260920"
+        }
+      ],
+      "totalApis": 2,
+      "autodiscoveryApiName": "groupId:00000000-0000-4000-8000-4256cc8e6f68:assetId:ddk-demo-sku-lookup"
+    }
+  ]
+}
