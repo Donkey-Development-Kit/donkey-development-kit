@@ -257,7 +257,10 @@ version-bump rule. Each agent asset is published with:
 - its name and description, as for an MCP server. An agent's description
   defaults to its docstring.
 - the digest, and the protocol you declared (`other` when you declared none),
-  stored with the asset.
+  stored with the asset. Exchange stores an `a2a_v1` agent's protocol as `a2a`,
+  with the version carried by its A2A 1.0 card, so the agent is listed as
+  protocol `a2a`, version `v1`. That is the form the gateway accepts when
+  [`donkey expose`](https://docs.donkey-kit.dev/a2a.md) fronts the agent.
 - an `agent-metadata` file: the protocol, the agent's name and description,
   and its asset coordinates.
 - for an `a2a_v1` agent, an **A2A agent card** (`a2a-v1-card`): the name,

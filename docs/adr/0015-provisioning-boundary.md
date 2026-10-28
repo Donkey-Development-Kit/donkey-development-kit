@@ -1,9 +1,10 @@
 # ADR 0015: The SDK creates only the ingress instance in front of the developer's own agent or MCP server, never a control plane
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-28, when `donkey expose` shipped)
 - **Date:** 2026-10-27
-- **Issue:** #319. `donkey expose` (#226) implements the create side, gated
-  by #254 (A2A) and #1278 (MCP); the read-only preflight is #1279.
+- **Issue:** #319. `donkey expose` (#226) implements the create side, after
+  #254 (A2A) and #1278 (MCP); the read-only preflight, `donkey preflight`, is
+  #1279.
 
 ## Context
 
@@ -49,8 +50,8 @@ desired-state model of the estate.
 2. **The SDK may create exactly one thing per run: the ingress for the
    developer's own agent or MCP server.** That is one API Manager instance
    (an A2A agent or an MCP server endpoint on a gateway target that already
-   exists), the inbound policies on that instance, and its Exchange or Agent
-   Registry entry. This is `donkey expose` (BG §2.9.2). Enforced in review
+   exists), the policies declared for it (inbound, or outbound on the
+   instance's own upstreams), and its Exchange or Agent Registry entry. This is `donkey expose` (BG §2.9.2). Enforced in review
    and by the command's tests.
 3. **Creation is additive and idempotent.** An instance whose
    `instanceLabel` already exists in the environment is not created again.
@@ -73,8 +74,9 @@ desired-state model of the estate.
    call with no third-party support commitment (the `xapi` experience-API
    paths among them) is listed in the
    [unsupported boundary](../../website/content/reference/unsupported-boundary.mdx)
-   page with its justification. Until then the command is
-   `_verify.blocked(...)`. Enforced by the verified-apis gate in review.
+   page with its justification. A command whose write calls are not yet
+   verified is `_verify.blocked(...)`. Enforced by the verified-apis gate in
+   review.
 
 ### Alternatives considered
 
@@ -100,9 +102,12 @@ desired-state model of the estate.
   The build plan's *Do not build* entry and `ARCHITECTURE.md` point here.
 - #226 is re-scoped to both instance types. #254 stays the A2A
   verification; MCP instance creation is #1278.
-- The read-only preflight (#319's "SDK reads, verifies") is #1279, so this ADR can move to Accepted when `expose` ships.
-- The connected app that runs `expose` needs API Manager write scope. That
-  is UNVERIFIED today (#23) and is part of #254 and #1278.
+- The read-only preflight (#319's "SDK reads, verifies") is #1279, shipped
+  as `donkey preflight` with `expose` (#226).
+- The connected app that runs `expose` needs API Manager write scopes. They
+  were verified live (#23, #226) and are listed in `docs/scopes.md`. The
+  deploy is a documented experience API with no SLA, and the outbound policy
+  write is undocumented; both are on the unsupported boundary page.
 - `expose` is the only write path to API Manager in the package. A second
   one needs a new ADR, so the line is argued once rather than per issue.
 - TypeScript parity (Phase 5): the same rules apply. A port that adds an

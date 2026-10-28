@@ -82,6 +82,13 @@ bearer, on a one-agent repo declaring `protocol = "a2a_v1"` and an endpoint in
   both files as downloaded back, byte-for-byte what was sent (key order
   normalised here).
 
+Re-captured 2026-10-28 the same way for #226, after the agent-metadata
+`protocol` for an `a2a_v1` agent became `a2a`: API Manager refuses an `a2a`
+instance for an agent stored with `protocol: a2a_v1` ("must have an A2A
+protocol"). Only `protocol` in `agent.agent-metadata.stored.json` and
+`<protocol>` in `agent.pom.xml` changed; the card, the publish response and the
+latest-version query came back as before.
+
 The rerun answered `unchanged` after reading the POM back. A changed endpoint
 under the same version was refused after the same two reads, with nothing
 sent. The external-instance POST, the page calls and the `409` behaved as they

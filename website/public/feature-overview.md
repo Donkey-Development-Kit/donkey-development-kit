@@ -138,8 +138,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   
   
     **Purpose:** `donkey.serve()` makes your agent callable by other agents in
-    one line, on the official `a2a-sdk`; `expose` and `dev` are on the
-    Roadmap. **Advantage:** the agent card is generated from your code, and
+    one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
+    gateway instance with its policies; `dev` is on the Roadmap. **Advantage:** the agent card is generated from your code, and
     inbound tasks are to be governed with the same correlation, spans and
     refusals.
   

@@ -92,6 +92,8 @@ donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
 donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
+donkey preflight     # checks, read-only, that a service can be put behind its gateway
+donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
 
 ### Global flags
@@ -155,6 +157,17 @@ Global options go before the command (`donkey --json init`):
 | `--model` | `gpt-4o` | Model id to test against the proxy allow-list. |
 | `--json` | off | Emit machine-readable JSON. |
 
+`donkey expose`: Expose one MCP server or A2A agent through an existing gateway.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `service` | none | The service ID to expose; optional when the project has exactly one. |
+| `--path` | `.` | The repository (or one .py file) to scan. |
+| `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
+| `--target` | none | The gateway's name; overrides the declared target. |
+| `--dry-run` | off | Only read: print what would be created, and change nothing. |
+| `--json` | off | Emit the report as JSON. |
+
 `donkey init`: Bootstrap a commented `.donkey-kit.toml` from the resolved config.
 
 | Option | Default | Meaning |
@@ -168,6 +181,16 @@ Global options go before the command (`donkey --json init`):
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
 | `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+
+`donkey preflight`: Check, read-only, that a service can be exposed.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `service` | none | The service ID to expose; optional when the project has exactly one. |
+| `--path` | `.` | The repository (or one .py file) to scan. |
+| `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
+| `--target` | none | The gateway's name; overrides the declared target. |
+| `--json` | off | Emit the report as JSON. |
 
 `donkey publish`: Publish code-first assets to Exchange.
 
@@ -410,12 +433,69 @@ published or left unchanged, `1` on an issue or a refused publish, and `2` on a
 missing path, invalid config or missing credentials. See
 [Scan & publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
 
+### `donkey expose`
+
+```bash
+donkey preflight sku-manager           # what expose would do; reads only
+donkey expose sku-manager --dry-run    # the same
+donkey expose sku-manager              # publish, create, add policies, deploy
+```
+
+Puts one MCP server or A2A agent behind a gateway that already exists, in the
+environment `ANYPOINT_ENV` (or `--env`) names. It runs one step at a time and
+prints one line per step:
+
+```
+  ✓ environment         present  Sandbox (…)
+  ✓ gateway             present  shared-omni-gateway, ingress port 8081
+  ✓ registry            created  sku-manager: published 1.0.0
+  ✓ instance            created  sku-manager (21262612), upstream https://sku.example.com/mcp
+  ✓ policy mcp-support  created  inbound mcp-support 1.1.1
+  ✓ deployment          created  applied on shared-omni-gateway
+MCP server sku-manager is exposed at https://<gateway>/sku-manager/
+```
+
+- **registry** publishes the service's Exchange asset, as `donkey publish`
+  does.
+- **instance** creates the API Manager instance for that version, labelled
+  with the service ID unless the declaration sets a `label`, and proxying to the
+  service's `endpoint` unless it sets an `upstream`.
+- **policy** adds each declared policy the instance lacks. Policies come only
+  from the declaration: there are no defaults.
+- **deployment** deploys the instance to the gateway and waits until the gateway
+  has applied it.
+
+What the run needs comes from the `[donkey.expose]` table in
+`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/a2a.md) for the keys.
+
+The command adds what is missing and nothing else:
+
+- A re-run changes nothing that is there; each step reports `present`.
+- It never deletes, never edits a policy's configuration, and never moves an
+  instance to another gateway. Something that is there but differs from the
+  declaration, such as another upstream or a policy at another version, is
+  reported as `differs` and left alone, and the command exits `1`.
+- It never creates the environment or the gateway. A missing one is reported as
+  `missing`, with where to create it, and nothing else is tried.
+- A failed step is reported as `failed`, with what to do, and the steps after it
+  are `skipped`. A step that did not happen is never reported as done.
+
+`donkey preflight`, like `--dry-run`, makes only the reads and reports what
+would be created as `planned`. Run it in CI before a deploy: it exits `1` when
+the gateway, the environment or a connected-app scope is missing.
+
+Both exit `0` when every step is present, created or planned; `1` when a step
+is missing, differs or failed, or the declaration has an issue (nothing is
+sent then); and `2` on a missing path, invalid config or missing control-plane
+credentials. The connected-app scopes they need are in
+[Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose).
+
 ## Planned commands Roadmap
 
 These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
-- `donkey serve` and `donkey expose` — serve your agent over A2A and expose it
-  through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+- `donkey serve` — serve your agent over A2A from the command line. In code,
+  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
   Run `donkey --help` to see the commands available in your installed version.

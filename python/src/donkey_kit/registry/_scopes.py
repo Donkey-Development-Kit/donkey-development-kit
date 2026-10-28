@@ -23,6 +23,11 @@ EXCHANGE_PUBLISH = "manage:exchange"
 API_READ = "read:api_configuration"
 POLICIES_READ = "read:api_policies"
 GATEWAY_READ = "read:servers"
+# What ``donkey expose`` writes with (#226): the instance create also needs
+# EXCHANGE_READ, the deploy also GATEWAY_READ.
+API_WRITE = "manage:api_configuration"
+POLICIES_WRITE = "manage:api_policies"
+DEPLOY = "manage:api_proxies"
 
 
 def missing_scope(

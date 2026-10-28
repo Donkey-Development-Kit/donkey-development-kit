@@ -1,9 +1,9 @@
-"""The ``donkey`` CLI: ``init``, ``doctor``, ``mock``, ``dev``, ``test``, ``scan`` and
-``publish``.
+"""The ``donkey`` CLI: ``init``, ``doctor``, ``mock``, ``dev``, ``test``, ``scan``,
+``publish``, ``expose`` and ``preflight``.
 
 The console script is ``donkey = "donkey_kit.cli:main"``. Each command lives in
 its own module (:mod:`.init`, :mod:`.doctor`, :mod:`.mock`, :mod:`.dev`, :mod:`.test`,
-:mod:`.scan`, :mod:`.publish`) and
+:mod:`.scan`, :mod:`.publish`, :mod:`.expose`) and
 registers on the shared app in :mod:`._app`. The CLI is a front end over the
 library: it may import any layer, and no layer imports it (an import-linter
 contract enforces that). Why it lives here, and why the old ``provisioning/``
@@ -16,9 +16,12 @@ to your own sink with no SDK-specific env var; opt out entirely with
 ``DONKEY_TELEMETRY=false``.
 
 ``publish`` (#218, #1291) registers a repository's MCP servers and agents in
-Exchange from CI. Two commands are hidden: ``status`` and ``verify`` (BG §2.5)
-are verification-blocked: they print a "blocked on verification" message and
-exit 3 rather than fabricating calls (§0.3). The refused provisioning control plane
+Exchange from CI. ``expose`` (#226) puts one of them behind an existing
+gateway: its Exchange asset, API Manager instance, policies and deployment;
+``preflight`` (#1279) checks the same read-only. Two commands are hidden:
+``status`` and ``verify`` (BG §2.5) are verification-blocked: they print a
+"blocked on verification" message and exit 3 rather than fabricating calls
+(§0.3). The refused provisioning control plane
 (``plan``/``apply``/``drift``/``lint``/``generate``/``validate``) was removed.
 
 Needs the ``[cli]`` extra; importing this package without it raises an
@@ -31,6 +34,6 @@ from __future__ import annotations
 # `import typer` raises a bare one. The command modules are then imported for
 # their registration side effect.
 from ._app import app, main  # isort: skip
-from . import _blocked, dev, doctor, init, mock, publish, scan, test  # noqa: F401  # isort: skip
+from . import _blocked, dev, doctor, expose, init, mock, publish, scan, test  # noqa: F401  # isort: skip
 
 __all__ = ["app", "main"]

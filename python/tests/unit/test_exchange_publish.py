@@ -429,7 +429,7 @@ async def test_an_a2a_agent_is_published_with_its_metadata_card_and_endpoint(
     assert published.files["files.a2a-v1-card.json"] == agent_card(planned, result)
     assert set(published.files) == {"files.agent-metadata.json", "files.a2a-v1-card.json"}
     assert (published.fields["properties.protocol"], published.fields["properties.platform"]) == (
-        "a2a_v1",
+        "a2a",
         "other",
     )
     assert exchange.instances[(ORG, AGENT, "v1.0")] == [AGENT_ENDPOINT]
@@ -467,7 +467,7 @@ def test_agent_metadata_has_the_plugins_shape(repo: Repo) -> None:
     plan, _ = repo()
 
     assert agent_metadata(plan.assets[0]) == {
-        "protocol": "a2a_v1",
+        "protocol": "a2a",
         "platform": "other",
         "kind": "agent",
         "name": AGENT,
@@ -649,5 +649,5 @@ def test_the_captured_bodies_are_the_shapes_the_publisher_reads() -> None:
     assert {("agent-metadata", "json"), ("a2a-v1-card", "json"), (None, "pom")} <= classifiers
     assert json.loads(fixture("agent.publish.201.json"))["type"] == "agent"
     pom = fixture("agent.pom.xml")
-    assert "<type>agent</type>" in pom and "<protocol>a2a_v1</protocol>" in pom
+    assert "<type>agent</type>" in pom and "<protocol>a2a</protocol>" in pom
     assert "<ddkDigest>sha256:" in pom

@@ -9,7 +9,7 @@
   <properties>
     <type>agent</type>
     <ddkDigest>sha256:5555555555555555555555555555555555555555555555555555555555555555</ddkDigest>
-    <protocol>a2a_v1</protocol>
+    <protocol>a2a</protocol>
     <platform>other</platform>
   </properties>
   <repositories>

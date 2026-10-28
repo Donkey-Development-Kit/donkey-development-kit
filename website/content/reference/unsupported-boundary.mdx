@@ -22,7 +22,7 @@ Every platform API the SDK calls is classified:
 |---|---|
 | **Documented and public** | Safe to depend on. |
 | **Documented, no SLA for third-party use** | Observed on a real gateway but not promised to third parties. The SDK reads it fail-open, and the maintainers update the SDK if it changes. |
-| **Undocumented** | Must stay empty. Anything here needs a written justification and an owner. |
+| **Undocumented** | Kept to what a shipped feature cannot do without. Anything here needs a written justification and an owner. |
 
 ## Current boundary
 
@@ -35,7 +35,10 @@ In this release they are `donkey publish` and `donkey.registry.search()`,
 which also call Exchange, `donkey.registry.resolve_mcp()`, which reads
 Access Management, API Manager and Omni Gateway Manager, and
 `donkey.registry.explain()`, which reads Access Management, API Manager,
-Exchange and API Governance; the rest are Roadmap.
+Exchange and API Governance, and `donkey expose` and `donkey preflight`, which
+read Access Management, Omni Gateway Manager, Exchange and API Manager, and
+(`expose` only) publish to Exchange, create an API Manager instance with its
+policies and deploy it; the rest are Roadmap.
 Otherwise the token endpoint is contacted only if your own code calls
 `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
@@ -55,11 +58,15 @@ before making a network request, except `donkey.as_user()`, described below.
 | Gateway identity and routing headers: `x-request-id`, `x-envoy-decorator-operation`, `x-llm-proxy-{routing-type,routing-fallback,llm-provider,llm-model}` | `core.lastcall.LastCall`, `core.transport` | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`, and only an explicit `routing-fallback: true` changes retry behaviour. Owner: DDK maintainers; a contract change needs new fixtures before the parser changes. |
 | Exchange Graph API asset search: `POST /graph/api/v1/graphql`, `assets(query: {searchTerm, organizationIds, tags}, latestVersionsOnly: true)` | `registry.exchange.ExchangeRegistry.search` | **Documented and public** | Searches the business group's assets, at their latest versions. Documented in [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api). A tag filter there also matches the keyed tags Exchange derives, so the SDK keeps only assets whose matching tags are keyless, the kind the page says are set in Exchange or at publish. |
 | The `types`, `limit` and `offset` fields of the Graph API search's `query` input | `registry.exchange.ExchangeRegistry.search` | **Undocumented** | Filters by asset type and pages the results. The Graph API page does not list them; the documented REST search (`GET /exchange/api/v2/assets/search`) takes the same three parameters, but it needs the root organisation's ID and has no text filter. Justification: without them, an `asset_types` filter would read the whole group and a search could not page. Owner: DDK maintainers. A refusal raises `RegistryError`; `tests/fixtures/anypoint/exchange_search/` holds the captures to re-check against. |
-| Access Management environment list: `GET /accounts/api/organizations/{org}/environments` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain` | **Documented and public** | Finds the id of the environment named by `ANYPOINT_ENV`. Documented in the [Access Management API](https://dev-portal.mulesoft.com/apis/access-management.html) reference. |
-| API Manager instance reads: `GET /apimanager/api/v1/…/environments/{env}/apis?assetId=&groupId=&assetVersion=`, `GET …/apis/{id}` and `GET …/apis/{id}/policies` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain` | **Documented and public** | Finds the asset version's deployed MCP instance and reads its path and gateway. `explain()` also reads each deployed instance's policies and gateway name. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference (`listApiInstances` takes the three filters). |
+| Access Management environment list: `GET /accounts/api/organizations/{org}/environments` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain`, `registry.expose.expose` | **Documented and public** | Finds the id of the environment named by `ANYPOINT_ENV`. Documented in the [Access Management API](https://dev-portal.mulesoft.com/apis/access-management.html) reference. |
+| API Manager instance reads: `GET /apimanager/api/v1/…/environments/{env}/apis?assetId=&groupId=&assetVersion=`, `GET …/apis/{id}` and `GET …/apis/{id}/policies` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain`, `registry.expose.expose` | **Documented and public** | Finds the asset version's deployed MCP instance and reads its path and gateway. `explain()` also reads each deployed instance's policies and gateway name. `donkey expose` lists the environment's instances (`?limit=500`) to find its label, and reads the instance and its policies to tell what is already there. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference (`listApiInstances` takes the three filters). |
 | Exchange asset version read: `GET /exchange/api/v2/assets/{group}/{asset}/{version}` | `registry.exchange.ExchangeRegistry.explain` | **Documented and public** | Reads the version's tags (`labels`) and lifecycle `status` for `require_tags` and `require_lifecycle`. Documented in the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`getAssetVersion`). A refused read makes both checks UNKNOWN. |
 | API Governance conformance read: `GET /governance/xapi/api/v1/stats/organization/targets/{group}/{asset}/{version}?organization={org}` | `registry.exchange.ExchangeRegistry.explain` | **Documented, no SLA for third-party use** | Reads the business group's governance reports for the version (`summaryStatus` per ruleset) for `require_governance_pass`. It is the API Governance Experience API, which [Getting Started with API Governance](https://docs.mulesoft.com/api-governance/get-started) points to for retrieving conformance status, and whose spec is published in Exchange as `api-governance-xapi`. As an experience API it has no third-party support commitment, so the SDK reads it fail-open: no report, an unrecognised status or a refused read makes the check UNKNOWN. Owner: DDK maintainers; `tests/fixtures/anypoint/mcp_explain/` holds the captures to re-check against. |
-| Omni Gateway Manager gateway read: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp` | **Documented and public** | Reads the gateway's `configuration.ingress.publicUrl`, the host of the resolved MCP endpoint. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference. |
+| Omni Gateway Manager gateway read: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `registry.expose.expose` | **Documented and public** | Reads the gateway's `configuration.ingress.publicUrl`, the host of the resolved MCP endpoint. `donkey expose` also reads its `status`, `runtimeVersion` and listener port. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference. |
+| Omni Gateway Manager gateway list: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways?name={name}` | `registry.expose.expose` | **Documented and public** | Finds the gateway `donkey expose` deploys to, by the name in `[donkey.expose]`. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference (`listGateways`). `name` matches a substring, so the SDK keeps the exact name only. A gateway that is not there is reported missing, never created. |
+| API Manager instance writes: `POST /apimanager/api/v1/…/environments/{env}/apis`, `POST …/apis/{id}/policies` and `GET …/apis/{id}/upstreams` | `registry.expose.expose` | **Documented and public** | Creates the instance for the published asset version, applies its inbound policies, and reads the upstream ids an outbound policy attaches to. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference. `donkey expose` never edits, moves or deletes what is there. |
+| Proxy deployment: `POST /proxies/xapi/v1/…/environments/{env}/apis/{id}/deployments`, then `GET …/deployments/{deploymentId}/status` | `registry.expose.expose` | **Documented, no SLA for third-party use** | Deploys the instance to the gateway and polls until it is applied. It is the Proxies Experience API (`createProxyDeployment`, `getProxyDeploymentStatus` in the [`proxies-xapi`](https://dev-portal.mulesoft.com/apis/proxies-xapi.html) reference). As an experience API it has no third-party support commitment. Owner: DDK maintainers; a refusal or a deployment that is not applied in time fails the step, and `tests/fixtures/anypoint/mcp_instance/` and `a2a_instance/` hold the captures to re-check against. |
+| Outbound policy on an A2A instance: `POST /apimanager/xapi/v1/…/environments/{env}/apis/{id}/policies/outbound-policies` | `registry.expose.expose` | **Undocumented** | See [Undocumented surfaces](#undocumented-surfaces). |
 
 The connected-app scope each of these calls needs is in
 [Connected-app scopes](/reference/scopes).
@@ -88,18 +95,6 @@ How each row was established (live capture, plugin test, and so on) is in the
   <Badge tone="roadmap">Roadmap</Badge>, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.
-- `donkey expose` is <Badge tone="roadmap">Roadmap</Badge>. The A2A and MCP
-  instances it would create were verified live, and two of the calls that
-  takes are experience APIs (`xapi`) with no third-party support commitment:
-  attaching an outbound policy to an A2A instance
-  (`POST /apimanager/xapi/v1/…/apis/{id}/policies/outbound-policies`) and
-  deploying either instance to a gateway target
-  (`POST /proxies/xapi/v1/…/apis/{id}/deployments`, then polling its
-  `…/status`). An MCP instance's inbound policies use the public API Manager
-  path. The Anypoint CLI plugins call the same paths. The SDK calls
-  none of them today. If `expose` ships with them, they move to
-  [Undocumented surfaces](#undocumented-surfaces) with a justification and an
-  owner, unless a documented alternative is found first.
 - `donkey.as_user()` posts an RFC 8693 token exchange to the control-plane
   host, then sends the exchanged token on model calls. Neither the exchange
   path nor the header the gateway reads the token from is confirmed yet (see
@@ -119,10 +114,22 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Undocumented surfaces
 
-This section must stay empty. A surface listed here needs a written
-justification and an owner, and is re-evaluated at every milestone.
+A surface listed here needs a written justification and an owner, and is
+re-evaluated at every milestone.
 
-_(none)_
+- **Outbound policy on an A2A instance**:
+  `POST /apimanager/xapi/v1/organizations/{org}/environments/{env}/apis/{id}/policies/outbound-policies`,
+  body `{configurationData, groupId, assetId, assetVersion, upstreamIds,
+  apiVersionId}`. Used by `donkey expose` for a policy declared with
+  `outbound = true`. Justification: the public policy path refuses an
+  outbound-only policy ("This policy can not be applied as inbound"), and
+  neither the API Manager API nor any other reference on MuleSoft's developer
+  portal documents another way to attach one to an instance's upstreams. The
+  Anypoint CLI's agent-fabric plugin sends the same call. It is made only when
+  a project declares an outbound policy, and a refusal fails that policy's step
+  and skips the deployment. Owner: DDK maintainers;
+  `tests/fixtures/anypoint/a2a_instance/` holds the capture to re-check
+  against.
 
 ## Local Mode is not supported
 
