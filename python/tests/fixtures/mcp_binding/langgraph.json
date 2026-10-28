@@ -1,0 +1,41 @@
+{
+  "binding": {
+    "call": "MultiServerMCPClient({name: {\"transport\": \"streamable_http\", \"url\": url, \"headers\": {...}}}).get_tools() -> BaseTool.ainvoke({\"a\": 2, \"b\": 3})",
+    "class": "MultiServerMCPClient",
+    "module": "langchain_mcp_adapters.client"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "httpx": "0.28.1",
+    "langchain-core": "1.7.0",
+    "langchain-mcp-adapters": "0.3.2",
+    "langgraph": "1.2.18",
+    "mcp": "1.30.0"
+  },
+  "framework": "langgraph",
+  "headers_seen": {
+    "client_id": "probe-id",
+    "client_secret": "probe-secret"
+  },
+  "native_tool_types": [
+    "langchain_core.tools.structured.StructuredTool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": [
+      {
+        "text": "5",
+        "type": "text"
+      }
+    ]
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}
