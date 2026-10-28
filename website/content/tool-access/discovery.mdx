@@ -9,7 +9,8 @@ import { Badge } from '../../components'
 # Discovery, search & filter
 
 `donkey.tools.discover()` is on the [Roadmap](/roadmap); the API shown here is the
-planned design. [`donkey.registry.search()`](#registry-search) is live.
+planned design. [`donkey.registry.search()`](#registry-search) and
+[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server) are live.
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance**, domain and tags, so an agent
@@ -82,6 +83,31 @@ latest version:
 - `domain`, `environment`, `governed` and the `"a2a-agent"` type raise
   `NotImplementedError` for now. Exchange has no domain filter, and
   `environment` and `governed` need the governed-state join below.
+
+## Resolving an MCP server
+
+`donkey.registry.resolve_mcp()` is <Badge tone="live">Live</Badge>. It turns an
+MCP server asset into the gateway URL an agent connects to:
+
+```python
+server = await donkey.registry.resolve_mcp("<group-id>/sku-lookup-mcp/1.1.0")
+print(server.endpoint_url)   # https://<gateway-host>/<instance-path>/
+```
+
+It looks for the asset version's API Manager instance in the environment set by
+`ANYPOINT_ENV` (default `Sandbox`) that is deployed to a gateway, and joins the
+gateway's public URL with the instance's path. The URL ends in `/`: the gateway
+routes the path only with the trailing slash.
+
+- It raises `RegistryError` when the environment does not exist, when the
+  version has no deployed MCP instance there, or when it has more than one.
+- It does not open a connection or send the gateway's client credentials.
+  Calls through the URL need them, because the gateway's Client ID Enforcement
+  policy refuses a call without them.
+- The returned handle's `governance` is `None`: whether the instance is
+  governed comes from `explain()`, which is on the Roadmap.
+- Results are cached like the other registry lookups; see
+  [Registry caching](/tool-access/lockfile#registry-caching).
 
 ## "Governed" is a computed predicate
 

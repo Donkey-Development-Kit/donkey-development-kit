@@ -1,7 +1,8 @@
 """Exchange discovery + the governed-only join (BG §2.7).
 
 :meth:`ExchangeRegistry.search` reads Exchange's GraphQL ``assets`` query
-(docs/verified-apis.md §7, #53). Every other method that requires a real
+(docs/verified-apis.md §7, #53), and :meth:`ExchangeRegistry.resolve_mcp` reads
+API Manager and Gateway Manager (§6, #1297). Every other method that requires a real
 Anypoint endpoint is gated behind a verification-blocked error (verification
 discipline, working instruction #2) rather than a fabricated request path. The
 N+1-avoiding index design is documented in :meth:`warm` for the implementer who
@@ -14,6 +15,7 @@ import json
 import re
 from fnmatch import fnmatchcase
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..core import _verify
 from ..core.cache import TTLCache
@@ -57,9 +59,9 @@ class ExchangeRegistry:
 
     Uses the control-plane credential and caches lookups for
     ``registry_cache_ttl_s`` seconds (``DONKEY_NO_CACHE=1`` bypasses the cache).
-    :meth:`search` reads Exchange; the methods that need an asset-resolution or
-    API Manager endpoint raise ``NotImplementedError`` for now
-    (docs/verified-apis.md §7).
+    :meth:`search` reads Exchange and :meth:`resolve_mcp` reads API Manager; the
+    methods that need an unverified endpoint raise ``NotImplementedError`` for
+    now (docs/verified-apis.md §6, §7).
 
     Args:
         cfg: The resolved configuration.
@@ -150,6 +152,45 @@ class ExchangeRegistry:
         self._index_cache.set(key, refs)
         return list(refs)
 
+    async def _environment_id(self) -> str:
+        """The id of the configured ``environment``, matched by name ignoring case."""
+        cfg = self._cfg
+        key = f"environment:{cfg.environment}"
+        cached = self._index_cache.get(key)
+        if isinstance(cached, str):
+            return cached
+        body = await self._get(
+            f"/accounts/api/organizations/{cfg.org_id}/environments",
+            what="the organization's environments",
+        )
+        envs = [e for e in body.get("data") or () if isinstance(e, dict)]
+        for env in envs:
+            if str(env.get("name")).lower() == cfg.environment.lower():
+                env_id = str(env.get("id"))
+                self._index_cache.set(key, env_id)
+                return env_id
+        names = ", ".join(repr(e.get("name")) for e in envs)
+        raise RegistryError(
+            f"Environment {cfg.environment!r} is not in organization {cfg.org_id}; "
+            f"it has {names or 'none'}."
+        )
+
+    async def _get(
+        self, path: str, *, what: str, params: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        response = await self._http.get(
+            self._cfg.control_plane_url.rstrip("/") + path, params=params
+        )
+        if not response.is_success:
+            raise RegistryError(
+                f"Anypoint refused the read of {what}: HTTP {response.status_code} "
+                f"{response.text[:300]}"
+            )
+        body = response.json()
+        if not isinstance(body, dict):
+            raise RegistryError(f"Anypoint returned an unexpected body for {what}.")
+        return body
+
     async def _assets(self, search: dict[str, Any]) -> list[dict[str, Any]]:
         response = await self._http.post(
             self._cfg.control_plane_url.rstrip("/") + _GRAPHQL_PATH,
@@ -170,16 +211,77 @@ class ExchangeRegistry:
         return [a for a in assets if isinstance(a, dict)]
 
     async def resolve_mcp(self, ref: AssetRef | str) -> McpServerHandle:
-        """Resolve an MCP server asset to a connectable handle.
+        """Resolve an MCP server asset to its governed gateway endpoint.
+
+        Finds the asset version's API Manager instance in the configured
+        ``environment`` that is deployed to a gateway, and joins the gateway's
+        public URL with the instance's path. The handle does not open a
+        connection, and ``governance`` is left for ``explain()`` to fill.
+        Results are cached for ``registry_cache_ttl_s`` seconds.
 
         Raises:
+            ConfigError: The control-plane settings are missing.
             ValueError: ``ref`` is not ``group_id/asset_id/version``.
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §7.
+            RegistryError: The environment does not exist, the asset version has
+                no deployed MCP instance there or has several, or an Anypoint
+                read was refused.
         """
-        AssetRef.parse(ref)  # validate shape now; resolution needs verified API
-        raise _verify.blocked(
-            "Exchange asset-resolution API for MCP servers (docs/verified-apis.md §7)."
+        cfg = self._cfg.validated(need="control_plane")
+        asset = AssetRef.parse(ref)
+        key = f"resolve_mcp:{cfg.environment}:{asset.coordinates}"
+        cached = self._index_cache.get(key)
+        if isinstance(cached, McpServerHandle):
+            return cached
+
+        env_id = await self._environment_id()
+        base = f"/apimanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
+        listing = await self._get(
+            f"{base}/apis",
+            params={
+                "assetId": asset.asset_id,
+                "groupId": asset.group_id,
+                "assetVersion": asset.version,
+            },
+            what=f"the API Manager instances of {asset.coordinates}",
         )
+        instances = [
+            api
+            for row in listing.get("assets") or ()
+            for api in row.get("apis") or ()
+            if api.get("endpointType") == "mcp"
+            and (api.get("deployment") or {}).get("expectedStatus") == "deployed"
+        ]
+        where = f"environment {cfg.environment!r}"
+        if not instances:
+            raise RegistryError(
+                f"{asset.coordinates} has no MCP instance deployed to a gateway in {where}."
+            )
+        if len(instances) > 1:
+            labels = ", ".join(sorted(str(api.get("instanceLabel")) for api in instances))
+            raise RegistryError(
+                f"{asset.coordinates} has {len(instances)} deployed MCP instances in "
+                f"{where} ({labels}); resolve_mcp() needs exactly one."
+            )
+        api = await self._get(
+            f"{base}/apis/{instances[0]['id']}",
+            what=f"API Manager instance {instances[0]['id']}",
+        )
+        target = (api.get("deployment") or {}).get("targetId")
+        gateway = await self._get(
+            f"/gatewaymanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
+            f"/gateways/{target}",
+            what=f"gateway {target}",
+        )
+        public = ((gateway.get("configuration") or {}).get("ingress") or {}).get("publicUrl")
+        if not public:
+            raise RegistryError(f"Gateway {target} has no public URL for {asset.coordinates}.")
+        # The gateway routes the instance's path only with a trailing slash; without
+        # one it answers an empty 404 (docs/verified-apis.md §6, #1297).
+        path = urlsplit(str((api.get("endpoint") or {}).get("proxyUri") or "")).path.strip("/")
+        url = str(public).rstrip("/") + "/" + (f"{path}/" if path else "")
+        handle = McpServerHandle(ref=asset, endpoint_url=url)
+        self._index_cache.set(key, handle)
+        return handle
 
     async def resolve_agent(self, ref: AssetRef | str) -> AgentHandle:
         """Resolve an A2A agent asset to a handle.
