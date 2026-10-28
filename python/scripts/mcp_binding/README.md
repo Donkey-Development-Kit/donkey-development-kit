@@ -30,6 +30,13 @@ VIRTUAL_ENV=/tmp/ddk-mcpbind-<fw>/venv uv pip install <framework> mcp
 /tmp/ddk-mcpbind-<fw>/venv/bin/python scripts/mcp_binding/probe_<fw>.py --write
 ```
 
+Install the framework's MCP binding package too where it is separate:
+`langchain-mcp-adapters` for LangGraph, `llama-index-tools-mcp` for LlamaIndex.
+LangGraph also needs `mcp<2`: `langchain-mcp-adapters` 0.3.2 requires it, and
+the 0.3.1 a resolver picks without the pin does not import on `mcp` 2.x. The
+baseline fixture was recorded on `mcp<2`; the probe also passes on `mcp` 2.x,
+where its `distributions` differ.
+
 The probe launches `server.py` with its own interpreter (`sys.executable`), so
 the framework's venv needs `mcp` (and `uvicorn`, which `mcp` depends on).
 Without `--write` a probe prints the fixture and writes nothing.

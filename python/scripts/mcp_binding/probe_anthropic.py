@@ -72,7 +72,7 @@ async def probe_no_slash(srv: LocalServer) -> str:
     url = srv.url.rstrip("/")
     try:
         async with (
-            http_lib.AsyncClient(headers=HEADERS, follow_redirects=True) as http,
+            http_lib.AsyncClient(headers=HEADERS) as http,
             streamable.streamable_http_client(url, http_client=http) as streams,
             ClientSession(streams[0], streams[1]) as session,
         ):

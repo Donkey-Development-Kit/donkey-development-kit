@@ -91,12 +91,16 @@ def read_requests(record: Path) -> list[dict[str, Any]]:
 
 
 def headers_seen(record: Path) -> dict[str, str | None]:
-    """The ``client_id`` / ``client_secret`` values of the last requests that carried them."""
-    seen: dict[str, str | None] = {"client_id": None, "client_secret": None}
-    for entry in read_requests(record):
-        for key in seen:
-            if entry.get(key) is not None:
-                seen[key] = entry[key]
+    """The ``client_id`` / ``client_secret`` value every recorded request carried.
+
+    A key is ``None`` unless every request, the tool call's included, carried the
+    same value for it, so one request that dropped a header fails the probe.
+    """
+    requests = read_requests(record)
+    seen: dict[str, str | None] = {}
+    for key in ("client_id", "client_secret"):
+        values = {entry.get(key) for entry in requests}
+        seen[key] = values.pop() if len(values) == 1 else None
     return seen
 
 

@@ -156,14 +156,15 @@ docstring calls out the difference.
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec(...).to_tool_list_async()`. |
 | Strands | `strands.tools.mcp.MCPClient(url=..., headers=...)`, used as a context manager; `list_tools_sync()` yields `MCPAgentTool` objects for `Agent(tools=[...])`. |
 
-Apart from CrewAI's, each class and argument in this table was checked by
-binding the framework's current release to a local MCP server. Binding through
+Apart from CrewAI's, each class in this table, and the argument that carries
+the gateway's credential headers, was checked by binding the framework's
+current release to a local MCP server. Binding through
 the gateway has not been verified yet, so the methods above still raise
 `NotImplementedError`.
 
 The frameworks also return a tool call's result in different shapes: a plain
-string, MCP content blocks, structured JSON, or a wrapper object. Each method
-leaves the framework's own result type unchanged.
+string, MCP content blocks, structured JSON, or a wrapper object. The plan is
+for each method to leave the framework's own result type unchanged.
 
 A binding failure or a `401` surfaces as a typed exception from the
 [error taxonomy](/errors), and so does an ungoverned server
