@@ -56,7 +56,8 @@ class Discovery:
 
     Args:
         registry: The Exchange registry client.
-        cfg: The resolved configuration (``registry_cache_ttl_s``).
+        cfg: The resolved configuration (``registry_cache_ttl_s`` and the
+            ``tool_warn_*`` thresholds).
         auth: The default gateway credential for bindings.
         natives: The framework approval pauses (#1153).
     """
@@ -112,6 +113,7 @@ class Discovery:
             _natives=self._natives,
             _auth=auth if auth is not None else self._auth,
             _discovered=(found.at, found.started, self._cfg.registry_cache_ttl_s),
+            _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
         )
 
     def refresh(self) -> None:

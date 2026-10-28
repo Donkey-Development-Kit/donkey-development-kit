@@ -12,6 +12,10 @@ else (#1150, ADR 0013): the governed transport attaches the consumer's gateway
 credentials to every request, so they must never reach a server the gateway
 does not front. There is no opt-out.
 
+Every binding logs the tool count and :meth:`ToolSet.descriptor_tokens` at
+debug level, and warns when either passes ``tool_warn_count`` or
+``tool_warn_tokens`` (#1257; the defaults' sources are on :func:`_report_cost`).
+
 ``require_approval()`` gates named tools behind a human decision, the same
 approval ``@donkey.tool(approval="required")`` gives a local function (#1153).
 A per-tool binding (LangGraph, LlamaIndex, Anthropic) applies
@@ -33,6 +37,7 @@ from typing import Any
 
 from ..core import _verify
 from ..core.approvals import APPROVAL_TIMEOUT, NativePause, parse_timeout
+from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, ConfigError, DonkeyError
 from ..core.reactions import Duration
 from ..registry.models import McpServerHandle
@@ -119,6 +124,7 @@ class ToolSet:
         _natives: tuple[NativePause, ...] = (),
         _auth: McpAuth | None = None,
         _discovered: tuple[datetime, float, float] | None = None,
+        _limits: tuple[int, int] | None = None,
     ) -> None:
         self._servers = list(servers)
         # Every filter() call so far: a tool is exposed only if all accept it,
@@ -133,6 +139,9 @@ class ToolSet:
         self._auth = _auth
         # (wall-clock time, monotonic time, TTL in seconds) of the discovery.
         self._discovered = _discovered
+        # (tool_warn_count, tool_warn_tokens) from the config discovery read; a
+        # set built by hand gets the DonkeyConfig defaults.
+        self._limits = _limits or (DonkeyConfig.tool_warn_count, DonkeyConfig.tool_warn_tokens)
 
     def _with(
         self,
@@ -148,6 +157,7 @@ class ToolSet:
             _natives=self._natives,
             _auth=self._auth,
             _discovered=self._discovered,
+            _limits=self._limits,
         )
 
     @property
@@ -446,6 +456,7 @@ class ToolSet:
                     "langgraph(), llamaindex() or anthropic() to gate a discovered tool."
                 )
         headers = await self._credential().headers()
+        _report_cost(binding, len(exposed), descriptor_tokens(exposed), self._limits)
         if not bound:
             _log.info(
                 "%s binds no tools: %s",
@@ -787,6 +798,49 @@ def _index(
     kept = [(i, d) for i, d in descs if all(f.accepts(d) for f in filters)]
     _log.debug("ToolSet exposes %d of %d tool descriptors", len(kept), len(descs))
     return kept
+
+
+def _report_cost(binding: str, count: int, tokens: int, limits: tuple[int, int]) -> None:
+    """Log what ``binding`` costs a model call, and warn when it is large (#1257).
+
+    ``count`` tool descriptors, about ``tokens`` tokens (``descriptor_tokens()``),
+    go into every model call's prompt. ``limits`` is ``(tool_warn_count,
+    tool_warn_tokens)``; a warning names each one passed, and 0 turns one off.
+    The defaults, 20 tools and 10,000 tokens, are published vendor guidance:
+
+    - OpenAI, https://developers.openai.com/api/docs/guides/function-calling:
+      "Aim for fewer than 20 functions available at the start of a turn at any
+      one time, though this is just a soft suggestion."
+    - Google Gemini, https://ai.google.dev/gemini-api/docs/function-calling:
+      "Tool Selection: Keep active set to 10-20 tools maximum."
+    - Anthropic, https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool:
+      use tool search when "Your tool definitions consume more than 10k tokens."
+    """
+    _log.debug(
+        "%s binds %d tool descriptor(s), about %d descriptor tokens per model call",
+        binding,
+        count,
+        tokens,
+    )
+    max_count, max_tokens = limits
+    passed = [
+        f"more than {name}={limit}"
+        for name, limit, value in (
+            ("tool_warn_count", max_count, count),
+            ("tool_warn_tokens", max_tokens, tokens),
+        )
+        if limit and value > limit
+    ]
+    if passed:
+        _log.warning(
+            "%s binds %d tool descriptors, about %d descriptor tokens per model call (%s). "
+            "Large tool sets degrade tool selection and cost tokens on every call: narrow "
+            "the set with filter(), or raise the threshold (0 turns it off).",
+            binding,
+            count,
+            tokens,
+            ", ".join(passed),
+        )
 
 
 def _install(extra: str, package: str | None) -> str:
