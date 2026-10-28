@@ -17,7 +17,7 @@ def _assert_control_plane_remediation(error: AuthError) -> None:
     assert "ANYPOINT_CLIENT_ID" in error.remediation
     assert "ANYPOINT_CLIENT_SECRET" in error.remediation
     assert "scopes" in error.remediation
-    assert "docs/verified-apis.md §1" in error.remediation
+    assert "https://docs.donkey-kit.dev/reference/scopes" in error.remediation
     assert "DONKEY_LLM_PROXY_CLIENT_ID" not in error.remediation
 
 

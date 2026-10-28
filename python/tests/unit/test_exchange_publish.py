@@ -14,7 +14,7 @@ from _fake_exchange import BASE_URL, ORG, FakeExchange
 
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
-from donkey_kit.core.errors import RegistryError
+from donkey_kit.core.errors import AuthError, DonkeyError, RegistryError
 from donkey_kit.core.runtime import Runtime
 from donkey_kit.registry.exchange_page import PageSource
 from donkey_kit.registry.exchange_publish import (
@@ -552,14 +552,20 @@ async def test_a_plan_with_issues_is_refused(
 
 
 @pytest.mark.parametrize(
-    ("status", "remediation"), [(403, "Exchange Contributor"), (400, "Fix what Exchange reported")]
+    ("status", "error", "remediation"),
+    [
+        (401, AuthError, "'manage:exchange'"),
+        (403, AuthError, "'manage:exchange'"),
+        (400, RegistryError, "Fix what Exchange reported"),
+    ],
 )
-async def test_a_refused_publish_is_a_registry_error(
+async def test_a_refused_publish_names_the_scope_or_the_fix(
     repo: Repo,
     exchange: FakeExchange,
     http: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
     status: int,
+    error: type[DonkeyError],
     remediation: str,
 ) -> None:
     handle = exchange.handle
@@ -571,10 +577,30 @@ async def test_a_refused_publish_is_a_registry_error(
 
     monkeypatch.setattr(exchange, "handle", refusing)
 
-    with pytest.raises(RegistryError, match=f"HTTP {status}") as err:
+    with pytest.raises(error, match=f"HTTP {status}") as err:
         await _publish(http, repo())
 
     assert remediation in err.value.remediation
+
+
+async def test_an_endpoint_refused_with_404_names_manage_exchange(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What a connected app with only edit:exchange got live (#23): the version is
+    published, then the external-instance POST answers 404."""
+    handle = exchange.handle
+
+    def refusing(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/instances/external"):
+            return httpx.Response(404, json={"message": "The requested instance does not exist."})
+        return handle(request)
+
+    monkeypatch.setattr(exchange, "handle", refusing)
+
+    with pytest.raises(RegistryError, match="registering the endpoint") as err:
+        await _publish(http, repo())
+
+    assert "'manage:exchange'" in err.value.remediation
 
 
 async def test_a_graphql_error_other_than_not_found_is_raised(

@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from donkey_kit.core.config import DonkeyConfig
-from donkey_kit.core.errors import ConfigError, RegistryError
+from donkey_kit.core.errors import AuthError, ConfigError, RegistryError
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.registry.exchange import ExchangeRegistry
 from donkey_kit.registry.models import AssetRef, McpServerHandle
@@ -152,11 +152,21 @@ async def test_a_non_mcp_instance_does_not_resolve() -> None:
         await _registry(fake).resolve_mcp(REF)
 
 
-async def test_a_refused_read_is_a_registry_error() -> None:
+async def test_a_refused_read_is_an_auth_error_naming_the_scope() -> None:
     fake = _Anypoint(**{f"{_APIM}/apis": {"message": "Forbidden"}})
     fake.status[f"{_APIM}/apis"] = 403
 
-    with pytest.raises(RegistryError, match="HTTP 403"):
+    with pytest.raises(AuthError, match="HTTP 403") as err:
+        await _registry(fake).resolve_mcp(REF)
+
+    assert f"'read:api_configuration' on business group {ORG}" in err.value.remediation
+
+
+async def test_a_failed_read_other_than_401_or_403_is_a_registry_error() -> None:
+    fake = _Anypoint(**{f"{_APIM}/apis": {"message": "boom"}})
+    fake.status[f"{_APIM}/apis"] = 500
+
+    with pytest.raises(RegistryError, match="HTTP 500"):
         await _registry(fake).resolve_mcp(REF)
 
 

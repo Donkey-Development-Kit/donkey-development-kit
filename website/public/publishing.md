@@ -201,8 +201,9 @@ Without `--dry-run`, `donkey publish` registers each MCP server in the plan as
 an Exchange asset of type `mcp`, in the group and at the version you declared.
 It runs from CI with the control-plane credentials: `ANYPOINT_CLIENT_ID`,
 `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID`. The connected app needs
-permission to publish to Exchange in that business group (the Exchange
-Contributor permission). Publishing has been checked against a live sandbox
+the `manage:exchange` scope on that business group: with `edit:exchange` or
+`create:exchange` only, a version can be published but its endpoint cannot be
+registered. See [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). Publishing has been checked against a live sandbox
 with a connected app's token.
 
 Each asset is published with:

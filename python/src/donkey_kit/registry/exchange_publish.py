@@ -43,6 +43,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..core.errors import RegistryError
+from . import _scopes
 from .exchange_page import PageSource, documentation_page
 from .publish_plan import PlannedAsset, PublishPlan
 from .scan import ScanResult
@@ -159,6 +160,8 @@ async def publish_plan(
         ValueError: The plan has issues.
         RegistryError: Exchange refused a call, or a planned version is
             already published with other content.
+        AuthError: Exchange refused a call with ``401``/``403``; its ``remediation``
+            names the ``manage:exchange`` scope (docs/scopes.md).
     """
     if plan.issues:
         raise ValueError("a plan with issues is not published; fix them first")
@@ -257,6 +260,7 @@ async def latest_version(
 
     Raises:
         RegistryError: Exchange refused the query or the POM download.
+        AuthError: Exchange refused the query with ``401``/``403``.
     """
     return await _Exchange(http, base_url).latest(group_id, asset_id)
 
@@ -404,7 +408,7 @@ class _Exchange:
             # A pre-signed link: the control-plane client sends its credential
             # only to the control plane, so none goes to this host.
             response = await self._http.get(pom)
-            _check(response, f"downloading the POM of {group_id}:{asset_id}")
+            _check(response, f"downloading the POM of {group_id}:{asset_id}", scope=None)
             match = _POM_DIGEST.search(response.text)
             digest = match.group(1) if match else None
         version = str(data["version"])
@@ -435,6 +439,19 @@ class _Exchange:
             _INSTANCE_PATH.format(group=group, asset=asset_id, group_name=data["versionGroup"]),
             json={"name": asset.service_id, "endpointUri": asset.endpoint},
         )
+        if response.status_code == 404:
+            # What a connected app with edit:exchange but not manage:exchange
+            # gets here: the version is published, its endpoint is not (#23).
+            raise RegistryError(
+                f"Exchange refused registering the endpoint of {group}:{asset_id}:{version}: "
+                f"HTTP 404 {response.text[:300]}",
+                remediation=(
+                    f"Registering an endpoint needs the scope '{_scopes.EXCHANGE_PUBLISH}'; "
+                    "a connected app with only edit:exchange gets this 404. Grant it, then "
+                    f"re-run donkey publish. See {_scopes.SCOPES_DOC}."
+                ),
+                response=response,
+            )
         _check(response, f"registering the endpoint of {group}:{asset_id}:{version}")
 
     async def publish_page(self, group: str, asset_id: str, version: str, markdown: str) -> None:
@@ -506,17 +523,18 @@ def _gav(asset: PlannedAsset) -> tuple[str, str, str]:
     return asset.group_id, asset.asset_id, asset.version
 
 
-def _check(response: httpx.Response, action: str) -> None:
+def _check(
+    response: httpx.Response, action: str, *, scope: str | None = _scopes.EXCHANGE_PUBLISH
+) -> None:
+    """Raise unless ``response`` succeeded. A ``401``/``403`` is an :class:`AuthError`
+    naming ``scope``; ``None`` is for a call that sends no control-plane credential."""
     if response.is_success:
         return
+    message = f"Exchange refused {action}: HTTP {response.status_code} {response.text[:300]}"
+    if scope is not None and response.status_code in (401, 403):
+        raise _scopes.missing_scope(response, message, scope=scope, org_id=None)
     raise RegistryError(
-        f"Exchange refused {action}: HTTP {response.status_code} {response.text[:300]}",
-        remediation=(
-            "Check that the connected app has the Exchange Contributor permission "
-            "for the business group, and that the group ID is right."
-            if response.status_code in (401, 403)
-            else "Fix what Exchange reported, then re-run donkey publish."
-        ),
+        message, remediation="Fix what Exchange reported, then re-run donkey publish."
     )
 
 

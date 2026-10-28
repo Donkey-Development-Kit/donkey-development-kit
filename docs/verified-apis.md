@@ -132,10 +132,10 @@ VERIFIED with a concrete path.
 | Control-plane host (EU) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (plugin) | `eu1.anypoint.mulesoft.com`. Live smoke (unauthenticated, #22): `GET /accounts/api/users/me` → `401`, and `POST /accounts/api/v2/oauth2/token` with `{}` → `401 {"error":"invalid_request","error_description":"Invalid grant_type"}`, the same response as the US host. | 2026-10-12 | `anypoint-cli-command` 1.6.6 / `anypoint-cli-command-lib` 1.6.14 `lib/uris.js` `validServers`; [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
 | Control-plane host (CA Hyperforce) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (LIVE) | `ca1.platform.mulesoft.com` (on `platform.`, **not** `anypoint.`; the previous `ca1.anypoint.mulesoft.com` placeholder does not resolve in DNS, #22). An SDK run with `region="ca"` and no `base_url` against a real ca1 org: `AnypointConnectedApp` minted a client-credentials token at `POST /accounts/api/v2/oauth2/token`, `GET /accounts/api/me` → `200`, `GET /accounts/api/organizations/{org}/environments` → `200` (2 envs). On the same root, `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis` → `403` JSON (connected app lacks the scope) and `GET /exchange/api/v2/assets/{org}/<missing>` → `404` JSON: both services answer there, but neither contract was exercised. `ca1.omni.mulesoft.com` is not a control-plane API host (`405` on the token path). | 2026-10-12 | live probe, ca1 org, connected app (client credentials); [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
 | Control-plane host (JP Hyperforce) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (LIVE) | `jp1.platform.mulesoft.com` (on `platform.`, **not** `anypoint.`; the previous `jp1.anypoint.mulesoft.com` placeholder does not resolve in DNS, #22). An SDK run with `region="jp"` and no `base_url` against a real jp1 org: `AnypointConnectedApp` minted a client-credentials token at `POST /accounts/api/v2/oauth2/token`, `GET /accounts/api/me` → `200`, `GET /accounts/api/organizations/{org}/environments` → `200` (2 envs), `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis` → `200` JSON. `GET /exchange/api/v2/assets/{org}/<missing>` → `404` JSON: Exchange answers on the same root, but its contract was not exercised. Not in the shipping CLI's `validServers`. | 2026-10-12 | live probe, jp1 org, connected app (client credentials); [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
-| Connected-app scopes: Exchange read | `core/auth.py`, docs | UNVERIFIED | — | — | — |
-| Connected-app scopes: API Manager write | provisioning, `donkey expose` (#226) | PARTIAL: a sufficient set VERIFIED (LIVE) | A `client_credentials` token ran the whole A2A instance write path in §12.5 (create, upstreams, outbound policy, deploy, status, delete) and an Exchange hard delete. The app held 57 scopes on the environment, among them `manage:apis`, `manage:api_configuration`, `manage:api_policies`, `manage:api_proxies`, `read:api_configuration`, `read:api_policies` and `view:environment`. Which of them each call needs was not isolated: that takes an app granted one scope at a time (#23). | 2026-10-27 | live run, sandbox, connected app (#254) |
-| Connected-app scopes: policy management | provisioning, `donkey expose` (#226) | PARTIAL: a sufficient set VERIFIED (LIVE) | The outbound-policy POST and the policy listing in §12.5 succeeded with the token above (`manage:api_policies` and `read:api_policies` among its scopes). The minimal set was not isolated (#23). | 2026-10-27 | live run, sandbox, connected app (#254) |
-| Which ops require an **admin** connected app w/ user context | `core/auth.py` | UNVERIFIED | — | — | — |
+| Connected-app scopes: Exchange read | `registry/_scopes.py`, `registry.exchange`, [`scopes.md`](scopes.md) | VERIFIED (LIVE) | `read:exchange`, granted on the business group only (an `envId` context is rejected), allows the Graph search, `GET /exchange/api/v2/assets/{g}/{a}/{v}` and the API Governance conformance read (which `view:ang_governance_profiles` and `admin:ang_governance_profiles` also allow). Without it the version read is `403` `ForbiddenError`, the governance read `403` with a text body, and the Graph search `200` with no assets. The other registry reads: the environment list takes `view:environment`, `read:orgenvironments` or `read:servers` (`401` text without); the API Manager instance list and describe take `read:api_configuration`, `read:api_policies` or `manage:apis` (`403`); the policy listing takes `read:api_policies` or `manage:api_policies`, **not** `read:api_configuration`; the Gateway Manager read takes `read:servers` only (`403`). `donkey publish` needs `manage:exchange`: `edit:exchange` publishes a version but its endpoint registration answers `404` "The requested instance does not exist.", `create:exchange` likewise on a new asset and `403` on an existing one. Each set was granted to a fresh `client_credentials` app, because a scope removed from an app keeps working for a while; the reads also ran through `search()`, `resolve_mcp()` and `explain()`. Per-operation table: [`scopes.md`](scopes.md). | 2026-10-28 | live run, sandbox, connected app (#23) |
+| Connected-app scopes: API Manager write | provisioning, `donkey expose` (#226) | VERIFIED (LIVE) | Fresh app per set, on throwaway instances: the instance create (`POST …/apis`) needs `manage:api_configuration` or `manage:apis` **plus** `read:exchange` (either manage scope alone: `400` "Error while trying to retrieve asset. Reason: Forbidden"); the deploy (`POST /proxies/xapi/v1/…/deployments`) needs `read:servers` **plus** `manage:api_proxies` (`403` with either alone, or with `manage:api_configuration`, `manage:apis` or `manage:servers`); the delete takes `manage:api_configuration` or `manage:apis`. All `client_credentials`, scopes on the business group and environment. See [`scopes.md`](scopes.md). | 2026-10-28 | live run, sandbox, connected app (#23) |
+| Connected-app scopes: policy management | provisioning, `donkey expose` (#226), `registry.exchange` `explain()` | VERIFIED (LIVE) | Reading `GET …/apis/{id}/policies` takes `read:api_policies` or `manage:api_policies` (`403` `AuthorizationError` with `read:api_configuration`). Writing an inbound policy (`POST …/apis/{id}/policies`) and an outbound one (`POST /apimanager/xapi/v1/…/policies/outbound-policies`) takes `manage:api_policies`: it got past authorization to a `404` for a missing instance id, while `read:api_policies` and `manage:api_configuration` got `403`. The policy writes were checked up to authorization only. | 2026-10-28 | live run, sandbox, connected app (#23) |
+| Which ops require an **admin** connected app w/ user context | `core/auth.py`, [`scopes.md`](scopes.md) | VERIFIED (LIVE) | None. Every SDK control-plane operation (`search()`, `resolve_mcp()`, `explain()`, `donkey.tools.discover()`, `donkey publish`) and the `donkey expose` write path ran with a `client_credentials` app holding only the scopes above. MuleSoft documents that a connected app's data access is bounded by its creator's ([Creating Connected Apps](https://docs.mulesoft.com/access-management/creating-connected-apps-dev), "Endpoint Scopes"). | 2026-10-28 | live run, sandbox, connected app (#23); MuleSoft docs |
 
 ## 2. LLM Proxy (data plane) — **LIVE-VERIFIED 2026-08-28**
 
@@ -1240,9 +1240,9 @@ for that POST (plus `keywords`, `fields.*`, `categories.*`, `contactName`,
 #218: an earlier revision of this section said the plugin publishes through the
 POST. The SDK publishes through the POST (`donkey_kit.registry.exchange_publish`);
 the PUT is not exercised. The 2026-10-26 captures authenticated with a user
-session bearer: the same calls with a connected app's `client_credentials` token
-need the app to hold the Exchange Contributor permission, which is not yet
-confirmed live.
+session bearer. With a connected app's `client_credentials` token the same
+calls need `manage:exchange` (§1, [`scopes.md`](scopes.md); confirmed live
+2026-10-28, #23).
 
 ### 12.4 Agent Network gateway setup + Private Space (`dist/utils/uris.js`, `gateway.js`)
 
@@ -1294,8 +1294,8 @@ was created, given an outbound policy, deployed and deleted in the sandbox
 (DDK/Sandbox, managed shared-space Flex target, listener port 8081), for a
 throwaway `agent` asset that was hard-deleted afterwards, first with a
 username/password session, then again end to end with a connected app's
-`client_credentials` token. The scopes that second run had are in §1; the
-minimal set is not isolated (#23).
+`client_credentials` token. The scopes each call needs were isolated later
+(§1, [`scopes.md`](scopes.md), #23).
 Captures, scrubbed, are in `python/tests/fixtures/anypoint/a2a_instance/`.
 
 | Call | Status | Observed |
@@ -1330,7 +1330,7 @@ scrubbed, are in `python/tests/fixtures/anypoint/mcp_instance/`.
 Not verified by this run: traffic through the deployed instance (its upstream
 was not reachable, and no call went through the gateway), how the gateway
 answers an MCP call a policy refuses (#303), and the run with a connected
-app's token, so the scopes in §1 still come from the A2A run (#23).
+app's token. The scopes in §1 were isolated with an MCP instance (#23).
 
 App deploy (CloudHub 2.0 / RTF): `/amc/application-manager/api/v2/organizations/{org}/environments/{env}/deployments[/{id}]`;
 status poll `/amc/adam/api/organizations/{org}/environments/{env}/deployments/{id}`.

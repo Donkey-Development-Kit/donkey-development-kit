@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from donkey_kit.core.config import DonkeyConfig
-from donkey_kit.core.errors import ConfigError, RegistryError
+from donkey_kit.core.errors import AuthError, ConfigError, RegistryError
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.registry.criteria import STRICT, Check, GovernanceCriteria
 from donkey_kit.registry.exchange import ExchangeRegistry
@@ -220,6 +220,7 @@ async def test_a_refused_exchange_read_is_unknown() -> None:
 
     assert [(c.name, c.passed) for c in report.checks] == [("tags", None), ("lifecycle", None)]
     assert "HTTP 403" in report.checks[0].detail
+    assert "'read:exchange'" in report.checks[0].detail
     assert report.governed is False
 
 
@@ -279,11 +280,21 @@ async def test_a_refused_governance_read_is_unknown() -> None:
     assert report.checks[-1].detail.startswith("UNKNOWN: Anypoint refused")
 
 
-async def test_a_refused_api_manager_read_is_a_registry_error() -> None:
+async def test_a_refused_api_manager_read_is_an_auth_error() -> None:
     fake = _Anypoint(**{_LIST: {"message": "Forbidden"}})
     fake.status[_LIST] = 403
 
-    with pytest.raises(RegistryError, match="HTTP 403"):
+    with pytest.raises(AuthError, match="HTTP 403") as err:
+        await _registry(fake).explain(REF, criteria=GovernanceCriteria())
+
+    assert "'read:api_configuration'" in err.value.remediation
+
+
+async def test_a_failed_api_manager_read_is_a_registry_error() -> None:
+    fake = _Anypoint(**{_LIST: {"message": "boom"}})
+    fake.status[_LIST] = 502
+
+    with pytest.raises(RegistryError, match="HTTP 502"):
         await _registry(fake).explain(REF, criteria=GovernanceCriteria())
 
 

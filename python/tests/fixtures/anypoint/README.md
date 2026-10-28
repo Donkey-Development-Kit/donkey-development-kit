@@ -34,3 +34,5 @@ contracts the SDK targets.
   docs/verified-apis.md §12 (from the CLI-plugin analysis). The REST reads
   `ExchangeRegistry` makes were captured later, in `mcp_resolve/` (#1297) and
   `mcp_explain/` (#1298).
+- `missing_scope/` (#23) holds what each of those reads, and the Exchange
+  publish, answer when the connected app lacks the scope it needs.

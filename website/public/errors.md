@@ -140,7 +140,7 @@ never burn an exhausted budget or replay a blocked prompt.
 
 | Exception | Discriminator | Retryable? | Next step (`.remediation`) |
 |---|---|---|---|
-| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails. Inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md#no-silent-fallback-a-deliberate-hard-failure): a missing `id_token`, a refused token exchange, or an expired user token — never a fallback to the service identity. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. `as_user()`: pass the user's current OIDC `id_token`. |
+| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails, or a registry read is refused (`401`/`403`) because the connected app lacks a scope. Inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md#no-silent-fallback-a-deliberate-hard-failure): a missing `id_token`, a refused token exchange, or an expired user token — never a fallback to the service identity. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. A refused registry read names the missing scope; see [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). `as_user()`: pass the user's current OIDC `id_token`. |
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. It also stops [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) loops, and spans are flushed before it reaches you. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
@@ -192,7 +192,9 @@ an LLM-proxy response use the canonical consumer-credential guidance that
 [`donkey doctor`](https://docs.donkey-kit.dev/cli.md) also prints. Control-plane token failures override that
 default with guidance for the provider that failed: connected-app errors point
 to the Anypoint credentials and scopes, while an exhausted `ChainedAuth` points
-to each configured provider's credential or token source.
+to each configured provider's credential or token source. A registry read the
+connected app is not allowed to make names the scope it needs and the business
+group to grant it on; see [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
 
 ## When the gateway can't be reached at all
 

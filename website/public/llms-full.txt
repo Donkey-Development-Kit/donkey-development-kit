@@ -550,6 +550,10 @@ donkey doctor
 
 `donkey doctor` tells a wrong URL from wrong credentials from a model that is
 not on the proxy's allow-list, instead of one opaque failure.
+The `control plane` line matters only for features that call the Anypoint
+platform (registry reads, tool discovery, `donkey publish`). Their connected
+app needs the scopes in [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md); model calls
+don't use it.
 
 If `doctor` reports a `404`, read which line it is on:
 
@@ -2889,7 +2893,7 @@ never burn an exhausted budget or replay a blocked prompt.
 
 | Exception | Discriminator | Retryable? | Next step (`.remediation`) |
 |---|---|---|---|
-| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails. Inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md#no-silent-fallback-a-deliberate-hard-failure): a missing `id_token`, a refused token exchange, or an expired user token — never a fallback to the service identity. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. `as_user()`: pass the user's current OIDC `id_token`. |
+| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails, or a registry read is refused (`401`/`403`) because the connected app lacks a scope. Inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md#no-silent-fallback-a-deliberate-hard-failure): a missing `id_token`, a refused token exchange, or an expired user token — never a fallback to the service identity. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. A refused registry read names the missing scope; see [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). `as_user()`: pass the user's current OIDC `id_token`. |
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. It also stops [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) loops, and spans are flushed before it reaches you. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
@@ -2941,7 +2945,9 @@ an LLM-proxy response use the canonical consumer-credential guidance that
 [`donkey doctor`](https://docs.donkey-kit.dev/cli.md) also prints. Control-plane token failures override that
 default with guidance for the provider that failed: connected-app errors point
 to the Anypoint credentials and scopes, while an exhausted `ChainedAuth` points
-to each configured provider's credential or token source.
+to each configured provider's credential or token source. A registry read the
+connected app is not allowed to make names the scope it needs and the business
+group to grant it on; see [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
 
 ## When the gateway can't be reached at all
 
@@ -7983,8 +7989,9 @@ Without `--dry-run`, `donkey publish` registers each MCP server in the plan as
 an Exchange asset of type `mcp`, in the group and at the version you declared.
 It runs from CI with the control-plane credentials: `ANYPOINT_CLIENT_ID`,
 `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID`. The connected app needs
-permission to publish to Exchange in that business group (the Exchange
-Contributor permission). Publishing has been checked against a live sandbox
+the `manage:exchange` scope on that business group: with `edit:exchange` or
+`create:exchange` only, a version can be published but its endpoint cannot be
+registered. See [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). Publishing has been checked against a live sandbox
 with a connected app's token.
 
 Each asset is published with:
@@ -13658,7 +13665,11 @@ token at the Anypoint token endpoint and sends only that token to the platform.
 You don't need these values for governed model access. Model calls never use
 them.
 
-  The features that call the Anypoint platform are
+The connected app needs a scope for each platform call: see
+[Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). A `client_credentials` app is
+enough; no feature needs one that acts on behalf of a user.
+
+  Some of the features that call the Anypoint platform are
   Roadmap in this release and stop before sending
   anything. [Which features use the control plane](#which-features-use-the-control-plane)
   lists them.
@@ -13749,8 +13760,10 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Hidden commands `donkey status`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
-So in this release the SDK sends the `ANYPOINT_*` credentials only when you run
-`donkey publish`, or when your own code asks for a connected-app token.
+So in this release the SDK sends the `ANYPOINT_*` credentials only for the
+Available rows above: `donkey publish`, the registry reads and tool discovery,
+or your own code asking for a connected-app token. The scopes each one needs
+are in [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
 
 ### Other headers
 
@@ -14886,6 +14899,81 @@ counts. A field that is `None` is omitted from the span entirely. See
 
 ---
 
+Source: https://docs.donkey-kit.dev/reference/scopes.md
+
+# Connected-app scopes
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+Which scopes does the connected app behind `ANYPOINT_CLIENT_ID` /
+`ANYPOINT_CLIENT_SECRET` need? This page lists them per operation. Model calls
+need none of them: they use the LLM proxy's own credentials (see
+[Anypoint control plane](https://docs.donkey-kit.dev/reference/configuration.md#anypoint-control-plane)).
+
+Create the app as **App acts on its own behalf (client credentials)** in
+Access Management. No operation needs an app that acts on behalf of a user, or
+admin rights: the scopes below are enough. The app can see only what the user
+who created it can see, so that user needs access to the business group and
+environment too.
+
+## Recommended grant
+
+| Scope | Grant on | Used by |
+|---|---|---|
+| `read:exchange` | the business group | `search()`, `explain()` tag, lifecycle and governance checks |
+| `view:environment` | the business group and the `ANYPOINT_ENV` environment | `resolve_mcp()`, `explain()` |
+| `read:api_configuration` | the business group and the environment | `resolve_mcp()`, `explain()` |
+| `read:api_policies` | the business group and the environment | `explain()` policy checks |
+| `read:servers` | the business group and the environment | `resolve_mcp()` |
+| `manage:exchange` | the business group | `donkey publish` |
+
+Leave out `manage:exchange` if the app never publishes. The SDK's error
+messages name the scopes in this table. A smaller set also works for the
+reads: `read:exchange`, `read:servers` and `read:api_policies`.
+
+  Removing a scope from an app does not take effect at once: the app keeps it
+  for a while. To check that an app works with fewer scopes, create a new one
+  with just those.
+
+## Per operation
+
+Each row lists the scopes that allow the call; any one of them is enough
+unless the row says **plus**.
+
+| Operation | Platform call | Scopes | Status |
+|---|---|---|---|
+| Connected-app token | `POST /accounts/api/v2/oauth2/token` | None | Live |
+| `donkey.registry.search()` | Exchange Graph search | `read:exchange` | Live |
+| `resolve_mcp()`, `explain()`: find the environment | Access Management environment list | `view:environment`, `read:orgenvironments` or `read:servers` | Live |
+| `resolve_mcp()`, `explain()`: find the instance | API Manager instance list and describe | `read:api_configuration`, `read:api_policies` or `manage:apis` | Live |
+| `explain()`: `require_any_policy`, `required_policies`, `forbidden_policies` | API Manager instance policies | `read:api_policies` or `manage:api_policies`. `read:api_configuration` is not enough. | Live |
+| `resolve_mcp()`: the gateway's public URL | Omni Gateway Manager gateway read | `read:servers` | Live |
+| `explain()`: `require_tags`, `require_lifecycle` | Exchange asset version read | `read:exchange` | Live |
+| `explain()`: `require_governance_pass` | API Governance conformance read | `read:exchange`, `view:ang_governance_profiles` or `admin:ang_governance_profiles` | Live |
+| `donkey.tools.discover()` | The `search()`, `explain()` and `resolve_mcp()` reads | Theirs | Live |
+| `donkey publish` | Exchange publish, endpoint registration, asset name and description, page | `manage:exchange`. `create:exchange` and `edit:exchange` are not enough. | Live |
+| `donkey expose`: create an instance | API Manager instance create | `manage:api_configuration` or `manage:apis`, **plus** `read:exchange` | Roadmap |
+| `donkey expose`: inbound and outbound policies | API Manager policies | `manage:api_policies` | Roadmap |
+| `donkey expose`: deploy | Gateway deployment | `read:servers` **plus** `manage:api_proxies` | Roadmap |
+| `donkey expose`: delete an instance | API Manager instance delete | `manage:api_configuration` or `manage:apis` | Roadmap |
+
+Exchange, API Governance and `read:orgenvironments` scopes are granted on the
+business group only. The others are granted on the business group and the
+environment.
+
+## When a scope is missing
+
+| Where | What you get |
+|---|---|
+| `resolve_mcp()`, `explain()` | `AuthError`. Its `remediation` names the scope the call needs and the business group, for example "The connected app likely lacks the scope 'read:servers' on business group …". |
+| `explain()` Exchange and API Governance checks | No error: the check is UNKNOWN (`passed=None`), and its detail names `read:exchange`. |
+| `search()` | No error: Exchange returns no assets, so `search()` returns `[]`. If a search you expect to match returns nothing, check `read:exchange` first. |
+| `donkey publish` | `AuthError` naming `manage:exchange`. If the app has `edit:exchange` instead, the version can be published but registering its endpoint fails with a `RegistryError` naming `manage:exchange`. |
+
+See [Errors](https://docs.donkey-kit.dev/errors.md) for how `AuthError` fits the error taxonomy.
+
+---
+
 Source: https://docs.donkey-kit.dev/reference/unsupported-boundary.md
 
 # Unsupported boundary
@@ -14944,6 +15032,9 @@ before making a network request, except `donkey.as_user()`, described below.
 | Exchange asset version read: `GET /exchange/api/v2/assets/{group}/{asset}/{version}` | `registry.exchange.ExchangeRegistry.explain` | **Documented and public** | Reads the version's tags (`labels`) and lifecycle `status` for `require_tags` and `require_lifecycle`. Documented in the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`getAssetVersion`). A refused read makes both checks UNKNOWN. |
 | API Governance conformance read: `GET /governance/xapi/api/v1/stats/organization/targets/{group}/{asset}/{version}?organization={org}` | `registry.exchange.ExchangeRegistry.explain` | **Documented, no SLA for third-party use** | Reads the business group's governance reports for the version (`summaryStatus` per ruleset) for `require_governance_pass`. It is the API Governance Experience API, which [Getting Started with API Governance](https://docs.mulesoft.com/api-governance/get-started) points to for retrieving conformance status, and whose spec is published in Exchange as `api-governance-xapi`. As an experience API it has no third-party support commitment, so the SDK reads it fail-open: no report, an unrecognised status or a refused read makes the check UNKNOWN. Owner: DDK maintainers; `tests/fixtures/anypoint/mcp_explain/` holds the captures to re-check against. |
 | Omni Gateway Manager gateway read: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp` | **Documented and public** | Reads the gateway's `configuration.ingress.publicUrl`, the host of the resolved MCP endpoint. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference. |
+
+The connected-app scope each of these calls needs is in
+[Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
 
 How each row was established (live capture, plugin test, and so on) is in the
 [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md), sections 1 to 4.
