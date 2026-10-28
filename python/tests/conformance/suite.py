@@ -22,23 +22,23 @@ loopback gateway. ``attribution_headers_present`` asserts the consumer-auth
 per-agent attribution unit. The application and business-group header names
 are still UNVERIFIED placeholders (docs/verified-apis.md §3).
 
-Thirteen names were **retired, not implemented** (#749), and nine still are:
-``governed_filter_excludes``, ``governance_resolve_drift``,
-``governance_target_switch``, ``descriptor_auto_stable``,
-``publication_verify_drift``, ``descriptor_matches_framework``,
-``auto_vs_live_agree``, ``dynamic_tools_detected`` and ``asset_type_detection``.
-Each one needs a per-adapter surface that is not verified and built yet: Exchange
-discovery is blocked in ``registry/exchange.py``, publication in
-``registry/publication.py``, and descriptor derivation from a framework's tools
-in ``registry/introspect.py``. ``dynamic_tools_detected`` (loop-registered tools
-present in ``auto``, warned in ``auto:static``) belongs with the introspection
-names, not the binding ones: it is about deriving a descriptor, and
-``auto:static`` was dropped as UNSUPPORTED (docs/verified-apis.md §10, #1248).
-``publication_idempotent`` came back with ``donkey publish`` (#218), and
-``single_tool_call``, ``multi_tool_multi_server`` and ``tool_filtering`` with the
-verified ``ToolSet`` bindings (docs/verified-apis.md §9, #991). The pure logic
-beneath the rest (``ToolFilter``, collision prefixes, governance criteria,
-content digests) is unit-tested in ``tests/unit/test_pure_logic.py``. A retired
+Thirteen names were **retired, not implemented** (#749), and two still are:
+``descriptor_auto_stable`` and ``publication_verify_drift``. Both need a
+:class:`~donkey_kit.registry.publication.Publication` verb that is not verified
+and built yet (``publish_if_changed()`` and ``verify()`` in
+``registry/publication.py``). ``governance_resolve_drift`` and
+``governance_target_switch`` were dropped with the declarative control plane
+(#730, ADR 0008). ``publication_idempotent`` came back with ``donkey publish``
+(#218); ``single_tool_call``, ``multi_tool_multi_server`` and ``tool_filtering``
+with the verified ``ToolSet`` bindings (docs/verified-apis.md §9, #991);
+``governed_filter_excludes`` with ``donkey.tools.discover()`` (#221, #991); and
+``descriptor_matches_framework``, ``auto_vs_live_agree``,
+``asset_type_detection`` and ``dynamic_tools_detected`` with the verified
+descriptor-derivation attributes (docs/verified-apis.md §10, #1024, #991).
+``dynamic_tools_detected`` came back for ``auto`` only: ``auto:static`` was
+dropped as UNSUPPORTED (#1248). The pure logic beneath the rest (``ToolFilter``,
+collision prefixes, governance criteria, content digests) is unit-tested in
+``tests/unit/test_pure_logic.py``. A retired
 name comes back only with a body, once its surface is verified and built.
 """
 
@@ -112,6 +112,28 @@ CONFORMANCE_SCENARIOS = [
     # ToolSet.filter(allow=..., deny=...) decides what the framework itself lists:
     # a removed tool is never bound (BG §2.7, #222). Every binding passes.
     "tool_filtering",
+    # discover(governed=True) leaves out every MCP server whose governed state
+    # fails the criteria, and logs why (BG §2.7, #221, #991). Discovery reads the
+    # registry, not a framework, so no adapter is exempt.
+    "governed_filter_excludes",
+    # derive_descriptor() reads each framework's tool exactly as the framework
+    # computed it: equal to an independent read of the same attributes, and to
+    # the committed capture at the pinned version (BG §2.5, docs/verified-apis.md
+    # §10, #1024). Every framework's read is verified, so none is exempt.
+    "descriptor_matches_framework",
+    # For an MCP server, auto (read the object) and auto:live (initialize +
+    # tools/list) derive the same descriptor, on both MCP SDK majors (BG §2.5,
+    # #1024). Framework tools have no protocol surface, so this is about MCP
+    # servers, not adapters.
+    "auto_vs_live_agree",
+    # derive_descriptor() tells an MCP server, framework tools, a list of them and
+    # a zero-argument factory apart, and refuses a plain function or an
+    # unrecognised object rather than guess a schema (BG §2.5, #1024).
+    "asset_type_detection",
+    # Tools built at import time (in a loop, say) are all in the auto descriptor,
+    # since auto imports the module (BG §2.5). auto:static, which would have
+    # warned instead, was dropped (#1248).
+    "dynamic_tools_detected",
 ]
 
 # Where each scenario runs (#749), as pytest node ids relative to ``python/``.
@@ -119,6 +141,7 @@ CONFORMANCE_SCENARIOS = [
 # checks that every node id names a test function that exists.
 _CONTRACT = "tests/conformance/test_adapter_contract.py"
 _BINDING = "tests/conformance/test_tool_binding.py"
+_DESCRIPTOR = "tests/unit/test_descriptor_derivation.py"
 SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
     "simple_completion": (
         f"{_CONTRACT}::test_call_sends_governed_headers_and_correlation",
@@ -169,6 +192,22 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
         "tests/unit/test_discover.py::test_a_whole_server_plan_refuses_a_rename_and_a_gate",
     ),
     "tool_filtering": (f"{_BINDING}::test_tool_filtering",),
+    "governed_filter_excludes": (
+        "tests/unit/test_discover.py::test_governed_discover_leaves_out_ungoverned_with_reasons",
+    ),
+    "descriptor_matches_framework": (
+        f"{_DESCRIPTOR}::test_derivation_equals_the_independent_attribute_read",
+        f"{_DESCRIPTOR}::test_derivation_matches_the_fixture_at_the_captured_version",
+    ),
+    "auto_vs_live_agree": (f"{_DESCRIPTOR}::test_live_mcp_tools_list_equals_object_introspection",),
+    "asset_type_detection": (
+        f"{_DESCRIPTOR}::test_anthropic_tool_params_derive_in_order",
+        f"{_DESCRIPTOR}::test_zero_argument_factory_is_called",
+        f"{_DESCRIPTOR}::test_plain_function_is_never_re_derived",
+        f"{_DESCRIPTOR}::test_unverified_framework_object_stays_blocked",
+        f"{_DESCRIPTOR}::test_live_needs_an_mcp_server",
+    ),
+    "dynamic_tools_detected": (f"{_DESCRIPTOR}::test_tools_registered_in_a_loop_are_all_derived",),
 }
 
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework

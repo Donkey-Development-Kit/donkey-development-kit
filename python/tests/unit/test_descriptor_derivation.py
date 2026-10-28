@@ -117,6 +117,16 @@ def user_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
         TOOLS = {_ANTHROPIC_TOOLS!r}
         DUPLICATED = TOOLS + TOOLS[:1]
 
+        REGISTERED = []
+        for city in ("paris", "tokyo"):
+            REGISTERED.append(
+                dict(
+                    name="weather_in_" + city,
+                    description="Get the weather in " + city + ".",
+                    input_schema=dict(type="object", properties=dict()),
+                )
+            )
+
         def build():
             return TOOLS
 
@@ -158,6 +168,17 @@ async def test_anthropic_tool_params_derive_in_order(user_module: str) -> None:
 
 async def test_zero_argument_factory_is_called(user_module: str) -> None:
     assert await derive_descriptor(f"{user_module}:build") == _EXPECTED
+
+
+async def test_tools_registered_in_a_loop_are_all_derived(user_module: str) -> None:
+    # dynamic_tools_detected: ``auto`` imports the module, so a tool built at
+    # import time is read like any other. Only ``auto:static`` would miss one,
+    # and it was dropped (#1248, #991).
+    descriptor = await derive_descriptor(f"{user_module}:REGISTERED")
+
+    tools = descriptor["tools"]
+    assert isinstance(tools, list)
+    assert [tool["name"] for tool in tools] == ["weather_in_paris", "weather_in_tokyo"]
 
 
 async def test_factory_with_arguments_is_refused(user_module: str) -> None:
