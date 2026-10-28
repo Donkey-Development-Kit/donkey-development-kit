@@ -15,6 +15,7 @@ import random
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import httpx
 import pytest
@@ -111,50 +112,80 @@ def test_the_transport_stamp_orders_observations_not_the_call_to_observe() -> No
     assert b.remaining == 100
 
 
-class _SlowHookClient(DonkeyAsyncClient):
-    """A subclass whose response hook is slower the fresher the response is, so
-    hooks finish in the reverse of arrival order: the worst case for a budget
-    that trusted the order ``observe()`` runs in."""
+class _ReversedHookClient(DonkeyAsyncClient):
+    """A subclass whose response hooks run in the reverse of arrival order: the
+    worst case for a budget that trusted the order ``observe()`` runs in.
 
-    seen: list[float]
-    order: list[int]
+    The order is forced by handoff, not timing (#1301). No hook observes until
+    every response has arrived; then the freshest goes first and each hook
+    waits for the next-fresher one to finish."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.seen: list[float] = []
+        self.order: list[int] = []
+        self.stamps: dict[int, datetime] = {}
+        self._arrived = 0
+        self._all_arrived = asyncio.Event()
+        self._observed = [asyncio.Event() for _ in range(_FANOUT)]
 
     async def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
-        # Answers land 3 ms apart; a hook 9 ms slower per step fresher runs
-        # them in exactly the reverse order.
         index = int(response.headers["x-call-index"])
-        await asyncio.sleep(0.009 * (_FANOUT - index))
-        await super()._on_response(request, response)
-        self.order.append(index)
-        assert self._budget is not None
-        used = self._budget.fraction_used
-        assert used is not None
-        self.seen.append(used)
+        self.stamps[index] = response.extensions["donkey_received_at"]
+        self._arrived += 1
+        if self._arrived == _FANOUT:
+            self._all_arrived.set()
+        await self._all_arrived.wait()
+        if index < _FANOUT - 1:
+            await self._observed[index + 1].wait()  # the next-fresher hook ran
+        try:
+            await super()._on_response(request, response)
+            self.order.append(index)
+            assert self._budget is not None
+            used = self._budget.fraction_used
+            assert used is not None
+            self.seen.append(used)
+        finally:
+            self._observed[index].set()  # a failing hook must not hang the rest
 
 
 async def test_a_fan_out_whose_hooks_finish_out_of_order_keeps_the_freshest_budget() -> None:
     calls = 0
+    answered = [asyncio.Event() for _ in range(_FANOUT)]
+    responses: list[httpx.Response] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         index, calls = calls, calls + 1
-        # Staggered so the gateway answers in call order, each spending more.
-        await asyncio.sleep(0.003 * index)
+        # The gateway answers in call order, each spending more. Answer i waits
+        # for answer i-1, which the governed transport stamped as it came back,
+        # and for the clock to pass that stamp, so the stamps strictly increase
+        # even on a coarse clock.
+        if index:
+            await answered[index - 1].wait()
+            stamp = responses[index - 1].extensions["donkey_received_at"]
+            while datetime.now(timezone.utc) <= stamp:
+                await asyncio.sleep(0)
         response = _tokens(1000 - 50 * (index + 1))
         response.headers["x-call-index"] = str(index)
+        responses.append(response)
+        answered[index].set()
         return response
 
     budget = Budget()
-    client = _SlowHookClient(
+    client = _ReversedHookClient(
         DonkeyConfig(), None, budget=budget, transport=httpx.MockTransport(handler)
     )
-    client.seen, client.order = [], []
     async with client:
         await asyncio.gather(*(client.get("https://proxy/x") for _ in range(_FANOUT)))
 
     assert budget.remaining == 1000 - 50 * _FANOUT  # the last answer, not the last hook
     assert client.seen == sorted(client.seen)  # fraction_used never moved backwards
-    assert client.order == sorted(client.order, reverse=True)  # hooks really ran reversed
+    # The setup really is the worst case: answers stamped in call order, hooks
+    # run in exactly the reverse.
+    stamps = [client.stamps[index] for index in range(_FANOUT)]
+    assert stamps == sorted(set(stamps))  # strictly increasing
+    assert client.order == list(reversed(range(_FANOUT)))
 
 
 def test_threads_observing_at_once_leave_one_consistent_freshest_state() -> None:
