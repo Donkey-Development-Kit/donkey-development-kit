@@ -1,0 +1,36 @@
+{
+  "binding": {
+    "call": "async with MCPServerStreamableHttp(params={'url': url, 'headers': {...}}) as server: Agent(name=..., mcp_servers=[server]).get_all_tools(RunContextWrapper(None)) -> FunctionTool.on_invoke_tool(ToolContext, json)",
+    "class": "MCPServerStreamableHttp",
+    "module": "agents.mcp"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "mcp": "2.3.0",
+    "openai-agents": "0.24.0"
+  },
+  "framework": "openai_agents",
+  "headers_seen": {
+    "client_id": "probe-id",
+    "client_secret": "probe-secret"
+  },
+  "native_tool_types": [
+    "agents.tool.FunctionTool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": {
+      "text": "5",
+      "type": "text"
+    }
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}

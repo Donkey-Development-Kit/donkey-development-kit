@@ -338,7 +338,7 @@ class ToolSet:
         """
         self._require_governed()
         raise _verify.blocked(
-            "Strands MCPClient(streamablehttp_client(...)) (docs/verified-apis.md §9)."
+            "Strands strands.tools.mcp.MCPClient(url=..., headers=...) (docs/verified-apis.md §9)."
         )
 
     def llamaindex(self) -> list[object]:  # -> list[FunctionTool]
@@ -363,7 +363,7 @@ class ToolSet:
             "OpenAI Agents SDK agents.mcp.MCPServerStreamableHttp (docs/verified-apis.md §9)."
         )
 
-    def anthropic(self) -> list[object]:  # -> list[MCP tool defs]
+    def anthropic(self) -> list[object]:  # -> list[BetaAsyncFunctionTool]
         """Bind the tool set as Anthropic SDK MCP tool definitions.
 
         Raises:
@@ -372,7 +372,7 @@ class ToolSet:
         """
         self._require_governed()
         raise _verify.blocked(
-            "Anthropic SDK MCP tool / mcp_servers binding (docs/verified-apis.md §9)."
+            "Anthropic SDK anthropic.lib.tools.mcp.async_mcp_tool (docs/verified-apis.md §9)."
         )
 
     def crewai(self) -> list[object]:  # -> list[crewai BaseTool]
@@ -395,4 +395,6 @@ class ToolSet:
             NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
         """
         self._require_governed()
-        raise _verify.blocked("Agent Framework MCP client/tool class (docs/verified-apis.md §9).")
+        raise _verify.blocked(
+            "Agent Framework agent_framework.MCPStreamableHTTPTool (docs/verified-apis.md §9)."
+        )

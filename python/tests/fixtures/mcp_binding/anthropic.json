@@ -1,0 +1,39 @@
+{
+  "binding": {
+    "call": "async_mcp_tool(tool, session) for tool in (await session.list_tools()).tools, session = mcp ClientSession over streamable_http_client(url, http_client=AsyncClient(headers=...)); then await tool.call(args)",
+    "class": "BetaAsyncFunctionTool",
+    "module": "anthropic.lib.tools.mcp"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "anthropic": "2.3.0",
+    "httpx2": "2.16.0",
+    "mcp": "2.3.0"
+  },
+  "framework": "anthropic",
+  "headers_seen": {
+    "client_id": "probe-id",
+    "client_secret": "probe-secret"
+  },
+  "native_tool_types": [
+    "anthropic.lib.tools._beta_functions.BetaAsyncFunctionTool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": [
+      {
+        "text": "5",
+        "type": "text"
+      }
+    ]
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}

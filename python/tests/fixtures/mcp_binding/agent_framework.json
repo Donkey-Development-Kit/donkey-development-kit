@@ -1,0 +1,34 @@
+{
+  "binding": {
+    "call": "async with MCPStreamableHTTPTool(name, url, static_headers={...}) as tool: tool.functions -> FunctionTool.invoke(arguments={...})",
+    "class": "MCPStreamableHTTPTool",
+    "module": "agent_framework"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "agent-framework": "1.23.0",
+    "agent-framework-core": "1.23.0",
+    "mcp": "2.3.0"
+  },
+  "framework": "agent_framework",
+  "headers_seen": {
+    "client_id": "probe-id",
+    "client_secret": "probe-secret"
+  },
+  "native_tool_types": [
+    "agent_framework._tools.FunctionTool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": "{\"result\": 5}"
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}
