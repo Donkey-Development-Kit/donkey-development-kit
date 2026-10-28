@@ -315,7 +315,7 @@ These gate Phase 2 features. Started when Phase 2 starts, they block it; started
 - [#257](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/257) **verify: whether Anypoint Monitoring or Agent Visualizer ingests OTLP GenAI spans**  
   Whether the platform ingests OTLP GenAI — informs what 1.6 may claim.
 - [#258](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/258) **verify: self-managed gateway image availability and licensing for local development**  
-  Self-managed gateway licensing — decides whether donkey dev Option A is ever attempted.
+  Self-managed gateway licensing — ruled out donkey dev Option A (Local Mode can't run the A2A policies).
 
 ### Phase 2, wave 1 — nothing external blocking
 
@@ -364,7 +364,7 @@ Start with the work that needs no verification answer, so Phase 2 has momentum w
 - [#226](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/226) **a2a: donkey expose — the gateway instance, policies and registry entry for an A2A agent or MCP server**  
   donkey expose. Needs V-02.
 - [#227](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/227) **a2a: donkey dev — a gateway in front of the laptop, real or simulated**  
-  donkey dev. Option B ships regardless; Option A needs V-06.
+  donkey dev — the simulated A2A ingress (Option B). Option A ruled out by V-06 (#258).
 - [#213](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/213) **hitl: mappings for OpenAI Agents, ADK, Strands and MCP elicitation**  
   HITL for the other frameworks. Sequence behind P2-16 rather than re-deepening four adapters speculatively.
 - [#260](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/260) **epic: Phase 2 — Differentiate, go beyond**  
