@@ -156,12 +156,14 @@ _.escalate  # unused method (src/donkey_kit/core/reactions.py)
 _.reject  # unused method (src/donkey_kit/core/approvals.py)
 requested_at  # unused variable (src/donkey_kit/core/approvals.py)
 # ToolSet approval on discovered tools (#1153): require_approval is public API;
-# _bind_tool and _check_approvals are the seam each binding method applies once
-# binding is verified (#221, docs/verified-apis.md §9). Used by
-# tests/unit/test_toolset_approval.py until then. inspect reads __signature__.
+# _check_approvals is used by tests/unit/test_toolset_approval.py. inspect reads
+# __signature__.
 _.require_approval  # unused method (src/donkey_kit/tools/session.py)
-_._bind_tool  # unused method (src/donkey_kit/tools/session.py)
 _._check_approvals  # unused method (src/donkey_kit/tools/session.py)
+# ToolSet staleness after a cached discover() (#221) is public API; only user
+# code and tests/unit/test_discover.py read it.
+_.discovered_at  # unused property (src/donkey_kit/tools/session.py)
+_.is_stale  # unused property (src/donkey_kit/tools/session.py)
 _.__signature__  # unused attribute (src/donkey_kit/tools/approval.py)
 # The a2a-sdk calls AgentExecutor.execute (BG §2.9.1, #224); a served handler
 # reads A2ATask.input.

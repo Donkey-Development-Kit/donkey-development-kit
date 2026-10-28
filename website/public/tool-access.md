@@ -1,8 +1,10 @@
 # Tool access
 
-Status: Roadmap. Planned design; not shipped yet.
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
-This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
+Discovery and binding run end to end against a local MCP server. Binding
+through the governed gateway has not been verified yet; see
+[Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 
 Governed tool access lets an agent discover the MCP tools your organisation has
 published and governed, filter them down to what it actually needs, and bind
@@ -12,8 +14,8 @@ tool objects** — the same "no wrapper" approach as [model access](https://docs
 ## Two lines from catalog to agent
 
 ```python
-tools = await donkey.tools.discover(domain="hr", tags=["approved"])
-agent = create_react_agent(donkey.langgraph.chat_model("gpt-4o"), tools.langgraph())
+tools = await donkey.tools.discover(tags=["approved"], governed=True)
+agent = create_react_agent(donkey.langgraph.chat_model("gpt-4o"), await tools.langgraph())
 ```
 
 Everything else in this section — search filters, session management,
@@ -23,12 +25,11 @@ hold up in production.
 ## Discover and filter
 
 `donkey.tools.discover(...)` is also the filter entry point. One call narrows
-the catalog by governance, domain and tags, so an agent binds only the tools it
+the catalog by governance and tags, so an agent binds only the tools it
 needs:
 
 ```python
 tools = await donkey.tools.discover(
-    domain="hr",
     tags=["approved"],
     governed=True,           # default criteria, or a GovernanceCriteria
 )
@@ -43,7 +44,7 @@ Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-a
 ## In this section
 
   
-    Narrow the catalog by governance, domain and tags, or search it by name and asset type.
+    Narrow the catalog by governance and tags, or search it by name and asset type.
   
   
     Turn a `ToolSet` into each framework's own native tool objects.

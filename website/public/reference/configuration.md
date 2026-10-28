@@ -549,7 +549,8 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `resolve_mcp()` | Token request, then Access Management, API Manager and Omni Gateway Manager reads | Available. See [Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). |
 | Registry: `explain()` | Token request, then Access Management, API Manager, Exchange and API Governance reads, only those the criteria need | Available. See [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md#explain--why-a-tool-was-included-or-excluded). |
 | Registry: `resolve_agent()`, `warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
-| Tool discovery: `donkey.tools.discover()`, `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
+| Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter and `locked=True` raise `NotImplementedError` before sending. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
+| Tool pinning: `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
 | Hidden commands `donkey status`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |

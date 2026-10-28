@@ -45,9 +45,9 @@
 
 ## Tool access
 
-- [Overview](https://docs.donkey-kit.dev/tool-access.md): (status: roadmap) Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
-- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md): (status: roadmap) Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
-- [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): (status: roadmap) Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
+- [Overview](https://docs.donkey-kit.dev/tool-access.md): (status: offline-verified) Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
+- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md): (status: offline-verified) Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
+- [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): (status: offline-verified) Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
 - [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md): (status: roadmap) Pin governed tool versions and content digests in a donkey.lock so catalog changes become reviewable diffs, not runtime surprises.
 - [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md): (status: roadmap) Bind a governed A2A agent from the registry as a native tool, so your agent can delegate to it without learning the A2A protocol.
 

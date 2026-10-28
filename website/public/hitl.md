@@ -503,12 +503,12 @@ Without the plugin, nothing pauses. The gate raises `ApprovalRequired` inside
 the tool, which leaves the runner, and the call waits in `donkey.approvals`
 like any other.
 
-## Discovered tools Roadmap
+## Discovered tools Offline-verified
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
 [`donkey.tools.discover()`](https://docs.donkey-kit.dev/tool-access/discovery.md) is not one, so you declare
-its approval once on the `ToolSet` instead. Tool discovery and binding are on
-the [Roadmap](https://docs.donkey-kit.dev/roadmap.md), so this section shows the planned design:
+its approval once on the `ToolSet` instead. Binding through the governed
+gateway has not been verified yet (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)):
 
 ```python
 # `tools` is the ToolSet that donkey.tools.discover() returns, before you bind it.
@@ -530,6 +530,10 @@ holds the tool's arguments by name, taken from its input schema.
   A bare name such as `"issue_refund"` gates that tool on every server in the
   set. The server-prefixed name collision resolution exposes, such as
   `"billing__issue_refund"`, gates only that server's tool.
+- **Per-tool bindings only.** LangGraph, LlamaIndex and the Anthropic SDK
+  gate the call. The whole-server bindings (ADK, Strands, the OpenAI Agents
+  SDK, Agent Framework) raise `NotImplementedError` for a set with a rule; see
+  [Whole-server bindings](https://docs.donkey-kit.dev/tool-access/binding.md#whole-server-bindings).
 - **A typo fails at bind time.** Binding raises `ConfigError` for a name that no
   server in the set exposes, so a misspelt name can never leave a tool ungated.
   Removing a gated tool with `filter()` is fine.
