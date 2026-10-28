@@ -306,6 +306,7 @@ async def test_list_tools_reads_the_status_the_session_recorded(
     # mcp 2.x raises an MCPError without the HTTP response; the session's hook
     # recorded the status the gateway answered with.
     pytest.importorskip("mcp")  # list_tools imports it before opening the session
+
     @asynccontextmanager
     async def refused(
         url: str, headers: Mapping[str, str], *, errors: list[int]
