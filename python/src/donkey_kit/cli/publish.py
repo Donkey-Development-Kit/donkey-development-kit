@@ -76,6 +76,7 @@ def publish(
     if dry_run:
         if as_json:
             typer.echo(plan.to_json(), nl=False)
+            _issues(plan)
         else:
             _summary(plan)
         raise typer.Exit(1 if plan.issues else 0)

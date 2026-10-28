@@ -86,6 +86,18 @@ def test_dry_run_issues_exit_1(repo: Path) -> None:
     assert "missing-group-id  donkey.publication" in result.output
 
 
+def test_dry_run_json_issues_go_to_stderr_too(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANYPOINT_ORG_ID", "org-123")
+    (repo / ".donkey-kit.toml").write_text("[donkey.publication]\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["--json", "publish", "--dry-run", str(repo)])
+
+    assert result.exit_code == 1
+    assert [i["kind"] for i in json.loads(result.stdout)["issues"]] == ["missing-version"]
+    assert "1 issue" in result.stderr
+    assert "missing-version  donkey.publication" in result.stderr
+
+
 def test_dry_run_on_a_missing_path_exits_2(repo: Path) -> None:
     result = runner.invoke(app, ["publish", "--dry-run", str(repo / "absent")])
 
