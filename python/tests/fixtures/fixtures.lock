@@ -216,5 +216,6 @@
   "descriptor/mcp-1.json": "sha256:61c1bb7d1ff898b99711cdd7401a3e373861f11fdedc924aa15218bcd6c6d98b",
   "descriptor/mcp-2.json": "sha256:0d75170a1538031b9184f07dd6e58c503c2e80ba31016fb1051e351a17eb5214",
   "descriptor/openai_agents.json": "sha256:20bf20b4663ac7a0f9ea066533b5cf8e2c273a210415a02f976b1adf8a44f9a5",
-  "descriptor/strands.json": "sha256:91aee6e5a117dbc93ce503cb361d096bf24f0906aa3f0e22b4eb76fc73090a70"
+  "descriptor/strands.json": "sha256:91aee6e5a117dbc93ce503cb361d096bf24f0906aa3f0e22b4eb76fc73090a70",
+  "mcp_binding/mcp_sdk.json": "sha256:b1a12acd6952e049dbf5d0f322d765e2c6976faf27bad30761e2006bf9b7a2f8"
 }

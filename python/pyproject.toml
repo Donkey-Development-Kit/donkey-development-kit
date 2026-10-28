@@ -488,6 +488,10 @@ ignore-variadic-names = true
 # The §10 capture reads framework objects the way a user would, private ADK
 # method included, and its reference function is a schema, not logic (#1024).
 "scripts/capture_descriptor_fixtures.py" = ["ANN401", "ARG001", "SLF001"]
+# The MCP binding harness (§9, #636-#652): the reference server's ASGI callables take
+# and pass through Starlette's untyped scope/receive/send, and the probes bind to
+# whichever mcp major (1.x FastMCP, 2.x MCPServer) their throwaway venv has.
+"scripts/mcp_binding/*.py" = ["ANN401"]
 
 # --- vulture: dead-code check in CI (#720) ---
 # Reads src/ only, so code that only the tests use is reported as dead; names
