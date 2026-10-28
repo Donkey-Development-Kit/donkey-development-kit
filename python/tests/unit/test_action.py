@@ -182,6 +182,31 @@ def test_a_failure_annotates_each_error_line_and_keeps_the_exit_code(
     )
 
 
+def test_a_failure_with_no_stderr_annotates_each_json_issue(
+    github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plan = {
+        "assets": [{**ASSET, "version": None}],
+        "issues": [
+            {
+                "kind": "missing-version",
+                "subject": "donkey.publication",
+                "path": ".donkey-kit.toml",
+                "line": 0,
+                "detail": "set version in [donkey.publication]",
+            }
+        ],
+    }
+    _donkey(monkeypatch, json.dumps(plan), code=1)
+
+    assert run.main() == 1
+
+    assert capsys.readouterr().out.splitlines() == [
+        "::error title=donkey publish::.donkey-kit.toml:0 missing-version: donkey.publication: "
+        "set version in [donkey.publication]",
+    ]
+
+
 def test_output_that_is_not_json_still_fails_with_an_annotation(
     github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

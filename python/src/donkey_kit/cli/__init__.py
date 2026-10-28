@@ -1,8 +1,9 @@
-"""The ``donkey`` CLI: ``init``, ``doctor``, ``mock``, ``dev``, ``test`` and ``scan``.
+"""The ``donkey`` CLI: ``init``, ``doctor``, ``mock``, ``dev``, ``test``, ``scan`` and
+``publish``.
 
 The console script is ``donkey = "donkey_kit.cli:main"``. Each command lives in
 its own module (:mod:`.init`, :mod:`.doctor`, :mod:`.mock`, :mod:`.dev`, :mod:`.test`,
-:mod:`.scan`) and
+:mod:`.scan`, :mod:`.publish`) and
 registers on the shared app in :mod:`._app`. The CLI is a front end over the
 library: it may import any layer, and no layer imports it (an import-linter
 contract enforces that). Why it lives here, and why the old ``provisioning/``
@@ -14,8 +15,8 @@ OTLP endpoint is configured: set ``OTEL_EXPORTER_OTLP_ENDPOINT`` and spans flow
 to your own sink with no SDK-specific env var; opt out entirely with
 ``DONKEY_TELEMETRY=false``.
 
-Three commands are hidden. ``publish`` (#218, :mod:`.publish`) registers a
-repository's MCP servers in Exchange from CI. ``status`` and ``verify`` (BG §2.5)
+``publish`` (#218, #1291) registers a repository's MCP servers and agents in
+Exchange from CI. Two commands are hidden: ``status`` and ``verify`` (BG §2.5)
 are verification-blocked: they print a "blocked on verification" message and
 exit 3 rather than fabricating calls (§0.3). The refused provisioning control plane
 (``plan``/``apply``/``drift``/``lint``/``generate``/``validate``) was removed.

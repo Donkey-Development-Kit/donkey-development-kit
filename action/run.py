@@ -10,7 +10,8 @@ sets them in its own ``env:`` still works), and runs
 * the ``published``, ``unchanged`` and ``skipped`` counts (``skipped`` is always
   0 now that agents are published, #1260), and the path of the JSON result, to
   the step's outputs (``GITHUB_OUTPUT``);
-* each error line donkey printed as an ``::error::`` annotation when it fails.
+* each error line donkey printed as an ``::error::`` annotation when it fails,
+  or each issue in the JSON when it printed none.
 
 It exits with donkey's exit code. Standard library only: it runs before
 anything but donkey-kit is installed.
@@ -61,10 +62,22 @@ def main() -> int:
         _append(env.get("GITHUB_STEP_SUMMARY"), summary(data, dry_run=dry_run))
         _append(env.get("GITHUB_OUTPUT"), outputs(data, result))
     if done.returncode != 0:
-        for line in done.stderr.splitlines() or [f"donkey publish exited {done.returncode}"]:
-            if line.strip():
-                print(f"::error title=donkey publish::{escape(line.strip())}", flush=True)
+        for line in failures(done.stderr, data, done.returncode):
+            print(f"::error title=donkey publish::{escape(line)}", flush=True)
     return done.returncode
+
+
+def failures(stderr: str, data: Mapping[str, Any] | None, code: int) -> list[str]:
+    """The annotation lines for a failed run: donkey's stderr, else each issue
+    in the JSON (a donkey-kit before #1268 printed a dry run's issues only
+    there), else the exit code."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    if not lines and data is not None:
+        lines = [
+            f"{i['path']}:{i['line']} {i['kind']}: {i['subject']}: {i['detail']}"
+            for i in data.get("issues") or []
+        ]
+    return lines or [f"donkey publish exited {code}"]
 
 
 def child_env(env: Mapping[str, str]) -> dict[str, str]:
