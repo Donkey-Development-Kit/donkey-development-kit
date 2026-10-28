@@ -428,6 +428,27 @@ headers.
    upstream is never called. VERIFIED (LIVE) 2026-10-07 on
    `ddk-request-rate-limit` (instance 21188400, #974); fixture
    `request_rate_limit/reject.request-rate-limit.{headers.txt,body.json}`.
+8. **OAuth2 OBO CIBA step-up** — `401` **but NOT auth**, then `403` **but NOT
+   auth**: with `cibaEnabled`, the OAuth2 OBO Credential Injection policy asks
+   the user to approve the call out of band before it exchanges their token.
+   While they have not answered it returns `401` with
+   `{"error":"authorization_pending","error_description":"CIBA authorization flow initiated. Downstream user authorization is in progress. Retry after the indicated interval."}`,
+   `content-type: application/json`, `retry-after: 5` (the poll interval plus
+   the policy's 2s buffer; `8` after Keycloak's `slow_down`), and **no**
+   `www-authenticate`. After an approve the same request gets the normal `200`.
+   After a deny it returns `403` with
+   `{"error":"access_denied","error_description":"The downstream user denied the CIBA authorization request."}`
+   (the first retry after the deny can still be one more `401` pending). An
+   unanswered request is **never** reported as expired: past `expires_in` the
+   policy silently starts a new flow and keeps answering `401` pending. On OBO
+   `1.1.3` the decision is cached per user (`login_hint`), not per A2A
+   `contextId`, for up to an hour. `classify()` keys on the status plus the
+   flat-string body `error` and returns `GatewayApprovalPending` (`.retry_after`)
+   or `GatewayApprovalDenied` (`policy="oauth2-obo-ciba"`), both checked
+   *before* the 401/403→auth rule (#1320). VERIFIED (LIVE) 2026-10-28 on an A2A
+   `message/send` to the Cumulus Bank `trusted-agent-id-core-banking-agent`
+   instance (20825039, `agent-network-ingress-gw`, OBO `1.1.3`; provisioning
+   #96); fixtures `rejections/reject.ciba-{pending,denied}.{headers.txt,body.json}`.
 
 `core/errors.classify()` implements this (tests: `test_llm_proxy_contract.py`,
 `test_rejection_contract.py`, `test_errors.py`): error `type == "pii_detected"` →
@@ -435,7 +456,10 @@ headers.
 message); a nested error `code == "agent_killed"` → `AgentKilled`
 (`policy="agent-kill-switch"`; keyed on the body code, checked *before* the auth
 and generic-4xx rules so it is not mis-typed as `UpstreamRequestError`; VERIFIED
-LIVE 2026-09-29, #694); a top-level `matched_patterns` list → `PromptInjectionBlocked`
+LIVE 2026-09-29, #694); a `401` or `403` whose flat-string `error` is
+`authorization_pending` or `access_denied` → `GatewayApprovalPending` /
+`GatewayApprovalDenied` (the OBO policy's CIBA step-up, checked *before* the
+auth rule, VERIFIED LIVE 2026-10-28, #1320); a top-level `matched_patterns` list → `PromptInjectionBlocked`
 (`policy="regex-prompt-guard"`); a vendor `x-llm-proxy-<vendor>-…-action: reject`
 header (Azure Content Safety / Amazon Bedrock Guardrails / Google Model Armor /
 CrowdStrike AIDR) on a `403` → `ContentSafetyBlocked` (parses `categories` from the sibling `…-reason`
@@ -653,6 +677,9 @@ driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
 | Google Model Armor Guardrails | `google-model-armor-guardrails-policy` `1.0.0` (OpenAI ingress, Gemini upstream) | VERIFIED (LIVE) | `403`, `x-llm-proxy-model-armor-action: reject` + `-phase` (`request`/`response`) + `-reason` headers; body `{"error":"Content blocked by Google Model Armor","categories":[…]}` (the template's matched filters, e.g. `pi_and_jailbreak`, `rai_dangerous`, `malicious_uri`). A response-phase `403` keeps the upstream's headers (`x-gemini-*`). `allow` on every moderated success; `skip_detection` rides on `allow`. Streamed responses through the Gemini transcoder are not scanned (policy gap), so a streamed call sees only the request-phase `403` | 2026-10-19 | live probe, `ddk-google-model-armor` instance 21244069 (shared-omni-gateway) |
 | CrowdStrike AIDR Guardrails | `crowdstrike-aidr-guardrails-policy` `1.0.0` (OpenAI Chat Completions traffic only) | UNVERIFIED (read from policy source; live capture #1184) | `403`, `content-type: application/json` + `x-llm-proxy-crowdstrike-aidr-action: reject` + `-phase` (`request`/`response`) + `-reason` (triggered detectors, comma-joined: `malicious_prompt`, `pii`, `secrets`, `topic`, `language`, `access_rule`, …; omitted when none) headers; body `{"detectors":[…],"error":"Content blocked by CrowdStrike Falcon AIDR","message":"<AIDR summary>"}`. A streamed response is buffered and a block comes back as the same JSON `403`. `allow` / `transform` (redacted content forwarded) on a success. Fail-closed `503` `{"error":"CrowdStrike Falcon AIDR service unavailable"}` with `action: reject` and a cause reason (`auth_failed`, `rate_limited`, `timeout`, `indeterminate`, …) → `UpstreamModelError` | 2026-10-20 | policy source 1.0.0 + the public policy page (status codes); no proxy, needs a CrowdStrike AIDR for Agents subscription (#1176) |
 | Agent Kill Switch | applied to `ddk-agent-kill-switch` | VERIFIED (LIVE) | `403`, nested `{"error":{code:"agent_killed",message}}` — no `type`, no `www-authenticate`, no reason field (#314). Discriminator: nested `error.code == "agent_killed"` → `AgentKilled` | 2026-09-29 | live probe, `ddk-agent-kill-switch` instance 21206201 (shared-omni-gateway), quarantined agent `act.sub=21206128`, correlation id `00000000-0000-4000-8000-ede8f2783ba7` (#694) |
+| OAuth2 OBO Credential Injection, CIBA pending | `credential-injection-oauth2-obo` `1.1.3` (`cibaEnabled: true`), on instance 20825039 | VERIFIED (LIVE) | `401`, flat-string `{"error":"authorization_pending","error_description":…}`, `retry-after: 5` (`8` after `slow_down`), no `www-authenticate`. Discriminator: `401` + body `error == "authorization_pending"` → `GatewayApprovalPending` (#1320). An unanswered request past `expires_in` (about 124s observed) stays `401` pending: the policy starts a new flow and the client never sees an expiry | 2026-10-28 | live probe, A2A `message/send`, `trusted-agent-id-core-banking-agent` (Cumulus Bank, `agent-network-ingress-gw`); provisioning #96 |
+| OAuth2 OBO Credential Injection, CIBA denied | same | VERIFIED (LIVE) | `403`, flat-string `{"error":"access_denied","error_description":"The downstream user denied the CIBA authorization request."}`, no `www-authenticate`. Discriminator: `403` + body `error == "access_denied"` → `GatewayApprovalDenied` (#1320). On `1.1.3` the denial is cached per `login_hint` for up to an hour, even across fresh tokens and new `contextId`s | 2026-10-28 | same probe |
+| OAuth2 OBO Credential Injection, CIBA initiation failure | same | DOCUMENTED | `502`, `error: ciba_initiation_failed` per the policy source; not captured (producing it would mean breaking `cibaEndpoint` on a Production instance). Falls through to `UpstreamModelError` like any `5xx` | — | policy source |
 | Model wallet budget | `mw-find-key-policy` `1.0.3` + `mw-token-rate-limit-policy` `1.0.0`, auto-attached, not applied by hand | VERIFIED (LIVE) | `429`, flat-string `{"error":"token rate limit exceeded"}` (`text/plain`), `retry-after: 86400`, `x-model-wallet-selected`; no `x-token-*`. See "Model-wallet budget emission" above. | 2026-09-30 | live probe, `ddk-model-wallet` instance 21189395 (#301) |
 
 **Apply note (verified):** these LLM policies apply against the schema-bearing

@@ -97,6 +97,7 @@ def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
 # DonkeyError.request_id, and `donkey.last_call` parses the decorator op into the
 # API-instance/environment ids (#362) — so replaying them is what makes
 # simulate()/`donkey mock` populate the record from the committed fixtures. The
+# `retry-after` is kept for the CIBA pending 401, whose poll interval it carries (#1320). The
 # honesty marker stays the injected `x-donkey-simulator: true`, not the absence
 # of identity headers. The unsuffixed request-window trio is kept (#974); the
 # upstream's suffixed ``x-ratelimit-*-requests`` / ``-tokens`` passthrough is not.
@@ -106,6 +107,7 @@ _KEEP_EXACT = frozenset(
         _wire.REQUEST_REMAINING_HEADER,
         _wire.REQUEST_RESET_HEADER,
         _wire.WWW_AUTHENTICATE_HEADER,
+        _wire.RETRY_AFTER_HEADER,
         _wire.INJECTION_PROTECTION_HEADER,
         _wire.CORRELATION_ID_HEADER.lower(),
         _wire.REQUEST_ID_HEADER,
@@ -211,6 +213,20 @@ SHAPES: dict[str, _Spec] = {
         "rejections",
         "reject.agent-killed.headers.txt",
         "reject.agent-killed.body.json",
+        403,
+    ),
+    # OAuth2 OBO CIBA step-up (docs/verified-apis.md §4, #1320): a flat-string body ``error``,
+    # ``authorization_pending`` on the 401 (with Retry-After) and ``access_denied`` on the 403.
+    "ciba-pending": _Spec(
+        "rejections",
+        "reject.ciba-pending.headers.txt",
+        "reject.ciba-pending.body.json",
+        401,
+    ),
+    "ciba-denied": _Spec(
+        "rejections",
+        "reject.ciba-denied.headers.txt",
+        "reject.ciba-denied.body.json",
         403,
     ),
     "model-not-found": _Spec(

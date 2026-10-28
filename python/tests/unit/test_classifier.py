@@ -288,6 +288,7 @@ _REJECTED: list[tuple[dict[str, Any], type[Exception], str]] = [
     ({"status": 500, "error_type": "acme_x"}, ValueError, "4xx"),
     ({"status": 403, "error_type": "pii_detected"}, ValueError, "PIIDetected"),
     ({"status": 403, "error_code": "agent_killed"}, ValueError, "AgentKilled"),
+    ({"status": 403, "body": {"error": "access_denied"}}, ValueError, "GatewayApprovalDenied"),
     (
         {"status": 403, "headers": {"x-injection-protection": "blocked"}},
         ValueError,

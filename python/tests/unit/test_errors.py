@@ -22,6 +22,8 @@ from donkey_kit.core.errors import (
     classify,
     gateway_unavailable,
 )
+from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
+from donkey_kit.core.telemetry import policy_type_slug
 from donkey_kit.core.transport import CALL_ID_HEADER, CORRELATION_HEADER
 from donkey_kit.simulator import fixtures as fx
 
@@ -810,3 +812,49 @@ def test_classify_treats_an_unread_httpx2_body_as_absent() -> None:
     err = classify(response)
     assert isinstance(err, PolicyViolation)
     assert "shape unconfirmed" in str(err)
+
+
+# --- OAuth2 OBO CIBA step-up (#1320, docs/verified-apis.md §4) ---------------------------------
+_PENDING = {"error": "authorization_pending", "error_description": "in progress"}
+_DENIED = {"error": "access_denied", "error_description": "denied"}
+
+
+def test_ciba_pending_carries_the_gateway_retry_after() -> None:
+    err = classify(_json_resp(401, _PENDING, {"retry-after": "8"}))
+    assert isinstance(err, GatewayApprovalPending)
+    assert err.retry_after == 8.0
+    assert err.remediation is GatewayApprovalPending.remediation
+    assert policy_type_slug(err) is None  # nothing refused yet
+
+
+def test_ciba_pending_without_retry_after_is_still_pending() -> None:
+    err = classify(_json_resp(401, _PENDING))
+    assert isinstance(err, GatewayApprovalPending)
+    assert err.retry_after is None
+
+
+def test_ciba_denied_is_a_policy_violation_with_its_own_slug() -> None:
+    err = classify(_json_resp(403, _DENIED))
+    assert isinstance(err, GatewayApprovalDenied)
+    assert err.policy == "oauth2-obo-ciba"
+    assert policy_type_slug(err) == "approval_denied"
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        # The body value needs its own status: a swapped pair is not a CIBA answer.
+        (403, _PENDING, PolicyViolation),
+        (401, _DENIED, AuthError),
+        # A plain 401 and a challenged 401 stay auth failures.
+        (401, {"error": "unauthorized"}, AuthError),
+        # A nested provider envelope with that code is not the OBO policy's flat string.
+        (403, {"error": {"code": "access_denied", "message": "x"}}, UpstreamRequestError),
+        (400, _DENIED, PolicyViolation),
+    ],
+)
+def test_ciba_rules_need_their_status_and_flat_error(
+    status: int, body: dict, expected: type[DonkeyError]
+) -> None:
+    err = classify(_json_resp(status, body))
+    assert type(err) is expected

@@ -52,7 +52,7 @@ def _namespace() -> dict[str, Any]:
 def test_the_page_has_every_form() -> None:
     assert len(_DEFINITIONS) == 2
     assert len(_PAIRS) == 8
-    assert len(_REJECTED_ROWS) == 14
+    assert len(_REJECTED_ROWS) == 15
 
 
 @pytest.mark.parametrize(("http", "source"), _PAIRS, ids=[f"form{i}" for i in range(len(_PAIRS))])

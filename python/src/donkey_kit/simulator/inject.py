@@ -42,6 +42,7 @@ from ..core.errors import (
     UpstreamRequestError,
     classify,
 )
+from ..core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 from .app import SIMULATOR_HEADER
 from .fixtures import Fixture, load, replay_headers
 
@@ -66,6 +67,8 @@ _EXC_TO_SHAPE: dict[type[DonkeyError], str] = {
     PromptInjectionBlocked: "injection-protection",
     ContentSafetyBlocked: "content-safety",
     AgentKilled: "agent-killed",
+    GatewayApprovalPending: "ciba-pending",
+    GatewayApprovalDenied: "ciba-denied",
     UpstreamRequestError: "model-not-found",
     ModelNotRoutable: "model-not-routable",
     UpstreamModelError: "upstream-5xx",

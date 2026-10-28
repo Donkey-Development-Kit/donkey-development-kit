@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     from .core.lastcall import LastCall, LastCallStatus
     from .core.reactions import OnRefusal, RefusalContext
     from .core.refusals import TypedRefusals
+    from .core.step_up import GatewayApprovalDenied, GatewayApprovalPending
     from .core.telemetry import RunScope
     from .core.toolspec import AgentSpec, ToolSpec, registered_agents, registered_tools
     from .core.transport import DonkeyAsyncClientView, DonkeyClientView
@@ -108,6 +109,8 @@ _LAZY = {
     "DonkeyConfig": ".core.config",
     "DonkeyError": ".core.errors",
     "ExchangeRegistry": ".registry",
+    "GatewayApprovalDenied": ".core.step_up",
+    "GatewayApprovalPending": ".core.step_up",
     "GatewayUnavailable": ".core.errors",
     "LLMClient": ".llm.client",
     "LastCall": ".core.lastcall",
@@ -220,6 +223,8 @@ __all__ = [
     "DonkeyConfig",
     "DonkeyError",
     "ExchangeRegistry",
+    "GatewayApprovalDenied",
+    "GatewayApprovalPending",
     "GatewayUnavailable",
     "LLMClient",
     "LastCall",

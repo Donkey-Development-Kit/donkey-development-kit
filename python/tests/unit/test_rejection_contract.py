@@ -18,7 +18,10 @@ stays generic, not a captured policy shape (#253). Row 9 (Agent Kill Switch,
 nested ``error.code == "agent_killed"``) was live-captured 2026-09-29 against
 ``ddk-agent-kill-switch`` (instance 21206201, #694). Row 10 (request rate
 limit, the unsuffixed ``x-ratelimit-*`` trio on a 429) was live-captured
-2026-10-07 against ``ddk-request-rate-limit`` (instance 21188400, #974).
+2026-10-07 against ``ddk-request-rate-limit`` (instance 21188400, #974). The two
+OAuth2 OBO CIBA step-up answers (#1320, a flat-string ``error`` of
+``authorization_pending`` on a 401 and ``access_denied`` on a 403) were live-captured
+2026-10-28 (provisioning #96); they are not policy-rejection rows, like the auth 401.
 The discriminator is the error ``type`` + specific headers, NEVER the status code
 alone — which is exactly why rows 7/8 (both 403) must not be swallowed by the
 401/403 → auth rule.
@@ -45,6 +48,7 @@ from donkey_kit.core.errors import (
     UpstreamRequestError,
     classify,
 )
+from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 from donkey_kit.simulator.fixtures import parse_headers
 
 _FIXTURES = Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
@@ -246,3 +250,25 @@ def test_row10_request_rate_limit_is_its_own_type_not_token_budget() -> None:
     assert isinstance(err, RequestRateLimitExceeded)
     assert not isinstance(err, TokenBudgetExceeded)
     assert err.policy == "request-rate-limit"
+
+
+def test_ciba_pending_401_is_approval_pending_not_auth() -> None:
+    # docs/verified-apis.md §4 (#1320): the OBO policy's CIBA 401 carries no
+    # www-authenticate; the body ``error`` is the discriminator. The credential was
+    # accepted, so an AuthError ("check your client_id") would send the caller the
+    # wrong way.
+    headers = _headers(REJECTIONS / "reject.ciba-pending.headers.txt")
+    assert "www-authenticate" not in headers
+    err = classify(_response(REJECTIONS, "ciba-pending", 401))
+    assert isinstance(err, GatewayApprovalPending)
+    assert not isinstance(err, (AuthError, PolicyViolation))
+    assert err.retry_after == 5.0
+    assert err.remediation.strip()
+
+
+def test_ciba_denied_403_is_a_terminal_policy_violation() -> None:
+    err = classify(_response(REJECTIONS, "ciba-denied", 403))
+    assert isinstance(err, GatewayApprovalDenied)
+    assert isinstance(err, PolicyViolation)
+    assert not isinstance(err, AuthError)
+    assert err.policy == "oauth2-obo-ciba"

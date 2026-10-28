@@ -183,7 +183,10 @@ Beside it:
   concurrent responses are ordered by arrival at the wire; it imports nothing
   from core, and is split out to keep `budget` under the size budget. `classifier` holds the `classify.register()` registry (#210, ADR
   0012) over `_policy_spec`, its match-spec checks; it fills a hook slot in
-  `errors`, so `errors` never imports it. This contract is exhaustive too.
+  `errors`, so `errors` never imports it. `step_up` (#1320) holds the OAuth2
+  OBO policy's CIBA step-up types, which subclass `errors`' own, and fills a
+  second hook slot there the same way, ahead of the auth rule. This contract is
+  exhaustive too.
 
 Two rules the import graph can't express are tests in
 `tests/unit/test_architecture.py`:
@@ -503,7 +506,7 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 
 1. **A policy refusal is never retried.** `PolicyViolation` (and its subclasses —
    `TokenBudgetExceeded`, `RequestRateLimitExceeded`, `PIIDetected`,
-   `PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`) must be distinguishable from a transient error at the
+   `PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`, `GatewayApprovalDenied`) must be distinguishable from a transient error at the
    framework boundary, so a host framework never silently retries a governance
    refusal. The transport treats these as terminal
    (`test_429_is_terminal_but_5xx_still_retries` and
@@ -534,6 +537,8 @@ flowchart TD
   sig -->|"nested error code<br/>agent_killed"| AgentKilled
   sig -->|"x-llm-proxy-*-action:<br/>reject"| ContentSafetyBlocked
   sig -->|"top-level matched_patterns,<br/>or x-injection-protection: blocked"| PromptInjectionBlocked
+  sig -->|"401 + flat error<br/>authorization_pending"| GatewayApprovalPending
+  sig -->|"403 + flat error<br/>access_denied"| GatewayApprovalDenied
   sig -->|none| status{"status?"}
 
   status -->|"401, or 403 with<br/>www-authenticate"| AuthError
@@ -550,8 +555,8 @@ flowchart TD
 
   classDef refusal fill:#fde2e2,stroke:#c0392b,color:#000
   classDef other fill:#e8f0fe,stroke:#3367d6,color:#000
-  class PIIDetected,AgentKilled,ContentSafetyBlocked,PromptInjectionBlocked,RequestRateLimitExceeded,TokenBudgetExceeded,PV,Registered refusal
-  class AuthError,UpstreamRequestError,ModelNotRoutable,UpstreamModelError,DonkeyError other
+  class PIIDetected,AgentKilled,GatewayApprovalDenied,ContentSafetyBlocked,PromptInjectionBlocked,RequestRateLimitExceeded,TokenBudgetExceeded,PV,Registered refusal
+  class AuthError,GatewayApprovalPending,UpstreamRequestError,ModelNotRoutable,UpstreamModelError,DonkeyError other
 ```
 
 Red marks a policy refusal (a `PolicyViolation`, never retried); blue is
@@ -570,6 +575,13 @@ everything else. The captures established, for example, that:
   telemetry on, the transport then force-flushes the span providers
   (`core/spanflush.py`, bounded at 2s per provider) before the response
   returns, so the kill's span is exported before the agent exits.
+- An **OAuth2 OBO CIBA step-up** answer is a **401** (`error: "authorization_pending"`,
+  with `retry-after`) while the user hasn't approved the call on their device,
+  and a **403** (`error: "access_denied"`) once they deny it. Neither carries
+  `www-authenticate`, and the credential was accepted, so both are decided ahead
+  of the auth rule: `GatewayApprovalPending` (not a refusal; the same request
+  succeeds after approval) and `GatewayApprovalDenied` (a `PolicyViolation`).
+  The types live in `core/step_up.py` (#1320).
 - A **content-safety / guardrail** block (Azure Content Safety, Amazon Bedrock
   Guardrails) is a **403** with a vendor `x-llm-proxy-<vendor>-…-action: reject`
   header → `ContentSafetyBlocked`, its flagged categories parsed from the sibling

@@ -14,7 +14,8 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
-from ..core.errors import AuthError, ToolInvocationError
+from ..core.errors import AuthError, ToolInvocationError, classify
+from ..core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 
 __all__ = ["list_tools", "open_session"]
 
@@ -50,17 +51,18 @@ def _status(exc: BaseException) -> int | None:
 
 @asynccontextmanager
 async def open_session(
-    url: str, headers: Mapping[str, str], *, errors: list[int] | None = None
+    url: str, headers: Mapping[str, str], *, errors: list[Any] | None = None
 ) -> AsyncIterator[Any]:
     """An initialized ``mcp.ClientSession`` to ``url``, sending ``headers`` on
-    every request. Each HTTP error status the server answers with is appended
-    to ``errors``."""
+    every request. Each HTTP error response the server answers with is appended
+    to ``errors``, its body read, so the caller can classify it."""
     streamable = _streamable()
     from mcp import ClientSession
 
     async def record(response: Any) -> None:  # noqa: ANN401
         if errors is not None and response.status_code >= 400:
-            errors.append(response.status_code)
+            await response.aread()
+            errors.append(response)
 
     http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
     async with (
@@ -79,11 +81,13 @@ async def list_tools(
     ``inputSchema``), following ``nextCursor``.
 
     Raises:
+        GatewayApprovalPending: The gateway is waiting for the user's CIBA approval (#1320).
+        GatewayApprovalDenied: The user denied that approval.
         AuthError: The gateway refused the credential (401 or 403).
         ToolInvocationError: The server could not be reached or refused the call.
     """
     tools: list[dict[str, object]] = []
-    errors: list[int] = []
+    errors: list[Any] = []
     _streamable()
     from mcp.types import PaginatedRequestParams
 
@@ -103,7 +107,13 @@ async def list_tools(
     except ImportError:
         raise
     except Exception as exc:  # the mcp client wraps HTTP errors in task groups
-        status = _status(exc) or (errors[0] if errors else None)
+        if errors:
+            # A CIBA step-up answer is a 401/403 too, but the credential was accepted: raise
+            # it typed, so the caller neither drops the credential nor retries at once (#1320).
+            step_up = classify(errors[0])
+            if isinstance(step_up, (GatewayApprovalPending, GatewayApprovalDenied)):
+                raise step_up from exc
+        status = _status(exc) or (errors[0].status_code if errors else None)
         if status in (401, 403):
             raise AuthError(
                 f"The gateway refused the credential when listing the tools of {server} "

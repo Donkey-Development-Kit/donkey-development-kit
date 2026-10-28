@@ -138,6 +138,17 @@ Client-ID enforcement (401 + `www-authenticate` → `AuthError`) is a separate
 **consumer-auth** case, deliberately **not** one of the ten policy-rejection
 rows.
 
+The OAuth2 OBO Credential Injection policy's two **CIBA step-up answers**
+(#1320) live here too, also outside the ten rows: `reject.ciba-pending.*` (`401`,
+`retry-after: 5`, flat-string `error: "authorization_pending"`, no
+`www-authenticate` → `GatewayApprovalPending`) and `reject.ciba-denied.*`
+(`403`, flat-string `error: "access_denied"` → `GatewayApprovalDenied`). Both are
+**VERIFIED (LIVE), 2026-10-28**: captured on an A2A `message/send` to the
+Cumulus Bank `trusted-agent-id-core-banking-agent` instance (20825039, OBO
+`1.1.3`, provisioning #96), bodies byte-faithful, no token written to disk. The
+`retry-after` value is the capture's (the policy's 3s poll interval plus its 2s
+buffer), which is why `replay_headers()` keeps that header.
+
 ## Which headers each `.headers.txt` records (#670)
 
 A live gateway response carries far more headers than any fixture here

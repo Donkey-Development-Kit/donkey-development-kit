@@ -362,12 +362,16 @@ class ToolSet:
         binding's credential. Every binding method calls it, and so can you, so
         that :attr:`name_map`, :meth:`descriptor_tokens` and the ``filter()``
         typo check see the tools. A ``401`` or ``403`` drops the cached
-        credential and is retried once.
+        credential and is retried once, unless it is a CIBA step-up answer
+        (#1320), which is raised as it is.
 
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
             ConfigError: No gateway credential is configured, or a ``filter()``
                 or ``require_approval()`` name matches no tool.
+            GatewayApprovalPending: The gateway is waiting for the user's CIBA
+                approval; re-run after ``retry_after`` seconds.
+            GatewayApprovalDenied: The user denied that approval.
             AuthError: The gateway refused the credential.
             ToolInvocationError: A server could not list its tools.
         """

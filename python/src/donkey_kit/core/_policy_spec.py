@@ -28,6 +28,7 @@ from .errors import (
     _Shape,
     _shape,
 )
+from .step_up import GatewayApprovalDenied
 
 __all__ = ["POLICY_SLUGS", "BodyValue", "PolicyRegistration", "condition_key", "holds", "validated"]
 
@@ -44,6 +45,7 @@ POLICY_SLUGS: tuple[tuple[type[DonkeyError], str], ...] = (
     (PromptInjectionBlocked, "injection"),
     (ContentSafetyBlocked, "content_safety"),
     (AgentKilled, "agent_killed"),
+    (GatewayApprovalDenied, "approval_denied"),
     (PolicyViolation, "policy_violation"),
 )
 

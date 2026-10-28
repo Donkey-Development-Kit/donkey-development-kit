@@ -14,11 +14,13 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.errors import AuthError, ConfigError, RegistryError, ToolInvocationError
+from donkey_kit.core.step_up import GatewayApprovalPending
 from donkey_kit.registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.tools import discovery as discovery_module
@@ -282,6 +284,25 @@ async def test_a_refused_credential_is_invalidated_and_retried_once(lister: _Lis
     assert auth.invalidated == 2
 
 
+async def test_a_ciba_pending_answer_keeps_the_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The gateway accepted the credential and is waiting for the user's approval (#1320):
+    # no invalidation, no immediate second listing.
+    calls: list[str] = []
+
+    async def pending(url: str, headers: Mapping[str, str], *, server: str) -> Any:
+        calls.append(url)
+        raise GatewayApprovalPending("waiting", retry_after=5.0)
+
+    monkeypatch.setattr(session_module, "list_tools", pending)
+    auth = _CountingAuth()
+    with pytest.raises(GatewayApprovalPending):
+        await ToolSet([_handle("inventory")], _auth=auth).describe()
+    assert auth.invalidated == 0
+    assert len(calls) == 1
+
+
 async def test_filter_servers_narrows_before_listing(lister: _Lister) -> None:
     both = ToolSet([_handle("inv-a"), _handle("inv-b")], _auth=_AUTH)
     described = await both.filter(servers=["inv-b"]).describe()
@@ -309,9 +330,9 @@ async def test_list_tools_reads_the_status_the_session_recorded(
 
     @asynccontextmanager
     async def refused(
-        url: str, headers: Mapping[str, str], *, errors: list[int]
+        url: str, headers: Mapping[str, str], *, errors: list[Any]
     ) -> AsyncIterator[Any]:
-        errors.append(status)
+        errors.append(httpx.Response(status, request=httpx.Request("POST", url)))
         raise RuntimeError("Server returned an error response")
         yield  # pragma: no cover
 

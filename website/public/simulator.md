@@ -30,10 +30,11 @@ curl -s http://localhost:8080/responses \
 The selectable shapes are `token-rate-limit`, `pii-detected`,
 `injection-protection`, `regex-prompt-guard`, `content-safety`,
 `content-moderation`, `agent-killed`, `model-not-found`, `upstream-5xx`,
-`client-id-missing`, `model-not-routable`, and `request-rate-limit` — the ten documented rejections
-(including the request-rate-limit `429`, `RequestRateLimitExceeded`) plus the
-consumer-auth `401` and the gateway's `400` for a bare model name on a
-multi-provider proxy (`ModelNotRoutable`). One happy-path
+`client-id-missing`, `model-not-routable`, `request-rate-limit`, `ciba-pending`, and
+`ciba-denied` — the ten documented rejections (including the request-rate-limit `429`,
+`RequestRateLimitExceeded`) plus the consumer-auth `401`, the gateway's `400` for a bare
+model name on a multi-provider proxy (`ModelNotRoutable`), and the OAuth2 OBO policy's two
+CIBA step-up answers (`GatewayApprovalPending`, `GatewayApprovalDenied`). One happy-path
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see

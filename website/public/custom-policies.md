@@ -409,6 +409,7 @@ time rather than at the first refusal. An unknown key, a value of the wrong type
 | `match=dict(status=500, error_type="x")` | Only a 4xx is a refusal |
 | `match=dict(status=403, error_type="pii_detected")` | Claimed by the built-in PII rule, so it could never match |
 | `match=dict(status=403, error_code="agent_killed")` | Claimed by the built-in kill-switch rule |
+| `match=dict(status=403, body={"error": "access_denied"})` | Claimed by the built-in CIBA step-up rule (`GatewayApprovalDenied`) |
 | `match=dict(status=403, headers={"x-injection-protection": "blocked"})` | Claimed by the built-in injection-protection rule |
 | `match=dict(status=403, headers={"www-authenticate": "Bearer"})` | Claimed by the built-in auth rule |
 | `match=dict(status=400, error_type="invalid_request_error")` | Its only discriminator is an upstream provider's error value, so a provider mistake would become a policy refusal |

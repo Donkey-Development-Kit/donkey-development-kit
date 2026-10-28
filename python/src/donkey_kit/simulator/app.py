@@ -80,6 +80,8 @@ _REJECTION_SHAPES = frozenset(
         "content-safety",
         "content-moderation",
         "agent-killed",
+        "ciba-pending",
+        "ciba-denied",
         "model-not-found",
         "model-not-routable",
         "upstream-5xx",
