@@ -94,6 +94,12 @@ crewai = ["crewai>=1.15.3"]
 llamaindex = ["llama-index-llms-openai-like>=0.8"]
 # The OpenAIModel the adapter builds needs strands' own `openai` extra.
 strands = ["strands-agents[openai]>=1.57.1"]
+# --- Governed MCP tool binding (#221): ToolSet's own tools/list ---
+# 1.24 is the first mcp with `streamable_http_client(url, http_client=...)`, the
+# one call that works on 1.x (httpx) and 2.x (httpx2) alike. Each framework's MCP
+# client comes with its extra, except two separate packages the binding names:
+# langchain-mcp-adapters (LangGraph) and llama-index-tools-mcp (LlamaIndex).
+mcp = ["mcp>=1.24"]
 
 # --- Local gateway simulator (BG §1.4): `donkey mock` ---
 # Pure-Python ASGI (starlette) served by uvicorn. Plain `uvicorn`, NOT
@@ -293,6 +299,8 @@ module = [
     "llama_index.*",
     "strands.*",
     "litellm.*",
+    "mcp.*",
+    "langchain_mcp_adapters.*",
     # [local] simulator deps — absent under the typecheck job's [llm,cli]
     # install; build_app()/serve() confine their use to function bodies and the
     # public return type is a framework-free Protocol, so no Any leaks out.

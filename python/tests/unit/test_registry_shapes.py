@@ -38,7 +38,7 @@ _REGISTRY = ExchangeRegistry(
     DonkeyConfig(client_id="client", client_secret="secret", org_id="org"),
     cast(DonkeyAsyncClient, object()),
 )
-# Governed, so binding gets past the ADR 0013 guard to the verification block.
+# Governed, so CrewAI's binding gets past the ADR 0013 guard to the verification block.
 _TOOL_SET = ToolSet(
     [
         McpServerHandle(
@@ -61,14 +61,7 @@ _BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
     ("registry.search(governed=)", lambda: _REGISTRY.search(governed=True)),
     ("registry.resolve_agent", lambda: _REGISTRY.resolve_agent(_REF)),
     ("registry.warm", lambda: _REGISTRY.warm()),
-    ("tools.langgraph", _TOOL_SET.langgraph),
-    ("tools.adk", _TOOL_SET.adk),
-    ("tools.strands", _TOOL_SET.strands),
-    ("tools.llamaindex", _TOOL_SET.llamaindex),
-    ("tools.openai", _TOOL_SET.openai),
-    ("tools.anthropic", _TOOL_SET.anthropic),
     ("tools.crewai", _TOOL_SET.crewai),
-    ("tools.agent_framework", _TOOL_SET.agent_framework),
     ("publication.preview", lambda: _PUBLICATION.preview(object())),
     ("publication.export", _PUBLICATION.export),
     ("publication.verify", lambda: _PUBLICATION.verify(object())),

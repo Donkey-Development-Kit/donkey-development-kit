@@ -75,6 +75,11 @@ reviewed = 2026-10-03
 reason = "[strands]: Strands' OpenAIModel, supported at connection_kwargs()."
 reviewed = 2026-10-03
 
+# --- [mcp]: governed MCP tool binding (#221) ---
+[packages.mcp]
+reason = "[mcp]: the official MCP client ToolSet uses for tools/list and the Anthropic binding's sessions."
+reviewed = 2026-10-28
+
 # --- [local]: the local gateway simulator (BG §1.4) ---
 
 [packages.starlette]

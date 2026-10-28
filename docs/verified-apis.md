@@ -36,7 +36,8 @@
 > fall-through; federated-guardrail verdicts are tracked in #305), the
 > **MCP tool bind through the governed gateway** (§9; the framework binding
 > classes themselves were `VERIFIED (local round-trip)` against a local
-> reference MCP server on 2026-10-28, #636–#652, except CrewAI's; the §10
+> reference MCP server on 2026-10-28, #636–#652, except CrewAI's, and so were
+> the SDK's own `ToolSet` bindings over them, #221; the §10
 > descriptor-derivation reads were `VERIFIED (local capture)` on 2026-10-26,
 > #1024), and the on-behalf-of token
 > exchange behind `donkey.as_user()` (§13, #255). §11
@@ -1019,8 +1020,29 @@ framework's extra, its MCP binding package where that is separate
 framework's class exists under that name, accepts that construction, can send
 the `client_id`/`client_secret` pair, and yields its native tool type against a
 local reference server. No row was bound through the governed Omni Gateway, so
-the live gateway bind is still pending, and `ToolSet.<framework>()` stays behind
-`_verify.blocked(...)` until it is done. Two findings carry over to that work:
+the live gateway bind is still `UNVERIFIED` (#221).
+
+**The SDK's `ToolSet` bindings: `VERIFIED (local round-trip)`, 2026-10-28, #221.**
+`python/scripts/mcp_binding/bind_toolset.py` runs every `ToolSet.<framework>()`
+except `crewai()` (still `_verify.blocked(...)`) against two copies of the
+reference server, with a governed handle and a `ClientIdAuth` pair. For each
+framework it checks that `filter(allow=["add"])` binds only `add`, the call
+returns 5 (ADK lists only; its call is the `probe_adk.py` row), and the server
+recorded the pair. With both servers, LangGraph, LlamaIndex and Anthropic
+expose the four `inv-a__*`/`inv-b__*` names, and `require_approval(tools=["add"])`
+makes their `add` raise `ApprovalRequired`. ADK, Strands, OpenAI Agents and
+Agent Framework refuse the clash with `ConfigError`, bind once
+`filter(deny=["inv-b__*"])` removes it, and refuse the approval rule with
+`_verify.blocked(...)`. It passed in two venvs: LangGraph on `mcp==1.30.0`
+(`langchain-mcp-adapters` needs `mcp<2`), and ADK, Strands, OpenAI Agents,
+Anthropic, LlamaIndex and Agent Framework on `mcp` 2.x, at the versions in the
+rows above. The SDK's own `tools/list` call (`donkey_kit.tools.mcp.list_tools`,
+`mcp.ClientSession` over `streamable_http_client(url, http_client=...)`, as in
+the baseline row) was also run against the reference server on `mcp==1.24.0`,
+`1.30.0` and `2.1.1`; `mcp==1.23` has no `streamable_http_client`, hence the
+`donkey-kit[mcp]` floor `mcp>=1.24`. These bindings ship, with the docs pages
+marked `offline-verified`; the gateway bind is the remaining step. Two findings
+carry over to that work:
 
 - **Tool results differ per framework.** `add(2, 3)` came back as the string `5`
   (Strands, the MCP baseline), a content-block dict or list (OpenAI Agents,

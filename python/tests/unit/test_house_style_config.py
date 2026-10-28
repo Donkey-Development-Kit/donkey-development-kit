@@ -65,6 +65,7 @@ _EXTRA_IMPORTS = {
     "crewai": "crewai",
     "llamaindex": "llama_index",
     "strands": "strands",
+    "mcp": "mcp",
     "local": "starlette",
     "a2a": "a2a",
     "otel": "opentelemetry",

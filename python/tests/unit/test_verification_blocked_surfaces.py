@@ -38,7 +38,7 @@ _SYNC_BLOCKED_SURFACES: tuple[tuple[str, Callable[[Donkey], object]], ...] = (
 )
 
 _ASYNC_BLOCKED_SURFACES: tuple[tuple[str, Callable[[Donkey], Awaitable[object]]], ...] = (
-    ("Donkey.tools.discover", lambda donkey: donkey.tools.discover()),
+    ("Donkey.tools.discover(locked=True)", lambda donkey: donkey.tools.discover(locked=True)),
     (
         "publish_if_changed",
         lambda donkey: publish_if_changed(_PUBLICATION, donkey),

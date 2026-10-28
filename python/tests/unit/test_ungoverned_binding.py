@@ -6,11 +6,12 @@ credentials never reach a server the gateway does not front.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import inspect
 
 import httpx
 import pytest
 
+from donkey_kit.core.errors import ConfigError
 from donkey_kit.experimental import UngovernedMcpServer
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
@@ -46,9 +47,13 @@ def _server(asset_id: str, governance: GovernanceReport | None) -> McpServerHand
     )
 
 
-def _bind(tools: ToolSet, method: str) -> Callable[[], object]:
-    bind: Callable[[], object] = getattr(tools, method)
-    return bind
+async def _bind(tools: ToolSet, method: str) -> object:
+    """Run one binding however it is called: awaited, entered, or (CrewAI) plain."""
+    if method == "anthropic":
+        async with tools.anthropic() as bound:
+            return bound
+    result = getattr(tools, method)()
+    return await result if inspect.isawaitable(result) else result
 
 
 @pytest.fixture
@@ -72,13 +77,13 @@ def sent(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
 
 
 @pytest.mark.parametrize("method", _BINDINGS)
-def test_an_ungoverned_server_is_refused_with_its_reasons(
+async def test_an_ungoverned_server_is_refused_with_its_reasons(
     method: str, sent: list[httpx.Request]
 ) -> None:
     tools = ToolSet([_server("hr", _GOVERNED), _server("fastmcp-crm", _UNGOVERNED)])
 
     with pytest.raises(UngovernedMcpServer) as caught:
-        _bind(tools, method)()
+        await _bind(tools, method)
 
     err = caught.value
     assert err.servers == ("com.acme/fastmcp-crm/1.0.0",)
@@ -93,56 +98,62 @@ def test_an_ungoverned_server_is_refused_with_its_reasons(
 
 
 @pytest.mark.parametrize("method", _BINDINGS)
-def test_a_server_never_evaluated_is_refused(method: str, sent: list[httpx.Request]) -> None:
+async def test_a_server_never_evaluated_is_refused(method: str, sent: list[httpx.Request]) -> None:
     tools = ToolSet([_server("unknown", None)])
 
     with pytest.raises(UngovernedMcpServer) as caught:
-        _bind(tools, method)()
+        await _bind(tools, method)
 
     assert caught.value.reasons == ("com.acme/unknown/1.0.0: governance: not evaluated",)
     assert sent == []
 
 
-def test_a_verdict_without_failed_checks_still_names_a_reason() -> None:
+async def test_a_verdict_without_failed_checks_still_names_a_reason() -> None:
     tools = ToolSet([_server("bare", GovernanceReport(governed=False, checks=[]))])
 
     with pytest.raises(UngovernedMcpServer) as caught:
-        tools.langgraph()
+        await tools.langgraph()
 
     assert caught.value.reasons == ("com.acme/bare/1.0.0: governance: not governed",)
 
 
-def test_every_refused_server_is_named() -> None:
+async def test_every_refused_server_is_named() -> None:
     tools = ToolSet([_server("a", None), _server("b", _UNGOVERNED), _server("c", _GOVERNED)])
 
     with pytest.raises(UngovernedMcpServer) as caught:
-        tools.adk()
+        await tools.adk()
 
     assert caught.value.servers == ("com.acme/a/1.0.0", "com.acme/b/1.0.0")
 
 
-def test_filtering_does_not_drop_the_guard() -> None:
+async def test_filtering_does_not_drop_the_guard() -> None:
     # filter() narrows tools, not servers: the ungoverned server is still bound.
     tools = ToolSet([_server("crm", _UNGOVERNED)]).filter(allow=["read"])
 
     with pytest.raises(UngovernedMcpServer):
-        tools.strands()
+        await tools.strands()
 
 
-@pytest.mark.parametrize("method", _BINDINGS)
-def test_a_governed_set_gets_past_the_guard(method: str, sent: list[httpx.Request]) -> None:
-    # Binding itself is still blocked on verification (docs/verified-apis.md §9).
+@pytest.mark.parametrize("method", [m for m in _BINDINGS if m != "crewai"])
+async def test_a_governed_set_gets_past_the_guard(method: str, sent: list[httpx.Request]) -> None:
+    # Past the guard, a binding needs its framework and a gateway credential; with
+    # neither it stops there, still before any request.
     tools = ToolSet([_server("hr", _GOVERNED)])
 
+    with pytest.raises((ImportError, ConfigError)):
+        await _bind(tools, method)
+    assert sent == []
+
+
+def test_crewai_binding_is_still_blocked(sent: list[httpx.Request]) -> None:
+    # CrewAI's binding row is UNVERIFIED (docs/verified-apis.md §9).
     with pytest.raises(NotImplementedError, match="blocked on verification"):
-        _bind(tools, method)()
+        ToolSet([_server("hr", _GOVERNED)]).crewai()
     assert sent == []
 
 
 def test_there_is_no_opt_out() -> None:
     # ADR 0013 rule 3: no allow_ungoverned escape hatch on binding or discovery.
-    import inspect
-
     from donkey_kit.donkey import ToolsFacade
 
     for method in _BINDINGS:

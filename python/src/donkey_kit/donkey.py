@@ -59,6 +59,8 @@ from .integrations import typed_refusals as _typed_refusals
 from .llm.client import LLMClient
 from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
+from .tools.auth import McpAuth, gateway_auth
+from .tools.discovery import Discovery, blocked_lock
 from .tools.session import ToolSet
 
 # Imported at runtime: the public API surface check resolves ``Donkey.from_env``'s
@@ -160,8 +162,13 @@ _NATIVES = (_openai_agents_approval, _strands_approval, _adk_approval, _langgrap
 class ToolsFacade:
     """``donkey.tools`` — discovery + lock (BG §2.7)."""
 
-    def __init__(self, registry: ExchangeRegistry) -> None:
+    def __init__(
+        self, registry: ExchangeRegistry, cfg: DonkeyConfig, llm_auth: AuthProvider | None
+    ) -> None:
         self._registry = registry
+        self._discovery = Discovery(
+            registry, cfg, auth=gateway_auth(cfg, llm_auth), natives=_NATIVES
+        )
 
     async def discover(
         self,
@@ -170,26 +177,54 @@ class ToolsFacade:
         tags: list[str] | None = None,
         governed: bool | GovernanceCriteria | None = None,
         locked: bool = False,
+        auth: McpAuth | None = None,
     ) -> ToolSet:
-        """Discover a governed tool catalog and return a bindable ``ToolSet``.
+        """Discover the MCP servers in Exchange and return a bindable ``ToolSet``.
 
-        ``governed`` defaults to ``None`` (no filtering) in v1, with a startup
-        log line stating discovery is unfiltered (governed-only discovery). Flipping the default
-        to ``True`` is a breaking change reserved for a later major version.
-        Unfiltered discovery still *lists* an ungoverned server, with its
-        ``registry.explain()`` verdict on ``McpServerHandle.governance``, but the
-        ``ToolSet`` binding methods refuse it with ``UngovernedMcpServer`` (ADR 0013).
+        Reads the MCP assets with ``registry.search()``, then each one's
+        ``registry.explain()`` verdict and ``registry.resolve_mcp()`` gateway
+        endpoint. No MCP connection opens until a binding method runs. The
+        result is cached for ``registry_cache_ttl_s`` seconds;
+        ``ToolSet.discovered_at`` and ``ToolSet.is_stale`` say how old it is,
+        and :meth:`refresh` drops it.
 
-        Blocked until MCP resolution + the governed-state join are verified
-        (verification discipline / the Verification milestone).
+        ``governed`` defaults to ``None`` (no filtering) in v1, with a log line
+        stating discovery is unfiltered (governed-only discovery). Flipping the
+        default to ``True`` is a breaking change reserved for a later major
+        version. Unfiltered discovery still *lists* an ungoverned server, with
+        its verdict on ``McpServerHandle.governance``, but the ``ToolSet``
+        binding methods refuse it with ``UngovernedMcpServer`` (ADR 0013).
+        ``governed=True`` leaves those out, logging each one's reasons. When
+        nothing is left the set is empty, with a log line saying why, not an
+        error.
+
+        Args:
+            domain: Catalog domain. Not supported yet.
+            tags: Keep the assets that carry every tag, ignoring case.
+            governed: ``True`` keeps the servers the default ``GovernanceCriteria``
+                passes; a ``GovernanceCriteria`` (such as ``STRICT``) sets the
+                rules; ``None`` keeps every server.
+            locked: Resolve only what ``donkey.lock`` pins. Not supported yet.
+            auth: The gateway credential bindings send. ``None`` uses the
+                data-plane consumer credential (``llm_proxy_auth``).
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            RegistryError: Exchange or API Manager refused a read.
+            NotImplementedError: ``domain`` or ``locked=True`` was given; see
+                docs/verified-apis.md §7.
+
+        Docs: https://docs.donkey-kit.dev/tool-access/discovery
         """
-
-        raise _verify.blocked(
-            "MCP resolution + governed-state join (governed-only discovery, the Verification "
-            "milestone). ToolSet filtering and binding scaffolding exist; wire discover() once the "
-            "APIs are confirmed, use registry.explain() for the empty-result reason, and pass "
-            "ToolSet(_natives=_NATIVES) so require_approval() can pause a graph or an Agents run."
+        if locked:
+            raise blocked_lock()
+        return await self._discovery.discover(
+            domain=domain, tags=tags, governed=governed, auth=auth
         )
+
+    def refresh(self) -> None:
+        """Drop the cached discoveries, so the next :meth:`discover` reads the registry."""
+        self._discovery.refresh()
 
     def lock(self) -> None:
         """Write a ``donkey.lock`` of resolved versions + digests (BG §2.7)."""
@@ -264,7 +299,7 @@ class Donkey:
         self._control_http: DonkeyAsyncClient = self._runtime.control_http
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
         self._registry = ExchangeRegistry(self._cfg, self._control_http)
-        self._tools = ToolsFacade(self._registry)
+        self._tools = ToolsFacade(self._registry, self._cfg, self._llm_auth)
         self._adapter_cache: dict[str, Adapter] = {}
 
     @classmethod
