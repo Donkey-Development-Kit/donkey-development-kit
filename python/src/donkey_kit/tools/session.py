@@ -2,9 +2,10 @@
 
 ``ToolSet`` wraps N ``McpServerHandle``s. Filtering and collision resolution are
 pure and implemented here. The per-framework binding methods return each
-framework's NATIVE tool type (BG §2.7) and are gated on verification of the MCP
-binding class names (docs/verified-apis.md §9) — connections open on first tool
-use, never in ``discover()`` (BG §2.7).
+framework's NATIVE tool type (BG §2.7), built on the framework's own MCP class
+as the local round-trip in ``scripts/mcp_binding`` verified it
+(docs/verified-apis.md §9). Connections open when a set is described or bound,
+never in ``discover()`` (BG §2.7).
 
 Binding refuses a set holding any server that is not governed, before anything
 else (#1150, ADR 0013): the governed transport attaches the consumer's gateway
@@ -13,22 +14,29 @@ does not front. There is no opt-out.
 
 ``require_approval()`` gates named tools behind a human decision, the same
 approval ``@donkey.tool(approval="required")`` gives a local function (#1153).
-Each binding applies :meth:`ToolSet._bind_tool` to its per-tool invoker; the
-rules and the gate live in ``tools/approval.py``.
+A per-tool binding (LangGraph, LlamaIndex, Anthropic) applies
+:meth:`ToolSet._bind_tool` to each gated tool's invoker; a whole-server binding
+refuses a gate. The rules and the gate live in ``tools/approval.py``.
 """
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import logging
-from collections.abc import Callable, Mapping, Sequence
+import time
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import datetime
 from typing import Any
 
 from ..core import _verify
 from ..core.approvals import APPROVAL_TIMEOUT, NativePause, parse_timeout
-from ..core.errors import DonkeyError
+from ..core.errors import AuthError, ConfigError, DonkeyError
 from ..core.reactions import Duration
 from ..registry.models import McpServerHandle
 from .approval import ApprovalRule, check_rules, gated_tool, rule_for
+from .auth import McpAuth
 from .filter import (
     ToolDescriptor,
     ToolFilter,
@@ -36,6 +44,7 @@ from .filter import (
     descriptor_tokens,
     resolve_collisions,
 )
+from .mcp import list_tools, open_session
 
 __all__ = ["ToolSet", "UngovernedMcpServer"]
 
@@ -75,6 +84,16 @@ class UngovernedMcpServer(DonkeyError):
         self.reasons = reasons
 
 
+@dataclasses.dataclass(frozen=True)
+class _Tool:
+    """One tool a binding binds: the name the model sees, its descriptor and the
+    approval rule that gates it, if any."""
+
+    exposed: str
+    desc: ToolDescriptor
+    rule: ApprovalRule | None
+
+
 class ToolSet:
     """A governed set of MCP tools, from ``donkey.tools.discover()`` (BG §2.7).
 
@@ -82,10 +101,10 @@ class ToolSet:
     descriptors cost a model call, :meth:`require_approval` gates named tools
     behind a human decision, and :attr:`name_map` explains collision renames.
     The per-framework binding methods (:meth:`langgraph`, :meth:`adk`, ...)
-    return each framework's native tool objects; they raise
-    ``NotImplementedError`` for now (docs/verified-apis.md §9). Each first raises
-    :class:`UngovernedMcpServer` if any server in the set
-    is not governed (ADR 0013).
+    return each framework's native tool objects (docs/verified-apis.md §9);
+    :meth:`crewai` is still blocked. Each first raises
+    :class:`UngovernedMcpServer` if any server in the set is not governed
+    (ADR 0013), then lists the tools with :meth:`describe`.
 
     Docs: https://docs.donkey-kit.dev/tool-access/binding
     """
@@ -97,6 +116,8 @@ class ToolSet:
         _filters: tuple[ToolFilter, ...] = (),
         _approvals: tuple[ApprovalRule, ...] = (),
         _natives: tuple[NativePause, ...] = (),
+        _auth: McpAuth | None = None,
+        _discovered: tuple[datetime, float, float] | None = None,
     ) -> None:
         self._servers = list(servers)
         # Every filter() call so far: a tool is exposed only if all accept it,
@@ -106,19 +127,48 @@ class ToolSet:
         # Framework pauses for a gated call, such as the LangGraph interrupt()
         # hook. Passed in by discovery: tools/ cannot import integrations/.
         self._natives = _natives
+        # The gateway credential every binding sends (tools/auth.py); None when
+        # none is configured, which only binding refuses.
+        self._auth = _auth
+        # (wall-clock time, monotonic time, TTL in seconds) of the discovery.
+        self._discovered = _discovered
 
     def _with(
         self,
         *,
+        _servers: list[McpServerHandle] | None = None,
         _filters: tuple[ToolFilter, ...] | None = None,
         _approvals: tuple[ApprovalRule, ...] | None = None,
     ) -> ToolSet:
         return ToolSet(
-            self._servers,
+            _servers if _servers is not None else self._servers,
             _filters=_filters if _filters is not None else self._filters,
             _approvals=_approvals if _approvals is not None else self._approvals,
             _natives=self._natives,
+            _auth=self._auth,
+            _discovered=self._discovered,
         )
+
+    @property
+    def servers(self) -> tuple[McpServerHandle, ...]:
+        """The MCP servers in the set, each with its ``governance`` verdict."""
+        return tuple(self._servers)
+
+    # ---- staleness (discovery is cached, #221) ------------------------------
+    @property
+    def discovered_at(self) -> datetime | None:
+        """When ``discover()`` read the registry for this set (UTC), or ``None``
+        for a set built by hand. A cached ``discover()`` returns the same time."""
+        return self._discovered[0] if self._discovered else None
+
+    @property
+    def is_stale(self) -> bool:
+        """True once the set is older than ``registry_cache_ttl_s``: the next
+        ``discover()`` call reads the registry again. A set built by hand is never stale."""
+        if self._discovered is None:
+            return False
+        _, started, ttl = self._discovered
+        return time.monotonic() - started >= ttl
 
     # ---- filtering (pure, implemented) ------------------------------------
     def filter(
@@ -254,29 +304,7 @@ class ToolSet:
         return name_map
 
     def _descriptors(self, *, filtered: bool = True) -> list[ToolDescriptor]:
-        descs: list[ToolDescriptor] = []
-        for server in self._servers:
-            short = server.ref.asset_id
-            for raw in server.tool_descriptors or ():
-                description = raw.get("description")
-                raw_tags = raw.get("tags")
-                schema = raw.get("inputSchema")
-                descs.append(
-                    ToolDescriptor(
-                        server=short,
-                        name=str(raw.get("name")),
-                        description=description if isinstance(description, str) else None,
-                        tags=tuple(str(t) for t in raw_tags)
-                        if isinstance(raw_tags, (list, tuple))
-                        else (),
-                        input_schema=schema if isinstance(schema, Mapping) else None,
-                    )
-                )
-        if not filtered:
-            return descs
-        kept = [d for d in descs if all(f.accepts(d) for f in self._filters)]
-        _log.debug("ToolSet exposes %d of %d tool descriptors", len(kept), len(descs))
-        return kept
+        return [d for _, d in _index(self._servers, self._filters if filtered else None)]
 
     def _require_governed(self) -> None:
         """Refuse to bind unless every server is governed (#1150, ADR 0013).
@@ -303,77 +331,359 @@ class ToolSet:
             reasons=reasons,
         )
 
-    # ---- per-framework binding (native types BG §2.7, gated on verification discipline,
-    # docs/verified-apis.md §9) ------
-    def langgraph(self) -> list[object]:  # -> list[BaseTool]
-        """Bind the tool set as LangChain ``BaseTool`` objects.
+    # ---- descriptors (lazy, governed tools/list, #221) ----------------------
+    async def describe(self) -> ToolSet:
+        """Return this set with every server's tool descriptors loaded.
+
+        Discovery never connects (BG §2.7), so a discovered server's tools are
+        unknown until this runs: a ``tools/list`` call to each server whose
+        descriptors are missing, after the governance check and with the
+        binding's credential. Every binding method calls it, and so can you, so
+        that :attr:`name_map`, :meth:`descriptor_tokens` and the ``filter()``
+        typo check see the tools. A ``401`` or ``403`` drops the cached
+        credential and is retried once.
 
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
+            ConfigError: No gateway credential is configured, or a ``filter()``
+                or ``require_approval()`` name matches no tool.
+            AuthError: The gateway refused the credential.
+            ToolInvocationError: A server could not list its tools.
         """
         self._require_governed()
-        raise _verify.blocked(
-            "langchain_mcp_adapters.client.MultiServerMCPClient binding (docs/verified-apis.md §9)."
+        missing = [i for i, s in enumerate(self._servers) if s.tool_descriptors is None]
+        servers = list(self._servers)
+        if missing:
+            listed = await self._list(missing)
+            for index, tools in zip(missing, listed, strict=True):
+                servers[index] = dataclasses.replace(servers[index], tool_descriptors=tools)
+        every = [d for _, d in _index(servers, None)]
+        for each in self._filters:
+            check_patterns(each, every)
+        check_rules(self._approvals, every)
+        return self._with(_servers=servers) if missing else self
+
+    async def _list(self, indexes: list[int]) -> list[tuple[dict[str, object], ...]]:
+        auth = self._credential()
+        for attempt in (1, 2):
+            headers = await auth.headers()
+            try:
+                return list(
+                    await asyncio.gather(
+                        *(
+                            list_tools(
+                                self._servers[i].endpoint_url,
+                                headers,
+                                server=self._servers[i].ref.coordinates,
+                            )
+                            for i in indexes
+                        )
+                    )
+                )
+            except AuthError:
+                if attempt == 2:
+                    raise
+                await auth.invalidate()
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _credential(self) -> McpAuth:
+        if self._auth is None:
+            raise ConfigError(
+                "No gateway credential to bind MCP servers with.",
+                remediation=(
+                    "Set DONKEY_LLM_PROXY_CLIENT_ID and DONKEY_LLM_PROXY_CLIENT_SECRET (the "
+                    "consumer application the MCP instances have a contract with), or pass "
+                    "donkey.tools.discover(auth=...) for an instance behind JWT Validation."
+                ),
+            )
+        return self._auth
+
+    async def _plan(
+        self, binding: str, *, per_tool: bool
+    ) -> tuple[list[tuple[McpServerHandle, dict[str, _Tool]]], dict[str, str]]:
+        """What ``binding`` binds: each server with a tool left after
+        ``filter()``, with its tools by original name, and the headers.
+
+        ``per_tool`` is false for a framework that binds a whole server as one
+        object (ADK, Strands, OpenAI Agents, Agent Framework). Those take an
+        allow-list of tool names but cannot rename one tool or gate it, so a
+        collision rename or a ``require_approval()`` refuses the bind there.
+        """
+        described = await self.describe()
+        servers = described.servers
+        indexed = _index(servers, self._filters)
+        exposed, _ = resolve_collisions([d for _, d in indexed])
+        exposed_as = {id(d): name for name, d in exposed.items()}
+        tools: dict[int, dict[str, _Tool]] = {}
+        for index, desc in indexed:
+            rule = rule_for(self._approvals, desc)
+            tools.setdefault(index, {})[desc.name] = _Tool(exposed_as[id(desc)], desc, rule)
+        bound = [t for names in tools.values() for t in names.values()]
+        if not per_tool:
+            renamed = sorted(t.exposed for t in bound if t.exposed != t.desc.name)
+            if renamed:
+                raise ConfigError(
+                    f"{binding} binds each MCP server as one object and cannot rename a "
+                    f"single tool, but these names collide across servers: {', '.join(renamed)}.",
+                    remediation="Keep one of each clashing tool with filter(deny=[...]).",
+                )
+            gated = sorted(t.exposed for t in bound if t.rule is not None)
+            if gated:
+                raise _verify.blocked(
+                    f"require_approval() on the {binding} binding ({', '.join(gated)}): it "
+                    "binds whole servers, so there is no per-tool call to gate; bind with "
+                    "langgraph(), llamaindex() or anthropic() to gate a discovered tool."
+                )
+        headers = await self._credential().headers()
+        if not bound:
+            _log.info(
+                "%s binds no tools: %s",
+                binding,
+                "filter() removed every tool" if servers else "the ToolSet holds no MCP server",
+            )
+        return [(servers[i], names) for i, names in sorted(tools.items())], headers
+
+    def _gate(self, tool: _Tool, invoke: Callable[..., Any]) -> Callable[..., Any] | None:
+        """``invoke`` behind ``tool``'s approval gate, or ``None`` when no rule gates it."""
+        if tool.rule is None:
+            return None
+        return self._bind_tool(tool.exposed, tool.desc, invoke, schema=tool.desc.input_schema)
+
+    # ---- per-framework binding (native types BG §2.7, docs/verified-apis.md §9) --
+    # Each method binds the framework's own MCP class, as the local round-trip in
+    # scripts/mcp_binding verified it, and returns what that class returns. Each
+    # first refuses an ungoverned set (ADR 0013), then loads the descriptors.
+    async def langgraph(self) -> list[Any]:  # -> list[BaseTool]
+        """Bind the tool set as LangChain ``BaseTool`` objects, a flat list for
+        ``create_react_agent(tools=...)`` or a ``ToolNode``.
+
+        Uses ``langchain_mcp_adapters.client.MultiServerMCPClient``; each tool
+        call opens its own session. A collision rename sets the tool's ``name``,
+        and a ``require_approval()`` tool pauses the graph with ``interrupt()``.
+
+        Raises:
+            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            ImportError: ``langchain-mcp-adapters`` is not installed.
+        """
+        self._require_governed()
+        try:
+            from langchain_mcp_adapters.client import MultiServerMCPClient
+        except ImportError as exc:
+            raise ImportError(_install("langgraph", "langchain-mcp-adapters")) from exc
+        plan, headers = await self._plan("langgraph()", per_tool=True)
+        client = MultiServerMCPClient(
+            {
+                server.ref.coordinates: {
+                    "transport": "streamable_http",
+                    "url": server.endpoint_url,
+                    "headers": dict(headers),
+                }
+                for server, _ in plan
+            }
         )
+        bound: list[Any] = []
+        for server, names in plan:
+            for tool in await client.get_tools(server_name=server.ref.coordinates):
+                plan_tool = names.get(tool.name)
+                if plan_tool is None:
+                    continue
+                gated = self._gate(plan_tool, tool.coroutine)
+                tool.name = plan_tool.exposed
+                if gated is not None:
+                    tool.coroutine = gated
+                bound.append(tool)
+        return bound
 
-    def adk(self) -> list[object]:  # -> list[McpToolset]
-        """Bind the tool set as Google ADK ``McpToolset`` objects.
+    async def llamaindex(self) -> list[Any]:  # -> list[FunctionTool]
+        """Bind the tool set as LlamaIndex ``FunctionTool`` objects, a flat list
+        for an agent's ``tools=``.
 
-        Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
-        """
-        self._require_governed()
-        raise _verify.blocked(
-            "ADK McpToolset / StreamableHTTPConnectionParams (docs/verified-apis.md §9)."
-        )
-
-    def strands(self) -> list[object]:  # -> list[MCPClient]
-        """Bind the tool set as Strands ``MCPClient`` objects.
-
-        Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
-        """
-        self._require_governed()
-        raise _verify.blocked(
-            "Strands strands.tools.mcp.MCPClient(url=..., headers=...) (docs/verified-apis.md §9)."
-        )
-
-    def llamaindex(self) -> list[object]:  # -> list[FunctionTool]
-        """Bind the tool set as LlamaIndex ``FunctionTool`` objects.
+        Uses ``llama_index.tools.mcp.BasicMCPClient`` with ``McpToolSpec``;
+        each tool call opens its own session.
 
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
+            ImportError: ``llama-index-tools-mcp`` is not installed.
         """
         self._require_governed()
-        raise _verify.blocked("LlamaIndex BasicMCPClient + McpToolSpec (docs/verified-apis.md §9).")
+        try:
+            from llama_index.core.tools import FunctionTool
+            from llama_index.tools.mcp import BasicMCPClient, McpToolSpec
+        except ImportError as exc:
+            raise ImportError(_install("llamaindex", "llama-index-tools-mcp")) from exc
+        plan, headers = await self._plan("llamaindex()", per_tool=True)
+        bound: list[Any] = []
+        for server, names in plan:
+            client = BasicMCPClient(server.endpoint_url, headers=dict(headers))
+            spec = McpToolSpec(client, allowed_tools=sorted(names))
+            for tool in await spec.to_tool_list_async():
+                plan_tool = names[tool.metadata.name]
+                tool.metadata.name = plan_tool.exposed
+                gated = self._gate(plan_tool, tool.async_fn)
+                if gated is not None:
+                    tool = FunctionTool.from_defaults(async_fn=gated, tool_metadata=tool.metadata)
+                bound.append(tool)
+        return bound
 
-    def openai(self) -> list[object]:  # -> list[agents.mcp.MCPServer]
-        """Bind the tool set as OpenAI Agents SDK MCP server objects.
+    @asynccontextmanager
+    async def anthropic(self) -> AsyncIterator[list[Any]]:  # -> list[BetaAsyncFunctionTool]
+        """Bind the tool set as Anthropic SDK ``BetaAsyncFunctionTool`` objects
+        for ``client.beta.messages.tool_runner(tools=...)``.
+
+        An async context manager, because the tools call through an open MCP
+        ``ClientSession`` (``anthropic.lib.tools.mcp.async_mcp_tool``): one per
+        server, closed on exit::
+
+            async with tools.anthropic() as bound:
+                runner = client.beta.messages.tool_runner(tools=bound, ...)
+
+        The Messages API ``mcp_servers`` connector is not used: Anthropic's
+        servers dial that URL, and it has no field for the credential headers.
 
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
+            ImportError: ``anthropic`` is not installed.
         """
         self._require_governed()
-        raise _verify.blocked(
-            "OpenAI Agents SDK agents.mcp.MCPServerStreamableHttp (docs/verified-apis.md §9)."
-        )
+        try:
+            from anthropic.lib.tools import BetaAsyncFunctionTool
+            from anthropic.lib.tools.mcp import async_mcp_tool
+        except ImportError as exc:
+            raise ImportError(_install("anthropic", None)) from exc
+        plan, headers = await self._plan("anthropic()", per_tool=True)
+        async with AsyncExitStack() as stack:
+            bound: list[Any] = []
+            for server, names in plan:
+                session = await stack.enter_async_context(
+                    open_session(server.endpoint_url, headers)
+                )
+                for mcp_tool in (await session.list_tools()).tools:
+                    plan_tool = names.get(mcp_tool.name)
+                    if plan_tool is None:
+                        continue
+                    tool = async_mcp_tool(mcp_tool, session)
+                    gated = self._gate(plan_tool, tool.func)
+                    if gated is not None:
+                        tool = BetaAsyncFunctionTool(
+                            gated,
+                            name=plan_tool.exposed,
+                            description=tool.description,
+                            input_schema=tool.input_schema,
+                        )
+                    tool.name = plan_tool.exposed
+                    bound.append(tool)
+            yield bound
 
-    def anthropic(self) -> list[object]:  # -> list[BetaAsyncFunctionTool]
-        """Bind the tool set as Anthropic SDK MCP tool definitions.
+    async def adk(self) -> list[Any]:  # -> list[McpToolset]
+        """Bind the tool set as Google ADK ``McpToolset`` objects, one per
+        server, for ``LlmAgent(tools=[...])``.
+
+        A toolset, not a flat list: ADK connects when the agent first lists its
+        tools. The tools left after ``filter()`` go in its ``tool_filter``.
 
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
+            ConfigError: Two servers expose a tool under one name.
+            ImportError: ``google-adk`` is not installed.
         """
         self._require_governed()
-        raise _verify.blocked(
-            "Anthropic SDK anthropic.lib.tools.mcp.async_mcp_tool (docs/verified-apis.md §9)."
-        )
+        try:
+            from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
+        except ImportError as exc:
+            raise ImportError(_install("adk", None)) from exc
+        plan, headers = await self._plan("adk()", per_tool=False)
+        return [
+            McpToolset(
+                connection_params=StreamableHTTPConnectionParams(
+                    url=server.endpoint_url, headers=dict(headers)
+                ),
+                tool_filter=sorted(names),
+            )
+            for server, names in plan
+        ]
+
+    async def strands(self) -> list[Any]:  # -> list[MCPClient]
+        """Bind the tool set as Strands ``MCPClient`` objects, one per server.
+
+        Use each as a context manager and pass its ``list_tools_sync()`` to
+        ``Agent(tools=...)``, or pass the clients themselves. The tools left
+        after ``filter()`` go in its ``tool_filters``.
+
+        Raises:
+            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            ConfigError: Two servers expose a tool under one name.
+            ImportError: ``strands-agents`` is not installed.
+        """
+        self._require_governed()
+        try:
+            from strands.tools.mcp import MCPClient
+        except ImportError as exc:
+            raise ImportError(_install("strands", None)) from exc
+        plan, headers = await self._plan("strands()", per_tool=False)
+        return [
+            MCPClient(
+                url=server.endpoint_url,
+                headers=dict(headers),
+                tool_filters={"allowed": sorted(names)},
+            )
+            for server, names in plan
+        ]
+
+    async def openai(self) -> list[Any]:  # -> list[MCPServerStreamableHttp]
+        """Bind the tool set as OpenAI Agents SDK ``MCPServerStreamableHttp``
+        objects, one per server, for ``Agent(mcp_servers=[...])``.
+
+        Connect each (``async with``) before the run. The tools left after
+        ``filter()`` go in its static ``tool_filter``.
+
+        Raises:
+            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            ConfigError: Two servers expose a tool under one name.
+            ImportError: ``openai-agents`` is not installed.
+        """
+        self._require_governed()
+        try:
+            from agents.mcp import MCPServerStreamableHttp, create_static_tool_filter
+        except ImportError as exc:
+            raise ImportError(_install("openai-agents", None)) from exc
+        plan, headers = await self._plan("openai()", per_tool=False)
+        return [
+            MCPServerStreamableHttp(
+                params={"url": server.endpoint_url, "headers": dict(headers)},
+                name=server.ref.asset_id,
+                tool_filter=create_static_tool_filter(allowed_tool_names=sorted(names)),
+            )
+            for server, names in plan
+        ]
+
+    async def agent_framework(self) -> list[Any]:  # -> list[MCPStreamableHTTPTool]
+        """Bind the tool set as Microsoft Agent Framework ``MCPStreamableHTTPTool``
+        objects, one per server, entered with ``async with`` and passed as an
+        agent's ``tools=``.
+
+        The credential goes in ``static_headers`` (the class has no
+        ``headers=``), and the tools left after ``filter()`` in ``allowed_tools``.
+
+        Raises:
+            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            ConfigError: Two servers expose a tool under one name.
+            ImportError: ``agent-framework`` is not installed.
+        """
+        self._require_governed()
+        try:
+            from agent_framework import MCPStreamableHTTPTool
+        except ImportError as exc:
+            raise ImportError(_install("agent_framework", None)) from exc
+        plan, headers = await self._plan("agent_framework()", per_tool=False)
+        return [
+            MCPStreamableHTTPTool(
+                server.ref.asset_id,
+                server.endpoint_url,
+                static_headers=dict(headers),
+                allowed_tools=sorted(names),
+            )
+            for server, names in plan
+        ]
 
     def crewai(self) -> list[object]:  # -> list[crewai BaseTool]
         """Bind the tool set as CrewAI ``BaseTool`` objects.
@@ -387,14 +697,40 @@ class ToolSet:
             "CrewAI crewai_tools.MCPServerAdapter binding (docs/verified-apis.md §9)."
         )
 
-    def agent_framework(self) -> list[object]:
-        """Bind the tool set as Microsoft Agent Framework tool objects.
 
-        Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
-        """
-        self._require_governed()
-        raise _verify.blocked(
-            "Agent Framework agent_framework.MCPStreamableHTTPTool (docs/verified-apis.md §9)."
-        )
+def _index(
+    servers: Sequence[McpServerHandle], filters: Sequence[ToolFilter] | None
+) -> list[tuple[int, ToolDescriptor]]:
+    """Each tool's descriptor with the index of the server exposing it, kept by
+    every one of ``filters`` (all of them when ``filters`` is ``None``)."""
+    descs: list[tuple[int, ToolDescriptor]] = []
+    for index, server in enumerate(servers):
+        short = server.ref.asset_id
+        for raw in server.tool_descriptors or ():
+            description = raw.get("description")
+            raw_tags = raw.get("tags")
+            schema = raw.get("inputSchema")
+            descs.append(
+                (
+                    index,
+                    ToolDescriptor(
+                        server=short,
+                        name=str(raw.get("name")),
+                        description=description if isinstance(description, str) else None,
+                        tags=tuple(str(t) for t in raw_tags)
+                        if isinstance(raw_tags, (list, tuple))
+                        else (),
+                        input_schema=schema if isinstance(schema, Mapping) else None,
+                    ),
+                )
+            )
+    if filters is None:
+        return descs
+    kept = [(i, d) for i, d in descs if all(f.accepts(d) for f in filters)]
+    _log.debug("ToolSet exposes %d of %d tool descriptors", len(kept), len(descs))
+    return kept
+
+
+def _install(extra: str, package: str | None) -> str:
+    command = f"pip install 'donkey-kit[{extra},mcp]'" + (f" {package}" if package else "")
+    return f"This binding needs the framework's MCP client. Install it with: {command}"

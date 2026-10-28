@@ -1,15 +1,16 @@
 # Discovery, search & filter
 
-Status: Roadmap. Planned design; not shipped yet.
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
-`donkey.tools.discover()` is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the
-planned design. [`donkey.registry.search()`](#registry-search),
-[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server) and
-[`donkey.registry.explain()`](#explain--why-a-tool-was-included-or-excluded)
-are live.
+`donkey.tools.discover()` composes three live registry reads:
+[`donkey.registry.search()`](#registry-search),
+[`donkey.registry.explain()`](#explain--why-a-tool-was-included-or-excluded) and
+[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). Binding what it
+returns has been verified against a local MCP server, not yet through the
+governed gateway (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)).
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
-to bind. It narrows the catalog by **governance**, domain and tags, so an agent
+to bind. It narrows the catalog by **governance** and tags, so an agent
 binds only the tools it needs rather than the entire catalog. It returns a
 [`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding.md) whose per-framework methods hand back native
 tool objects. Name search and asset type are filters on the lower-level
@@ -18,11 +19,11 @@ tool objects. Name search and asset type are filters on the lower-level
 ## The two most common calls
 
 ```python
-# 1. Everything governed in a domain:
-tools = await donkey.tools.discover(domain="hr", governed=True)
+# 1. Every governed MCP server:
+tools = await donkey.tools.discover(governed=True)
 
-# 2. Governed tools in a domain that carry a tag:
-tools = await donkey.tools.discover(domain="hr", tags=["approved"], governed=True)
+# 2. Governed MCP servers that carry a tag:
+tools = await donkey.tools.discover(tags=["approved"], governed=True)
 ```
 
 ## Filter reference
@@ -32,19 +33,24 @@ semantics:
 
 ```python
 tools = await donkey.tools.discover(
-    domain="hr",             # catalog domain
     tags=["approved"],       # all tags must be present
     governed=True,           # True = default criteria; or an explicit GovernanceCriteria
-    locked=False,            # True = resolve only what donkey.lock pins
+    auth=None,               # None = the data-plane consumer credential
 )
 ```
 
 | Argument | Type | Meaning |
 |---|---|---|
-| `domain` | `str \| None` | Catalog domain. |
+| `domain` | `str \| None` | Catalog domain. Raises `NotImplementedError` for now: Exchange has no domain filter. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
 | `governed` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered (the default). |
-| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Default `False`. |
+| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Raises `NotImplementedError` for now. Default `False`. |
+| `auth` | `McpAuth \| None` | The gateway credential bindings send. `None` uses the data-plane consumer credential; see [Auth](https://docs.donkey-kit.dev/tool-access/binding.md#auth). |
+
+It reads at most 200 MCP assets, and logs a warning when it reaches that limit;
+narrow it with `tags=`. A server that does not resolve to exactly one deployed
+MCP instance in the environment is listed with a failed `resolve_mcp` check, so
+`governed=True` leaves it out and binding refuses it.
 
 ## Registry search
 
@@ -141,7 +147,7 @@ STRICT = GovernanceCriteria(
 Pass it straight through:
 
 ```python
-tools = await donkey.tools.discover(domain="hr", governed=STRICT)
+tools = await donkey.tools.discover(governed=STRICT)
 ```
 
   `allow_unknown` matters more than it looks. If the platform doesn't expose,
@@ -170,8 +176,8 @@ print(report.reasons_failed())
 ```
 
 Each check is `True` (passed), `False` (failed, with the reason), or `None`
-(couldn't be evaluated, resolved by `allow_unknown`). The empty-result warning
-message points you to `explain()`.
+(couldn't be evaluated, resolved by `allow_unknown`). When `discover()` keeps
+no server, it logs why at info level, pointing you to `explain()`.
 
 It reads the asset version's API Manager instances in the environment set by
 `ANYPOINT_ENV`, and only what the criteria ask about:
@@ -203,17 +209,28 @@ It reads the asset version's API Manager instances in the environment set by
 
 ## Defaults and performance
 
-- **Unfiltered by default.** `governed` defaults to `None`, and a startup
-  log line states that discovery is unfiltered. Changing the default to `True`
-  is reserved for a future major version.
+- **Unfiltered by default.** `governed` defaults to `None`, and the first
+  unfiltered call logs that discovery is unfiltered. Changing the default to
+  `True` is reserved for a future major version.
 - **Listed is not bindable.** Unfiltered discovery still lists a server the
   gateway does not govern, and attaches its `explain()` report to the handle
   (`McpServerHandle.governance`). Binding refuses it with
   `UngovernedMcpServer` (see [Only governed servers are bound](https://docs.donkey-kit.dev/tool-access/binding.md#only-governed-servers-are-bound)).
-  Pass `governed=True` to get a set you can bind as a whole.
-- **Warm the index.** The governance join is a bulk operation, not one API call
-  per asset. A long-running agent can build the index at startup with
-  `donkey.registry.warm(environment=...)` so the first discovery is fast.
+  Pass `governed=True` to get a set you can bind as a whole; each server it
+  leaves out is logged with its failed checks.
+- **Nothing found is not an error.** When no server is left, `discover()`
+  returns an empty `ToolSet` and logs why: no MCP asset matched, or none was
+  governed.
+- **Cached, with a staleness check.** A discovery is cached for
+  `registry_cache_ttl_s` seconds (default 300), per environment, tags and
+  criteria. `ToolSet.discovered_at` says when the registry was read and
+  `ToolSet.is_stale` turns true once the TTL has passed;
+  `donkey.tools.refresh()` drops the cache, and `DONKEY_NO_CACHE=1` turns it
+  off.
+- **No connection.** `discover()` opens no MCP connection. The tools are listed
+  when you bind, or call `describe()`.
+- **Bounded fan-out.** The `explain()` and `resolve_mcp()` reads for each asset
+  run at most eight at a time.
 
 ## Related
 

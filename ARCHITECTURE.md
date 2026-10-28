@@ -459,8 +459,8 @@ is the single home for every value that the verification discipline says must be
 Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
-  It is used where there is no defensible placeholder at all — e.g. the MCP-bridge
-  tool-discovery and the Exchange publication endpoints. The SDK raises
+  It is used where there is no defensible placeholder at all — e.g. the Exchange
+  publication endpoints and the CrewAI MCP binding. The SDK raises
   rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
 - **`Unverified(...)`** placeholder constants hold a documented best-guess that is
   fully overridable via config/env, and emit a one-time `UnverifiedValueWarning`
@@ -480,8 +480,9 @@ status or a date; `scripts/check_verification_claims.py` enforces that in CI.
 What is verified today: the LLM-proxy data plane (its base-URL shape — note there
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
 and the live rejection shapes), the OAuth2 control-plane token path, and the
-CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
-discovery and Exchange publication (BG §2.5). The framework adapters are not
+CLI-plugin REST contract (from static analysis). Exchange→MCP tool discovery and
+the `ToolSet` bindings are verified against a local MCP server, not yet through
+the governed gateway (§9). Still blocked: Exchange publication (BG §2.5). The framework adapters are not
 blocked. They build their native object directly, and an adapter refuses with
 `blocked(...)` only when the installed framework version lacks the class or
 field it depends on. Their status, generated from the ledger's §8 rows (§8.4
