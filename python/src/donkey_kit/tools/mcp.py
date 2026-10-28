@@ -33,7 +33,9 @@ def _streamable() -> Any:  # noqa: ANN401
 
 def _status(exc: BaseException) -> int | None:
     """The HTTP status of the first response error inside ``exc``, which the
-    ``mcp`` client raises inside a task group."""
+    ``mcp`` 1.x client raises inside a task group. ``mcp`` 2.x raises an
+    ``MCPError`` without the response instead; ``open_session`` records the
+    status for that case."""
     response = getattr(exc, "response", None)
     status = getattr(response, "status_code", None)
     if isinstance(status, int):
@@ -47,14 +49,22 @@ def _status(exc: BaseException) -> int | None:
 
 
 @asynccontextmanager
-async def open_session(url: str, headers: Mapping[str, str]) -> AsyncIterator[Any]:
-    """An initialized ``mcp.ClientSession`` to ``url``, sending ``headers`` on every request."""
+async def open_session(
+    url: str, headers: Mapping[str, str], *, errors: list[int] | None = None
+) -> AsyncIterator[Any]:
+    """An initialized ``mcp.ClientSession`` to ``url``, sending ``headers`` on
+    every request. Each HTTP error status the server answers with is appended
+    to ``errors``."""
     streamable = _streamable()
     from mcp import ClientSession
 
+    async def record(response: Any) -> None:  # noqa: ANN401
+        if errors is not None and response.status_code >= 400:
+            errors.append(response.status_code)
+
     http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
     async with (
-        http_lib.AsyncClient(headers=dict(headers)) as http,
+        http_lib.AsyncClient(headers=dict(headers), event_hooks={"response": [record]}) as http,
         streamable.streamable_http_client(url, http_client=http) as streams,
         ClientSession(streams[0], streams[1]) as session,
     ):
@@ -73,11 +83,12 @@ async def list_tools(
         ToolInvocationError: The server could not be reached or refused the call.
     """
     tools: list[dict[str, object]] = []
+    errors: list[int] = []
     _streamable()
     from mcp.types import PaginatedRequestParams
 
     try:
-        async with open_session(url, headers) as session:
+        async with open_session(url, headers, errors=errors) as session:
             cursor: str | None = None
             while True:
                 params = PaginatedRequestParams(cursor=cursor) if cursor else None
@@ -92,7 +103,7 @@ async def list_tools(
     except ImportError:
         raise
     except Exception as exc:  # the mcp client wraps HTTP errors in task groups
-        status = _status(exc)
+        status = _status(exc) or (errors[0] if errors else None)
         if status in (401, 403):
             raise AuthError(
                 f"The gateway refused the credential when listing the tools of {server} "

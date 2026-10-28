@@ -28,6 +28,7 @@ import time
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
+from fnmatch import fnmatchcase
 from typing import Any
 
 from ..core import _verify
@@ -101,8 +102,8 @@ class ToolSet:
     descriptors cost a model call, :meth:`require_approval` gates named tools
     behind a human decision, and :attr:`name_map` explains collision renames.
     The per-framework binding methods (:meth:`langgraph`, :meth:`adk`, ...)
-    return each framework's native tool objects (docs/verified-apis.md §9);
-    :meth:`crewai` is still blocked. Each first raises
+    return each framework's native tool objects (docs/verified-apis.md §9).
+    Each first raises
     :class:`UngovernedMcpServer` if any server in the set is not governed
     (ADR 0013), then lists the tools with :meth:`describe`.
 
@@ -177,6 +178,7 @@ class ToolSet:
         allow: list[str] | None = None,
         deny: list[str] | None = None,
         predicate: Callable[[ToolDescriptor], bool] | None = None,
+        servers: list[str] | None = None,
     ) -> ToolSet:
         """Return a narrower view. Enterprise MCP servers can expose dozens of
         tools; handing 60 descriptors to a model degrades it and inflates token
@@ -189,19 +191,27 @@ class ToolSet:
         exposes the ``get_`` tools except ``get_ssn``, and no call can bring
         back a tool an earlier one removed (#222).
 
+        ``servers`` keeps only the servers whose asset ID (``hr``) or
+        coordinates match an entry, before any tool is listed: a server it
+        drops is never connected to and never receives the credential. Use it
+        when the credential is good for one server only, such as a JWT whose
+        audience is that server's instance.
+
         Args:
             allow: Keep only the tools that match an entry.
             deny: Drop the tools that match an entry.
             predicate: Keep only the tools it returns true for.
+            servers: Keep only the servers that match an entry.
 
         Raises:
-            ValueError: ``allow`` or ``deny`` is a string, not a list.
-            ConfigError: An ``allow`` or ``deny`` entry matches no tool any
-                server exposes, so a typo never empties the set or leaves a
-                tool exposed. Checked when every server's descriptors are
-                known.
+            ValueError: ``allow``, ``deny`` or ``servers`` is a string, not a list.
+            ConfigError: A ``servers`` entry matches no server in the set, or
+                an ``allow`` or ``deny`` entry matches no tool any server
+                exposes, so a typo never empties the set or leaves a tool
+                exposed. The tool names are checked when every server's
+                descriptors are known.
         """
-        for arg, value in (("allow", allow), ("deny", deny)):
+        for arg, value in (("allow", allow), ("deny", deny), ("servers", servers)):
             if isinstance(value, str):
                 raise ValueError(f"{arg} must be a list of tool names, not the string {value!r}")
         new = ToolFilter(
@@ -209,9 +219,10 @@ class ToolSet:
             deny=frozenset(deny or ()),
             predicate=predicate,
         )
-        if all(s.tool_descriptors is not None for s in self._servers):
-            check_patterns(new, self._descriptors(filtered=False))
-        return self._with(_filters=(*self._filters, new))
+        kept = self._servers if servers is None else _select(self._servers, servers)
+        if all(s.tool_descriptors is not None for s in kept):
+            check_patterns(new, [d for _, d in _index(kept, None)])
+        return self._with(_servers=kept, _filters=(*self._filters, new))
 
     def descriptor_tokens(self) -> int:
         """Estimate the prompt tokens this set's tool descriptors cost on every
@@ -405,7 +416,7 @@ class ToolSet:
         ``filter()``, with its tools by original name, and the headers.
 
         ``per_tool`` is false for a framework that binds a whole server as one
-        object (ADK, Strands, OpenAI Agents, Agent Framework). Those take an
+        object (ADK, Strands, OpenAI Agents, Agent Framework, CrewAI). Those take an
         allow-list of tool names but cannot rename one tool or gate it, so a
         collision rename or a ``require_approval()`` refuses the bind there.
         """
@@ -685,17 +696,64 @@ class ToolSet:
             for server, names in plan
         ]
 
-    def crewai(self) -> list[object]:  # -> list[crewai BaseTool]
-        """Bind the tool set as CrewAI ``BaseTool`` objects.
+    @asynccontextmanager
+    async def crewai(self) -> AsyncIterator[list[Any]]:  # -> list[crewai BaseTool]
+        """Bind the tool set as CrewAI ``BaseTool`` objects for ``Agent(tools=...)``.
+
+        An async context manager, because the tools call through a
+        ``crewai_tools.MCPServerAdapter`` that holds its server connection open:
+        one per server, stopped on exit::
+
+            async with tools.crewai() as bound:
+                agent = Agent(role=..., tools=bound)
+                await crew.kickoff_async()
+
+        The tools left after ``filter()`` are the adapter's ``tool_names``
+        allow-list. It needs ``mcp<2``: ``mcpadapt`` connects with the 1.x
+        ``streamablehttp_client``.
 
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §9.
+            ConfigError: Two servers expose a tool under one name.
+            ImportError: ``crewai-tools[mcp]`` is not installed.
         """
         self._require_governed()
-        raise _verify.blocked(
-            "CrewAI crewai_tools.MCPServerAdapter binding (docs/verified-apis.md §9)."
+        try:
+            from crewai_tools import MCPServerAdapter
+        except ImportError as exc:
+            raise ImportError(_install("crewai", "'crewai-tools[mcp]'")) from exc
+        plan, headers = await self._plan("crewai()", per_tool=False)
+        adapters: list[Any] = []
+        try:
+            for server, names in plan:
+                params = {
+                    "url": server.endpoint_url,
+                    "transport": "streamable-http",
+                    "headers": dict(headers),
+                }
+                # The adapter connects in its constructor, on its own thread and loop.
+                adapters.append(await asyncio.to_thread(MCPServerAdapter, params, *sorted(names)))
+            yield [tool for adapter in adapters for tool in adapter.tools]
+        finally:
+            for adapter in reversed(adapters):
+                await asyncio.to_thread(adapter.stop)
+
+
+def _select(servers: list[McpServerHandle], patterns: list[str]) -> list[McpServerHandle]:
+    """The ``servers`` whose asset ID or coordinates match a pattern; a pattern
+    that matches none is a ``ConfigError``."""
+
+    def hit(server: McpServerHandle, pattern: str) -> bool:
+        ref = server.ref
+        return fnmatchcase(ref.asset_id, pattern) or fnmatchcase(ref.coordinates, pattern)
+
+    unmatched = sorted(p for p in set(patterns) if not any(hit(s, p) for s in servers))
+    if unmatched:
+        raise ConfigError(
+            f"filter(servers=...) names no server in the set: {', '.join(unmatched)}.",
+            remediation="Match the asset ID or the coordinates in ToolSet.servers.",
         )
+    return [s for s in servers if any(hit(s, p) for p in patterns)]
 
 
 def _index(

@@ -1,6 +1,6 @@
 ---
 description: Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
-status: offline-verified
+status: live
 ---
 
 import { Callout } from 'nextra/components'
@@ -11,9 +11,9 @@ import { Badge } from '../../components'
 `donkey.tools.discover()` composes three live registry reads:
 [`donkey.registry.search()`](#registry-search),
 [`donkey.registry.explain()`](#explain--why-a-tool-was-included-or-excluded) and
-[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). Binding what it
-returns has been verified against a local MCP server, not yet through the
-governed gateway (see [Framework binding](/tool-access/binding)).
+[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). What it returns
+has been bound and called through the governed gateway with every supported
+framework (see [Framework binding](/tool-access/binding)).
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance** and tags, so an agent

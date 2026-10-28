@@ -1,10 +1,9 @@
 # Tool access
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
-Discovery and binding run end to end against a local MCP server. Binding
-through the governed gateway has not been verified yet; see
-[Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
+Discovery and binding run end to end through the governed gateway, with
+every supported framework; see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 
 Governed tool access lets an agent discover the MCP tools your organisation has
 published and governed, filter them down to what it actually needs, and bind

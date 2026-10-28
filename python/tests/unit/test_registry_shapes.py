@@ -22,11 +22,9 @@ import pytest
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.experimental import AssetRef, AssetType, Publication, PublicationAssetType
-from donkey_kit.registry.criteria import GovernanceReport
 from donkey_kit.registry.exchange import ExchangeRegistry
 from donkey_kit.registry.models import McpServerHandle
 from donkey_kit.tools.filter import ToolDescriptor, resolve_collisions
-from donkey_kit.tools.session import ToolSet
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "a2d"
 
@@ -37,16 +35,6 @@ _REF = AssetRef(group_id="com.example", asset_id="blocked-asset", version="1.0.0
 _REGISTRY = ExchangeRegistry(
     DonkeyConfig(client_id="client", client_secret="secret", org_id="org"),
     cast(DonkeyAsyncClient, object()),
-)
-# Governed, so CrewAI's binding gets past the ADR 0013 guard to the verification block.
-_TOOL_SET = ToolSet(
-    [
-        McpServerHandle(
-            ref=_REF,
-            endpoint_url="https://example.test/mcp",
-            governance=GovernanceReport(governed=True, checks=[]),
-        )
-    ]
 )
 _PUBLICATION = Publication(
     asset_type=PublicationAssetType.MCP_SERVER,
@@ -61,7 +49,6 @@ _BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
     ("registry.search(governed=)", lambda: _REGISTRY.search(governed=True)),
     ("registry.resolve_agent", lambda: _REGISTRY.resolve_agent(_REF)),
     ("registry.warm", lambda: _REGISTRY.warm()),
-    ("tools.crewai", _TOOL_SET.crewai),
     ("publication.preview", lambda: _PUBLICATION.preview(object())),
     ("publication.export", _PUBLICATION.export),
     ("publication.verify", lambda: _PUBLICATION.verify(object())),
