@@ -148,13 +148,22 @@ docstring calls out the difference.
 | Framework | Binding |
 |---|---|
 | LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient({...}).get_tools()` — the SDK builds the connection dict from your handles, transport `"streamable_http"`, headers injected. |
-| Google ADK | `McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=...), tool_filter=[...])`, passed straight into `LlmAgent(tools=[...])`. |
-| MS Agent Framework | The framework's MCP client/tool class for streamable HTTP. |
+| Google ADK | `google.adk.tools.mcp_tool.McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=...), tool_filter=[...])`, passed straight into `LlmAgent(tools=[...])`. |
+| MS Agent Framework | `agent_framework.MCPStreamableHTTPTool(name, url, static_headers=...)`, entered with `async with`. It has no `headers=` argument; the gateway credentials go in `static_headers`. |
 | OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": ..., "headers": ...})`, passed into `Agent(mcp_servers=[...])`. |
-| Anthropic SDK | The `anthropic` SDK has no native client-side MCP binding; the SDK binds via the MCP Python SDK's streamable-HTTP client and passes the resulting tool schemas to `messages.create(tools=...)`. |
+| Anthropic SDK | `anthropic.lib.tools.mcp.async_mcp_tool(tool, session)` over an MCP Python SDK `ClientSession` on the streamable-HTTP client, which carries the headers. It returns `BetaAsyncFunctionTool` objects for the tool runner. The Messages API `mcp_servers` connector is not used: Anthropic's servers dial that URL, and it has no field for the gateway's credential headers. |
 | CrewAI | The framework's MCP adapter for streamable-HTTP servers, yielding native `crewai` tool objects for a `Crew`/`Agent`. |
 | LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec(...).to_tool_list_async()`. |
-| Strands | `MCPClient(lambda: streamablehttp_client(url, headers=...))` — implements `ToolProvider`, so it can be passed directly into `Agent(tools=[...])` with automatic lifecycle management. |
+| Strands | `strands.tools.mcp.MCPClient(url=..., headers=...)`, used as a context manager; `list_tools_sync()` yields `MCPAgentTool` objects for `Agent(tools=[...])`. |
+
+Apart from CrewAI's, each class and argument in this table was checked by
+binding the framework's current release to a local MCP server. Binding through
+the gateway has not been verified yet, so the methods above still raise
+`NotImplementedError`.
+
+The frameworks also return a tool call's result in different shapes: a plain
+string, MCP content blocks, structured JSON, or a wrapper object. Each method
+leaves the framework's own result type unchanged.
 
 A binding failure or a `401` surfaces as a typed exception from the
 [error taxonomy](/errors), and so does an ungoverned server

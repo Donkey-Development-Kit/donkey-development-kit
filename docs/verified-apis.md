@@ -33,9 +33,12 @@
 > over a Gemini upstream (§2, #830, 2026-10-01) sends whole `chat.completion`
 > events with no `delta` and no `[DONE]`. This is an upstream gap. Still
 > `UNVERIFIED`: any other unrecognised content-moderation shape (§4, the
-> fall-through; federated-guardrail verdicts are tracked in #305), and the **framework
-> constructor/binding names** (§§8–9; the §10 descriptor-derivation reads were
-> `VERIFIED (local capture)` on 2026-10-26, #1024), and the on-behalf-of token
+> fall-through; federated-guardrail verdicts are tracked in #305), the
+> **MCP tool bind through the governed gateway** (§9; the framework binding
+> classes themselves were `VERIFIED (local round-trip)` against a local
+> reference MCP server on 2026-10-28, #636–#652, except CrewAI's; the §10
+> descriptor-derivation reads were `VERIFIED (local capture)` on 2026-10-26,
+> #1024), and the on-behalf-of token
 > exchange behind `donkey.as_user()` (§13, #255). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
@@ -50,7 +53,10 @@
 > data shape confirmed from an Anypoint-adjacent source (A2D), not the direct
 > contract. `VERIFIED (local capture)` = read off a real object of the
 > installed framework at the pinned version, committed as a fixture and
-> re-asserted by the nightly matrix (no Anypoint involved). `UNSUPPORTED` = a
+> re-asserted by the nightly matrix (no Anypoint involved). `VERIFIED (local
+> round-trip)` = exercised end to end against a real local server on
+> `127.0.0.1` with the installed framework (no Anypoint or gateway involved);
+> the gateway path stays unverified until a live row says so. `UNSUPPORTED` = a
 > deliberate gap, with its reason; its code guard stays. `UNVERIFIED` = not
 > yet confirmed; its code guard stays in place.
 >
@@ -983,16 +989,49 @@ not captured (#226/#1278).
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 
+Each row marked `VERIFIED (local round-trip)` was produced by a probe in
+`python/scripts/mcp_binding/` (harness, reference server and how to run one:
+`python/scripts/mcp_binding/README.md`). The probe binds the framework's own MCP
+class to a real MCP server on `127.0.0.1` (official `mcp` SDK, streamable HTTP at
+`http://127.0.0.1:<port>/mcp/`, tools `add` and `lookup_sku`), sends a
+`client_id`/`client_secret` pair, lists the tools, calls `add(2, 3)` through the
+framework's own tool object, and reads back from the server's request record the
+header values it actually received. What it observed is committed under
+`python/tests/fixtures/mcp_binding/<framework>.json` and hashed in
+`tests/fixtures/fixtures.lock`. Every probe ran in a throwaway venv with only that
+framework's extra plus `mcp`, on Python 3.12.16, on 2026-10-28.
+
 | Framework | Binding class | Status | Source |
 |---|---|---|---|
-| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient` | UNVERIFIED | — |
-| Google ADK | `McpToolset` + `StreamableHTTPConnectionParams` | UNVERIFIED | — |
-| MS Agent Framework | MCP client/tool class for streamable HTTP | UNVERIFIED | — |
-| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp` | UNVERIFIED | — |
-| Anthropic SDK | streamable-HTTP MCP via SDK `mcp_servers` integration | UNVERIFIED | — |
+| MCP Python SDK (baseline) | `mcp.ClientSession` over `mcp.client.streamable_http.streamable_http_client(url, http_client=httpx.AsyncClient(headers=...))` | VERIFIED (local round-trip) | `mcp==1.30.0`, `httpx==0.28.1`: `initialize()` / `list_tools()` returned `add` and `lookup_sku` as `Tool`; `call_tool("add", {"a": 2, "b": 3})` returned text `5`; the server recorded `client_id`/`client_secret`. The plain-client reference every framework row is compared against. Fixture `mcp_binding/mcp_sdk.json`, probe `probe_mcp_sdk.py`. 2026-10-28 |
+| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient({name: {"transport": "streamable_http", "url": url, "headers": {...}}}).get_tools()` | VERIFIED (local round-trip) | `langchain-mcp-adapters==0.3.2`, `langchain-core==1.7.0`, `langgraph==1.2.18`, `mcp==1.30.0`, `httpx==0.28.1`: `get_tools()` returned `langchain_core.tools.structured.StructuredTool` objects (`add`, `lookup_sku`); `add.ainvoke({"a": 2, "b": 3})` returned `[{"type": "text", "text": "5"}]`. The adapter stamps each content block with a random `id` (`lc_<uuid4>`), which the probe strips so the fixture stays deterministic. The server recorded `client_id`/`client_secret` as given in the connection dict; no custom `httpx_client_factory` was needed. Without a `session`, `get_tools()` opens a fresh MCP session per call. Fixture `mcp_binding/langgraph.json`, probe `probe_langgraph.py`. 2026-10-28, #642 |
+| Google ADK | `google.adk.tools.mcp_tool.McpToolset(*, connection_params=StreamableHTTPConnectionParams(url=..., headers=...), tool_filter=None, tool_name_prefix=None, header_provider=None, ...)` (`StreamableHTTPConnectionParams` from `google.adk.tools.mcp_tool.mcp_session_manager`; alias `MCPToolset` also exported) | VERIFIED (local round-trip) | `google-adk==2.13.0`, `mcp==2.3.0`: `await toolset.get_tools()` returned `google.adk.tools.mcp_tool.mcp_tool.McpTool` for `add` and `lookup_sku`. A scripted `BaseLlm` driven by `Runner` over `LlmAgent(tools=[toolset])` called `add(2, 3)` through `McpTool.run_async` and got `{'content': [{'type': 'text', 'text': '5'}], 'structuredContent': {'result': 5}, 'isError': False}`. The server recorded `client_id`/`client_secret` as sent in the static `headers`. `get_tools()` opens an MCP session, closed with `await toolset.close()`. `header_provider` (per-call headers) is in the signature but was not exercised. Fixture `mcp_binding/adk.json`, probe `probe_adk.py`. 2026-10-28, #636 |
+| MS Agent Framework | `agent_framework.MCPStreamableHTTPTool(name, url, *, static_headers=..., header_provider=..., http_client=..., ...)` (defined in `agent_framework._mcp`, subclass of `MCPTool`), used as `async with`; **no `headers=` kwarg** | VERIFIED (local round-trip) | `agent-framework==1.23.0`, `agent-framework-core==1.23.0`, `mcp==2.3.0`: with `static_headers={"client_id": ..., "client_secret": ...}` the headers reached the server. After `__aenter__`, `tool.functions` listed `add` and `lookup_sku` as `agent_framework._tools.FunctionTool` (empty until connected); `FunctionTool.invoke(arguments={"a": 2, "b": 3})` returned `{"result": 5}` (JSON text; the default `tool_result_content='structured_first'` prefers structured content). The probe passes `load_prompts=False` because the reference server has no prompts. Fixture `mcp_binding/agent_framework.json`, probe `probe_agent_framework.py`. 2026-10-28, #652 |
+| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": url, "headers": {...}})`, entered with `async with ... as server`, bound with `Agent(name=..., mcp_servers=[server])` | VERIFIED (local round-trip) | `openai-agents==0.24.0`, `mcp==2.3.0`: `Agent.get_all_tools(RunContextWrapper(None))` listed `add` and `lookup_sku` as `agents.tool.FunctionTool`. `add(2, 3)` through `FunctionTool.on_invoke_tool(ToolContext, json_args)` with a hand-built `ToolContext` (no `Runner.run` turn, which needs a model) returned `{"type": "text", "text": "5"}`, a dict, not a bare string. The server recorded `client_id`/`client_secret` from `params["headers"]`. The server must be entered (or `connect()`ed) before `get_all_tools`. Fixture `mcp_binding/openai_agents.json`, probe `probe_openai_agents.py`. 2026-10-28, #638 |
+| Anthropic SDK | `anthropic.lib.tools.mcp.async_mcp_tool(tool, session)` → `BetaAsyncFunctionTool` (sync twin `mcp_tool` → `BetaFunctionTool`), a client-side helper over an `mcp.ClientSession`. Not the Messages API `mcp_servers` connector, which is a different, server-side path | VERIFIED (local round-trip) | `anthropic==2.3.0`, `mcp==2.3.0`, `httpx2==2.16.0`: over a `ClientSession` on `streamable_http_client(url, http_client=httpx2.AsyncClient(headers=...))`, the listed tools converted to `anthropic.lib.tools._beta_functions.BetaAsyncFunctionTool` (`add`, `lookup_sku`; `.to_dict()` keys `description`, `input_schema`, `name`). `await tool.call({"a": 2, "b": 3})` returned `[{"type": "text", "text": "5"}]`; the sync twin returned the same from a worker thread. The server recorded `client_id`/`client_secret`. The helper opens no transport, so header delivery is the `mcp` client's, as in the baseline row; what this row adds is the conversion and the `.call()` path that `tool_runner` uses. `tool_runner` / `messages.create` were not run (they need the real API). The `mcp_servers` connector (`BetaRequestMCPServerURLDefinitionParam`) was inspected statically only: its fields are `authorization_token`, `name`, `tool_configuration`, `type`, `url`, with no custom-header field, and Anthropic's servers dial the URL, so it cannot carry the gateway's header pair or reach `127.0.0.1`. Fixture `mcp_binding/anthropic.json`, probe `probe_anthropic.py`. 2026-10-28, #639 |
 | CrewAI | `crewai_tools.MCPServerAdapter` | UNVERIFIED (signature confirmed offline) | `crewai_tools==1.15.22`: `inspect.signature(MCPServerAdapter.__init__)` → `(serverparams: StdioServerParameters \| dict[str, Any], *tool_names: str, connect_timeout: int = 30)`. Class path confirmed at `crewai_tools.adapters.mcp_adapter.MCPServerAdapter`, re-exported at top level. No MCP server actually connected/bound. 2026-09-27, #640 |
-| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec` | UNVERIFIED | — |
-| Strands | `MCPClient(lambda: streamablehttp_client(...))` | UNVERIFIED | — |
+| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient(command_or_url, ..., headers=None, http_client=None, ...)` + `llama_index.tools.mcp.McpToolSpec(client).to_tool_list_async()` (defined in `llama_index.tools.mcp.client` and `.base`) | VERIFIED (local round-trip) | `llama-index-tools-mcp==0.6.0`, `llama-index-core==0.14.25`, `mcp==2.3.0`: `to_tool_list_async()` returned `llama_index.core.tools.function_tool.FunctionTool` (`add`, `lookup_sku`). `add(a=2, b=3)` through `FunctionTool.acall` returned a `ToolOutput` whose `.raw_output` is the MCP `CallToolResult` with text `5`; `.content` is the `str()` of that whole result, not `5`. The server recorded `client_id`/`client_secret`. `headers=` builds the client's own `httpx2.AsyncClient`; a caller-supplied `http_client` ignores `headers` and was not tested. A URL is streamable HTTP unless it looks like SSE (`/sse`). `BasicMCPClient` opens a new session per call. Fixture `mcp_binding/llamaindex.json`, probe `probe_llamaindex.py`. 2026-10-28, #641 |
+| Strands | `strands.tools.mcp.MCPClient(url=..., headers={...})`, used as a context manager. The `MCPClient(lambda: streamablehttp_client(...))` form does not work on `mcp` 2.x, which no longer has `streamablehttp_client` | VERIFIED (local round-trip) | `strands-agents==1.62.0`, `mcp==2.1.1`: `list_tools_sync()` returned `add` and `lookup_sku` as `strands.tools.mcp.mcp_agent_tool.MCPAgentTool` (a `PaginatedList`, in server order). `Agent(tools=tools, callback_handler=None).tool.add(a=2, b=3)` returned `status: success` with content text `"5"`, through the direct tool path with no model turn. The server recorded `client_id`/`client_secret` on every request. The `transport_callable` form is still in the signature but rejects `headers`, `auth` and `auth_provider` (`ValueError`); it was not run. Fixture `mcp_binding/strands.json`, probe `probe_strands.py`. 2026-10-28, #637 |
+
+**`VERIFIED (local round-trip)` is not a gateway result.** These rows say that each
+framework's class exists under that name, accepts that construction, can send
+the `client_id`/`client_secret` pair, and yields its native tool type against a
+local reference server. No row was bound through the governed Omni Gateway, so
+the live gateway bind is still pending, and `ToolSet.<framework>()` stays behind
+`_verify.blocked(...)` until it is done. Two findings carry over to that work:
+
+- **Tool results differ per framework.** `add(2, 3)` came back as the string `5`
+  (Strands, the MCP baseline), a content-block dict or list (OpenAI Agents,
+  Anthropic, LangGraph, ADK), the JSON text `{"result": 5}` (Agent Framework),
+  or a `ToolOutput` whose `.content` is the stringified `CallToolResult`
+  (LlamaIndex). A binding should not assume a bare string.
+- **The URL keeps its trailing slash.** Without it (`/mcp`), the local server
+  redirects to `/mcp/`. ADK, Agent Framework, LangGraph, LlamaIndex and Strands
+  followed that redirect, and so did the Anthropic probe, whose own `mcp` client
+  sets `follow_redirects=True`. The OpenAI Agents SDK did not: it failed with
+  `httpx2.RequestNotRead`, wrapped in an `ExceptionGroup`. This is informational,
+  because the governed gateway routes only the trailing-slash form (§6), and every
+  probe uses that form.
 
 Which MCP transports Omni Gateway can front (streamable HTTP, SSE, stdio) is
 UNVERIFIED (#1150). §5 verifies only the shape of a gateway MCP endpoint. The
