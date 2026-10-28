@@ -10,7 +10,7 @@ cffi==2.1.1
 charset-normalizer==3.5.2
 cryptography==50.0.2
 docutils==0.23
-hatchling==1.32.4
+hatchling==1.33.0
 id==1.6.1
 idna==3.20
 importlib-metadata==10.1.0
