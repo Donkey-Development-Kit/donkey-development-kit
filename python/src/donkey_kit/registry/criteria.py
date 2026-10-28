@@ -3,8 +3,8 @@
 "Governed" is NOT a flag — it is a computed predicate joining state across three
 systems, environment-scoped. The criteria and report types here are
 pure and fully implemented. The JOIN that populates a report from live API
-Manager / ruleset state lives in :mod:`donkey_kit.registry.exchange` and is
-gated on the Verification milestone.
+Manager, Exchange and API Governance state is
+:meth:`donkey_kit.registry.exchange.ExchangeRegistry.explain` (#1298).
 """
 
 from __future__ import annotations

@@ -31,5 +31,6 @@ contracts the SDK targets.
   needed. `test_governed_state_shapes.py` proves the domain models represent
   this real data.
 - The direct-REST *fetch* endpoints behind the CLI are recorded in
-  docs/verified-apis.md §12 (from the CLI-plugin analysis); nothing here wires
-  `ExchangeRegistry` to a live call yet.
+  docs/verified-apis.md §12 (from the CLI-plugin analysis). The REST reads
+  `ExchangeRegistry` makes were captured later, in `mcp_resolve/` (#1297) and
+  `mcp_explain/` (#1298).

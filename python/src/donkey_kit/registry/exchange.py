@@ -1,8 +1,9 @@
 """Exchange discovery + the governed-only join (BG §2.7).
 
 :meth:`ExchangeRegistry.search` reads Exchange's GraphQL ``assets`` query
-(docs/verified-apis.md §7, #53), and :meth:`ExchangeRegistry.resolve_mcp` reads
-API Manager and Gateway Manager (§6, #1297). Every other method that requires a real
+(docs/verified-apis.md §7, #53), :meth:`ExchangeRegistry.resolve_mcp` reads
+API Manager and Gateway Manager (§6, #1297), and :meth:`ExchangeRegistry.explain`
+reads API Manager, Exchange and API Governance (§6, #1298). Every other method that requires a real
 Anypoint endpoint is gated behind a verification-blocked error (verification
 discipline, working instruction #2) rather than a fabricated request path. The
 N+1-avoiding index design is documented in :meth:`warm` for the implementer who
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import asdict
 from fnmatch import fnmatchcase
 from typing import Any
 from urllib.parse import urlsplit
@@ -22,7 +24,7 @@ from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
 from ..core.errors import RegistryError
 from ..core.transport import DonkeyAsyncClient
-from .criteria import GovernanceCriteria, GovernanceReport
+from .criteria import Check, GovernanceCriteria, GovernanceReport, evaluate
 from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
 
 __all__ = ["ExchangeRegistry"]
@@ -38,6 +40,8 @@ _SEARCH_QUERY = (
 # One page of ``assets``.
 _PAGE_MAX = 250
 _GLOB = re.compile(r"[*?\[]")
+# API Governance's conformance stats for one asset version (docs/verified-apis.md §6, #1298).
+_GOVERNANCE_TARGETS = "/governance/xapi/api/v1/stats/organization/targets"
 # The SDK's discovery types → Exchange's ``type`` values. ``a2a-agent`` has no
 # Exchange type of its own: an A2A agent publishes as ``agent`` (#1260).
 _EXCHANGE_TYPES: dict[str, tuple[str, ...]] = {
@@ -59,9 +63,10 @@ class ExchangeRegistry:
 
     Uses the control-plane credential and caches lookups for
     ``registry_cache_ttl_s`` seconds (``DONKEY_NO_CACHE=1`` bypasses the cache).
-    :meth:`search` reads Exchange and :meth:`resolve_mcp` reads API Manager; the
-    methods that need an unverified endpoint raise ``NotImplementedError`` for
-    now (docs/verified-apis.md §6, §7).
+    :meth:`search` reads Exchange, :meth:`resolve_mcp` reads API Manager, and
+    :meth:`explain` joins the two with API Governance; the methods that need an
+    unverified endpoint raise ``NotImplementedError`` for now (docs/verified-apis.md
+    §6, §7).
 
     Args:
         cfg: The resolved configuration.
@@ -175,6 +180,24 @@ class ExchangeRegistry:
             f"it has {names or 'none'}."
         )
 
+    async def _instances(self, base: str, asset: AssetRef) -> list[dict[str, Any]]:
+        """The asset version's API Manager instances in the environment at ``base``."""
+        listing = await self._get(
+            f"{base}/apis",
+            params={
+                "assetId": asset.asset_id,
+                "groupId": asset.group_id,
+                "assetVersion": asset.version,
+            },
+            what=f"the API Manager instances of {asset.coordinates}",
+        )
+        return [
+            api
+            for row in listing.get("assets") or ()
+            for api in row.get("apis") or ()
+            if isinstance(api, dict)
+        ]
+
     async def _get(
         self, path: str, *, what: str, params: dict[str, str] | None = None
     ) -> dict[str, Any]:
@@ -235,21 +258,10 @@ class ExchangeRegistry:
 
         env_id = await self._environment_id()
         base = f"/apimanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
-        listing = await self._get(
-            f"{base}/apis",
-            params={
-                "assetId": asset.asset_id,
-                "groupId": asset.group_id,
-                "assetVersion": asset.version,
-            },
-            what=f"the API Manager instances of {asset.coordinates}",
-        )
         instances = [
             api
-            for row in listing.get("assets") or ()
-            for api in row.get("apis") or ()
-            if api.get("endpointType") == "mcp"
-            and (api.get("deployment") or {}).get("expectedStatus") == "deployed"
+            for api in await self._instances(base, asset)
+            if api.get("endpointType") == "mcp" and _deployed(api)
         ]
         where = f"environment {cfg.environment!r}"
         if not instances:
@@ -298,20 +310,223 @@ class ExchangeRegistry:
     async def explain(
         self, ref: AssetRef | str, *, criteria: GovernanceCriteria
     ) -> GovernanceReport:
-        """Explain why an asset is (not) governed.
+        """Explain why an asset version is, or is not, governed in the configured ``environment``.
 
-        First-class, documented, referenced in the empty-result warning — without
-        it, ``governed=True`` returning empty is indistinguishable from a broken
-        credential. Blocked until the API Manager / ruleset read APIs are
-        verified (the Verification milestone).
+        Reports one :class:`Check` for each condition ``criteria`` sets. Policy and
+        gateway checks judge the asset version's deployed API Manager instances, every
+        one of them: a deployed instance without a required policy is an ungoverned
+        route. A check whose source refused the read is ``None`` (UNKNOWN), with the
+        refusal as its detail. Results are cached for ``registry_cache_ttl_s`` seconds.
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            ValueError: ``ref`` is not ``group_id/asset_id/version``.
+            RegistryError: The environment does not exist, or API Manager refused a read.
         """
-
-        AssetRef.parse(ref)
-        raise _verify.blocked(
-            "governed-state join: per-instance 'deployed' readability and ruleset results API (the "
-            "Verification milestone). Until verified, explain() cannot produce real Check rows; "
-            "see registry/criteria.py for the pure evaluation logic."
+        cfg = self._cfg.validated(need="control_plane")
+        asset = AssetRef.parse(ref)
+        key = "explain:" + json.dumps(
+            [cfg.environment, asset.coordinates, asdict(criteria)], sort_keys=True
         )
+        cached = self._index_cache.get(key)
+        if isinstance(cached, GovernanceReport):
+            return cached
+
+        env_id = await self._environment_id()
+        base = f"/apimanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
+        instances = await self._instances(base, asset)
+        deployed = [api for api in instances if _deployed(api)]
+        where = f"environment {cfg.environment!r}"
+        checks: list[Check] = []
+        if criteria.require_api_instance:
+            checks.append(
+                Check(
+                    "api_instance_exists",
+                    bool(instances),
+                    f"instances {_labels(instances)} in {where}"
+                    if instances
+                    else f"no API Manager instance in {where}",
+                )
+            )
+        if criteria.require_deployed:
+            checks.append(
+                Check(
+                    "deployed",
+                    bool(deployed),
+                    f"deployed: {_labels(deployed)}"
+                    if deployed
+                    else f"no instance is deployed to a gateway in {where}",
+                )
+            )
+        if (
+            criteria.require_any_policy
+            or criteria.required_policies
+            or criteria.forbidden_policies
+            or criteria.require_gateways
+        ):
+            checks += await self._instance_checks(base, deployed, criteria)
+        if criteria.require_tags or criteria.require_lifecycle:
+            checks += await self._exchange_checks(asset, criteria)
+        if criteria.require_governance_pass:
+            checks.append(await self._governance_check(asset))
+        report = evaluate(checks, criteria)
+        self._index_cache.set(key, report)
+        return report
+
+    async def _instance_checks(
+        self, base: str, deployed: list[dict[str, Any]], criteria: GovernanceCriteria
+    ) -> list[Check]:
+        """The policy and gateway checks over every deployed instance."""
+        wants_policies = (
+            criteria.require_any_policy or criteria.required_policies or criteria.forbidden_policies
+        )
+        policies: dict[str, set[str]] = {}
+        gateways: dict[str, str] = {}
+        for api in deployed:
+            label = str(api.get("instanceLabel"))
+            if wants_policies:
+                body = await self._get(
+                    f"{base}/apis/{api['id']}/policies", what=f"the policies of instance {label}"
+                )
+                policies[label] = {
+                    str((policy.get("template") or {}).get("assetId"))
+                    for policy in body.get("policies") or ()
+                    if isinstance(policy, dict)
+                }
+            if criteria.require_gateways:
+                body = await self._get(f"{base}/apis/{api['id']}", what=f"instance {label}")
+                gateways[label] = str((body.get("deployment") or {}).get("targetName"))
+
+        checks: list[Check] = []
+        if criteria.require_any_policy:
+            bare: dict[str, list[str]] = {
+                label: [] for label, applied in policies.items() if not applied
+            }
+            checks.append(
+                _over_instances("any_policy", policies, bare, "has no policy", "a policy on each")
+            )
+        if criteria.required_policies:
+            wanted = set(criteria.required_policies)
+            missing = {
+                label: sorted(wanted - applied)
+                for label, applied in policies.items()
+                if wanted - applied
+            }
+            checks.append(
+                _over_instances(
+                    "required_policies",
+                    policies,
+                    missing,
+                    "is missing",
+                    f"{', '.join(criteria.required_policies)} on each",
+                )
+            )
+        if criteria.forbidden_policies:
+            forbidden = set(criteria.forbidden_policies)
+            present = {
+                label: sorted(forbidden & applied)
+                for label, applied in policies.items()
+                if forbidden & applied
+            }
+            checks.append(
+                _over_instances(
+                    "forbidden_policies",
+                    policies,
+                    present,
+                    "has",
+                    f"none of {', '.join(criteria.forbidden_policies)}",
+                )
+            )
+        if criteria.require_gateways:
+            outside = {
+                label: [name]
+                for label, name in gateways.items()
+                if name not in criteria.require_gateways
+            }
+            checks.append(
+                _over_instances(
+                    "gateways",
+                    gateways,
+                    outside,
+                    "is on",
+                    f"on {', '.join(sorted(set(gateways.values())))}",
+                )
+            )
+        return checks
+
+    async def _exchange_checks(self, asset: AssetRef, criteria: GovernanceCriteria) -> list[Check]:
+        """The tag and lifecycle checks, from the Exchange asset version."""
+        names = [
+            name
+            for name, wanted in (
+                ("tags", criteria.require_tags),
+                ("lifecycle", criteria.require_lifecycle),
+            )
+            if wanted
+        ]
+        try:
+            body = await self._get(
+                f"/exchange/api/v2/assets/{asset.group_id}/{asset.asset_id}/{asset.version}",
+                what=f"Exchange asset {asset.coordinates}",
+            )
+        except RegistryError as exc:
+            return [Check(name, None, f"UNKNOWN: {exc}") for name in names]
+        checks: list[Check] = []
+        if criteria.require_tags:
+            labels = {str(label).lower() for label in body.get("labels") or ()}
+            missing = [tag for tag in criteria.require_tags if tag.lower() not in labels]
+            checks.append(
+                Check(
+                    "tags",
+                    not missing,
+                    f"missing: {', '.join(missing)}"
+                    if missing
+                    else f"tagged {', '.join(criteria.require_tags)}",
+                )
+            )
+        if criteria.require_lifecycle:
+            status = str(body.get("status"))
+            checks.append(
+                Check(
+                    "lifecycle",
+                    status in criteria.require_lifecycle,
+                    f"status {status}",
+                )
+            )
+        return checks
+
+    async def _governance_check(self, asset: AssetRef) -> Check:
+        """The ``governance_pass`` check, from API Governance's conformance reports."""
+        try:
+            # Without ``organization`` the read looks in the root organization and
+            # finds nothing for a business group's asset.
+            body = await self._get(
+                f"{_GOVERNANCE_TARGETS}/{asset.group_id}/{asset.asset_id}/{asset.version}",
+                params={"organization": str(self._cfg.org_id)},
+                what=f"the conformance reports of {asset.coordinates}",
+            )
+        except RegistryError as exc:
+            return Check("governance_pass", None, f"UNKNOWN: {exc}")
+        reports = [r for r in body.get("reports") or () if isinstance(r, dict)]
+        if not reports:
+            # An asset no profile governs, and one that does not exist, both come
+            # back with no reports (docs/verified-apis.md §6, #1298).
+            return Check(
+                "governance_pass",
+                None,
+                f"UNKNOWN: no governance profile has evaluated {asset.coordinates}",
+            )
+        # One report per ruleset of the profiles that govern the asset's minor version.
+        statuses = {
+            str((r.get("ruleset") or {}).get("label")): str(r.get("summaryStatus")) for r in reports
+        }
+        detail = "; ".join(f"{label}: {status}" for label, status in sorted(statuses.items()))
+        if "NonConformant" in statuses.values():
+            return Check("governance_pass", False, detail)
+        if set(statuses.values()) == {"Conformant"}:
+            return Check("governance_pass", True, detail)
+        # ``Pending`` (not evaluated yet) or ``Failed`` (the evaluation did not run).
+        return Check("governance_pass", None, f"UNKNOWN: {detail}")
 
     async def warm(self, *, environment: str | None = None) -> None:
         """Build the in-memory governance index at startup.
@@ -351,6 +566,32 @@ def _asset_ref(asset: dict[str, Any]) -> AssetRef:
         ),
         description=asset.get("description") or None,
     )
+
+
+def _deployed(api: dict[str, Any]) -> bool:
+    return (api.get("deployment") or {}).get("expectedStatus") == "deployed"
+
+
+def _labels(apis: list[dict[str, Any]]) -> str:
+    return ", ".join(sorted(str(api.get("instanceLabel")) for api in apis))
+
+
+def _over_instances(
+    name: str,
+    read: dict[str, Any],
+    failed: dict[str, list[str]],
+    what: str,
+    passed: str,
+) -> Check:
+    """A check over every deployed instance: ``failed`` maps a label to what failed it."""
+    if not read:
+        return Check(name, False, "no deployed instance to check")
+    if failed:
+        detail = "; ".join(
+            f"{label} {what} {', '.join(found)}".rstrip() for label, found in sorted(failed.items())
+        )
+        return Check(name, False, detail)
+    return Check(name, True, passed)
 
 
 def _globbed(ref: AssetRef, glob: str | None) -> bool:

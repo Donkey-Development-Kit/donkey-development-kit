@@ -1,0 +1,13 @@
+{
+  "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "assetId": "ddk-verify1298-mcp",
+  "version": "0.1.0",
+  "minorVersion": "0.1",
+  "name": "DDK verify 1298 MCP",
+  "type": "mcp",
+  "status": "published",
+  "labels": [
+    "ddk-verify1298"
+  ],
+  "isPublic": false
+}

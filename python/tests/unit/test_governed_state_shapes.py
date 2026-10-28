@@ -3,11 +3,9 @@ API Manager data (captured 2026-08-28 from the sandbox; see
 tests/fixtures/anypoint/README.md).
 
 Proves that `AssetRef` / `McpServerHandle` / the governance `Check`+`evaluate`
-logic faithfully represent the direct Anypoint control-plane contract — the
-join `ExchangeRegistry` will perform once its (still-blocked) live fetch path is
-wired (docs/verified-apis.md §12). The raw→domain mapping lives here in the test,
-not in the SDK, keeping the verification discipline: shapes are verified, the live fetch
-endpoint is not yet.
+logic faithfully represent the direct Anypoint control-plane contract. The live
+join is `ExchangeRegistry.explain()`, tested against its own REST captures in
+test_explain.py (#1298); the raw→domain mapping here predates it.
 """
 
 from __future__ import annotations

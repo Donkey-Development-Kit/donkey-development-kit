@@ -3,8 +3,10 @@
 Status: Roadmap. Planned design; not shipped yet.
 
 `donkey.tools.discover()` is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the
-planned design. [`donkey.registry.search()`](#registry-search) and
-[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server) are live.
+planned design. [`donkey.registry.search()`](#registry-search),
+[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server) and
+[`donkey.registry.explain()`](#explain--why-a-tool-was-included-or-excluded)
+are live.
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance**, domain and tags, so an agent
@@ -99,7 +101,7 @@ routes the path only with the trailing slash.
   Calls through the URL need them, because the gateway's Client ID Enforcement
   policy refuses a call without them.
 - The returned handle's `governance` is `None`: whether the instance is
-  governed comes from `explain()`, which is on the Roadmap.
+  governed comes from [`explain()`](#explain--why-a-tool-was-included-or-excluded).
 - Results are cached like the other registry lookups; see
   [Registry caching](https://docs.donkey-kit.dev/tool-access/lockfile.md#registry-caching).
 
@@ -122,7 +124,7 @@ class GovernanceCriteria:
     require_any_policy: bool = True       # at least one policy applied
     required_policies: list[str] = ...    # e.g. ["client-id-enforcement"]
     forbidden_policies: list[str] = ...
-    require_governance_pass: bool = False  # passes org rulesets with no `error` findings
+    require_governance_pass: bool = False  # every API Governance report is Conformant
     require_gateways: list[str] = ...      # only assets behind these named gateways
     require_tags: list[str] = ...
     require_lifecycle: list[str] = ...     # e.g. ["published", "approved"]
@@ -149,22 +151,55 @@ tools = await donkey.tools.discover(domain="hr", governed=STRICT)
 
 ## `explain()` — why a tool was included or excluded
 
-Without it, `governed=True` returning an empty list is indistinguishable
-from a broken credential. `explain()` reports every check:
+`donkey.registry.explain()` is Live. Without it,
+`governed=True` returning an empty list is indistinguishable from a broken
+credential. `explain()` reports every check the criteria turn on:
 
 ```python
-report = await donkey.registry.explain(ref, criteria=STRICT)
+report = await donkey.registry.explain(
+    "<group-id>/sku-lookup-mcp/1.1.0", criteria=STRICT
+)
 # GovernanceReport(governed=False, checks=[
-#     Check("api_instance_exists", True,  "instance 19283 in Sandbox"),
-#     Check("deployed",            True,  "gateway managed-omni-eu-1"),
-#     Check("required_policies",   False, "missing: client-id-enforcement"),
-#     Check("governance_pass",     None,  "UNKNOWN: rulesets API returned 403"),
+#     Check("api_instance_exists", True,  "instances sku-lookup in environment 'Sandbox'"),
+#     Check("deployed",            True,  "deployed: sku-lookup"),
+#     Check("any_policy",          True,  "a policy on each"),
+#     Check("required_policies",   False, "sku-lookup is missing client-id-enforcement"),
+#     Check("governance_pass",     None,  "UNKNOWN: no governance profile has evaluated <group-id>/sku-lookup-mcp/1.1.0"),
 # ])
+print(report.reasons_failed())
 ```
 
 Each check is `True` (passed), `False` (failed, with the reason), or `None`
-(couldn't be evaluated — resolved via `allow_unknown`). The empty-result warning
+(couldn't be evaluated, resolved by `allow_unknown`). The empty-result warning
 message points you to `explain()`.
+
+It reads the asset version's API Manager instances in the environment set by
+`ANYPOINT_ENV`, and only what the criteria ask about:
+
+| Check | Criteria | Passes when |
+|---|---|---|
+| `api_instance_exists` | `require_api_instance` | the version has an API Manager instance in the environment |
+| `deployed` | `require_deployed` | at least one instance is deployed to a gateway |
+| `any_policy` | `require_any_policy` | every deployed instance has a policy |
+| `required_policies` | `required_policies` | every deployed instance has each named policy |
+| `forbidden_policies` | `forbidden_policies` | no deployed instance has a named policy |
+| `gateways` | `require_gateways` | every deployed instance is on a named gateway |
+| `tags` | `require_tags` | the Exchange asset version has each tag, ignoring case |
+| `lifecycle` | `require_lifecycle` | the version's Exchange status is one of those named |
+| `governance_pass` | `require_governance_pass` | every API Governance report for the version is `Conformant` |
+
+- Policies are matched by their asset ID, such as `client-id-enforcement`, and
+  gateways by name.
+- A version with no deployed instance fails the policy and gateway checks.
+- `governance_pass` reads the reports of the business group's API Governance
+  profiles. It is `False` when a report is `NonConformant`. It is UNKNOWN when
+  no profile has evaluated the version, when a report is pending or failed, or
+  when the read is refused. API Governance evaluates an asset version when it
+  is published, so a profile created later does not report on it.
+- A refused Exchange read makes `tags` and `lifecycle` UNKNOWN. A refused API
+  Manager read raises `RegistryError`.
+- Results are cached per asset version and criteria, like the other registry
+  lookups; see [Registry caching](https://docs.donkey-kit.dev/tool-access/lockfile.md#registry-caching).
 
 ## Defaults and performance
 
