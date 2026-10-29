@@ -228,6 +228,39 @@ class ToolsFacade:
         ``Publication.verify()`` lists the live tools through (#991)."""
         return await self._discovery.resolve(ref, auth=None)
 
+    async def warm(
+        self,
+        *,
+        domain: str | None = None,
+        tags: list[str] | None = None,
+        governed: bool | GovernanceCriteria | None = None,
+    ) -> int:
+        """Read the registry now, so the next matching :meth:`discover` is a cache hit.
+
+        Call it at startup with the arguments the agent will pass to
+        :meth:`discover`: it does the same reads and fills the same cache entry,
+        so the first tool lookup does not wait on them. It always reads, even
+        when that entry is cached, and returns the number of servers cached.
+
+        There is no bulk read of applied policies, so the cost is O(N): one
+        ``search()``, then an ``explain()`` and a ``resolve_mcp()`` per MCP
+        asset, eight at a time. Measured at about 20 policy reads a second, so
+        200 servers take roughly 10 s (docs/verified-apis.md §6, #54).
+
+        Args:
+            domain: As for :meth:`discover`. Not supported yet.
+            tags: As for :meth:`discover`.
+            governed: As for :meth:`discover`.
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            RegistryError: Exchange or API Manager refused a read.
+            NotImplementedError: ``domain`` was given; see docs/verified-apis.md §7.
+
+        Docs: https://docs.donkey-kit.dev/tool-access/discovery#defaults-and-performance
+        """
+        return await self._discovery.warm(domain=domain, tags=tags, governed=governed)
+
     def refresh(self) -> None:
         """Drop the cached discoveries, so the next :meth:`discover` reads the registry."""
         self._discovery.refresh()

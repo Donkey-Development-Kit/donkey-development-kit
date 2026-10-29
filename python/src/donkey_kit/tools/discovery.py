@@ -94,7 +94,38 @@ class Discovery:
                 "server, and binding refuses an ungoverned one. Pass governed=True to leave "
                 "those out."
             )
-        key = "discover:" + json.dumps(
+        key = self._key(domain, tags, governed, criteria)
+        found = self._cache.get(key)
+        if found is None:
+            found = await self._fill(key, domain, tags, governed, criteria)
+        return ToolSet(
+            list(found.servers),
+            _natives=self._natives,
+            _auth=auth if auth is not None else self._auth,
+            _discovered=(found.at, found.started, self._cfg.registry_cache_ttl_s),
+            _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
+        )
+
+    async def warm(
+        self,
+        *,
+        domain: str | None,
+        tags: Sequence[str] | None,
+        governed: bool | GovernanceCriteria | None,
+    ) -> int:
+        """See ``ToolsFacade.warm``."""
+        criteria = governed if isinstance(governed, GovernanceCriteria) else GovernanceCriteria()
+        key = self._key(domain, tags, governed, criteria)
+        return len((await self._fill(key, domain, tags, governed, criteria)).servers)
+
+    def _key(
+        self,
+        domain: str | None,
+        tags: Sequence[str] | None,
+        governed: bool | GovernanceCriteria | None,
+        criteria: GovernanceCriteria,
+    ) -> str:
+        return "discover:" + json.dumps(
             [
                 self._cfg.environment,
                 domain,
@@ -104,17 +135,18 @@ class Discovery:
             ],
             sort_keys=True,
         )
-        found = self._cache.get(key)
-        if found is None:
-            found = await self._read(domain, tags, criteria, keep_ungoverned=not governed)
-            self._cache.set(key, found)
-        return ToolSet(
-            list(found.servers),
-            _natives=self._natives,
-            _auth=auth if auth is not None else self._auth,
-            _discovered=(found.at, found.started, self._cfg.registry_cache_ttl_s),
-            _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
-        )
+
+    async def _fill(
+        self,
+        key: str,
+        domain: str | None,
+        tags: Sequence[str] | None,
+        governed: bool | GovernanceCriteria | None,
+        criteria: GovernanceCriteria,
+    ) -> _Found:
+        found = await self._read(domain, tags, criteria, keep_ungoverned=not governed)
+        self._cache.set(key, found)
+        return found
 
     async def resolve(self, ref: AssetRef | str, *, auth: McpAuth | None) -> ToolSet:
         """A ``ToolSet`` of the one server ``ref``: its default-criteria verdict

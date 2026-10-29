@@ -7167,6 +7167,18 @@ It reads the asset version's API Manager instances in the environment set by
   when you bind, or call `describe()`.
 - **Bounded fan-out.** The `explain()` and `resolve_mcp()` reads for each asset
   run at most eight at a time.
+- **Warm the cache at startup.** `await donkey.tools.warm(...)` takes the same
+  `domain`, `tags` and `governed` arguments as `discover()`, does the same reads
+  and fills the same cache entry, so the first matching `discover()` does not
+  wait on the registry. It always reads, and returns how many servers it cached.
+  Anypoint has no bulk read of applied policies, so the cost grows with the
+  catalog: one search, then one `explain()` per MCP asset. Measured at about 20
+  policy reads a second, 200 servers take roughly 10 seconds cold.
+
+```python
+await donkey.tools.warm(tags=["erp"], governed=True)
+tools = await donkey.tools.discover(tags=["erp"], governed=True)  # cache hit
+```
 
 ## Related
 
@@ -13944,8 +13956,8 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry search: `donkey.registry.search()` | Token request, then Exchange Graph API reads | Available. Its `domain`, `environment` and `governed` filters raise `NotImplementedError` before sending. See [Registry search](https://docs.donkey-kit.dev/tool-access/discovery.md#registry-search). |
 | Registry: `resolve_mcp()` | Token request, then Access Management, API Manager and Omni Gateway Manager reads | Available. See [Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). |
 | Registry: `explain()` | Token request, then Access Management, API Manager, Exchange and API Governance reads, only those the criteria need | Available. See [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md#explain--why-a-tool-was-included-or-excluded). |
-| Registry: `resolve_agent()`, `warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
-| Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter and `locked=True` raise `NotImplementedError` before sending. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
+| Registry: `resolve_agent()`, `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
+| Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter and `locked=True` raise `NotImplementedError` before sending. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
 | Tool pinning: `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` download, the `explain()` and `resolve_mcp()` reads, and the server's `tools/list` through the gateway | Available for MCP servers; other asset types raise `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify). |
 | Publication: `Publication.preview()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |

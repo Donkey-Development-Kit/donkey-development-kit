@@ -9,6 +9,7 @@ real bindings against a local server).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -167,6 +168,48 @@ async def test_discover_is_cached_until_refresh(monkeypatch: pytest.MonkeyPatch)
     await _discover(d)
     await _discover(d)
     assert len(registry.searches) == 5
+
+
+async def test_warm_fills_the_cache_discover_reads() -> None:
+    registry = _Registry({"inventory": _GOVERNED, "shadow": _UNGOVERNED})
+    d = _discovery(registry)
+    assert await d.warm(domain=None, tags=["erp"], governed=True) == 1
+    assert len(registry.searches) == 1
+    ts = await _discover(d, tags=["erp"], governed=True)
+    assert len(registry.searches) == 1
+    assert [s.ref.asset_id for s in ts.servers] == ["inventory"]
+    await _discover(d, tags=["erp"])
+    assert len(registry.searches) == 2
+
+
+async def test_warm_always_reads_and_replaces_the_entry() -> None:
+    registry = _Registry({"inventory": _GOVERNED})
+    d = _discovery(registry)
+    first = await _discover(d)
+    registry.catalog["orders"] = _GOVERNED
+    assert await d.warm(domain=None, tags=None, governed=None) == 2
+    again = await _discover(d)
+    assert len(registry.searches) == 2
+    assert len(again.servers) == 2
+    assert again.discovered_at != first.discovered_at
+
+
+async def test_warm_is_one_search_and_one_explain_per_asset_eight_at_a_time() -> None:
+    class _Slow(_Registry):
+        live = peak = 0
+
+        async def explain(self, ref: AssetRef, *, criteria: GovernanceCriteria) -> GovernanceReport:
+            _Slow.live += 1
+            _Slow.peak = max(_Slow.peak, _Slow.live)
+            await asyncio.sleep(0)
+            _Slow.live -= 1
+            return await super().explain(ref, criteria=criteria)
+
+    registry = _Slow({f"server-{i}": _GOVERNED for i in range(20)})
+    assert await _discovery(registry).warm(domain=None, tags=None, governed=None) == 20
+    assert len(registry.searches) == 1
+    assert sorted(registry.explained) == sorted(registry.catalog)
+    assert 1 < _Slow.peak <= 8
 
 
 async def test_a_set_is_stale_after_the_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
