@@ -135,7 +135,7 @@ async with donkey.as_user(token=user_token):
 
 <Callout type="warning">
   **A whole-server binding can't be checked.** `adk()`, `strands()`,
-  `openai()`, `agent_framework()` and `crewai()` hand each server to the
+  `openai_agents()`, `agent_framework()` and `crewai()` hand each server to the
   framework, and the framework makes the tool calls itself, so the SDK never
   sees them. Such a binding sends the identity it was bound with on every
   call, whatever `as_user()` block the call runs in. Build an agent once at
@@ -270,7 +270,7 @@ async with ts.anthropic() as tools:   # -> list[BetaAsyncFunctionTool]
     ...
 await ts.adk()                # -> list[McpToolset], one per server
 await ts.strands()            # -> list[MCPClient], one per server
-await ts.openai()             # -> list[MCPServerStreamableHttp], one per server
+await ts.openai_agents()      # -> list[MCPServerStreamableHttp], one per server
 await ts.agent_framework()    # -> list[MCPStreamableHTTPTool], one per server
 async with ts.crewai() as tools:      # -> list[BaseTool]
     ...

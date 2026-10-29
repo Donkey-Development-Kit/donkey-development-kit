@@ -97,7 +97,7 @@ BINDINGS: dict[str, Binding] = {
         Binding("anthropic", "anthropic", True, ("anthropic.lib.tools.mcp",), ("anthropic",)),
         Binding("adk", "adk", False, ("google.adk.tools.mcp_tool",), ("google-adk",)),
         Binding("strands", "strands", False, ("strands.tools.mcp",), ("strands-agents",)),
-        Binding("openai_agents", "openai", False, ("agents.mcp",), ("openai-agents",)),
+        Binding("openai_agents", "openai_agents", False, ("agents.mcp",), ("openai-agents",)),
         Binding(
             "agent_framework", "agent_framework", False, ("agent_framework",), ("agent-framework",)
         ),
@@ -322,12 +322,12 @@ async def _bound(binding: Binding, ts: ToolSet) -> AsyncIterator[Bound]:
                 return _text(owner[name].call_tool_sync("t1", name, args))
 
             yield Bound(list(owner), call)
-        elif binding.method == "openai":
+        elif binding.method == "openai_agents":
             from agents import Agent
             from agents.run_context import RunContextWrapper
 
             owner = {}
-            for server in await ts.openai():
+            for server in await ts.openai_agents():
                 await stack.enter_async_context(server)
                 for tool in await server.list_tools(RunContextWrapper(None), Agent(name="probe")):
                     owner[tool.name] = server
@@ -517,7 +517,7 @@ async def test_tool_access_denied_typed(binding: Binding, servers: _Servers) -> 
 
 #: What each whole-server binding's framework does with the denial, recorded with
 #: scripts/mcp_binding/probe_denial.py (docs/verified-apis.md §9, #312).
-_RAISES_THE_MCP_ERROR = {"openai", "agent_framework", "crewai"}
+_RAISES_THE_MCP_ERROR = {"openai_agents", "agent_framework", "crewai"}
 _RETURNS_AN_ERROR_RESULT = {"adk", "strands"}
 
 

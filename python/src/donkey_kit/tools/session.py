@@ -803,7 +803,7 @@ class ToolSet:
             for server, names in plan
         ]
 
-    async def openai(self) -> list[Any]:  # -> list[MCPServerStreamableHttp]
+    async def openai_agents(self) -> list[Any]:  # -> list[MCPServerStreamableHttp]
         """Bind the tool set as OpenAI Agents SDK ``MCPServerStreamableHttp``
         objects, one per server, for ``Agent(mcp_servers=[...])``.
 
@@ -820,7 +820,7 @@ class ToolSet:
             from agents.mcp import MCPServerStreamableHttp, create_static_tool_filter
         except ImportError as exc:
             raise ImportError(_install("openai-agents", None)) from exc
-        plan, headers = await self._plan("openai()", per_tool=False)
+        plan, headers = await self._plan("openai_agents()", per_tool=False)
         return [
             MCPServerStreamableHttp(
                 params={

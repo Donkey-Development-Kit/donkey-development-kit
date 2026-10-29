@@ -22,7 +22,7 @@ _BINDINGS = (
     "adk",
     "strands",
     "llamaindex",
-    "openai",
+    "openai_agents",
     "anthropic",
     "crewai",
     "agent_framework",
