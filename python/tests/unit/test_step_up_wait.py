@@ -7,6 +7,8 @@ to ``tools/list``. The gateway owns the approval; the loop only waits.
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 from collections.abc import Mapping
 from typing import Any
 
@@ -185,6 +187,86 @@ async def test_listing_raises_denied_without_retrying(
     with pytest.raises(GatewayApprovalDenied):
         await _toolset().wait_for_gateway_approval("2m").describe()
     assert len(answers) == 1  # the second answer was never asked for
+
+
+async def test_failed_listing_cancels_and_drains_other_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def fake_list(url: str, headers: Mapping[str, str], *, server: str) -> Any:
+        if url.endswith("/inv/"):
+            await started.wait()
+            raise GatewayApprovalDenied("denied")
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    first = _toolset().servers[0]
+    second = dataclasses.replace(first, endpoint_url="https://gw.example.test/other/")
+    toolset = ToolSet([first, second], _auth=ClientIdAuth("cid", "secret"))
+    monkeypatch.setattr(session_module, "list_tools", fake_list)
+    with pytest.raises(GatewayApprovalDenied):
+        await toolset.wait_for_gateway_approval("2m").describe()
+    assert cancelled.is_set()
+
+
+async def test_cancelling_listing_drains_all_servers(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def fake_list(url: str, headers: Mapping[str, str], *, server: str) -> Any:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(session_module, "list_tools", fake_list)
+    task = asyncio.create_task(_toolset().describe())
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert cancelled.is_set()
+
+
+async def test_auth_retry_starts_after_sibling_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+    calls = 0
+
+    async def fake_list(url: str, headers: Mapping[str, str], *, server: str) -> Any:
+        nonlocal calls
+        if url.endswith("/inv/"):
+            calls += 1
+            if calls == 1:
+                await started.wait()
+                raise AuthError("expired")
+            assert cancelled.is_set()
+            return ({"name": "first"},)
+        if calls == 1:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return ({"name": "second"},)
+
+    first = _toolset().servers[0]
+    second = dataclasses.replace(first, endpoint_url="https://gw.example.test/other/")
+    toolset = ToolSet([first, second], _auth=ClientIdAuth("cid", "secret"))
+    monkeypatch.setattr(session_module, "list_tools", fake_list)
+    described = await toolset.describe()
+    assert [server.tool_descriptors for server in described.servers] == [
+        ({"name": "first"},),
+        ({"name": "second"},),
+    ]
 
 
 def test_the_wait_survives_filter_and_require_approval() -> None:

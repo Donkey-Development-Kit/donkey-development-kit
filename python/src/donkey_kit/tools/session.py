@@ -459,23 +459,28 @@ class ToolSet:
         user = current_user() is not None
         for attempt in (1, 2):
             headers = await self._headers()
-            try:
-                return list(
-                    await asyncio.gather(
-                        *(
-                            wait_for_approval(
-                                functools.partial(
-                                    list_tools,
-                                    self._servers[i].endpoint_url,
-                                    headers,
-                                    server=self._servers[i].ref.coordinates,
-                                ),
-                                timeout=self._step_up_wait,
-                            )
-                            for i in indexes
-                        )
+            tasks = [
+                asyncio.create_task(
+                    wait_for_approval(
+                        functools.partial(
+                            list_tools,
+                            self._servers[i].endpoint_url,
+                            headers,
+                            server=self._servers[i].ref.coordinates,
+                        ),
+                        timeout=self._step_up_wait,
                     )
                 )
+                for i in indexes
+            ]
+            try:
+                try:
+                    return list(await asyncio.gather(*tasks))
+                except BaseException:
+                    for task in tasks:
+                        task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    raise
             except AuthError as exc:
                 if user:
                     raise AuthError(
