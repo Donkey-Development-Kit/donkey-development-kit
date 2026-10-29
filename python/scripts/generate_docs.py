@@ -312,6 +312,8 @@ def _option_rows(params: Iterable[Any]) -> list[tuple[str, str, str]]:
         if getattr(param, "hidden", False) or not param.opts:
             continue
         flags = ", ".join(f"`{opt}`" for opt in param.opts)
+        if getattr(param, "secondary_opts", None):
+            flags += " / " + ", ".join(f"`{opt}`" for opt in param.secondary_opts)
         meaning = rst_to_markdown(" ".join((param.help or "").split()))
         meaning = meaning[:1].upper() + meaning[1:]
         if meaning and not meaning.endswith("."):

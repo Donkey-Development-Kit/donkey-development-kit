@@ -1,7 +1,8 @@
 """The hidden, verification-blocked ``donkey`` command (§0.3, BG §2.5).
 
-``status`` is scaffolded for the Exchange publication flow (BG §2.5), which is
-in scope but waits on a verified platform API. It prints a
+``status`` is scaffolded for the Exchange publication flow (BG §2.5). The reads
+behind "published" and "governed" are verified, but "reachable" has no ledger
+row, so the command waits on it. It prints a
 ``blocked on verification`` message and exits 3, so a script wrapping the CLI
 can tell "blocked" from "failed". It is hidden from ``--help`` so the CLI never
 advertises a capability it lacks. ``verify`` was here until #1352 wired it
@@ -30,4 +31,7 @@ def _exit_blocked(what: str) -> None:
 @app.command(hidden=True)
 def status() -> None:
     """Render published / reachable / governed per asset (BG §2.5)."""
-    _exit_blocked("Exchange + API Manager read APIs (BG §2.5)")
+    _exit_blocked(
+        "a per-asset 'reachable' check (BG §2.5). The Exchange and API Manager reads "
+        "behind 'published' and 'governed' are verified, and `donkey verify` makes them today"
+    )

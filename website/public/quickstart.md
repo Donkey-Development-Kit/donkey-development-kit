@@ -19,14 +19,14 @@ Omni Gateway later is an environment change, not a code change.
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
 | Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
-| Governed tool access (MCP) | Roadmap | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
-| A2A agents: `donkey.serve()` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
-| A2A agents: `expose`, `dev` | Roadmap | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
-| On-behalf-of identity: `donkey.as_user()` | Offline-verified | [Identity](https://docs.donkey-kit.dev/identity.md) |
+| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
+| A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
 | `donkey scan` (agents, tools and MCP servers from code) | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
-| Publish to the registry | Roadmap | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| Publish to the registry and verify: `donkey publish`, `donkey verify` | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
 ## Your first governed call

@@ -86,10 +86,10 @@ agents in production.
 
 ## Architecture
 
-DDK sits inside your agent process. Today it speaks to the platform on two
-fronts: governed calls through the gateway, and telemetry to your
-observability stack. A third front, publishing assets to the control plane,
-is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
+DDK sits inside your agent process. It speaks to the platform on three
+fronts: governed calls through the gateway, telemetry to your observability
+stack, and the control plane, where it publishes your assets and discovers
+governed ones.
 
 **The AI control plane** is where the platform team manages the AI estate:
 the agent registry, cost control, gateway federation, and governance and
@@ -119,11 +119,12 @@ framework client your agent already uses and adds:
   decision, policy type, budget and correlation ID, exported to whatever
   observability stack you run (Grafana, Datadog, Jaeger, and others) and
   joined to the gateway's audit record through the correlation ID.
-- **Registry and agent-to-agent** Roadmap —
-  planned, not shipped: scanning your code to publish tools and agent cards
-  to the control plane, discovering governed MCP tools, and exposing your agent to other agents
-  over A2A through the gateway. Serving it over A2A, `donkey.serve()`, ships
-  today: see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+- **Registry and agent-to-agent** — `donkey scan` and `donkey publish` turn
+  your code into Exchange assets with their tools and agent cards,
+  `donkey.tools.discover()` binds governed MCP tools, and `donkey.serve()` and
+  `donkey expose` make your agent callable by other agents over A2A through the
+  gateway. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md), [Tool access](https://docs.donkey-kit.dev/tool-access.md) and
+  [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK
@@ -290,14 +291,14 @@ Omni Gateway later is an environment change, not a code change.
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
 | Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
-| Governed tool access (MCP) | Roadmap | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
-| A2A agents: `donkey.serve()` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
-| A2A agents: `expose`, `dev` | Roadmap | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
-| On-behalf-of identity: `donkey.as_user()` | Offline-verified | [Identity](https://docs.donkey-kit.dev/identity.md) |
+| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
+| A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
 | `donkey scan` (agents, tools and MCP servers from code) | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
-| Publish to the registry | Roadmap | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| Publish to the registry and verify: `donkey publish`, `donkey verify` | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
 ## Your first governed call
@@ -697,7 +698,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     **Advantage:** the PII branch is tested before production, not in it.
   
   
-    **Purpose:** `donkey init`, `doctor`, `mock`, `dev`, `test` and `scan`, plus
+    **Purpose:** `donkey init`, `doctor`, `mock`, `dev`, `test`, `scan`,
+    `publish`, `verify`, `preflight` and `expose`, plus
     `@donkey.governed`, `@donkey.tool` and `@donkey.agent`. **Advantage:** `doctor` tells wrong
     credentials from wrong URL from model-not-allowed; one decorator gives a
     function a run scope, span and typed refusals.
@@ -719,14 +721,16 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   
     **Purpose:** `donkey.serve()` makes your agent callable by other agents in
     one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
-    gateway instance with its policies; `dev` is on the Roadmap. **Advantage:** the agent card is generated from your code, and
-    inbound tasks are to be governed with the same correlation, spans and
+    gateway instance with its policies; `donkey dev` puts a simulated gateway in
+    front of it on your laptop. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are governed with the same correlation, spans and
     refusals.
   
   
-    **Purpose:** `donkey scan` (live) derives a model of your agents, tools and
-    MCP servers from code; publishing registers it in the Agent Fabric
-    registry. **Advantage:** the catalog stays in sync from CI, not by hand.
+    **Purpose:** `donkey scan` derives a model of your agents, tools and
+    MCP servers from code; `donkey publish` registers it in Exchange, and
+    `donkey verify` checks the live servers and agents against what was
+    published. **Advantage:** the catalog stays in sync from CI, not by hand.
   
 
 ## What DDK leaves to the platform
@@ -4184,7 +4188,7 @@ Source: https://docs.donkey-kit.dev/identity.md
 
 # Identity
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 By default the gateway sees your **service**, not the person the agent is
 acting for. That is fine until policy depends on who is asking.
@@ -6531,9 +6535,9 @@ with exit `2` rather than silently ignore them.
 Every command exits non-zero on failure, so any of them drops into CI as a
 preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
 `donkey test` → `[test]`, `donkey doctor` → `[llm]`) prints the exact
-`pip install` line and exits `1` — never a stack trace. A command whose platform
-API is not verified yet exits `3` with `blocked on verification`, so a script can
-tell "blocked" from "failed".
+`pip install` line and exits `1` — never a stack trace. The one command still
+blocked, the hidden `donkey status`, exits `3` with `blocked on verification`,
+so a script can tell "blocked" from "failed".
 
 The CLI lives in the `donkey_kit.cli` package. Earlier releases also shipped
 hidden provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
@@ -6610,7 +6614,7 @@ Global options go before the command (`donkey --json init`):
 |---|---|---|
 | `path` | `.` | The repository (or one .py file) to publish. |
 | `--dry-run` | off | Print the assets and digests it would publish; no network call. |
-| `--if-changed` | on | Skip an asset whose latest published version has the same digest. |
+| `--if-changed` / `--always` | on | Skip an asset whose latest published version has the same digest. |
 | `--json` | off | Emit the plan, or what was published, as JSON. |
 
 `donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
@@ -8406,12 +8410,13 @@ Source: https://docs.donkey-kit.dev/publishing.md
 
 # Scan & publish
 
-Status: Roadmap. Planned design; not shipped yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
-`donkey scan` is live, and so is `donkey publish`: it plans a publish
+`donkey scan`, `donkey publish` and `donkey verify` are live: publish plans
 (`--dry-run` sends nothing) and registers each MCP server and agent in Exchange
-from CI. The sections from [Scope: code-first assets](#scope-code-first-assets)
-on are on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and show their planned design.
+from CI, and verify checks the live side against what was published. The
+collision check and `descriptor="auto"` derivation are on the
+[Roadmap](https://docs.donkey-kit.dev/roadmap.md); their sections are badged and show the planned design.
 
 `donkey scan` walks your repository and finds every
 [`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
@@ -8427,9 +8432,9 @@ Action, every merge updates it.
   **This complements MuleSoft's Agent Scanners.** Agent Scanners discover agents
   from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan is
   the **design-time / CI** source for the agents you build in plain Python,
-  which no cloud scanner can see. Its model is planned to feed both direct
-  Exchange publishing and the platform's self-managed scanner, so the platform
-  stays the system of record.
+  which no cloud scanner can see. Its model feeds direct Exchange publishing
+  today, and is planned to feed the platform's self-managed scanner too, so the
+  platform stays the system of record.
 
 ## `donkey scan` — the model of your code Live
 
@@ -8874,18 +8879,20 @@ It is not for assets the platform already owns. An MCP server created by MCP
 Bridge from an existing API is already in Exchange; publishing a second,
 code-derived descriptor would create two catalog entries for one capability.
 
-### Collision check
+### Collision check Roadmap
 
-Before publishing, the SDK searches Exchange for an existing asset with the
-same endpoint, name, or derived tool signature. On a probable match it
-**refuses** and prints the existing asset's coordinates. Override with an
-explicit `--allow-duplicate`, which logs at `WARNING`.
+`donkey publish` doesn't run this check yet. As planned, before publishing the
+SDK will search Exchange for an existing asset with the same endpoint, name, or
+derived tool signature. On a probable match it will **refuse** and print the
+existing asset's coordinates, and a planned `--allow-duplicate` flag will
+override it with a `WARNING`.
 
 ## The `Publication` object
 
 The publication types are in `donkey_kit.experimental`, not `donkey_kit`, until
-the Exchange publication API is verified. They may change in any release until
-then.
+descriptor derivation (`preview()` and `export()`) is verified. They may change
+in any release until then. [`verify()`](#verifying-at-runtime-verify) works
+today; `preview()` and `export()` raise `NotImplementedError`.
 
 ```python
 from donkey_kit.experimental import Contact, Publication, PublicationAssetType
@@ -8917,7 +8924,8 @@ pub = Publication(
 )
 ```
 
-`asset_type` determines which descriptor is required and how it is generated:
+As planned, `asset_type` will determine which descriptor is required and how it
+is generated Roadmap:
 
 | `asset_type` | Descriptor | Generated from |
 |---|---|---|
@@ -8926,9 +8934,10 @@ pub = Publication(
 | `AGENT` | agent descriptor (no A2A surface) | framework introspection, best-effort |
 | `API` | OpenAPI / AsyncAPI | user-supplied file; no generation |
 
-## `descriptor="auto"` — deriving the spec from code
+## `descriptor="auto"` — deriving the spec from code Roadmap
 
-Hand-maintained catalog descriptors go stale within a sprint, so generation is
+This section is the planned design: a `Publication` doesn't derive its
+descriptor yet. Hand-maintained catalog descriptors go stale within a sprint, so generation is
 the core of this feature.
 
 Every supported framework already derives JSON Schema from function signatures,
@@ -8953,6 +8962,7 @@ descriptor="auto:check"    # generate, diff against committed file, fail on mism
 - **`auto`** (the default) imports your module, locates the tool and agent
   objects, and reads their already-computed schemas. No server, no network,
   works in CI. Importing user code executes it, so tool definitions must be
+  packages, in a planned table such as:
 
   ```toml
   [publication.entrypoints]
@@ -8967,15 +8977,15 @@ There is no AST-only mode. Parsing source can name a tool but cannot produce
 its schema without re-deriving it. Where importing your code is not acceptable,
 `donkey scan` (above) is the static, no-execution view.
 
-`donkey publish --cross-check` runs `auto` and `auto:live` and diffs them. A
-disagreement means either dynamic registration the object graph does not
-reflect, or a broken framework adapter.
+A planned `donkey publish --cross-check` will run `auto` and `auto:live` and diff
+them. A disagreement will mean either dynamic registration the object graph does
+not reflect, or a broken framework adapter.
 
   Type hints give the **shape**, not the **meaning** — `department: str` becomes
   `{"type": "string"}` and says nothing about which departments are valid, or
-  when to use this tool over a similar one. `auto` fails publication on a
-  description that is tautological or missing, and `preview()` reports
-  description quality.
+  when to use this tool over a similar one. `auto` will fail publication on a
+  description that is tautological or missing, and `preview()` will report
+  description quality. Today `donkey scan` already fails on such a description.
 
 ## Verifying at runtime: `verify()`
 
@@ -15857,17 +15867,20 @@ feature needs a token. Model calls never request that token. The features that
 would request it are listed in
 [Which features use the control plane](https://docs.donkey-kit.dev/reference/configuration.md#which-features-use-the-control-plane).
 In this release they are `donkey publish` and `donkey.registry.search()`,
-which also call Exchange, `donkey.registry.resolve_mcp()`, which reads
-Access Management, API Manager and Omni Gateway Manager, and
-`donkey.registry.explain()`, which reads Access Management, API Manager,
-Exchange and API Governance, and `donkey expose` and `donkey preflight`, which
+which also call Exchange, `donkey.registry.resolve_mcp()` and
+`resolve_agent()`, which read Access Management, API Manager and Omni Gateway
+Manager, and `donkey.registry.explain()`, which reads Access Management, API
+Manager, Exchange and API Governance. `donkey.tools.discover()` makes the
+`search()`, `explain()` and `resolve_mcp()` reads, and `Publication.verify()`
+and `donkey verify` read the published version from Exchange and the live
+server or agent through its gateway. `donkey expose` and `donkey preflight`
 read Access Management, Omni Gateway Manager, Exchange and API Manager, and
 (`expose` only) publish to Exchange, create an API Manager instance with its
 policies and deploy it; the rest are Roadmap.
 Otherwise the token endpoint is contacted only if your own code calls
 `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
-before making a network request, except `donkey.as_user()`, whose placeholder header is described below.
+before making a network request.
 
 | Destination / contract | Module | Classification | SDK use and official docs |
 |---|---|---|---|
@@ -15914,15 +15927,18 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Deliberately outside the boundary
 
-- A2A agent resolution and `Publication.preview()` are
-  Roadmap, not hidden dependencies. Today they
-  raise `NotImplementedError("blocked on verification: …")` before making any
+- `Publication.preview()` and `Publication.export()`, `donkey.tools.lock()`
+  and `donkey.registry.warm()` are Roadmap, not
+  hidden dependencies. Today they raise
+  `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.
-- `donkey.as_user()` forwards the user's token on model calls; the gateway
-  runs the exchange. The header the gateway reads the token from is not
-  confirmed yet (see the ledger, section 13). It is a placeholder that warns
-  once and that you override with `user_token_header`, so it is not
-  classified above. The token is sent only when your code enters `as_user()`.
+- `donkey.as_user()` forwards the user's token on model calls and on the MCP
+  tool sets bound in its block; the gateway runs the exchange. It adds no
+  platform API: the token rides only to the Model Proxy and the governed MCP
+  servers the block calls, as `Authorization: Bearer`, the header the gateway's
+  JWT Validation and on-behalf-of policies read (see the ledger, section 13).
+  You can move it with `user_token_header`. The token is sent only when your
+  code enters `as_user()`.
 - `LLMClient.list_models(live=True)` does not call `GET /models`: the Model
   Proxy has no model-catalog endpoint.
 - The application and business-group attribution header names are

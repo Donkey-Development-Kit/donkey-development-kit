@@ -76,10 +76,10 @@ agents in production.
 
 ## Architecture
 
-DDK sits inside your agent process. Today it speaks to the platform on two
-fronts: governed calls through the gateway, and telemetry to your
-observability stack. A third front, publishing assets to the control plane,
-is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
+DDK sits inside your agent process. It speaks to the platform on three
+fronts: governed calls through the gateway, telemetry to your observability
+stack, and the control plane, where it publishes your assets and discovers
+governed ones.
 
 **The AI control plane** is where the platform team manages the AI estate:
 the agent registry, cost control, gateway federation, and governance and
@@ -109,11 +109,12 @@ framework client your agent already uses and adds:
   decision, policy type, budget and correlation ID, exported to whatever
   observability stack you run (Grafana, Datadog, Jaeger, and others) and
   joined to the gateway's audit record through the correlation ID.
-- **Registry and agent-to-agent** Roadmap —
-  planned, not shipped: scanning your code to publish tools and agent cards
-  to the control plane, discovering governed MCP tools, and exposing your agent to other agents
-  over A2A through the gateway. Serving it over A2A, `donkey.serve()`, ships
-  today: see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+- **Registry and agent-to-agent** — `donkey scan` and `donkey publish` turn
+  your code into Exchange assets with their tools and agent cards,
+  `donkey.tools.discover()` binds governed MCP tools, and `donkey.serve()` and
+  `donkey expose` make your agent callable by other agents over A2A through the
+  gateway. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md), [Tool access](https://docs.donkey-kit.dev/tool-access.md) and
+  [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
 enforcement legible and actionable inside the agent. Nothing in DDK
