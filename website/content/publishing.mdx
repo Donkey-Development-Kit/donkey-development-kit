@@ -141,7 +141,7 @@ endpoint = "https://agents.acme.com/support-triage/"
 
 ```bash
 donkey publish --dry-run .          # the assets a publish would register
-donkey publish --dry-run . --json   # the same plan as canonical JSON
+donkey publish --dry-run . --json   # the same plan as canonical JSON (plan_format: 1)
 ```
 
 The dry run scans your code the way `donkey scan` does, then prints one
@@ -204,7 +204,7 @@ define.
 ```bash
 donkey publish .            # publish what changed (--if-changed is the default)
 donkey publish . --always   # publish even when the digest matches the latest version
-donkey publish . --json     # the plan as JSON, each asset with its status and detail
+donkey publish . --json     # each asset with its status and detail (publish_format: 1)
 ```
 
 Without `--dry-run`, `donkey publish` registers each MCP server in the plan as
@@ -271,7 +271,12 @@ and `--json` still prints every asset with its `status` and `detail`:
 | `unchanged` | The latest version already has this digest, and its publish is complete. |
 | `incomplete` | The version is published, but registering its endpoint, writing its page, or setting the asset's name and description was refused. |
 | `failed` | Exchange refused the asset, and nothing was published for it. |
-| `not_attempted` | An earlier asset failed, so this one was not tried. |
+| `not_attempted` | An earlier asset failed, or an issue stopped the publish, so this one was not tried. |
+
+When the scan or the declaration has an issue, nothing is sent: `--json`
+prints every asset `not_attempted`, with the issues, and the command exits
+`1`. Each `--json` document carries a format key; see
+[JSON output](/cli#json-output).
 
 The refusal and its fix go to stderr, and a refused asset's `detail` ends with
 the same fix. A common one: a connected app without `manage:exchange` can
@@ -378,6 +383,12 @@ JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
 annotation, so the fix shows on the run's page. Re-running the failed job
 finishes the publish (see [When a publish fails](#when-a-publish-fails)).
+
+The action reads only the document of its own release: `plan_format: 1` on a
+dry run, `publish_format: 1` otherwise (see [JSON output](/cli#json-output)).
+If the `donkey-kit` input installs a release that prints another, the action
+writes no summary and no outputs. It fails the step with an annotation that
+names the format it found, even when the publish succeeded.
 
 ## From GitLab CI
 

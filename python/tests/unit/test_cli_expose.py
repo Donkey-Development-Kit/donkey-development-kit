@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from _fake_anypoint import GATEWAY, FakeAnypoint
 from _fake_exchange import ORG
+from _json_shapes import EXPOSE_KEYS, EXPOSE_STEP_KEYS, assert_shape
 from typer.testing import CliRunner
 
 from donkey_kit.cli import app
@@ -149,6 +150,8 @@ def test_json_report(repo: Path, anypoint: FakeAnypoint) -> None:
 
     assert result.exit_code == 0, result.output
     report = json.loads(result.stdout)
+    assert_shape(report, EXPOSE_KEYS, "steps", EXPOSE_STEP_KEYS)
+    assert report["issues"] == []
     assert report["ok"] is True
     assert report["dry_run"] is True
     assert report["url"] == URL
@@ -170,6 +173,32 @@ def test_declaration_issues_exit_1_and_send_nothing(repo: Path, anypoint: FakeAn
     assert result.exit_code == 1
     assert "missing-target  donkey.expose" in result.stderr
     assert "nothing was sent" in result.stderr
+    assert anypoint.requests == []
+
+
+@pytest.mark.parametrize(
+    ("command", "dry_run"),
+    [(["preflight"], True), (["expose"], False), (["expose", "--dry-run"], True)],
+)
+def test_json_with_declaration_issues_prints_the_report(
+    repo: Path, anypoint: FakeAnypoint, command: list[str], dry_run: bool
+) -> None:
+    """#1427: a document on stdout, as well as the issues on stderr."""
+    (repo / ".donkey-kit.toml").write_text(CONFIG.replace(f'target = "{GATEWAY}"\n', ""))
+
+    result = runner.invoke(app, ["--json", *command, "--path", str(repo)])
+
+    assert result.exit_code == 1
+    report = json.loads(result.stdout)
+    assert_shape(report, EXPOSE_KEYS, "steps", EXPOSE_STEP_KEYS)
+    assert (report["ok"], report["dry_run"], report["url"], report["steps"]) == (
+        False,
+        dry_run,
+        None,
+        [],
+    )
+    assert [i["kind"] for i in report["issues"]] == ["missing-target"]
+    assert "missing-target  donkey.expose" in result.stderr
     assert anypoint.requests == []
 
 

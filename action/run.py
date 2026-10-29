@@ -17,10 +17,14 @@ sets them in its own ``env:`` still works), and runs
   or each issue in the JSON when it printed none.
 
 donkey prints the JSON when a publish fails too (#1426), so the summary and
-the outputs say what was published before the failure.
+the outputs say what was published before the failure. The JSON must be the
+document this action reads, ``plan_format`` 1 for a dry run and
+``publish_format`` 1 otherwise (#1427): any other is not read, and the step
+fails with an annotation naming the format it found.
 
-It exits with donkey's exit code. Standard library only: it runs before
-anything but donkey-kit is installed.
+It exits with donkey's exit code, or 1 when donkey exited 0 with a document
+this action does not read. Standard library only: it runs before anything but
+donkey-kit is installed.
 """
 
 from __future__ import annotations
@@ -42,6 +46,9 @@ CREDENTIALS = {
 STATUSES = ("published", "unchanged", "incomplete", "failed", "not_attempted", "skipped")
 # The statuses of a publish that did not finish.
 UNFINISHED = ("incomplete", "failed", "not_attempted")
+# The document donkey publish --json prints, as (format key, version), for a dry
+# run and for a publish: PLAN_FORMAT and PUBLISH_FORMAT in donkey-kit.
+FORMATS = {True: ("plan_format", 1), False: ("publish_format", 1)}
 
 
 def main() -> int:
@@ -66,13 +73,32 @@ def main() -> int:
     result = Path(env.get("RUNNER_TEMP") or ".") / "donkey-publish.json"
     result.write_text(done.stdout, encoding="utf-8")
     data = _parse(done.stdout)
+    code = done.returncode
+    problem = None if data is None else unread(data, dry_run=dry_run)
+    if problem is not None:
+        print(f"::error title=donkey publish::{escape(problem)}", flush=True)
+        data, code = None, code or 1
     if data is not None:
         _append(env.get("GITHUB_STEP_SUMMARY"), summary(data, dry_run=dry_run))
         _append(env.get("GITHUB_OUTPUT"), outputs(data, result))
     if done.returncode != 0:
         for line in failures(done.stderr, data, done.returncode):
             print(f"::error title=donkey publish::{escape(line)}", flush=True)
-    return done.returncode
+    return code
+
+
+def unread(data: Mapping[str, Any], *, dry_run: bool) -> str | None:
+    """Why this action does not read ``data``, or ``None`` when it does: its
+    format key is not the one in ``FORMATS``."""
+    key, version = FORMATS[dry_run]
+    if data.get(key) == version:
+        return None
+    found = [f"{k} {data[k]}" for k in sorted(data) if k.endswith("_format")]
+    return (
+        f"donkey printed a JSON document with {', '.join(found) or 'no format key'}, "
+        f"and this action reads {key} {version}; use the donkey-kit of the action's "
+        "own release (leave the donkey-kit input empty)"
+    )
 
 
 def failures(stderr: str, data: Mapping[str, Any] | None, code: int) -> list[str]:
@@ -105,6 +131,7 @@ def summary(data: Mapping[str, Any], *, dry_run: bool) -> str:
         "",
     ]
     assets = data.get("assets") or []
+    issues = data.get("issues") or []
     if assets:
         if dry_run:
             lines += ["| Type | Asset | Digest |", "| --- | --- | --- |"]
@@ -116,7 +143,8 @@ def summary(data: Mapping[str, Any], *, dry_run: bool) -> str:
                 for a in assets
             ]
             counts = [(s, sum(a.get("status") == s for a in assets)) for s in UNFINISHED]
-            if any(n for _, n in counts):
+            # An issue stops the publish before it starts; the issues say why.
+            if any(n for _, n in counts) and not issues:
                 told = ", ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts if n)
                 lines += [
                     "",
@@ -128,7 +156,6 @@ def summary(data: Mapping[str, Any], *, dry_run: bool) -> str:
                 ]
     else:
         lines.append("No MCP server or agent was found.")
-    issues = data.get("issues") or []
     if issues:
         lines += [
             "",

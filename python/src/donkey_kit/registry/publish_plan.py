@@ -65,7 +65,8 @@ __all__ = [
     "plan_publication",
 ]
 
-# Bumped when the JSON shape changes incompatibly, as SCAN_FORMAT is.
+# The version of the dry run's JSON document, bumped when its shape changes
+# incompatibly, as SCAN_FORMAT is. A publish and a verify print their own (#1427).
 PLAN_FORMAT = 1
 
 _TABLE_KEYS = frozenset({"group_id", "version", "protocol_version", "provider", "assets"})
@@ -177,16 +178,7 @@ class PublishPlan:
                 }
                 for a in self.assets
             ],
-            "issues": [
-                {
-                    "kind": i.kind,
-                    "subject": i.subject,
-                    "path": i.path,
-                    "line": i.line,
-                    "detail": i.detail,
-                }
-                for i in self.issues
-            ],
+            "issues": [i.to_dict() for i in self.issues],
         }
 
     def to_json(self) -> str:

@@ -15,6 +15,10 @@ environment.
 created and exits non-zero when anything stands in the way, such as a missing
 gateway, environment or connected-app scope.
 
+``--json`` prints the report (``expose_format`` 1), also when the declaration
+has an issue: then ``ok`` is false, ``steps`` is empty and ``issues`` lists
+them. Issues still go to stderr too.
+
 Exit codes: 0 when every step is present, created or planned; 1 when a step is
 missing, differs from the declaration or failed, or the declaration has an
 issue (nothing is sent); 2 when there is nothing at the path or the config is
@@ -118,6 +122,8 @@ def _run(
     publication = plan_publication(result, path, default_group_id=cfg.org_id)
     plan = plan_exposure(publication, path, service=service, target=target)
     if plan.issues:
+        if as_json:
+            _echo_json(ExposeReport((), dry_run=dry_run, issues=plan.issues))
         count = len(plan.issues)
         typer.secho(f"{count} issue{'' if count == 1 else 's'}", fg="red", err=True)
         for i in plan.issues:
@@ -131,10 +137,14 @@ def _run(
         raise typer.Exit(2) from exc
     report = asyncio.run(_expose(cfg, plan, result, dry_run=dry_run))
     if as_json:
-        typer.echo(json.dumps(report.to_dict(), sort_keys=True, indent=2))
+        _echo_json(report)
     else:
         _print(plan, report)
     raise typer.Exit(0 if report.ok else 1)
+
+
+def _echo_json(report: ExposeReport) -> None:
+    typer.echo(json.dumps(report.to_dict(), sort_keys=True, indent=2))
 
 
 async def _expose(
