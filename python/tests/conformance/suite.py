@@ -181,7 +181,8 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
         "tests/conformance/test_handlers_cannot_unrefuse.py::test_a_success_comes_only_from_a_new_governed_request",
     ),
     "custom_policy_typed": (
-        "tests/conformance/test_custom_policy_typed.py::test_a_custom_refusal_is_typed_handled_and_named_on_the_span",
+        "tests/conformance/test_custom_policy_typed.py::test_a_custom_refusal_is_typed_and_handled",
+        "tests/conformance/test_custom_policy_typed.py::test_a_custom_refusal_is_named_on_the_span",
     ),
     "agent_killed_stops_cleanly": (
         "tests/conformance/test_agent_killed_stops_cleanly.py::test_a_kill_stops_the_agent_and_its_pace_loops",

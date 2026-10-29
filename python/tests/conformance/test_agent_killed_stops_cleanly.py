@@ -11,9 +11,10 @@ whatever framework sits between the call and the caller:
 * spans are flushed before the call unwinds.
 
 The gateway replies with the committed live capture (docs/verified-apis.md §4,
-#694). ``importorskip``-guarded per framework. CrewAI is exempt
-(``KNOWN_LIMITATIONS``): its provider owns the transport, so its kill never
-reaches ours.
+#694). The surfaces are every adapter factory that sends through the SDK's
+transport (``transport_surfaces.py``, #1441). ``importorskip``-guarded per
+framework. CrewAI is exempt (``KNOWN_LIMITATIONS``): its provider owns the
+transport, so its kill never reaches ours.
 """
 
 from __future__ import annotations
@@ -25,7 +26,12 @@ import pytest
 
 # Sibling data modules (tests/conformance/ is not a package).
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS
-from test_handlers_cannot_unrefuse import SURFACES
+from transport_surfaces import (
+    FACTORIES,
+    SURFACES,
+    framework_transport_adapters,
+    transport_factories,
+)
 
 from donkey_kit import AgentKilled, BudgetReserveReached, Donkey, DonkeyConfig, PolicyViolation
 from donkey_kit._testing import http_clients, swap_transport
@@ -83,7 +89,13 @@ async def _pace_loop(budget: Budget) -> None:
 def test_scenario_is_registered() -> None:
     assert _SCENARIO in CONFORMANCE_SCENARIOS
     exempt = {a for a, limits in KNOWN_LIMITATIONS.items() if _SCENARIO in limits}
-    assert exempt == {"crewai"}
+    assert exempt == framework_transport_adapters() == {"crewai"}
+
+
+def test_every_transport_factory_runs_the_scenario() -> None:
+    # The README says every adapter but CrewAI stops cleanly on a kill (#1441).
+    assert set(FACTORIES) == set(SURFACES) - {"openai"}
+    assert set(FACTORIES.values()) == transport_factories()
 
 
 @pytest.mark.parametrize("surface", SURFACES)

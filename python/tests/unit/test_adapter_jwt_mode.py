@@ -89,10 +89,24 @@ async def _adk_model(donkey: Donkey) -> None:
         pass
 
 
+async def _adk_gemini(donkey: Donkey) -> None:
+    pytest.importorskip("google.adk.models")
+    from google.adk.models.llm_request import LlmRequest
+    from google.genai import types
+
+    model = donkey.adk.gemini("m")
+    request = LlmRequest(
+        model=model.model,
+        contents=[types.Content(role="user", parts=[types.Part(text="hi")])],
+    )
+    async for _ in model.generate_content_async(request):
+        pass
+
+
 @pytest.mark.parametrize(
     "call",
-    [_llamaindex, _agent_framework, _adk_model],
-    ids=["llamaindex", "agent_framework", "adk_model"],
+    [_llamaindex, _agent_framework, _adk_model, _adk_gemini],
+    ids=["llamaindex", "agent_framework", "adk_model", "adk_gemini"],
 )
 async def test_async_call_carries_the_jwt(call: Callable[[Donkey], Awaitable[None]]) -> None:
     seen: list[httpx.Request] = []
