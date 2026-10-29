@@ -529,9 +529,11 @@ jobs:
       # Dev tooling is the `dev` dependency group (#943), not an extra.
       # -c locks the resolve (ADR 0007 rule 3, #948), one file per matrix leg
       # (combo "adapter-contract-<extra>"); refresh with scripts/compile_constraints.py.
+      # The contract-<extra> group adds the leg's MCP binding packages (#1318).
       - run: >-
           python -m pip install --upgrade pip &&
           pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev
+          --group "contract-$DONKEY_CONTRACT_EXTRA"
           -c "constraints/adapter-contract-${DONKEY_CONTRACT_EXTRA}-py3.12.txt"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

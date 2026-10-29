@@ -178,13 +178,15 @@ _COMBOS: tuple[Combo, ...] = (
     ),
     # One combo per adapter-contract matrix leg: that job installs
     # `.[llm,local,$DONKEY_CONTRACT_EXTRA]` — no `cli`, no `otel` — so each
-    # leg's own compile must use exactly that, not the base combo's extras.
+    # leg's own compile must use exactly that, not the base combo's extras —
+    # plus the leg's `contract-<extra>` group, its MCP binding packages (#1318).
     Combo(
         "adapter-contract-langgraph",
         ("llm", "local", "langgraph"),
         True,
         ("3.12",),
         "adapter-contract(langgraph)",
+        groups=("contract-langgraph",),
     ),
     Combo(
         "adapter-contract-adk",
@@ -192,6 +194,7 @@ _COMBOS: tuple[Combo, ...] = (
         True,
         ("3.12",),
         "adapter-contract(adk)",
+        groups=("contract-adk",),
     ),
     Combo(
         "adapter-contract-strands",
@@ -199,6 +202,7 @@ _COMBOS: tuple[Combo, ...] = (
         True,
         ("3.12",),
         "adapter-contract(strands)",
+        groups=("contract-strands",),
     ),
     Combo(
         "adapter-contract-agent_framework",
@@ -206,6 +210,7 @@ _COMBOS: tuple[Combo, ...] = (
         True,
         ("3.12",),
         "adapter-contract(agent_framework)",
+        groups=("contract-agent_framework",),
     ),
     Combo(
         "adapter-contract-openai-agents",
@@ -213,6 +218,7 @@ _COMBOS: tuple[Combo, ...] = (
         True,
         ("3.12",),
         "adapter-contract(openai-agents)",
+        groups=("contract-openai-agents",),
     ),
     Combo(
         "adapter-contract-anthropic",
@@ -220,6 +226,7 @@ _COMBOS: tuple[Combo, ...] = (
         True,
         ("3.12",),
         "adapter-contract(anthropic)",
+        groups=("contract-anthropic",),
     ),
     Combo(
         "adapter-contract-crewai",
@@ -227,6 +234,7 @@ _COMBOS: tuple[Combo, ...] = (
         True,
         ("3.12",),
         "adapter-contract(crewai)",
+        groups=("contract-crewai",),
     ),
     Combo(
         "adapter-contract-llamaindex",
@@ -234,6 +242,7 @@ _COMBOS: tuple[Combo, ...] = (
         True,
         ("3.12",),
         "adapter-contract(llamaindex)",
+        groups=("contract-llamaindex",),
     ),
     # Tool-only locks (#763): no extras, no dev group, no donkey-kit deps.
     Combo(

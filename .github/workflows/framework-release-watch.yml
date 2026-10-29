@@ -140,7 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          if pip install --dry-run -e ".[llm,local,$EXTRA]" --group dev \
+          if pip install --dry-run -e ".[llm,local,$EXTRA]" --group dev --group "contract-$EXTRA" \
               -c "$RUNNER_TEMP/constraints.txt" > "$RUNNER_TEMP/resolve.log" 2>&1; then
             echo "mode=locked" >> "$GITHUB_OUTPUT"
           else
@@ -155,9 +155,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$MODE" = locked ]; then
-            pip install -e ".[llm,local,$EXTRA]" --group dev -c "$RUNNER_TEMP/constraints.txt"
+            pip install -e ".[llm,local,$EXTRA]" --group dev --group "contract-$EXTRA" -c "$RUNNER_TEMP/constraints.txt"
           else
-            pip install -e ".[llm,local,$EXTRA]" --group dev "$PACKAGE==$LATEST"
+            pip install -e ".[llm,local,$EXTRA]" --group dev --group "contract-$EXTRA" "$PACKAGE==$LATEST"
           fi
       - name: Signature verification (§8), fail if not installed
         id: verify

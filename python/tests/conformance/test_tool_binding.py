@@ -22,10 +22,10 @@ take an allow-list of tool names and cannot rename one tool, so
 A binding skips when its packages are not installed, except in the
 ``adapter-contract`` CI leg for its framework when that leg's lock pins them:
 there ``DONKEY_CONTRACT_EXTRA`` turns the skip into a failure, as in
-``test_adapter_contract.py``. Today that covers ADK, Strands, OpenAI Agents and
-Agent Framework; the LangGraph, LlamaIndex, Anthropic and CrewAI locks do not
-pin their binding packages, and ``test_ci_requires_the_bindings_its_locks_pin``
-keeps that list honest.
+``test_adapter_contract.py``. Every leg's lock pins its binding: ADK, Strands,
+OpenAI Agents and Agent Framework through their extras, LangGraph, LlamaIndex,
+Anthropic and CrewAI through the leg's ``contract-<extra>`` dependency group
+(#1318). ``test_ci_requires_the_bindings_its_locks_pin`` keeps that honest.
 """
 
 from __future__ import annotations
@@ -484,7 +484,7 @@ def test_no_other_tool_binding_scenario_is_exempt() -> None:
 
 
 def test_ci_requires_the_bindings_its_locks_pin() -> None:
-    """The CI legs that fail rather than skip a binding: the ones whose lock pins
-    its packages. A lock change moves a binding in or out of this set on purpose."""
+    """Every CI leg fails rather than skips its binding, because every leg's lock
+    pins its packages (#1318). A lock that stops pinning one fails here."""
     required = {b.adapter for b in BINDINGS.values() if _ci_requires(b)}
-    assert required == {"adk", "strands", "openai_agents", "agent_framework"}
+    assert required == set(ADAPTERS)

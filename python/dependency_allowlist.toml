@@ -190,3 +190,17 @@ reviewed = 2026-10-10
 [packages.uv]
 reason = "lock: `uv pip compile` behind scripts/compile_constraints.py, which lock-refresh.yml runs nightly to refresh constraints/ (#763)."
 reviewed = 2026-10-10
+
+# --- contract-* groups: the adapter-contract legs' MCP bindings (not published, #1318) ---
+
+[packages.langchain-mcp-adapters]
+reason = "contract-langgraph: MultiServerMCPClient, the class ToolSet.langgraph() returns tools from; the leg's tool-binding tests fail without it (#1318)."
+reviewed = 2026-10-29
+
+[packages.llama-index-tools-mcp]
+reason = "contract-llamaindex: BasicMCPClient and McpToolSpec behind ToolSet.llamaindex(); the leg's tool-binding tests fail without it (#1318)."
+reviewed = 2026-10-29
+
+[packages.crewai-tools]
+reason = "contract-crewai: MCPServerAdapter behind ToolSet.crewai(), with its [mcp] extra (mcpadapt); the leg's tool-binding tests fail without it (#1318)."
+reviewed = 2026-10-29
