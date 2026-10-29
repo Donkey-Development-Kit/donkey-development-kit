@@ -188,7 +188,7 @@ Global options go before the command (`donkey --json init`):
 |---|---|---|
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
-| `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+| `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous', 'ciba:pending=2,then=approve'. |
 
 `donkey preflight`: Check, read-only, that a service can be exposed.
 

@@ -1,0 +1,28 @@
+{
+  "ciba": "HTTP 401 authorization_pending (Retry-After) / 403 access_denied on tools/call",
+  "distributions": {
+    "google-adk": "2.13.0",
+    "mcp": "2.3.0"
+  },
+  "observed": {
+    "adk": {
+      "denied": {
+        "body_visible": false,
+        "run_async": {
+          "returned": "builtins.dict",
+          "text": "{'error': 'MCP tool execution failed: Server returned an error response'}"
+        }
+      },
+      "pending": {
+        "body_visible": false,
+        "run_async": {
+          "returned": "builtins.dict",
+          "text": "{'error': 'MCP tool execution failed: Server returned an error response'}"
+        }
+      }
+    }
+  },
+  "probe": "probe_ciba.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}

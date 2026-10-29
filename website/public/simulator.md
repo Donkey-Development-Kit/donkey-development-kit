@@ -193,6 +193,21 @@ accepts `ms`, `s`, or `m` (a bare number is seconds).
   `x-llm-proxy-ratelimit` header only on the `200` — matching the real gateway.
   The simulator never emits a header shape the gateway does not.
 
+### `ciba:pending=[,then=approve|deny]`
+
+Plays the OAuth2 OBO policy's CIBA step-up. The first `N` calls get the captured `401`
+`authorization_pending` (a typed [`GatewayApprovalPending`](https://docs.donkey-kit.dev/errors.md), with its
+`retry_after`). Then the user "answers": with `then=approve` (the default) every later call
+goes through, and with `then=deny` it gets the `403` `access_denied`
+([`GatewayApprovalDenied`](https://docs.donkey-kit.dev/errors.md)).
+
+```bash
+donkey mock --scenario ciba:pending=2,then=approve
+```
+
+The count is the scenario's own. The simulator does not model the live policy's per-user
+cache or its silent expiry, so test your own deadline separately.
+
 ### `request_limit:limit=<requests>,window=<duration>`
 
 Runs a **request counter** for the gateway's `rate-limiting` policy, which

@@ -1,0 +1,85 @@
+{
+  "ciba": "HTTP 401 authorization_pending (Retry-After) / 403 access_denied on tools/call",
+  "distributions": {
+    "mcp": "1.30.0"
+  },
+  "observed": {
+    "mcp_sdk": {
+      "denied": {
+        "body_visible": false,
+        "raised": [
+          {
+            "code": null,
+            "data": null,
+            "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+            "type": "builtins.ExceptionGroup"
+          },
+          {
+            "code": null,
+            "data": null,
+            "http_status": 403,
+            "message": "Client error '403 Forbidden' for url 'http://127.0.0.1:52299/mcp/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+            "type": "httpx.HTTPStatusError"
+          },
+          {
+            "code": null,
+            "data": null,
+            "message": "Cancelled via cancel scope 108646210",
+            "type": "asyncio.exceptions.CancelledError"
+          },
+          {
+            "code": null,
+            "data": null,
+            "message": "Cancelled via cancel scope 108646210",
+            "type": "asyncio.exceptions.CancelledError"
+          },
+          {
+            "code": null,
+            "data": null,
+            "message": "",
+            "type": "anyio._core._exceptions.WouldBlock"
+          }
+        ]
+      },
+      "pending": {
+        "body_visible": false,
+        "raised": [
+          {
+            "code": null,
+            "data": null,
+            "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+            "type": "builtins.ExceptionGroup"
+          },
+          {
+            "code": null,
+            "data": null,
+            "http_status": 401,
+            "message": "Client error '401 Unauthorized' for url 'http://127.0.0.1:51483/mcp/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401",
+            "type": "httpx.HTTPStatusError"
+          },
+          {
+            "code": null,
+            "data": null,
+            "message": "Cancelled via cancel scope 106974690",
+            "type": "asyncio.exceptions.CancelledError"
+          },
+          {
+            "code": null,
+            "data": null,
+            "message": "Cancelled via cancel scope 106974690",
+            "type": "asyncio.exceptions.CancelledError"
+          },
+          {
+            "code": null,
+            "data": null,
+            "message": "",
+            "type": "anyio._core._exceptions.WouldBlock"
+          }
+        ]
+      }
+    }
+  },
+  "probe": "probe_ciba.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}

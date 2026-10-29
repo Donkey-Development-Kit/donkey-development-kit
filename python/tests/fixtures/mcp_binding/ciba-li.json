@@ -1,0 +1,157 @@
+{
+  "ciba": "HTTP 401 authorization_pending (Retry-After) / 403 access_denied on tools/call",
+  "distributions": {
+    "anthropic": "2.3.0",
+    "llama-index-tools-mcp": "0.6.0",
+    "mcp": "2.3.0"
+  },
+  "observed": {
+    "anthropic": {
+      "denied": {
+        "body_visible": false,
+        "call": {
+          "raised": [
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        },
+        "func": {
+          "raised": [
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        }
+      },
+      "pending": {
+        "body_visible": false,
+        "call": {
+          "raised": [
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        },
+        "func": {
+          "raised": [
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        }
+      }
+    },
+    "llamaindex": {
+      "denied": {
+        "acall": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        },
+        "async_fn": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        },
+        "body_visible": false
+      },
+      "pending": {
+        "acall": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        },
+        "async_fn": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        },
+        "body_visible": false
+      }
+    }
+  },
+  "probe": "probe_ciba.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}

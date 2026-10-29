@@ -19,7 +19,7 @@ def mock(
         help=(
             "Fault-injection rule, repeatable. e.g. 'pii_block:every=5', "
             "'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', "
-            "'injection:on-pattern=ignore previous'."
+            "'injection:on-pattern=ignore previous', 'ciba:pending=2,then=approve'."
         ),
     ),
 ) -> None:
@@ -40,7 +40,9 @@ def mock(
     fails every Nth call, ``injection`` matches request text, ``budget``
     runs a real windowed token counter (429 on exhaustion), and
     ``request_limit`` runs a request counter with the ``x-ratelimit-*`` headers
-    (the request-rate-limit 429 once spent, #974). Repeatable.
+    (the request-rate-limit 429 once spent, #974), and ``ciba`` plays the OBO policy's
+    step-up: ``pending=N`` calls get the CIBA 401, then the user approves (calls pass)
+    or, with ``then=deny``, denies (calls get the 403, #214). Repeatable.
 
     Needs the ``[local]`` extra (starlette + uvicorn); this is NOT one of the
     verification-gated platform commands, so a missing extra is an install

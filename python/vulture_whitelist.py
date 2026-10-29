@@ -160,6 +160,9 @@ requested_at  # unused variable (src/donkey_kit/core/approvals.py)
 # __signature__.
 _.require_approval  # unused method (src/donkey_kit/tools/session.py)
 _._check_approvals  # unused method (src/donkey_kit/tools/session.py)
+# ToolSet.wait_for_gateway_approval (#214) is public API; only user code and
+# tests/unit/test_step_up_wait.py call it.
+_.wait_for_gateway_approval  # unused method (src/donkey_kit/tools/session.py)
 # ToolSet staleness after a cached discover() (#221) is public API; only user
 # code and tests/unit/test_discover.py read it.
 _.discovered_at  # unused property (src/donkey_kit/tools/session.py)

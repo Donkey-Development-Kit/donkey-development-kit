@@ -2861,6 +2861,15 @@ conversation, for up to an hour. The policy's initiation failure (`502`,
 `ciba_initiation_failed`) has not been captured and stays an
 `UpstreamModelError`.
 
+The SDK does not retry a pending approval on its own. To wait for one while listing an
+MCP server's tools, use `toolset.wait_for_gateway_approval("2m")`: it re-sends the
+`tools/list` after each `retry_after` until the user approves, raises
+`GatewayApprovalDenied` at once if they deny, and raises the last
+`GatewayApprovalPending` when the timeout passes. A tool *call* is not retried: the
+framework MCP clients lose the response body that tells a pending approval from a bad
+credential, so handle `GatewayApprovalPending` where your framework lets you. `donkey mock
+--scenario ciba:pending=2` plays the sequence offline.
+
 The Injection Protection shape is live-verified against a deployed proxy
 (#669); `classify()` keys on the header discriminator alone for it, not the
 body.
@@ -5884,6 +5893,21 @@ accepts `ms`, `s`, or `m` (a bare number is seconds).
   `x-llm-proxy-ratelimit` header only on the `200` — matching the real gateway.
   The simulator never emits a header shape the gateway does not.
 
+### `ciba:pending=[,then=approve|deny]`
+
+Plays the OAuth2 OBO policy's CIBA step-up. The first `N` calls get the captured `401`
+`authorization_pending` (a typed [`GatewayApprovalPending`](https://docs.donkey-kit.dev/errors.md), with its
+`retry_after`). Then the user "answers": with `then=approve` (the default) every later call
+goes through, and with `then=deny` it gets the `403` `access_denied`
+([`GatewayApprovalDenied`](https://docs.donkey-kit.dev/errors.md)).
+
+```bash
+donkey mock --scenario ciba:pending=2,then=approve
+```
+
+The count is the scenario's own. The simulator does not model the live policy's per-user
+cache or its silent expiry, so test your own deadline separately.
+
 ### `request_limit:limit=<requests>,window=<duration>`
 
 Runs a **request counter** for the gateway's `rate-limiting` policy, which
@@ -6343,7 +6367,7 @@ Global options go before the command (`donkey --json init`):
 |---|---|---|
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
-| `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+| `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous', 'ciba:pending=2,then=approve'. |
 
 `donkey preflight`: Check, read-only, that a service can be exposed.
 

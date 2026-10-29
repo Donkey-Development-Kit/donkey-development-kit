@@ -326,6 +326,13 @@ def test_the_binding_list_is_every_binding() -> None:
         for name in vars(ToolSet)
         if not name.startswith("_")
         and callable(getattr(ToolSet, name))
-        and name not in {"filter", "descriptor_tokens", "require_approval", "describe"}
+        and name
+        not in {
+            "filter",
+            "descriptor_tokens",
+            "require_approval",
+            "describe",
+            "wait_for_gateway_approval",
+        }
     }
     assert bindings == set(_BINDINGS)

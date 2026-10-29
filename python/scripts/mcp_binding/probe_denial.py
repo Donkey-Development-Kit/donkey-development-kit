@@ -39,14 +39,16 @@ def _chain(exc: BaseException) -> list[dict[str, Any]]:
             continue
         seen.add(id(cur))
         error = getattr(cur, "error", None)
-        out.append(
-            {
-                "type": f"{type(cur).__module__}.{type(cur).__qualname__}",
-                "message": str(cur)[:300],
-                "code": getattr(error, "code", None),
-                "data": getattr(error, "data", None),
-            }
-        )
+        entry = {
+            "type": f"{type(cur).__module__}.{type(cur).__qualname__}",
+            "message": str(cur)[:300],
+            "code": getattr(error, "code", None),
+            "data": getattr(error, "data", None),
+        }
+        status = getattr(getattr(cur, "response", None), "status_code", None)
+        if isinstance(status, int):  # an HTTP error response rode along (#214)
+            entry["http_status"] = status
+        out.append(entry)
         stack.extend(getattr(cur, "exceptions", ()) or ())
         for nxt in (cur.__cause__, cur.__context__):
             if nxt is not None:
