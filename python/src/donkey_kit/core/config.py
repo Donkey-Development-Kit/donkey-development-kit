@@ -634,9 +634,10 @@ class DonkeyConfig:
         ``bearer`` auth modes the token comes from the caller's ``AuthProvider``,
         never from those files, so it always counts as outside them. ``code_credential``
         names another credential supplied in code, such as the token of a
-        ``Donkey(auth=...)`` provider, which counts as outside them too.
+        ``Donkey(auth=...)`` provider or of ``donkey.as_user()``, which counts as
+        outside them too, in every auth mode.
         """
-        runtime_credential = code_credential
+        runtime = [code_credential] if code_credential else []
         if need == "control_plane":
             key, url = "base_url", self.control_plane_url
             credentials: tuple[str, ...] = ("client_id", "client_secret")
@@ -646,10 +647,10 @@ class DonkeyConfig:
             key, url = "llm_proxy_url", self.llm_proxy_url
             if self.llm_proxy_auth == "jwt":
                 credentials = ("llm_proxy_wallet_client_id",)
-                runtime_credential = "the JWT from the llm_auth provider"
+                runtime.insert(0, "the JWT from the llm_auth provider")
             elif self.llm_proxy_auth == "bearer":
                 credentials = ("llm_proxy_key",)
-                runtime_credential = "the token from the llm_auth provider"
+                runtime.insert(0, "the token from the llm_auth provider")
             else:
                 credentials = ("llm_proxy_client_id", "llm_proxy_client_secret", "llm_proxy_key")
         else:
@@ -669,8 +670,7 @@ class DonkeyConfig:
             for name in credentials
             if getattr(self, name) and self.source_of(name).kind not in _WORKDIR_KINDS
         ]
-        if runtime_credential:
-            outside.append(runtime_credential)
+        outside.extend(runtime)
         if outside:
             raise _binding_error(
                 key=key,
@@ -678,7 +678,7 @@ class DonkeyConfig:
                 url=url,
                 origin=origin,
                 credentials=outside,
-                offer_local_file=runtime_credential is None,
+                offer_local_file=not runtime,
             )
 
 

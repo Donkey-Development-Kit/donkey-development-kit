@@ -372,7 +372,10 @@ request either plane sends passes the same origin check.
   is set in the environment. The check runs before a credential leaves on
   either plane: in `validated()` for model calls and the registry, before each
   control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
-  requested.
+  requested. The `donkey.as_user()` token counts as set in code too. It is
+  checked against `llm_proxy_url` when the scope is built, and against
+  `base_url`, where discovery read the MCP gateway URLs from, before a
+  discovered `ToolSet` sends it (#1439).
   Provenance stores a keyed digest of each loaded value (the key is random per
   process), so `asdict()` copies no secret and a config rebuilt in another
   process keeps its URL sources but treats its credentials as set in code. A

@@ -40,6 +40,14 @@ platform request and needs no connected-app credentials.
   proxy, and on the MCP tool sets you [bind](/tool-access/binding#acting-for-a-user)
   inside the block. Calls to the Anypoint platform keep the service's own
   credentials, and a request to any other origin never carries it.
+- **Never to an untrusted project URL.** You pass the token in code, so it
+  follows the same rule as any credential that doesn't come from the project
+  config files. If `llm_proxy_url` comes from the working directory's
+  `.donkey-kit.toml` or `.donkey-kit.local.toml`, `as_user()` raises a
+  `ConfigError` unless `DONKEY_TRUST_PROJECT_CONFIG` is set. A discovered MCP
+  tool set does the same check for `base_url`, the source of its server URLs.
+  To fix it, set the URL in the environment or set the opt-in. See
+  [Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
 
 ## Configuring the header
 

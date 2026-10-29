@@ -125,6 +125,13 @@ async with donkey.as_user(token=user_token):
   provider for that audience first.
 - A `401` or `403` on the user's token raises `AuthError` without retrying: the
   SDK never falls back to your service's credential.
+- Discovery reads the server URLs from the control plane at `base_url`. If
+  `base_url` comes from the working directory's `.donkey-kit.toml` or
+  `.donkey-kit.local.toml`, a discovered set sends the user's token only when
+  `base_url` is a regional Anypoint host or `DONKEY_TRUST_PROJECT_CONFIG` is set.
+  Otherwise listing or binding inside the block raises `ConfigError` before
+  anything is sent. See
+  [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 
   **A whole-server binding can't be checked.** `adk()`, `strands()`,
   `openai_agents()`, `agent_framework()` and `crewai()` hand each server to the
