@@ -132,6 +132,7 @@ CI_INSTALLS: dict[str, str | None] = {
     "adapter-contract": (
         "python -m pip install --upgrade pip && "
         'pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev '
+        '--group "contract-$DONKEY_CONTRACT_EXTRA" '
         '-c "constraints/adapter-contract-${DONKEY_CONTRACT_EXTRA}-py3.12.txt"'
     ),
     "benchmark": (

@@ -267,11 +267,13 @@ jobs:
           python-version: "3.12"
 
       # `local` + `otel`: so the whole-suite step's simulator (uvicorn) and span
-      # tests run rather than skip. No `-c`: a fresh resolve is this job's whole point.
+      # tests run rather than skip. `contract-<extra>`: the leg's MCP binding
+      # packages, which the armed skip guard requires (#1318). No `-c`: a fresh
+      # resolve is this job's whole point.
       - name: Install SDK + framework extra (fresh resolve; ADR 0007 rule 4)
         run: >-
           python -m pip install --upgrade pip &&
-          pip install -e ".[llm,local,otel,$EXTRA]" --group dev
+          pip install -e ".[llm,local,otel,$EXTRA]" --group dev --group "contract-$EXTRA"
 
       - name: Signature verification (§8), fail if not actually installed (#748)
         run: python scripts/verify_frameworks.py --only "$FRAMEWORK" --require-installed
