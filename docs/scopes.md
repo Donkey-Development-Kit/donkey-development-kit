@@ -44,7 +44,7 @@ environment the SDK targets (`ANYPOINT_ENV`). Exchange, API Governance and
 | `search()` | `POST /graph/api/v1/graphql` | `read:exchange` | org | No | `200` with no assets: no error, `search()` returns `[]` | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `resolve_mcp()`, `explain()`: environment id | `GET /accounts/api/organizations/{org}/environments` | `view:environment`, `read:orgenvironments`, `read:servers` | org + env (`read:orgenvironments`: org) | No | `401`, plain text `Unauthorized` → `AuthError` naming `view:environment` | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `resolve_mcp()`, `explain()`: instance list | `GET /apimanager/api/v1/…/apis?assetId=&groupId=&assetVersion=` | `read:api_configuration`, `read:api_policies`, `manage:api_configuration`, `manage:apis` | org + env | No | `403` `{"name":"AuthorizationError","message":"Unauthorized"}` → `AuthError` naming `read:api_configuration` | 2026-10-28 | live run, sandbox, connected app (#23) |
-| `resolve_mcp()`: instance describe | `GET /apimanager/api/v1/…/apis/{id}` | `read:api_configuration`, `read:api_policies`, `manage:apis` | org + env | No | as the instance list | 2026-10-28 | live run, sandbox, connected app (#23) |
+| `resolve_mcp()`: instance describe | `GET /apimanager/api/v1/…/apis/{id}` | `read:api_configuration`, `read:api_policies`, `manage:api_configuration`, `manage:apis` | org + env | No | as the instance list | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `explain()`: policies (`require_any_policy`, `required_policies`, `forbidden_policies`) | `GET /apimanager/api/v1/…/apis/{id}/policies` | `read:api_policies`, `manage:api_policies`. **Not** `read:api_configuration`. | org + env | No | `403` `AuthorizationError` → `AuthError` naming `read:api_policies` | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `resolve_mcp()`: gateway public URL | `GET /gatewaymanager/api/v1/…/gateways/{id}` | `read:servers`. Not `manage:servers`, `read:api_configuration`, `manage:api_proxies` or `view:environment`. | org + env | No | `403` `{"status":403,"message":"Forbidden"}` → `AuthError` naming `read:servers` | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `explain()`: tags and lifecycle (`require_tags`, `require_lifecycle`) | `GET /exchange/api/v2/assets/{group}/{asset}/{version}` | `read:exchange` | org | No | `403` `ForbiddenError` → the checks are UNKNOWN, their detail names `read:exchange` | 2026-10-28 | live run, sandbox, connected app (#23) |
@@ -62,11 +62,27 @@ that set was also run end to end.
 |---|---|---|---|---|---|---|---|
 | Publish a version (new or existing asset), register its endpoint, set name and description, write the page | the Exchange calls in [`verified-apis.md`](verified-apis.md) §12.3 | `manage:exchange` | org | No | `read:exchange`: `403` on the publish → `AuthError` naming `manage:exchange`. `create:exchange`: publishes a new asset's first version, then `404` "The requested instance does not exist." when registering its endpoint; `403` on an existing asset. `edit:exchange`: publishes a version and sets the asset's name and description (`PATCH` → `204`), then the same `404` when the version starts a new version group and so needs its endpoint registered → `RegistryError` naming `manage:exchange`. | 2026-10-28 | live run, sandbox, connected app (#23) |
 
-## Instance writes (`donkey expose`, #226, Roadmap)
+## `donkey expose` and `donkey preflight` (#226, #1279)
 
-The SDK makes none of these calls yet. They are the write path in
-[`verified-apis.md`](verified-apis.md) §12.5, recorded here for the command
-that will.
+`donkey expose` publishes the service with the `donkey publish` calls, then
+makes the write path in [`verified-apis.md`](verified-apis.md) §12.5.
+`donkey preflight` (and `donkey expose --dry-run`) make only its reads. A
+fresh app holding exactly these seven scopes ran both commands end to end,
+for an MCP server and an A2A agent, twice each:
+
+| Scope | Context | Used for |
+|---|---|---|
+| `view:environment` | org + env | the environment id |
+| `read:servers` | org + env | the gateway, by name, with its listener port, runtime version and public URL; the deploy needs it too |
+| `read:exchange` | org | the published version, and the instance create, which reads the asset |
+| `manage:exchange` | org | publishing the version, as `donkey publish` does |
+| `manage:api_configuration` | org + env | the instance list, describe and upstreams, and the create |
+| `manage:api_policies` | org + env | the policy list and the inbound and outbound policy writes |
+| `manage:api_proxies` | org + env | the deploy and its status |
+
+`donkey preflight` makes only the reads, so it needs `view:environment`,
+`read:servers`, `read:exchange`, and the read scopes of the instance and policy
+calls in the Reads table above. Each write, and what a smaller set answers:
 
 | Call | Scope | Context | Admin / user context | Result with less | Date | Source |
 |---|---|---|---|---|---|---|
@@ -74,11 +90,15 @@ that will.
 | `POST /apimanager/api/v1/…/apis/{id}/policies` (inbound policy) | `manage:api_policies` | org + env | No | `read:api_policies` or `manage:api_configuration`: `403`. | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `POST /apimanager/xapi/v1/…/apis/{id}/policies/outbound-policies` | `manage:api_policies` | org + env | No | `manage:api_configuration`: `403`. | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `POST /proxies/xapi/v1/…/apis/{id}/deployments` (deploy) | `read:servers` **plus** `manage:api_proxies` | org + env | No | `manage:api_proxies`, `manage:api_configuration`, `manage:apis` or `manage:servers` alone, or `read:servers` with `manage:api_configuration`: `403`. | 2026-10-28 | live run, sandbox, connected app (#23) |
-| `DELETE /apimanager/api/v1/…/apis/{id}` | `manage:api_configuration` or `manage:apis` | org + env | No | none: `403`. | 2026-10-28 | live run, sandbox, connected app (#23) |
+| `GET /proxies/xapi/v1/…/apis/{id}/deployments/{id}/status` | `manage:api_proxies` | org + env | No | not isolated: it ran with the seven scopes above. | 2026-10-28 | live run, sandbox, connected app (#226) |
+| `DELETE /apimanager/api/v1/…/apis/{id}` | `manage:api_configuration` or `manage:apis` | org + env | No | none: `403`. `donkey expose` never deletes. | 2026-10-28 | live run, sandbox, connected app (#23) |
 
-The two policy writes were checked up to authorization only: with
+The policy writes were first checked up to authorization (#23): with
 `manage:api_policies` they got past it to a `404` for an instance id that does
-not exist.
+not exist. The `donkey expose` run (#226) then made both. The instance
+describe (`GET …/apis/{id}`) and upstreams read also work with
+`manage:api_configuration`, which that run had in place of
+`read:api_configuration`.
 
 ## What a missing scope looks like
 
@@ -95,5 +115,7 @@ without is an `AuthError` whose `remediation` names the scope and the business
 group. A refused Exchange or API Governance read makes the `explain()` checks
 that need it UNKNOWN, with the scope in their detail. A refused `donkey
 publish` step is an `AuthError`, or for the endpoint registration a
-`RegistryError`, naming `manage:exchange`. The captures are in
+`RegistryError`, naming `manage:exchange`. A refused `donkey expose` step
+fails with the scope in its remediation, and the steps after it are skipped;
+the instance create's `400` "retrieve asset" names `read:exchange`. The captures are in
 `python/tests/fixtures/anypoint/missing_scope/`.

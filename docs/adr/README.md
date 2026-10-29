@@ -86,4 +86,4 @@ is not rewritten.
 | [0012](0012-custom-policy-registry.md) | Customer-registered refusal shapes, in one process-wide registry behind a hook slot | Accepted | #210 |
 | [0013](0013-ungoverned-mcp-binding.md) | Binding refuses an MCP server that is not governed, with no opt-out | Accepted | #1150 |
 | [0014](0014-a2a-server-package.md) | `donkey.serve()` wraps the official a2a-sdk, in a top-level `a2a` package beside `integrations` | Proposed | #224 |
-| [0015](0015-provisioning-boundary.md) | The SDK creates only the ingress instance in front of the developer's own agent or MCP server, never a control plane | Proposed | #319 |
+| [0015](0015-provisioning-boundary.md) | The SDK creates only the ingress instance in front of the developer's own agent or MCP server, never a control plane | Accepted | #319 |

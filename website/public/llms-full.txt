@@ -718,8 +718,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   
   
     **Purpose:** `donkey.serve()` makes your agent callable by other agents in
-    one line, on the official `a2a-sdk`; `expose` and `dev` are on the
-    Roadmap. **Advantage:** the agent card is generated from your code, and
+    one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
+    gateway instance with its policies; `dev` is on the Roadmap. **Advantage:** the agent card is generated from your code, and
     inbound tasks are to be governed with the same correlation, spans and
     refusals.
   
@@ -6249,6 +6249,8 @@ donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
 donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
+donkey preflight     # checks, read-only, that a service can be put behind its gateway
+donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
 
 ### Global flags
@@ -6312,6 +6314,17 @@ Global options go before the command (`donkey --json init`):
 | `--model` | `gpt-4o` | Model id to test against the proxy allow-list. |
 | `--json` | off | Emit machine-readable JSON. |
 
+`donkey expose`: Expose one MCP server or A2A agent through an existing gateway.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `service` | none | The service ID to expose; optional when the project has exactly one. |
+| `--path` | `.` | The repository (or one .py file) to scan. |
+| `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
+| `--target` | none | The gateway's name; overrides the declared target. |
+| `--dry-run` | off | Only read: print what would be created, and change nothing. |
+| `--json` | off | Emit the report as JSON. |
+
 `donkey init`: Bootstrap a commented `.donkey-kit.toml` from the resolved config.
 
 | Option | Default | Meaning |
@@ -6325,6 +6338,16 @@ Global options go before the command (`donkey --json init`):
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
 | `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+
+`donkey preflight`: Check, read-only, that a service can be exposed.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `service` | none | The service ID to expose; optional when the project has exactly one. |
+| `--path` | `.` | The repository (or one .py file) to scan. |
+| `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
+| `--target` | none | The gateway's name; overrides the declared target. |
+| `--json` | off | Emit the report as JSON. |
 
 `donkey publish`: Publish code-first assets to Exchange.
 
@@ -6567,13 +6590,70 @@ published or left unchanged, `1` on an issue or a refused publish, and `2` on a
 missing path, invalid config or missing credentials. See
 [Scan & publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
 
+### `donkey expose`
+
+```bash
+donkey preflight sku-manager           # what expose would do; reads only
+donkey expose sku-manager --dry-run    # the same
+donkey expose sku-manager              # publish, create, add policies, deploy
+```
+
+Puts one MCP server or A2A agent behind a gateway that already exists, in the
+environment `ANYPOINT_ENV` (or `--env`) names. It runs one step at a time and
+prints one line per step:
+
+```
+  ✓ environment         present  Sandbox (…)
+  ✓ gateway             present  shared-omni-gateway, ingress port 8081
+  ✓ registry            created  sku-manager: published 1.0.0
+  ✓ instance            created  sku-manager (21262612), upstream https://sku.example.com/mcp
+  ✓ policy mcp-support  created  inbound mcp-support 1.1.1
+  ✓ deployment          created  applied on shared-omni-gateway
+MCP server sku-manager is exposed at https://<gateway>/sku-manager/
+```
+
+- **registry** publishes the service's Exchange asset, as `donkey publish`
+  does.
+- **instance** creates the API Manager instance for that version, labelled
+  with the service ID unless the declaration sets a `label`, and proxying to the
+  service's `endpoint` unless it sets an `upstream`.
+- **policy** adds each declared policy the instance lacks. Policies come only
+  from the declaration: there are no defaults.
+- **deployment** deploys the instance to the gateway and waits until the gateway
+  has applied it.
+
+What the run needs comes from the `[donkey.expose]` table in
+`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/a2a.md) for the keys.
+
+The command adds what is missing and nothing else:
+
+- A re-run changes nothing that is there; each step reports `present`.
+- It never deletes, never edits a policy's configuration, and never moves an
+  instance to another gateway. Something that is there but differs from the
+  declaration, such as another upstream or a policy at another version, is
+  reported as `differs` and left alone, and the command exits `1`.
+- It never creates the environment or the gateway. A missing one is reported as
+  `missing`, with where to create it, and nothing else is tried.
+- A failed step is reported as `failed`, with what to do, and the steps after it
+  are `skipped`. A step that did not happen is never reported as done.
+
+`donkey preflight`, like `--dry-run`, makes only the reads and reports what
+would be created as `planned`. Run it in CI before a deploy: it exits `1` when
+the gateway, the environment or a connected-app scope is missing.
+
+Both exit `0` when every step is present, created or planned; `1` when a step
+is missing, differs or failed, or the declaration has an issue (nothing is
+sent then); and `2` on a missing path, invalid config or missing control-plane
+credentials. The connected-app scopes they need are in
+[Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose).
+
 ## Planned commands Roadmap
 
 These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
-- `donkey serve` and `donkey expose` — serve your agent over A2A and expose it
-  through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+- `donkey serve` — serve your agent over A2A from the command line. In code,
+  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
   Run `donkey --help` to see the commands available in your installed version.
 
@@ -7500,8 +7580,8 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
-gateway locally. `donkey.serve()` and `donkey dev` (with a simulated gateway)
-ship today. `donkey expose` is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md).
+gateway locally. `donkey.serve()`, `donkey expose` and `donkey dev` (with a
+simulated gateway) ship today.
 
 ## The setup it replaces
 
@@ -7514,8 +7594,7 @@ Today, accepting a task from a partner agent means:
 
 `donkey.serve()` takes care of the first three today:
 [governed inbound](#governed-inbound) gives every task a correlation ID and a
-tracing span. `donkey expose`, which hands the fourth to the gateway, is on the
-Roadmap.
+tracing span. `donkey expose` hands the fourth to the gateway.
 
 ## Why not have users call the a2a-sdk directly?
 
@@ -7721,37 +7800,81 @@ match `donkey.serve()`, which fills them from the client's configuration.
   policy (auth, rate limits, PII screening of the caller's message) is the
   gateway's job, in front of the agent.
 
-## `donkey expose` — the ingress, registered from code Roadmap
+## `donkey expose` — the ingress, registered from code Live
 
 ```
-$ donkey expose --env prod
-  ✓ A2A proxy  https://gw.acme.internal/agents/support-triage
-  ✓ policies   token-budget, pii-detection, trusted-agent-identity
-  ✓ registry   support-triage v1.4.0
+$ donkey expose support-triage
+  ✓ environment                          present  Sandbox (…)
+  ✓ gateway                              present  shared-omni-gateway, ingress port 8081
+  ✓ registry                             created  support-triage: published 1.4.0
+  ✓ instance                             created  support-triage (21262614), upstream https://agents.acme.example/triage/
+  ✓ policy client-id-enforcement         created  inbound client-id-enforcement 1.3.3
+  ✓ policy credential-injection-api-key  created  outbound credential-injection-api-key 1.0.1
+  ✓ deployment                           created  applied on shared-omni-gateway
+A2A agent support-triage is exposed at https://<gateway>/support-triage/
 ```
 
-The gateway does the work — creating the A2A proxy, attaching the policy set,
-and registering the card. `donkey expose` turns that console session into one
-command that runs in CI. The same command will put an MCP server behind the
-gateway: an MCP instance in front of it, its policies, and its Exchange entry.
+The gateway does the work: it fronts the agent with an A2A instance, enforces
+the policies and lists the agent in Exchange. `donkey expose` turns that
+console session into one command that runs in CI. It puts an MCP server behind
+the gateway the same way, with an MCP instance.
 
-It is planned to stay narrow, so it never turns into a provisioning tool:
+Declare where the service goes, and which policies it gets, in
+`.donkey-kit.toml`:
+
+```toml
+[donkey.publication]
+version = "1.4.0"
+
+[donkey.agents.support-triage]
+protocol = "a2a_v1"
+endpoint = "https://agents.acme.example/triage/"
+
+[donkey.expose]
+target = "shared-omni-gateway"          # the gateway's name; --target overrides it
+
+[donkey.expose.services.support-triage]
+label = "support-triage"                # the instance label and path; default: the service ID
+upstream = "https://agents.acme.example/triage/"   # default: the service's endpoint
+
+[[donkey.expose.services.support-triage.policies]]
+asset = "68ef9520-24e9-4cf2-b2f5-620025690913/client-id-enforcement/1.3.3"
+
+[[donkey.expose.services.support-triage.policies]]
+asset = "68ef9520-24e9-4cf2-b2f5-620025690913/credential-injection-api-key/1.0.1"
+configuration = { authType = "apiKey", customHeader = "X-Api-Key", overwrite = true, apiKey = "…" }
+outbound = true                         # applied on the way to the agent (A2A only)
+```
+
+- `target` names the gateway; it must already exist and be running.
+- Each policy is a `group/asset/version` from Exchange, with its
+  `configuration`. There are no default policies: what is declared is what is
+  applied. `outbound = true` attaches a policy to the agent's upstream rather
+  than to its inbound side; an MCP server's policies are all inbound.
+- Put a policy secret, such as `apiKey` above, in `.donkey-kit.local.toml`
+  rather than the committed file. Its `[donkey.expose]` table overrides the
+  project file's.
+- Only an agent declared with `protocol = "a2a_v1"` can be exposed, and the
+  agent or MCP server needs an `endpoint` unless the declaration gives an
+  `upstream`.
+
+It stays narrow, so it never turns into a provisioning tool:
 
 - It creates only the instance in front of *your* agent or MCP server, on a
-  gateway target that already exists.
+  gateway that already exists.
 - Running it again changes nothing that is already there. It adds a missing
   policy, and it never deletes, edits a policy's configuration, or moves an
   instance.
-- `--dry-run` prints what it would create, and each step reports its own
-  result.
-- Gateways, targets, LLM proxies, organization-wide policy and connected-app
-  scopes belong to your platform team and its infrastructure-as-code. If one is
-  missing, `donkey expose` tells you which one rather than creating it.
+- `--dry-run`, and `donkey preflight`, print what it would create and send no
+  write. Each step reports its own result.
+- Gateways, environments, LLM proxies, organization-wide policy and
+  connected-app scopes belong to your platform team and its
+  infrastructure-as-code. If one is missing, `donkey expose` tells you which
+  one, and where to create it, rather than creating it.
 
-The calls that create, deploy and delete an A2A instance have been verified
-against a live sandbox, with a connected app as well as a user login, and so
-have the MCP instance calls, with a user login. The smallest set of scopes the
-connected app needs has not, so the command does not ship until it is.
+See [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose) for the step statuses and exit
+codes, and [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose) for the
+connected app it runs with.
 
 ## `donkey dev` — a gateway in front of your laptop
 
@@ -8073,7 +8196,10 @@ version-bump rule. Each agent asset is published with:
 - its name and description, as for an MCP server. An agent's description
   defaults to its docstring.
 - the digest, and the protocol you declared (`other` when you declared none),
-  stored with the asset.
+  stored with the asset. Exchange stores an `a2a_v1` agent's protocol as `a2a`,
+  with the version carried by its A2A 1.0 card, so the agent is listed as
+  protocol `a2a`, version `v1`. That is the form the gateway accepts when
+  [`donkey expose`](https://docs.donkey-kit.dev/a2a.md) fronts the agent.
 - an `agent-metadata` file: the protocol, the agent's name and description,
   and its asset coordinates.
 - for an `a2a_v1` agent, an **A2A agent card** (`a2a-v1-card`): the name,
@@ -12995,7 +13121,7 @@ reachable and typed, not to reproduce it:
 - Client-side semantic caching — DDK steers the gateway's semantic cache and
   reports hits, but never caches responses itself.
 - A provisioning control plane competing with API Manager or Terraform. The
-  one thing DDK will create is the gateway instance in front of your own agent
+  one thing DDK creates is the gateway instance in front of your own agent
   or MCP server (`donkey expose`); everything else stays with your platform's
   infrastructure-as-code.
 - Re-implementations of Agent Scanners, Kill Switch or Trusted Agent Identity.
@@ -13785,11 +13911,14 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Tool pinning: `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
 | Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
+| `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose). |
+| `donkey preflight`, `donkey expose --dry-run` | Token request, then the same reads, and no writes | Available |
 | Hidden commands `donkey status`, `verify` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
 So in this release the SDK sends the `ANYPOINT_*` credentials only for the
-Available rows above: `donkey publish`, the registry reads and tool discovery,
+Available rows above: `donkey publish`, `donkey expose` and `donkey preflight`,
+the registry reads and tool discovery,
 or your own code asking for a connected-app token. The scopes each one needs
 are in [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
 
@@ -13831,8 +13960,8 @@ one leaves unset. Nested tables such as `[donkey.cost]` merge the same way. A
 scalar or an array in a higher file replaces the lower file's value; it isn't
 appended to. Each key remembers which file it came from.
 
-Three tables in these files are not `DonkeyConfig` fields, and
-`Donkey.from_env()` ignores all three:
+Four tables in these files are not `DonkeyConfig` fields, and
+`Donkey.from_env()` ignores all four:
 
 - `[donkey.mcp_servers]` declares how each MCP server your tools name is
   reached. `donkey scan` reads it from the scanned directory's two project
@@ -13846,6 +13975,9 @@ Three tables in these files are not `DonkeyConfig` fields, and
   provider and documentation file. `donkey publish` reads it from the same two
   files. See
   [Planning a publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
+- `[donkey.expose]` names the gateway `donkey expose` deploys to, and for
+  each service its instance label, upstream and policies. `donkey expose` and
+  `donkey preflight` read it from the same two files. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
 file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that
@@ -14961,6 +15093,25 @@ Leave out `manage:exchange` if the app never publishes. The SDK's error
 messages name the scopes in this table. A smaller set also works for the
 reads: `read:exchange`, `read:servers` and `read:api_policies`.
 
+### For `donkey expose`
+
+`donkey expose` publishes the service, creates its gateway instance, applies
+its policies and deploys it. An app with these seven scopes runs it, and
+`donkey preflight`, end to end:
+
+| Scope | Grant on | Used for |
+|---|---|---|
+| `view:environment` | the business group and the environment | finding the environment |
+| `read:servers` | the business group and the environment | finding the gateway; the deploy needs it too |
+| `read:exchange` | the business group | the published version, and the instance create |
+| `manage:exchange` | the business group | publishing the version |
+| `manage:api_configuration` | the business group and the environment | reading and creating the instance |
+| `manage:api_policies` | the business group and the environment | reading and applying the policies |
+| `manage:api_proxies` | the business group and the environment | the deploy |
+
+`donkey preflight` only reads, so the read scopes in the table above are enough
+for it.
+
   Removing a scope from an app does not take effect at once: the app keeps it
   for a while. To check that an app works with fewer scopes, create a new one
   with just those.
@@ -14975,17 +15126,17 @@ unless the row says **plus**.
 | Connected-app token | `POST /accounts/api/v2/oauth2/token` | None | Live |
 | `donkey.registry.search()` | Exchange Graph search | `read:exchange` | Live |
 | `resolve_mcp()`, `explain()`: find the environment | Access Management environment list | `view:environment`, `read:orgenvironments` or `read:servers` | Live |
-| `resolve_mcp()`, `explain()`: find the instance | API Manager instance list and describe | `read:api_configuration`, `read:api_policies` or `manage:apis` | Live |
+| `resolve_mcp()`, `explain()`: find the instance | API Manager instance list and describe | `read:api_configuration`, `read:api_policies`, `manage:api_configuration` or `manage:apis` | Live |
 | `explain()`: `require_any_policy`, `required_policies`, `forbidden_policies` | API Manager instance policies | `read:api_policies` or `manage:api_policies`. `read:api_configuration` is not enough. | Live |
 | `resolve_mcp()`: the gateway's public URL | Omni Gateway Manager gateway read | `read:servers` | Live |
 | `explain()`: `require_tags`, `require_lifecycle` | Exchange asset version read | `read:exchange` | Live |
 | `explain()`: `require_governance_pass` | API Governance conformance read | `read:exchange`, `view:ang_governance_profiles` or `admin:ang_governance_profiles` | Live |
 | `donkey.tools.discover()` | The `search()`, `explain()` and `resolve_mcp()` reads | Theirs | Live |
 | `donkey publish` | Exchange publish, endpoint registration, asset name and description, page | `manage:exchange`. `create:exchange` and `edit:exchange` are not enough. | Live |
-| `donkey expose`: create an instance | API Manager instance create | `manage:api_configuration` or `manage:apis`, **plus** `read:exchange` | Roadmap |
-| `donkey expose`: inbound and outbound policies | API Manager policies | `manage:api_policies` | Roadmap |
-| `donkey expose`: deploy | Gateway deployment | `read:servers` **plus** `manage:api_proxies` | Roadmap |
-| `donkey expose`: delete an instance | API Manager instance delete | `manage:api_configuration` or `manage:apis` | Roadmap |
+| `donkey preflight`, `donkey expose`: find the gateway | Omni Gateway Manager gateway list and read | `read:servers` | Live |
+| `donkey expose`: create an instance | API Manager instance create | `manage:api_configuration` or `manage:apis`, **plus** `read:exchange` | Live |
+| `donkey expose`: inbound and outbound policies | API Manager policies | `manage:api_policies` | Live |
+| `donkey expose`: deploy, and its status | Proxy deployment | `read:servers` **plus** `manage:api_proxies` | Live |
 
 Exchange, API Governance and `read:orgenvironments` scopes are granted on the
 business group only. The others are granted on the business group and the
@@ -14999,6 +15150,7 @@ environment.
 | `explain()` Exchange and API Governance checks | No error: the check is UNKNOWN (`passed=None`), and its detail names `read:exchange`. |
 | `search()` | No error: Exchange returns no assets, so `search()` returns `[]`. If a search you expect to match returns nothing, check `read:exchange` first. |
 | `donkey publish` | `AuthError` naming `manage:exchange`. If the app has `edit:exchange` instead, the version can be published but registering its endpoint fails with a `RegistryError` naming `manage:exchange`. |
+| `donkey expose`, `donkey preflight` | The step fails (`✗`), its remediation names the scope, and the steps after it are skipped. An instance create without `read:exchange` answers `400` "Error while trying to retrieve asset", which the step reports as a missing `read:exchange`. |
 
 See [Errors](https://docs.donkey-kit.dev/errors.md) for how `AuthError` fits the error taxonomy.
 
@@ -15024,7 +15176,7 @@ Every platform API the SDK calls is classified:
 |---|---|
 | **Documented and public** | Safe to depend on. |
 | **Documented, no SLA for third-party use** | Observed on a real gateway but not promised to third parties. The SDK reads it fail-open, and the maintainers update the SDK if it changes. |
-| **Undocumented** | Must stay empty. Anything here needs a written justification and an owner. |
+| **Undocumented** | Kept to what a shipped feature cannot do without. Anything here needs a written justification and an owner. |
 
 ## Current boundary
 
@@ -15037,7 +15189,10 @@ In this release they are `donkey publish` and `donkey.registry.search()`,
 which also call Exchange, `donkey.registry.resolve_mcp()`, which reads
 Access Management, API Manager and Omni Gateway Manager, and
 `donkey.registry.explain()`, which reads Access Management, API Manager,
-Exchange and API Governance; the rest are Roadmap.
+Exchange and API Governance, and `donkey expose` and `donkey preflight`, which
+read Access Management, Omni Gateway Manager, Exchange and API Manager, and
+(`expose` only) publish to Exchange, create an API Manager instance with its
+policies and deploy it; the rest are Roadmap.
 Otherwise the token endpoint is contacted only if your own code calls
 `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
@@ -15057,11 +15212,15 @@ before making a network request, except `donkey.as_user()`, described below.
 | Gateway identity and routing headers: `x-request-id`, `x-envoy-decorator-operation`, `x-llm-proxy-{routing-type,routing-fallback,llm-provider,llm-model}` | `core.lastcall.LastCall`, `core.transport` | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`, and only an explicit `routing-fallback: true` changes retry behaviour. Owner: DDK maintainers; a contract change needs new fixtures before the parser changes. |
 | Exchange Graph API asset search: `POST /graph/api/v1/graphql`, `assets(query: {searchTerm, organizationIds, tags}, latestVersionsOnly: true)` | `registry.exchange.ExchangeRegistry.search` | **Documented and public** | Searches the business group's assets, at their latest versions. Documented in [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api). A tag filter there also matches the keyed tags Exchange derives, so the SDK keeps only assets whose matching tags are keyless, the kind the page says are set in Exchange or at publish. |
 | The `types`, `limit` and `offset` fields of the Graph API search's `query` input | `registry.exchange.ExchangeRegistry.search` | **Undocumented** | Filters by asset type and pages the results. The Graph API page does not list them; the documented REST search (`GET /exchange/api/v2/assets/search`) takes the same three parameters, but it needs the root organisation's ID and has no text filter. Justification: without them, an `asset_types` filter would read the whole group and a search could not page. Owner: DDK maintainers. A refusal raises `RegistryError`; `tests/fixtures/anypoint/exchange_search/` holds the captures to re-check against. |
-| Access Management environment list: `GET /accounts/api/organizations/{org}/environments` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain` | **Documented and public** | Finds the id of the environment named by `ANYPOINT_ENV`. Documented in the [Access Management API](https://dev-portal.mulesoft.com/apis/access-management.html) reference. |
-| API Manager instance reads: `GET /apimanager/api/v1/…/environments/{env}/apis?assetId=&groupId=&assetVersion=`, `GET …/apis/{id}` and `GET …/apis/{id}/policies` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain` | **Documented and public** | Finds the asset version's deployed MCP instance and reads its path and gateway. `explain()` also reads each deployed instance's policies and gateway name. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference (`listApiInstances` takes the three filters). |
+| Access Management environment list: `GET /accounts/api/organizations/{org}/environments` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain`, `registry.expose.expose` | **Documented and public** | Finds the id of the environment named by `ANYPOINT_ENV`. Documented in the [Access Management API](https://dev-portal.mulesoft.com/apis/access-management.html) reference. |
+| API Manager instance reads: `GET /apimanager/api/v1/…/environments/{env}/apis?assetId=&groupId=&assetVersion=`, `GET …/apis/{id}` and `GET …/apis/{id}/policies` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain`, `registry.expose.expose` | **Documented and public** | Finds the asset version's deployed MCP instance and reads its path and gateway. `explain()` also reads each deployed instance's policies and gateway name. `donkey expose` lists the environment's instances (`?limit=500`) to find its label, and reads the instance and its policies to tell what is already there. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference (`listApiInstances` takes the three filters). |
 | Exchange asset version read: `GET /exchange/api/v2/assets/{group}/{asset}/{version}` | `registry.exchange.ExchangeRegistry.explain` | **Documented and public** | Reads the version's tags (`labels`) and lifecycle `status` for `require_tags` and `require_lifecycle`. Documented in the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`getAssetVersion`). A refused read makes both checks UNKNOWN. |
 | API Governance conformance read: `GET /governance/xapi/api/v1/stats/organization/targets/{group}/{asset}/{version}?organization={org}` | `registry.exchange.ExchangeRegistry.explain` | **Documented, no SLA for third-party use** | Reads the business group's governance reports for the version (`summaryStatus` per ruleset) for `require_governance_pass`. It is the API Governance Experience API, which [Getting Started with API Governance](https://docs.mulesoft.com/api-governance/get-started) points to for retrieving conformance status, and whose spec is published in Exchange as `api-governance-xapi`. As an experience API it has no third-party support commitment, so the SDK reads it fail-open: no report, an unrecognised status or a refused read makes the check UNKNOWN. Owner: DDK maintainers; `tests/fixtures/anypoint/mcp_explain/` holds the captures to re-check against. |
-| Omni Gateway Manager gateway read: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp` | **Documented and public** | Reads the gateway's `configuration.ingress.publicUrl`, the host of the resolved MCP endpoint. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference. |
+| Omni Gateway Manager gateway read: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `registry.expose.expose` | **Documented and public** | Reads the gateway's `configuration.ingress.publicUrl`, the host of the resolved MCP endpoint. `donkey expose` also reads its `status`, `runtimeVersion` and listener port. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference. |
+| Omni Gateway Manager gateway list: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways?name={name}` | `registry.expose.expose` | **Documented and public** | Finds the gateway `donkey expose` deploys to, by the name in `[donkey.expose]`. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference (`listGateways`). `name` matches a substring, so the SDK keeps the exact name only. A gateway that is not there is reported missing, never created. |
+| API Manager instance writes: `POST /apimanager/api/v1/…/environments/{env}/apis`, `POST …/apis/{id}/policies` and `GET …/apis/{id}/upstreams` | `registry.expose.expose` | **Documented and public** | Creates the instance for the published asset version, applies its inbound policies, and reads the upstream ids an outbound policy attaches to. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference. `donkey expose` never edits, moves or deletes what is there. |
+| Proxy deployment: `POST /proxies/xapi/v1/…/environments/{env}/apis/{id}/deployments`, then `GET …/deployments/{deploymentId}/status` | `registry.expose.expose` | **Documented, no SLA for third-party use** | Deploys the instance to the gateway and polls until it is applied. It is the Proxies Experience API (`createProxyDeployment`, `getProxyDeploymentStatus` in the [`proxies-xapi`](https://dev-portal.mulesoft.com/apis/proxies-xapi.html) reference). As an experience API it has no third-party support commitment. Owner: DDK maintainers; a refusal or a deployment that is not applied in time fails the step, and `tests/fixtures/anypoint/mcp_instance/` and `a2a_instance/` hold the captures to re-check against. |
+| Outbound policy on an A2A instance: `POST /apimanager/xapi/v1/…/environments/{env}/apis/{id}/policies/outbound-policies` | `registry.expose.expose` | **Undocumented** | See [Undocumented surfaces](#undocumented-surfaces). |
 
 The connected-app scope each of these calls needs is in
 [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
@@ -15088,18 +15247,6 @@ How each row was established (live capture, plugin test, and so on) is in the
   Roadmap, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.
-- `donkey expose` is Roadmap. The A2A and MCP
-  instances it would create were verified live, and two of the calls that
-  takes are experience APIs (`xapi`) with no third-party support commitment:
-  attaching an outbound policy to an A2A instance
-  (`POST /apimanager/xapi/v1/…/apis/{id}/policies/outbound-policies`) and
-  deploying either instance to a gateway target
-  (`POST /proxies/xapi/v1/…/apis/{id}/deployments`, then polling its
-  `…/status`). An MCP instance's inbound policies use the public API Manager
-  path. The Anypoint CLI plugins call the same paths. The SDK calls
-  none of them today. If `expose` ships with them, they move to
-  [Undocumented surfaces](#undocumented-surfaces) with a justification and an
-  owner, unless a documented alternative is found first.
 - `donkey.as_user()` posts an RFC 8693 token exchange to the control-plane
   host, then sends the exchanged token on model calls. Neither the exchange
   path nor the header the gateway reads the token from is confirmed yet (see
@@ -15119,10 +15266,22 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Undocumented surfaces
 
-This section must stay empty. A surface listed here needs a written
-justification and an owner, and is re-evaluated at every milestone.
+A surface listed here needs a written justification and an owner, and is
+re-evaluated at every milestone.
 
-_(none)_
+- **Outbound policy on an A2A instance**:
+  `POST /apimanager/xapi/v1/organizations/{org}/environments/{env}/apis/{id}/policies/outbound-policies`,
+  body `{configurationData, groupId, assetId, assetVersion, upstreamIds,
+  apiVersionId}`. Used by `donkey expose` for a policy declared with
+  `outbound = true`. Justification: the public policy path refuses an
+  outbound-only policy ("This policy can not be applied as inbound"), and
+  neither the API Manager API nor any other reference on MuleSoft's developer
+  portal documents another way to attach one to an instance's upstreams. The
+  Anypoint CLI's agent-fabric plugin sends the same call. It is made only when
+  a project declares an outbound policy, and a refusal fails that policy's step
+  and skips the deployment. Owner: DDK maintainers;
+  `tests/fixtures/anypoint/a2a_instance/` holds the capture to re-check
+  against.
 
 ## Local Mode is not supported
 

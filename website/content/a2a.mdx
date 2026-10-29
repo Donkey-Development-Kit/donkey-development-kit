@@ -10,8 +10,8 @@ import { Badge } from '../components'
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
-gateway locally. `donkey.serve()` and `donkey dev` (with a simulated gateway)
-ship today. `donkey expose` is on the [Roadmap](/roadmap).
+gateway locally. `donkey.serve()`, `donkey expose` and `donkey dev` (with a
+simulated gateway) ship today.
 
 ## The setup it replaces
 
@@ -24,8 +24,7 @@ Today, accepting a task from a partner agent means:
 
 `donkey.serve()` takes care of the first three today:
 [governed inbound](#governed-inbound) gives every task a correlation ID and a
-tracing span. `donkey expose`, which hands the fourth to the gateway, is on the
-Roadmap.
+tracing span. `donkey expose` hands the fourth to the gateway.
 
 ## Why not have users call the a2a-sdk directly?
 
@@ -243,37 +242,81 @@ match `donkey.serve()`, which fills them from the client's configuration.
   gateway's job, in front of the agent.
 </Callout>
 
-## `donkey expose` — the ingress, registered from code <Badge tone="roadmap">Roadmap</Badge>
+## `donkey expose` — the ingress, registered from code <Badge tone="live">Live</Badge>
 
 ```
-$ donkey expose --env prod
-  ✓ A2A proxy  https://gw.acme.internal/agents/support-triage
-  ✓ policies   token-budget, pii-detection, trusted-agent-identity
-  ✓ registry   support-triage v1.4.0
+$ donkey expose support-triage
+  ✓ environment                          present  Sandbox (…)
+  ✓ gateway                              present  shared-omni-gateway, ingress port 8081
+  ✓ registry                             created  support-triage: published 1.4.0
+  ✓ instance                             created  support-triage (21262614), upstream https://agents.acme.example/triage/
+  ✓ policy client-id-enforcement         created  inbound client-id-enforcement 1.3.3
+  ✓ policy credential-injection-api-key  created  outbound credential-injection-api-key 1.0.1
+  ✓ deployment                           created  applied on shared-omni-gateway
+A2A agent support-triage is exposed at https://<gateway>/support-triage/
 ```
 
-The gateway does the work — creating the A2A proxy, attaching the policy set,
-and registering the card. `donkey expose` turns that console session into one
-command that runs in CI. The same command will put an MCP server behind the
-gateway: an MCP instance in front of it, its policies, and its Exchange entry.
+The gateway does the work: it fronts the agent with an A2A instance, enforces
+the policies and lists the agent in Exchange. `donkey expose` turns that
+console session into one command that runs in CI. It puts an MCP server behind
+the gateway the same way, with an MCP instance.
 
-It is planned to stay narrow, so it never turns into a provisioning tool:
+Declare where the service goes, and which policies it gets, in
+`.donkey-kit.toml`:
+
+```toml
+[donkey.publication]
+version = "1.4.0"
+
+[donkey.agents.support-triage]
+protocol = "a2a_v1"
+endpoint = "https://agents.acme.example/triage/"
+
+[donkey.expose]
+target = "shared-omni-gateway"          # the gateway's name; --target overrides it
+
+[donkey.expose.services.support-triage]
+label = "support-triage"                # the instance label and path; default: the service ID
+upstream = "https://agents.acme.example/triage/"   # default: the service's endpoint
+
+[[donkey.expose.services.support-triage.policies]]
+asset = "68ef9520-24e9-4cf2-b2f5-620025690913/client-id-enforcement/1.3.3"
+
+[[donkey.expose.services.support-triage.policies]]
+asset = "68ef9520-24e9-4cf2-b2f5-620025690913/credential-injection-api-key/1.0.1"
+configuration = { authType = "apiKey", customHeader = "X-Api-Key", overwrite = true, apiKey = "…" }
+outbound = true                         # applied on the way to the agent (A2A only)
+```
+
+- `target` names the gateway; it must already exist and be running.
+- Each policy is a `group/asset/version` from Exchange, with its
+  `configuration`. There are no default policies: what is declared is what is
+  applied. `outbound = true` attaches a policy to the agent's upstream rather
+  than to its inbound side; an MCP server's policies are all inbound.
+- Put a policy secret, such as `apiKey` above, in `.donkey-kit.local.toml`
+  rather than the committed file. Its `[donkey.expose]` table overrides the
+  project file's.
+- Only an agent declared with `protocol = "a2a_v1"` can be exposed, and the
+  agent or MCP server needs an `endpoint` unless the declaration gives an
+  `upstream`.
+
+It stays narrow, so it never turns into a provisioning tool:
 
 - It creates only the instance in front of *your* agent or MCP server, on a
-  gateway target that already exists.
+  gateway that already exists.
 - Running it again changes nothing that is already there. It adds a missing
   policy, and it never deletes, edits a policy's configuration, or moves an
   instance.
-- `--dry-run` prints what it would create, and each step reports its own
-  result.
-- Gateways, targets, LLM proxies, organization-wide policy and connected-app
-  scopes belong to your platform team and its infrastructure-as-code. If one is
-  missing, `donkey expose` tells you which one rather than creating it.
+- `--dry-run`, and `donkey preflight`, print what it would create and send no
+  write. Each step reports its own result.
+- Gateways, environments, LLM proxies, organization-wide policy and
+  connected-app scopes belong to your platform team and its
+  infrastructure-as-code. If one is missing, `donkey expose` tells you which
+  one, and where to create it, rather than creating it.
 
-The calls that create, deploy and delete an A2A instance have been verified
-against a live sandbox, with a connected app as well as a user login, and so
-have the MCP instance calls, with a user login. The smallest set of scopes the
-connected app needs has not, so the command does not ship until it is.
+See [`donkey expose`](/cli#donkey-expose) for the step statuses and exit
+codes, and [Connected-app scopes](/reference/scopes#for-donkey-expose) for the
+connected app it runs with.
 
 ## `donkey dev` — a gateway in front of your laptop
 

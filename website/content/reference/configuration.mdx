@@ -602,11 +602,14 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Tool pinning: `donkey.tools.lock()` | Token request, then Exchange reads | <Badge tone="roadmap">Roadmap</Badge>: raises `NotImplementedError` before sending |
 | Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | <Badge tone="roadmap">Roadmap</Badge>: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](/publishing#publishing-mcp-servers) and [Publishing agents](/publishing#publishing-agents). |
+| `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](/cli#donkey-expose). |
+| `donkey preflight`, `donkey expose --dry-run` | Token request, then the same reads, and no writes | Available |
 | Hidden commands `donkey status`, `verify` | Token request, then platform calls | <Badge tone="roadmap">Roadmap</Badge>: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
 So in this release the SDK sends the `ANYPOINT_*` credentials only for the
-Available rows above: `donkey publish`, the registry reads and tool discovery,
+Available rows above: `donkey publish`, `donkey expose` and `donkey preflight`,
+the registry reads and tool discovery,
 or your own code asking for a connected-app token. The scopes each one needs
 are in [Connected-app scopes](/reference/scopes).
 
@@ -648,8 +651,8 @@ one leaves unset. Nested tables such as `[donkey.cost]` merge the same way. A
 scalar or an array in a higher file replaces the lower file's value; it isn't
 appended to. Each key remembers which file it came from.
 
-Three tables in these files are not `DonkeyConfig` fields, and
-`Donkey.from_env()` ignores all three:
+Four tables in these files are not `DonkeyConfig` fields, and
+`Donkey.from_env()` ignores all four:
 
 - `[donkey.mcp_servers]` declares how each MCP server your tools name is
   reached. `donkey scan` reads it from the scanned directory's two project
@@ -663,6 +666,9 @@ Three tables in these files are not `DonkeyConfig` fields, and
   provider and documentation file. `donkey publish` reads it from the same two
   files. See
   [Planning a publish](/publishing#planning-a-publish).
+- `[donkey.expose]` names the gateway `donkey expose` deploys to, and for
+  each service its instance label, upstream and policies. `donkey expose` and
+  `donkey preflight` read it from the same two files. See [A2A agents](/a2a).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
 file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that

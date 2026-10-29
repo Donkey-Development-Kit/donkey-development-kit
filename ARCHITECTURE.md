@@ -99,10 +99,11 @@ CLI's home, #730).
 
 **The provisioning boundary** ([ADR 0015](docs/adr/0015-provisioning-boundary.md),
 #319). The SDK never holds desired state. Its one write path to the control
-plane is `donkey expose` (BG §2.9.2, roadmap): one API Manager instance in
-front of the developer's own A2A agent or MCP server, the inbound policies on
-that instance, and its registry entry. Creation is additive and idempotent by
-`instanceLabel`, with a dry run and no deletes. Gateways, targets, LLM proxies,
+plane is `donkey expose` (BG §2.9.2, #226; `donkey_kit.registry.expose`): one
+API Manager instance in front of the developer's own A2A agent or MCP server,
+the policies declared for it, its registry entry and its deployment to an
+existing gateway. Creation is additive and idempotent by `instanceLabel`, with
+a dry run and no deletes; `donkey preflight` (#1279) makes only the reads. Gateways, targets, LLM proxies,
 org-wide policy, connected apps and scopes belong to the platform and its IaC:
 the SDK reads and reports them, never creates them. A second write path needs
 a new ADR.

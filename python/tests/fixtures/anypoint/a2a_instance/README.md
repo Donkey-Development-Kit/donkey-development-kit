@@ -48,3 +48,8 @@ unless they start with `/`.
   `applying`/`unregistered`, then `applied`/`active` about 10 seconds later.
 - `api_describe.200.json` — `GET …/apis/{id}` once deployed.
 - `contracts.200.json` — `GET …/apis/{id}/contracts` before the delete: none.
+- `create.a2a-v1-protocol.400.json` — the create (#226, 2026-10-28) for an
+  agent asset whose Exchange agent-metadata `protocol` is `a2a_v1`: `400`
+  `InvalidOperationError`. The same create succeeds once the asset is
+  published with `protocol: a2a` and the `a2a-v1-card` file, which Exchange
+  records as `protocol: a2a, protocol-version: v1`.

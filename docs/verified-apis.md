@@ -133,8 +133,8 @@ VERIFIED with a concrete path.
 | Control-plane host (CA Hyperforce) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (LIVE) | `ca1.platform.mulesoft.com` (on `platform.`, **not** `anypoint.`; the previous `ca1.anypoint.mulesoft.com` placeholder does not resolve in DNS, #22). An SDK run with `region="ca"` and no `base_url` against a real ca1 org: `AnypointConnectedApp` minted a client-credentials token at `POST /accounts/api/v2/oauth2/token`, `GET /accounts/api/me` → `200`, `GET /accounts/api/organizations/{org}/environments` → `200` (2 envs). On the same root, `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis` → `403` JSON (connected app lacks the scope) and `GET /exchange/api/v2/assets/{org}/<missing>` → `404` JSON: both services answer there, but neither contract was exercised. `ca1.omni.mulesoft.com` is not a control-plane API host (`405` on the token path). | 2026-10-12 | live probe, ca1 org, connected app (client credentials); [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
 | Control-plane host (JP Hyperforce) | `core/_verify.py` `REGION_HOSTS` | VERIFIED (LIVE) | `jp1.platform.mulesoft.com` (on `platform.`, **not** `anypoint.`; the previous `jp1.anypoint.mulesoft.com` placeholder does not resolve in DNS, #22). An SDK run with `region="jp"` and no `base_url` against a real jp1 org: `AnypointConnectedApp` minted a client-credentials token at `POST /accounts/api/v2/oauth2/token`, `GET /accounts/api/me` → `200`, `GET /accounts/api/organizations/{org}/environments` → `200` (2 envs), `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis` → `200` JSON. `GET /exchange/api/v2/assets/{org}/<missing>` → `404` JSON: Exchange answers on the same root, but its contract was not exercised. Not in the shipping CLI's `validServers`. | 2026-10-12 | live probe, jp1 org, connected app (client credentials); [Hyperforce docs](https://docs.mulesoft.com/hyperforce/) |
 | Connected-app scopes: Exchange read | `registry/_scopes.py`, `registry.exchange`, [`scopes.md`](scopes.md) | VERIFIED (LIVE) | `read:exchange`, granted on the business group only (an `envId` context is rejected), allows the Graph search, `GET /exchange/api/v2/assets/{g}/{a}/{v}` and the API Governance conformance read (which `view:ang_governance_profiles` and `admin:ang_governance_profiles` also allow). Without it the version read is `403` `ForbiddenError`, the governance read `403` with a text body, and the Graph search `200` with no assets. The other registry reads: the environment list takes `view:environment`, `read:orgenvironments` or `read:servers` (`401` text without); the API Manager instance list and describe take `read:api_configuration`, `read:api_policies` or `manage:apis` (`403`); the policy listing takes `read:api_policies` or `manage:api_policies`, **not** `read:api_configuration`; the Gateway Manager read takes `read:servers` only (`403`). `donkey publish` needs `manage:exchange`: `edit:exchange` publishes a version but its endpoint registration answers `404` "The requested instance does not exist.", `create:exchange` likewise on a new asset and `403` on an existing one. Each set was granted to a fresh `client_credentials` app, because a scope removed from an app keeps working for a while; the reads also ran through `search()`, `resolve_mcp()` and `explain()`. Per-operation table: [`scopes.md`](scopes.md). | 2026-10-28 | live run, sandbox, connected app (#23) |
-| Connected-app scopes: API Manager write | provisioning, `donkey expose` (#226) | VERIFIED (LIVE) | Fresh app per set, on throwaway instances: the instance create (`POST …/apis`) needs `manage:api_configuration` or `manage:apis` **plus** `read:exchange` (either manage scope alone: `400` "Error while trying to retrieve asset. Reason: Forbidden"); the deploy (`POST /proxies/xapi/v1/…/deployments`) needs `read:servers` **plus** `manage:api_proxies` (`403` with either alone, or with `manage:api_configuration`, `manage:apis` or `manage:servers`); the delete takes `manage:api_configuration` or `manage:apis`. All `client_credentials`, scopes on the business group and environment. See [`scopes.md`](scopes.md). | 2026-10-28 | live run, sandbox, connected app (#23) |
-| Connected-app scopes: policy management | provisioning, `donkey expose` (#226), `registry.exchange` `explain()` | VERIFIED (LIVE) | Reading `GET …/apis/{id}/policies` takes `read:api_policies` or `manage:api_policies` (`403` `AuthorizationError` with `read:api_configuration`). Writing an inbound policy (`POST …/apis/{id}/policies`) and an outbound one (`POST /apimanager/xapi/v1/…/policies/outbound-policies`) takes `manage:api_policies`: it got past authorization to a `404` for a missing instance id, while `read:api_policies` and `manage:api_configuration` got `403`. The policy writes were checked up to authorization only. | 2026-10-28 | live run, sandbox, connected app (#23) |
+| Connected-app scopes: API Manager write | provisioning, `donkey expose` (#226) | VERIFIED (LIVE) | Fresh app per set, on throwaway instances: the instance create (`POST …/apis`) needs `manage:api_configuration` or `manage:apis` **plus** `read:exchange` (either manage scope alone: `400` "Error while trying to retrieve asset. Reason: Forbidden"); the deploy (`POST /proxies/xapi/v1/…/deployments`) needs `read:servers` **plus** `manage:api_proxies` (`403` with either alone, or with `manage:api_configuration`, `manage:apis` or `manage:servers`); the delete takes `manage:api_configuration` or `manage:apis`. All `client_credentials`, scopes on the business group and environment. `donkey expose` (#226) then ran end to end, for an MCP server and an A2A agent, with a fresh app holding exactly `view:environment`, `read:servers`, `read:exchange`, `manage:exchange`, `manage:api_configuration`, `manage:api_policies` and `manage:api_proxies`: the instance describe and upstreams read work with `manage:api_configuration`, and the deployment status read with `manage:api_proxies`. See [`scopes.md`](scopes.md). | 2026-10-28 | live run, sandbox, connected app (#23, #226) |
+| Connected-app scopes: policy management | provisioning, `donkey expose` (#226), `registry.exchange` `explain()` | VERIFIED (LIVE) | Reading `GET …/apis/{id}/policies` takes `read:api_policies` or `manage:api_policies` (`403` `AuthorizationError` with `read:api_configuration`). Writing an inbound policy (`POST …/apis/{id}/policies`) and an outbound one (`POST /apimanager/xapi/v1/…/policies/outbound-policies`) takes `manage:api_policies`: it got past authorization to a `404` for a missing instance id, while `read:api_policies` and `manage:api_configuration` got `403`. The `donkey expose` run (#226) then made both writes with `manage:api_policies`: `201` each. | 2026-10-28 | live run, sandbox, connected app (#23, #226) |
 | Which ops require an **admin** connected app w/ user context | `core/auth.py`, [`scopes.md`](scopes.md) | VERIFIED (LIVE) | None. Every SDK control-plane operation (`search()`, `resolve_mcp()`, `explain()`, `donkey.tools.discover()`, `donkey publish`) and the `donkey expose` write path ran with a `client_credentials` app holding only the scopes above. MuleSoft documents that a connected app's data access is bounded by its creator's ([Creating Connected Apps](https://docs.mulesoft.com/access-management/creating-connected-apps-dev), "Endpoint Scopes"). | 2026-10-28 | live run, sandbox, connected app (#23); MuleSoft docs |
 
 ## 2. LLM Proxy (data plane) — **LIVE-VERIFIED 2026-08-28**
@@ -769,7 +769,7 @@ decision resolves as out of scope rather than answered.
 | Documentation pages publishable? | BG §2.5 | PARTIAL | `exchange asset page` + `exchange asset resource` topics exist | 2026-08-28: `exchange:asset --help` |
 | Can arbitrary metadata/tags be attached (content digest)? | BG §2.5, `donkey publish --if-changed` | VERIFIED (LIVE) 2026-10-26 | Yes, as a `properties.{key}` multipart field. Exchange keeps it only in the version's generated POM `<properties>` (not in GraphQL `attributes`, `labels` or `customFields`), so `donkey publish` sends `properties.ddkDigest` and reads it back from the POM, downloaded without credentials from the pre-signed `externalLink` the GraphQL `asset` query returns. A republish of an existing version is `409` `ASSET_PRE_CONDITIONS_FAILED` and leaves the version as it was, so a digest is never overwritten (#218) | 2026-10-26 sandbox publish; `tests/fixtures/anypoint/exchange_publish/` (`pom.xml`, `publish.409.json`, `graphql.latest.json`) |
 | Asset lifecycle states (draft/published/deprecated) via API? | `require_lifecycle`, BG §2.5 | PARTIAL | `Deprecated` + `Public` flags on instances; A2D showed `status: draft\|published`. 2026-10-27 (#53): every asset has a `status`, and the v2 GraphQL `assets` query filters by the `Status` enum (`status: published` and `status: deprecated` were accepted live; the group has no deprecated asset). [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api) documents `development`, `published` and `deprecated` | 2026-08-28; 2026-10-27 |
-| Native descriptor formats (MCP manifest, A2A card) vs file attach? | BG §2.5 output | VERIFIED (plugin) | typed Exchange files w/ fixed classifiers (`agent-metadata`, `mcp-metadata`, `llm-metadata`, `a2a-card`, `schema`, `mule-application`) attached to `agent-network` root asset. VERIFIED (LIVE) 2026-10-27 for a standalone `agent` asset (#1260): `files.agent-metadata.json` (`{protocol, platform, kind, name, description, connections, provenance}`) and, for protocol `a2a_v1`, `files.a2a-v1-card.json` (an A2A 1.0 card) are stored as sent, each under its classifier as `json`, `zip`, `fat-*` and `original-*` | 2026-08-28; 2026-10-27 | §12.7; `tests/fixtures/anypoint/exchange_publish/agent.*` |
+| Native descriptor formats (MCP manifest, A2A card) vs file attach? | BG §2.5 output | VERIFIED (plugin) | typed Exchange files w/ fixed classifiers (`agent-metadata`, `mcp-metadata`, `llm-metadata`, `a2a-card`, `schema`, `mule-application`) attached to `agent-network` root asset. VERIFIED (LIVE) 2026-10-27 for a standalone `agent` asset (#1260): `files.agent-metadata.json` (`{protocol, platform, kind, name, description, connections, provenance}`) and, for protocol `a2a_v1`, `files.a2a-v1-card.json` (an A2A 1.0 card) are stored as sent, each under its classifier as `json`, `zip`, `fat-*` and `original-*`. 2026-10-28 (#226): the agent-metadata `protocol` of an `a2a_v1` agent is `a2a`, with the version carried by the `a2a-v1-card` file; Exchange then records `protocol: a2a, protocol-version: v1`. Stored as `protocol: a2a_v1`, the asset publishes, but API Manager refuses it an `a2a` instance (§12.5) | 2026-08-28; 2026-10-27; 2026-10-28 | §12.7; `tests/fixtures/anypoint/exchange_publish/agent.*` |
 
 ## 8. Framework APIs (BG §1.8) — re-verify every constructor
 
@@ -1009,11 +1009,12 @@ local; no gateway fronted the agent.
 | JSON-RPC methods `SendMessage` and `SendStreamingMessage` (`JsonRpcDispatcher.METHOD_TO_MODEL`) | The calls `donkey dev`'s simulated ingress runs its `--scenario` rules on; the other methods pass through | VERIFIED (local round-trip) | a2a-sdk 1.3.0, 2026-10-27, #1284: `donkey dev` on `127.0.0.1:8931`, called with plain `curl`, returned the card and a completed `SendMessage` task with `x-donkey-simulator: true`, and a scenario-matched `SendMessage` got the 79-byte injection-protection fixture |
 
 Fronting an agent with an Omni Gateway A2A instance is `donkey expose` (#226);
-the control-plane calls it needs are recorded in §12.5 (#254, and #1278 for an
+the control-plane calls it makes are recorded in §12.5 (#254, and #1278 for an
 MCP instance). `donkey dev`'s
 simulated ingress (#1284) answers inbound rejections with the LLM-proxy fixtures
-of §4; how the gateway answers a policy rejection on an A2A agent instance is
-not captured (#226/#1278).
+of §4. Of the gateway's own policy rejections on an A2A agent instance, only
+`client-id-enforcement`'s with no client id was seen (`401`
+`{"error":"Client ID is not present"}`, #226); none is captured as a fixture.
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 
@@ -1336,8 +1337,8 @@ Captures, scrubbed, are in `python/tests/fixtures/anypoint/a2a_instance/`.
 | `DELETE /apimanager/api/v1/…/apis/{apiId}` | VERIFIED (LIVE) | `204`; the instance then drops out of the listing. |
 
 Not verified by this run: inbound policies on an A2A instance, and traffic
-through the deployed instance (its upstream was not reachable). The `mcp`
-instance is below (#1278).
+through the deployed instance (its upstream was not reachable); the `donkey
+expose` run below did both. The `mcp` instance is below (#1278).
 
 **Live: the MCP instance write path (#1278).** On 2026-10-27 one MCP instance
 was created, given two inbound policies, deployed and deleted in the same
@@ -1357,7 +1358,54 @@ scrubbed, are in `python/tests/fixtures/anypoint/mcp_instance/`.
 Not verified by this run: traffic through the deployed instance (its upstream
 was not reachable, and no call went through the gateway), how the gateway
 answers an MCP call a policy refuses (#303), and the run with a connected
-app's token. The scopes in §1 were isolated with an MCP instance (#23).
+app's token, which the `donkey expose` run below made. The scopes in §1 were
+isolated with an MCP instance (#23).
+
+**Live: `donkey expose` and `donkey preflight` (#226, #1279).** On 2026-10-28
+both commands ran from a project declaring one MCP server (inbound
+`mcp-support` 1.1.1) and one `a2a_v1` agent (inbound `client-id-enforcement`
+1.3.3, outbound `credential-injection-api-key` 1.0.1), against the same
+sandbox and managed shared-space target, with a fresh connected app holding
+only the seven scopes in [`scopes.md`](scopes.md). Per service: `preflight`
+planned every step and sent no write, the first `expose` published,
+created, applied the policies and deployed (about 30 s), a second `expose` and
+a `--dry-run` found every step present and sent nothing. Both instances, both
+assets and the app were deleted afterwards. The gateway was found with:
+
+| Call | Status | Observed |
+|---|---|---|
+| `GET /gatewaymanager/api/v1/organizations/{org}/environments/{env}/gateways?name={name}` | VERIFIED (LIVE) | `200`, `{content: [{id, name, targetId, status, …}], …}`. `name` matches a case-sensitive substring (`name=shared` answers the same row), so the SDK keeps the exact name only. Capture: `python/tests/fixtures/anypoint/gateway/`. |
+| `GET /gatewaymanager/api/v1/…/gateways/{id}` | VERIFIED (LIVE) | `200`, `status: "APPLIED"`, `runtimeVersion` (sent as the deploy's `gatewayVersion`), `portConfiguration.ingress.port` (8081, the `proxyUri` port) and `configuration.ingress.publicUrl` (the URL `expose` reports). |
+
+What the run added to the calls above:
+
+- An inbound policy on an A2A instance: `POST …/apis/{apiId}/policies` with
+  `client-id-enforcement` 1.3.3 is `201`, as on an MCP instance. Through the
+  deployed gateway, a call with no client id was refused `401`
+  `{"error":"Client ID is not present"}`. The MCP instance's call reached the
+  gateway and got `503` `no healthy upstream` (its upstream does not exist).
+- An `a2a` instance needs the agent's Exchange protocol to be `a2a`. For an
+  agent asset whose agent-metadata `protocol` is `a2a_v1`, the create is `400`
+  `InvalidOperationError` "a2a endpoint type using agent asset type must have
+  an A2A protocol" (`a2a_instance/create.a2a-v1-protocol.400.json`). Published
+  with `protocol: a2a` (agent-metadata and `properties.protocol`) and the
+  `a2a-v1-card` file, Exchange records `protocol: a2a, protocol-version: v1`
+  and the create is `201`, with `metadata {assetKind: agent, assetPlatform:
+  other, assetType: agent}`. A metadata `protocol` that differs from
+  `properties.protocol` is `400` at publish, and so is `a2a` with an
+  `a2a-card` file holding a 1.0 card. So `donkey publish` sends `a2a` for an
+  `a2a_v1` agent (§7); a version published before that fails `expose` with a
+  remediation to publish a new version.
+- The deploy's status poll is the only wait. `expose` polls every 5 s for up
+  to 180 s, and a deployment still applying then fails its step rather than
+  being reported as done.
+- Where each call is documented, checked on the MuleSoft developer portal on
+  2026-10-28: the gateway list is Gateway Manager's `listGateways` (with its
+  `name` filter); the instance create, policy list and create, and upstreams
+  read are in the API Manager public API; the deploy and its status are
+  `createProxyDeployment` and `getProxyDeploymentStatus` in the `proxies-xapi`
+  reference (an experience API, no SLA). The outbound-policies call is on no
+  portal page. All four are on the unsupported boundary page.
 
 App deploy (CloudHub 2.0 / RTF): `/amc/application-manager/api/v2/organizations/{org}/environments/{env}/deployments[/{id}]`;
 status poll `/amc/adam/api/organizations/{org}/environments/{env}/deployments/{id}`.

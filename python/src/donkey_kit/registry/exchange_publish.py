@@ -90,6 +90,12 @@ _VERSION_QUERY = (
 # The agent card file's classifier per protocol: the agent-fabric plugin's
 # (docs/verified-apis.md §7). An ``other`` agent has no card.
 _CARD_CLASSIFIERS = {"a2a_v1": "a2a-v1-card"}
+# The agent-metadata ``protocol`` per declared protocol. Exchange accepts
+# ``a2a_v1`` there, but API Manager then refuses the agent an ``a2a`` instance
+# ("must have an A2A protocol"); with ``a2a`` and the ``a2a-v1-card`` file,
+# Exchange records ``protocol: a2a, protocol-version: v1`` and the instance is
+# created (docs/verified-apis.md §12.5, #226).
+_EXCHANGE_PROTOCOLS = {"a2a_v1": "a2a"}
 # What ``donkey.serve()`` reads and writes; a2a/_server.py's ``_MODES``, which
 # registry cannot import (the layered-import rule).
 _AGENT_MODES = ("text/plain", "application/json")
@@ -328,13 +334,15 @@ def agent_metadata(asset: PlannedAsset) -> dict[str, Any]:
     """The ``agent-metadata`` file published with the agent ``asset``: its
     protocol, platform, name and ``urn:gav`` provenance, in Agent Fabric's
     agent metadata schema, as the agent-fabric plugin builds it
-    (docs/verified-apis.md §7). ``platform`` is ``other``: the SDK runs
+    (docs/verified-apis.md §7). An ``a2a_v1`` agent's protocol is ``a2a``:
+    its card's classifier, ``a2a-v1-card``, carries the A2A version, which is
+    what API Manager reads (#226). ``platform`` is ``other``: the SDK runs
     anywhere. ``connections`` is empty, since the scan does not see what an
     agent calls; the description is added when one is planned.
     """
     group, asset_id, version = _gav(asset)
     metadata: dict[str, Any] = {
-        "protocol": asset.protocol or "other",
+        "protocol": _EXCHANGE_PROTOCOLS.get(str(asset.protocol), asset.protocol or "other"),
         "platform": "other",
         "kind": "agent",
         "name": asset.service_id,
