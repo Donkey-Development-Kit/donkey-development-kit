@@ -33,7 +33,12 @@ Inside ``donkey.as_user(...)`` (BG §2.4, #1366) listing and binding send the
 user's token in the user-token header (``Authorization: Bearer`` by default,
 docs/verified-apis.md §13) instead of the credential's ``Authorization``; the
 credential's other headers still go. The token is read when the set lists or
-binds, so a binding keeps the user it was made for.
+binds and goes into the framework client's static headers, so a binding sends
+the identity it was bound for. A per-tool binding records that identity, and a
+call under any other identity (another token, the service where a user was
+bound, or the reverse) raises :class:`~donkey_kit.core.errors.AuthError` before it is sent
+(#1418). A whole-server binding hands each call to the framework, out of the
+SDK's sight, so it cannot refuse one: bind it inside the block that uses it.
 """
 
 from __future__ import annotations
@@ -53,7 +58,7 @@ from ..core import _verify
 from ..core.approvals import APPROVAL_TIMEOUT, NativePause, parse_timeout
 from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, ConfigError, DonkeyError
-from ..core.identity import current_user
+from ..core.identity import Requester, capture_requester, current_user
 from ..core.reactions import Duration
 from ..core.step_up import wait_for_approval
 from ..core.tool_access import tool_access_denial
@@ -110,12 +115,13 @@ class UngovernedMcpServer(DonkeyError):
 
 @dataclasses.dataclass(frozen=True)
 class _Tool:
-    """One tool a binding binds: the name the model sees, its descriptor and the
-    approval rule that gates it, if any."""
+    """One tool a binding binds: the name the model sees, its descriptor, the
+    approval rule that gates it, if any, and who it was bound for."""
 
     exposed: str
     desc: ToolDescriptor
     rule: ApprovalRule | None
+    bound_for: Requester
 
 
 class ToolSet:
@@ -537,16 +543,22 @@ class ToolSet:
         object (ADK, Strands, OpenAI Agents, Agent Framework, CrewAI). Those take an
         allow-list of tool names but cannot rename one tool or gate it, so a
         collision rename or a ``require_approval()`` refuses the bind there.
+
+        Each tool records who it is bound for, read with the headers' user
+        token, so a per-tool call under another user is refused (#1418).
         """
         described = await self.describe()
         servers = described.servers
         indexed = _index(servers, self._filters)
         exposed, _ = resolve_collisions([d for _, d in indexed])
         exposed_as = {id(d): name for name, d in exposed.items()}
+        bound_for = capture_requester()
         tools: dict[int, dict[str, _Tool]] = {}
         for index, desc in indexed:
             rule = rule_for(self._approvals, desc)
-            tools.setdefault(index, {})[desc.name] = _Tool(exposed_as[id(desc)], desc, rule)
+            tools.setdefault(index, {})[desc.name] = _Tool(
+                exposed_as[id(desc)], desc, rule, bound_for
+            )
         bound = [t for names in tools.values() for t in names.values()]
         if not per_tool:
             renamed = sorted(t.exposed for t in bound if t.exposed != t.desc.name)
@@ -577,9 +589,12 @@ class ToolSet:
         self, tool: _Tool, invoke: Callable[..., Any], server: McpServerHandle
     ) -> Callable[..., Any]:
         """``invoke`` raising :class:`~donkey_kit.core.tool_access.ToolNotInProfile` for
-        the gateway's tool-access denial (#312), behind ``tool``'s approval gate
-        when a rule gates it."""
-        refusing = _refusing(invoke, tool=tool.desc.name, server=server.ref.coordinates)
+        the gateway's tool-access denial (#312) and refusing a call under another
+        user than the binding's (#1418), behind ``tool``'s approval gate when a
+        rule gates it."""
+        refusing = _refusing(
+            invoke, tool=tool.desc.name, server=server.ref.coordinates, bound_for=tool.bound_for
+        )
         if tool.rule is None:
             return refusing
         return self._bind_tool(tool.exposed, tool.desc, refusing, schema=tool.desc.input_schema)
@@ -589,7 +604,8 @@ class ToolSet:
     # scripts/mcp_binding verified it, and returns what that class returns. Each
     # first refuses an ungoverned set (ADR 0013), then loads the descriptors.
     # The per-tool ones (LangGraph, LlamaIndex, Anthropic) wrap each tool's call so
-    # the gateway's tool-access denial raises ToolNotInProfile (#312); the
+    # the gateway's tool-access denial raises ToolNotInProfile (#312) and a call
+    # under another user than the bind's raises AuthError (#1418); the
     # whole-server ones leave the call to the framework (docs/verified-apis.md §9).
     async def langgraph(self) -> list[Any]:  # -> list[BaseTool]
         """Bind the tool set as LangChain ``BaseTool`` objects, a flat list for
@@ -874,13 +890,22 @@ class ToolSet:
                 await asyncio.to_thread(adapter.stop)
 
 
-def _refusing(invoke: Callable[..., Any], *, tool: str, server: str) -> Callable[..., Any]:
+def _refusing(
+    invoke: Callable[..., Any], *, tool: str, server: str, bound_for: Requester
+) -> Callable[..., Any]:
     """``invoke``, an async MCP tool call, re-raising the gateway's tool-access
     denial as :class:`~donkey_kit.core.tool_access.ToolNotInProfile` (#312). Every
-    other exception, and every result (an ``isError`` one too), passes through."""
+    other exception, and every result (an ``isError`` one too), passes through.
+
+    The call carries the headers of the user it was bound for, so a call under
+    any other user raises :class:`~donkey_kit.core.errors.AuthError` and is not
+    sent (#1418). An approved call resumes under its requester's binding
+    (``core.identity.requester_scope``), so this check sees that user."""
 
     @functools.wraps(invoke)
     async def call(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        if not bound_for.matches_current_user():
+            raise _wrong_user(tool, server, bound_for)
         try:
             return await invoke(*args, **kwargs)
         except Exception as exc:
@@ -890,6 +915,25 @@ def _refusing(invoke: Callable[..., Any], *, tool: str, server: str) -> Callable
             raise denied from exc
 
     return call
+
+
+def _wrong_user(tool: str, server: str, bound_for: Requester) -> AuthError:
+    made = "inside donkey.as_user()" if bound_for.user is not None else "as the service"
+    now = (
+        "inside donkey.as_user() with a different token"
+        if current_user() is not None
+        else "outside any donkey.as_user() block"
+    )
+    return AuthError(
+        f"MCP tool {tool!r} on {server} was not called: its binding was made {made} and "
+        f"sends that identity's headers, but the call runs {now}, so it would have reached "
+        "the gateway as someone other than the caller.",
+        remediation=(
+            "Bind the ToolSet where the agent runs: inside the donkey.as_user() block, once "
+            "per user or request, to act for that user, or outside any block to act as "
+            "the service. A binding sends the identity it was bound for (BG §2.4)."
+        ),
+    )
 
 
 def _select(servers: list[McpServerHandle], patterns: list[str]) -> list[McpServerHandle]:

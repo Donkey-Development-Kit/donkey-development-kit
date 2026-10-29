@@ -168,6 +168,22 @@ async def test_the_check_compares_tokens_not_scopes() -> None:
             assert token not in str(err) and token not in err.remediation
 
 
+async def test_matching_the_current_user_is_strict_where_the_check_lets_unbound_pass() -> None:
+    service = Requester(None, None, None)
+    async with Donkey(_cfg()) as donkey:
+        async with donkey.as_user(id_token=_ALICE):
+            alice = capture_requester()
+            assert alice.matches_current_user()
+            assert not service.matches_current_user()
+        # Unbound matches only a requester that had no user (#1418).
+        assert service.matches_current_user()
+        assert not alice.matches_current_user()
+        async with donkey.as_user(id_token=_ALICE):
+            assert alice.matches_current_user()
+        async with donkey.as_user(id_token=_BOB):
+            assert not alice.matches_current_user()
+
+
 # --- resolve(): the raise-and-resume path -------------------------------------
 async def test_resolve_sends_the_tools_model_calls_as_the_requester() -> None:
     async with Donkey(_cfg()) as donkey:

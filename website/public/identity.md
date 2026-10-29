@@ -90,12 +90,27 @@ with a `.remediation`, before any request leaves the process.
 |---|---|---|
 | No `id_token`: empty, blank or `None` | `donkey.as_user(...)` itself | the missing `id_token` |
 | An approved tool resumed with another user's token | when the tool would run | the approval and the tool |
+| A per-tool MCP binding called under a different user from the one it was bound for | when the tool would be called | the tool and its server |
 
 The same rule holds across an approval. A tool that waits for a human runs as
 the user who asked for it, with their token and attribution, wherever it is
 resumed. Resuming it inside `as_user()` under a different token raises
 `AuthError` instead of running it as someone else. See
 [Who a resumed call runs as](https://docs.donkey-kit.dev/hitl.md#who-a-resumed-call-runs-as).
+
+MCP tools follow it too. A binding sends the identity it was bound with, so
+bind inside the block that runs the agent. A per-tool binding (LangGraph,
+LlamaIndex, the Anthropic SDK) called under a different user raises `AuthError`
+instead of sending the call as someone else. "A different user" means another
+token, a user's binding called outside any block, or a service binding called
+inside one.
+
+  **Whole-server MCP bindings are not checked.** ADK, Strands, the OpenAI
+  Agents SDK, Agent Framework and CrewAI make their own MCP calls, out of the
+  SDK's sight. An agent built with one at startup and run inside `as_user()`
+  sends its model calls as the user and its tool calls as your service. Bind
+  those inside the `as_user()` block that uses them. See
+  [Acting for a user](https://docs.donkey-kit.dev/tool-access/binding.md#acting-for-a-user).
 
 The errors and the SDK's logs never contain the token itself. There is **no
 setting that enables a fallback** to the service identity, and none will be

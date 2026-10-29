@@ -15,11 +15,13 @@ from typing import Any
 import pytest
 
 from donkey_kit.core.errors import PolicyViolation, UpstreamModelError
+from donkey_kit.core.identity import Requester
 from donkey_kit.core.tool_access import ToolNotInProfile, tool_access_denial
 from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.tools import ToolExclusion
 from donkey_kit.tools.session import ToolSet, _refusing
 
+_SERVICE = Requester(None, None, None)
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "mcp_access"
 
 
@@ -117,7 +119,9 @@ def test_the_refusing_wrapper_raises_the_typed_denial_from_the_mcp_error() -> No
     async def denied(**_: Any) -> Any:
         raise _McpError(_ErrorData(err["code"], err["message"], err["data"]))
 
-    call = _refusing(denied, tool="current_time", server="com.example/inv/1.0.0")
+    call = _refusing(
+        denied, tool="current_time", server="com.example/inv/1.0.0", bound_for=_SERVICE
+    )
     with pytest.raises(ToolNotInProfile) as caught:
         asyncio.run(call(x=1))
     assert isinstance(caught.value.__cause__, _McpError)
@@ -132,10 +136,10 @@ def test_the_refusing_wrapper_passes_other_errors_and_results_through() -> None:
         return {"isError": True, "content": [], "args": kwargs}
 
     with pytest.raises(ConnectionError):
-        asyncio.run(_refusing(boom, tool="add", server="s")())
-    result = asyncio.run(_refusing(failed, tool="add", server="s")(a=1))
+        asyncio.run(_refusing(boom, tool="add", server="s", bound_for=_SERVICE)())
+    result = asyncio.run(_refusing(failed, tool="add", server="s", bound_for=_SERVICE)(a=1))
     assert result == {"isError": True, "content": [], "args": {"a": 1}}
-    assert _refusing(failed, tool="add", server="s").__name__ == "failed"
+    assert _refusing(failed, tool="add", server="s", bound_for=_SERVICE).__name__ == "failed"
 
 
 def _server(asset_id: str, *names: str) -> McpServerHandle:
