@@ -51,7 +51,6 @@ _BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
     ("registry.warm", lambda: _REGISTRY.warm()),
     ("publication.preview", lambda: _PUBLICATION.preview(object())),
     ("publication.export", _PUBLICATION.export),
-    ("publication.verify", lambda: _PUBLICATION.verify(object())),
 )
 
 

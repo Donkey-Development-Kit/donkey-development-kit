@@ -26,7 +26,8 @@ from typing import Any
 
 import pytest
 
-from donkey_kit.registry.introspect import DescriptorMismatch, derive_descriptor
+from donkey_kit.registry.introspect import DerivationMode, DescriptorMismatch, derive_descriptor
+from donkey_kit.registry.publication import content_digest
 
 _PYTHON_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PYTHON_ROOT / "scripts"))
@@ -84,6 +85,17 @@ async def test_live_mcp_tools_list_equals_object_introspection() -> None:
     live = await derive_descriptor(_entrypoint("mcp"), mode="auto:live")
 
     assert live == await derive_descriptor(_entrypoint("mcp"))
+
+
+@pytest.mark.parametrize("mode", ["auto", "auto:live"])
+async def test_two_introspections_of_one_server_digest_equal(mode: DerivationMode) -> None:
+    # descriptor_auto_stable: an unchanged server never looks changed, so
+    # ``--if-changed`` never publishes a version for nothing (BG §2.5).
+    _installed("mcp")
+    first = await derive_descriptor(_entrypoint("mcp"), mode=mode)
+    second = await derive_descriptor(_entrypoint("mcp"), mode=mode)
+
+    assert content_digest(first, {}) == content_digest(second, {})
 
 
 # --- framework-free --------------------------------------------------------------

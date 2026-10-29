@@ -116,6 +116,19 @@ class Discovery:
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
         )
 
+    async def resolve(self, ref: AssetRef | str, *, auth: McpAuth | None) -> ToolSet:
+        """A ``ToolSet`` of the one server ``ref``: its default-criteria verdict
+        and its endpoint, as :meth:`discover` reads them for each asset, with no
+        search and no cache. A server that does not resolve is in the set with
+        a failed ``resolve_mcp`` check, so listing its tools refuses it."""
+        handle = await self._handle(AssetRef.parse(ref), GovernanceCriteria())
+        return ToolSet(
+            [handle],
+            _natives=self._natives,
+            _auth=auth if auth is not None else self._auth,
+            _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
+        )
+
     def refresh(self) -> None:
         """Drop every cached discovery, so the next ``discover()`` reads the registry."""
         self._cache.invalidate()

@@ -22,11 +22,8 @@ loopback gateway. ``attribution_headers_present`` asserts the consumer-auth
 per-agent attribution unit. The application and business-group header names
 are still UNVERIFIED placeholders (docs/verified-apis.md §3).
 
-Thirteen names were **retired, not implemented** (#749), and two still are:
-``descriptor_auto_stable`` and ``publication_verify_drift``. Both need a
-:class:`~donkey_kit.registry.publication.Publication` verb that is not verified
-and built yet (``publish_if_changed()`` and ``verify()`` in
-``registry/publication.py``). ``governance_resolve_drift`` and
+Thirteen names were **retired, not implemented** (#749). Every one is back
+with a body, or dropped: ``governance_resolve_drift`` and
 ``governance_target_switch`` were dropped with the declarative control plane
 (#730, ADR 0008). ``publication_idempotent`` came back with ``donkey publish``
 (#218); ``single_tool_call``, ``multi_tool_multi_server`` and ``tool_filtering``
@@ -36,10 +33,11 @@ with the verified ``ToolSet`` bindings (docs/verified-apis.md §9, #991);
 ``asset_type_detection`` and ``dynamic_tools_detected`` with the verified
 descriptor-derivation attributes (docs/verified-apis.md §10, #1024, #991).
 ``dynamic_tools_detected`` came back for ``auto`` only: ``auto:static`` was
-dropped as UNSUPPORTED (#1248). The pure logic beneath the rest (``ToolFilter``,
-collision prefixes, governance criteria, content digests) is unit-tested in
-``tests/unit/test_pure_logic.py``. A retired
-name comes back only with a body, once its surface is verified and built.
+dropped as UNSUPPORTED (#1248). ``descriptor_auto_stable`` came back with the
+content digest over a derived descriptor, and ``publication_verify_drift`` with
+``Publication.verify()`` (#991). The pure logic beneath them (``ToolFilter``,
+collision prefixes, governance criteria, content digests) is also unit-tested
+in ``tests/unit/test_pure_logic.py``.
 """
 
 from __future__ import annotations
@@ -134,6 +132,13 @@ CONFORMANCE_SCENARIOS = [
     # since auto imports the module (BG §2.5). auto:static, which would have
     # warned instead, was dropped (#1248).
     "dynamic_tools_detected",
+    # Two introspections of one unchanged server derive the same content digest,
+    # so --if-changed never publishes a version for nothing (BG §2.5, #991).
+    "descriptor_auto_stable",
+    # A tool added on the live server since its version was published is drift:
+    # Publication.verify() warns, or raises PublicationDrift (BG §2.5, #991). It
+    # compares Exchange's mcp-metadata with tools/list, not a framework.
+    "publication_verify_drift",
 ]
 
 # Where each scenario runs (#749), as pytest node ids relative to ``python/``.
@@ -208,6 +213,14 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
         f"{_DESCRIPTOR}::test_live_needs_an_mcp_server",
     ),
     "dynamic_tools_detected": (f"{_DESCRIPTOR}::test_tools_registered_in_a_loop_are_all_derived",),
+    "descriptor_auto_stable": (
+        f"{_DESCRIPTOR}::test_two_introspections_of_one_server_digest_equal",
+    ),
+    "publication_verify_drift": (
+        "tests/unit/test_publication_verify.py::"
+        "test_an_added_tool_on_the_live_server_raises_publication_drift",
+        "tests/unit/test_publication_verify.py::test_an_added_tool_warns_by_default",
+    ),
 }
 
 # Documented, ASSERTED exemptions — published in the README (the conformance kit). A framework

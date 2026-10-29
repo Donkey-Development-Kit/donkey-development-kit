@@ -1,0 +1,34 @@
+{
+  "capabilities": {
+    "logging": false,
+    "prompts": false,
+    "resources": false,
+    "tools": true
+  },
+  "protocolVersion": "2025-06-18",
+  "provenance": {
+    "id": "urn:gav:00000000-0000-4000-8000-306f0858eed3:ddk-verify-991-fixture:1.1.0"
+  },
+  "provider": {
+    "organization": "Donkey Development Kit",
+    "url": "https://docs.donkey-kit.dev"
+  },
+  "tools": [
+    {
+      "description": "Look up a product by its SKU: name, price and stock level.",
+      "inputSchema": {
+        "properties": {
+          "sku": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "lookup_sku"
+    }
+  ],
+  "transport": {
+    "kind": "streamableHttp",
+    "path": "/mcp"
+  }
+}
