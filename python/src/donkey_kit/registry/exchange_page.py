@@ -4,8 +4,9 @@
 so every asset's page has the same sections in the same order: Overview (its
 description, then the ``documentation`` file it declares), Tools for an MCP
 server (each with its parameters and any approval or risk it declares) or
-Skills for an agent, Connecting (how it is reached) and Provenance (where it
-was published from). Exchange shows the page
+Skills for an agent, for a new version of an MCP server what changed since the
+previous one (:func:`tool_changes`, #1271), Connecting (how it is reached) and
+Provenance (where it was published from). Exchange shows the page
 as the asset's Home page, and Agent Fabric as the Documentation section of its
 Overview (docs/verified-apis.md §12.3).
 
@@ -17,12 +18,14 @@ coordinates it shows.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from .publish_plan import PlannedAsset
 from .scan import ScanResult
 
-__all__ = ["PageSource", "documentation_page"]
+__all__ = ["Changes", "PageSource", "documentation_page", "tool_changes"]
 
 
 @dataclass(frozen=True)
@@ -37,17 +40,33 @@ class PageSource:
     run_url: str | None = None
 
 
+@dataclass(frozen=True)
+class Changes:
+    """What changed since the version ``since``, one line per difference, as
+    :func:`tool_changes` reports it."""
+
+    since: str
+    lines: tuple[str, ...]
+
+
 def documentation_page(
-    asset: PlannedAsset, result: ScanResult, *, source: PageSource | None = None
+    asset: PlannedAsset,
+    result: ScanResult,
+    *,
+    source: PageSource | None = None,
+    changes: Changes | None = None,
 ) -> str:
     """The Markdown page for ``asset``, an ``mcp`` or ``agent`` asset scanned as
-    ``result``."""
+    ``result``. ``changes`` adds a "Changes since" section to an MCP server's
+    page; a first publish has none."""
     lines = [f"# {asset.name}", "", "## Overview", ""]
     lines += [(asset.description or "").strip() or "No description is declared.", ""]
     if asset.documentation_text and asset.documentation_text.strip():
         lines += [asset.documentation_text.strip(), ""]
     lines += (
-        _agent_sections(asset, result) if asset.type == "agent" else _mcp_sections(asset, result)
+        _agent_sections(asset, result)
+        if asset.type == "agent"
+        else _mcp_sections(asset, result, changes)
     )
 
     lines += ["## Provenance", "", f"- **Asset:** {asset.asset_id} {asset.version}"]
@@ -77,7 +96,7 @@ def _agent_sections(asset: PlannedAsset, result: ScanResult) -> list[str]:
     return lines
 
 
-def _mcp_sections(asset: PlannedAsset, result: ScanResult) -> list[str]:
+def _mcp_sections(asset: PlannedAsset, result: ScanResult, changes: Changes | None) -> list[str]:
     lines: list[str] = []
     tools = sorted((t for t in result.tools if t.server == asset.service_id), key=lambda t: t.name)
     lines += ["## Tools", ""]
@@ -99,6 +118,10 @@ def _mcp_sections(asset: PlannedAsset, result: ScanResult) -> list[str]:
             lines.append("")
         else:
             lines += ["No parameters.", ""]
+    if changes is not None:
+        lines += [f"## Changes since {changes.since}", ""]
+        lines += [f"- {line}" for line in changes.lines] or ["No tool changed."]
+        lines.append("")
 
     server = next(s for s in result.mcp_servers if s.id == asset.service_id)
     lines += ["## Connecting", "", f"- **Transport:** {server.transport or 'streamable-http'}"]
@@ -108,6 +131,56 @@ def _mcp_sections(asset: PlannedAsset, result: ScanResult) -> list[str]:
         lines.append(f"- **MCP protocol version:** {asset.protocol_version}")
     lines.append("")
     return lines
+
+
+def tool_changes(
+    before: Sequence[Mapping[str, Any]], after: Sequence[Mapping[str, Any]]
+) -> tuple[str, ...]:
+    """What changed from the ``before`` tools to the ``after`` ones, both in the
+    ``mcp-metadata`` file's shape, one line per difference, sorted by tool name:
+    a tool added or removed, its description changed (stripped; a missing one
+    equals an empty one), and a parameter added, removed or given another
+    schema type."""
+    was = {str(t.get("name")): t for t in before}
+    now = {str(t.get("name")): t for t in after}
+    lines: list[str] = []
+    for name in sorted(was.keys() | now.keys()):
+        if name not in was:
+            lines.append(f"Added the tool `{name}`.")
+            continue
+        if name not in now:
+            lines.append(f"Removed the tool `{name}`.")
+            continue
+        if _text(was[name].get("description")) != _text(now[name].get("description")):
+            lines.append(f"`{name}`: the description changed.")
+        old, new = _properties(was[name]), _properties(now[name])
+        for param in sorted(old.keys() | new.keys()):
+            if param not in old:
+                lines.append(f"`{name}`: added the parameter `{param}`.")
+            elif param not in new:
+                lines.append(f"`{name}`: removed the parameter `{param}`.")
+            elif _type(old[param]) != _type(new[param]):
+                lines.append(
+                    f"`{name}`: the parameter `{param}` changed from "
+                    f"{_type(old[param])} to {_type(new[param])}."
+                )
+    return tuple(lines)
+
+
+def _text(value: object) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _properties(tool: Mapping[str, Any]) -> Mapping[str, Any]:
+    schema = tool.get("inputSchema")
+    properties = schema.get("properties") if isinstance(schema, Mapping) else None
+    return properties if isinstance(properties, Mapping) else {}
+
+
+def _type(schema: object) -> str:
+    """A parameter's schema type, or ``any`` when it is left open."""
+    kind = schema.get("type") if isinstance(schema, Mapping) else None
+    return str(kind) if kind else "any"
 
 
 def _cell(text: str) -> str:
