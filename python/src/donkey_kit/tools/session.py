@@ -317,7 +317,8 @@ class ToolSet:
         accumulate, ``filter()`` keeps them, and when several match a tool the
         last one sets its ``risk`` and ``timeout``. Binding refuses a name no
         server exposes, so a typo never leaves a tool ungated. The approval is
-        client-side and advisory until gateway step-up (#214).
+        client-side and advisory; the gateway's own step-up is separate (see
+        :meth:`wait_for_gateway_approval`, #214).
 
         Args:
             tools: Exact tool names to gate.

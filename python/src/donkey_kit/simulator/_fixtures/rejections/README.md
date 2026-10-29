@@ -24,7 +24,7 @@ introduced the policy) — no longer left open as "no URL recorded" (#253):
 | Azure Content Safety (row 8) | https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety | v1.13.0 |
 | Amazon Bedrock Guardrails (row 8, sibling) | https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails | v1.13.0 |
 | Google Model Armor Guardrails (row 8, sibling) | https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails | v1.14.0 |
-| CrowdStrike AIDR Guardrails (row 8, sibling) | https://docs.mulesoft.com/gateway/latest/policies-included-crowdstrike-aidr-guardrails | v1.14.0 |
+| CrowdStrike AIDR Guardrails (not a row: uncaptured, not typed, see below) | https://docs.mulesoft.com/gateway/latest/policies-included-crowdstrike-aidr-guardrails | v1.14.0 |
 
 **Live-capture status (#253, 2026-09-22):** rows 7 and 8 were re-confirmed
 against the deployed provisioning proxies — `ddk-injection-guard` (Regex Prompt
@@ -68,22 +68,24 @@ like the Bedrock sibling is a classify()-contract fixture only, absent from
 call failed) sends the same `action: reject` header; it is typed from the policy
 source as the retryable 5xx (row 6), not row 8, and is not captured.
 
-**CrowdStrike AIDR sibling (#1176, 2026-10-20):** row 8's fourth vendor is
-**read from the policy source, not live-captured** — no DDK proxy runs the
-CrowdStrike AIDR Guardrails policy, because it needs a CrowdStrike AIDR for
-Agents subscription (the live capture is #1184). The public policy page
-documents the `403` reject and the fail-closed `503`; the header names and body
-come from `crowdstrike-aidr-guardrails-policy` 1.0.0: a `403` carrying
+**CrowdStrike AIDR — UNVERIFIED, not typed (#1176, #1429):** this fixture is
+**read from the policy source, not live-captured**, so it is not one of the ten
+rows and `classify()` does not type it (§0.3). No DDK proxy runs the CrowdStrike
+AIDR Guardrails policy, because it needs a CrowdStrike AIDR for Agents
+subscription (the live capture is #1184). The public policy page documents the
+`403` reject and the fail-closed `503`; the header names and body come from
+`crowdstrike-aidr-guardrails-policy` 1.0.0: a `403` carrying
 `x-llm-proxy-crowdstrike-aidr-action: reject` / `-phase: request|response` /
 `-reason: <detectors, comma-joined>` and a
 `{"detectors":[…],"error":"Content blocked by CrowdStrike Falcon AIDR","message":…}`
 body (keys in the policy's serialisation order; `message` is AIDR's summary, empty
 when AIDR gives none, as in the fixture). It lives as
-`reject.content-safety-crowdstrike-aidr.{headers.txt,body.json}`, asserted by
-`test_row8_crowdstrike_aidr_variant_is_content_safety_blocked`, and is a
-classify()-contract fixture only, absent from `fixtures.lock`. Its fail-closed
-`503` also sends `action: reject` (reason `auth_failed`, `timeout`,
-`indeterminate`, …) and is typed as row 6.
+`reject.content-safety-crowdstrike-aidr.{headers.txt,body.json}`, is absent from
+`fixtures.lock` and is never served by the simulator. Until #1184 replaces it
+with a capture, `test_uncaptured_crowdstrike_aidr_shape_falls_through_unconfirmed`
+pins it to row 4's fall-through: a generic `PolicyViolation` whose message says
+the shape is unconfirmed and names the `x-llm-proxy-crowdstrike-aidr-*` headers,
+never a `ContentSafetyBlocked`. Its fail-closed `503` is a 5xx, so row 6.
 
 **Agent Kill Switch capture (#694, 2026-09-29):** row 9 was live-captured
 against `ddk-agent-kill-switch` (DDK / Sandbox, API instance 21206201,
@@ -107,7 +109,7 @@ capture (the JWT was a request header, never written to disk).
 | 5 | Upstream provider 4xx | `../anypoint/llm_proxy/reject.model-not-found.body.json` | `UpstreamRequestError` | non-429 4xx, nested `error` with `code`/`type`/`param` | LIVE, 2026-08-28 (OpenAI passthrough) |
 | 6 | Upstream 5xx | `reject.upstream-5xx.{headers.txt,body.empty}` | `UpstreamModelError` (retryable) | 5xx status range (no competing discriminator) | **SYNTHETIC** — status-range classification only; no live capture, no invented body. |
 | 7 | Regex Prompt Guard | `reject.regex-prompt-guard.{headers.txt,body.json}` | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | 403 + top-level `matched_patterns` list (flat-string `error`) | **VERIFIED (LIVE), 2026-09-22 (#253)** — body matches the live capture byte-for-byte against `ddk-injection-guard` (instance 21179713). [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4). |
-| 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling); `reject.content-safety-model-armor.{headers.txt,body.json}` (Model Armor sibling); `reject.content-safety-crowdstrike-aidr.{headers.txt,body.json}` (CrowdStrike AIDR sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR) | **VERIFIED (LIVE)** (CrowdStrike AIDR: from the policy source, see below) — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). Google Model Armor 2026-10-19 (#1178): same family confirmed against `ddk-google-model-armor` (`rai_harassment,rai_dangerous,pi_and_jailbreak`). CrowdStrike AIDR (#1176): read from the policy source, not live-captured (#1184). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); [Google Model Armor Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails) (v1.14.0); [CrowdStrike AIDR Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-crowdstrike-aidr-guardrails) (v1.14.0). |
+| 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling); `reject.content-safety-model-armor.{headers.txt,body.json}` (Model Armor sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor) | **VERIFIED (LIVE)** — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). Google Model Armor 2026-10-19 (#1178): same family confirmed against `ddk-google-model-armor` (`rai_harassment,rai_dangerous,pi_and_jailbreak`). CrowdStrike AIDR is not in this row: uncaptured (#1184), it falls through as row 4 (see above). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); [Google Model Armor Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails) (v1.14.0). |
 | 9 | Agent Kill Switch | `reject.agent-killed.{headers.txt,body.json}` | `AgentKilled` (`policy="agent-kill-switch"`) | nested `error.code == "agent_killed"` (no `type`, no `www-authenticate`) | **VERIFIED (LIVE), 2026-09-29 (#694)** — captured against `ddk-agent-kill-switch` (instance 21206201) with a quarantined agent's JWT. |
 | 10 | Request rate limit | `../anypoint/request_rate_limit/reject.request-rate-limit.{headers.txt,body.json}` | `RequestRateLimitExceeded` (`policy="request-rate-limit"`) | 429 + unsuffixed `x-ratelimit-limit`/`-remaining`, no `x-token-limit` (body `{"error":"Too Many Requests"}`) | **VERIFIED (LIVE), 2026-10-07 (#974)** — captured against `ddk-request-rate-limit` (instance 21188400, stock `rate-limiting` 1.5.1, `exposeHeaders: true`). With `exposeHeaders: false` the headers are absent; that shape is not captured and classifies as row 1. |
 

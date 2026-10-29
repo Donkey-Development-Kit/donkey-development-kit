@@ -1064,8 +1064,9 @@ class Donkey:
         stops on the SDK's own ``needs_approval``, and ``RunState`` approves it.
 
         The approval is client-side and advisory: calling the undecorated
-        function bypasses it, and the gateway never learns of it (gateway
-        step-up is #214). It never overrides a refusal: the gateway still judges
+        function bypasses it, and the gateway never learns of it. The gateway's
+        own step-up is separate (:class:`~donkey_kit.core.step_up.GatewayApprovalPending`,
+        #214). It never overrides a refusal: the gateway still judges
         every model call the resumed tool makes.
 
         Args:
