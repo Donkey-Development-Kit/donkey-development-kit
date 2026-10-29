@@ -13,10 +13,13 @@ import httpx
 import pytest
 
 from donkey_kit.core.config import DonkeyConfig
-from donkey_kit.core.errors import AuthError, ConfigError, RegistryError
+from donkey_kit.core.errors import AuthError, ConfigError, ConfigWarning, RegistryError
 from donkey_kit.core.transport import DonkeyAsyncClient
+from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.exchange import ExchangeRegistry
 from donkey_kit.registry.models import AssetRef, McpServerHandle
+from donkey_kit.tools.auth import ClientIdAuth
+from donkey_kit.tools.discovery import Discovery
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "mcp_resolve"
 ORG = "00000000-0000-4000-8000-4256cc8e6f68"
@@ -25,13 +28,12 @@ GATEWAY = "00000000-0000-4000-8000-d4b0d8dad526"
 REF = f"{ORG}/ddk-demo-sku-lookup/1.1.0"
 _CFG = DonkeyConfig(client_id="client", client_secret="secret", org_id=ORG)
 _APIM = f"/apimanager/api/v1/organizations/{ORG}/environments/{ENV}"
+_GATEWAY_PATH = f"/gatewaymanager/api/v1/organizations/{ORG}/environments/{ENV}/gateways/{GATEWAY}"
 _ROUTES = {
     f"/accounts/api/organizations/{ORG}/environments": "environments.json",
     f"{_APIM}/apis": "apis.by-asset.json",
     f"{_APIM}/apis/21260926": "api.describe.json",
-    f"/gatewaymanager/api/v1/organizations/{ORG}/environments/{ENV}/gateways/{GATEWAY}": (
-        "gateway.json"
-    ),
+    _GATEWAY_PATH: "gateway.json",
 }
 
 
@@ -168,6 +170,113 @@ async def test_a_failed_read_other_than_401_or_403_is_a_registry_error() -> None
 
     with pytest.raises(RegistryError, match="HTTP 500"):
         await _registry(fake).resolve_mcp(REF)
+
+
+def _gateway(public_url: str) -> dict[str, Any]:
+    gateway = _body("gateway.json")
+    gateway["configuration"]["ingress"]["publicUrl"] = public_url
+    return {_GATEWAY_PATH: gateway}
+
+
+@pytest.mark.parametrize(
+    "public_url",
+    ["http://omni.example.invalid", "ftp://omni.example.invalid", "https://"],
+)
+async def test_a_gateway_url_that_is_not_https_is_refused(
+    public_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DONKEY_ALLOW_HTTP", raising=False)
+
+    with pytest.raises(RegistryError, match="must be an https:// URL") as err:
+        await _registry(_Anypoint(**_gateway(public_url))).resolve_mcp(REF)
+
+    assert f"Gateway {GATEWAY}'s public URL for {REF}" in str(err.value)
+    assert "DONKEY_ALLOW_HTTP" in err.value.remediation
+
+
+async def test_a_gateway_url_with_userinfo_is_refused_without_echoing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DONKEY_ALLOW_HTTP", raising=False)
+    fake = _Anypoint(**_gateway("https://admin:hunter2@omni.example.invalid"))
+
+    with pytest.raises(RegistryError, match="carries a user name or password") as err:
+        await _registry(fake).resolve_mcp(REF)
+
+    assert "hunter2" not in str(err.value)
+    assert "hunter2" not in err.value.remediation
+
+
+@pytest.mark.parametrize("public_url", ["http://localhost:8081", "http://127.0.0.1:8081"])
+async def test_a_loopback_gateway_url_may_be_plain_http(
+    public_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DONKEY_ALLOW_HTTP", raising=False)
+
+    handle = await _registry(_Anypoint(**_gateway(public_url))).resolve_mcp(REF)
+
+    assert handle.endpoint_url == f"{public_url}/ddk-verify1297-b/"
+
+
+async def test_allow_http_lets_a_plain_http_gateway_url_through_with_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    fake = _Anypoint(**_gateway("http://omni.example.invalid"))
+
+    with pytest.warns(ConfigWarning, match="plain http:// to omni.example.invalid"):
+        handle = await _registry(fake).resolve_mcp(REF)
+
+    assert handle.endpoint_url == "http://omni.example.invalid/ddk-verify1297-b/"
+
+
+async def test_allow_http_does_not_let_userinfo_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    fake = _Anypoint(**_gateway("http://admin:hunter2@omni.example.invalid"))
+
+    with pytest.raises(RegistryError, match="carries a user name or password"):
+        await _registry(fake).resolve_mcp(REF)
+
+
+async def test_a_refused_gateway_url_is_not_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DONKEY_ALLOW_HTTP", raising=False)
+    fake = _Anypoint(**_gateway("http://omni.example.invalid"))
+    registry = _registry(fake)
+    with pytest.raises(RegistryError):
+        await registry.resolve_mcp(REF)
+
+    monkeypatch.setenv("DONKEY_ALLOW_HTTP", "1")
+    with pytest.warns(ConfigWarning):
+        handle = await registry.resolve_mcp(REF)
+    assert handle.endpoint_url.startswith("http://omni.example.invalid/")
+
+
+class _Governed(ExchangeRegistry):
+    """The real ``resolve_mcp()`` with a passing ``explain()``: its reads are
+    ``test_explain.py``'s."""
+
+    async def explain(self, ref: AssetRef | str, *, criteria: Any) -> GovernanceReport:
+        return GovernanceReport(governed=True, checks=[Check("deployed", True, "ok")])
+
+
+async def test_a_server_behind_a_plain_http_gateway_is_listed_with_a_failed_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``discover()`` and ``resolve()`` list it, so binding refuses it with this reason."""
+    monkeypatch.delenv("DONKEY_ALLOW_HTTP", raising=False)
+    fake = _Anypoint(**_gateway("http://omni.example.invalid"))
+    http = httpx.AsyncClient(transport=httpx.MockTransport(fake))
+    registry = _Governed(_CFG, cast(DonkeyAsyncClient, http))
+
+    tools = await Discovery(registry, _CFG, auth=ClientIdAuth("cid", "secret")).resolve(
+        REF, auth=None
+    )
+
+    (server,) = tools.servers
+    assert server.endpoint_url == ""
+    assert server.governance is not None and not server.governance.governed
+    (reason,) = server.governance.reasons_failed()
+    assert reason.startswith("resolve_mcp: ") and "must be an https:// URL" in reason
 
 
 async def test_resolution_is_cached_until_refresh() -> None:

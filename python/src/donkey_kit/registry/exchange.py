@@ -22,7 +22,8 @@ from urllib.parse import urlsplit
 from ..core import _verify
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
-from ..core.errors import AuthError, RegistryError
+from ..core.endpoints import require_secure_url
+from ..core.errors import AuthError, ConfigError, RegistryError
 from ..core.transport import DonkeyAsyncClient
 from . import _scopes
 from .criteria import Check, GovernanceCriteria, GovernanceReport, evaluate
@@ -263,8 +264,10 @@ class ExchangeRegistry:
             ConfigError: The control-plane settings are missing.
             ValueError: ``ref`` is not ``group_id/asset_id/version``.
             RegistryError: The environment does not exist, the asset version has
-                no deployed MCP instance there or has several, or an Anypoint
-                read failed.
+                no deployed MCP instance there or has several, the gateway URL
+                is not ``https://`` (loopback hosts and ``DONKEY_ALLOW_HTTP``
+                aside) or carries a user name or password, or an Anypoint read
+                failed.
             AuthError: Anypoint refused a read (``401``/``403``); its
                 ``remediation`` names the connected-app scope the read needs.
         """
@@ -282,7 +285,9 @@ class ExchangeRegistry:
     async def _endpoint(self, asset: AssetRef, endpoint_type: str, kind: str, verb: str) -> str:
         """The gateway URL of ``asset``'s one deployed ``endpoint_type`` instance in
         the configured environment: the gateway's public URL joined with the
-        instance's path, with a trailing slash (docs/verified-apis.md §6)."""
+        instance's path, with a trailing slash (docs/verified-apis.md §6). The
+        gateway credential is sent to it, so it must pass the https rule of the
+        configured endpoints."""
         cfg = self._cfg
         env_id = await self._environment_id()
         base = f"/apimanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
@@ -320,7 +325,9 @@ class ExchangeRegistry:
         # The gateway routes the instance's path only with a trailing slash; without
         # one it answers an empty 404 (docs/verified-apis.md §6, #1297).
         path = urlsplit(str((api.get("endpoint") or {}).get("proxyUri") or "")).path.strip("/")
-        return str(public).rstrip("/") + "/" + (f"{path}/" if path else "")
+        url = str(public).rstrip("/") + "/" + (f"{path}/" if path else "")
+        _require_secure_gateway(url, name=f"Gateway {target}'s public URL for {asset.coordinates}")
+        return url
 
     async def published_tools(self, ref: AssetRef | str) -> list[dict[str, Any]]:
         """The tools an MCP server asset version was published with: the
@@ -391,8 +398,9 @@ class ExchangeRegistry:
             ConfigError: The control-plane settings are missing.
             ValueError: ``ref`` is not ``group_id/asset_id/version``.
             RegistryError: The environment does not exist, the asset version has
-                no deployed A2A instance there or has several, or an Anypoint
-                read failed.
+                no deployed A2A instance there or has several, the gateway URL
+                is refused as ``resolve_mcp()`` refuses it, or an Anypoint read
+                failed.
             AuthError: Anypoint refused a read (``401``/``403``); its
                 ``remediation`` names the connected-app scope the read needs.
         """
@@ -675,6 +683,34 @@ def _asset_ref(asset: dict[str, Any]) -> AssetRef:
         ),
         description=asset.get("description") or None,
     )
+
+
+def _require_secure_gateway(url: str, *, name: str) -> None:
+    """Raise :class:`RegistryError` unless ``url`` may receive the gateway credential:
+    the https rule of the configured endpoints, and no user name or password."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        parts = None  # require_secure_url refuses it below
+    if parts is not None and (parts.username is not None or parts.password is not None):
+        # Never echo the URL: it carries a credential.
+        raise RegistryError(
+            f"{name} carries a user name or password. No gateway credentials were sent.",
+            remediation=(
+                "Remove the user name and password from the gateway's public URL; the "
+                "SDK sends the gateway credential itself."
+            ),
+        )
+    try:
+        require_secure_url(url, name=name)
+    except ConfigError as exc:
+        raise RegistryError(
+            f"{exc} No gateway credentials were sent.",
+            remediation=(
+                "Give the gateway an https:// public URL, or set DONKEY_ALLOW_HTTP=1 in "
+                "the environment to allow plain http:// to it on a network you control."
+            ),
+        ) from exc
 
 
 def _deployed(api: dict[str, Any]) -> bool:

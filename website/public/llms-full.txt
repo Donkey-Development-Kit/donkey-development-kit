@@ -7165,6 +7165,14 @@ routes the path only with the trailing slash.
 
 - It raises `RegistryError` when the environment does not exist, when the
   version has no deployed MCP instance there, or when it has more than one.
+- The gateway URL receives the gateway credential, so it follows the same rule
+  as the URLs you configure (see
+  [Endpoints must use `https://`](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https)):
+  it must be `https://`. Plain `http://` is accepted for a loopback host, and
+  for any other host only with `DONKEY_ALLOW_HTTP=1` in the environment, with a
+  `ConfigWarning`. A gateway public URL that is not, or that carries a user name
+  or password, raises `RegistryError`. `discover()` then lists the server with
+  a failed `resolve_mcp` check, and binding refuses it.
 - It does not open a connection or send the gateway's client credentials.
   Calls through the URL need them, because the gateway's Client ID Enforcement
   policy refuses a call without them.
@@ -7185,8 +7193,8 @@ print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
 ```
 
 The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
-`RegistryError` in the same cases as `resolve_mcp()`, and like it sends no
-gateway credential. Calling the agent as a tool, `AgentHandle.as_tool()`, is on
+`RegistryError` in the same cases as `resolve_mcp()`, including a gateway URL
+that is not `https://`, and like it sends no gateway credential. Calling the agent as a tool, `AgentHandle.as_tool()`, is on
 the [Roadmap](https://docs.donkey-kit.dev/tool-access/a2a.md).
 
 ## "Governed" is a computed predicate
@@ -7789,6 +7797,12 @@ carrying `a2a-sdk` exists today for the server side,
   available today: it resolves the agent's gateway URL the way `resolve_mcp()`
   resolves an MCP server's. Only `as_tool()` is on the Roadmap. See
   [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent).
+- The resolved URL follows the
+  [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) of the
+  URLs you configure, because the gateway credential is sent to it. A gateway
+  public URL that uses plain `http://` to a non-loopback host (without
+  `DONKEY_ALLOW_HTTP=1`), or that carries a user name or password, raises
+  `RegistryError`, and nothing is sent to the agent.
 - `as_tool()` returns a framework-native callable, following the same
   conventions as [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 - To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
@@ -8731,7 +8745,8 @@ published with (its `a2a-v1-card` file, or the `a2a-card` of a version published
 before A2A 1.0) and the card the agent serves at
 `.well-known/agent-card.json` through its gateway instance, with the same
 governance check and gateway credential: an ungoverned agent raises
-`RegistryError` and is sent nothing. A changed card description, a changed set
+`RegistryError` and is sent nothing, and so does one whose gateway URL is not
+[`https://`](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). A changed card description, a changed set
 of default input or output modes, a skill added or removed, or a skill whose
 description changed is drift. The fields that say where and how this deployment
 serves the agent are not compared: `url`, `supportedInterfaces`,
@@ -14467,7 +14482,11 @@ regional Anypoint host) lets it through.
 
 #### Endpoints must use `https://`
 
-This applies wherever the URL comes from: environment, file or code.
+This applies wherever the URL comes from: environment, file or code. It also
+applies to the gateway URL that `resolve_mcp()` and `resolve_agent()` read from
+Omni Gateway Manager, which raises `RegistryError` instead of `ConfigError`, as
+does a gateway URL with a user name or password (see
+[Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server)).
 
 | URL | Result |
 |---|---|
@@ -14488,7 +14507,8 @@ a network you don't trust. It is read from the environment only; a `[donkey]`
 key with that name is ignored. It changes only the `https://` rule: a URL from
 the project files still receives only credentials from those files (next
 section). When it lets a URL through, the SDK emits a `ConfigWarning` naming the
-key (`base_url`, `llm_proxy_url` or `token endpoint`) and the host. Python shows
+key (`base_url`, `llm_proxy_url` or `token endpoint`), or the gateway and asset
+of a resolved URL, and the host. Python shows
 each distinct warning once per location by default:
 
 ```text

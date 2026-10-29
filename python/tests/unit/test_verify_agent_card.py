@@ -255,6 +255,27 @@ async def test_an_ungoverned_agent_is_never_sent_the_credential(
     assert fake.to("shared-omni-gateway.example.invalid") == []
 
 
+@pytest.mark.parametrize(
+    ("public_url", "refusal"),
+    [
+        ("http://shared-omni-gateway.example.invalid", "must be an https:// URL"),
+        ("https://u:p@shared-omni-gateway.example.invalid", "carries a user name or password"),
+    ],
+)
+async def test_a_card_behind_an_insecure_gateway_url_is_never_sent_the_credential(
+    runtime: Runtime, monkeypatch: pytest.MonkeyPatch, public_url: str, refusal: str
+) -> None:
+    monkeypatch.delenv("DONKEY_ALLOW_HTTP", raising=False)
+    fake = _Anypoint()
+    gateway = f"/gatewaymanager/api/v1/organizations/{ORG}/environments/{ENV}/gateways/{GATEWAY}"
+    fake.routes[gateway]["configuration"]["ingress"]["publicUrl"] = public_url
+    _, discovery = _wire(runtime, monkeypatch, fake)
+
+    with pytest.raises(RegistryError, match=refusal):
+        await discovery.agent_card(REF)
+    assert fake.to("shared-omni-gateway.example.invalid") == []
+
+
 # ---- the comparison: card_drift() ---------------------------------------------------
 
 
