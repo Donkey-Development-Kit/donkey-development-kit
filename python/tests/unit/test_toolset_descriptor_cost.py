@@ -124,7 +124,7 @@ async def test_more_tokens_than_the_token_threshold_warns(
     tools = _set(2, description="x" * 30_000)
     assert tools.descriptor_tokens() > 10_000
     with caplog.at_level(logging.WARNING, logger=_LOGGER):
-        await tools._plan("openai()", per_tool=False)
+        await tools._plan("openai_agents()", per_tool=False)
     (warning,) = _messages(caplog, logging.WARNING)
     assert f"about {tools.descriptor_tokens()} descriptor tokens per model call" in warning
     assert "more than tool_warn_tokens=10000" in warning
@@ -267,7 +267,7 @@ _FRAMEWORK_MODULES: dict[str, tuple[str, ...]] = {
     "agent_framework": ("MCPStreamableHTTPTool",),
     "crewai_tools": ("MCPServerAdapter",),
 }
-_BINDINGS = ("langgraph", "llamaindex", "anthropic", "adk", "strands", "openai")
+_BINDINGS = ("langgraph", "llamaindex", "anthropic", "adk", "strands", "openai_agents")
 _BINDINGS += ("agent_framework", "crewai")
 
 

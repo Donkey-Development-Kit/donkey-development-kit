@@ -410,10 +410,10 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # approval_round_trip since #213. Its ToolSet binding is a whole-server one.
     "openai_agents": {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
-            binding="ToolSet.openai()", cls="MCPServerStreamableHttp"
+            binding="ToolSet.openai_agents()", cls="MCPServerStreamableHttp"
         ),
         "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RAISED.format(
-            binding="ToolSet.openai()", cls="MCPServerStreamableHttp", wrapped=""
+            binding="ToolSet.openai_agents()", cls="MCPServerStreamableHttp", wrapped=""
         ),
     },
 }

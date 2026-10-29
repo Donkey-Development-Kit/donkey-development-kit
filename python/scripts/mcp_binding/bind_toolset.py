@@ -62,7 +62,7 @@ MODULES = {
     "anthropic": "anthropic",
     "adk": "google.adk",
     "strands": "strands",
-    "openai": "agents",
+    "openai_agents": "agents",
     "agent_framework": "agent_framework",
     "crewai": "crewai_tools",
 }
@@ -137,10 +137,10 @@ async def run_strands(ts: ToolSet, call: Call = ADD) -> tuple[list[str], Any]:
     return names, call if result is not None else None
 
 
-async def run_openai(ts: ToolSet, call: Call = ADD) -> tuple[list[str], Any]:
+async def run_openai_agents(ts: ToolSet, call: Call = ADD) -> tuple[list[str], Any]:
     names: list[str] = []
     result = None
-    for server in await ts.openai():
+    for server in await ts.openai_agents():
         async with server:
             from agents import Agent
             from agents.run_context import RunContextWrapper
@@ -204,7 +204,7 @@ RUNS: dict[str, Run] = {
     "llamaindex": run_llamaindex,
     "adk": run_adk,
     "strands": run_strands,
-    "openai": run_openai,
+    "openai_agents": run_openai_agents,
     "agent_framework": run_agent_framework,
 }
 

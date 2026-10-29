@@ -254,7 +254,7 @@ async def _adk(monkeypatch: pytest.MonkeyPatch, transports: list[Any]) -> Any:
     return _from_factory(made[0].kwargs["httpx_client_factory"])
 
 
-async def _openai(monkeypatch: pytest.MonkeyPatch, transports: list[Any]) -> Any:
+async def _openai_agents(monkeypatch: pytest.MonkeyPatch, transports: list[Any]) -> Any:
     _install(
         monkeypatch,
         {
@@ -265,7 +265,7 @@ async def _openai(monkeypatch: pytest.MonkeyPatch, transports: list[Any]) -> Any
             },
         },
     )
-    await _toolset().openai()
+    await _toolset().openai_agents()
     return _from_factory(made[0].kwargs["params"]["httpx_client_factory"])
 
 
@@ -298,8 +298,8 @@ async def _strands(monkeypatch: pytest.MonkeyPatch, transports: list[Any]) -> An
 
 @pytest.mark.parametrize(
     "bind",
-    [_langgraph, _llamaindex, _adk, _openai, _crewai, _strands],
-    ids=["langgraph", "llamaindex", "adk", "openai", "crewai", "strands"],
+    [_langgraph, _llamaindex, _adk, _openai_agents, _crewai, _strands],
+    ids=["langgraph", "llamaindex", "adk", "openai_agents", "crewai", "strands"],
 )
 async def test_the_binding_hands_its_framework_the_guarded_client(
     bind: Callable[..., Any], monkeypatch: pytest.MonkeyPatch, transports: list[Any]
