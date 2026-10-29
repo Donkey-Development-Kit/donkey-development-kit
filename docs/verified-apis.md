@@ -1118,6 +1118,43 @@ listing the tools and passed on two reruns. Three findings from it:
   `list_tools` reads it from there. On `mcp` 1.x the status is on the
   `httpx.HTTPStatusError` inside the `ExceptionGroup`.
 
+**A Mule-hosted MCP server through the governed gateway: `VERIFIED (LIVE)`,
+2026-10-29, #1312.** #221 asks that discovery and binding behave the same for a
+Mule-hosted server and a framework-built one. The server here is a Mule 4.13
+app (`ddk-mule-mcp` 1.0.1) with MCP Connector 1.7.0: a `streamable-http-server-connection`
+at `/mcp` and one `mcp:tool-listener` flow per tool (`current_time`, `calculate`,
+`convert_units`, `lookup_proxy`, the same four as the agent MCP servers), deployed
+to CloudHub 2.0 (`Cloudhub-US-East-2`, runtime 4.13.0 on the EDGE channel, 0.1 vCore).
+It is published as the `mcp` asset `ddk-mulehosted-mcp:1.0.0` (the Exchange
+`app` asset `ddk-mule-mcp` holds the code; an asset ID holds one type), with an
+instance on `shared-omni-gateway` behind MCP Support 1.1.1 and Client ID
+Enforcement 1.3.3, and one consumer app with an approved contract. Run with
+`bind_live.py --bind FRAMEWORK=ddk-mulehosted-mcp --call calculate '{"expression": "6*7"}' --want 42`
+and the default `gateway_auth`: `discover(governed=True)` found the instance,
+`filter(servers=["ddk-mulehosted-mcp"])` listed all four tools, and `calculate`
+returned `42` through the framework's own tool object for all eight
+frameworks. A wrong client secret raised
+`AuthError` (HTTP 401, `{"error":"Authentication Attempt Failed"}`). Frameworks
+and `mcp`, in four venvs because their pins conflict: `mcp` 2.1.1 with
+`google-adk` 2.13.0, `strands-agents` 1.62.0, `openai-agents` 0.20.0,
+`anthropic` 2.3.0 and `llama-index-tools-mcp` 0.6.0; `agent-framework` 1.23.0 on
+`mcp` 2.3.0 (strands needs `mcp<2.2`, agent-framework 1.23 needs `>=2.2`);
+`langchain-mcp-adapters` 0.3.2 on `mcp` 1.30.0; `crewai` 1.15.33 on `mcp` 1.30.0.
+No SDK code changed: nothing on the discovery or binding path reads where a
+server comes from. Differences in shape against the framework-built servers, as
+findings:
+
+- **A tool's error text carries the Java stack.** `calculate("1/0")` returned
+  `isError: true` whose text is DataWeave's "An exception occurred while trying
+  to execute function `io.ddk.DdkTools.calculate(java.lang.String)`" plus the
+  Java frames. A binding should not parse it.
+- **Closing a session answers `202`.** The `mcp` client logs "Session
+  termination failed: 202" after every `DELETE` on the way out; the calls
+  themselves succeed.
+- **Tool schemas are what the flow declares.** `parameters-schema` is a free JSON
+  Schema string, so `required` and `default` are as the author wrote them; here
+  only `current_time` has an empty `required`.
+
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.
 
