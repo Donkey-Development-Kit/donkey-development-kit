@@ -1155,6 +1155,43 @@ findings:
   Schema string, so `required` and `default` are as the author wrote them; here
   only `current_time` has an empty `required`.
 
+**The gateway's tool-access denial: `VERIFIED (LIVE)`, 2026-10-29, #303.** MCP
+Global Access (`mcp-global-access-policy` 1.0.1) and MCP Attribute-Based Access
+Control (`mcp-access-control` 1.0.2) were each attached to two instances and
+removed after the capture. One instance fronts the framework-built
+`ddk-langgraph-mcp` (MCP Support 1.1.1, JWT Validation, OAuth2 OBO); the other
+fronts the Mule-hosted server above (MCP Support 1.1.1, Client ID Enforcement).
+Both were on Omni Gateway 1.14.4 and spoke MCP `2025-06-18`. Global Access
+blocked `current_time`. ABAC used two Cedar rules, one permitting everything
+except `tools/call` on `Tool::"lookup_proxy"`, the other permitting that call
+for one caller. It matched on `principal.properties.claims.azp` behind JWT
+Validation (`authType: "Other"`) and on `principal.client_name` behind Client
+ID Enforcement (`authType: "ClientId"`). Fixtures are in
+`python/tests/fixtures/anypoint/mcp_access/`; the raw captures are on #303.
+
+| Question | Answer |
+|---|---|
+| Is discovery scoped? | Yes, by the server's `tools/list`. Both policies drop the denied tool from an ordinary HTTP 200 `result.tools`. ABAC does it per caller: 4 tools for the permitted caller, 3 for another. Nothing in the registry or Exchange query changes. |
+| A denied `tools/call` | **HTTP 200**, `content-type: application/json`, no `WWW-Authenticate`, and a JSON-RPC `error` instead of a `result`: `code` `-32008`, `message` `"Unable to access"`. |
+| Does it name the tool or the profile? | The tool, in `data` and nowhere else. Global Access sends `Access denied to: current_time`; ABAC sends `Access denied to: "lookup_proxy".` (quoted, with a period). No profile, rule or policy id appears. |
+| Same for both server origins? | Yes, byte-identical. The gateway answers and the server never sees the call. |
+
+The discriminator is `error.code == -32008` with `error.message == "Unable to
+access"`. `data` differs by policy and is informational. Three findings:
+
+- **It is not an HTTP error.** A check on the status sees a success, and the
+  `open_session` status hook above records nothing. These captures were raw
+  HTTP. How the `mcp` client and each framework binding surface the error is
+  not verified (#312).
+- **The order depends on the instance's auth.** On the framework-built
+  instance, JWT Validation runs only when `Authorization` is present, so Global
+  Access also denied an unauthenticated call. On the Client ID Enforcement
+  instance, a call without credentials gets `401` `{"error":"Client ID is not
+  present"}` first.
+- **A server's own tool failure looks different.** It comes back as
+  `result.isError: true`, never as `error`. The Mule server puts a Java stack
+  in the text.
+
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.
 
@@ -1396,7 +1433,7 @@ scrubbed, are in `python/tests/fixtures/anypoint/mcp_instance/`.
 
 Not verified by this run: traffic through the deployed instance (its upstream
 was not reachable, and no call went through the gateway), how the gateway
-answers an MCP call a policy refuses (#303), and the run with a connected
+answers an MCP call a policy refuses (since verified, §9, #303), and the run with a connected
 app's token, which the `donkey expose` run below made. The scopes in §1 were
 isolated with an MCP instance (#23).
 
