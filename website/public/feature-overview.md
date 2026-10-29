@@ -69,7 +69,7 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     instead of dying at 2am.
   
   
-    **Purpose:** on-behalf-of token exchange. **Goal:** per-user policy
+    **Purpose:** on-behalf-of user identity. **Goal:** per-user policy
     reaches the gateway. **Advantage:** requests never silently fall back to
     the service identity.
   

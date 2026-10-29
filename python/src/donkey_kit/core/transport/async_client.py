@@ -157,7 +157,7 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
         # (BG §2.4); the Anypoint platform calls stay the service's own.
         user = current_user() if not self._control_plane else None
         if user is not None:
-            _apply_user_token(self._cfg, request, await user.token())
+            _apply_user_token(self._cfg, request, user.token)
 
     # --- lifecycle hooks (BG §1.1) ------------------------------------------
     # The *logical* per-``send()`` seams, distinct from the per-wire

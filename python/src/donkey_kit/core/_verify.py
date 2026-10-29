@@ -212,18 +212,11 @@ LLM_PROXY_WALLET_CLIENT_ID_HEADER = _wire.LLM_PROXY_WALLET_CLIENT_ID_HEADER
 LLM_PROXY_WALLET_JWT_HEADER = _wire.LLM_PROXY_WALLET_JWT_HEADER
 LLM_PROXY_WALLET_JWT_SCHEME = _wire.LLM_PROXY_WALLET_JWT_SCHEME
 
-# --- On-behalf-of token exchange (BG §2.4, #215) — UNVERIFIED (#255) ---------
-# ``donkey.as_user(id_token=...)`` trades a user's OIDC id_token for a
-# gateway-scoped access token with an RFC 8693 token-exchange grant. Neither the
-# Anypoint endpoint that serves the grant nor the request header the gateway
-# reads the exchanged token from is confirmed (docs/verified-apis.md §13): both
-# are placeholders, overridable with ``token_exchange_path`` /
-# ``user_token_header``. The path guess is the verified OAuth2 token endpoint.
-TOKEN_EXCHANGE_PATH = Unverified(
-    key="identity.token_exchange_path",
-    placeholder=OAUTH_TOKEN_PATH,
-    doc_ref="docs/verified-apis.md §13",
-)
+# --- On-behalf-of user token (BG §2.4, #215) — UNVERIFIED (#255) -----------
+# ``donkey.as_user(id_token=...)`` forwards the user's token unchanged; the
+# gateway's OBO policy runs the exchange (#1350). The request header the gateway
+# reads it from is not confirmed (docs/verified-apis.md §13): a placeholder,
+# overridable with ``user_token_header``.
 USER_TOKEN_HEADER = Unverified(
     key="identity.user_token_header",
     placeholder=_wire.USER_TOKEN_HEADER_PLACEHOLDER,

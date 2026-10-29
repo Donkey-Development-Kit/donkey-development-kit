@@ -307,8 +307,8 @@ class DonkeyConfig:
     # (the rotating JWT is not); required in JWT mode, ignored in client-id mode.
     llm_proxy_wallet_client_id: str | None = None
 
-    # --- ``donkey.as_user(...)`` (BG §2.4, #215): the RFC 8693 exchange path on the
-    # control-plane host and the user-token header; unset → ``core/_verify``. ---
+    # --- ``donkey.as_user(...)`` (BG §2.4, #215): the user-token header, unset →
+    # ``core/_verify``. ``token_exchange_path`` is deprecated and ignored (#1350). ---
     token_exchange_path: str | None = None
     user_token_header: str | None = None
 
