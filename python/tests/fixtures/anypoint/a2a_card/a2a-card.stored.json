@@ -1,0 +1,38 @@
+{
+  "name": "ddk-langgraph-agent",
+  "description": "A LangGraph agent that chats through Donkey-governed LLM proxies.",
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:8765/a2a/langgraph",
+      "protocolBinding": "JSONRPC"
+    }
+  ],
+  "version": "0.1.0",
+  "capabilities": {
+    "streaming": false
+  },
+  "defaultInputModes": [
+    "text"
+  ],
+  "defaultOutputModes": [
+    "text"
+  ],
+  "skills": [
+    {
+      "id": "chat",
+      "name": "Governed chat",
+      "description": "Chat through a governed DDK LLM proxy. Set metadata {'proxy': '<name>'} to pick a chat-compatible proxy (default ddk-openai-model-routing); optional metadata {'model': '<name>'} to override the requested model, {'history': [...]} for prior turns.",
+      "tags": [
+        "chat",
+        "llm",
+        "governed"
+      ],
+      "examples": [
+        "Say hi in three words."
+      ]
+    }
+  ],
+  "preferredTransport": "JSONRPC",
+  "protocolVersion": "0.3",
+  "url": "http://127.0.0.1:8765/a2a/langgraph"
+}

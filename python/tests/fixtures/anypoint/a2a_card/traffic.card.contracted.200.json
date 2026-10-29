@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "content-length": "1279",
+    "server": "Anypoint Flex Gateway"
+  },
+  "body": "{\"name\":\"ddk-langgraph-agent\",\"description\":\"A LangGraph agent that chats through Donkey-governed LLM proxies.\",\"supportedInterfaces\":[{\"url\":\"https://agents.example.invalid/a2a/langgraph\",\"protocolBinding\":\"JSONRPC\"}],\"version\":\"0.2.0\",\"capabilities\":{\"streaming\":false},\"securitySchemes\":{\"ddkAccessKey\":{\"apiKeySecurityScheme\":{\"description\":\"The DDK access key, for callers outside the DDK UI.\",\"location\":\"header\",\"name\":\"X-DDK-Access-Key\"},\"description\":\"The DDK access key, for callers outside the DDK UI.\",\"in\":\"header\",\"name\":\"X-DDK-Access-Key\",\"type\":\"apiKey\"}},\"securityRequirements\":[{\"schemes\":{\"ddkAccessKey\":{}}}],\"defaultInputModes\":[\"text\"],\"defaultOutputModes\":[\"text\"],\"skills\":[{\"id\":\"chat\",\"name\":\"Governed chat\",\"description\":\"Chat through a governed DDK LLM proxy. Set metadata {'proxy': '<name>'} to pick a chat-compatible proxy (default ddk-openai-model-routing); optional metadata {'model': '<name>'} to override the requested model, {'history': [...]} for prior turns, {'mcp': true} to give it the tools of its framework's DDK MCP server.\",\"tags\":[\"chat\",\"llm\",\"governed\"],\"examples\":[\"Say hi in three words.\"]}],\"preferredTransport\":\"JSONRPC\",\"protocolVersion\":\"0.3\",\"security\":[{\"ddkAccessKey\":[]}],\"url\":\"https://agents.example.invalid/a2a/langgraph\"}"
+}

@@ -92,7 +92,7 @@ donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
 donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
-donkey verify        # checks each published MCP server against its live tools; reads only
+donkey verify        # checks published MCP servers and agents against their live side; reads only
 donkey preflight     # checks, read-only, that a service can be put behind its gateway
 donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
@@ -215,7 +215,7 @@ Global options go before the command (`donkey --json init`):
 |---|---|---|
 | `--agent` | none | Import path to your agent factory, e.g. my.pkg:make_agent. |
 
-`donkey verify`: Check published MCP servers against their live tools.
+`donkey verify`: Check published MCP servers and A2A agents against their live side.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -444,19 +444,21 @@ missing path, invalid config or missing credentials. See
 ### `donkey verify`
 
 ```bash
-donkey verify .          # each published MCP server against its live tools
+donkey verify .          # each published MCP server and A2A agent against its live side
 donkey --json verify .   # the same, with each asset's outcome as JSON
 ```
 
 Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify) on each
-MCP server `donkey publish` would register, at the version declared in
-`[donkey.publication]`: the tools that version was published with against the
-tools the server lists through its gateway. It writes nothing. Each server is
-reported as `match`, `drift` (with each difference) or `error`; an agent is
-`skipped`, since only an MCP server's published tools are verified.
+MCP server and `a2a_v1` agent `donkey publish` would register, at the version
+declared in `[donkey.publication]`: the tools an MCP server's version was
+published with against the tools it lists through its gateway, and the card an
+agent's version was published with against the card it serves there. It writes
+nothing. Each asset is reported as `match`, `drift` (with each difference) or
+`error`; an agent with protocol `other` or none declared is `skipped`, since it
+has no card to compare.
 
 It reads the `ANYPOINT_*` control-plane credentials for Exchange and the
-gateway credential for the live tools, and exits `0` when every server matches,
+gateway credential for the live side, and exits `0` when every verified asset matches,
 `1` on drift, a failed read or a declaration issue (nothing is read then), and
 `2` on a missing path, invalid config or missing control-plane credentials.
 Run it in CI after a deploy to catch a server that changed without a new

@@ -534,8 +534,8 @@ reflect, or a broken framework adapter.
 
 ## Verifying at runtime: `verify()`
 
-`Publication.verify(donkey)` is the read-only runtime check that the live MCP
-server still matches what its version was published with. It writes nothing:
+`Publication.verify(donkey)` is the read-only runtime check that a live MCP
+server or A2A agent still matches what its version was published with. It writes nothing:
 there is no runtime publish.
 
 ```python
@@ -564,14 +564,27 @@ added or removed, a changed description, or a changed set of parameter names
 is drift. Parameter types are not compared, because `donkey publish` records
 only the plain annotations it reads without running your code.
 
+For an `AGENT` (or `A2A_AGENT`) publication it reads the card the version was
+published with (its `a2a-v1-card` file, or the `a2a-card` of a version published
+before A2A 1.0) and the card the agent serves at
+`.well-known/agent-card.json` through its gateway instance, with the same
+governance check and gateway credential: an ungoverned agent raises
+`RegistryError` and is sent nothing. A changed card description, a changed set
+of default input or output modes, a skill added or removed, or a skill whose
+description changed is drift. The fields that say where and how this deployment
+serves the agent are not compared: `url`, `supportedInterfaces`,
+`preferredTransport`, `protocolVersion`, `version` (your code's version, not the
+asset's) and the security fields (`securitySchemes`, `security`,
+`securityRequirements`), which the upstream declares and the gateway enforces.
+
 By default each difference is logged at `WARNING` and returned, so a drifted
 catalog is loud without taking down production traffic. With
 `raise_on_drift=True` it raises `PublicationDrift`, whose message
-lists every difference. Only `MCP_SERVER` publications are verified; the other
-types raise `NotImplementedError`.
+lists every difference. `API` publications are not verified and raise
+`NotImplementedError`.
 
 [`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify) runs the same check from CI, for every MCP
-server in the repository.
+server and `a2a_v1` agent in the repository.
 
 ## Related
 

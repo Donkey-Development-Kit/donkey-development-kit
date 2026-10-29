@@ -20,12 +20,15 @@ import logging
 import time
 from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime, timezone
+from typing import Any
+
+import httpx
 
 from ..core import _verify, telemetry
 from ..core.approvals import NativePause
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
-from ..core.errors import RegistryError
+from ..core.errors import AuthError, RegistryError
 from ..registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from ..registry.exchange import ExchangeRegistry
 from ..registry.models import AssetRef, McpServerHandle
@@ -206,6 +209,63 @@ class Discovery:
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
         )
 
+    async def agent_card(self, ref: AssetRef | str) -> dict[str, Any]:
+        """The A2A card agent ``ref`` serves through its gateway instance (#1354):
+        ``GET <endpoint>/.well-known/agent-card.json``, with the gateway
+        credential a ``ToolSet`` binding sends (docs/verified-apis.md §7).
+
+        Like a binding, it reads the default-criteria verdict first and sends
+        nothing to an agent that is not governed (ADR 0013). Not cached.
+
+        Raises:
+            RegistryError: The agent is not governed, does not resolve to one
+                deployed A2A instance, or the card read failed.
+            AuthError: The gateway refused the credential (``401``/``403``).
+        """
+        asset = AssetRef.parse(ref)
+        report = await self._registry.explain(asset, criteria=GovernanceCriteria())
+        if not report.governed:
+            raise RegistryError(
+                f"Refusing to read the live card of {asset.coordinates}: it is not governed "
+                f"({'; '.join(report.reasons_failed()) or 'not governed'}). No gateway "
+                "credentials were sent.",
+                remediation=(
+                    "Front the agent with the gateway so its policies apply. Run "
+                    "donkey.registry.explain(ref) to see which governance check failed."
+                ),
+            )
+        handle = await self._registry.resolve_agent(asset)
+        url = handle.endpoint_url + ".well-known/agent-card.json"
+        headers = await self._auth.headers() if self._auth is not None else {}
+        # Its own client, as an MCP binding's is: the shared ones send credentials
+        # only to their configured origins. Redirects are not followed, so the
+        # credential goes to the gateway and nowhere else.
+        try:
+            async with _card_client(self._cfg.timeout_s) as http:
+                response = await http.get(url, headers=headers)
+        except httpx.HTTPError as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            raise RegistryError(
+                f"Reading the live card of {asset.coordinates} failed ({detail})."
+            ) from exc
+        if response.status_code in (401, 403):
+            raise AuthError(
+                f"The gateway refused the credential when reading the card of "
+                f"{asset.coordinates} (HTTP {response.status_code} {response.text[:200]})."
+            )
+        if not response.is_success:
+            raise RegistryError(
+                f"Reading the live card of {asset.coordinates} failed: HTTP "
+                f"{response.status_code} {response.text[:200]}"
+            )
+        try:
+            card = response.json()
+        except ValueError as exc:
+            raise RegistryError(f"The live card of {asset.coordinates} is not JSON.") from exc
+        if not isinstance(card, dict):
+            raise RegistryError(f"The live card of {asset.coordinates} is not a JSON object.")
+        return card
+
     def refresh(self) -> None:
         """Drop every cached discovery, so the next ``discover()`` reads the registry."""
         self._cache.invalidate()
@@ -273,6 +333,11 @@ class Discovery:
             report = GovernanceReport(governed=False, checks=[*report.checks, failed])
             return McpServerHandle(ref=ref, endpoint_url="", governance=report)
         return dataclasses.replace(handle, ref=ref, governance=report)
+
+
+def _card_client(timeout_s: float) -> httpx.AsyncClient:
+    """The client an agent card is read with; a test seam."""
+    return httpx.AsyncClient(timeout=timeout_s)
 
 
 def _no_record(_found: _Found, _hit: bool) -> None:

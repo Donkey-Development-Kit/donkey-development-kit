@@ -1,20 +1,21 @@
-"""``donkey verify`` — check each published MCP server against what it was
-published with (BG §2.5, #1352).
+"""``donkey verify`` — check each published MCP server and A2A agent against
+what it was published with (BG §2.5, #1352, #1354).
 
 It plans the repository's assets the way ``donkey publish`` does, then runs
-:meth:`~donkey_kit.registry.publication.Publication.verify` on each MCP server
-at its declared version: the version's ``mcp-metadata`` tools in Exchange
-against the server's live ``tools/list`` through its gateway instance. It
-writes nothing. An agent is skipped: only an MCP server's published tools are
-verified (docs/verified-apis.md §7).
+:meth:`~donkey_kit.registry.publication.Publication.verify` on each one at its
+declared version: an MCP server's ``mcp-metadata`` tools in Exchange against
+its live ``tools/list``, and an ``a2a_v1`` agent's published card against the
+card it serves, each through its gateway instance. It writes nothing. Any
+other agent (protocol ``other`` or undeclared) is skipped: it has no card to
+compare (docs/verified-apis.md §7).
 
 It needs the control-plane credentials, to read Exchange, and the gateway
-credential, to list the live tools, as a ``donkey.tools`` binding does.
+credential, to read the live side, as a ``donkey.tools`` binding does.
 
 ``--json`` prints the plan as JSON, each asset with its ``status`` (``match``,
 ``drift``, ``error`` or ``skipped``), ``detail`` and ``differences``.
 
-Exit codes: 0 when every MCP server matches, 1 when one drifted, a read failed,
+Exit codes: 0 when every verified asset matches, 1 when one drifted, a read failed,
 or the scan or the declaration reports an issue (nothing is read), 2 when there
 is nothing at the path or the config is invalid or lacks the control-plane
 credentials.
@@ -60,7 +61,7 @@ def verify(
         False, "--json", help="emit the plan with each asset's outcome as JSON"
     ),
 ) -> None:
-    """Check published MCP servers against their live tools (read-only, BG §2.5)."""
+    """Check published MCP servers and A2A agents against their live side (read-only, BG §2.5)."""
     as_json = as_json or bool((ctx.obj or {}).get("json"))
     try:
         result = scan_repository(path)
@@ -101,12 +102,16 @@ async def _verify(cfg: DonkeyConfig, plan: PublishPlan) -> tuple[VerifyOutcome, 
 
 
 async def _verify_one(donkey: Donkey, asset: PlannedAsset) -> VerifyOutcome:
-    if asset.type != PublicationAssetType.MCP_SERVER.value:
-        return VerifyOutcome(asset, "skipped", "only an MCP server's published tools are verified")
+    if asset.type == PublicationAssetType.MCP_SERVER.value:
+        asset_type, live = PublicationAssetType.MCP_SERVER, "the live tools match"
+    elif asset.protocol == "a2a_v1":
+        asset_type, live = PublicationAssetType.AGENT, "the live card matches"
+    else:
+        return VerifyOutcome(asset, "skipped", "only an a2a_v1 agent has a card to compare")
     # plan.issues is empty, so the coordinates are declared.
     assert asset.group_id is not None and asset.version is not None
     publication = Publication(
-        asset_type=PublicationAssetType.MCP_SERVER,
+        asset_type=asset_type,
         group_id=asset.group_id,
         asset_id=asset.asset_id,
         version=asset.version,
@@ -120,7 +125,7 @@ async def _verify_one(donkey: Donkey, asset: PlannedAsset) -> VerifyOutcome:
     if differences:
         n = len(differences)
         return VerifyOutcome(asset, "drift", f"{n} difference{'' if n == 1 else 's'}", differences)
-    return VerifyOutcome(asset, "match", "the live tools match the published version")
+    return VerifyOutcome(asset, "match", f"{live} the published version")
 
 
 def _outcomes_json(plan: PublishPlan, outcomes: tuple[VerifyOutcome, ...]) -> str:
@@ -142,6 +147,6 @@ def _summary(outcomes: tuple[VerifyOutcome, ...]) -> None:
     drifted = sum(o.status in ("drift", "error") for o in outcomes)
     verified = sum(o.status != "skipped" for o in outcomes)
     typer.echo(
-        f"verified {verified} MCP server{'' if verified == 1 else 's'}: "
+        f"verified {verified} asset{'' if verified == 1 else 's'}: "
         + ("all match" if not drifted else f"{drifted} did not")
     )

@@ -1,0 +1,109 @@
+{
+  "audit": {
+    "created": {
+      "date": "2026-09-29T19:23:41.946Z"
+    },
+    "updated": {
+      "date": "2026-10-28T15:36:54.201Z"
+    }
+  },
+  "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+  "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "id": 21206128,
+  "instanceLabel": "ddk-langgraph-agent",
+  "environmentInstanceId": "instance_21206128",
+  "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "assetId": "ddk-langgraph-agent",
+  "assetVersion": "0.1.0",
+  "productVersion": "v0.1",
+  "description": null,
+  "tags": [],
+  "order": 1,
+  "providerId": null,
+  "deprecated": false,
+  "lastActiveDate": null,
+  "endpointUri": null,
+  "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+  "isPublic": false,
+  "stage": "release",
+  "technology": "flexGateway",
+  "approvalMethod": null,
+  "endpoint": {
+    "audit": {
+      "created": {},
+      "updated": {}
+    },
+    "id": 5611570,
+    "type": "a2a",
+    "uri": "http://host.docker.internal:8765/a2a/langgraph",
+    "apiGatewayVersion": "1.14.4",
+    "proxyUri": "http://0.0.0.0:8081/ddk-langgraph-agent",
+    "proxyRegistrationUri": null,
+    "lastActiveDate": null,
+    "isCloudHub": null,
+    "deploymentType": "HY",
+    "policiesVersion": null,
+    "referencesUserDomain": null,
+    "responseTimeout": null,
+    "wsdlConfig": null,
+    "muleVersion4OrAbove": null
+  },
+  "deployment": {
+    "audit": {
+      "created": {},
+      "updated": {
+        "date": "2026-10-28T15:36:59.392Z"
+      }
+    },
+    "id": 28453816,
+    "applicationId": "00000000-0000-4000-8000-1354a0000001",
+    "applicationName": null,
+    "gatewayVersion": "1.14.4",
+    "environmentName": "Sandbox",
+    "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+    "targetId": "00000000-0000-4000-8000-d4b0d8dad526",
+    "targetName": "shared-omni-gateway",
+    "deploymentId": null,
+    "updatedDate": "2026-10-28T15:36:59.392Z",
+    "type": "HY",
+    "expectedStatus": "deployed",
+    "targetMetadata": {
+      "spec": {
+        "target": {
+          "annotations": {
+            "gateway-manager.mulesoft.com/kind": "managed",
+            "gateway-manager.mulesoft.com/targetType": "shared-space"
+          },
+          "environment": {
+            "target": {
+              "id": "00000000-0000-4000-8000-d4b0d8dad526",
+              "provider": "RR"
+            }
+          }
+        }
+      },
+      "target": {
+        "id": "00000000-0000-4000-8000-d4b0d8dad526",
+        "provider": "RR"
+      }
+    },
+    "apiId": 21206128
+  },
+  "routing": [
+    {
+      "upstreams": [
+        {
+          "id": "00000000-0000-4000-8000-1354a0000002",
+          "weight": 100
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "assetType": "agent",
+    "assetPlatform": "LangGraph"
+  },
+  "semanticServiceConfigId": null,
+  "status": "active",
+  "autodiscoveryInstanceName": "v0.1:21206128"
+}

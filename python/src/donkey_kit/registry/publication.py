@@ -12,7 +12,9 @@ Verbs (BG §2.5):
     blocked). CI publishes on merge.
   * ``verify()``  — runtime, READ-ONLY. Reads the published ``mcp-metadata``
     tools, lists the live server's tools through its gateway, compares
-    (:func:`tool_drift`). Warns on a mismatch, or raises PublicationDrift.
+    (:func:`tool_drift`); for an A2A agent, the published card against the
+    card its gateway instance serves (:func:`card_drift`). Warns on a
+    mismatch, or raises PublicationDrift.
 
 The CI side of ``donkey publish --if-changed`` is here too: :func:`content_digest`
 (pure, implemented) and :func:`publish_if_changed` (blocked). They moved from the
@@ -43,6 +45,7 @@ __all__ = [
     "Publication",
     "PublicationAssetType",
     "VersionStrategy",
+    "card_drift",
     "check_description_quality",
     "content_digest",
     "publish_if_changed",
@@ -138,17 +141,23 @@ class Publication:
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------
     async def verify(self, donkey: Any, *, raise_on_drift: bool = False) -> tuple[str, ...]:  # noqa: ANN401
-        """Compare the live MCP server against what this version was published
-        with in Exchange (BG §2.5). Read-only: nothing is written anywhere.
+        """Compare the live asset against what this version was published with
+        in Exchange (BG §2.5). Read-only: nothing is written anywhere.
 
-        The published side is the ``tools`` of the version's ``mcp-metadata``
-        file, read with ``donkey.registry`` (docs/verified-apis.md §7). The live
-        side is the server's ``tools/list`` through its gateway instance, after
-        the same governance check and with the same credential as a
-        ``donkey.tools`` binding (§9). A tool added or removed, a changed
+        For an MCP server, the published side is the ``tools`` of the version's
+        ``mcp-metadata`` file, read with ``donkey.registry`` (docs/verified-apis.md
+        §7). The live side is the server's ``tools/list`` through its gateway
+        instance, after the same governance check and with the same credential
+        as a ``donkey.tools`` binding (§9). A tool added or removed, a changed
         description, or a changed set of parameter names is drift. Parameter
         types are not compared: ``donkey publish`` records only the bare
         annotations it can read without importing the code.
+
+        For an A2A agent (``AGENT`` or ``A2A_AGENT``), the published side is the
+        version's agent card file, and the live side the card its gateway
+        instance serves at ``/.well-known/agent-card.json``, read after the same
+        governance check and with the same credential (#1354). The comparison is
+        :func:`card_drift`.
 
         Defaults to warn-and-continue: a drifted catalog must be loud, but must
         not take down production traffic. Each difference is logged as a
@@ -161,24 +170,29 @@ class Publication:
 
         Raises:
             PublicationDrift: ``raise_on_drift`` is set and the two differ.
-            NotImplementedError: The asset is not an MCP server: only an
-                ``mcp`` asset's published tools are verified.
+            NotImplementedError: The asset is an ``API``: only MCP servers and
+                A2A agents are verified.
             RegistryError: Exchange has no such version or no ``mcp-metadata``
-                file for it, or the server does not resolve to one gateway instance.
+                or card file for it, the asset does not resolve to one gateway
+                instance, or an agent is not governed (nothing is sent to it).
             UngovernedMcpServer: The server is not governed, so no credential
                 is sent to it (ADR 0013).
         """
-        if self.asset_type is not PublicationAssetType.MCP_SERVER:
-            raise _verify.blocked(
-                f"Publication.verify() for a {self.asset_type.value!r} asset: only an MCP "
-                "server's published tools are verified (BG §2.5, docs/verified-apis.md §7)."
-            )
         ref = f"{self.group_id}/{self.asset_id}/{self.version}"
-        published = await donkey.registry.published_tools(ref)
-        # The one-server ToolSet discovery builds: tools/ is a higher layer.
-        toolset = await donkey.tools._resolve(ref)  # noqa: SLF001
-        (server,) = (await toolset.describe()).servers
-        differences = tool_drift(published, server.tool_descriptors or ())
+        if self.asset_type is PublicationAssetType.MCP_SERVER:
+            published = await donkey.registry.published_tools(ref)
+            # The one-server ToolSet discovery builds: tools/ is a higher layer.
+            toolset = await donkey.tools._resolve(ref)  # noqa: SLF001
+            (server,) = (await toolset.describe()).servers
+            differences = tool_drift(published, server.tool_descriptors or ())
+        elif self.asset_type in (PublicationAssetType.AGENT, PublicationAssetType.A2A_AGENT):
+            card = await donkey.registry.published_card(ref)
+            differences = card_drift(card, await donkey.tools._agent_card(ref))  # noqa: SLF001
+        else:
+            raise _verify.blocked(
+                f"Publication.verify() for a {self.asset_type.value!r} asset: only MCP "
+                "servers and A2A agents are verified (BG §2.5, docs/verified-apis.md §7)."
+            )
         if differences and raise_on_drift:
             raise PublicationDrift(
                 f"{ref} no longer matches its Exchange descriptor: " + "; ".join(differences)
@@ -215,6 +229,49 @@ def tool_drift(
             change = [f"+{p}" for p in sorted(now - was)] + [f"-{p}" for p in sorted(was - now)]
             differences.append(f"tool {name}: the parameters changed ({', '.join(change)})")
     return tuple(differences)
+
+
+def card_drift(published: Mapping[str, Any], live: Mapping[str, Any]) -> tuple[str, ...]:
+    """What differs between two A2A agent cards, one line per difference (BG §2.5,
+    #1354). Pure.
+
+    Compares the card's ``description`` and its ``defaultInputModes`` and
+    ``defaultOutputModes`` (as sets), then the skills by ``id``: one added or
+    removed, and each one's ``description`` (stripped; a missing one equals an
+    empty one). Everything else is left out: ``url`` and ``supportedInterfaces``
+    are where the agent is served, which differs between the published card and
+    the deployed agent; ``version`` and ``protocolVersion`` are the agent's own
+    release and the card schema; and the security fields are the upstream's,
+    not the gateway's (docs/verified-apis.md §7).
+    """
+    differences: list[str] = []
+    if _text(published.get("description")) != _text(live.get("description")):
+        differences.append("the card description changed")
+    for key, label in (("defaultInputModes", "input"), ("defaultOutputModes", "output")):
+        was, now = _modes(published.get(key)), _modes(live.get(key))
+        if was != now:
+            change = [f"+{m}" for m in sorted(now - was)] + [f"-{m}" for m in sorted(was - now)]
+            differences.append(f"the default {label} modes changed ({', '.join(change)})")
+    before, after = _skills(published), _skills(live)
+    for skill in sorted(before.keys() | after.keys()):
+        if skill not in after:
+            differences.append(f"skill {skill} was published but the agent no longer serves it")
+        elif skill not in before:
+            differences.append(f"skill {skill} is live but was not published")
+        elif _text(before[skill].get("description")) != _text(after[skill].get("description")):
+            differences.append(f"skill {skill}: the description changed")
+    return tuple(differences)
+
+
+def _modes(value: object) -> frozenset[str]:
+    return frozenset(str(m) for m in value) if isinstance(value, list) else frozenset()
+
+
+def _skills(card: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    skills = card.get("skills")
+    if not isinstance(skills, list):
+        return {}
+    return {str(s.get("id")): s for s in skills if isinstance(s, dict)}
 
 
 def _text(value: object) -> str:

@@ -111,6 +111,22 @@ routes the path only with the trailing slash.
 - Results are cached like the other registry lookups; see
   [Registry caching](https://docs.donkey-kit.dev/tool-access/lockfile.md#registry-caching).
 
+## Resolving an A2A agent
+
+`donkey.registry.resolve_agent()` is Live. It does
+for an A2A agent asset what `resolve_mcp()` does for an MCP server, with the
+same reads, and finds the version's deployed A2A instance:
+
+```python
+agent = await donkey.registry.resolve_agent("<group-id>/claims-triage-agent/1.0.0")
+print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
+```
+
+The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
+`RegistryError` in the same cases as `resolve_mcp()`, and like it sends no
+gateway credential. Calling the agent as a tool, `AgentHandle.as_tool()`, is on
+the [Roadmap](https://docs.donkey-kit.dev/tool-access/a2a.md).
+
 ## "Governed" is a computed predicate
 
 Publication to Exchange says nothing about whether an asset is fronted by a

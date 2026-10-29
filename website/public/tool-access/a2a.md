@@ -28,9 +28,10 @@ carrying `a2a-sdk` exists today for the server side,
 
 ## Where this fits
 
-- `AgentHandle` comes from `ExchangeRegistry.resolve_agent()` — the same
-  registry surface that resolves MCP servers into `McpServerHandle`s. See
-  [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
+- `AgentHandle` comes from `ExchangeRegistry.resolve_agent()`, which is
+  available today: it resolves the agent's gateway URL the way `resolve_mcp()`
+  resolves an MCP server's. Only `as_tool()` is on the Roadmap. See
+  [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent).
 - `as_tool()` returns a framework-native callable, following the same
   conventions as [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 - To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
