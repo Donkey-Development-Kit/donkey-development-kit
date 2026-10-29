@@ -43,8 +43,8 @@ span and your policy's own logs share one string.
 
 A refusal made by an external moderation provider also says **who** blocked the
 call and **why**. `donkey.policy.provider` is the provider's stable slug
-(`azure-content-safety`, `bedrock-guardrails`, `google-model-armor` or
-`crowdstrike-aidr`), and `donkey.policy.categories` is a string array of the
+(`azure-content-safety`, `bedrock-guardrails` or `google-model-armor`), and
+`donkey.policy.categories` is a string array of the
 categories it flagged. They are the same values as `ContentSafetyBlocked.provider`
 and `.categories` on the [exception](https://docs.donkey-kit.dev/errors.md). Both are omitted on every other
 refusal, such as a PII block or a budget refusal. The categories are the

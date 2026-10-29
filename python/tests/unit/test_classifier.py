@@ -236,6 +236,20 @@ def test_a_built_in_shape_still_wins() -> None:
     assert type(classify(pii)) is PIIDetected
 
 
+def test_an_uncaptured_vendor_header_can_be_registered() -> None:
+    # #1429: CrowdStrike AIDR is not a built-in rule until its shape is captured
+    # (#1184), so a caller who has seen it on their own proxy can type it.
+    class AidrBlocked(PolicyViolation):
+        remediation = "CrowdStrike AIDR blocked this request."
+        policy = "acme_aidr"
+
+    headers = {"x-llm-proxy-crowdstrike-aidr-action": "reject"}
+    response = _resp(403, {"error": "Content blocked"}, headers=headers)
+    assert type(classify(response)) is PolicyViolation
+    classify.register(match={"status": 403, "headers": headers}, raises=AidrBlocked)
+    assert type(classify(response)) is AidrBlocked
+
+
 def test_model_not_routable_and_upstream_request_stay_disjoint() -> None:
     classify.register(match={"status": 404, "error_type": "acme_route"}, raises=SalaryLeakBlocked)
     routable = _resp(404, {"error": {"type": "not_found", "message": "model x not found"}})

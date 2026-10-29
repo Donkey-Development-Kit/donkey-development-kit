@@ -1533,7 +1533,6 @@ _REJECTIONS = Path(__file__).resolve().parents[2] / "src/donkey_kit/simulator/_f
             "google-model-armor",
             ("rai_harassment", "rai_dangerous", "pi_and_jailbreak"),
         ),
-        ("content-safety-crowdstrike-aidr", "crowdstrike-aidr", ("malicious_prompt", "pii")),
     ],
 )
 async def test_content_safety_refusal_span_names_the_provider_and_categories(
