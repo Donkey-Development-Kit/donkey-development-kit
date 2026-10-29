@@ -794,7 +794,11 @@ regional Anypoint host) lets it through.
 
 #### Endpoints must use `https://`
 
-This applies wherever the URL comes from: environment, file or code.
+This applies wherever the URL comes from: environment, file or code. It also
+applies to the gateway URL that `resolve_mcp()` and `resolve_agent()` read from
+Omni Gateway Manager, which raises `RegistryError` instead of `ConfigError`, as
+does a gateway URL with a user name or password (see
+[Resolving an MCP server](/tool-access/discovery#resolving-an-mcp-server)).
 
 | URL | Result |
 |---|---|
@@ -815,7 +819,8 @@ a network you don't trust. It is read from the environment only; a `[donkey]`
 key with that name is ignored. It changes only the `https://` rule: a URL from
 the project files still receives only credentials from those files (next
 section). When it lets a URL through, the SDK emits a `ConfigWarning` naming the
-key (`base_url`, `llm_proxy_url` or `token endpoint`) and the host. Python shows
+key (`base_url`, `llm_proxy_url` or `token endpoint`), or the gateway and asset
+of a resolved URL, and the host. Python shows
 each distinct warning once per location by default:
 
 ```text

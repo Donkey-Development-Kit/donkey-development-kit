@@ -109,6 +109,14 @@ routes the path only with the trailing slash.
 
 - It raises `RegistryError` when the environment does not exist, when the
   version has no deployed MCP instance there, or when it has more than one.
+- The gateway URL receives the gateway credential, so it follows the same rule
+  as the URLs you configure (see
+  [Endpoints must use `https://`](/reference/configuration#endpoints-must-use-https)):
+  it must be `https://`. Plain `http://` is accepted for a loopback host, and
+  for any other host only with `DONKEY_ALLOW_HTTP=1` in the environment, with a
+  `ConfigWarning`. A gateway public URL that is not, or that carries a user name
+  or password, raises `RegistryError`. `discover()` then lists the server with
+  a failed `resolve_mcp` check, and binding refuses it.
 - It does not open a connection or send the gateway's client credentials.
   Calls through the URL need them, because the gateway's Client ID Enforcement
   policy refuses a call without them.
@@ -129,8 +137,8 @@ print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
 ```
 
 The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
-`RegistryError` in the same cases as `resolve_mcp()`, and like it sends no
-gateway credential. Calling the agent as a tool, `AgentHandle.as_tool()`, is on
+`RegistryError` in the same cases as `resolve_mcp()`, including a gateway URL
+that is not `https://`, and like it sends no gateway credential. Calling the agent as a tool, `AgentHandle.as_tool()`, is on
 the [Roadmap](/tool-access/a2a).
 
 ## "Governed" is a computed predicate

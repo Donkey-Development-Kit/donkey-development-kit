@@ -222,7 +222,8 @@ class Discovery:
 
         Raises:
             RegistryError: The agent is not governed, does not resolve to one
-                deployed A2A instance, or the card read failed.
+                deployed A2A instance behind an ``https://`` gateway URL, or the
+                card read failed.
             AuthError: The gateway refused the credential (``401``/``403``).
         """
         asset = AssetRef.parse(ref)
