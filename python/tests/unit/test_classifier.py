@@ -639,6 +639,8 @@ def _captured_error_values() -> set[str]:
         except ValueError:
             continue  # an empty-body capture
         for envelope in data if isinstance(data, list) else [data]:
+            if isinstance(envelope, dict) and "jsonrpc" in envelope:
+                continue  # a JSON-RPC error (MCP tool-access denial, #303), not an HTTP envelope
             error = envelope.get("error") if isinstance(envelope, dict) else None
             if isinstance(error, dict):
                 values.update(
