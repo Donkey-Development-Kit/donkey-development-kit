@@ -1,11 +1,11 @@
 """On-behalf-of identity: run governed calls as a user (BG §2.4, #215).
 
-``donkey.as_user(id_token=...)`` binds the user's token to a
+``donkey.as_user(token=...)`` binds the user's access token to a
 :class:`~contextvars.ContextVar` for the block. The transport reads the binding
 per send and stamps the token, unchanged, on data-plane requests, so the
 gateway sees the user, not the service identity::
 
-    async with donkey.as_user(id_token=request.id_token):
+    async with donkey.as_user(token=request.access_token):
         await agent.run(task)        # every governed model call is the user's
 
 The SDK runs no token exchange: the gateway's OBO policy trades the user token
@@ -106,19 +106,19 @@ class UserScope:
 
     __slots__ = ("_binding", "_reset")
 
-    def __init__(self, cfg: DonkeyConfig, id_token: str) -> None:
+    def __init__(self, cfg: DonkeyConfig, token: str) -> None:
         """
         Raises:
-            AuthError: ``id_token`` is missing or empty.
+            AuthError: ``token`` is missing or empty.
             ConfigError: The user token would ride in the default
                 ``Authorization`` header in the ``jwt`` / ``bearer`` modes,
                 where the data-plane token already rides.
         """
-        if not isinstance(id_token, str) or not id_token.strip():
+        if not isinstance(token, str) or not token.strip():
             # An AuthError, not a ConfigError: a request handler that lost the
             # user's token must stop here, not run the block as the service.
             raise AuthError(
-                "donkey.as_user() was given no id_token: the user's token is "
+                "donkey.as_user() was given no token: the user's token is "
                 "missing, so the block can't run as the user and no request was sent "
                 "as the service identity instead.",
                 remediation=(
@@ -137,7 +137,7 @@ class UserScope:
                 "Set user_token_header (env DONKEY_USER_TOKEN_HEADER) to the header "
                 "the gateway reads the user token from."
             )
-        self._binding = _UserBinding(id_token)
+        self._binding = _UserBinding(token)
         self._reset: Token[_UserBinding | None] | None = None
 
     async def __aenter__(self) -> None:

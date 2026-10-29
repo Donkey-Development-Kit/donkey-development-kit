@@ -9,9 +9,9 @@ acting for. That is fine until policy depends on who is asking.
 ```python
 from donkey_kit import Donkey
 
-async def answer(donkey: Donkey, id_token: str, question: str) -> None:
+async def answer(donkey: Donkey, access_token: str, question: str) -> None:
     openai = donkey.llm.client()
-    async with donkey.as_user(id_token=id_token):
+    async with donkey.as_user(token=access_token):
         # The gateway sees the user, not just the service.
         await openai.chat.completions.create(
             model="gpt-4o-mini", messages=[{"role": "user", "content": question}]
@@ -48,10 +48,8 @@ JWT Validation and on-behalf-of policies read. You can override it:
   only if its audience names the gateway API (for an MCP tool set, the MCP
   instance). A user's login token usually names your app instead: exchange it
   at your identity provider for one issued to the gateway's audience before you
-  pass it in.
-
-`token_exchange_path` (`DONKEY_TOKEN_EXCHANGE_PATH`) is deprecated and ignored:
-setting it makes `as_user()` emit a `DeprecationWarning`.
+  pass it in. Pass an access token, not an OIDC ID token: an ID token is issued
+  to your app, not to the gateway.
 
 In the `jwt` and `bearer` [auth modes](https://docs.donkey-kit.dev/reference/configuration.md#bearer-token-auth-mode)
 the data-plane token already rides in `Authorization`, so `as_user()` raises a
@@ -88,7 +86,7 @@ with a `.remediation`, before any request leaves the process.
 
 | What went wrong | When it raises | The error names |
 |---|---|---|
-| No `id_token`: empty, blank or `None` | `donkey.as_user(...)` itself | the missing `id_token` |
+| No `token`: empty, blank or `None` | `donkey.as_user(...)` itself | the missing `token` |
 | An approved tool resumed with another user's token | when the tool would run | the approval and the tool |
 | A per-tool MCP binding called under a different user from the one it was bound for | when the tool would be called | the tool and its server |
 

@@ -99,7 +99,7 @@ token instead of your service's, so the gateway's on-behalf-of policy acts for
 that user:
 
 ```python
-async with donkey.as_user(id_token=user_token):
+async with donkey.as_user(token=user_token):
     tools = await (await donkey.tools.discover(governed=True)).langgraph()
     agent = create_react_agent(model, tools=tools)
     await agent.ainvoke({"messages": [("user", question)]})

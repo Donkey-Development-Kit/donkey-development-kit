@@ -210,10 +210,10 @@ Steer the gateway's **semantic cache** for every governed model call in the bloc
 ### `donkey.as_user()`
 
 ```python nocheck
-donkey.as_user(*, id_token: str) -> UserScope
+donkey.as_user(*, token: str) -> UserScope
 ```
 
-Run the governed model calls in the block as the user behind `id_token`, not as this service.
+Run the governed model calls in the block as the user behind `token`, not as this service.
 
 ### `donkey.governed()`
 

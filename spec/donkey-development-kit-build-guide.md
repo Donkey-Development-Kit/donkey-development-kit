@@ -488,7 +488,7 @@ When the agent calls `issue_refund`, the SDK raises `ApprovalRequired` (or trigg
 **What it is.** Small helpers that acquire and attach a user-scoped token for the gateway's Trusted Agent Identity, so the gateway can enforce per-user policy.
 
 ```python
-async with donkey.as_user(id_token=slack_user_oidc_token):
+async with donkey.as_user(token=slack_user_access_token):
     await hr_bot.answer(question)      # gateway sees the user, not just the service
 ```
 

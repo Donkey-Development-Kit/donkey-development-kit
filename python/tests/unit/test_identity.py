@@ -1,4 +1,4 @@
-"""On-behalf-of identity: ``donkey.as_user(id_token=...)`` (BG §2.4, #215, #216, #1350).
+"""On-behalf-of identity: ``donkey.as_user(token=...)`` (BG §2.4, #215, #216, #1350, #1420).
 
 The user's token is forwarded unchanged: no token exchange, no control-plane
 request, no connected-app credentials needed (the gateway's OBO policy runs
@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey
+from donkey_kit.core import config
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import AuthError, ConfigError
 from donkey_kit.core.header_names import user_token_header_problem
@@ -27,7 +28,7 @@ from donkey_kit.core.transport.headers import PROXY_API_KEY_SENTINEL
 
 _PROXY = "https://gw.example.internal/openai-sdk/"
 _CONTROL_PLANE = "https://anypoint.example.internal"
-_ID_TOKEN = "id-token-alice"
+_TOKEN = "token-alice"
 _SENTINEL = f"Bearer {PROXY_API_KEY_SENTINEL}"
 
 
@@ -86,11 +87,11 @@ async def _model_call(donkey: Donkey, url: str = f"{_PROXY}chat/completions") ->
 )
 def test_a_token_mode_refuses_the_authorization_header(kw: dict[str, object]) -> None:
     with pytest.raises(ConfigError, match="user_token_header"):
-        UserScope(_cfg(**kw), _ID_TOKEN)
+        UserScope(_cfg(**kw), _TOKEN)
 
 
 def test_a_token_mode_with_a_custom_user_header_is_allowed() -> None:
-    UserScope(_cfg(llm_proxy_auth="bearer", user_token_header="X-User-Token"), _ID_TOKEN)
+    UserScope(_cfg(llm_proxy_auth="bearer", user_token_header="X-User-Token"), _TOKEN)
 
 
 def test_user_token_header_names() -> None:
@@ -106,15 +107,22 @@ def test_user_token_header_names() -> None:
         _cfg(user_token_header="X-Key", llm_proxy_key_header="X-Key")
 
 
-async def test_token_exchange_path_is_deprecated_and_ignored() -> None:
-    async with Donkey(_cfg(token_exchange_path="/custom/exchange")) as donkey:
-        proxy, platform = _wire(donkey), _wire_platform(donkey)
-        with pytest.warns(DeprecationWarning, match="token_exchange_path"):
-            scope = donkey.as_user(id_token=_ID_TOKEN)
-        async with scope:
-            await _model_call(donkey)
-    assert platform.requests == []
-    assert proxy.requests[0].headers["Authorization"] == f"Bearer {_ID_TOKEN}"
+async def test_as_user_takes_the_token_by_keyword_only() -> None:
+    """``token=`` is the only spelling (#1420): ``id_token=`` never shipped in a
+    final release, so it has no alias."""
+    async with Donkey(_cfg()) as donkey:
+        with pytest.raises(TypeError, match="id_token"):
+            donkey.as_user(id_token=_TOKEN)  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            donkey.as_user(_TOKEN)  # type: ignore[misc]
+
+
+def test_there_is_no_token_exchange_setting() -> None:
+    """The SDK runs no exchange, so nothing configures one (#1350, #1420)."""
+    names = {field.name for field in dataclasses.fields(DonkeyConfig)}
+    envs = {spec.env for spec in config._FIELDS}
+    assert "token_exchange_path" not in names
+    assert "DONKEY_TOKEN_EXCHANGE_PATH" not in envs
 
 
 # --- the scope and the transport ----------------------------------------------
@@ -124,13 +132,13 @@ async def test_a_model_call_in_the_scope_carries_the_user_token_unchanged() -> N
     async with Donkey(_cfg()) as donkey:
         proxy, platform = _wire(donkey), _wire_platform(donkey)
         await _model_call(donkey)
-        async with donkey.as_user(id_token=_ID_TOKEN):
+        async with donkey.as_user(token=_TOKEN):
             await _model_call(donkey)
         await _model_call(donkey)
     before, inside, after = proxy.requests
     assert before.headers["Authorization"] == _SENTINEL
     # The sentinel is overridden: yielding to it would send the service identity.
-    assert inside.headers["Authorization"] == f"Bearer {_ID_TOKEN}"
+    assert inside.headers["Authorization"] == f"Bearer {_TOKEN}"
     assert after.headers["Authorization"] == _SENTINEL
     # No exchange: the scope makes no control-plane request for the user.
     assert platform.requests == []
@@ -139,18 +147,18 @@ async def test_a_model_call_in_the_scope_carries_the_user_token_unchanged() -> N
 async def test_as_user_needs_no_connected_app_credentials() -> None:
     async with Donkey(_cfg(client_id=None, client_secret=None)) as donkey:
         proxy = _wire(donkey)
-        async with donkey.as_user(id_token=_ID_TOKEN):
+        async with donkey.as_user(token=_TOKEN):
             await _model_call(donkey)
-    assert proxy.requests[0].headers["Authorization"] == f"Bearer {_ID_TOKEN}"
+    assert proxy.requests[0].headers["Authorization"] == f"Bearer {_TOKEN}"
 
 
 async def test_a_custom_user_token_header_carries_the_raw_token() -> None:
     async with Donkey(_cfg(user_token_header="X-User-Token")) as donkey:
         proxy = _wire(donkey)
-        async with donkey.as_user(id_token=_ID_TOKEN):
+        async with donkey.as_user(token=_TOKEN):
             await _model_call(donkey)
     (request,) = proxy.requests
-    assert request.headers["X-User-Token"] == _ID_TOKEN
+    assert request.headers["X-User-Token"] == _TOKEN
     assert request.headers["Authorization"] == _SENTINEL
 
 
@@ -158,14 +166,14 @@ async def test_the_user_token_stays_off_the_control_plane_and_unchecked_origins(
     async with Donkey(_cfg(user_token_header="X-User-Token")) as donkey:
         platform = _wire_platform(donkey)
         elsewhere = _wire(donkey)
-        async with donkey.as_user(id_token=_ID_TOKEN):
+        async with donkey.as_user(token=_TOKEN):
             await donkey._runtime.control_http.get(f"{_CONTROL_PLANE}/accounts/api/me")
             await donkey._http.post(
                 "https://elsewhere.example/v1/chat", json={}, headers={"X-User-Token": "planted"}
             )
     for request in [*platform.requests, *elsewhere.requests]:
         assert "x-user-token" not in request.headers
-        assert _ID_TOKEN not in str(request.headers)
+        assert _TOKEN not in str(request.headers)
 
 
 async def test_concurrent_tasks_never_see_each_others_user() -> None:
@@ -174,12 +182,12 @@ async def test_concurrent_tasks_never_see_each_others_user() -> None:
         entered = asyncio.Event()
         release = asyncio.Event()
 
-        async def as_user(id_token: str) -> None:
-            async with donkey.as_user(id_token=id_token):
+        async def as_user(token: str) -> None:
+            async with donkey.as_user(token=token):
                 entered.set()
                 await release.wait()
                 await donkey._http.post(
-                    f"{_PROXY}chat", json={"model": "m"}, headers={"X-Who": id_token}
+                    f"{_PROXY}chat", json={"model": "m"}, headers={"X-Who": token}
                 )
 
         async def anonymous() -> None:
@@ -195,8 +203,8 @@ async def test_concurrent_tasks_never_see_each_others_user() -> None:
 async def test_nested_scopes_restore_the_outer_user() -> None:
     async with Donkey(_cfg()) as donkey:
         proxy = _wire(donkey)
-        async with donkey.as_user(id_token="id-outer"):
-            async with donkey.as_user(id_token="id-inner"):
+        async with donkey.as_user(token="id-outer"):
+            async with donkey.as_user(token="id-inner"):
                 await _model_call(donkey)
             await _model_call(donkey)
         assert current_user() is None
@@ -211,29 +219,29 @@ async def test_the_blocking_client_stamps_the_user_token() -> None:
         sync = donkey._sync_http_client()
         proxy = _Recorder()
         sync.governed_transport.replace_inner(httpx.MockTransport(proxy))
-        async with donkey.as_user(id_token=_ID_TOKEN):
+        async with donkey.as_user(token=_TOKEN):
             sync.post(f"{_PROXY}chat", json={"model": "m"}, headers={"Authorization": _SENTINEL})
         sync.post(f"{_PROXY}chat", json={"model": "m"}, headers={"Authorization": _SENTINEL})
     inside, after = proxy.requests
-    assert inside.headers["Authorization"] == f"Bearer {_ID_TOKEN}"
+    assert inside.headers["Authorization"] == f"Bearer {_TOKEN}"
     assert after.headers["Authorization"] == _SENTINEL
 
 
 # --- no silent fallback to the service identity (#216) ------------------------
 
 
-@pytest.mark.parametrize("id_token", ["", "  ", None])
-def test_a_missing_id_token_is_an_auth_error_that_names_it(id_token: object) -> None:
-    with pytest.raises(AuthError, match="no id_token") as info:
-        UserScope(_cfg(), id_token)  # type: ignore[arg-type]
+@pytest.mark.parametrize("token", ["", "  ", None])
+def test_a_missing_token_is_an_auth_error_that_names_it(token: object) -> None:
+    with pytest.raises(AuthError, match="no token") as info:
+        UserScope(_cfg(), token)  # type: ignore[arg-type]
     assert "service" in info.value.remediation
 
 
-async def test_a_missing_id_token_binds_nothing_and_sends_nothing() -> None:
+async def test_a_missing_token_binds_nothing_and_sends_nothing() -> None:
     async with Donkey(_cfg()) as donkey:
         proxy = _wire(donkey)
         with pytest.raises(AuthError):
-            async with donkey.as_user(id_token=""):
+            async with donkey.as_user(token=""):
                 await _model_call(donkey)  # pragma: no cover - never reached
         assert current_user() is None
     assert proxy.requests == []
@@ -250,12 +258,12 @@ async def test_every_request_through_the_openai_clients_carries_the_user_token()
         sync_http = donkey._sync_http_client()
         sync_http.governed_transport.replace_inner(httpx.MockTransport(proxy))
         openai, openai_sync = donkey.llm.client(), donkey.llm.client(sync=True)
-        async with donkey.as_user(id_token=_ID_TOKEN):
+        async with donkey.as_user(token=_TOKEN):
             await openai.chat.completions.create(model="m", messages=messages)  # type: ignore[arg-type]
             openai_sync.chat.completions.create(model="m", messages=messages)  # type: ignore[arg-type]
     assert len(proxy.requests) == 2
     for request in proxy.requests:
-        assert request.headers["Authorization"] == f"Bearer {_ID_TOKEN}"
+        assert request.headers["Authorization"] == f"Bearer {_TOKEN}"
 
 
 def test_no_setting_enables_a_fallback_to_the_service_identity() -> None:

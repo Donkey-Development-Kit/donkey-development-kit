@@ -418,7 +418,7 @@ async def _paused_as_alice(donkey: Donkey, seen: list[str | None]) -> tuple[Any,
         model=donkey.openai_agents.model("gpt-4o"),
         tools=[ddk_agents.function_tool(issue_refund)],
     )
-    async with donkey.as_user(id_token="id-token-alice"):
+    async with donkey.as_user(token="token-alice"):
         result = await agents.Runner.run(agent, "refund", run_config=_RUN)
         (approval,) = ddk_agents.pending_approvals(result)
     return agent, result.to_state(), approval
@@ -432,7 +432,7 @@ async def test_the_resumed_tool_runs_as_the_user_who_paused_the_run() -> None:
         ddk_agents.approve(state, approval, by="m.keller")
         await agents.Runner.run(agent, state, run_config=_RUN)
 
-    assert seen == ["id-token-alice"]
+    assert seen == ["token-alice"]
 
 
 async def test_resuming_the_run_as_another_user_is_refused() -> None:
@@ -440,7 +440,7 @@ async def test_resuming_the_run_as_another_user_is_refused() -> None:
     async with Donkey(_cfg()) as donkey:
         agent, state, approval = await _paused_as_alice(donkey, seen)
         ddk_agents.approve(state, approval, by="m.keller")
-        async with donkey.as_user(id_token="id-token-bob"):
+        async with donkey.as_user(token="token-bob"):
             with pytest.raises(AuthError, match="as_user"):
                 async with donkey.run():
                     await agents.Runner.run(agent, state, run_config=_RUN)

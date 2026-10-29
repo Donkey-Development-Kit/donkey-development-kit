@@ -217,7 +217,7 @@ def _user_refund_tool(users: list[str | None]) -> Any:
 async def _paused_as_alice(donkey: Donkey, users: list[str | None]) -> tuple[Agent, Any]:
     model = _ScriptedModel(_REFUND)
     agent = _agent(model, _user_refund_tool(users), hooks=(ApprovalHook(),))
-    async with donkey.as_user(id_token="id-token-alice"):
+    async with donkey.as_user(token="token-alice"):
         result = await agent.invoke_async("refund T-1")
     (interrupt,) = pending_approvals(result)
     return agent, interrupt
@@ -230,14 +230,14 @@ async def test_an_approved_call_runs_as_the_user_who_paused_it() -> None:
         # The approver's handler resumes the agent, outside as_user().
         resumed = await agent.invoke_async([approve(interrupt, by="m.keller")])
     assert resumed.stop_reason == "end_turn"
-    assert users == ["id-token-alice"]
+    assert users == ["token-alice"]
 
 
 async def test_resuming_as_another_user_is_refused() -> None:
     users: list[str | None] = []
     async with Donkey(_cfg()) as donkey:
         agent, interrupt = await _paused_as_alice(donkey, users)
-        async with donkey.as_user(id_token="id-token-bob"):
+        async with donkey.as_user(token="token-bob"):
             with pytest.raises(AuthError, match="as_user"):
                 async with donkey.run():
                     await agent.invoke_async([approve(interrupt, by="m.keller")])
