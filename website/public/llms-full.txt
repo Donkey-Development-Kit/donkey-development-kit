@@ -6484,6 +6484,28 @@ hidden provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
 `generate`); they were removed with the refused provisioning control plane, and
 typer now rejects them as unknown commands (exit `2`).
 
+### JSON output
+
+Each document that `scan`, `publish`, `verify`, `preflight` and `expose` print
+with `--json` carries its own format key. A script reads the key before it reads
+the rest. The number goes up only when the shape changes in a way that breaks an
+existing reader:
+
+| Command | Format key | What it prints |
+|---|---|---|
+| `donkey scan` | `scan_format: 1` | The scan model. |
+| `donkey publish --dry-run` | `plan_format: 1` | The plan: the assets a publish would register, and the issues. |
+| `donkey publish` | `publish_format: 1` | The plan's assets, each with a `status` and a `detail`, and the issues. |
+| `donkey verify` | `verify_format: 1` | The plan's assets, each with a `status`, a `detail` and its `differences`, and the issues. |
+| `donkey preflight`, `donkey expose` | `expose_format: 1` | `ok`, `dry_run`, the `url`, one entry per step, and the issues. |
+
+A declaration issue still prints the document, so stdout is JSON whenever
+the command got as far as reading the declaration. Nothing is sent then. A
+`publish` or `verify` reports every asset `not_attempted`, an `expose`
+report has `ok: false` and no steps, and every document lists the issues.
+The issues also go to stderr, and the command exits `1`. A missing path or
+invalid config exits `2` with no document.
+
 ### Command reference
 
 Generated from the CLI itself; `donkey <command> --help` prints the same.
@@ -6793,8 +6815,9 @@ asset whose latest published version has the same digest is left unchanged;
 one changed without a version bump is refused before anything is published. It reads
 the `ANYPOINT_*` control-plane credentials.
 
-With `--json`, each asset in the plan carries a `status` and a `detail`, also
-when the publish fails:
+With `--json` it prints the publish document (`publish_format: 1`; with
+`--dry-run`, the plan, `plan_format: 1`). Each asset carries a `status` and a
+`detail`, also when the publish fails:
 
 | `status` | Meaning |
 |---|---|
@@ -6802,7 +6825,7 @@ when the publish fails:
 | `unchanged` | The latest version already has this digest, and its publish is complete. |
 | `incomplete` | The version is published, but its endpoint, page, or name and description were refused. A rerun finishes it. |
 | `failed` | Exchange refused the asset, and nothing was published for it. The detail ends with the fix. |
-| `not_attempted` | An earlier asset failed, so this one was not tried. |
+| `not_attempted` | An earlier asset failed, or an issue stopped the publish, so this one was not tried. |
 
 It exits `0` when every asset is `published` or `unchanged`, `1` on an issue
 or when an asset is `failed` or `incomplete` (what was published before stays
@@ -6823,7 +6846,9 @@ published with against the tools it lists through its gateway, and the card an
 agent's version was published with against the card it serves there. It writes
 nothing. Each asset is reported as `match`, `drift` (with each difference) or
 `error`; an agent with protocol `other` or none declared is `skipped`, since it
-has no card to compare.
+has no card to compare. With `--json` it prints the verify document
+(`verify_format: 1`), where a declaration issue makes every asset
+`not_attempted`.
 
 It reads the `ANYPOINT_*` control-plane credentials for Exchange and the
 gateway credential for the live side, and exits `0` when every verified asset matches,
@@ -6886,7 +6911,8 @@ the gateway, the environment or a connected-app scope is missing.
 Both exit `0` when every step is present, created or planned; `1` when a step
 is missing, differs or failed, or the declaration has an issue (nothing is
 sent then); and `2` on a missing path, invalid config or missing control-plane
-credentials. The connected-app scopes they need are in
+credentials. With `--json` both print the report (`expose_format: 1`), with
+the declaration's issues when it has any. The connected-app scopes they need are in
 [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose).
 
 ## Planned commands Roadmap
@@ -8220,6 +8246,9 @@ It stays narrow, so it never turns into a provisioning tool:
   instance.
 - `--dry-run`, and `donkey preflight`, print what it would create and send no
   write. Each step reports its own result.
+- `--json` prints the report as JSON, with `expose_format: 1`. It does so
+  even when the declaration has an issue, and then lists the issues and no
+  steps. See [JSON output](https://docs.donkey-kit.dev/cli.md#json-output).
 - Gateways, environments, LLM proxies, organization-wide policy and
   connected-app scopes belong to your platform team and its
   infrastructure-as-code. If one is missing, `donkey expose` tells you which
@@ -8423,7 +8452,7 @@ endpoint = "https://agents.acme.com/support-triage/"
 
 ```bash
 donkey publish --dry-run .          # the assets a publish would register
-donkey publish --dry-run . --json   # the same plan as canonical JSON
+donkey publish --dry-run . --json   # the same plan as canonical JSON (plan_format: 1)
 ```
 
 The dry run scans your code the way `donkey scan` does, then prints one
@@ -8486,7 +8515,7 @@ define.
 ```bash
 donkey publish .            # publish what changed (--if-changed is the default)
 donkey publish . --always   # publish even when the digest matches the latest version
-donkey publish . --json     # the plan as JSON, each asset with its status and detail
+donkey publish . --json     # each asset with its status and detail (publish_format: 1)
 ```
 
 Without `--dry-run`, `donkey publish` registers each MCP server in the plan as
@@ -8553,7 +8582,12 @@ and `--json` still prints every asset with its `status` and `detail`:
 | `unchanged` | The latest version already has this digest, and its publish is complete. |
 | `incomplete` | The version is published, but registering its endpoint, writing its page, or setting the asset's name and description was refused. |
 | `failed` | Exchange refused the asset, and nothing was published for it. |
-| `not_attempted` | An earlier asset failed, so this one was not tried. |
+| `not_attempted` | An earlier asset failed, or an issue stopped the publish, so this one was not tried. |
+
+When the scan or the declaration has an issue, nothing is sent: `--json`
+prints every asset `not_attempted`, with the issues, and the command exits
+`1`. Each `--json` document carries a format key; see
+[JSON output](https://docs.donkey-kit.dev/cli.md#json-output).
 
 The refusal and its fix go to stderr, and a refused asset's `detail` ends with
 the same fix. A common one: a connected app without `manage:exchange` can
@@ -8660,6 +8694,12 @@ JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
 annotation, so the fix shows on the run's page. Re-running the failed job
 finishes the publish (see [When a publish fails](#when-a-publish-fails)).
+
+The action reads only the document of its own release: `plan_format: 1` on a
+dry run, `publish_format: 1` otherwise (see [JSON output](https://docs.donkey-kit.dev/cli.md#json-output)).
+If the `donkey-kit` input installs a release that prints another, the action
+writes no summary and no outputs. It fails the step with an annotation that
+names the format it found, even when the publish succeeded.
 
 ## From GitLab CI
 
