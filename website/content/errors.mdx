@@ -28,10 +28,10 @@ specific headers.
 | Agent kill switch | `403` | nested `{"error":{code:"agent_killed"}}`, **no** `type`, **no** `www-authenticate` | `AgentKilled` |
 | Injection protection | `400` | header `x-injection-protection: blocked` (**not** the status) | `PromptInjectionBlocked` |
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
-| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor). The same header on a `503` is the policy failing closed (its moderation service was unreachable): an `UpstreamModelError` | `ContentSafetyBlocked` (sets `provider`, parses `categories`) |
+| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR). The CrowdStrike AIDR shape is read from the policy's source, not captured from a live gateway. The same header on a `503` is the policy failing closed (its moderation service was unreachable): an `UpstreamModelError` | `ContentSafetyBlocked` (sets `provider`, parses `categories`) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
 | Request rate limit | `429` | body `{"error":"Too Many Requests"}`; `x-ratelimit-limit`/`-remaining`/`-reset` headers (ms), **no** `x-token-*`, **no** `retry-after` | `RequestRateLimitExceeded` (`retry_after` derived) |
-| Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator. A CrowdStrike AIDR `403` lands here: its shape has not been captured from a live gateway | generic `PolicyViolation` |
+| Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
 | Bare model name on a multi-provider proxy | `400` | flat `{"error":"…"}` saying the model "is not in the known unique model map" | `ModelNotRoutable` (`.model`) |
@@ -142,7 +142,7 @@ DonkeyError                     # base of the whole tree
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
-│  ├─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor 403 reject header; .provider, .categories
+│  ├─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR (policy source) 403 reject header; .provider, .categories
 │  └─ ToolNotInProfile          # MCP tools/call refused: JSON-RPC -32008 "Unable to access"; .tool_name, .server (experimental)
 ├─ GatewayApprovalPending       # 401, error=authorization_pending — waiting for the user's CIBA approval; .retry_after
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
@@ -183,7 +183,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
-| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager (for Google Model Armor, the template's filters in Google Cloud). |
+| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR, whose shape is read from the policy's source and not captured live) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager (for Google Model Armor, the template's filters in Google Cloud; for CrowdStrike AIDR, the collector's AIDR policy in the Falcon console). |
 | `ToolNotInProfile` | An MCP `tools/call` answered with HTTP `200` and the JSON-RPC error `-32008` `"Unable to access"` (the gateway's MCP Global Access or Attribute-Based Access Control policy). Not an HTTP error, so `classify()` never sees it; the LangGraph, LlamaIndex and Anthropic `ToolSet` bindings raise it, and `tool_access_denial(exc)` converts the error elsewhere. See [Tools outside your access profile](/tool-access/binding#tools-outside-your-access-profile). | **No** — a `PolicyViolation`, never retried; a configuration problem that no retry or rephrasing fixes. | Ask the server's owner to grant the tool (`.tool_name`) in the MCP access policy on its API instance in API Manager, or stop offering it to the agent. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
@@ -312,8 +312,8 @@ prompt itself. The other refusal messages are built from status codes,
 headers, category names and policy pattern names, never from the request.
 
 `ContentSafetyBlocked.provider` names the moderation provider that blocked the
-call, as a stable slug: `azure-content-safety`, `bedrock-guardrails` or
-`google-model-armor`. `.categories` lists what it flagged
+call, as a stable slug: `azure-content-safety`, `bedrock-guardrails`,
+`google-model-armor` or `crowdstrike-aidr`. `.categories` lists what it flagged
 (`["rai_dangerous"]`). The refusal's span carries the same two values as
 `donkey.policy.provider` and `donkey.policy.categories`
 ([Telemetry](/telemetry#opentelemetry-genai-spans)).
@@ -517,25 +517,17 @@ reliably; everything else stays inspectable via `.response`. The message says
 the shape is unconfirmed and names the status and any `x-llm-proxy-*` headers
 it carried.
 
-The CrowdStrike AIDR Guardrails policy is one of these for now. Its
-`x-llm-proxy-crowdstrike-aidr-*` headers are documented by the policy but have
-not been captured from a live gateway, so an AIDR block is a generic
-`PolicyViolation`, not a `ContentSafetyBlocked`. `except PolicyViolation` still
-catches it. To give it a type of your own, register the shape you see on your
-proxy:
-
-```python
-from donkey_kit import PolicyViolation, classify
-
-class AidrBlocked(PolicyViolation):
-    remediation = "CrowdStrike AIDR blocked this request. Revise the flagged content."
-    policy = "acme_aidr"
-
-classify.register(
-    match=dict(status=403, headers={"x-llm-proxy-crowdstrike-aidr-action": "reject"}),
-    raises=AidrBlocked,
-)
-```
+The CrowdStrike AIDR Guardrails policy is the one typed shape that has not been
+captured from a live gateway. No proxy running it is available yet, so DDK read
+its `x-llm-proxy-crowdstrike-aidr-*` headers and body from the policy's own
+source (`crowdstrike-aidr-guardrails-policy` 1.0.0) and types an AIDR `403` as
+`ContentSafetyBlocked(provider="crowdstrike-aidr")`. The
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)
+records it at `VERIFIED (POLICY SOURCE)` until a live capture replaces it. If
+your proxy sends a different shape, the call falls through to a generic
+`PolicyViolation` here; please file an issue with its status and headers.
+Because the shape is built in, `classify.register()` refuses a rule that
+matches it.
 
 One `400` that used to land here is now typed: a bare model name (`gpt-5-mini`)
 sent to a model-based proxy with more than one provider. The gateway rejects it

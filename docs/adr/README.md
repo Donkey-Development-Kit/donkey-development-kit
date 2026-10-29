@@ -87,3 +87,4 @@ is not rewritten.
 | [0013](0013-ungoverned-mcp-binding.md) | Binding refuses an MCP server that is not governed, with no opt-out | Accepted | #1150 |
 | [0014](0014-a2a-server-package.md) | `donkey.serve()` wraps the official a2a-sdk, in a top-level `a2a` package beside `integrations` | Proposed | #224 |
 | [0015](0015-provisioning-boundary.md) | The SDK creates only the ingress instance in front of the developer's own agent or MCP server, never a control plane | Accepted | #319 |
+| [0016](0016-policy-source-evidence-class.md) | A gateway response shape read from the policy's own source may be typed, at `VERIFIED (POLICY SOURCE)` | Accepted | #1429 |

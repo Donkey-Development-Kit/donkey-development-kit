@@ -213,9 +213,9 @@ class PolicyViolation(DonkeyError):
         "agent kill switch (403, error code agent_killed), request-rate-limit (429 with "
         "x-ratelimit-* headers), token-budget (429), prompt-injection (the x-injection-protection "
         "header or the regex prompt guard's matched_patterns) and content-safety (Azure Content "
-        "Safety, Amazon Bedrock Guardrails, Google Model Armor) rejections are identified "
-        "specifically; only federated-guardrail verdicts and otherwise-unrecognised shapes "
-        "fall through to here. Inspect .response for the raw body."
+        "Safety, Amazon Bedrock Guardrails, Google Model Armor; CrowdStrike AIDR from its policy "
+        "source) rejections have their own types; only federated-guardrail verdicts and otherwise-"
+        "unrecognised shapes fall through to here. Inspect .response for the raw body."
     )
 
     def __init__(self, message: str, *, policy: str | None = None, **kw: Any) -> None:
@@ -388,19 +388,21 @@ class PromptInjectionBlocked(PolicyViolation):
 
 class ContentSafetyBlocked(PolicyViolation):
     """A provider-backed content-moderation policy (Azure Content Safety, Amazon Bedrock
-    Guardrails or Google Model Armor) blocked the request or response.
+    Guardrails, Google Model Armor or CrowdStrike AIDR) blocked the request or response. The
+    AIDR shape is read from the policy's source, not captured live (docs/verified-apis.md §4).
 
     ``provider`` is the vendor's stable slug (``azure-content-safety``, ``bedrock-guardrails``,
-    ``google-model-armor``); ``categories`` the flagged reasons from its
+    ``google-model-armor``, ``crowdstrike-aidr``); ``categories`` the flagged reasons from its
     ``x-llm-proxy-<vendor>-...-reason`` header (e.g. ``severity_hate``, ``denied_topic``), the
     moderation analog of :attr:`PIIDetected.entities`, empty when none was reported. Both ride
     the span as ``donkey.policy.provider`` / ``donkey.policy.categories`` (#1183)."""
 
     policy = "content-safety"
     remediation: str = (
-        "A content-moderation policy (Azure Content Safety, Bedrock Guardrails or Model Armor) "
-        "blocked this request. Revise the flagged content, or adjust its categories / "
-        "thresholds (API Manager; Model Armor template)."
+        "A content-moderation policy (Azure Content Safety, Bedrock Guardrails, Model Armor or "
+        "CrowdStrike AIDR) blocked this request. Revise the flagged content, or adjust its "
+        "categories / thresholds (API Manager; Model Armor template; AIDR policy in Falcon). "
+        "The CrowdStrike AIDR shape is read from its policy source, not a live capture."
     )
 
     def __init__(
@@ -662,10 +664,9 @@ def classify(
     header that was sent with no extra wiring. An explicit argument (e.g. when the header name
     was overridden via config) always wins over the auto-derived value.
 
-    The precise policy discrimination (BG §1.2, working instruction #4) is driven by
-    real rejection captures from a live governed LLM proxy (docs/verified-apis.md §4,
-    ``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/reject.*``), NOT hand-written guesses.
-    What the captures established:
+    The precise policy discrimination (BG §1.2, working instruction #4) is driven by real
+    rejection captures from a live governed LLM proxy (docs/verified-apis.md §4), or, where
+    no proxy can produce one, by the gateway policy's own source (ADR 0016), NOT guesses:
 
     * **PII detection** rejects with **403** and a *nested* error object whose ``type`` is
       ``"pii_detected"`` (and, unlike a genuine auth failure, NO ``www-authenticate`` header).
@@ -700,10 +701,10 @@ def classify(
       Keyed on ``matched_patterns`` and checked BEFORE the 401/403→auth rule so a deny-list
       block is not mis-typed as auth.
     * **Content safety / guardrails** (Azure Content Safety, Amazon Bedrock Guardrails, Google
-      Model Armor) reject with **403** and a vendor header
-      ``x-llm-proxy-<vendor>-...-action: reject`` → :class:`ContentSafetyBlocked` (flagged
-      reasons parsed from the sibling ``...-reason`` header). Also checked before the auth rule;
-      on a fail-closed 503 it is a 5xx outage.
+      Model Armor; CrowdStrike AIDR from its policy source) reject with **403** and a vendor
+      header ``x-llm-proxy-<vendor>-...-action: reject`` → :class:`ContentSafetyBlocked`
+      (flagged reasons parsed from the sibling ``...-reason`` header). Also checked before the
+      auth rule; on a fail-closed 503 it is a 5xx outage.
     * **OAuth2 OBO CIBA step-up** answers **401** ``error: authorization_pending`` while the user
       has not approved, and **403** ``error: access_denied`` once they deny →
       ``GatewayApprovalPending`` / ``GatewayApprovalDenied`` (``core/step_up``, #1320). Also
@@ -713,10 +714,9 @@ def classify(
     response — so their verification record is the docs/verified-apis.md §4 rows. Any other
     content-moderation / federated-guardrail shape falls through to a generic
     :class:`PolicyViolation` whose message names what was observed and says the shape is
-    unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate`` shape
-    (docs/verified-apis.md §4), a **403 carrying no ``www-authenticate`` header** and matching
-    none of the policy discriminators above is treated as one of these unconfirmed refusals, not
-    mis-typed as an :class:`AuthError`.
+    unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate`` shape, a **403
+    carrying no ``www-authenticate`` header** and matching none of the policy discriminators
+    above is treated as one of these unconfirmed refusals, not mis-typed as an :class:`AuthError`.
 
     A shape a customer registered with ``classify.register()`` (BG §2.2, #210,
     ``core/classifier``) is matched after every built-in above and before the upstream-envelope
@@ -824,7 +824,7 @@ def _match_agent_killed(s: _Shape) -> DonkeyError | None:
 
 def _match_content_safety(s: _Shape) -> DonkeyError | None:
     """Content safety / guardrails: 403 + a vendor ``...-action: reject`` header
-    (docs/verified-apis.md §4, #253/#568/#1178/#1183). Keyed on the header, so an odd
+    (docs/verified-apis.md §4, #253/#568/#1178/#1176/#1183/#1429). Keyed on the header, so an odd
     or absent body is still caught; ahead of the auth rule; never a fail-closed 503."""
     cs = content_safety_reject(s.response)
     if cs is None:

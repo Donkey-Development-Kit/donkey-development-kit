@@ -21,9 +21,10 @@
 > Bedrock Guardrails content-safety shape (same `…-action: reject` family) on
 > 2026-09-24 against `ddk-bedrock-guardrails` (#568), and the Google Model
 > Armor shape (same family) on 2026-10-19 against `ddk-google-model-armor`
-> (#1178). The CrowdStrike AIDR shape (same family, #1176) is read from the
-> policy source, not live-captured (no proxy runs it; capture tracked in #1184),
-> so `classify()` does not type it: it falls through as an unconfirmed refusal (#1429).
+> (#1178). The CrowdStrike AIDR shape (same family, #1176) is
+> `VERIFIED (POLICY SOURCE)`: read from `crowdstrike-aidr-guardrails-policy`
+> 1.0.0, not live-captured (no proxy runs it; capture tracked in #1184), and
+> typed by `classify()` under ADR 0016 (#1429).
 > The Injection Protection
 > body (`x-injection-protection: blocked`) was itself `VERIFIED (LIVE)` on
 > 2026-09-27 against `ddk-injection-protection` (instance 21200898, #669) — a
@@ -58,9 +59,26 @@
 > re-asserted by the nightly matrix (no Anypoint involved). `VERIFIED (local
 > round-trip)` = exercised end to end against a real local server on
 > `127.0.0.1` with the installed framework (no Anypoint or gateway involved);
-> the gateway path stays unverified until a live row says so. `UNSUPPORTED` = a
-> deliberate gap, with its reason; its code guard stays. `UNVERIFIED` = not
-> yet confirmed; its code guard stays in place.
+> the gateway path stays unverified until a live row says so.
+> `VERIFIED (POLICY SOURCE)` = a gateway response shape (status, headers, body)
+> read from the gateway policy's own source code, at a named policy asset and
+> version or commit, not observed from a live response (ADR 0016).
+> `UNSUPPORTED` = a deliberate gap, with its reason; its code guard stays.
+> `UNVERIFIED` = not yet confirmed; its code guard stays in place.
+>
+> **Typing a `VERIFIED (POLICY SOURCE)` shape (ADR 0016).** `classify()` may
+> type a response shape at this class only when all three hold: (1) the
+> shape's ledger row names, in its **Source** column, the policy source it was
+> read from: the policy asset and its version or commit; (2) its fixture is
+> labelled, in its directory's README, as derived from that source and not
+> captured; and (3) the typed exception's remediation, and every docs page that
+> describes the type, say the shape is read from the policy source and not
+> captured live. A shape that misses any of the three falls through to the
+> generic `PolicyViolation`, like any other unconfirmed refusal. The class
+> types a response shape only: it never removes a `_verify.blocked(...)` guard
+> or flips an `Unverified(...)` value, and it does not close the shape's
+> live-capture issue, which stays open until a capture replaces the derived
+> fixture and the row moves to `VERIFIED (LIVE)`.
 >
 > This is the verification ledger. For any row still `UNVERIFIED`, the
 > implementing engineer must, against a **real Anypoint sandbox**, confirm the
@@ -464,11 +482,11 @@ LIVE 2026-09-29, #694); a `401` or `403` whose flat-string `error` is
 `GatewayApprovalDenied` (the OBO policy's CIBA step-up, checked *before* the
 auth rule, VERIFIED LIVE 2026-10-28, #1320); a top-level `matched_patterns` list → `PromptInjectionBlocked`
 (`policy="regex-prompt-guard"`); a vendor `x-llm-proxy-<vendor>-…-action: reject`
-header (Azure Content Safety / Amazon Bedrock Guardrails / Google Model Armor) on a
+header (Azure Content Safety / Amazon Bedrock Guardrails / Google Model Armor, and
+CrowdStrike AIDR at `VERIFIED (POLICY SOURCE)`, #1176/#1429) on a
 `403` → `ContentSafetyBlocked` (parses `categories` from the sibling `…-reason`
 header; the same header on the policies' fail-closed `503` is an outage, typed
-`UpstreamModelError`, #1178; CrowdStrike AIDR's uncaptured header family is not
-typed and falls through, #1429) — both of these also
+`UpstreamModelError`, #1178/#1176) — both of these also
 checked *before* the 401/403→auth rule so a `403` moderation block is not
 mis-typed as auth; header `x-injection-protection: blocked` (VERIFIED LIVE
 2026-09-27 against `ddk-injection-protection`, instance 21200898, #669 — see
@@ -506,7 +524,8 @@ own routing configuration rather than to the policy — see
 The Regex Prompt Guard and content-safety/guardrail shapes below are now
 **VERIFIED (LIVE), 2026-09-22 (#253)** — confirmed against the deployed
 provisioning proxies (`ddk-injection-guard`, `ddk-azure-content-safety`), not
-only typed from the policy pages. They have **no `_verify.py` constant** —
+only typed from the policy pages; the CrowdStrike AIDR row is the exception, at
+`VERIFIED (POLICY SOURCE)`. They have **no `_verify.py` constant** —
 `classify()` reads them straight from the response — so the verification record
 is these rows, not an `Unverified(...)` flip:
 
@@ -515,7 +534,7 @@ is these rows, not an `Unverified(...)` flip:
 | Injection Protection | `400` | header `x-injection-protection: blocked` (not the status) | `PromptInjectionBlocked` (`policy="prompt-injection-protection"`) | [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection) (v1.12.0); VERIFIED (LIVE) 2026-09-27 on `ddk-injection-protection` (instance 21200898, #669) — real 79-byte body |
 | Regex Prompt Guard | `403` | top-level `matched_patterns` list (flat-string `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4); VERIFIED (LIVE) 2026-09-22 on `ddk-injection-guard` (instance 21179713) |
 | Content safety / guardrails | `403` | `x-llm-proxy-azure-content-safety-action` / `x-llm-proxy-bedrock-guardrail-action` / `x-llm-proxy-model-armor-action` == `reject`; reasons in the sibling `…-reason` header. A `503` with the same header is the fail-closed outage (moderation service unreachable), not a block → `UpstreamModelError` | `ContentSafetyBlocked` (parses `categories`) | [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); [Google Model Armor Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails) (v1.14.0); VERIFIED (LIVE) 2026-09-22 on `ddk-azure-content-safety` (instance 21180957) + 2026-09-24 on `ddk-bedrock-guardrails` (#568) + 2026-10-19 on `ddk-google-model-armor` (#1178). The `503` shape is read from the policy source, not live-captured |
-| CrowdStrike AIDR Guardrails | `403` | `x-llm-proxy-crowdstrike-aidr-action: reject`, read from the policy source and never captured live (#1184) | **not typed**: the unrecognised-refusal fall-through below (generic `PolicyViolation`, message says **shape unconfirmed** and names the `x-llm-proxy-crowdstrike-aidr-*` headers); never `ContentSafetyBlocked` (#1429). The fail-closed `503` → `UpstreamModelError` | [CrowdStrike AIDR Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-crowdstrike-aidr-guardrails) (v1.14.0); UNVERIFIED — typed only once #1184 captures it |
+| CrowdStrike AIDR Guardrails | `403` | `x-llm-proxy-crowdstrike-aidr-action: reject`; reasons (the triggered detectors) in the sibling `…-reason` header. A `503` with the same header is the fail-closed outage → `UpstreamModelError` | `ContentSafetyBlocked` (`provider="crowdstrike-aidr"`, parses `categories`) | [CrowdStrike AIDR Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-crowdstrike-aidr-guardrails) (v1.14.0); VERIFIED (POLICY SOURCE) 2026-10-20 from `crowdstrike-aidr-guardrails-policy` 1.0.0 (#1176), typed under ADR 0016 (#1429). Derived, not captured: the live capture is #1184 |
 | Unrecognised refusal (fall-through) | any non-429 `4xx` | matches **none** of the discriminators above; no nested `error` envelope; no `www-authenticate` (e.g. an unrecognised `403`) | generic `PolicyViolation` (`policy="unknown"`), message says **shape unconfirmed** and names the observed status + `x-llm-proxy-*` headers | UNVERIFIED — no known contract by design (#184); federated-guardrail verdicts tracked in #305 |
 
 The Injection Protection (row 3), Regex Prompt Guard (row 7), and Content
@@ -534,8 +553,7 @@ verified `www-authenticate` auth shape is excluded. The fall-through is a
 standing catch-all, not a pending contract: no capture can verify "any
 unrecognised shape", so it closes nothing and blocks nothing. A specific
 vendor verdict that turns up is captured and typed on its own issue; the
-federated guardrails are tracked in #305, and CrowdStrike AIDR, which falls
-through here today, in #1184.
+federated guardrails are tracked in #305.
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two
@@ -681,7 +699,7 @@ driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
 | Regex Prompt Guard | `regex-prompt-guard-policy` `1.0.0` | VERIFIED (LIVE) | `403`, flat-string `error` + top-level `matched_patterns` list; body matched the committed fixture byte-for-byte | 2026-09-22 | live probe, `ddk-injection-guard` instance 21179713 |
 | Azure Content Safety | `azure-content-safety-policy` `1.0.0` | VERIFIED (LIVE) | `403`, `x-llm-proxy-azure-content-safety-action: reject` + `-phase` + `-reason` headers; body `{"error":…,"categories":[…]}` (categories prompt-dependent, e.g. `severity_hate,severity_violence`, `prompt_shield`) | 2026-09-22 | live probe, `ddk-azure-content-safety` instance 21180957 (private-space gateway) |
 | Google Model Armor Guardrails | `google-model-armor-guardrails-policy` `1.0.0` (OpenAI ingress, Gemini upstream) | VERIFIED (LIVE) | `403`, `x-llm-proxy-model-armor-action: reject` + `-phase` (`request`/`response`) + `-reason` headers; body `{"error":"Content blocked by Google Model Armor","categories":[…]}` (the template's matched filters, e.g. `pi_and_jailbreak`, `rai_dangerous`, `malicious_uri`). A response-phase `403` keeps the upstream's headers (`x-gemini-*`). `allow` on every moderated success; `skip_detection` rides on `allow`. Streamed responses through the Gemini transcoder are not scanned (policy gap), so a streamed call sees only the request-phase `403` | 2026-10-19 | live probe, `ddk-google-model-armor` instance 21244069 (shared-omni-gateway) |
-| CrowdStrike AIDR Guardrails | `crowdstrike-aidr-guardrails-policy` `1.0.0` (OpenAI Chat Completions traffic only) | UNVERIFIED (read from policy source; live capture #1184). Not typed: `classify()` returns the unconfirmed-refusal `PolicyViolation` until the capture lands (#1429) | `403`, `content-type: application/json` + `x-llm-proxy-crowdstrike-aidr-action: reject` + `-phase` (`request`/`response`) + `-reason` (triggered detectors, comma-joined: `malicious_prompt`, `pii`, `secrets`, `topic`, `language`, `access_rule`, …; omitted when none) headers; body `{"detectors":[…],"error":"Content blocked by CrowdStrike Falcon AIDR","message":"<AIDR summary>"}`. A streamed response is buffered and a block comes back as the same JSON `403`. `allow` / `transform` (redacted content forwarded) on a success. Fail-closed `503` `{"error":"CrowdStrike Falcon AIDR service unavailable"}` with `action: reject` and a cause reason (`auth_failed`, `rate_limited`, `timeout`, `indeterminate`, …) → `UpstreamModelError` | 2026-10-20 | policy source 1.0.0 + the public policy page (status codes); no proxy, needs a CrowdStrike AIDR for Agents subscription (#1176) |
+| CrowdStrike AIDR Guardrails | `crowdstrike-aidr-guardrails-policy` `1.0.0` (OpenAI Chat Completions traffic only) | VERIFIED (POLICY SOURCE). Typed by `classify()` as `ContentSafetyBlocked(provider="crowdstrike-aidr")` under ADR 0016 (#1429); the live capture is still open (#1184) | `403`, `content-type: application/json` + `x-llm-proxy-crowdstrike-aidr-action: reject` + `-phase` (`request`/`response`) + `-reason` (triggered detectors, comma-joined: `malicious_prompt`, `pii`, `secrets`, `topic`, `language`, `access_rule`, …; omitted when none) headers; body `{"detectors":[…],"error":"Content blocked by CrowdStrike Falcon AIDR","message":"<AIDR summary>"}`. A streamed response is buffered and a block comes back as the same JSON `403`. `allow` / `transform` (redacted content forwarded) on a success. Fail-closed `503` `{"error":"CrowdStrike Falcon AIDR service unavailable"}` with `action: reject` and a cause reason (`auth_failed`, `rate_limited`, `timeout`, `indeterminate`, …) → `UpstreamModelError` | 2026-10-20 | `crowdstrike-aidr-guardrails-policy` 1.0.0 source (headers, body) + the public policy page, v1.14.0 (status codes); fixture `rejections/reject.content-safety-crowdstrike-aidr.*` is derived from that source, not captured. No proxy: it needs a CrowdStrike AIDR for Agents subscription (#1176) |
 | Agent Kill Switch | applied to `ddk-agent-kill-switch` | VERIFIED (LIVE) | `403`, nested `{"error":{code:"agent_killed",message}}` — no `type`, no `www-authenticate`, no reason field (#314). Discriminator: nested `error.code == "agent_killed"` → `AgentKilled` | 2026-09-29 | live probe, `ddk-agent-kill-switch` instance 21206201 (shared-omni-gateway), quarantined agent `act.sub=21206128`, correlation id `00000000-0000-4000-8000-ede8f2783ba7` (#694) |
 | OAuth2 OBO Credential Injection, CIBA pending | `credential-injection-oauth2-obo` `1.1.3` (`cibaEnabled: true`), on instance 20825039 | VERIFIED (LIVE) | `401`, flat-string `{"error":"authorization_pending","error_description":…}`, `retry-after: 5` (`8` after `slow_down`), no `www-authenticate`. Discriminator: `401` + body `error == "authorization_pending"` → `GatewayApprovalPending` (#1320). An unanswered request past `expires_in` (about 124s observed) stays `401` pending: the policy starts a new flow and the client never sees an expiry | 2026-10-28 | live probe, A2A `message/send`, `trusted-agent-id-core-banking-agent` (Cumulus Bank, `agent-network-ingress-gw`); provisioning #96 |
 | OAuth2 OBO Credential Injection, CIBA denied | same | VERIFIED (LIVE) | `403`, flat-string `{"error":"access_denied","error_description":"The downstream user denied the CIBA authorization request."}`, no `www-authenticate`. Discriminator: `403` + body `error == "access_denied"` → `GatewayApprovalDenied` (#1320). On `1.1.3` the denial is cached per `login_hint` for up to an hour, even across fresh tokens and new `contextId`s | 2026-10-28 | same probe |
@@ -1000,6 +1018,7 @@ column as follows and refuses any other value:
 | §8 Status | Docs label | Page `status:` |
 |---|---|---|
 | `VERIFIED (LIVE)`, `VERIFIED (CLI)` | Live-verified | `live` |
+| `VERIFIED (POLICY SOURCE)` | Policy-source | `offline-verified` |
 | `UNVERIFIED (signature confirmed; …)` | Signature-confirmed | `offline-verified` |
 
 Every factory in `ADAPTERS` needs a row here, and every row needs its §8 row

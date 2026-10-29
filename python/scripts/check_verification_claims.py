@@ -13,7 +13,11 @@ Rejected outside ``_verify.py``:
   revision) is a value, not a claim, and passes;
 * ``LIVE-VERIFIED`` / ``live-verified`` / ``verified live``;
 * a ledger status label: ``VERIFIED (LIVE)``, ``VERIFIED (plugin)``,
-  ``VERIFIED-NEGATIVE``, ``VERIFIED-SHAPE-ONLY``, … and ``(LIVE, …)``.
+  ``VERIFIED (POLICY SOURCE)`` (ADR 0016), ``VERIFIED-NEGATIVE``,
+  ``VERIFIED-SHAPE-ONLY``, … and the bare ``(LIVE, …)`` / ``(POLICY SOURCE, …)``.
+
+A shape typed from the policy source still says so in ``src/``, in words ("read
+from the policy source, not captured live"), not with the ledger label.
 
 ``UNVERIFIED`` stays allowed: it marks a guard that is still in place.
 
@@ -35,7 +39,10 @@ _ALLOWED = Path("core") / "_verify.py"
 _CLAIMS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("dated claim", re.compile(r"(?<![\"'])\b20\d\d-\d\d-\d\d\b(?![\"'])")),
     ("LIVE-verified claim", re.compile(r"\blive[- ]verified\b|\bverified[- ]live\b", re.I)),
-    ("ledger status label", re.compile(r"\bVERIFIED(?: \(|-NEGATIVE\b|-SHAPE-ONLY\b)|\(LIVE\b")),
+    (
+        "ledger status label",
+        re.compile(r"\bVERIFIED(?: \(|-NEGATIVE\b|-SHAPE-ONLY\b)|\((?:LIVE|POLICY SOURCE)\b"),
+    ),
 )
 
 

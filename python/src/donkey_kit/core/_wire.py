@@ -121,3 +121,6 @@ BEDROCK_GUARDRAIL_ACTION_HEADER = "x-llm-proxy-bedrock-guardrail-action"
 BEDROCK_GUARDRAIL_REASON_HEADER = "x-llm-proxy-bedrock-guardrail-reason"
 MODEL_ARMOR_ACTION_HEADER = "x-llm-proxy-model-armor-action"
 MODEL_ARMOR_REASON_HEADER = "x-llm-proxy-model-armor-reason"
+# Read from the CrowdStrike AIDR policy's source, not captured live (§4, ADR 0016).
+CROWDSTRIKE_AIDR_ACTION_HEADER = "x-llm-proxy-crowdstrike-aidr-action"
+CROWDSTRIKE_AIDR_REASON_HEADER = "x-llm-proxy-crowdstrike-aidr-reason"

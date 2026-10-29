@@ -486,6 +486,14 @@ what is verified and the worklist of what is still blocked. Code outside
 `core/_verify.py` cites it (`docs/verified-apis.md §N`) and never restates a
 status or a date; `scripts/check_verification_claims.py` enforces that in CI.
 
+**A response shape no proxy can produce.** `classify()` may also type a gateway
+rejection shape read from the policy's own source, at `VERIFIED (POLICY SOURCE)`,
+when its ledger row names the source and version, its fixture says it is derived
+and not captured, and its remediation and docs say so too
+([ADR 0016](docs/adr/0016-policy-source-evidence-class.md)). That class types a
+shape only; it never lifts a `blocked(...)` guard or flips an `Unverified(...)`
+value.
+
 What is verified today: the LLM-proxy data plane (its base-URL shape — note there
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
 and the live rejection shapes), the OAuth2 control-plane token path, and the

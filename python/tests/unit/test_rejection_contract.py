@@ -173,22 +173,20 @@ def test_row8_google_model_armor_variant_is_content_safety_blocked() -> None:
     assert err.remediation  # required, non-empty
 
 
-def test_uncaptured_crowdstrike_aidr_shape_falls_through_unconfirmed() -> None:
-    # The CrowdStrike AIDR fixture is read from the policy source
-    # (crowdstrike-aidr-guardrails-policy 1.0.0), not live-captured (#1184), so
-    # nothing types it (§0.3, #1429): it falls through like row 4, as a generic
-    # PolicyViolation whose message says the shape is unconfirmed and names the
-    # observed policy headers. Swap in the capture and type it once #1184 lands.
-    response = _response(REJECTIONS, "content-safety-crowdstrike-aidr", 403)
-    err = classify(response)
-    assert type(err) is PolicyViolation
-    assert not isinstance(err, (ContentSafetyBlocked, AuthError))
-    assert err.policy == "unknown"
-    assert "shape unconfirmed" in str(err)
-    assert "x-llm-proxy-crowdstrike-aidr-action" in str(err)
-    assert "CrowdStrike" not in str(err)
-    assert "#184" in err.remediation
-    assert err.response is response
+def test_row8_crowdstrike_aidr_variant_is_content_safety_blocked() -> None:
+    # The CrowdStrike AIDR sibling of row 8: the x-llm-proxy-crowdstrike-aidr-*
+    # header family, VERIFIED (POLICY SOURCE): derived from
+    # crowdstrike-aidr-guardrails-policy 1.0.0, not captured live (ADR 0016,
+    # #1176/#1429; the capture is #1184). The categories are the triggered
+    # detectors. A classify()-contract fixture, unserved and absent from
+    # fixtures.lock like the other siblings.
+    err = classify(_response(REJECTIONS, "content-safety-crowdstrike-aidr", 403))
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.policy == "content-safety"
+    assert err.provider == "crowdstrike-aidr"
+    assert err.categories == ["malicious_prompt", "pii"]
+    assert "CrowdStrike AIDR" in str(err)
+    assert "policy source" in err.remediation  # states its evidence class (ADR 0016)
 
 
 @pytest.mark.parametrize(
@@ -201,6 +199,7 @@ def test_uncaptured_crowdstrike_aidr_shape_falls_through_unconfirmed() -> None:
             "google-model-armor",
             ["rai_harassment", "rai_dangerous", "pi_and_jailbreak"],
         ),
+        ("content-safety-crowdstrike-aidr", "crowdstrike-aidr", ["malicious_prompt", "pii"]),
     ],
 )
 def test_row8_content_safety_reports_the_provider_slug(

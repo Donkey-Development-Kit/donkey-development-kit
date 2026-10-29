@@ -50,6 +50,8 @@ def test_shipped_source_has_no_claims() -> None:
         "# VERIFIED (LIVE, docs/verified-apis.md §3).",
         "# A VERIFIED-NEGATIVE result.",
         "# Agent Kill Switch (LIVE, #694).",
+        "# The AIDR shape is VERIFIED (POLICY SOURCE).",
+        "# CrowdStrike AIDR (POLICY SOURCE, #1429).",
     ],
 )
 def test_claims_outside_verify_are_rejected(tmp_path: Path, line: str) -> None:
@@ -67,6 +69,7 @@ def test_claims_outside_verify_are_rejected(tmp_path: Path, line: str) -> None:
         "# The pair is confirmed (docs/verified-apis.md §2/§3).",
         "# observed in the live-captured fixtures",
         'MCP_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26")',
+        "# Read from the CrowdStrike AIDR policy's source, not captured live (§4, ADR 0016).",
     ],
 )
 def test_citations_and_unverified_guards_pass(tmp_path: Path, line: str) -> None:

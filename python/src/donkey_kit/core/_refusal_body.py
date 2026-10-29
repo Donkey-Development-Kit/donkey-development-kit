@@ -216,10 +216,10 @@ MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the know
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
 # ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
-# #253/#568/#1178). Each policy also sends ``action: reject`` on its fail-closed
+# #253/#568/#1178/#1176). Each policy also sends ``action: reject`` on its fail-closed
 # ``503`` (the moderation service was unreachable), so only a ``403`` is a block.
-# A vendor joins only once its shape is captured live (§0.3): CrowdStrike AIDR waits
-# on #1184 and falls through to the unconfirmed refusal until then (#1429).
+# CrowdStrike AIDR's header family is read from the policy's source, not captured
+# from a live gateway (ADR 0016, #1429; the capture is #1184).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str, str], ...] = (
     (
         _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
@@ -238,6 +238,12 @@ _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str, str], ...] = (
         _wire.MODEL_ARMOR_REASON_HEADER,
         "google-model-armor",
         "Google Model Armor",
+    ),
+    (
+        _wire.CROWDSTRIKE_AIDR_ACTION_HEADER,
+        _wire.CROWDSTRIKE_AIDR_REASON_HEADER,
+        "crowdstrike-aidr",
+        "CrowdStrike AIDR",
     ),
 )
 

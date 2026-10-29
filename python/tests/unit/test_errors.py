@@ -250,6 +250,8 @@ def test_model_armor_response_phase_403_is_content_safety_blocked() -> None:
         ("model-armor", "timeout"),
         ("azure-content-safety", "service_unavailable"),
         ("bedrock-guardrail", "service_unavailable"),
+        ("crowdstrike-aidr", "auth_failed"),
+        ("crowdstrike-aidr", "indeterminate"),
     ],
 )
 def test_content_safety_fail_closed_503_is_an_outage_not_a_block(prefix: str, reason: str) -> None:
@@ -286,13 +288,11 @@ def test_model_armor_allow_with_skip_detection_is_not_a_block() -> None:
     assert not isinstance(err, ContentSafetyBlocked)
 
 
-@pytest.mark.parametrize("phase", ["request", "response"])
-@pytest.mark.parametrize("action", ["reject", "allow", "transform"])
-def test_crowdstrike_aidr_403_is_not_typed_until_captured(phase: str, action: str) -> None:
-    """#1429: the CrowdStrike AIDR shape is read from the policy source, never
-    captured live (#1184), so no verdict on its header family is typed (§0.3). A
-    ``403`` carrying it is the honest unconfirmed refusal, which names the
-    observed headers, never a ContentSafetyBlocked or an AuthError."""
+def test_crowdstrike_aidr_response_phase_403_is_content_safety_blocked() -> None:
+    """#1176/#1429: a response-phase CrowdStrike AIDR block (the policy rewrites the
+    completion, streamed or not, to a JSON 403) is typed by its vendor header,
+    with every triggered detector as a category. The shape is read from the
+    policy source, not captured live (ADR 0016)."""
     err = classify(
         _json_resp(
             403,
@@ -302,28 +302,58 @@ def test_crowdstrike_aidr_403_is_not_typed_until_captured(phase: str, action: st
                 "message": "",
             },
             {
-                "x-llm-proxy-crowdstrike-aidr-action": action,
-                "x-llm-proxy-crowdstrike-aidr-phase": phase,
+                "x-llm-proxy-crowdstrike-aidr-action": "reject",
+                "x-llm-proxy-crowdstrike-aidr-phase": "response",
                 "x-llm-proxy-crowdstrike-aidr-reason": "secrets,topic",
             },
         )
     )
-    assert type(err) is PolicyViolation
-    assert err.policy == "unknown"
-    assert "shape unconfirmed" in str(err)
-    assert "x-llm-proxy-crowdstrike-aidr-action" in str(err)
-    assert not hasattr(err, "provider")
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.categories == ["secrets", "topic"]
+    assert "CrowdStrike AIDR" in str(err)
 
 
-def test_content_safety_vendors_name_no_uncaptured_provider() -> None:
-    """#1429: neither the remediations nor the vendor list claim CrowdStrike AIDR
-    is identified while its shape is uncaptured (#1184)."""
-    from donkey_kit.core import _refusal_body
+def test_crowdstrike_aidr_reject_without_reason_has_no_categories() -> None:
+    """#1176: the policy omits the ``-reason`` header when no detector is named
+    (e.g. a reject from the verdict alone); still a block, with no categories."""
+    err = classify(
+        _resp(
+            403,
+            {
+                "x-llm-proxy-crowdstrike-aidr-action": "reject",
+                "x-llm-proxy-crowdstrike-aidr-phase": "request",
+            },
+        )
+    )
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.categories == []
 
-    assert "crowdstrike-aidr" not in {row[2] for row in _refusal_body._CONTENT_SAFETY_VENDORS}
-    for cls in (ContentSafetyBlocked, PolicyViolation):
-        assert "CrowdStrike" not in cls.remediation
-        assert "AIDR" not in cls.remediation
+
+@pytest.mark.parametrize("action", ["allow", "transform"])
+def test_crowdstrike_aidr_allow_and_transform_are_not_blocks(action: str) -> None:
+    """#1176: ``allow`` (including report-only detections) and ``transform``
+    (redacted content forwarded) never block, whatever the status."""
+    err = classify(
+        _resp(
+            403,
+            {
+                "x-llm-proxy-crowdstrike-aidr-action": action,
+                "x-llm-proxy-crowdstrike-aidr-reason": "pii",
+            },
+        )
+    )
+    assert not isinstance(err, ContentSafetyBlocked)
+
+
+def test_a_policy_source_shape_states_its_evidence() -> None:
+    """ADR 0016 rule 3: a shape typed from the gateway policy's source says so
+    in the remediation and docstring a caller reads, and no remediation claims
+    the content-safety vendors are all identified from live captures."""
+    assert "CrowdStrike AIDR" in ContentSafetyBlocked.remediation
+    assert "policy source, not a live capture" in ContentSafetyBlocked.remediation
+    assert "not captured live" in (ContentSafetyBlocked.__doc__ or "")
+    assert "CrowdStrike AIDR from its policy source" in PolicyViolation.remediation
+    assert "identified specifically" not in PolicyViolation.remediation
 
 
 # --- bare model name on a multi-provider proxy (#825) -----------------------
