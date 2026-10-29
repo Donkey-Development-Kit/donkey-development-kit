@@ -236,9 +236,9 @@ def refusal_translator(exc: BaseException) -> DonkeyError | None:
 APPROVAL_INTERRUPT = "donkey.approval"
 
 # The call the hook approved, for the gate inside the tool to pick up. Set in
-# BeforeToolCallEvent and cleared in AfterToolCallEvent, on the task that runs
-# that one tool call. Strands runs a sync tool with asyncio.to_thread, which
-# copies the context, so the worker thread sees it too.
+# BeforeToolCallEvent, spent by the gate, and cleared in AfterToolCallEvent, on
+# the task that runs that one tool call. Strands runs a sync tool with
+# asyncio.to_thread, which copies the context, so the worker thread sees it too.
 _APPROVED: contextvars.ContextVar[Approval | None] = contextvars.ContextVar(
     "donkey_strands_approved", default=None
 )
@@ -377,10 +377,12 @@ class ApprovalHook:
 def approved_call(tool: str) -> Approval | None:
     """The approval an :class:`ApprovalHook` granted for the ``tool`` call
     running now, or ``None``. The gate's Strands hook (BG §2.3): it lets the
-    approved call run instead of raising ``ApprovalRequired``."""
+    approved call run instead of raising ``ApprovalRequired``. One approval runs
+    one call."""
     approval = _APPROVED.get()
     if approval is None or approval.tool != tool:
         return None
+    _APPROVED.set(None)
     return approval
 
 

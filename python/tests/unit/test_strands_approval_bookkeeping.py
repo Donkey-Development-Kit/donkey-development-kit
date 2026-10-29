@@ -240,7 +240,7 @@ def test_an_approved_call_runs_once_under_the_approval(
     event = _event(response={"approved": True, "by": " m.keller "})
     hook._before_tool(event)
 
-    approval = approved_call("issue_refund")
+    approval = strands_mod._APPROVED.get()
     assert approval is not None and approval.id == reason["approval_id"]
     assert approval.correlation_id == "run-1"
     assert approved_call("lookup") is None
@@ -250,11 +250,12 @@ def test_an_approved_call_runs_once_under_the_approval(
     ran.clear()
     assert issue_refund("T-1") == "refunded T-1"  # the gate lets it through
     assert ran == ["T-1"]
-
-    hook._after_tool(object())
+    # One approval runs one call, even before AfterToolCallEvent (#1438).
     assert approved_call("issue_refund") is None
     with pytest.raises(ApprovalRequired):
         issue_refund("T-1")
+    assert ran == ["T-1"]
+    hook._after_tool(object())
 
 
 def test_a_retried_call_records_its_decision_once_per_invocation(

@@ -215,6 +215,56 @@ async def test_an_approved_call_pauses_then_runs_once_under_the_approval(
     assert approved_call("issue_refund") is None
 
 
+@pytest.mark.parametrize("is_async", [False, True], ids=["sync", "async"])
+async def test_a_nested_call_of_the_approved_tool_waits_for_its_own_approval(
+    is_async: bool,
+) -> None:
+    """One approval runs one call, as on ADK and the OpenAI Agents SDK (#1438):
+    the approved call spends it, so the same tool called from inside it is
+    gated again instead of running before ``AfterToolCallEvent``."""
+    ran: list[str] = []
+    nested: list[ApprovalRequired] = []
+
+    if is_async:
+
+        @Donkey.tool(approval="required")
+        async def issue_refund(ticket_id: str) -> str:
+            """Refund a ticket, and the next one too."""
+            ran.append(ticket_id)
+            if ticket_id == "T-1":
+                try:
+                    await issue_refund("T-2")
+                except ApprovalRequired as needed:
+                    nested.append(needed)
+            return "refunded"
+
+    else:
+
+        @Donkey.tool(approval="required")
+        def issue_refund(ticket_id: str) -> str:
+            """Refund a ticket, and the next one too."""
+            ran.append(ticket_id)
+            if ticket_id == "T-1":
+                try:
+                    issue_refund("T-2")
+                except ApprovalRequired as needed:
+                    nested.append(needed)
+            return "refunded"
+
+    agent = _agent(_ScriptedModel(_REFUND), tool(issue_refund), hooks=(ApprovalHook(),))
+    (approval,) = pending_approvals(await _paused(agent))
+    resumed = await agent.invoke_async([approve(approval, by="m.keller").native])
+
+    assert resumed.stop_reason == "end_turn"
+    assert ran == ["T-1"]
+    (needed,) = nested
+    assert needed.approval.tool == "issue_refund"
+    assert dict(needed.approval.arguments) == {"ticket_id": "T-2"}
+    assert needed.approval.id != approval.id
+    (waiting,) = approvals_mod.approvals.pending()
+    assert waiting.id == needed.approval.id
+
+
 def _user_refund_tool(users: list[str | None]) -> Any:
     @Donkey.tool(approval="required")
     def issue_refund(ticket_id: str) -> str:
