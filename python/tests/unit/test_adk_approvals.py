@@ -192,7 +192,7 @@ async def _paused_as_alice(donkey: Donkey) -> tuple[Runner, str, Any]:
     users.clear()
     runner, sessions = _runner(approval_plugin(), tool=refund_as_user)
     session = await sessions.create_session(app_name="refunds", user_id="u")
-    async with donkey.as_user(id_token="id-token-alice"):
+    async with donkey.as_user(token="token-alice"):
         events = await _send(runner, session.id, _user(types.Part(text="go")))
     (request,) = pending_approvals(events)
     return runner, session.id, request
@@ -203,13 +203,13 @@ async def test_an_approved_call_runs_as_the_user_who_paused_it() -> None:
         runner, session_id, request = await _paused_as_alice(donkey)
         # The approver's handler resumes the run, outside as_user().
         await _send(runner, session_id, _user(approve(request, by="m.keller")))
-    assert users == ["id-token-alice"]
+    assert users == ["token-alice"]
 
 
 async def test_resuming_as_another_user_is_refused() -> None:
     async with _donkey() as donkey:
         runner, session_id, request = await _paused_as_alice(donkey)
-        async with donkey.as_user(id_token="id-token-bob"):
+        async with donkey.as_user(token="token-bob"):
             with pytest.raises(AuthError, match="as_user"):
                 await _send(runner, session_id, _user(approve(request, by="m.keller")))
     assert users == []

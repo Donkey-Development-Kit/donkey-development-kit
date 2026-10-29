@@ -843,14 +843,17 @@ class Donkey:
             )
         )
 
-    def as_user(self, *, id_token: str) -> UserScope:
+    def as_user(self, *, token: str) -> UserScope:
         """Run the governed model calls in the block as the user behind
-        ``id_token``, not as this service (BG §2.4, #215).
+        ``token``, not as this service (BG §2.4, #215).
 
-        Every data-plane call in the block carries the user's token, unchanged,
-        and so does every MCP ``ToolSet`` bound in the block (#1366)::
+        ``token`` is the user's access token for the gateway: its audience must
+        name the proxy or MCP instance it is sent to (docs/verified-apis.md
+        §13), so an OIDC ID token, issued for your app, is not one. Every
+        data-plane call in the block carries it, unchanged, and so does every
+        MCP ``ToolSet`` bound in the block (#1366)::
 
-            async with donkey.as_user(id_token=request.id_token):
+            async with donkey.as_user(token=request.access_token):
                 await agent.run(task)
 
         The SDK runs no token exchange and makes no control-plane request for
@@ -867,28 +870,20 @@ class Donkey:
 
         The token rides as ``Authorization: Bearer <token>``
         (docs/verified-apis.md §13); set ``user_token_header`` if your gateway
-        reads another header. ``token_exchange_path`` is deprecated and ignored.
+        reads another header.
 
         The same documented degradation as :meth:`run` applies (BG §1.8): a
         ``connection_kwargs()``-only adapter that does not route through the
         shared transport never sees the user.
 
         Raises:
-            AuthError: ``id_token`` is missing or empty. Never a silent
+            AuthError: ``token`` is missing or empty. Never a silent
                 fallback to the service identity.
             ConfigError: The user token would ride in ``Authorization`` in the
                 ``jwt`` / ``bearer`` modes, where the data-plane token already
                 rides.
         """
-        if self._cfg.token_exchange_path is not None:
-            warnings.warn(
-                "token_exchange_path (DONKEY_TOKEN_EXCHANGE_PATH) is deprecated and "
-                "ignored: donkey.as_user() forwards the user token and the gateway "
-                "runs the exchange.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return UserScope(self._cfg, id_token)
+        return UserScope(self._cfg, token)
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
     # The overloads keep the decorated callable's own signature, for both the

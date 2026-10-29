@@ -1732,9 +1732,9 @@ guard is removed. Ordered by confidence:
 
 ## 13. On-behalf-of user token (BG §2.4)
 
-`donkey.as_user(id_token=...)` (#215) stamps the user's token, unchanged, on
-every data-plane request in the block, and on the MCP `ToolSet` bindings made
-in it (#1366). The SDK runs no token exchange: the
+`donkey.as_user(token=...)` (#215, #1420) stamps the user's access token,
+unchanged, on every data-plane request in the block, and on the MCP `ToolSet`
+bindings made in it (#1366). The SDK runs no token exchange: the
 gateway's OBO policy runs it (#1350, from the evidence below), so there is no
 SDK exchange endpoint left to verify. The header is verified live (#255): a
 plain constant in `core/_verify.py`, still overridable in config. What it was
@@ -1804,8 +1804,8 @@ Two findings bound what `as_user()`'s forward-unchanged design covers:
   RFC 8693 exchange, against the IdP realm's token endpoint
   (`/protocol/openid-connect/token`). Together with the refusal above, this
   is why `as_user()` forwards the user token and leaves the exchange to the
-  policy (#1350). The former `token_exchange_path` setting is deprecated and
-  ignored.
+  policy (#1350). The former `token_exchange_path` setting was removed before
+  it shipped in a release (#1420).
 - **Step-up MFA** (`BG §2.3`). The OBO policy's CIBA step-up shapes are
   `VERIFIED (LIVE)` in §4 item 8 and typed as `GatewayApprovalPending` /
   `GatewayApprovalDenied` (#1320). `ToolSet.wait_for_gateway_approval()` waits on

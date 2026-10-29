@@ -63,7 +63,6 @@ This table is generated from the field table in `core/config.py`.
 | `DONKEY_LLM_PROXY_KEY_HEADER` | `llm_proxy_key_header` | `llm_proxy_key_header` | unset |
 | `DONKEY_LLM_PROXY_AUTH` | `llm_proxy_auth` | `llm_proxy_auth` | `client-id` |
 | `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` | `llm_proxy_wallet_client_id` | `llm_proxy_wallet_client_id` | unset |
-| `DONKEY_TOKEN_EXCHANGE_PATH` | `token_exchange_path` | `token_exchange_path` | deprecated, ignored |
 | `DONKEY_USER_TOKEN_HEADER` | `user_token_header` | `user_token_header` | `Authorization` |
 | `DONKEY_APP_NAME` | `application_name` | `application_name` | unset |
 | `DONKEY_BUSINESS_GROUP` | `business_group` | `business_group` | unset |

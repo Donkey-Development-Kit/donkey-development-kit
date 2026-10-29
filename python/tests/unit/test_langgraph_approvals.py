@@ -205,7 +205,7 @@ async def test_the_resumed_tool_runs_as_the_user_who_paused_the_graph() -> None:
     thread = _thread("t-identity")
 
     async with Donkey(_cfg()) as donkey:
-        async with donkey.as_user(id_token="id-token-alice"):
+        async with donkey.as_user(token="token-alice"):
             with donkey.attribution(business_group="risk-eu"):
                 graph.invoke({"ticket_id": "T-1"}, thread)
         # The approver's handler resumes the graph, outside as_user().
@@ -213,7 +213,7 @@ async def test_the_resumed_tool_runs_as_the_user_who_paused_the_graph() -> None:
             done = graph.invoke(Command(resume=_APPROVE), thread)
 
     assert done["result"] == "refunded T-1"
-    assert seen == [("id-token-alice", "risk-eu")]
+    assert seen == [("token-alice", "risk-eu")]
 
 
 async def test_resuming_the_graph_as_another_user_is_refused() -> None:
@@ -222,9 +222,9 @@ async def test_resuming_the_graph_as_another_user_is_refused() -> None:
     thread = _thread("t-identity-other")
 
     async with Donkey(_cfg()) as donkey:
-        async with donkey.as_user(id_token="id-token-alice"):
+        async with donkey.as_user(token="token-alice"):
             graph.invoke({"ticket_id": "T-1"}, thread)
-        async with donkey.as_user(id_token="id-token-bob"):
+        async with donkey.as_user(token="token-bob"):
             with pytest.raises(AuthError, match="as_user"):
                 graph.invoke(Command(resume=_APPROVE), thread)
 

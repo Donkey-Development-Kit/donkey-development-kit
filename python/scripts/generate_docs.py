@@ -264,7 +264,6 @@ def settings_index() -> str:
     defaults.update((key, f"`{name}`") for key, name in config._HEADER_KEYS)  # noqa: SLF001
     defaults["base_url"] = "from `region`"
     # The ``as_user()`` header (docs/verified-apis.md §13).
-    defaults["token_exchange_path"] = "deprecated, ignored"
     defaults["user_token_header"] = f"`{_verify.USER_TOKEN_HEADER}`"
     rows = [
         (

@@ -117,7 +117,6 @@ class ConfigOverrides(TypedDict, total=False):
     llm_proxy_key_header: str | None
     llm_proxy_auth: LlmProxyAuth
     llm_proxy_wallet_client_id: str | None
-    token_exchange_path: str | None
     user_token_header: str | None
     application_name: str | None
     business_group: str | None
@@ -308,8 +307,7 @@ class DonkeyConfig:
     llm_proxy_wallet_client_id: str | None = None
 
     # --- ``donkey.as_user(...)`` (BG §2.4, #215): the user-token header, unset →
-    # ``core/_verify``. ``token_exchange_path`` is deprecated and ignored (#1350). ---
-    token_exchange_path: str | None = None
+    # ``core/_verify``. ---
     user_token_header: str | None = None
 
     # --- Attribution (real header names: see docs/verified-apis.md §3) ---
@@ -884,7 +882,6 @@ _FIELDS: tuple[_Field, ...] = (
         "llm_proxy_auth", "DONKEY_LLM_PROXY_AUTH", _as_token, _one_of("client-id", "jwt", "bearer")
     ),
     _Field("llm_proxy_wallet_client_id", "DONKEY_LLM_PROXY_WALLET_CLIENT_ID", _opt),
-    _Field("token_exchange_path", "DONKEY_TOKEN_EXCHANGE_PATH", _opt),
     _Field("user_token_header", "DONKEY_USER_TOKEN_HEADER", _opt),
     _Field("application_name", "DONKEY_APP_NAME", _opt),
     _Field("business_group", "DONKEY_BUSINESS_GROUP", _opt),

@@ -161,10 +161,11 @@ def key_header_problem(name: str) -> str | None:
 
 
 def user_token_header_problem(name: str) -> str | None:
-    """Why ``name`` can't carry the exchanged user token (``user_token_header``,
-    BG §2.4), or ``None`` if it can. ``Authorization`` is allowed; any other
-    header that carries the consumer's own credentials, routes or frames the
-    request, or that the SDK already sets is not."""
+    """Why ``name`` can't carry the ``donkey.as_user()`` token, which the SDK
+    forwards unchanged (``user_token_header``, BG §2.4), or ``None`` if it can.
+    ``Authorization`` is allowed; any other header that carries the consumer's
+    own credentials, routes or frames the request, or that the SDK already sets
+    is not."""
     if (problem := _unsafe(name)) is not None:
         return problem
     lowered = name.lower()
