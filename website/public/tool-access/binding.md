@@ -102,14 +102,33 @@ async with donkey.as_user(id_token=user_token):
   by default). It replaces the credential's `Authorization`; the credential's
   other headers, such as `client_id` and `client_secret`, still go. Inside the
   block a binding needs no credential of its own.
-- The token is read when you bind, like any credential. A binding made inside
-  the block keeps that user's token, so bind once per user; a binding made
-  outside the block carries none.
+- The token is read when you bind, like any credential, and the framework's
+  MCP client sends it on every call. A binding acts for the user it was bound
+  for, so bind inside the block that runs the agent, once per user or request.
+  A binding made outside any block acts as your service.
+- A per-tool binding (`langgraph()`, `llamaindex()`, `anthropic()`) refuses a
+  call made under a different user than the one it was bound for. That covers
+  another user's token, a user's binding called outside any block, and a
+  service binding called inside one. The call raises `AuthError` before
+  anything is sent. An approved tool still
+  [runs as the user who asked for it](https://docs.donkey-kit.dev/hitl.md#who-a-resumed-call-runs-as),
+  wherever it is resumed.
 - The token goes as you pass it. JWT Validation accepts it only if its audience
   names the MCP instance, so exchange the user's login token at your identity
   provider for that audience first.
 - A `401` or `403` on the user's token raises `AuthError` without retrying: the
   SDK never falls back to your service's credential.
+
+  **A whole-server binding can't be checked.** `adk()`, `strands()`,
+  `openai()`, `agent_framework()` and `crewai()` hand each server to the
+  framework, and the framework makes the tool calls itself, so the SDK never
+  sees them. Such a binding sends the identity it was bound with on every
+  call, whatever `as_user()` block the call runs in. Build an agent once at
+  startup and run each request inside `as_user()`, and its model calls go as
+  the user while its tool calls go as your service. Cache an agent built for
+  one user and reuse it for the next, and its tool calls go as the first user.
+  Bind a whole-server binding inside the `as_user()` block that uses it, and
+  don't reuse it outside that block.
 
 ## Filtering
 
@@ -270,7 +289,10 @@ object cannot rename one tool or gate one call, so:
   LlamaIndex or the Anthropic SDK, which rename it;
 - a set with a `require_approval()` rule raises `NotImplementedError`. Gate
   discovered tools through LangGraph, LlamaIndex or the Anthropic SDK, or use
-  the framework's own approval hook (see [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md)).
+  the framework's own approval hook (see [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md));
+- a tool call made under a different `as_user()` user from the bind's is not
+  refused: it goes out with the identity of the bind. See
+  [Acting for a user](#acting-for-a-user).
 
 ### Results and errors
 

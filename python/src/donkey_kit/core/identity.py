@@ -161,6 +161,15 @@ class Requester:
     cost: CostTags | None
     business_group: str | None
 
+    def matches_current_user(self) -> bool:
+        """True when this context binds the requester's user: the same token,
+        or no user when the requester had none. Stricter than
+        :func:`check_requester`, which lets an unbound context pass because
+        :func:`requester_scope` re-binds the requester's user; a caller that
+        cannot re-bind, such as a per-tool MCP binding whose headers carry the
+        requester's token (#1418), needs this one."""
+        return _same_user(current_user(), self.user)
+
 
 def capture_requester() -> Requester:
     """The :class:`Requester` of a call requested here, now: the current user
