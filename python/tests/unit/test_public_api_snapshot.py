@@ -98,7 +98,7 @@ MEMBERS = [
     "Donkey.aclose() [async]",
     "Donkey.agent(*, name, skills=...)",
     "Donkey.approvals [property]",
-    "Donkey.as_user(*, id_token)",
+    "Donkey.as_user(*, token)",
     "Donkey.attribution(*, business_group=None, team=None, project=None, env=None, enduser_id=None)",
     "Donkey.budget [property]",
     "Donkey.cache(*, skip=None, no_store=None, ttl=None, threshold=None, principal_id=None)",
