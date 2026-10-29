@@ -183,3 +183,10 @@ _.after_tool_callback  # unused method (src/donkey_kit/integrations/adk.py)
 _.on_tool_error_callback  # unused method (src/donkey_kit/integrations/adk.py)
 _.after_run_callback  # unused method (src/donkey_kit/integrations/adk.py)
 _.skip_summarization  # unused attribute (src/donkey_kit/integrations/adk.py)
+# The run ledger is read by the caller: donkey.current_run and its RunLedger
+# fields (#613, tests/unit/test_run_ledger.py, website/content/telemetry.mdx).
+_.current_run  # unused property (src/donkey_kit/donkey.py)
+call_count  # unused variable (src/donkey_kit/core/runledger.py)
+refusal_count  # unused variable (src/donkey_kit/core/runledger.py)
+dropped  # unused variable (src/donkey_kit/core/runledger.py)
+_.is_a  # unused method (src/donkey_kit/core/runledger.py)

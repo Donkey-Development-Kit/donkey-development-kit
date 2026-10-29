@@ -24,6 +24,7 @@ from ..lastcall import (
     semantic_routing,
     usage_from_response,
 )
+from ..runledger import record_call
 from ..telemetry import POLICY_DECISION_REFUSE, GenAiSpan
 from .policy import Finish, Retry, _policy_detail, _request_model, _span_decision
 
@@ -35,8 +36,8 @@ _log = logging.getLogger(__name__)
 def _observe_final(request: httpx.Request, response: httpx.Response, budget: Budget | None) -> None:
     """Feed the final response to the attached :class:`Budget` from its
     ``x-token-*`` headers (#185), and record a governed model call's gateway
-    identity into ``donkey.last_call`` (#362). Both are no-ops when not
-    applicable.
+    identity into ``donkey.last_call`` (#362) and the run ledger (#613). Each
+    is a no-op when not applicable.
 
     Only a model call feeds ``last_call``: a token fetch or a registry GET
     shares the transport but is not "the last call" a developer means (#362).
@@ -48,7 +49,8 @@ def _observe_final(request: httpx.Request, response: httpx.Response, budget: Bud
         budget.observe(response)
     model = _request_model(request)
     if model is not None:
-        observe_last_call(response, requested_model=model)
+        # The run ledger keeps every record last_call replaces (#613).
+        record_call(observe_last_call(response, requested_model=model))
 
 
 def _log_target(request: httpx.Request) -> str:

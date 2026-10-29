@@ -660,7 +660,8 @@ type = "layers"
 # checks); it fills a hook slot in errors, so errors never imports it. step_up
 # (the CIBA step-up types, #1320) fills another and sits just above errors,
 # beside tool_access (the MCP tool-access denial, #312), which only subclasses
-# errors' PolicyViolation.
+# errors' PolicyViolation, and runledger (the run ledger, #613), which holds
+# lastcall records and errors' DonkeyErrors and is bound by correlation.
 # approvals (the @donkey.tool approval gate, #211) sits beside transport: it
 # reads correlation, errors and telemetry, and neither imports the other.
 # inbound (the run an inbound A2A task binds, #225) sits there too: it binds
@@ -683,7 +684,7 @@ layers = [
     "config",
     "classifier | cost | endpoints | header_names | reactions | refusals",
     "_policy_spec",
-    "step_up | tool_access",
+    "runledger | step_up | tool_access",
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",

@@ -45,6 +45,7 @@ from .core.cost import CostTags
 from .core.identity import UserScope
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.reactions import Duration, OnRefusal
+from .core.runledger import DEFAULT_MAX_ENTRIES, RunLedger, current_run_ledger
 from .core.runtime import Runtime
 from .core.telemetry import RunScope, run_scope
 from .core.toolspec import register_agent, register_tool, validate_service_id
@@ -475,10 +476,42 @@ class Donkey:
         # Donkey routes outside our transport, say so by name instead of leaving
         # an indistinguishable UNOBSERVED (hazard #3). An empty cache (raw client
         # / not used yet) is a cold read, not UNAVAILABLE.
+        surface = self._unobservable_surface()
+        return unavailable(surface) if surface is not None else UNOBSERVED
+
+    def _unobservable_surface(self) -> str | None:
+        """The adapters resolved on this Donkey, when every one routes outside
+        the SDK's transport, so no response reaches ``last_call`` or the run
+        ledger; else ``None``. No adapter yet (the raw client) is ``None``."""
         used = list(self._adapter_cache.values())
         if used and all(not a.observes_last_call for a in used):
-            return unavailable(", ".join(sorted(self._adapter_cache)))
-        return UNOBSERVED
+            return ", ".join(sorted(self._adapter_cache))
+        return None
+
+    @property
+    def current_run(self) -> RunLedger | None:
+        """A snapshot of the bound ``donkey.run()`` block's ledger (#613), or
+        ``None`` outside a run.
+
+        Every governed model call made in the run (each call's
+        :class:`~donkey_kit.core.lastcall.LastCall` record), every refusal the
+        gateway returned on one, caught by a framework or not (each a
+        :class:`~donkey_kit.core.runledger.RunRefusal`), and the run's token
+        totals. Use it to adapt within a run::
+
+            async with donkey.run(id=ticket.id):
+                await triage_agent.run(ticket)
+                if any(r.is_a(PIIDetected) for r in donkey.current_run.refusals):
+                    ...  # redact the later prompts
+
+        Metadata only, never prompt or completion text. Like :attr:`last_call`,
+        it is fed only by responses through the SDK's transport, so when every
+        adapter used routes outside it, ``available`` is false: unavailable, not
+        empty.
+
+        Docs: https://docs.donkey-kit.dev/telemetry#run-ledger
+        """
+        return current_run_ledger(self._unobservable_surface())
 
     @overload
     def openai(self, *, sync: Literal[False] = ..., **kw: Any) -> AsyncOpenAI: ...
@@ -549,6 +582,7 @@ class Donkey:
         enduser_id: str | None = None,
         business_group: str | None = None,
         typed_refusals: bool = True,
+        ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
     ) -> RunScope:
         """Group one logical agent run under a shared correlation id (BG §1.7, #195).
 
@@ -593,6 +627,12 @@ class Donkey:
         for every framework. Anything that is not a refusal propagates unchanged.
         It is the bridge :func:`donkey_kit.typed_refusals` applies on its own;
         pass ``typed_refusals=False`` to get the framework's own errors instead.
+
+        **Run ledger** (#613): the block keeps every governed call, refusal and
+        token total, read inside at :attr:`current_run` and, after the block, from
+        the scope (``scope = donkey.run(...)``, ``async with scope: ...``,
+        ``scope.ledger``). ``ledger_max_entries`` caps the calls and refusals kept
+        (default 1000 each); the totals keep counting past it.
         """
         override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
         return run_scope(
@@ -600,6 +640,8 @@ class Donkey:
             override if not override.is_empty else None,
             _typed_refusals() if typed_refusals else None,
             business_group,
+            ledger_max_entries=ledger_max_entries,
+            surface=self._unobservable_surface,
         )
 
     def run_from_headers(
@@ -612,6 +654,7 @@ class Donkey:
         enduser_id: str | None = None,
         business_group: str | None = None,
         typed_refusals: bool = True,
+        ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
     ) -> RunScope:
         """Join the caller's run: :meth:`run`, with the id read from an inbound
         request's headers (#308).
@@ -652,6 +695,8 @@ class Donkey:
             _typed_refusals() if typed_refusals else None,
             business_group,
             inbound.source,
+            ledger_max_entries=ledger_max_entries,
+            surface=self._unobservable_surface,
         )
 
     def correlation_headers(self) -> dict[str, str]:
