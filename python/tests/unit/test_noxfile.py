@@ -6,7 +6,8 @@ read the noxfile's source (no nox import, so they run in every CI job) and
 .github/workflows/ci.yml:
 
 * every job but ci-ok is a session of the same name, and its check step calls it
-  (bar dependency-review, a GitHub-only action with no checkout to run one);
+  (bar dependency-review, a GitHub-only action with no checkout to run one, and
+  action-self-test, which runs the scan-and-publish action on a runner);
 * each session's install string is the job's install step, verbatim;
 * each session installs its own job's line, not another job's;
 * the matrices match, and no job runs a check (a tool, a repo script, npm,
@@ -65,6 +66,10 @@ _CI_ONLY_STEPS = {
 #: can run there: dependency-review reads GitHub's dependency graph diff (#757).
 #: Each still has a session (it skips) and a ``None`` install.
 _GITHUB_ONLY_JOBS = {"dependency-review"}
+#: Jobs that run the scan-and-publish action from the checkout (``uses:
+#: ./action``), which only a runner can do (#1442). Each has a checkout and
+#: shell checks of the action's outputs, but no install, and its session skips.
+_RUNNER_ONLY_JOBS = {"action-self-test"}
 #: The matrix env var each parametrized job names its session leg with.
 _LEG_VARS = {
     "anthropic-stacks": "$ANTHROPIC_SPEC",
@@ -163,7 +168,7 @@ def test_each_job_runs_its_session(job: str) -> None:
     sessions = [m["session"] for run in _runs(_jobs()[job]) for m in _NOX.finditer(run)]
     leg = _LEG_VARS.get(job)
     expected = [f'"{job}({leg})"' if leg else job]
-    assert sessions == ([] if job in _GITHUB_ONLY_JOBS else expected)
+    assert sessions == ([] if job in _GITHUB_ONLY_JOBS | _RUNNER_ONLY_JOBS else expected)
 
 
 @pytest.mark.parametrize("job", sorted(_GITHUB_ONLY_JOBS))
@@ -173,6 +178,18 @@ def test_a_github_only_job_runs_nothing_and_its_session_skips(job: str) -> None:
     steps = _jobs()[job]["steps"]
     assert all("uses" in step and "run" not in step for step in steps), steps
     assert not any(str(step["uses"]).startswith("actions/checkout@") for step in steps)
+    assert _literal("CI_INSTALLS")[job] is None
+    body = _sessions()[job].body
+    calls = [ast.unparse(node.func) for node in ast.walk(body[-1]) if isinstance(node, ast.Call)]
+    assert len(body) == 2 and calls == ["session.skip"], ast.unparse(_sessions()[job])
+
+
+@pytest.mark.parametrize("job", sorted(_RUNNER_ONLY_JOBS))
+def test_a_runner_only_job_runs_the_action_and_its_session_skips(job: str) -> None:
+    # The exemption above holds only while the job's point is the action: one
+    # that stopped running it would have nothing a session couldn't run.
+    steps = _jobs()[job]["steps"]
+    assert [s["uses"] for s in steps if s.get("uses") == "./action"], steps
     assert _literal("CI_INSTALLS")[job] is None
     body = _sessions()[job].body
     calls = [ast.unparse(node.func) for node in ast.walk(body[-1]) if isinstance(node, ast.Call)]

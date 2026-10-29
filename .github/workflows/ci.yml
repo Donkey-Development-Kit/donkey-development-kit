@@ -922,6 +922,76 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: pipx run --spec "nox==$NOX_VERSION" nox -f python/noxfile.py --no-venv --no-install -s workflow-lint
 
+  action-self-test:
+    # #219: runs the scan-and-publish action (action/) from this checkout, as a
+    # user's workflow would, against action/tests/fixture. A dry run, so it
+    # needs no credentials and runs on fork PRs too. A ci.yml job so ci-ok
+    # gates it (#1442), with docs-site's job-level path test: the job always
+    # starts and its steps no-op when the PR leaves the action, the SDK it
+    # installs and this file alone. Pushes to main/develop always run it.
+    # `uses: ./action` runs only on a runner, so the job calls no session
+    # (python/noxfile.py's action-self-test session skips, saying so);
+    # tests/unit/test_action.py covers run.py itself. `./action`, not GitHub's
+    # `$/action` self-repository form that zizmor suggests: the actionlint
+    # workflow-lint pins does not parse `$/` yet.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: .
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Two commits, so HEAD^1 (the base tip of a PR merge commit) exists.
+          fetch-depth: 2
+      - name: does this change touch the action?
+        id: scope
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(action/|python/src/|python/pyproject\.toml$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No action/**, python/src/** or pyproject.toml changes; skipping the self-test."
+          fi
+      - id: plan
+        if: steps.scope.outputs.run == 'true'
+        uses: ./action # zizmor: ignore[self-repository]
+        with:
+          path: action/tests/fixture
+          dry-run: "true"
+      - name: check the outputs and the result
+        if: steps.scope.outputs.run == 'true'
+        env:
+          PUBLISHED: ${{ steps.plan.outputs.published }}
+          RESULT: ${{ steps.plan.outputs.result }}
+        run: |
+          test "$PUBLISHED" = 0
+          jq -e '[.assets[].asset_id] == ["sku-manager"] and .issues == []' "$RESULT"
+      # A path with nothing to scan: the step fails, and the job goes on to
+      # check that it did. Its error annotation is expected.
+      - id: missing
+        if: steps.scope.outputs.run == 'true'
+        uses: ./action # zizmor: ignore[self-repository]
+        continue-on-error: true
+        with:
+          path: action/tests/no-such-directory
+          dry-run: "true"
+      - name: check that the missing path failed the step
+        if: steps.scope.outputs.run == 'true'
+        env:
+          OUTCOME: ${{ steps.missing.outcome }}
+        run: test "$OUTCOME" = failure
+
   ci-ok:
     # #755: the one required status check. Branch protection requires only this
     # job, so renaming a job or changing a matrix never silently drops a
@@ -954,6 +1024,7 @@ jobs:
       - pip-audit
       - dependency-review
       - workflow-lint
+      - action-self-test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

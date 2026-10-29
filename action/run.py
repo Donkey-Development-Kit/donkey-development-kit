@@ -15,6 +15,11 @@ sets them in its own ``env:`` still works), and runs
 * each error line donkey printed as an ``::error::`` annotation when it fails,
   or each issue in the JSON when it printed none.
 
+What donkey prints comes from the repository it scans, so none of it reaches
+the log or the summary as markup (#1442): its stderr is echoed with workflow
+commands stopped, under a token made for the run, and every field in the
+summary is escaped.
+
 donkey prints the JSON when a publish fails too (#1426), so the summary and
 the outputs say what was published before the failure. The JSON must be the
 document this action reads, ``plan_format`` 1 for a dry run and
@@ -30,6 +35,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import secrets
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -49,6 +56,8 @@ UNFINISHED = ("incomplete", "failed", "not_attempted")
 # The document donkey publish --json prints, as (format key, version), for a dry
 # run and for a publish: PLAN_FORMAT and PUBLISH_FORMAT in donkey-kit.
 FORMATS = {True: ("plan_format", 1), False: ("publish_format", 1)}
+# Markdown's inline syntax characters, and the backslash that escapes them.
+_MARKUP = re.compile(r"([\\`*_~\[\]<>|])")
 
 
 def main() -> int:
@@ -69,7 +78,9 @@ def main() -> int:
         *([] if if_changed else ["--always"]),
     ]
     done = subprocess.run(command, env=child_env(env), capture_output=True, text=True)
-    sys.stderr.write(done.stderr)
+    # stdout, not stderr: the runner reads the two pipes separately, and the
+    # resume line must reach it before the annotations printed below.
+    print(echo(done.stderr, secrets.token_hex(16)), end="", flush=True)
     result = Path(env.get("RUNNER_TEMP") or ".") / "donkey-publish.json"
     result.write_text(done.stdout, encoding="utf-8")
     data = _parse(done.stdout)
@@ -135,11 +146,14 @@ def summary(data: Mapping[str, Any], *, dry_run: bool) -> str:
     if assets:
         if dry_run:
             lines += ["| Type | Asset | Digest |", "| --- | --- | --- |"]
-            lines += [f"| {a['type']} | `{_gav(a)}` | `{a['digest']}` |" for a in assets]
+            lines += [
+                f"| {_cell(a['type'])} | {_code(_gav(a))} | {_code(a['digest'])} |" for a in assets
+            ]
         else:
             lines += ["| Status | Type | Asset | Detail |", "| --- | --- | --- | --- |"]
             lines += [
-                f"| {a.get('status', '')} | {a['type']} | `{_gav(a)}` | {_cell(a.get('detail'))} |"
+                f"| {_cell(a.get('status'))} | {_cell(a['type'])} | {_code(_gav(a))} "
+                f"| {_cell(a.get('detail'))} |"
                 for a in assets
             ]
             counts = [(s, sum(a.get("status") == s for a in assets)) for s in UNFINISHED]
@@ -163,7 +177,8 @@ def summary(data: Mapping[str, Any], *, dry_run: bool) -> str:
             "",
         ]
         lines += [
-            f"- `{i['path']}:{i['line']}` {i['kind']}: {i['subject']}: {_cell(i['detail'])}"
+            f"- {_code(str(i['path']) + ':' + str(i['line']), table=False)} {_cell(i['kind'])}: "
+            f"{_cell(i['subject'])}: {_cell(i['detail'])}"
             for i in issues
         ]
     return "\n".join(lines) + "\n"
@@ -179,6 +194,17 @@ def outputs(data: Mapping[str, Any], result: Path) -> str:
 def escape(message: str) -> str:
     """A workflow-command message: ``%``, CR and LF are escaped."""
     return message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def echo(text: str, token: str) -> str:
+    """``text`` for the log with workflow commands stopped: a line in it that
+    looks like ``::set-output::`` or ``::add-mask::`` is printed, not run.
+    Only ``::<token>::`` resumes them, so ``token`` must be one ``text`` cannot
+    know: a fresh random one per run."""
+    if not text:
+        return ""
+    end = "" if text.endswith("\n") else "\n"
+    return f"::stop-commands::{token}\n{text}{end}::{token}::\n"
 
 
 def _donkey() -> Path:
@@ -212,7 +238,26 @@ def _gav(asset: Mapping[str, Any]) -> str:
 
 
 def _cell(text: object) -> str:
-    return str(text or "").replace("|", "\\|").replace("\n", " ")
+    """Plain summary text on one line: the characters markdown reads as
+    links, HTML, code, emphasis or a table's column break are backslash-escaped."""
+    return _MARKUP.sub(r"\\\1", _one_line(text))
+
+
+def _code(text: object, *, table: bool = True) -> str:
+    """``text`` as an inline code span on one line. Backslashes do not escape
+    inside one, so the fence is a backtick run longer than any in ``text``. In a
+    table, ``|`` is escaped all the same: GFM splits the row before it reads
+    code spans."""
+    value = _one_line(text)
+    if table:
+        value = value.replace("|", "\\|")
+    fence = "`" * (max(map(len, re.findall("`+", value)), default=0) + 1)
+    pad = " " if value.startswith("`") or value.endswith("`") else ""
+    return f"{fence}{pad}{value}{pad}{fence}"
+
+
+def _one_line(text: object) -> str:
+    return re.sub(r"[\r\n]+", " ", str(text or ""))
 
 
 def _append(path: str | None, text: str) -> None:

@@ -31,7 +31,8 @@ Linux runner (locally, put the versions that job pins on your PATH). A
 list with pypa/gh-action-pip-audit, so locally the session runs pip-audit
 itself. dependency-review is GitHub's dependency-graph diff, with no checkout
 and nothing to run locally, so its job calls no session and its session only
-skips, saying so.
+skips, saying so. action-self-test runs the scan-and-publish action
+(``uses: ./action``), which only a runner can do, so the same holds for it.
 
 In CI the job installs into the runner's Python itself (that is where its cache
 and lock steps live) and then runs ``nox --no-venv --no-install -s <job>``: the
@@ -155,6 +156,7 @@ CI_INSTALLS: dict[str, str | None] = {
     "pip-audit": "python -m pip install --upgrade pip",
     "dependency-review": None,
     "workflow-lint": None,
+    "action-self-test": None,
 }
 
 # The matrices of ci.yml's matrix jobs, in its order (test_noxfile.py checks).
@@ -680,3 +682,16 @@ def workflow_lint(session: nox.Session) -> None:
     session.chdir(_PYTHON_DIR.parent)
     session.run("actionlint", "-color", env={"GH_TOKEN": None}, external=True)
     session.run("zizmor", "--format=github", ".github/", "action/", external=True)
+
+
+@nox.session(name="action-self-test", venv_backend="none")
+def action_self_test(session: nox.Session) -> None:
+    """Runner-only: the scan-and-publish action, dry-run against its fixture (#219, #1442).
+
+    The job runs the composite action from the checkout (``uses: ./action``) on
+    Linux, macOS and Windows, which only a GitHub runner can do, so it calls no
+    session. Locally, ``test-3.11`` runs tests/unit/test_action.py over
+    ``action/run.py``. The session exists so every ci.yml job has one; ``nox``
+    lists it and skips it.
+    """
+    session.skip("Runner-only: action-self-test runs the composite action with `uses: ./action`")

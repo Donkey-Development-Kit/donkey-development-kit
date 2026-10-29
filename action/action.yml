@@ -32,7 +32,7 @@ inputs:
     description: The connected app's client ID (ANYPOINT_CLIENT_ID). Leave empty to use the job's environment.
     default: ""
   client-secret:
-    description: The connected app's client secret (ANYPOINT_CLIENT_SECRET). Pass it from a secret.
+    description: The connected app's client secret (ANYPOINT_CLIENT_SECRET). Pass it from secrets.* only; any other value shows in the log once before the action can mask it.
     default: ""
   org-id:
     description: The business group's organization ID (ANYPOINT_ORG_ID), also the default Exchange group ID.
@@ -67,6 +67,15 @@ outputs:
 runs:
   using: composite
   steps:
+    # First, so the mask is in place before anything else in the action runs
+    # (#1442). A `secrets.*` value is masked by the runner already. Any other
+    # value shows once, in this step's env: header, which the runner prints
+    # before the step can mask it: that is why the input must be a secret.
+    - name: Mask the client secret
+      shell: bash
+      env:
+        CLIENT_SECRET: ${{ inputs.client-secret }}
+      run: if [ -n "$CLIENT_SECRET" ]; then echo "::add-mask::$CLIENT_SECRET"; fi
     - id: python
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
@@ -100,8 +109,5 @@ runs:
         INPUT_CLIENT_ID: ${{ inputs.client-id }}
         INPUT_CLIENT_SECRET: ${{ inputs.client-secret }}
         INPUT_ORG_ID: ${{ inputs.org-id }}
-      # A secret passed from `secrets.*` is masked already; one passed from a
-      # variable or another step's output is not, so mask it before donkey runs.
       run: |
-        if [ -n "$INPUT_CLIENT_SECRET" ]; then echo "::add-mask::$INPUT_CLIENT_SECRET"; fi
         "$PYTHON" "$RUN_PY"

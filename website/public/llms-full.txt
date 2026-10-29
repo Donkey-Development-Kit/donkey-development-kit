@@ -8925,8 +8925,13 @@ jobs:
 A dry run needs no credentials, so it works on pull requests from forks, which
 get no secrets. Set `group_id` in `[donkey.publication]` so the plan doesn't
 need the org ID either. The action passes the credentials to `donkey` only
-through the environment, and masks the client secret in the log. A credential
-input left empty keeps the `ANYPOINT_*` variable your job already sets.
+through the environment. A credential input left empty keeps the `ANYPOINT_*`
+variable your job already sets.
+
+Pass `client-secret` from a `secrets.*` value only. GitHub masks secrets before
+any step runs. The action masks the input in its first step, but the runner
+prints that step's environment before the mask takes effect, so a value from a
+variable or another step's output shows in the log once.
 
 | Input | Default | |
 | --- | --- | --- |
@@ -8945,6 +8950,8 @@ JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
 annotation, so the fix shows on the run's page. Re-running the failed job
 finishes the publish (see [When a publish fails](#when-a-publish-fails)).
+What `donkey` prints comes from the repository it scans, so the summary shows
+every field as plain text, and the stderr echo can't run a workflow command.
 
 The action reads only the document of its own release: `plan_format: 1` on a
 dry run, `publish_format: 1` otherwise (see [JSON output](https://docs.donkey-kit.dev/cli.md#json-output)).

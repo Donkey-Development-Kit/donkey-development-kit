@@ -2,7 +2,8 @@
 
 A PyPI upload cannot be undone, so before ``publish-pypi.yml`` or
 ``publish-testpypi.yml`` uploads anything: the test suite runs at that commit,
-the version check runs on the built dists (production also checks the tag),
+the version check runs on the built dists (production also checks the tag, and
+that the tagged commit is on main),
 the built wheel installs and imports in a clean virtualenv, and the upload
 carries PEP 740 attestations. This pins that wiring, so removing a gate fails a
 test instead of going unnoticed until a bad release.
@@ -90,6 +91,22 @@ def test_production_checks_the_tag_and_requires_a_final_version() -> None:
     # Event values reach the script through env, never interpolated into run:.
     assert step["env"]["TAG"] == "${{ github.event.release.tag_name }}"
     assert "${{" not in step["run"]
+
+
+def test_production_builds_only_a_commit_on_main() -> None:
+    # #1442: a final Release's tagged commit must be on main, checked before
+    # anything is built, with main's history fetched for the check.
+    steps = _jobs("publish-pypi.yml")["build"]["steps"]
+    checkout = steps[0]
+    assert str(checkout["uses"]).startswith("actions/checkout@")
+    assert checkout["with"]["fetch-depth"] == 0
+    runs = [str(s.get("run", "")) for s in steps]
+    ancestry = next(i for i, r in enumerate(runs) if "git merge-base --is-ancestor" in r)
+    build = next(i for i, r in enumerate(runs) if "python -m build" in r)
+    assert ancestry < build
+    assert '"$GITHUB_SHA" origin/main' in runs[ancestry]
+    assert '"$PRERELEASE" = "false"' in runs[ancestry]
+    assert steps[ancestry]["env"] == {"PRERELEASE": "${{ github.event.release.prerelease }}"}
 
 
 def test_production_still_skips_pre_release_releases() -> None:

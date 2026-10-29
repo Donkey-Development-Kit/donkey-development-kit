@@ -236,6 +236,7 @@ and its session drift apart.
 | `pip-audit(base)`, `pip-audit(all)` | resolve the base and `[all]` installs to exact pins, then audit them for known vulnerabilities |
 | `workflow-lint` | `actionlint` and `zizmor --format=github .github/ action/`, from the repository root (both on `PATH`) |
 | `dependency-review` | nothing locally: it skips. The job is GitHub's dependency-review action over the PR's dependency graph diff |
+| `action-self-test` | nothing locally: it skips. The job dry-runs the scan-and-publish action (`uses: ./action`) on Linux, macOS and Windows; `test-3.11` covers `action/run.py` |
 
 Where a green local `nox` and a red CI run can still differ:
 
@@ -246,7 +247,7 @@ Where a green local `nox` and a red CI run can still differ:
   `new-dependencies` base-branch fetch, the benchmark's artifact upload and
   trend comparison (on `main` pushes), `workflow-lint`'s linter downloads, the
   `pip-audit` action that audits the session's pin list, and the whole
-  `dependency-review` job stay in the workflow.
+  `dependency-review` and `action-self-test` jobs stay in the workflow.
 - **Other workflows.** `secret-scan`, the nightly matrix and the publish
   workflows are not sessions. To scan the history as `secret-scan` does, run
   `gitleaks git .` from the repository root.

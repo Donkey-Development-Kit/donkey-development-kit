@@ -83,7 +83,11 @@ The jobs, grouped by what they protect:
   (BG §1.6) and trends it across runs. `quickstart`, `langgraph-demo` and
   `openai-agents-demo` run the documented examples against the local simulator. `docs-llms-drift`
   regenerates `llms.txt` and fails on any diff. `docs-site` builds the site
-  and checks its internal links and anchors (#759).
+  and checks its internal links and anchors (#759). `action-self-test` dry-runs
+  the scan-and-publish action from the checkout on Linux, macOS and Windows
+  (#219). Like `docs-site`, it has a job-level path test (convention 8): its
+  steps no-op on a PR that leaves `action/**`, `python/src/**`,
+  `python/pyproject.toml` and `ci.yml` alone (#1442).
 - **Supply chain.** `pip-audit` audits a fresh resolve of the base install
   and of `.[all]` for known vulnerabilities, blocking (#757).
   `dependency-review` flags a PR that adds a vulnerable dependency or one
@@ -485,7 +489,9 @@ exceptions are named in that test and in the noxfile's docstring:
   locally it installs pip-audit and audits the list itself.
   `dependency-review` is a single action with no checkout, and the dependency
   graph diff it reads exists only on GitHub, so its job calls no session. The
-  session of the same name only skips, saying so.
+  session of the same name only skips, saying so. `action-self-test` is the
+  same: its point is running the composite action (`uses: ./action`), which
+  only a runner can do, so its session skips too (#1442).
 - **The site's `npm ci`.** `docs-site` installs nothing through
   `CI_INSTALLS`: its session runs `npm ci` itself, under `--no-install` too,
   so the job keeps only its Node setup.
@@ -576,7 +582,8 @@ The version is declared once, as `__version__` in
 `python/src/donkey_kit/__init__.py`; `pyproject.toml` reads it from there.
 Before either publish workflow uploads anything, its `test` job runs the suite
 at that commit, and its `build` job checks that every built dist carries the
-declared version (and, on `publish-pypi.yml`, that the tag equals
+declared version (and, on `publish-pypi.yml`, that a final Release's tagged
+commit is on `main`, checked before the build (#1442), that the tag equals
 `v<version>` and a final Release carries a final `X.Y.Z`), then installs the
 built wheel into a clean virtualenv and imports it. The upload generates PEP
 740 attestations. The acceptance run against the TestPyPI build is a listed

@@ -239,6 +239,7 @@ workflows; the last two are human.
 | Gate | Where | Fails when |
 | --- | --- | --- |
 | Test suite at the release commit | `test` job | `pytest -q` fails on the exact commit being uploaded (same install as `ci.yml`'s `test` job, 3.11). |
+| Commit on `main` | `publish-pypi.yml`'s `build` job, `git merge-base --is-ancestor` | A non-pre-release Release's tagged commit is not on `main` (checked before the build). |
 | One version, matching tag | `build` job, `scripts/check_release_version.py` | A built dist's metadata carries a version other than `__version__`, or the version isn't a normalised ladder version. On `publish-pypi.yml`, also when the tag isn't exactly `v<version>`, or a non-pre-release Release carries a pre-release version. |
 | `twine check`, no tenant identifiers, floors never ceilings | `build` job | The long description doesn't render, a dist carries a tenant identifier or live platform host, or the built metadata has an upper pin. |
 | Clean-install smoke test | `build` job, `scripts/smoke_test_wheel.py` | The built wheel doesn't install into a fresh virtualenv, or `import donkey_kit` there fails, imports from anywhere but that virtualenv, or reports a `__version__` other than the installed version. |

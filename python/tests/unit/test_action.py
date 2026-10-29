@@ -1,14 +1,15 @@
 """The scan-and-publish action's runner, ``action/run.py`` (#219).
 
 ``run.py`` is loaded from the repository root, as action.yml runs it. These
-tests replace the ``donkey`` subprocess with canned output; the CI self-test
-job runs the action itself against ``action/tests/fixture``.
+tests replace the ``donkey`` subprocess with canned output; ci.yml's
+``action-self-test`` job runs the action itself against ``action/tests/fixture``.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -126,7 +127,7 @@ def test_a_failed_publish_still_writes_the_summary_and_the_outputs(
     assert "**The publish did not finish** (1 failed, 1 not attempted)." in summary
     counts = github["output"].read_text().splitlines()[:5]
     assert counts == ["published=1", "unchanged=0", "incomplete=0", "failed=1", "not_attempted=1"]
-    assert capsys.readouterr().out.splitlines() == [
+    assert capsys.readouterr().out.splitlines()[-2:] == [
         "::error title=donkey publish::Exchange refused publishing",
         "::error title=donkey publish::Fix it.",
     ]
@@ -205,20 +206,25 @@ def test_a_failure_annotates_each_error_line_and_keeps_the_exit_code(
     }
     stderr = "1 issue\n  .donkey-kit.toml:0  missing-version  100% wrong\nnothing was published\n"
     _donkey(monkeypatch, json.dumps(document), stderr=stderr, code=1)
+    monkeypatch.setattr(run.secrets, "token_hex", lambda n: "t" * 2 * n)
 
     assert run.main() == 1
 
     captured = capsys.readouterr()
-    assert captured.err == stderr
+    assert captured.err == ""
     assert captured.out.splitlines() == [
+        f"::stop-commands::{'t' * 32}",
+        *stderr.splitlines(),
+        f"::{'t' * 32}::",
         "::error title=donkey publish::1 issue",
         "::error title=donkey publish::.donkey-kit.toml:0  missing-version  100%25 wrong",
         "::error title=donkey publish::nothing was published",
     ]
     summary = github["summary"].read_text()
-    assert "| not_attempted | mcp | `org-1:sku-manager:<version>` | not attempted |" in summary
+    assert "| not\\_attempted | mcp | `org-1:sku-manager:<version>` | not attempted |" in summary
     assert (
-        "- `.donkey-kit.toml:0` missing-version: donkey.publication: set version \\| in" in summary
+        "- `.donkey-kit.toml:0` missing-version: donkey.publication: "
+        "set version \\| in \\[donkey.publication\\]" in summary
     )
     assert "did not finish" not in summary
     assert "not_attempted=1" in github["output"].read_text()
@@ -292,7 +298,7 @@ def test_a_failed_run_of_another_format_keeps_donkeys_exit_code(
 
     assert run.main() == 2
 
-    assert capsys.readouterr().out.splitlines()[1:] == ["::error title=donkey publish::boom"]
+    assert capsys.readouterr().out.splitlines()[-1] == "::error title=donkey publish::boom"
 
 
 def test_the_formats_are_donkey_kits() -> None:
@@ -333,3 +339,111 @@ def test_output_that_is_not_json_still_fails_with_an_annotation(
 
 def test_escape_covers_the_workflow_command_characters() -> None:
     assert run.escape("50%\r\nnext") == "50%25%0D%0Anext"
+
+
+def test_donkeys_stderr_is_echoed_with_workflow_commands_stopped(
+    github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#1442: a line in donkey's stderr is printed, not run as a workflow command."""
+    stderr = "::add-mask::nothing\n::set-output name=published::99"
+    _donkey(
+        monkeypatch, json.dumps({"publish_format": 1, "assets": [], "issues": []}), stderr=stderr
+    )
+
+    assert run.main() == 0
+
+    stop, *echoed, resume = capsys.readouterr().out.splitlines()
+    token = stop.removeprefix("::stop-commands::")
+    assert re.fullmatch("[0-9a-f]{32}", token)
+    assert echoed == stderr.splitlines()
+    assert resume == f"::{token}::"
+
+
+def test_each_run_stops_commands_under_a_new_token(
+    github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _donkey(monkeypatch, json.dumps({"publish_format": 1, "assets": [], "issues": []}), stderr="x")
+    tokens = set()
+    for _ in range(2):
+        assert run.main() == 0
+        tokens.add(capsys.readouterr().out.splitlines()[0])
+
+    assert len(tokens) == 2
+
+
+def test_the_echo_ends_its_last_line_and_skips_an_empty_stderr() -> None:
+    assert run.echo("no newline", "t") == "::stop-commands::t\nno newline\n::t::\n"
+    assert run.echo("", "t") == ""
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("type", "mcp | x"),
+        ("asset_id", "a`b|c"),
+        ("group_id", "g\n### heading"),
+        ("version", "``1``"),
+        ("digest", "sha256:| injected |"),
+    ],
+)
+def test_no_asset_field_breaks_the_dry_run_table(field: str, value: str) -> None:
+    """#1442: the summary's fields come from the scanned repository."""
+    text = run.summary({"assets": [{**ASSET, field: value}], "issues": []}, dry_run=True)
+    *_, separator, row = text.splitlines()
+
+    assert separator == "| --- | --- | --- |"
+    assert len(re.findall(r"(?<!\\)\|", row)) == 4  # three cells, no more
+
+
+def test_a_publish_row_escapes_every_field() -> None:
+    asset = {
+        **ASSET,
+        "status": "<b>published</b>",
+        "type": "[mcp](https://example.test)",
+        "detail": "*done* \\| ~x~",
+    }
+    row = run.summary({"assets": [asset], "issues": []}, dry_run=False).splitlines()[4]
+
+    assert row == (
+        "| \\<b\\>published\\</b\\> | \\[mcp\\](https://example.test) "
+        "| `org-1:sku-manager:1.0.0` | \\*done\\* \\\\\\| \\~x\\~ |"
+    )
+
+
+def test_an_issue_escapes_every_field() -> None:
+    issue = {
+        "kind": "<img src=x>",
+        "subject": "![a](b)",
+        "path": "app`s.py",
+        "line": 3,
+        "detail": "line one\nline two",
+    }
+    text = run.summary({"assets": [], "issues": [issue]}, dry_run=True)
+
+    assert text.splitlines()[-1] == (
+        "- ``app`s.py:3`` \\<img src=x\\>: !\\[a\\](b): line one line two"
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "span"),
+    [
+        ("plain", "`plain`"),
+        ("a`b", "``a`b``"),
+        ("`edge`", "`` `edge` ``"),
+        ("a|b", "`a\\|b`"),
+    ],
+)
+def test_a_code_span_survives_backticks_and_pipes(value: str, span: str) -> None:
+    assert run._code(value) == span
+
+
+def test_the_client_secret_is_masked_before_any_other_step() -> None:
+    """#1442: the mask is the action's first step, and the one that runs donkey
+    only reads the value after it."""
+    steps = yaml.safe_load((ACTION / "action.yml").read_text(encoding="utf-8"))["runs"]["steps"]
+    first, *rest = steps
+    assert first["env"] == {"CLIENT_SECRET": "${{ inputs.client-secret }}"}
+    assert 'echo "::add-mask::$CLIENT_SECRET"' in first["run"]
+    readers = [s.get("id") for s in rest if "inputs.client-secret" in yaml.safe_dump(s)]
+    assert readers == ["publish"]

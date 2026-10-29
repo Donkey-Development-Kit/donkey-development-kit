@@ -53,6 +53,18 @@ def test_ci_ok_reports_even_when_a_dependency_failed() -> None:
     assert _workflow("ci.yml")["jobs"]["ci-ok"]["if"] == "always()"
 
 
+def test_the_action_self_test_is_a_ci_job_that_no_ops_off_its_paths() -> None:
+    # #1442: a workflow with a `paths:` filter reports nothing when it is
+    # filtered out, so the self-test is a ci.yml job (ci-ok needs it, above)
+    # whose steps no-op when the PR leaves the action and the SDK alone.
+    assert not (_WORKFLOWS / "action-self-test.yml").exists()
+    scope, *gated = _workflow("ci.yml")["jobs"]["action-self-test"]["steps"][1:]
+    assert scope["id"] == "scope"
+    for path in ("action/", "python/src/", "python/pyproject"):
+        assert path in scope["run"]
+    assert {step.get("if") for step in gated} == {"steps.scope.outputs.run == 'true'"}
+
+
 def test_ci_runs_on_pushes_to_develop() -> None:
     # PyYAML reads the bare `on:` key as the boolean True.
     triggers = _workflow("ci.yml")[True]
