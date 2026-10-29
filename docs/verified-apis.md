@@ -1495,3 +1495,24 @@ overridable in config.
 | Token-exchange endpoint path | `core/identity.py`, `core/_verify.py` `TOKEN_EXCHANGE_PATH`; override `token_exchange_path` / `DONKEY_TOKEN_EXCHANGE_PATH` | UNVERIFIED | — (placeholder: the verified OAuth2 token path, `POST /accounts/api/v2/oauth2/token` on the control-plane host, §1; form body `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `subject_token`, `subject_token_type=urn:ietf:params:oauth:token-type:id_token`, plus the connected-app `client_id` / `client_secret`; response `access_token`, `expires_in` per RFC 8693 §2.2) | — | — |
 | User-token request header | `core/transport/headers.py` `_apply_user_token`, `core/_verify.py` `USER_TOKEN_HEADER`; override `user_token_header` / `DONKEY_USER_TOKEN_HEADER` | UNVERIFIED | — (placeholder: `Authorization: Bearer <token>`, the header the Omni Gateway [OAuth 2.0 OBO Credential Injection policy](https://docs.mulesoft.com/gateway/latest/policies-outbound-oauth-obo) reads the incoming bearer from; a custom header carries the raw token) | — | — |
 | Exchange parameters beyond the subject token (`audience`, `resource`, `scope`, `requested_token_type`) | — | UNVERIFIED | — (none sent) | — | — |
+
+**Evidence so far (2026-10-29, #255).** Two related captures exist. Neither
+flips a row above.
+
+- **User-token header, partial.** On 2026-10-28 a Keycloak user token sent as
+  `Authorization: Bearer` straight to an A2A instance was accepted and
+  exchanged by the OAuth2 OBO Credential Injection policy (instance 20825039,
+  OBO `1.1.3`; provisioning #96). That supports the placeholder, but the call
+  went to an A2A instance and not through `as_user()` or an LLM proxy, so the
+  row stays `UNVERIFIED`. Provisioning #81 is the setup for a live
+  `as_user()` call through an MCP instance.
+- **Who runs the exchange.** In every live OBO setup the *gateway* runs the
+  RFC 8693 exchange, against the IdP realm's token endpoint
+  (`/protocol/openid-connect/token`). Nothing seen so far shows the Anypoint
+  control plane serving the grant at the placeholder path. If it doesn't,
+  `as_user()` should forward the user token and leave the exchange to the
+  policy, rather than flip this row to a different path.
+- **Step-up MFA** (`BG §2.3`). The OBO policy's CIBA step-up shapes are
+  `VERIFIED (LIVE)` in §4 item 8 and typed as `GatewayApprovalPending` /
+  `GatewayApprovalDenied` (#1320). The `502` `ciba_initiation_failed` shape is
+  still uncaptured.
