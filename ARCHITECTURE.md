@@ -80,8 +80,8 @@ linear stack:
   `mock`, `test`. It is a front end over the library: it may import any layer,
   and an import-linter contract forbids every library module from importing it
   back, so typer (the `[cli]` extra) never reaches the base `import donkey_kit`
-  path. `scan` and `publish` (BG §2.5) are visible commands too. Two hidden
-  commands, `status` and `verify`, are `_verify.blocked` and exit 3.
+  path. `scan`, `publish` and `verify` (BG §2.5) are visible commands too. One hidden
+  command, `status`, is `_verify.blocked` and exits 3.
 - **`donkey_kit.experimental`** re-exports the types that exist only for a
   verification-blocked surface (`AssetRef`, `Publication`, `GovernanceCriteria`,
   `STRICT`, `RegistryError`, …). They are importable, but they are not in

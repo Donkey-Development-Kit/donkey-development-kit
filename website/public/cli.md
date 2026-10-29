@@ -3,8 +3,8 @@
 Status: Live. Shipped, and verified against a real governed gateway.
 
 Two on-ramps to the SDK: decorators that govern a function in one line, and a
-five-command CLI for setup, diagnosis, local simulation, conformance testing,
-and scanning your code for agents and tools.
+CLI for setup, diagnosis, local simulation, conformance testing, and scanning,
+publishing, verifying and exposing your agents and tools.
 
 ## Decorators
 
@@ -92,6 +92,7 @@ donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
 donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
+donkey verify        # checks each published MCP server against its live tools; reads only
 donkey preflight     # checks, read-only, that a service can be put behind its gateway
 donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
@@ -213,6 +214,13 @@ Global options go before the command (`donkey --json init`):
 | Option | Default | Meaning |
 |---|---|---|
 | `--agent` | none | Import path to your agent factory, e.g. my.pkg:make_agent. |
+
+`donkey verify`: Check published MCP servers against their live tools.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to verify. |
+| `--json` | off | Emit the plan with each asset's outcome as JSON. |
 
 ### `donkey init`
 
@@ -432,6 +440,27 @@ the `ANYPOINT_*` control-plane credentials, and exits `0` when everything was
 published or left unchanged, `1` on an issue or a refused publish, and `2` on a
 missing path, invalid config or missing credentials. See
 [Scan & publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
+
+### `donkey verify`
+
+```bash
+donkey verify .          # each published MCP server against its live tools
+donkey --json verify .   # the same, with each asset's outcome as JSON
+```
+
+Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify) on each
+MCP server `donkey publish` would register, at the version declared in
+`[donkey.publication]`: the tools that version was published with against the
+tools the server lists through its gateway. It writes nothing. Each server is
+reported as `match`, `drift` (with each difference) or `error`; an agent is
+`skipped`, since only an MCP server's published tools are verified.
+
+It reads the `ANYPOINT_*` control-plane credentials for Exchange and the
+gateway credential for the live tools, and exits `0` when every server matches,
+`1` on drift, a failed read or a declaration issue (nothing is read then), and
+`2` on a missing path, invalid config or missing control-plane credentials.
+Run it in CI after a deploy to catch a server that changed without a new
+published version.
 
 ### `donkey expose`
 

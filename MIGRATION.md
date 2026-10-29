@@ -97,9 +97,9 @@ exited 3 with `blocked on verification`.
 
 **Symptom:** `No such command 'plan'.` and exit status 2.
 
-**Fix:** remove the call. `donkey status`, `donkey publish` and `donkey verify`
-are still there, hidden, and still exit 3 until Exchange publication (BG §2.5)
-is verified.
+**Fix:** remove the call. `donkey status` is still there, hidden, and still
+exits 3 until its platform reads (BG §2.5) are verified. `donkey publish` (#218)
+and `donkey verify` (#1352) have since been implemented.
 
 ### 3. Three errors are removed
 

@@ -39,7 +39,7 @@
 
 - [Local simulator](https://docs.donkey-kit.dev/simulator.md): (status: live) Run a local server that replays real gateway rejections, so you can build and test failure handling without a governed gateway.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md): (status: live) Test your agent's failure handling — in-process refusal injection, a pytest conformance suite you run against your own agent, and an out-of-process gateway fixture.
-- [CLI & decorators](https://docs.donkey-kit.dev/cli.md): (status: live) The @donkey.governed, @donkey.tool and @donkey.agent decorators, and the donkey CLI — init, doctor, mock, dev, test, scan, and publish.
+- [CLI & decorators](https://docs.donkey-kit.dev/cli.md): (status: live) The @donkey.governed, @donkey.tool and @donkey.agent decorators, and the donkey CLI — init, doctor, mock, dev, test, scan, publish, verify and expose.
 - [Troubleshooting](https://docs.donkey-kit.dev/troubleshooting.md): (status: live) How to read donkey doctor output, tell apart failures that look the same, explain an UNAVAILABLE donkey.last_call, and fix a 401 in JWT mode.
 - [Use with your coding agent](https://docs.donkey-kit.dev/use-with-your-agent.md): (status: live) Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
 

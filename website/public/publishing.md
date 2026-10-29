@@ -483,6 +483,9 @@ catalog is loud without taking down production traffic. With
 lists every difference. Only `MCP_SERVER` publications are verified; the other
 types raise `NotImplementedError`.
 
+[`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify) runs the same check from CI, for every MCP
+server in the repository.
+
 ## Related
 
 - [CLI & decorators](https://docs.donkey-kit.dev/cli.md) — mark tools with `@donkey.tool` today.

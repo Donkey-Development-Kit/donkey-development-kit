@@ -1152,8 +1152,8 @@ adapter-contract leg (pinned) and every nightly-matrix leg (latest). 2026-10-26,
 | AST-only derivation (`auto:static`) | — | UNSUPPORTED | Dropped (#1248): an AST pass can name a tool but cannot produce its schema without the type-hint→JSON-Schema converter BG §2.5 forbids. `donkey scan` is the no-execution view of the code; `mode="auto:static"` is rejected as an unknown mode |
 
 The Exchange descriptor read behind `Publication.verify()` is verified (§7,
-#991). `donkey verify` stays hidden and blocked: it has no `Publication` to
-read from the repository yet.
+#991). `donkey verify` (#1352) runs it for each MCP server `donkey publish`
+plans; agents are skipped.
 
 ## 11. A2D platform MCP tools — shapes captured 2026-08-28 (NOT the direct Anypoint REST API)
 
