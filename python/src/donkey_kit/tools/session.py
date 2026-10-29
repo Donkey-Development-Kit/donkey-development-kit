@@ -48,16 +48,17 @@ import dataclasses
 import functools
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+import warnings
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from fnmatch import fnmatchcase
-from typing import Any
+from typing import Any, TypeVar
 
 from ..core import _verify
 from ..core.approvals import APPROVAL_TIMEOUT, NativePause, parse_timeout
 from ..core.config import DonkeyConfig
-from ..core.errors import AuthError, ConfigError, DonkeyError
+from ..core.errors import AuthError, ConfigError, ConfigWarning, DonkeyError
 from ..core.identity import Requester, capture_requester, current_user
 from ..core.reactions import Duration
 from ..core.step_up import wait_for_approval
@@ -78,6 +79,12 @@ from .mcp import client_factory, list_tools, open_session, open_transport
 __all__ = ["ToolSet", "UngovernedMcpServer"]
 
 _log = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+#: A step-up wait longer than this outlives the gateway's approval request. OBO policy 1.1.3
+#: starts a new one after about 124s (docs/verified-apis.md §4), which asks the user again.
+_STEP_UP_FLOW_S = 120.0
 
 
 class UngovernedMcpServer(DonkeyError):
@@ -294,7 +301,8 @@ class ToolSet:
         ``retry_after`` until it goes through, the user denies it
         (:class:`~donkey_kit.core.step_up.GatewayApprovalDenied`, never retried), or ``timeout``
         passes (the last pending error is raised). Without it, the first pending answer is
-        raised at once.
+        raised at once. The servers are listed together, and the first one to fail stops the
+        others' waits (#1437).
 
         The gateway decides when step-up applies and keeps the audit trail; this only waits.
         It covers listing. A tool *call* behind the policy is not retried by the bindings: what
@@ -304,12 +312,24 @@ class ToolSet:
 
         Args:
             timeout: How long to wait for the user, such as ``"2m"``. The live policy's
-                request expires after about two minutes and silently starts a new one.
+                request expires after about two minutes and silently starts a new one,
+                which asks the user again, so a longer timeout emits a
+                :class:`~donkey_kit.core.errors.ConfigWarning`.
 
         Raises:
             ValueError: ``timeout`` is not a positive duration.
         """
-        return self._with(_step_up_wait=parse_timeout(timeout))
+        seconds = parse_timeout(timeout)
+        if seconds > _STEP_UP_FLOW_S:
+            warnings.warn(
+                f"wait_for_gateway_approval({timeout!r}) waits longer than the gateway's "
+                f"approval request lasts (about {_STEP_UP_FLOW_S:.0f}s): past it, the gateway "
+                "starts a new approval request and asks the user again. Keep the timeout "
+                "at '2m' or less unless repeated prompts are what you want.",
+                ConfigWarning,
+                stacklevel=2,
+            )
+        return self._with(_step_up_wait=seconds)
 
     def require_approval(
         self,
@@ -473,21 +493,19 @@ class ToolSet:
         for attempt in (1, 2):
             headers = await self._headers()
             try:
-                return list(
-                    await asyncio.gather(
-                        *(
-                            wait_for_approval(
-                                functools.partial(
-                                    list_tools,
-                                    self._servers[i].endpoint_url,
-                                    headers,
-                                    server=self._servers[i].ref.coordinates,
-                                ),
-                                timeout=self._step_up_wait,
-                            )
-                            for i in indexes
+                return await _all_or_none(
+                    [
+                        wait_for_approval(
+                            functools.partial(
+                                list_tools,
+                                self._servers[i].endpoint_url,
+                                headers,
+                                server=self._servers[i].ref.coordinates,
+                            ),
+                            timeout=self._step_up_wait,
                         )
-                    )
+                        for i in indexes
+                    ]
                 )
             except AuthError as exc:
                 if user:
@@ -984,6 +1002,32 @@ def _index(
     kept = [(i, d) for i, d in descs if all(f.accepts(d) for f in filters)]
     _log.debug("ToolSet exposes %d of %d tool descriptors", len(kept), len(descs))
     return kept
+
+
+async def _all_or_none(calls: Sequence[Awaitable[_T]]) -> list[_T]:
+    """Await ``calls`` together and return their results in order (#1437).
+
+    The first call to fail stops the rest: they are cancelled and awaited, and then its
+    error is raised, the earliest call's when several failed at once. A sibling must not
+    go on waiting for a step-up approval after another server denied it or refused the
+    credential, because each re-send can push the user's device again. Cancelling the
+    caller cancels them all too. ``asyncio.gather`` leaves the rest running after a failure,
+    and ``TaskGroup`` needs Python 3.11.
+    """
+    tasks = [asyncio.ensure_future(call) for call in calls]
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        for task in tasks:
+            error = task.exception() if task in done and not task.cancelled() else None
+            if error is not None:
+                raise error
+        return [task.result() for task in tasks]
+    finally:
+        running = [task for task in tasks if not task.done()]
+        for task in running:
+            task.cancel()
+        if running:
+            await asyncio.gather(*running, return_exceptions=True)
 
 
 def _report_cost(binding: str, count: int, tokens: int, limits: tuple[int, int]) -> None:

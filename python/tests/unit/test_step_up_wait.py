@@ -7,12 +7,14 @@ to ``tools/list``. The gateway owns the approval; the loop only waits.
 
 from __future__ import annotations
 
+import asyncio
+import warnings
 from collections.abc import Mapping
 from typing import Any
 
 import pytest
 
-from donkey_kit.core.errors import AuthError
+from donkey_kit.core.errors import AuthError, ConfigWarning
 from donkey_kit.core.step_up import (
     GatewayApprovalDenied,
     GatewayApprovalPending,
@@ -197,3 +199,132 @@ def test_the_wait_survives_filter_and_require_approval() -> None:
 def test_the_timeout_must_be_a_positive_duration() -> None:
     with pytest.raises(ValueError, match="positive duration"):
         _toolset().wait_for_gateway_approval(0)
+
+
+def test_a_wait_past_one_gateway_flow_warns() -> None:
+    with pytest.warns(ConfigWarning, match="new approval request"):
+        waiting = _toolset().wait_for_gateway_approval("5m")
+    assert waiting._step_up_wait == 300
+
+
+def test_a_wait_within_one_gateway_flow_does_not_warn() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _toolset().wait_for_gateway_approval("2m")
+        _toolset().wait_for_gateway_approval(90)
+
+
+# ---- one server's failure stops the others' waits (#1437) -------------------
+
+
+def _two_servers() -> ToolSet:
+    governed = GovernanceReport(governed=True, checks=[Check("deployed", True, "ok")])
+    return ToolSet(
+        [
+            McpServerHandle(
+                ref=AssetRef("com.acme", asset, "1.0.0"),
+                endpoint_url=f"https://gw.example.test/{asset}/",
+                governance=governed,
+            )
+            for asset in ("inv", "crm")
+        ],
+        _auth=ClientIdAuth("cid", "secret"),
+    )
+
+
+class _Servers:
+    """Two fake MCP servers whose answers a test scripts per call.
+
+    ``answers[asset]`` is a list with one entry per ``tools/list`` call: an error to raise,
+    ``"after crm waits"`` to raise the next entry only once ``crm`` is in its step-up pause,
+    or ``None`` to list. A pause blocks until it is cancelled, so a wait nothing cancels
+    never ends; ``events`` records the sends and the pauses in order.
+    """
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, **answers: list[Any]) -> None:
+        self.answers = answers
+        self.events: list[str] = []
+        self.crm_waiting = asyncio.Event()
+        self.pausing: dict[str, asyncio.Event] = {}
+        monkeypatch.setattr(session_module, "list_tools", self.list_tools)
+        monkeypatch.setattr(session_module, "wait_for_approval", self.wait)
+
+    async def list_tools(self, url: str, headers: Mapping[str, str], *, server: str) -> Any:
+        asset = server.split("/")[1]
+        self.events.append(f"{asset} sends")
+        answer = self.answers[asset].pop(0)
+        if answer == "after crm waits":
+            await self.crm_waiting.wait()
+            answer = self.answers[asset].pop(0)
+        if answer is not None:
+            raise answer
+        return ({"name": f"{asset}_tool"},)
+
+    def wait(self, send: Any, *, timeout: float) -> Any:
+        from donkey_kit.core import step_up
+
+        async def pause(_seconds: float) -> None:
+            asset = send.keywords["server"].split("/")[1]
+            self.events.append(f"{asset} waits")
+            if asset == "crm":
+                self.crm_waiting.set()
+            self.pausing.setdefault(asset, asyncio.Event()).set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.events.append(f"{asset} wait cancelled")
+                raise
+
+        return step_up.wait_for_approval(send, timeout=timeout, sleep=pause)
+
+
+async def test_a_denial_on_one_server_cancels_the_others_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    servers = _Servers(
+        monkeypatch,
+        inv=["after crm waits", GatewayApprovalDenied("no")],
+        crm=[_pending(5)],
+    )
+    with pytest.raises(GatewayApprovalDenied):
+        await _two_servers().wait_for_gateway_approval("2m").describe()
+    assert servers.events == ["inv sends", "crm sends", "crm waits", "crm wait cancelled"]
+
+
+async def test_an_auth_retry_starts_only_after_the_first_attempts_waits_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    servers = _Servers(
+        monkeypatch,
+        inv=["after crm waits", AuthError("expired"), None],
+        crm=[_pending(5), None],
+    )
+    described = await _two_servers().wait_for_gateway_approval("2m").describe()
+    assert [s.tool_descriptors for s in described.servers] == [
+        ({"name": "inv_tool"},),
+        ({"name": "crm_tool"},),
+    ]
+    assert servers.events == [
+        "inv sends",
+        "crm sends",
+        "crm waits",
+        "crm wait cancelled",
+        "inv sends",
+        "crm sends",
+    ]
+
+
+async def test_cancelling_describe_cancels_every_servers_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    servers = _Servers(monkeypatch, inv=[_pending(5)], crm=[_pending(5)])
+    task = asyncio.ensure_future(_two_servers().wait_for_gateway_approval("2m").describe())
+    while set(servers.pausing) != {"inv", "crm"}:
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert sorted(e for e in servers.events if e.endswith("cancelled")) == [
+        "crm wait cancelled",
+        "inv wait cancelled",
+    ]
