@@ -7310,9 +7310,11 @@ It reads the asset version's API Manager instances in the environment set by
 - **Cached, with a staleness check.** A discovery is cached for
   `registry_cache_ttl_s` seconds (default 300), per environment, tags and
   criteria. `ToolSet.discovered_at` says when the registry was read and
-  `ToolSet.is_stale` turns true once the TTL has passed;
-  `donkey.tools.refresh()` drops the cache, and `DONKEY_NO_CACHE=1` turns it
-  off. Each call records a `donkey.tools.discover` span whose
+  `ToolSet.is_stale` turns true once the TTL has passed.
+  `donkey.tools.refresh()` drops the cached discoveries and the registry's
+  cached `search()`, `explain()` and `resolve_mcp()` lookups, so the next
+  `discover()` reads the governance verdicts from API Manager again.
+  `DONKEY_NO_CACHE=1` turns both caches off. Each call records a `donkey.tools.discover` span whose
   `donkey.discover.cache` attribute is `hit` or `miss` (see
   [Telemetry](https://docs.donkey-kit.dev/telemetry.md)).
 - **No connection.** `discover()` opens no MCP connection. The tools are listed
@@ -7322,7 +7324,9 @@ It reads the asset version's API Manager instances in the environment set by
 - **Warm the cache at startup.** `await donkey.tools.warm(...)` takes the same
   `domain`, `tags` and `governed` arguments as `discover()`, does the same reads
   and fills the same cache entry, so the first matching `discover()` does not
-  wait on the registry. It always reads, and returns how many servers it cached.
+  wait on the registry. It always reads: it drops the registry's cached
+  lookups first, as `donkey.registry.refresh()` does, so the verdicts it caches
+  are current. It returns how many servers it cached.
   Anypoint has no bulk read of applied policies, so the cost grows with the
   catalog: one search, then one `explain()` per MCP asset. Measured at about 20
   policy reads a second, 200 servers take roughly 10 seconds cold.
@@ -7751,6 +7755,8 @@ donkey = Donkey.from_env(registry_cache_ttl_s=60)
 
 - `donkey.registry.refresh()` invalidates the cache and re-fetches on next use —
   call it after a platform team publishes a change you need to see immediately.
+  `donkey.tools.refresh()` does the same and also drops the cached discoveries,
+  and `donkey.tools.warm()` drops the registry cache before it reads.
 - Set `DONKEY_REGISTRY_CACHE_TTL_S` to change the TTL from the environment.
 - Set `DONKEY_NO_CACHE=1` to bypass the cache entirely, for debugging a
   discovery result that looks stale.
