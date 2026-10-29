@@ -136,7 +136,7 @@ MEMBERS = [
     "ToolSet.langgraph() [async]",
     "ToolSet.llamaindex() [async]",
     "ToolSet.name_map [property]",
-    "ToolSet.openai() [async]",
+    "ToolSet.openai_agents() [async]",
     "ToolSet.require_approval(*, tools, risk=None, timeout='15m')",
     "ToolSet.servers [property]",
     "ToolSet.strands() [async]",
