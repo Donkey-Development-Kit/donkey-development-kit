@@ -42,7 +42,7 @@ policies and deploy it; the rest are Roadmap.
 Otherwise the token endpoint is contacted only if your own code calls
 `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
-before making a network request, except `donkey.as_user()`, described below.
+before making a network request, except `donkey.as_user()`, whose placeholder header is described below.
 
 | Destination / contract | Module | Classification | SDK use and official docs |
 |---|---|---|---|
@@ -95,12 +95,11 @@ How each row was established (live capture, plugin test, and so on) is in the
   <Badge tone="roadmap">Roadmap</Badge>, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.
-- `donkey.as_user()` posts an RFC 8693 token exchange to the control-plane
-  host, then sends the exchanged token on model calls. Neither the exchange
-  path nor the header the gateway reads the token from is confirmed yet (see
-  the ledger, section 13). Both are placeholders that warn once and that you
-  override with `token_exchange_path` and `user_token_header`, so they are not
-  classified above. The exchange runs only when your code enters `as_user()`.
+- `donkey.as_user()` forwards the user's token on model calls; the gateway
+  runs the exchange. The header the gateway reads the token from is not
+  confirmed yet (see the ledger, section 13). It is a placeholder that warns
+  once and that you override with `user_token_header`, so it is not
+  classified above. The token is sent only when your code enters `as_user()`.
 - `LLMClient.list_models(live=True)` does not call `GET /models`: the Model
   Proxy has no model-catalog endpoint.
 - The application and business-group attribution header names are

@@ -39,8 +39,8 @@
 > reference MCP server on 2026-10-28, #636–#652, except CrewAI's, and so were
 > the SDK's own `ToolSet` bindings over them, #221; the §10
 > descriptor-derivation reads were `VERIFIED (local capture)` on 2026-10-26,
-> #1024), and the on-behalf-of token
-> exchange behind `donkey.as_user()` (§13, #255). §11
+> #1024), and the user-token header
+> behind `donkey.as_user()` (§13, #255). §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
 > code path was wired to them.
@@ -109,7 +109,7 @@ its status here flips to `VERIFIED`.
   - [12.6 LLM proxy — how governance is actually wired](#126-llm-proxy--how-governance-is-actually-wired)
   - [12.7 Agent Network project format (dist/commands/agent-network/project/create.js, templates/)](#127-agent-network-project-format-distcommandsagent-networkprojectcreatejs-templates)
   - [12.8 Unblocking guidance (verification discipline)](#128-unblocking-guidance-verification-discipline)
-- [13. On-behalf-of token exchange (BG §2.4)](#13-on-behalf-of-token-exchange-bg-24)
+- [13. On-behalf-of user token (BG §2.4)](#13-on-behalf-of-user-token-bg-24)
 <!-- tocstop -->
 
 ## 1. Anypoint control plane
@@ -1481,23 +1481,22 @@ guard is removed. Ordered by confidence:
    header — the CLI does not exercise them; capturing them needs a deployed
    gateway, not static analysis.
 
-## 13. On-behalf-of token exchange (BG §2.4)
+## 13. On-behalf-of user token (BG §2.4)
 
-`donkey.as_user(id_token=...)` (#215) trades a user's OIDC `id_token` for a
-gateway-scoped access token with an RFC 8693 token-exchange grant and stamps it
-on every data-plane request in the block. Nothing here has been observed
-against a live gateway; confirming both rows is #255. Until then each is an
+`donkey.as_user(id_token=...)` (#215) stamps the user's token, unchanged, on
+every data-plane request in the block. The SDK runs no token exchange: the
+gateway's OBO policy runs it (#1350, from the evidence below), so there is no
+SDK exchange endpoint left to verify. The header has not been observed through
+`as_user()` against a live gateway; confirming it is #255. Until then it is an
 `Unverified` placeholder in `core/_verify.py`, warns once when read, and is
 overridable in config.
 
 | Item | Where used | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
-| Token-exchange endpoint path | `core/identity.py`, `core/_verify.py` `TOKEN_EXCHANGE_PATH`; override `token_exchange_path` / `DONKEY_TOKEN_EXCHANGE_PATH` | UNVERIFIED | — (placeholder: the verified OAuth2 token path, `POST /accounts/api/v2/oauth2/token` on the control-plane host, §1; form body `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `subject_token`, `subject_token_type=urn:ietf:params:oauth:token-type:id_token`, plus the connected-app `client_id` / `client_secret`; response `access_token`, `expires_in` per RFC 8693 §2.2) | — | — |
 | User-token request header | `core/transport/headers.py` `_apply_user_token`, `core/_verify.py` `USER_TOKEN_HEADER`; override `user_token_header` / `DONKEY_USER_TOKEN_HEADER` | UNVERIFIED | — (placeholder: `Authorization: Bearer <token>`, the header the Omni Gateway [OAuth 2.0 OBO Credential Injection policy](https://docs.mulesoft.com/gateway/latest/policies-outbound-oauth-obo) reads the incoming bearer from; a custom header carries the raw token) | — | — |
-| Exchange parameters beyond the subject token (`audience`, `resource`, `scope`, `requested_token_type`) | — | UNVERIFIED | — (none sent) | — | — |
 
-**Evidence so far (2026-10-29, #255).** None of the captures below flips a
-row above.
+**Evidence so far (2026-10-29, #255).** None of the captures below flips the
+header row.
 
 - **User-token header, partial.** On 2026-10-28 a Keycloak user token sent as
   `Authorization: Bearer` straight to an A2A instance was accepted and
@@ -1506,21 +1505,24 @@ row above.
   went to an A2A instance and not through `as_user()` or an LLM proxy, so the
   row stays `UNVERIFIED`. Provisioning #81 is the setup for a live
   `as_user()` call through an MCP instance.
-- **The placeholder path refuses the grant (LIVE, 2026-10-29).** A
-  `POST /accounts/api/v2/oauth2/token` on `anypoint.mulesoft.com` with the
-  form body above returns `401`
+- **The control-plane token endpoint refuses the grant (LIVE, 2026-10-29).**
+  The SDK's former exchange placeholder: a
+  `POST /accounts/api/v2/oauth2/token` on `anypoint.mulesoft.com` with
+  `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`,
+  `subject_token`, `subject_token_type=urn:ietf:params:oauth:token-type:id_token`
+  and the connected-app `client_id` / `client_secret` returns `401`
   `{"error":"invalid_request","error_description":"Invalid grant_type"}`
   (`application/json`, no `www-authenticate`). The subject token was a current
   realm-`ddk` Keycloak `id_token`. The response is the same with valid
   connected-app credentials and with none. The control request
   (`client_credentials`, same app) got `200`, so the credentials were good and
-  the grant type itself is refused. The endpoint row stays `UNVERIFIED`: this
-  shows what the endpoint is not, not what it is.
+  the grant type itself is refused.
 - **Who runs the exchange.** In every live OBO setup the *gateway* runs the
   RFC 8693 exchange, against the IdP realm's token endpoint
   (`/protocol/openid-connect/token`). Together with the refusal above, this
-  points to `as_user()` forwarding the user token and leaving the exchange to
-  the policy, rather than this row flipping to a different path.
+  is why `as_user()` forwards the user token and leaves the exchange to the
+  policy (#1350). The former `token_exchange_path` setting is deprecated and
+  ignored.
 - **Step-up MFA** (`BG §2.3`). The OBO policy's CIBA step-up shapes are
   `VERIFIED (LIVE)` in §4 item 8 and typed as `GatewayApprovalPending` /
   `GatewayApprovalDenied` (#1320). The `502` `ciba_initiation_failed` shape is

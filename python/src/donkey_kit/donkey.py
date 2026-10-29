@@ -786,37 +786,47 @@ class Donkey:
         """Run the governed model calls in the block as the user behind
         ``id_token``, not as this service (BG §2.4, #215).
 
-        Entering the block trades the user's OIDC ``id_token`` for a
-        gateway-scoped access token with an RFC 8693 token exchange, then every
-        data-plane call in the block carries that token::
+        Every data-plane call in the block carries the user's token, unchanged::
 
             async with donkey.as_user(id_token=request.id_token):
                 await agent.run(task)
 
+        The SDK runs no token exchange and makes no control-plane request for
+        the user: the gateway's OBO policy trades the token at the identity
+        provider (docs/verified-apis.md §13, #1350), so no connected-app
+        credentials are needed. The SDK doesn't read the token's expiry or
+        claims either; an expired token comes back from the gateway as a typed
+        error.
+
         The binding is a contextvar like :meth:`run`: it reaches the ``asyncio``
         tasks the block spawns and never leaks into a concurrent task, and a
-        nested block restores the outer user on exit. Exchanged tokens are
-        cached per user until shortly before they expire. Control-plane calls
-        stay the service's own.
+        nested block restores the outer user on exit. Control-plane calls stay
+        the service's own.
 
-        The exchange endpoint and the header the token rides in are UNVERIFIED
-        placeholders (docs/verified-apis.md §13): set ``token_exchange_path`` and
-        ``user_token_header`` to the values your gateway uses. The SDK forwards
-        the user's token and makes no authorisation decision of its own.
+        The header the token rides in is an UNVERIFIED placeholder
+        (docs/verified-apis.md §13): set ``user_token_header`` to the one your
+        gateway reads. ``token_exchange_path`` is deprecated and ignored.
 
         The same documented degradation as :meth:`run` applies (BG §1.8): a
         ``connection_kwargs()``-only adapter that does not route through the
         shared transport never sees the user.
 
         Raises:
-            ConfigError: No connected-app credentials, or a config the exchange
-                can't run under (see ``TokenExchange.check``).
-            AuthError: On entry, when the id_token is missing or the exchange
-                refuses it or returns a malformed response; inside the block,
-                when a re-exchange fails or a blocking call finds the token
-                expired. Never a silent fallback to the service identity.
+            AuthError: ``id_token`` is missing or empty. Never a silent
+                fallback to the service identity.
+            ConfigError: The user token would ride in ``Authorization`` in the
+                ``jwt`` / ``bearer`` modes, where the data-plane token already
+                rides.
         """
-        return UserScope(self._runtime.token_exchange(), id_token)
+        if self._cfg.token_exchange_path is not None:
+            warnings.warn(
+                "token_exchange_path (DONKEY_TOKEN_EXCHANGE_PATH) is deprecated and "
+                "ignored: donkey.as_user() forwards the user token and the gateway "
+                "runs the exchange.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return UserScope(self._cfg, id_token)
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
     # The overloads keep the decorated callable's own signature, for both the

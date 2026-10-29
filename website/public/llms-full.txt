@@ -649,7 +649,7 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     instead of dying at 2am.
   
   
-    **Purpose:** on-behalf-of token exchange. **Goal:** per-user policy
+    **Purpose:** on-behalf-of user identity. **Goal:** per-user policy
     reaches the gateway. **Advantage:** requests never silently fall back to
     the service identity.
   
@@ -2912,7 +2912,7 @@ never burn an exhausted budget or replay a blocked prompt.
 
 | Exception | Discriminator | Retryable? | Next step (`.remediation`) |
 |---|---|---|---|
-| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails, or a registry read is refused (`401`/`403`) because the connected app lacks a scope. Inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md#no-silent-fallback-a-deliberate-hard-failure): a missing `id_token`, a refused token exchange, or an expired user token — never a fallback to the service identity. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. A refused registry read names the missing scope; see [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). `as_user()`: pass the user's current OIDC `id_token`. |
+| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails, or a registry read is refused (`401`/`403`) because the connected app lacks a scope. Inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md#no-silent-fallback-a-deliberate-hard-failure): a missing `id_token` — never a fallback to the service identity. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. A refused registry read names the missing scope; see [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). `as_user()`: pass the signed-in user's current token. |
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. It also stops [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) loops, and spans are flushed before it reaches you. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `GatewayApprovalPending` | `401`, flat `error: "authorization_pending"`, **no** `www-authenticate` | **Yes, after `.retry_after`** — never auto-retried; the same request succeeds once the user approves. | Re-send after `.retry_after` seconds; don't change or refresh the credentials, they were accepted. |
@@ -4154,46 +4154,39 @@ async def answer(donkey: Donkey, id_token: str, question: str) -> None:
         )
 ```
 
-Entering the block trades the user's OIDC `id_token` for a gateway-scoped access
-token with an [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) token exchange.
-Every governed model call in the block then carries that token, so the
-gateway's Trusted Agent Identity layer can apply per-user policy.
+Every governed model call in the block carries the user's token, unchanged, so
+the gateway's Trusted Agent Identity layer can apply per-user policy. The SDK
+runs no token exchange of its own: the gateway's on-behalf-of policy trades the
+user token at your identity provider. So `as_user()` makes no Anypoint
+platform request and needs no connected-app credentials.
 
 - **Scoped to the block.** The user is bound to a context variable, like
   `donkey.run(...)`. It reaches the `asyncio` tasks the block starts and never
   leaks into a concurrent task that entered no block. A nested block restores
   the outer user when it exits.
-- **Cached to expiry.** Each user's exchanged token is reused until 60 seconds
-  before its `expires_in`. A response without `expires_in` is not cached, so the
-  next call exchanges again.
+- **Forwarded as is.** The SDK doesn't read the token's claims or expiry. An
+  expired token comes back from the gateway as a typed error.
 - **Model calls only.** The user token goes on requests to the LLM proxy. Calls
   to the Anypoint platform keep the service's own credentials, and a request to
   any other origin never carries it.
 
-## Configuring the exchange
+## Configuring the header
 
-The exchange is a form `POST` to the control-plane host, authenticated with the
-connected app (`ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET`), which
-`as_user()` therefore requires.
-
-  The token-exchange endpoint path and the header the gateway reads the user
-  token from are **not confirmed** against a live gateway yet. Both are
-  placeholders that warn once when used, and you can override each one:
+  The header the gateway reads the user token from is **not confirmed**
+  against a live gateway yet. It is a placeholder that warns once when used,
+  and you can override it:
 
 | Env var | `DonkeyConfig` field | Default | Meaning |
 |---|---|---|---|
-| `DONKEY_TOKEN_EXCHANGE_PATH` | `token_exchange_path` | `/accounts/api/v2/oauth2/token` | The path on the control-plane host that serves the RFC 8693 grant. Only the path can change, so the user's token only goes to the control-plane host. |
-| `DONKEY_USER_TOKEN_HEADER` | `user_token_header` | `Authorization` | The request header the exchanged token rides in. `Authorization` carries it as `Bearer <token>`; any other header carries the raw token. |
+| `DONKEY_USER_TOKEN_HEADER` | `user_token_header` | `Authorization` | The request header the user token rides in. `Authorization` carries it as `Bearer <token>`; any other header carries the raw token. |
+
+`token_exchange_path` (`DONKEY_TOKEN_EXCHANGE_PATH`) is deprecated and ignored:
+setting it makes `as_user()` emit a `DeprecationWarning`.
 
 In the `jwt` and `bearer` [auth modes](https://docs.donkey-kit.dev/reference/configuration.md#bearer-token-auth-mode)
 the data-plane token already rides in `Authorization`, so `as_user()` raises a
 `ConfigError` until you set `user_token_header` to the header your gateway
 reads the user token from.
-
-The blocking client stamps the token obtained when the block was entered,
-because it can't run an exchange itself. Once that token expires, a blocking
-call raises `AuthError` instead of sending without it (see
-[No silent fallback](#no-silent-fallback-a-deliberate-hard-failure)).
 
 ## The problem this solves
 
@@ -4208,27 +4201,24 @@ make the call it is already able to make.
 ## Where the boundary sits
 
   **DDK does not implement authorisation logic.** Trusted Agent Identity is a
-  MuleSoft gateway feature. DDK does the token-exchange plumbing and header
-  placement — nothing more. "Check the user's role in the SDK" is client-side
+  MuleSoft gateway feature. DDK forwards the user token and places the
+  header — nothing more. "Check the user's role in the SDK" is client-side
   enforcement, and it is on the [will-not-build list](https://docs.donkey-kit.dev/roadmap.md): code in your
   process can be bypassed by code in your process.
 
 ## No silent fallback: a deliberate hard failure
 
-The failure mode to design against is a token exchange that quietly fails and
-lets the call proceed under the **service** identity. Per-user policy would stop
+The failure mode to design against is a lost user token that lets the call
+quietly proceed under the **service** identity. Per-user policy would stop
 applying while everything still appears to work.
 
 So inside `as_user()` a model call carries the user's token or it is not sent.
-A missing or expired user token is a **deliberate hard failure**: it raises
-`AuthError`, with a `.remediation`, before any request leaves the process.
+A missing user token is a **deliberate hard failure**: it raises `AuthError`,
+with a `.remediation`, before any request leaves the process.
 
 | What went wrong | When it raises | The error names |
 |---|---|---|
 | No `id_token`: empty, blank or `None` | `donkey.as_user(...)` itself | the missing `id_token` |
-| The exchange refuses the `id_token` (expired, revoked, not valid for the connected app) or returns a malformed response | entering the block | the `id_token`, the status and the exchange path |
-| The exchanged token expires and the re-exchange is refused | the next async model call | the `id_token` and the status |
-| The exchanged token expires on a blocking client | the next blocking model call | the expired exchanged token |
 
 The errors and the SDK's logs never contain the token itself. There is **no
 setting that enables a fallback** to the service identity, and none will be
@@ -13404,7 +13394,7 @@ This table is generated from the field table in `core/config.py`.
 | `DONKEY_LLM_PROXY_KEY_HEADER` | `llm_proxy_key_header` | `llm_proxy_key_header` | unset |
 | `DONKEY_LLM_PROXY_AUTH` | `llm_proxy_auth` | `llm_proxy_auth` | `client-id` |
 | `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` | `llm_proxy_wallet_client_id` | `llm_proxy_wallet_client_id` | unset |
-| `DONKEY_TOKEN_EXCHANGE_PATH` | `token_exchange_path` | `token_exchange_path` | `/accounts/api/v2/oauth2/token` |
+| `DONKEY_TOKEN_EXCHANGE_PATH` | `token_exchange_path` | `token_exchange_path` | deprecated, ignored |
 | `DONKEY_USER_TOKEN_HEADER` | `user_token_header` | `user_token_header` | `Authorization` |
 | `DONKEY_APP_NAME` | `application_name` | `application_name` | unset |
 | `DONKEY_BUSINESS_GROUP` | `business_group` | `business_group` | unset |
@@ -15208,7 +15198,7 @@ policies and deploy it; the rest are Roadmap.
 Otherwise the token endpoint is contacted only if your own code calls
 `AnypointConnectedApp.token()`. The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
-before making a network request, except `donkey.as_user()`, described below.
+before making a network request, except `donkey.as_user()`, whose placeholder header is described below.
 
 | Destination / contract | Module | Classification | SDK use and official docs |
 |---|---|---|---|
@@ -15259,12 +15249,11 @@ How each row was established (live capture, plugin test, and so on) is in the
   Roadmap, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.
-- `donkey.as_user()` posts an RFC 8693 token exchange to the control-plane
-  host, then sends the exchanged token on model calls. Neither the exchange
-  path nor the header the gateway reads the token from is confirmed yet (see
-  the ledger, section 13). Both are placeholders that warn once and that you
-  override with `token_exchange_path` and `user_token_header`, so they are not
-  classified above. The exchange runs only when your code enters `as_user()`.
+- `donkey.as_user()` forwards the user's token on model calls; the gateway
+  runs the exchange. The header the gateway reads the token from is not
+  confirmed yet (see the ledger, section 13). It is a placeholder that warns
+  once and that you override with `user_token_header`, so it is not
+  classified above. The token is sent only when your code enters `as_user()`.
 - `LLMClient.list_models(live=True)` does not call `GET /models`: the Model
   Proxy has no model-catalog endpoint.
 - The application and business-group attribution header names are

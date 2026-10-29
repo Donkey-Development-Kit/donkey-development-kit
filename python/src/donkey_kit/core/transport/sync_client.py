@@ -111,11 +111,10 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
     def _inject_headers(self, request: httpx.Request) -> None:
         if self._stamp(request):
             _apply_auth(self._cfg, request, None, control_plane=False)
-            # Can't await an exchange: stamps the token ``donkey.as_user(...)``
-            # got on entry, and raises once it expires (BG §2.4).
+            # The user bound by ``donkey.as_user(...)`` (BG §2.4).
             user = current_user()
             if user is not None:
-                _apply_user_token(self._cfg, request, user.cached_token())
+                _apply_user_token(self._cfg, request, user.token)
 
     # --- lifecycle hooks (BG §1.1) ------------------------------------------
     # Blocking twins of the async seams; internal, not public API.
