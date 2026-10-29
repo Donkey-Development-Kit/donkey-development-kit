@@ -16,9 +16,11 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -92,6 +94,52 @@ def local_mcp_server(*, deny: str | None = None, ciba: str | None = None) -> Ite
             yield LocalServer(f"http://127.0.0.1:{port}/mcp/", record, process)
         finally:
             stop_server(process)
+
+
+@dataclass
+class Redirect:
+    """A server that answers every request with a redirect to another origin."""
+
+    url: str
+    #: The ``client_id`` / ``client_secret`` each request it answered carried.
+    seen: list[dict[str, str | None]] = field(default_factory=list)
+
+
+@contextmanager
+def cross_origin_redirect(target: LocalServer) -> Iterator[Redirect]:
+    """Yield a server on its own port, so another origin than ``target``'s, that
+    answers every request with a ``307`` to the same path on ``target`` (#1415).
+    Bind to its ``url``: ``target``'s record then shows what followed the redirect."""
+    target_origin = target.url.split("/mcp/", 1)[0]
+    redirect = Redirect(url="")
+
+    class Handler(BaseHTTPRequestHandler):
+        def _answer(self) -> None:
+            redirect.seen.append({k: self.headers.get(k) for k in ("client_id", "client_secret")})
+            self.rfile.read(int(self.headers.get("content-length") or 0))
+            self.send_response(307)
+            self.send_header("location", f"{target_origin}{self.path}")
+            self.send_header("content-length", "0")
+            self.end_headers()
+
+        do_GET = do_POST = do_DELETE = _answer
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    redirect.url = f"http://127.0.0.1:{server.server_address[1]}/mcp/"
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield redirect
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def credentials_seen(record: Path) -> list[dict[str, Any]]:
+    """The recorded requests that carried a ``client_id`` or ``client_secret``."""
+    return [r for r in read_requests(record) if r.get("client_id") or r.get("client_secret")]
 
 
 def read_requests(record: Path) -> list[dict[str, Any]]:

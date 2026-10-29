@@ -19,6 +19,11 @@ take an allow-list of tool names and cannot rename one tool, so
 ``KNOWN_LIMITATIONS``: their test checks the ``ConfigError`` refusal and the
 ``filter(deny=...)`` remedy rather than skipping.
 
+``test_cross_origin_redirect_never_forwards_the_credential`` binds each binding
+to a server that redirects every request to another local server, on another
+origin, which must never receive the credential (#1415). It is not a conformance
+scenario: the bindings meet it without an exemption.
+
 A binding skips when its packages are not installed, except in the
 ``adapter-contract`` CI leg for its framework when that leg's lock pins them:
 there ``DONKEY_CONTRACT_EXTRA`` turns the skip into a failure, as in
@@ -31,6 +36,7 @@ Anthropic and CrewAI through the leg's ``contract-<extra>`` dependency group
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib
 import importlib.util
 import json
@@ -158,6 +164,7 @@ class _Servers:
         self._stack = ExitStack()
         self._pair: tuple[Any, Any] | None = None
         self._denying: Any = None
+        self._target: Any = None
         self.harness: ModuleType | None = None
 
     def pair(self) -> tuple[Any, Any]:
@@ -175,6 +182,13 @@ class _Servers:
             self.harness = _harness()
             self._denying = self._stack.enter_context(self.harness.local_mcp_server(deny="add"))
         return self._denying
+
+    def redirect_target(self) -> Any:
+        """A fourth server, the other origin a redirect points to (#1415)."""
+        if self._target is None:
+            self.harness = _harness()
+            self._target = self._stack.enter_context(self.harness.local_mcp_server())
+        return self._target
 
     def requests(self, server: Any) -> int:
         assert self.harness is not None
@@ -505,6 +519,40 @@ async def test_tool_access_denied_typed(binding: Binding, servers: _Servers) -> 
 #: scripts/mcp_binding/probe_denial.py (docs/verified-apis.md §9, #312).
 _RAISES_THE_MCP_ERROR = {"openai", "agent_framework", "crewai"}
 _RETURNS_AN_ERROR_RESULT = {"adk", "strands"}
+
+
+# --- a redirect to another origin (#1415) ------------------------------------------
+
+
+async def test_cross_origin_redirect_never_forwards_the_credential(
+    binding: Binding, servers: _Servers
+) -> None:
+    """The bound server answers every request with a ``307`` to another origin, a
+    second local server. The credential pair reaches the bound server and never
+    the other one, whether the framework's MCP client then follows the redirect
+    without it or does not follow it at all (and the bind fails).
+
+    The descriptors are given, so the SDK's own ``tools/list`` does not run and
+    the framework's client sends the first request."""
+    target = servers.redirect_target()
+    assert servers.harness is not None
+    before = len(servers.harness.credentials_seen(target.record))
+    with servers.harness.cross_origin_redirect(target) as redirect:
+        handle = McpServerHandle(
+            ref=AssetRef("com.example", "inv-r", "1.0.0"),
+            endpoint_url=redirect.url,
+            governance=_GOVERNED,
+            tool_descriptors=tuple({"name": name} for name in _TOOLS),
+        )
+
+        async def bind_and_call() -> None:
+            async with _bound(binding, ToolSet([handle], _auth=_AUTH)) as bound:
+                await bound.call("add", {"a": 2, "b": 3})
+
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(bind_and_call(), 60)
+    assert any(seen == _PAIR for seen in redirect.seen), redirect.seen
+    assert servers.harness.credentials_seen(target.record)[before:] == []
 
 
 # --- the matrix itself (no framework needed) --------------------------------------

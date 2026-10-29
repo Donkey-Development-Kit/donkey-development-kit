@@ -12,7 +12,10 @@ The probes next to this file verify each framework's own MCP class
   Strands, OpenAI Agents, Agent Framework, CrewAI) refuses with ``ConfigError`` until
   ``filter(deny=["inv-b__*"])`` removes the clash;
 - ``require_approval(tools=["add"])`` makes a per-tool binding's ``add`` raise
-  ``ApprovalRequired``, and a whole-server binding refuse.
+  ``ApprovalRequired``, and a whole-server binding refuse;
+- bound to a server that answers with a ``307`` to ``inv-b``, another origin,
+  the binding sends the pair to the server it was bound to and never to
+  ``inv-b`` (#1415). Whether it then follows the redirect is the framework's.
 
 Nothing here touches Anypoint or a gateway. Run it in a throwaway venv with the
 SDK and the frameworks installed (README.md), from python/:
@@ -27,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import importlib.util
 import json
 import sys
@@ -34,7 +38,13 @@ from collections.abc import Awaitable, Callable
 from contextlib import ExitStack
 from typing import Any
 
-from _harness import LocalServer, headers_seen, local_mcp_server
+from _harness import (
+    LocalServer,
+    credentials_seen,
+    cross_origin_redirect,
+    headers_seen,
+    local_mcp_server,
+)
 
 from donkey_kit.core.approvals import ApprovalRequired
 from donkey_kit.core.errors import ConfigError
@@ -259,6 +269,31 @@ async def check(fw: str, a: LocalServer, b: LocalServer) -> list[str]:
             problems.append("approval: bound a gate it cannot apply")
         except NotImplementedError:
             pass
+    problems += [f"redirect: {p}" for p in await redirected(fw, b)]
+    return problems
+
+
+async def redirected(fw: str, target: LocalServer) -> list[str]:
+    """Bind ``fw`` to a server that redirects every request to ``target``, on
+    another origin (#1415). The descriptors are given, so the SDK's own listing
+    does not run and the framework's client makes the first request."""
+    before = len(credentials_seen(target.record))
+    with cross_origin_redirect(target) as redirect:
+        handle = McpServerHandle(
+            ref=AssetRef("com.example", "inv-r", "1.0.0"),
+            endpoint_url=redirect.url,
+            governance=GOVERNED,
+            tool_descriptors=({"name": "add"}, {"name": "lookup_sku"}),
+        )
+        # The bind fails when the redirect is not followed; only the headers matter.
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(scenario(fw, ToolSet([handle], _auth=AUTH), []), 60)
+    problems = []
+    if not any(s["client_secret"] == "fake-client-secret" for s in redirect.seen):
+        problems.append(f"the bound server never got the credential: {redirect.seen}")
+    leaked = credentials_seen(target.record)[before:]
+    if leaked:
+        problems.append(f"another origin got the credential: {leaked}")
     return problems
 
 

@@ -6,20 +6,31 @@ baseline ``scripts/mcp_binding/probe_mcp_sdk.py`` round-trips (docs/verified-api
 §9). ``mcp`` 1.x builds that client on ``httpx`` and 2.x on ``httpx2``; the same
 call works on both. The package is imported here, inside the functions, so
 ``import donkey_kit`` never needs it.
+
+:func:`client_factory` and :func:`open_transport` build the HTTP client the
+framework bindings in ``tools/session.py`` hand their framework's MCP client
+(#1415): it sends the credential only to the server's origin, as the governed
+clients do (``core/transport/headers.py``).
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
 from ..core.errors import AuthError, ToolInvocationError, classify
 from ..core.step_up import GatewayApprovalDenied, GatewayApprovalPending
+from ..core.transport.headers import CREDENTIAL_HEADERS, origin_of, strip_credential_headers
 
-__all__ = ["list_tools", "open_session"]
+__all__ = ["client_factory", "list_tools", "open_session", "open_transport"]
 
 MCP_INSTALL = "pip install 'donkey-kit[mcp]'"
+
+#: The ``mcp`` transports' default timeouts, in seconds (``create_mcp_http_client``):
+#: the read timeout is long because a server may hold a response stream open.
+_TIMEOUT = 30.0
+_READ_TIMEOUT = 300.0
 
 
 def _streamable() -> Any:  # noqa: ANN401
@@ -72,6 +83,58 @@ async def open_session(
     ):
         await session.initialize()
         yield session
+
+
+def client_factory(url: str, credentials: Mapping[str, str]) -> Callable[..., Any]:
+    """An ``mcp`` HTTP-client factory, ``(headers, timeout, auth) -> AsyncClient``,
+    for a binding to ``url`` that sends ``credentials`` (#1415).
+
+    Its clients (``httpx`` on ``mcp`` 1.x, ``httpx2`` on 2.x) do not follow
+    redirects, and a request hook strips the ``credentials`` names and
+    :data:`~donkey_kit.core.transport.headers.CREDENTIAL_HEADERS` from any
+    request to another origin than ``url``'s. ``mcp`` 1.30 and 2.3 follow a
+    redirect within the origin themselves; an earlier ``mcp`` builds its client
+    with ``follow_redirects=True``, and httpx keeps every header but
+    ``Authorization`` on a hop to another origin.
+
+    ``mcp`` is imported when the framework calls the factory, not before.
+    """
+    origin = origin_of(url)
+    names = CREDENTIAL_HEADERS | {name.lower() for name in credentials}
+
+    async def guard(request: Any) -> None:  # noqa: ANN401
+        if origin_of(str(request.url)) != origin:
+            strip_credential_headers(request, names)
+
+    def build(
+        headers: Mapping[str, str] | None = None,
+        timeout: Any = None,  # noqa: ANN401
+        auth: Any = None,  # noqa: ANN401
+    ) -> Any:  # noqa: ANN401
+        streamable = _streamable()
+        http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
+        return http_lib.AsyncClient(
+            headers=dict(headers or {}),
+            timeout=timeout or http_lib.Timeout(_TIMEOUT, read=_READ_TIMEOUT),
+            auth=auth,
+            follow_redirects=False,
+            event_hooks={"request": [guard]},
+        )
+
+    return build
+
+
+@asynccontextmanager
+async def open_transport(url: str, headers: Mapping[str, str]) -> AsyncIterator[Any]:
+    """The streamable-HTTP streams to ``url`` over a :func:`client_factory`
+    client sending ``headers``, closed with the transport, for a framework that
+    takes a transport rather than a client (Strands)."""
+    streamable = _streamable()
+    async with (
+        client_factory(url, headers)(headers=headers) as http,
+        streamable.streamable_http_client(url, http_client=http) as streams,
+    ):
+        yield streams
 
 
 async def list_tools(

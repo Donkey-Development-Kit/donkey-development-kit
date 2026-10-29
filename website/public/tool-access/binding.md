@@ -73,6 +73,13 @@ tools = await donkey.tools.discover(tags=["hr"], governed=True, auth=BearerAuth(
 - The headers are read once per bind and handed to the framework's MCP client
   as static headers, the one header argument every framework has. A bearer
   token is the one current at bind time, so bind again after it expires.
+- A redirect never takes the credential to another origin. Where the framework
+  takes an HTTP client, a client factory or a transport, the binding passes
+  one that does not follow redirects and drops the credential, the user token
+  included, from any request to an origin other than the server's. Agent
+  Framework removes its `static_headers` on such a redirect itself. Bind to the
+  URL with its trailing slash: an older `mcp` release, such as the 2.1 that
+  Strands installs, then follows no redirect at all.
 - A `401` or `403` while listing tools drops the cached credential and retries
   once, then raises `AuthError`.
 
@@ -241,14 +248,14 @@ async with ts.crewai() as tools:      # -> list[BaseTool]
 
 | Framework | Binding | Install |
 |---|---|---|
-| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient`, transport `"streamable_http"`. Returns a flat list of tools for `create_react_agent(tools=...)` or a `ToolNode`; each call opens its own session. | `donkey-kit[langgraph,mcp]`, `langchain-mcp-adapters` (needs `mcp<2`) |
-| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec(...).to_tool_list_async()`. A flat list of tools; each call opens its own session. | `donkey-kit[llamaindex,mcp]`, `llama-index-tools-mcp` |
+| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient`, transport `"streamable_http"`, with the SDK's `httpx_client_factory`. Returns a flat list of tools for `create_react_agent(tools=...)` or a `ToolNode`; each call opens its own session. | `donkey-kit[langgraph,mcp]`, `langchain-mcp-adapters` (needs `mcp<2`) |
+| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient(url, http_client=...)` + `McpToolSpec(...).to_tool_list_async()`. A flat list of tools; each call opens its own session. | `donkey-kit[llamaindex,mcp]`, `llama-index-tools-mcp` |
 | Anthropic SDK | `anthropic.lib.tools.mcp.async_mcp_tool(tool, session)` over an MCP `ClientSession` per server, for `client.beta.messages.tool_runner(tools=...)`. An async context manager: the sessions close on exit. The Messages API `mcp_servers` connector is not used: Anthropic's servers dial that URL, and it has no field for the gateway's credential headers. | `donkey-kit[anthropic,mcp]` |
-| Google ADK | `google.adk.tools.mcp_tool.McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=...), tool_filter=[...])`, passed straight into `LlmAgent(tools=[...])`. Close it with `await toolset.close()`. | `donkey-kit[adk,mcp]` |
-| Strands | `strands.tools.mcp.MCPClient(url=..., headers=..., tool_filters=...)`, used as a context manager; `list_tools_sync()` yields `MCPAgentTool` objects for `Agent(tools=[...])`. | `donkey-kit[strands,mcp]` |
-| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": ..., "headers": ...}, tool_filter=...)`, entered with `async with` and passed into `Agent(mcp_servers=[...])`. | `donkey-kit[openai-agents,mcp]` |
+| Google ADK | `google.adk.tools.mcp_tool.McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=..., httpx_client_factory=...), tool_filter=[...])`, passed straight into `LlmAgent(tools=[...])`. Close it with `await toolset.close()`. | `donkey-kit[adk,mcp]` |
+| Strands | `strands.tools.mcp.MCPClient(transport_callable=..., tool_filters=...)`, used as a context manager; `list_tools_sync()` yields `MCPAgentTool` objects for `Agent(tools=[...])`. | `donkey-kit[strands,mcp]` |
+| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": ..., "headers": ..., "httpx_client_factory": ...}, tool_filter=...)`, entered with `async with` and passed into `Agent(mcp_servers=[...])`. | `donkey-kit[openai-agents,mcp]` |
 | MS Agent Framework | `agent_framework.MCPStreamableHTTPTool(name, url, static_headers=..., allowed_tools=...)`, entered with `async with`. It has no `headers=` argument; the gateway credentials go in `static_headers`. | `donkey-kit[agent_framework,mcp]` |
-| CrewAI | `crewai_tools.MCPServerAdapter({"url": ..., "transport": "streamable-http", "headers": ...}, *tool_names)`, one per server, for `Agent(tools=...)`. An async context manager: the adapters hold their connections open and stop on exit. `filter()` becomes the `tool_names` allow-list. | `donkey-kit[crewai,mcp]`, `crewai-tools[mcp]` (needs `mcp<2`) |
+| CrewAI | `crewai_tools.MCPServerAdapter({"url": ..., "transport": "streamable-http", "headers": ..., "httpx_client_factory": ...}, *tool_names)`, one per server, for `Agent(tools=...)`. An async context manager: the adapters hold their connections open and stop on exit. `filter()` becomes the `tool_names` allow-list. | `donkey-kit[crewai,mcp]`, `crewai-tools[mcp]` (needs `mcp<2`) |
 
 Each class in this table, and the argument that carries the gateway's
 credential headers, was checked by binding the framework's current release to

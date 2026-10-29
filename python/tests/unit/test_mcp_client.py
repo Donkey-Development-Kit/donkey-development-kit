@@ -242,6 +242,7 @@ async def test_crewai_binds_one_adapter_per_server_and_stops_them(
         assert tools == ["https://gw.example.test/inv-a/#add"]
         assert _Adapter.stopped == []
     (adapter,) = crewai_tools.made
+    assert callable(adapter.params.pop("httpx_client_factory"))  # #1415
     assert adapter.params == {
         "url": "https://gw.example.test/inv-a/",
         "transport": "streamable-http",
