@@ -2875,8 +2875,8 @@ answers is never reported as expired: the policy starts a new approval flow and
 keeps answering "pending", so keep your own deadline. After a deny, the gateway
 caches the decision; on OBO policy 1.1.3 it does so per user, not per
 conversation, for up to an hour. The policy's initiation failure (`502`,
-`ciba_initiation_failed`) has not been captured and stays an
-`UpstreamModelError`.
+`ciba_initiation_failed`) has no type of its own and is an
+`UpstreamModelError`, like any other `5xx`.
 
 The SDK does not retry a pending approval on its own. To wait for one while listing an
 MCP server's tools, use `toolset.wait_for_gateway_approval("2m")`: it re-sends the
@@ -2885,7 +2885,8 @@ MCP server's tools, use `toolset.wait_for_gateway_approval("2m")`: it re-sends t
 `GatewayApprovalPending` when the timeout passes. A tool *call* is not retried: the
 framework MCP clients lose the response body that tells a pending approval from a bad
 credential, so handle `GatewayApprovalPending` where your framework lets you. `donkey mock
---scenario ciba:pending=2` plays the sequence offline.
+--scenario ciba:pending=2` plays the sequence offline. [Gateway step-up](https://docs.donkey-kit.dev/hitl.md#gateway-step-up)
+covers the whole flow.
 
 The Injection Protection shape is live-verified against a deployed proxy
 (#669); `classify()` keys on the header discriminator alone for it, not the
@@ -4310,10 +4311,11 @@ async def on_decision(approval_id: str, reviewer: str, approved: bool) -> None:
 
   **The approval is advisory.** It runs in your process, before the call. The
   gateway does not know that an approval was needed or who gave it, and
-  nothing stops code that skips the decorator. Routing a high-risk approval
-  through the gateway's identity layer (step-up) is on the
-  [Roadmap](https://docs.donkey-kit.dev/roadmap.md). Until then, treat the approval as an audit record of
-  your own process, not as an enforcement point.
+  nothing stops code that skips the decorator. Treat the approval as an audit
+  record of your own process, not as an enforcement point. An approval the
+  gateway enforces is the gateway's own step-up, set in its policy
+  configuration and separate from this one: see
+  [Gateway step-up](#gateway-step-up).
 
 ## Declaring an approval
 
@@ -4770,13 +4772,13 @@ Without the plugin, nothing pauses. The gate raises `ApprovalRequired` inside
 the tool, which leaves the runner, and the call waits in `donkey.approvals`
 like any other.
 
-## Discovered tools Offline-verified
+## Discovered tools Local round-trip
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
 [`donkey.tools.discover()`](https://docs.donkey-kit.dev/tool-access/discovery.md) is not one, so you declare
 its approval once on the `ToolSet` instead. The gate runs in the SDK, before
-the call leaves the client, and has been run against local MCP servers (see
-[Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)):
+the call leaves the client. It has been run against local MCP servers, not
+through a gateway (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)):
 
 ```python
 # `tools` is the ToolSet that donkey.tools.discover() returns, before you bind it.
@@ -4810,31 +4812,109 @@ holds the tool's arguments by name, taken from its input schema.
   and `timeout`.
 
 The approval is advisory here too, for the same reason as above: the gateway
-does not know it was needed until step-up routes it through the gateway.
+never learns that it was needed.
+
+## Gateway step-up
+
+The approvals above are DDK's, and they run in your process. The gateway has
+its own. With CIBA enabled (`cibaEnabled`), the OAuth2 OBO Credential Injection
+policy asks the user to approve the call out of band, outside your app, before
+it exchanges their token, and holds the request until they answer. The gateway's
+policy configuration decides when that happens. Your code cannot ask for it,
+and `risk=` plays no part in it. DDK's part is to report the gateway's answer
+for what it is, not as a bad credential:
+
+| Gateway answer | `classify()` returns | What to do |
+|---|---|---|
+| `401`, flat `{"error":"authorization_pending"}`, `retry-after`, **no** `www-authenticate` | `GatewayApprovalPending`, with `retry_after` in seconds | Send the same request again after `retry_after`. It goes through once the user approves. Don't refresh the credentials: they were accepted. |
+| `403`, flat `{"error":"access_denied"}` | `GatewayApprovalDenied`, a `PolicyViolation` with `policy="oauth2-obo-ciba"` | Tell the user the action was not authorized. It is never retried. |
+| `502`, `{"error":"ciba_initiation_failed"}` | `UpstreamModelError`, as for any `5xx` | The gateway could not start the approval request. |
+
+`GatewayApprovalPending` is a `DonkeyError`, not a `PolicyViolation`: nothing
+has been refused yet. Each rule needs its status and its body, so a plain `401`
+or `403` is still an `AuthError`. See [Typed refusals](https://docs.donkey-kit.dev/errors.md) for the rest of
+the taxonomy.
+
+The policy's behaviour, as captured from OBO policy 1.1.3:
+
+- **An unanswered request never expires for the client.** Past its expiry
+  (about two minutes) the policy starts a new request and keeps answering
+  "pending", so keep your own deadline.
+- **A denial is cached.** The first retry after a deny can still be one more
+  pending `401`. After that the gateway answers with the denial, cached per
+  user rather than per conversation, for up to an hour. A retry, a fresh token
+  or a new A2A `contextId` gets the same denial.
+
+### Waiting while listing MCP tools
+
+`ToolSet.describe()`, which every binding calls, raises the first
+`GatewayApprovalPending` at once. A step-up answer is not treated as a refused
+credential: the cached gateway credential is kept, and nothing is re-sent. To
+wait for the user instead, build the set with `wait_for_gateway_approval()`:
+
+```python
+# `tools` is the ToolSet that donkey.tools.discover() returns, before you bind it.
+tools = tools.wait_for_gateway_approval("2m")
+```
+
+The listing is then sent again after each `retry_after`, kept between 1 and 30
+seconds, until it goes through or the user denies it, which raises
+`GatewayApprovalDenied` at once. When the next pause would pass the timeout, the
+last `GatewayApprovalPending` is raised. The timeout defaults to `"2m"` and must
+be a positive duration, and the view keeps it through `filter()` and
+`require_approval()`. The loop decides nothing: the user approves out of
+band, the gateway lets the same request through, and the gateway keeps the
+audit trail.
+
+A tool *call* is neither typed nor retried. The framework MCP clients DDK binds
+to drop the response body, so a pending approval on `tools/call` reaches your
+code as the framework's own error, or as an error result, and looks the same as
+a refused credential. Handle it where your framework lets you.
+
+  **A CrewAI tool call behind step-up hangs.** Against a local replay of the
+  gateway's pending answer, CrewAI's MCP adapter thread stopped on the `401`
+  and the call never returned. Run CrewAI only against MCP servers whose policy
+  does not ask for step-up on `tools/call`.
+
+`donkey mock --scenario ciba:pending=2,then=approve` plays the pending and
+approved sequence offline (see [Local simulator](https://docs.donkey-kit.dev/simulator.md)).
 
 ## Mapped onto what your framework already has
 
 DDK does not introduce a new pause mechanism. The raise-and-resume form above
 works in any Python code, and LangGraph's own `interrupt()`, the OpenAI Agents
 SDK's `needs_approval`, Strands' interrupt hooks and Google ADK's tool
-confirmation are mapped. Gateway step-up is planned:
+confirmation are mapped. The gateway's step-up is typed and waited on, not
+mapped onto a pause:
 
 | Framework / protocol | Native primitive | Status |
 |---|---|---|
 | Any Python code | `ApprovalRequired` + `donkey.approvals.resolve(...)` | Live |
-| LangGraph | `interrupt()` / `Command(resume=…)` | Live |
-| OpenAI Agents SDK | `needs_approval` / `RunState.approve(…)` | Live |
-| Google ADK | tool confirmation, via `approval_plugin()` | Live |
-| Strands | `BeforeToolCallEvent` interrupt, via `ApprovalHook` | Live |
+| LangGraph | `interrupt()` / `Command(resume=…)` | Offline-verified |
+| OpenAI Agents SDK | `needs_approval` / `RunState.approve(…)` | Offline-verified |
+| Google ADK | tool confirmation, via `approval_plugin()` | Offline-verified |
+| Strands | `BeforeToolCallEvent` interrupt, via `ApprovalHook` | Offline-verified |
 | MCP | elicitation | Not supported |
-| Omni Gateway | Trusted Agent Identity step-up (MFA) | Roadmap |
+| Omni Gateway | OAuth2 OBO CIBA step-up, typed as `GatewayApprovalPending` / `GatewayApprovalDenied` | Live |
+| Omni Gateway, MCP `tools/list` | `ToolSet.wait_for_gateway_approval()` | Offline-verified |
+| Omni Gateway, MCP `tools/call` | none: the framework's own error | Not supported |
+
+The badges use the terms of the
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md):
+
+| Status | Means |
+|---|---|
+| Live | The gateway contract the row rests on was observed from a real gateway (`VERIFIED (LIVE)`). The approval in the first row runs in your process and has no gateway contract of its own; the model calls a resumed tool makes go through the live-verified proxy data plane. |
+| Local round-trip | Run end to end against a real local server, not through a gateway (`VERIFIED (local round-trip)`). |
+| Offline-verified | The pause and the resume pass offline against the installed framework, with the model calls answered by a mocked gateway. No run through a live gateway yet: the ledger reads `UNVERIFIED (signature confirmed; pending maintainer --live + sign-off)`. For `wait_for_gateway_approval()`, the wire shapes are live, but the SDK's listing has only been tested against a replay of them. |
+| Not supported | DDK does not map onto it. |
 
 MCP elicitation is not a client-side approval, so DDK does not map onto it. A
 server sends `elicitation/create` to ask the user something while it handles a
 request. The direction is server to client, so a client cannot use it to hold a
 call it is about to send, and there is nothing for it to pause or resume.
 Governed MCP tools get their approval from
-[`require_approval()`](#discovered-tools-offline-verified) on the `ToolSet` instead, which gates
+[`require_approval()`](#discovered-tools-local-round-trip) on the `ToolSet` instead, which gates
 the call before it leaves the client.
 
 ## What DDK does not build
@@ -4849,7 +4929,8 @@ Specifically, DDK does not:
 - notify a reviewer, escalate an unanswered approval, or retry one that timed
   out;
 - decide who may approve, or authenticate the `approved_by` you pass;
-- tell the gateway that a call was approved.
+- tell the gateway that a call was approved;
+- decide when the gateway asks for step-up, or answer it for the user.
 
 A queue would mean owning a durable store, an escalation model and a
 notification system: a product rather than a feature.

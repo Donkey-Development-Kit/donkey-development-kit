@@ -11,7 +11,8 @@ expires after its timeout, and resolving it then raises
 
 The approval is client-side and advisory. Code that calls the function without
 the decorator bypasses it, and the gateway never learns that an approval was
-needed or who gave it; gateway step-up is #214. An approval never overrides a
+needed or who gave it. The gateway's own step-up is separate: its policy asks the
+user, and ``core/step_up`` types the answer (#214). An approval never overrides a
 gateway refusal either: the resumed call goes through the governed transport
 like any other, and the gateway judges each model call it makes afresh, as it
 judges a refusal handler's re-send (BG §2.1).

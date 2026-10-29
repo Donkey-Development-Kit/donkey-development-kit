@@ -16,8 +16,8 @@ the request. Both answers were captured live from OBO policy 1.1.3 on an A2A
 Each rule needs its status and its flat-string body ``error``, so a plain 401 is still an auth
 error. An approved request just succeeds. An unanswered request that passes its expiry is never
 reported to the client: the policy starts a new flow and keeps answering "pending". The
-initiation failure (``502``, ``ciba_initiation_failed``) is documented but not captured, so it
-stays an :class:`~donkey_kit.core.errors.UpstreamModelError` (§0.3).
+initiation failure (``502``, ``ciba_initiation_failed``, also in docs/verified-apis.md §4) has
+no rule here: it is an :class:`~donkey_kit.core.errors.UpstreamModelError`, like any ``5xx``.
 
 ``errors`` cannot import this module, because these classes subclass its own. Importing this
 module installs the rules in ``errors``' step-up slot, ahead of the auth rule. The ``core``

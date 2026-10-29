@@ -11,7 +11,8 @@ events, resolves through ``donkey.approvals`` and pauses in a LangGraph graph
 through the same native hook (#212).
 
 The approval is client-side and advisory, as for ``@donkey.tool``: the gateway
-never learns that an approval was needed. Gateway step-up is #214.
+never learns that an approval was needed. The gateway's own step-up is separate:
+``ToolSet.wait_for_gateway_approval()`` waits for it when listing tools (#214).
 
 MCP elicitation is not used, and is not a mapping target (#1236). A server
 sends ``elicitation/create`` to the client while it handles a request, so it
