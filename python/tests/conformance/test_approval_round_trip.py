@@ -91,7 +91,8 @@ async def _langgraph(donkey: Donkey) -> Callable[[], Awaitable[None]]:
     pytest.importorskip("langchain_openai")
     graph_mod = pytest.importorskip("langgraph.graph")
     saver = pytest.importorskip("langgraph.checkpoint.memory").MemorySaver()
-    command = pytest.importorskip("langgraph.types").Command
+    from donkey_kit.integrations.langgraph import approve, pending_approvals
+
     model = donkey.langgraph.chat_model("gpt-4o")
 
     @donkey.tool(approval="required", risk="financial")
@@ -113,13 +114,14 @@ async def _langgraph(donkey: Donkey) -> Callable[[], Awaitable[None]]:
     # Sync invoke: interrupt() under ainvoke() needs Python 3.11+ (#865).
     async with donkey.run(id=_PAUSE_RUN):
         paused = graph.invoke({"ticket_id": "T-1"}, thread)
-    assert paused["__interrupt__"][0].value["tool"] == "issue_refund"
+    (approval,) = pending_approvals(paused)
+    assert approval.tool == "issue_refund"
 
     async def resume() -> None:
         # LangGraph re-runs the node, so the resumed call runs under the run
         # that resumes it; resume under the same run id to join the two.
         async with donkey.run(id=_PAUSE_RUN):
-            graph.invoke(command(resume={"approved": True, "by": "m.keller"}), thread)
+            graph.invoke(approve(approval, by="m.keller").native, thread)
 
     return resume
 
@@ -315,7 +317,7 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
         async with donkey.run(id=_PAUSE_RUN):
             paused = await agent.invoke_async("refund T-1")
         assert paused.stop_reason == "interrupt"
-        (interrupt,) = pending_approvals(paused)
+        (approval,) = pending_approvals(paused)
 
         # The pause sent nothing: the only span is the pending approval.
         assert {s.name for s in exporter.get_finished_spans()} == {_APPROVAL_SPAN}
@@ -326,7 +328,7 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
 
         with donkey.simulate(PIIDetected), pytest.raises(PIIDetected) as caught:
             async with donkey.run():
-                await agent.invoke_async([approve(interrupt, by="m.keller")])
+                await agent.invoke_async([approve(approval, by="m.keller").native])
 
     decisions = [(n, a) for n, a in _approval_events(exporter) if n != pending]
     ((approved, approved_attrs),) = decisions
@@ -417,7 +419,7 @@ async def test_an_adk_agent_pauses_with_its_own_tool_confirmation(
             # A fresh run: the resumed call still runs under the pause's.
             async with donkey.run():
                 resumed = await send(
-                    types.Content(role="user", parts=[approve(request, by="m.keller")])
+                    types.Content(role="user", parts=[approve(request, by="m.keller").native])
                 )
 
     assert resumed[-1].content.parts[0].text == "done"

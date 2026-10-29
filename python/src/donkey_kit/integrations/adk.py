@@ -43,8 +43,9 @@ with ADK's own tool confirmation once the app has the plugin
 Before the call runs, the plugin records the pending approval and calls
 ``tool_context.request_confirmation``, and ADK ends the turn with an
 ``adk_request_confirmation`` call. :func:`pending_approvals` reads those calls
-off the run's events, and the run resumes on a user message whose parts are
-:func:`approve` / :func:`reject` responses. An approved call runs once, under
+off the run's events as ``Approval`` objects, and the run resumes on a user
+message whose parts are the ``native`` parts of :func:`approve` /
+:func:`reject`. An approved call runs once, under
 the pause's correlation id. A rejected call is not run: the model gets the
 rejection as the tool's error result, and nothing raises ``ApprovalRejected``.
 The pause lives in the session's events, so a fresh process can resume it.
@@ -57,6 +58,7 @@ from __future__ import annotations
 
 import collections
 import contextvars
+import dataclasses
 import functools
 import hashlib
 import json
@@ -84,7 +86,6 @@ if TYPE_CHECKING:
     from google.adk.models import BaseLlm, Gemini
     from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
     from google.adk.plugins import BasePlugin
-    from google.genai import types
 
 _M = TypeVar("_M", bound="BaseLlm")
 
@@ -93,7 +94,6 @@ __all__ = [
     "ADKAdapter",
     "approval_plugin",
     "approve",
-    "approved_call",
     "gemini",
     "last_call_bridged",
     "model",
@@ -410,8 +410,8 @@ def approval_plugin(name: str = "donkey_approval") -> BasePlugin:
     call runs, the plugin records the pending approval and requests a
     confirmation. Its payload carries the ``kind`` (:data:`APPROVAL_KIND`),
     ``approval_id``, ``tool``, ``arguments``, ``risk`` and ``correlation_id``.
-    Resume with ``types.Content(role="user", parts=[approve(c, by="m.keller")
-    for c in pending_approvals(session.events)])``. The plugin checks the
+    Resume with ``types.Content(role="user", parts=[approve(a, by="m.keller").native
+    for a in pending_approvals(session.events)])``. The plugin checks the
     answer against the request the agent stored in the session: a confirmation
     it did not request, or for a call already answered, is refused and the
     call not run. It records the decision once, and an approved call runs
@@ -554,11 +554,8 @@ def _as_requested(approval: Approval, payload: Mapping[str, Any]) -> Approval:
     call joins the pause's trace, in this process or another."""
     correlation_id = payload.get("correlation_id")
     requested_at = payload.get("requested_at")
-    return Approval(
-        id=approval.id,
-        tool=approval.tool,
-        arguments=approval.arguments,
-        risk=approval.risk,
+    return dataclasses.replace(
+        approval,
         correlation_id=(
             correlation_id
             if isinstance(correlation_id, str) and correlation_id
@@ -569,7 +566,6 @@ def _as_requested(approval: Approval, payload: Mapping[str, Any]) -> Approval:
             if isinstance(requested_at, (int, float)) and not isinstance(requested_at, bool)
             else approval.requested_at
         ),
-        expires_at=approval.expires_at,
     )
 
 
@@ -599,17 +595,19 @@ def approved_call(tool: str) -> Approval | None:
     return approval
 
 
-def pending_approvals(events: Iterable[Any]) -> tuple[Any, ...]:
-    """The DDK approval requests among ADK ``events`` that no later event
-    answers, in order.
+def pending_approvals(events: Iterable[Any]) -> tuple[Approval, ...]:
+    """The approval-gated calls among ADK ``events`` that no later event
+    answers, in order (BG §2.3, #1422).
 
     Pass the events of the latest run, or a session's ``events``. The runner
     does not yield the user message that answers a request, so the events of
     several runs put together still list a request already answered.
 
-    Each is ADK's own ``adk_request_confirmation`` ``FunctionCall``; its
-    ``args["toolConfirmation"]["payload"]`` is the payload described in
-    :func:`approval_plugin`. Pass it to :func:`approve` or :func:`reject`."""
+    Each is an :class:`~donkey_kit.core.approvals.Approval` read from the
+    payload described in :func:`approval_plugin` (its ``arguments`` as the model
+    sent them), and ``native`` is ADK's own ``adk_request_confirmation``
+    ``FunctionCall``. Pass it to :func:`approve` or :func:`reject`. ADK holds the
+    pause, so ``expires_at`` is ``math.inf``."""
     calls: dict[str, Any] = {}
     for event in events:
         for call in event.get_function_calls() or ():
@@ -617,32 +615,58 @@ def pending_approvals(events: Iterable[Any]) -> tuple[Any, ...]:
                 calls[call.id] = call
         for response in event.get_function_responses() or ():
             calls.pop(response.id, None)
-    return tuple(calls.values())
+    return tuple(_from_request(call) for call in calls.values())
 
 
-def approve(request: Any, *, by: str) -> types.Part:
-    """The user-message part that approves ``request`` (from
-    :func:`pending_approvals`), recording ``by`` as the approver once the run
-    resumes on it.
+def approve(approval: Approval, *, by: str) -> Approval:
+    """Approve a paused call from :func:`pending_approvals`, recording ``by`` as
+    the approver once the run resumes on it.
+
+    Returns the approval with ``native`` set to the user-message ``types.Part``
+    to resume on: ``types.Content(role="user", parts=[a.native for a in decided])``.
 
     Raises:
-        ValueError: ``by`` is empty, or ``request`` is not a DDK approval request.
+        ValueError: ``by`` is empty, or ``approval`` is not one of
+            :func:`pending_approvals`.
     """
-    return _response(request, {"by": _who(by)}, confirmed=True)
+    return _response(approval, {"by": _who(by)}, confirmed=True)
 
 
-def reject(request: Any, *, by: str, message: str | None = None) -> types.Part:
-    """The user-message part that rejects ``request``. On resume the call is not
-    run, and the model gets ``message`` (or a default that names the tool, never
-    ``by``) as the tool's error result.
+def reject(approval: Approval, *, by: str, message: str | None = None) -> Approval:
+    """Reject a paused call from :func:`pending_approvals`. On resume the call is
+    not run, and the model gets ``message`` (or a default that names the tool,
+    never ``by``) as the tool's error result.
+
+    Returns the approval with ``native`` set to the user-message ``types.Part``,
+    as :func:`approve` does.
 
     Raises:
-        ValueError: ``by`` is empty, or ``request`` is not a DDK approval request.
+        ValueError: ``by`` is empty, or ``approval`` is not one of
+            :func:`pending_approvals`.
     """
     decision: dict[str, Any] = {"by": _who(by)}
     if message is not None:
         decision["message"] = message
-    return _response(request, decision, confirmed=False)
+    return _response(approval, decision, confirmed=False)
+
+
+def _from_request(call: Any) -> Approval:
+    """The :class:`~donkey_kit.core.approvals.Approval` a DDK confirmation
+    request describes, with the request on ``native``."""
+    payload = call.args["toolConfirmation"]["payload"]
+    approval_id = str(payload.get("approval_id") or call.id)
+    arguments, risk = payload.get("arguments"), payload.get("risk")
+    approval = Approval(
+        id=approval_id,
+        tool=str(payload.get("tool") or ""),
+        arguments=MappingProxyType(dict(arguments) if isinstance(arguments, Mapping) else {}),
+        risk=risk if isinstance(risk, str) else None,
+        correlation_id=approval_id,
+        requested_at=time.time(),
+        expires_at=math.inf,
+        native=call,
+    )
+    return _as_requested(approval, payload)
 
 
 def _kind(call: Any) -> object:
@@ -651,19 +675,23 @@ def _kind(call: Any) -> object:
     return payload.get("kind") if isinstance(payload, Mapping) else None
 
 
-def _response(request: Any, decision: dict[str, Any], *, confirmed: bool) -> types.Part:
+def _response(approval: Approval, decision: dict[str, Any], *, confirmed: bool) -> Approval:
+    request: Any = getattr(approval, "native", None)
     if getattr(request, "name", None) != _CONFIRMATION_CALL or _kind(request) != APPROVAL_KIND:
-        raise ValueError("not a DDK approval request; use pending_approvals(events) to find them")
+        raise ValueError(
+            f"not a paused ADK approval; pass one of pending_approvals(events), not {approval!r}"
+        )
     from google.genai import types
 
     payload = {**request.args["toolConfirmation"]["payload"], **decision}
-    return types.Part(
+    part = types.Part(
         function_response=types.FunctionResponse(
             id=request.id,
             name=_CONFIRMATION_CALL,
             response={"confirmed": confirmed, "payload": payload},
         )
     )
+    return dataclasses.replace(approval, native=part)
 
 
 def _who(by: str) -> str:

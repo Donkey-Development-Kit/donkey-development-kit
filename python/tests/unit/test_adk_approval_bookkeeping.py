@@ -14,6 +14,7 @@ mapping's own logic covered on the legs that do not install ``google-adk``.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from collections.abc import Coroutine
@@ -25,6 +26,7 @@ import pytest
 
 from donkey_kit import ApprovalRequired, Donkey
 from donkey_kit import donkey as donkey_mod
+from donkey_kit.core.approvals import Approval
 from donkey_kit.core.correlation import run_scope
 from donkey_kit.integrations import adk as adk_mod
 from donkey_kit.integrations.adk import (
@@ -458,41 +460,71 @@ def test_a_malformed_confirmation_is_refused_without_running(
 
 
 # --- the helpers ------------------------------------------------------------------
-def test_pending_approvals_keeps_unanswered_ddk_requests_in_order() -> None:
-    ours, later = _request({"kind": APPROVAL_KIND}, "c-1"), _request({"kind": APPROVAL_KIND}, "c-3")
+def _pending(payload: dict[str, Any], call_id: str = "c-1") -> Approval:
+    (approval,) = pending_approvals([_Event(calls=[_request(payload, call_id)])])
+    return approval
+
+
+def test_pending_approvals_reads_unanswered_ddk_requests_in_order_as_approvals() -> None:
+    with run_scope("run-1"):
+        payload = _pause(approval_plugin())
+    ours, later = _request(payload, "c-1"), _request({**payload, "approval_id": "a-3"}, "c-3")
     theirs = _request({"kind": "other"}, "c-2")
     tool_call = SimpleNamespace(id="fc-1", name="issue_refund", args={"ticket_id": "T-1"})
     events = [_Event(calls=[tool_call]), _Event(calls=[ours, theirs, later])]
-    assert pending_approvals(events) == (ours, later)
+
+    first, second = pending_approvals(events)
+    assert (first.native, second.native) == (ours, later)
+    assert first.id == payload["approval_id"] and second.id == "a-3"
+    assert first.tool == "issue_refund" and first.risk == "financial"
+    assert dict(first.arguments) == payload["arguments"]
+    assert first.correlation_id == "run-1"
+    assert first.requested_at == payload["requested_at"]
+    assert first.expires_at == float("inf")
+
     answered = _Event(responses=[SimpleNamespace(id="c-1")])
-    assert pending_approvals([*events, answered]) == (later,)
+    assert [a.native for a in pending_approvals([*events, answered])] == [later]
     assert pending_approvals([]) == ()
 
 
-def test_approve_and_reject_build_confirmation_responses() -> None:
-    request = _request({"kind": APPROVAL_KIND, "approval_id": "a-1"})
-    part = approve(request, by=" m.keller ")
-    response = part.function_response
+def test_a_request_with_a_partial_payload_still_reads() -> None:
+    approval = _pending({"kind": APPROVAL_KIND, "arguments": "nope", "risk": 3})
+    assert approval.id == approval.correlation_id == "c-1"
+    assert dict(approval.arguments) == {} and approval.risk is None
+    assert approval.requested_at > 0
+
+
+def test_approve_and_reject_return_the_approval_with_its_response() -> None:
+    approval = _pending({"kind": APPROVAL_KIND, "approval_id": "a-1"})
+    approved = approve(approval, by=" m.keller ")
+    assert isinstance(approved, Approval) and approved == approval
+    response = approved.native.function_response
     assert (response.id, response.name) == ("c-1", "adk_request_confirmation")
     assert response.response == {
         "confirmed": True,
         "payload": {"kind": APPROVAL_KIND, "approval_id": "a-1", "by": "m.keller"},
     }
-    rejected = reject(request, by="a.ops").function_response.response
+    rejected = reject(approval, by="a.ops").native.function_response.response
     assert rejected["confirmed"] is False and rejected["payload"]["by"] == "a.ops"
-    told = reject(request, by="a.ops", message="no").function_response.response
+    told = reject(approval, by="a.ops", message="no").native.function_response.response
     assert json.loads(json.dumps(told))["payload"]["message"] == "no"
+    assert approval.native.name == "adk_request_confirmation"
 
 
-def test_decisions_need_an_approver_and_an_approval_request() -> None:
-    ours = _request({"kind": APPROVAL_KIND})
+def test_decisions_need_an_approver_and_a_paused_approval() -> None:
+    ours = _pending({"kind": APPROVAL_KIND})
     with pytest.raises(ValueError, match="by must name"):
         approve(ours, by=" ")
     with pytest.raises(ValueError, match="by must name"):
         reject(ours, by=None)  # type: ignore[arg-type]
-    for other in (_request({"kind": "other"}), _request({"kind": APPROVAL_KIND}, name="tool")):
-        with pytest.raises(ValueError, match="not a DDK approval request"):
-            approve(other, by="m.keller")
+    others = (
+        _request({"kind": "other"}),
+        _request({"kind": APPROVAL_KIND}, name="tool"),
+        None,
+    )
+    for other in others:
+        with pytest.raises(ValueError, match="not a paused ADK approval"):
+            approve(dataclasses.replace(ours, native=other), by="m.keller")
 
 
 # --- the gate's native hook ---------------------------------------------------------

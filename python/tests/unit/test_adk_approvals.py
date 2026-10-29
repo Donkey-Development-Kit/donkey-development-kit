@@ -97,7 +97,7 @@ async def test_a_rejected_call_is_not_run_and_the_model_is_told_without_the_reje
     ask = types.Content(role="user", parts=[types.Part(text="refund T-1")])
     (request,) = pending_approvals(await _send(runner, session.id, ask))
 
-    answer = types.Content(role="user", parts=[reject(request, by="a.ops")])
+    answer = types.Content(role="user", parts=[reject(request, by="a.ops").native])
     resumed = await _send(runner, session.id, answer)
 
     assert ran == []
@@ -115,7 +115,7 @@ async def test_a_resume_sent_twice_runs_the_call_once() -> None:
     runner, sessions = _runner(approval_plugin())
     session = await sessions.create_session(app_name="refunds", user_id="u")
     (request,) = pending_approvals(await _send(runner, session.id, _user(types.Part(text="go"))))
-    answer = _user(approve(request, by="m.keller"))
+    answer = _user(approve(request, by="m.keller").native)
     await _send(runner, session.id, answer)
     # google-adk 2.4.0 runs the call again on the same answer; the plugin
     # refuses it. 2.13.0 does not run it again.
@@ -161,8 +161,9 @@ async def test_a_tool_taking_adks_tool_context_pauses_and_runs_approved() -> Non
     runner, sessions = _runner(approval_plugin(), tool=refund_with_context)
     session = await sessions.create_session(app_name="refunds", user_id="u")
     (request,) = pending_approvals(await _send(runner, session.id, _user(types.Part(text="go"))))
-    assert request.args["toolConfirmation"]["payload"]["arguments"] == {"ticket_id": "T-1"}
-    await _send(runner, session.id, _user(approve(request, by="m.keller")))
+    assert dict(request.arguments) == {"ticket_id": "T-1"}
+    assert request.native.args["toolConfirmation"]["payload"]["arguments"] == {"ticket_id": "T-1"}
+    await _send(runner, session.id, _user(approve(request, by="m.keller").native))
     assert ran == ["T-1 in fc-1"]
 
 
@@ -202,7 +203,7 @@ async def test_an_approved_call_runs_as_the_user_who_paused_it() -> None:
     async with _donkey() as donkey:
         runner, session_id, request = await _paused_as_alice(donkey)
         # The approver's handler resumes the run, outside as_user().
-        await _send(runner, session_id, _user(approve(request, by="m.keller")))
+        await _send(runner, session_id, _user(approve(request, by="m.keller").native))
     assert users == ["token-alice"]
 
 
@@ -211,7 +212,7 @@ async def test_resuming_as_another_user_is_refused() -> None:
         runner, session_id, request = await _paused_as_alice(donkey)
         async with donkey.as_user(token="token-bob"):
             with pytest.raises(AuthError, match="as_user"):
-                await _send(runner, session_id, _user(approve(request, by="m.keller")))
+                await _send(runner, session_id, _user(approve(request, by="m.keller").native))
     assert users == []
 
 

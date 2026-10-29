@@ -181,9 +181,13 @@ model node still surfaces as its typed exception.
 
 A [`@donkey.tool(approval="required")`](https://docs.donkey-kit.dev/hitl.md#in-a-langgraph-graph) tool uses
 this pause: inside a graph with a checkpointer it calls `interrupt()` instead of
-raising `ApprovalRequired`, and `Command(resume={"approved": True, "by":
-"<approver>"})` records the approver and runs it. A refusal from the approved
-tool's model call still leaves the graph typed.
+raising `ApprovalRequired`. `pending_approvals(result)` from
+`donkey_kit.integrations.langgraph` returns each paused call as an `Approval`,
+and `graph.invoke(approve(approval, by="<approver>").native, config)` records
+the approver and runs it; `reject(...)` refuses it. Each helper returns an
+`Approval` whose `native` is the `Command` to resume on, or you can resume on
+`Command(resume={"approved": True, "by": "<approver>"})` yourself. A refusal
+from the approved tool's model call still leaves the graph typed.
 
 On Python 3.10, `interrupt()` only works when the graph runs with
 `graph.invoke()`. Under `graph.ainvoke()` it raises `RuntimeError: Called

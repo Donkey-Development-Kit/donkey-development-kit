@@ -81,6 +81,44 @@ def test_every_roster_entry_names_its_own_module_and_class() -> None:
         assert issubclass(cls, Adapter)
 
 
+def _internal_hooks() -> set[tuple[str, str]]:
+    """``(adapter module, name)`` for every adapter name a ``donkey.py`` function
+    imports (the gate's native-pause hooks, imported lazily) and every
+    ``AdapterSpec.refusal_translator``."""
+    hooks = {
+        (spec.module.lstrip("."), spec.refusal_translator)
+        for spec in ADAPTERS.values()
+        if spec.refusal_translator is not None
+    }
+    functions = (
+        node
+        for node in ast.walk(ast.parse(_DONKEY.read_text()))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    for function in functions:
+        for node in ast.walk(function):
+            module = getattr(node, "module", None) or ""
+            if isinstance(node, ast.ImportFrom) and module.startswith("integrations."):
+                name = module.removeprefix("integrations.")
+                hooks |= {(name, alias.name) for alias in node.names}
+    return hooks
+
+
+def test_no_internal_hook_is_in_an_adapter_all() -> None:
+    # The hooks are seams donkey.py and the roster reach by name, not adapter
+    # API: they stay importable but out of every __all__ (#1422, ADR 0006).
+    hooks = _internal_hooks()
+    assert {name for _, name in hooks} == {
+        "approval_interrupt",
+        "approved_call",
+        "refusal_translator",
+    }
+    for module_name, name in hooks:
+        module = importlib.import_module(f"donkey_kit.integrations.{module_name}")
+        assert callable(getattr(module, name)), f"{module_name}.{name} is gone"
+        assert name not in module.__all__, f"{module_name}.__all__ exports {name}"
+
+
 def test_framework_extras_are_the_roster() -> None:
     extras = set(_pyproject()["project"]["optional-dependencies"])
     assert extras - _NON_FRAMEWORK_EXTRAS == {s.extra for s in ADAPTERS.values()}

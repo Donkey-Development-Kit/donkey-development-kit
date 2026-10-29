@@ -20,16 +20,14 @@ judges a refusal handler's re-send (BG §2.1).
 There is no queue and no approval UI (build plan, "Do not build"). Pending
 approvals live in this process's memory, so a restart forgets them; a framework
 checkpointer is the durable form. ``gate(natives=...)`` takes framework hooks
-that pause the call with the framework's own primitive instead: inside a
-LangGraph graph, the LangGraph adapter's hook calls ``interrupt()`` (#212), and
-``Command(resume=...)`` carries the decision; under the OpenAI Agents SDK the
-tool's ``needs_approval`` pauses ``Runner.run`` and ``RunState.approve`` /
-``RunState.reject`` carry it (#213); Strands' ``ApprovalHook`` raises its
-interrupt (#1234), and ADK's plugin requests a tool confirmation (#1235). A
-rejection differs between them: LangGraph raises :class:`ApprovalRejected` from
-the resumed tool, while the others raise nothing and hand the model the
-rejection message as the tool's result. Core never imports a framework:
-the hooks are passed in from the top-level ``donkey`` module.
+that pause the call with the framework's own primitive instead: LangGraph's
+``interrupt()`` (#212), the OpenAI Agents SDK's ``needs_approval`` (#213),
+Strands' interrupt (#1234) and ADK's tool confirmation (#1235). Each adapter's
+``pending_approvals`` / ``approve`` / ``reject`` speak :class:`Approval`, with the
+framework's object on ``native`` (#1422). A rejection differs: LangGraph raises
+:class:`ApprovalRejected` from the resumed tool, the others hand the model the
+rejection message as the tool's result. Core never imports a framework: the
+hooks are passed in from the top-level ``donkey`` module.
 
 A resumed call runs as its requester, with the user and attribution bound where it
 was requested, and a resolver bound to another user is refused (#1416, ``identity``).
@@ -47,7 +45,7 @@ import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, TypeAlias, TypeVar
 
@@ -94,7 +92,8 @@ _EVENT_TIMED_OUT = "donkey.approval.timed_out"
 
 @dataclass(frozen=True)
 class Approval:
-    """One call of an approval-gated tool, waiting for a human (BG §2.3).
+    """One call of an approval-gated tool, waiting for a human (BG §2.3). A
+    framework adapter's approval helpers carry the framework's own object on ``native``.
 
     ``arguments`` is the call's arguments bound to the tool's parameter names,
     defaults included, so the approver sees the whole call. ``correlation_id`` is
@@ -103,6 +102,10 @@ class Approval:
     ``requested_at`` and ``expires_at`` are Unix timestamps; ``expires_at`` is
     ``math.inf`` for a call a framework holds, such as a LangGraph interrupt,
     which never expires.
+
+    ``native`` is the pause on an approval ``pending_approvals()`` returns, and what
+    to resume the framework with on one ``approve()`` / ``reject()`` returns (#1422).
+    ``None`` for a raise-and-resume approval. It is left out of equality and the repr.
     """
 
     id: str
@@ -112,6 +115,7 @@ class Approval:
     correlation_id: str
     requested_at: float
     expires_at: float
+    native: Any = field(default=None, compare=False, repr=False)
 
     @property
     def expired(self) -> bool:
@@ -165,12 +169,9 @@ class ApprovalRejected(DonkeyError):
     so the tool was not run (BG §2.3, #212). :attr:`approval` is the call.
 
     Raised where the framework resumes the call and reports a rejection by
-    raising: a LangGraph tool resumed with
-    ``Command(resume={"approved": False, "by": ...})`` raises it. The OpenAI
-    Agents SDK does not raise: it reports the rejection to the model as the
-    tool's result (``rejection_message``, #213), and the run carries on. The
-    raise-and-resume form needs no error either: ``donkey.approvals.reject()``
-    just drops the call.
+    raising: a LangGraph tool resumed on the ``Command`` its adapter's ``reject()``
+    builds. The other frameworks report the rejection to the model as the tool's
+    result (#213), and ``donkey.approvals.reject()`` just drops the call.
     """
 
     remediation = (
@@ -337,8 +338,7 @@ def _sweep() -> None:
 
 
 def _reset_for_tests() -> None:
-    """Forget every pending approval. Called only from the autouse fixture in
-    ``tests/conftest.py``."""
+    """Forget every pending approval (only the autouse fixture in ``tests/conftest.py``)."""
     with _LOCK:
         _PENDING.clear()
         _NATIVE_REQUESTERS.clear()

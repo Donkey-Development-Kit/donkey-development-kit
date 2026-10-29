@@ -638,7 +638,7 @@ is raised.
 | `A2AResult` | class | What a handler returns when a plain string is not enough. |
 | `A2ATask` | class | One A2A task handed to a `donkey.serve()` handler. |
 | `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
-| `Approval` | class | One call of an approval-gated tool, waiting for a human. |
+| `Approval` | class | One call of an approval-gated tool, waiting for a human. A framework adapter's approval helpers carry the framework's own object on `native`. |
 | `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |
 | `AttributionScope` | class | A **dual sync/async** context manager that attributes the governed calls in its block to a business group and cost tags, without starting a run. |
 | `Budget` | class | The token-budget window for one `Donkey`, updated in-band from each response's budget headers (numeric `x-token-*` or the prose `x-llm-proxy-ratelimit` fallback). Its request-count sibling is `requests`. |

@@ -2,10 +2,12 @@
 
 With an :class:`ApprovalHook` on the agent, a gated tool pauses the agent with
 Strands' own interrupt from ``BeforeToolCallEvent``: the run stops with
-``stop_reason == "interrupt"`` and the tool has not run. Resuming the agent on
-``approve(...)`` records the approver once and runs the tool once, under the
-approval's correlation id, on whichever thread Strands runs it; ``reject(...)``
-cancels the call, so the model gets the rejection as an error tool result.
+``stop_reason == "interrupt"`` and the tool has not run. ``pending_approvals``
+returns ``Approval`` objects with the interrupt on ``native`` (#1422). Resuming
+the agent on ``approve(...).native`` records the approver once and runs the tool
+once, under the approval's correlation id, on whichever thread Strands runs it;
+``reject(...).native`` cancels the call, so the model gets the rejection as an
+error tool result.
 Without the hook nothing pauses: the gate raises ``ApprovalRequired`` inside the
 tool, and Strands turns it into an error tool result. An approved call runs as
 the user who paused it, whoever resumes the agent (#1416).
@@ -13,9 +15,11 @@ the user who paused it, whoever resumes the agent (#1416).
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import threading
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -172,7 +176,8 @@ async def test_an_approved_call_pauses_then_runs_once_under_the_approval(
 
     result = await _paused(agent)
     assert ran == []
-    (interrupt,) = pending_approvals(result)
+    (approval,) = pending_approvals(result)
+    interrupt = approval.native
     assert interrupt.name == APPROVAL_INTERRUPT
     assert interrupt.reason == {
         "approval_id": interrupt.reason["approval_id"],
@@ -181,14 +186,21 @@ async def test_an_approved_call_pauses_then_runs_once_under_the_approval(
         "arguments": {"ticket_id": "T-1", "note": ""},
         "risk": "financial",
         "correlation_id": _RUN,
+        "requested_at": interrupt.reason["requested_at"],
     }
     [(kind, pending, _)] = recorded
     assert kind == "pending"
     assert pending.id == interrupt.reason["approval_id"]
     assert pending.expires_at == float("inf")
+    # The helper's Approval is the one the pause recorded, the interrupt aside.
+    assert approval == pending
+    assert approval.requested_at == pending.requested_at
+    assert pending.native is None
 
     # Resumed outside any run: the tool still runs under the approval's id.
-    resumed = await agent.invoke_async([approve(interrupt, by=" m.keller ")])
+    decided = approve(approval, by=" m.keller ")
+    assert decided == approval
+    resumed = await agent.invoke_async([decided.native])
 
     assert resumed.stop_reason == "end_turn"
     assert [(t, c) for t, c, _ in ran] == [("T-1", _RUN)]
@@ -219,16 +231,16 @@ async def _paused_as_alice(donkey: Donkey, users: list[str | None]) -> tuple[Age
     agent = _agent(model, _user_refund_tool(users), hooks=(ApprovalHook(),))
     async with donkey.as_user(token="token-alice"):
         result = await agent.invoke_async("refund T-1")
-    (interrupt,) = pending_approvals(result)
-    return agent, interrupt
+    (approval,) = pending_approvals(result)
+    return agent, approval
 
 
 async def test_an_approved_call_runs_as_the_user_who_paused_it() -> None:
     users: list[str | None] = []
     async with Donkey(_cfg()) as donkey:
-        agent, interrupt = await _paused_as_alice(donkey, users)
+        agent, approval = await _paused_as_alice(donkey, users)
         # The approver's handler resumes the agent, outside as_user().
-        resumed = await agent.invoke_async([approve(interrupt, by="m.keller")])
+        resumed = await agent.invoke_async([approve(approval, by="m.keller").native])
     assert resumed.stop_reason == "end_turn"
     assert users == ["token-alice"]
 
@@ -236,11 +248,11 @@ async def test_an_approved_call_runs_as_the_user_who_paused_it() -> None:
 async def test_resuming_as_another_user_is_refused() -> None:
     users: list[str | None] = []
     async with Donkey(_cfg()) as donkey:
-        agent, interrupt = await _paused_as_alice(donkey, users)
+        agent, approval = await _paused_as_alice(donkey, users)
         async with donkey.as_user(token="token-bob"):
             with pytest.raises(AuthError, match="as_user"):
                 async with donkey.run():
-                    await agent.invoke_async([approve(interrupt, by="m.keller")])
+                    await agent.invoke_async([approve(approval, by="m.keller").native])
     assert users == []
 
 
@@ -250,11 +262,11 @@ async def test_a_rejected_call_is_not_run_and_the_model_is_told(
     ran: Ran = []
     model = _ScriptedModel(_REFUND)
     agent = _agent(model, _refund_tool(ran), hooks=(ApprovalHook(),))
-    (interrupt,) = pending_approvals(await _paused(agent))
+    (approval,) = pending_approvals(await _paused(agent))
 
-    resumed = await agent.invoke_async(
-        [reject(interrupt, by="m.keller", message="no refunds on Sundays")]
-    )
+    rejected = reject(approval, by="m.keller", message="no refunds on Sundays")
+    assert rejected == approval
+    resumed = await agent.invoke_async([rejected.native])
 
     assert resumed.stop_reason == "end_turn"
     assert ran == []
@@ -269,9 +281,9 @@ async def test_a_rejection_without_a_message_does_not_name_the_approver(
 ) -> None:
     model = _ScriptedModel(_REFUND)
     agent = _agent(model, _refund_tool([]), hooks=(ApprovalHook(),))
-    (interrupt,) = pending_approvals(await _paused(agent))
+    (approval,) = pending_approvals(await _paused(agent))
 
-    await agent.invoke_async([reject(interrupt, by="m.keller")])
+    await agent.invoke_async([reject(approval, by="m.keller").native])
 
     (text,) = model.tool_results()["tu-1"]["content"]
     assert "m.keller" not in text["text"] and "issue_refund" in text["text"]
@@ -308,13 +320,13 @@ async def test_each_call_runs_under_its_own_decision(
     )
     # The concurrent executor pauses both calls at once; the sequential one
     # pauses on each in turn.
-    decide = {"T-1": lambda i: approve(i, by="m.keller"), "T-2": lambda i: reject(i, by="j.doe")}
+    decide = {"T-1": lambda a: approve(a, by="m.keller"), "T-2": lambda a: reject(a, by="j.doe")}
     result = await _paused(agent)
     seen: list[str] = []
     while result.stop_reason == "interrupt":
         paused = pending_approvals(result)
-        seen += [i.reason["approval_id"] for i in paused]
-        responses = [decide[i.reason["arguments"]["ticket_id"]](i) for i in paused]
+        seen += [a.id for a in paused]
+        responses = [decide[a.arguments["ticket_id"]](a).native for a in paused]
         result = await agent.invoke_async(responses)
     assert len(set(seen)) == 2
 
@@ -351,9 +363,9 @@ async def test_a_retried_call_records_its_decision_once(
 
     ran: Ran = []
     agent = _agent(_ScriptedModel(_REFUND), _refund_tool(ran), hooks=(ApprovalHook(), RetryOnce()))
-    (interrupt,) = pending_approvals(await _paused(agent))
+    (approval,) = pending_approvals(await _paused(agent))
 
-    await agent.invoke_async([approve(interrupt, by="m.keller")])
+    await agent.invoke_async([approve(approval, by="m.keller").native])
 
     assert len(ran) == 2  # the retry ran the approved call again
     assert [k for k, _, _ in recorded] == ["pending", "approved"]
@@ -399,12 +411,12 @@ async def test_a_tool_refusal_stops_the_agent_without_retrying(
     agent = _agent(
         model, tool(issue_refund), hooks=(ApprovalHook(), RetryErrors()), tool_executor=executor()
     )
-    (interrupt,) = pending_approvals(await _paused(agent))
+    (approval,) = pending_approvals(await _paused(agent))
 
     async with Donkey(_cfg()) as donkey:
         with pytest.raises(error) as caught:
             async with donkey.run():
-                await agent.invoke_async([approve(interrupt, by="m.keller")])
+                await agent.invoke_async([approve(approval, by="m.keller").native])
 
     assert caught.value is refusal
     assert calls == ["T-1"]
@@ -448,8 +460,8 @@ async def test_an_ordinary_tool_failure_still_reaches_the_model() -> None:
 
     model = _ScriptedModel(_REFUND)
     agent = _agent(model, tool(issue_refund), hooks=(ApprovalHook(),))
-    (interrupt,) = pending_approvals(await _paused(agent))
-    result = await agent.invoke_async([approve(interrupt, by="m.keller")])
+    (approval,) = pending_approvals(await _paused(agent))
+    result = await agent.invoke_async([approve(approval, by="m.keller").native])
 
     assert result.stop_reason == "end_turn"
     assert model.tool_results()["tu-1"]["status"] == "error"
@@ -465,15 +477,15 @@ async def test_a_fresh_hook_still_resumes_a_paused_call(
     ran: Ran = []
     model = _ScriptedModel(_REFUND)
     agent = _agent(model, _refund_tool(ran), hooks=(ApprovalHook(),))
-    (interrupt,) = pending_approvals(await _paused(agent))
+    (approval,) = pending_approvals(await _paused(agent))
     agent.hooks = type(agent.hooks)()
     agent.hooks.add_hook(ApprovalHook())
 
-    await agent.invoke_async([approve(interrupt, by="m.keller")])
+    await agent.invoke_async([approve(approval, by="m.keller").native])
 
     assert [t for t, _, _ in ran] == ["T-1"]
     (_, decided, _) = recorded[-1]
-    assert decided.id == interrupt.reason["approval_id"]
+    assert decided.id == approval.id == approval.native.reason["approval_id"]
 
 
 async def test_without_the_hook_nothing_pauses() -> None:
@@ -523,8 +535,8 @@ async def test_the_pending_and_decision_events_share_the_approval(
     monkeypatch.setattr(telemetry, "_tracer", lambda: provider.get_tracer("t"))
 
     agent = _agent(_ScriptedModel(_REFUND), _refund_tool([]), hooks=(ApprovalHook(),))
-    (interrupt,) = pending_approvals(await _paused(agent))
-    await agent.invoke_async([approve(interrupt, by="m.keller")])
+    (approval,) = pending_approvals(await _paused(agent))
+    await agent.invoke_async([approve(approval, by="m.keller").native])
 
     events = [
         (e.name, dict(e.attributes or {})) for s in exporter.get_finished_spans() for e in s.events
@@ -542,22 +554,28 @@ async def test_the_pending_and_decision_events_share_the_approval(
 def test_decisions_need_an_approver_and_an_approval_interrupt() -> None:
     from strands.interrupt import Interrupt
 
-    ours = Interrupt(id="i-1", name=APPROVAL_INTERRUPT)
-    assert approve(ours, by="m.keller") == {
+    reason = {"approval_id": "a-1", "tool": "issue_refund", "arguments": {}, "risk": None}
+    ours = Interrupt(id="i-1", name=APPROVAL_INTERRUPT, reason=reason)
+    (approval,) = pending_approvals(SimpleNamespace(interrupts=[ours]))
+    assert approve(approval, by="m.keller").native == {
         "interruptResponse": {
             "interruptId": "i-1",
             "response": {"approved": True, "by": "m.keller"},
         }
     }
-    assert reject(ours, by="m.keller", message="no")["interruptResponse"]["response"] == {
+    rejected = reject(approval, by="m.keller", message="no")
+    assert rejected.native["interruptResponse"]["response"] == {
         "approved": False,
         "by": "m.keller",
         "message": "no",
     }
     with pytest.raises(ValueError, match="by must name"):
-        approve(ours, by="  ")
-    with pytest.raises(ValueError, match="not a DDK approval interrupt"):
-        approve(Interrupt(id="i-2", name="someone_else"), by="m.keller")
+        approve(approval, by="  ")
+    other = dataclasses.replace(approval, native=Interrupt(id="i-2", name="someone_else"))
+    with pytest.raises(ValueError, match="not a paused Strands approval"):
+        approve(other, by="m.keller")
+    with pytest.raises(ValueError, match="not a paused Strands approval"):
+        approve(dataclasses.replace(approval, native=None), by="m.keller")
     assert pending_approvals(object()) == ()
 
 
@@ -566,9 +584,9 @@ async def test_a_malformed_response_is_refused(
 ) -> None:
     ran: Ran = []
     agent = _agent(_ScriptedModel(_REFUND), _refund_tool(ran), hooks=(ApprovalHook(),))
-    (interrupt,) = pending_approvals(await _paused(agent))
+    (approval,) = pending_approvals(await _paused(agent))
 
-    bad = {"interruptResponse": {"interruptId": interrupt.id, "response": "yes"}}
+    bad = {"interruptResponse": {"interruptId": approval.native.id, "response": "yes"}}
     # Strands' event loop wraps a hook's error in its own EventLoopException.
     with pytest.raises(EventLoopException) as refused:
         await agent.invoke_async([bad])

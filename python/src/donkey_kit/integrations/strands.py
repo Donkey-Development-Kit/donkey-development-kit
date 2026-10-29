@@ -35,8 +35,8 @@ the agent with Strands' own interrupt once the agent has an
 :class:`ApprovalHook`. ``Agent(hooks=[ApprovalHook()])`` raises the interrupt
 from ``BeforeToolCallEvent`` and records the pending approval; the run stops with
 ``stop_reason == "interrupt"``. :func:`pending_approvals` reads the paused calls
-off the result, and the agent resumes on a list of :func:`approve` /
-:func:`reject` responses. An approved call runs once, under the approval's
+off the result as ``Approval`` objects, and the agent resumes on the ``native``
+responses of :func:`approve` / :func:`reject`. An approved call runs once, under the approval's
 correlation id. A rejected call is not run: Strands hands the model the
 rejection as an error tool result, and nothing raises ``ApprovalRejected``.
 Without the hook the gate raises ``ApprovalRequired`` inside the tool, which
@@ -48,6 +48,7 @@ Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 from __future__ import annotations
 
 import contextvars
+import dataclasses
 import functools
 import hashlib
 import json
@@ -78,10 +79,8 @@ __all__ = [
     "ApprovalHook",
     "StrandsAdapter",
     "approve",
-    "approved_call",
     "model",
     "pending_approvals",
-    "refusal_translator",
     "reject",
 ]
 
@@ -253,9 +252,9 @@ class ApprovalHook:
     hooks=[ApprovalHook()])``. Before a ``@donkey.tool(approval="required")``
     call runs, the hook raises the :data:`APPROVAL_INTERRUPT` interrupt and
     records the pending approval; its ``reason`` is a dict with the
-    ``approval_id``, ``tool``, ``arguments``, ``risk`` and ``correlation_id``.
-    Resume the agent with ``agent([approve(i, by="m.keller") for i in
-    pending_approvals(result)])``: the hook records the decision once, and an
+    ``approval_id``, ``tool``, ``arguments``, ``risk``, ``correlation_id`` and
+    ``requested_at``. Resume the agent with ``agent([approve(a, by="m.keller").native
+    for a in pending_approvals(result)])``: the hook records the decision once, and an
     approved call runs under the approval's correlation id. A rejected call is
     cancelled, so Strands hands the model the rejection message as an error tool
     result.
@@ -385,47 +384,87 @@ def approved_call(tool: str) -> Approval | None:
     return approval
 
 
-def pending_approvals(result: Any) -> tuple[Any, ...]:
-    """The DDK approval interrupts on a paused Strands ``AgentResult``, in order.
+def pending_approvals(result: Any) -> tuple[Approval, ...]:
+    """The approval-gated calls a paused Strands ``AgentResult`` waits on, in
+    order (BG §2.3, #1422).
 
-    Each is Strands' own ``Interrupt``; its ``reason`` is the dict an
-    :class:`ApprovalHook` raised it with. Pass it to :func:`approve` or
-    :func:`reject`."""
+    Each is an :class:`~donkey_kit.core.approvals.Approval` read from the reason
+    an :class:`ApprovalHook` raised its interrupt with, and ``native`` is
+    Strands' own ``Interrupt``. Pass it to :func:`approve` or :func:`reject`.
+    Strands holds the pause, so ``expires_at`` is ``math.inf``. Other interrupts
+    are left out."""
     interrupts: Sequence[Any] = getattr(result, "interrupts", None) or ()
-    return tuple(i for i in interrupts if getattr(i, "name", None) == APPROVAL_INTERRUPT)
+    return tuple(
+        _from_reason(i) for i in interrupts if getattr(i, "name", None) == APPROVAL_INTERRUPT
+    )
 
 
-def approve(interrupt: Any, *, by: str) -> dict[str, Any]:
-    """The ``interruptResponse`` that approves ``interrupt``, recording ``by``
-    as the approver once the agent resumes on it.
+def approve(approval: Approval, *, by: str) -> Approval:
+    """Approve a paused call from :func:`pending_approvals`, recording ``by`` as
+    the approver once the agent resumes on it.
+
+    Returns the approval with ``native`` set to the ``interruptResponse`` to
+    resume the agent on: ``agent([a.native for a in decided])``.
 
     Raises:
-        ValueError: ``by`` is empty.
+        ValueError: ``by`` is empty, or ``approval`` is not one of
+            :func:`pending_approvals`.
     """
-    return _response(interrupt, {"approved": True, "by": _who(by)})
+    return _response(approval, {"approved": True, "by": _who(by)})
 
 
-def reject(interrupt: Any, *, by: str, message: str | None = None) -> dict[str, Any]:
-    """The ``interruptResponse`` that rejects ``interrupt``. On resume the call
+def reject(approval: Approval, *, by: str, message: str | None = None) -> Approval:
+    """Reject a paused call from :func:`pending_approvals`. On resume the call
     is not run, and the model gets ``message`` (or a default that names the
     tool, never ``by``) as an error tool result.
 
+    Returns the approval with ``native`` set to the ``interruptResponse``, as
+    :func:`approve` does.
+
     Raises:
-        ValueError: ``by`` is empty.
+        ValueError: ``by`` is empty, or ``approval`` is not one of
+            :func:`pending_approvals`.
     """
     decision: dict[str, Any] = {"approved": False, "by": _who(by)}
     if message is not None:
         decision["message"] = message
-    return _response(interrupt, decision)
+    return _response(approval, decision)
 
 
-def _response(interrupt: Any, decision: dict[str, Any]) -> dict[str, Any]:
+def _response(approval: Approval, decision: dict[str, Any]) -> Approval:
+    interrupt: Any = getattr(approval, "native", None)
     if getattr(interrupt, "name", None) != APPROVAL_INTERRUPT:
         raise ValueError(
-            f"not a DDK approval interrupt (name {getattr(interrupt, 'name', None)!r}); "
-            "use pending_approvals(result) to find them"
+            "not a paused Strands approval; pass one of pending_approvals(result), "
+            f"not {approval!r}"
         )
-    return {"interruptResponse": {"interruptId": interrupt.id, "response": decision}}
+    response = {"interruptResponse": {"interruptId": interrupt.id, "response": decision}}
+    return dataclasses.replace(approval, native=response)
+
+
+def _from_reason(interrupt: Any) -> Approval:
+    """The :class:`~donkey_kit.core.approvals.Approval` an :class:`ApprovalHook`
+    interrupt describes, with the interrupt on ``native``."""
+    reason = getattr(interrupt, "reason", None)
+    if not isinstance(reason, Mapping):
+        reason = {}
+    approval_id = str(reason.get("approval_id") or interrupt.id)
+    arguments, risk = reason.get("arguments"), reason.get("risk")
+    requested_at = reason.get("requested_at")
+    return Approval(
+        id=approval_id,
+        tool=str(reason.get("tool") or ""),
+        arguments=MappingProxyType(dict(arguments) if isinstance(arguments, Mapping) else {}),
+        risk=risk if isinstance(risk, str) else None,
+        correlation_id=str(reason.get("correlation_id") or approval_id),
+        requested_at=(
+            float(requested_at)
+            if isinstance(requested_at, (int, float)) and not isinstance(requested_at, bool)
+            else time.time()
+        ),
+        expires_at=math.inf,
+        native=interrupt,
+    )
 
 
 def _who(by: str) -> str:
@@ -441,6 +480,7 @@ def _reason(approval: Approval) -> dict[str, Any]:
         "arguments": dict(approval.arguments),
         "risk": approval.risk,
         "correlation_id": approval.correlation_id,
+        "requested_at": approval.requested_at,
     }
 
 

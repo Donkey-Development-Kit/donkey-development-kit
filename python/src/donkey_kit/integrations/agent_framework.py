@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
     from ..core.errors import DonkeyError
 
-__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client", "refusal_translator"]
+__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client"]
 
 ChatAPI = Literal["responses", "chat_completions"]
 # The agent-framework.openai class each ``api=`` value builds (docs/verified-apis.md §8).

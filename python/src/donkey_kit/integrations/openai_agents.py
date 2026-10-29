@@ -42,6 +42,7 @@ Class names / kwargs: docs/verified-apis.md §8.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import hashlib
 import json
@@ -78,11 +79,9 @@ if TYPE_CHECKING:
 __all__ = [
     "OpenAIAgentsAdapter",
     "approve",
-    "approved_call",
     "function_tool",
     "model",
     "pending_approvals",
-    "refusal_translator",
     "reject",
 ]
 
@@ -327,9 +326,10 @@ def pending_approvals(
     Pass the ``RunResult`` (or its ``to_state()``) of a ``Runner.run`` that
     stopped on :func:`function_tool` calls. Each call becomes an
     :class:`~donkey_kit.core.approvals.Approval` (tool, arguments with defaults,
-    risk) and a ``donkey.approval.pending`` span event; other interruptions are
-    left out. Call it once per pause, inside the ``donkey.run()`` that paused, so
-    the event carries the run's correlation id.
+    risk; ``native`` is the SDK's ``ToolApprovalItem``) and a
+    ``donkey.approval.pending`` span event; other interruptions are left out.
+    Call it once per pause, inside the ``donkey.run()`` that paused, so the
+    event carries the run's correlation id.
 
     The run state holds the pause, so ``approval_timeout`` does not apply and
     ``expires_at`` is ``math.inf``. The id is derived from the SDK's call id, the
@@ -342,7 +342,9 @@ def pending_approvals(
     for item in items:
         spec = _gated_spec(item)
         if spec is not None:
-            approval = _approval(spec, item.call_id, item.arguments)
+            approval = dataclasses.replace(
+                _approval(spec, item.call_id, item.arguments), native=item
+            )
             record_pending(approval)
             found.append(approval)
     return tuple(found)
@@ -352,9 +354,11 @@ def approve(state: RunState[Any, Any], approval: Approval | str, *, by: str) -> 
     """Approve a paused call: record ``by`` as the approver and approve it on
     ``state`` with ``RunState.approve`` (BG §2.3, #213).
 
-    ``approval`` is one of :func:`pending_approvals` or its id. Resume with
-    ``Runner.run(agent, state)``; the tool runs then, and a refusal its model
-    calls get still propagates. Resume inside
+    ``approval`` is one of :func:`pending_approvals` or its id. Returns the
+    approved :class:`~donkey_kit.core.approvals.Approval`, whose ``native`` is
+    ``state``, what the framework resumes on, as for every adapter's
+    ``approve()``. Resume with ``Runner.run(agent, state)``; the tool runs then,
+    and a refusal its model calls get still propagates. Resume inside
     ``donkey.run(id=approval.correlation_id)`` to keep the decision and the
     resumed calls on the pause's correlation id. Approving through
     ``RunState.approve`` directly also runs the tool, but records no approver.
@@ -383,7 +387,7 @@ def approve(state: RunState[Any, Any], approval: Approval | str, *, by: str) -> 
     with _decision(state, decided):
         state.approve(item)
     record_decision(decided, approved=True, by=who)
-    return decided
+    return dataclasses.replace(decided, native=state)
 
 
 def reject(
@@ -396,7 +400,7 @@ def reject(
     model ``message`` as the call's result, by default a line saying a human
     rejected it (never the approver's name), and the run carries on: the SDK's
     native rejection, where LangGraph raises ``ApprovalRejected``. Returns the
-    rejected approval.
+    rejected approval, whose ``native`` is ``state``.
 
     A call is decided once, and an :class:`~donkey_kit.core.approvals.Approval`
     keeps its correlation, as for :func:`approve` (with the same limits).
@@ -412,7 +416,7 @@ def reject(
     with _decision(state, decided):
         state.reject(item, rejection_message=text)
     record_decision(decided, approved=False, by=who)
-    return decided
+    return dataclasses.replace(decided, native=state)
 
 
 def refusal_translator(exc: BaseException) -> DonkeyError | None:

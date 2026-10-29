@@ -13,6 +13,7 @@ on the legs that do not install ``strands``.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from dataclasses import dataclass, field
@@ -22,6 +23,7 @@ from typing import Any
 import pytest
 
 from donkey_kit import ApprovalRequired, Donkey, PIIDetected
+from donkey_kit.core.approvals import Approval
 from donkey_kit.core.correlation import run_scope
 from donkey_kit.integrations import strands as strands_mod
 from donkey_kit.integrations.strands import (
@@ -303,33 +305,78 @@ def test_a_malformed_response_is_refused(response: Any, recorded: list[tuple[str
 
 
 # --- the helpers ------------------------------------------------------------------
-def test_pending_approvals_keeps_only_ddk_interrupts_in_order() -> None:
-    ours, theirs, later = _Interrupt("i-1"), _Interrupt("i-2", name="other"), _Interrupt("i-3")
+def _paused_on(reason: dict[str, Any], interrupt_id: str = "i-1") -> Approval:
+    (approval,) = pending_approvals(
+        SimpleNamespace(interrupts=[_Interrupt(interrupt_id, reason=reason)])
+    )
+    return approval
+
+
+def test_pending_approvals_reads_ddk_interrupts_in_order_as_approvals() -> None:
+    with run_scope("run-1"):
+        reason = _pause(ApprovalHook(), _event())
+    ours = _Interrupt("i-1", reason=reason)
+    theirs = _Interrupt("i-2", name="other", reason=reason)
+    later = _Interrupt("i-3", reason={**reason, "approval_id": "a-3"})
     result = type("Result", (), {"interrupts": [ours, theirs, later]})()
-    assert pending_approvals(result) == (ours, later)
+
+    first, second = pending_approvals(result)
+    assert (first.native, second.native) == (ours, later)
+    assert first.id == reason["approval_id"] and second.id == "a-3"
+    assert first.tool == "issue_refund" and first.risk == "financial"
+    assert dict(first.arguments) == {"ticket_id": "T-1", "amount": 140.0}
+    assert first.correlation_id == "run-1"
+    assert first.requested_at == reason["requested_at"]
+    assert first.expires_at == float("inf")
     assert pending_approvals(object()) == ()
 
 
-def test_approve_and_reject_build_interrupt_responses() -> None:
-    ours = _Interrupt("i-1")
-    assert approve(ours, by=" m.keller ") == {
+def test_an_interrupt_with_a_partial_reason_still_reads() -> None:
+    # A reason stored before requested_at was added, or edited by hand.
+    approval = _paused_on({"approval_id": "a-1", "arguments": "nope", "risk": 3})
+    assert approval.id == approval.correlation_id == "a-1"
+    assert dict(approval.arguments) == {} and approval.risk is None
+    assert approval.requested_at > 0
+    assert _paused_on({}).id == "i-1"
+
+
+def test_native_is_left_out_of_equality_and_the_repr() -> None:
+    reason = {"approval_id": "a-1", "tool": "issue_refund", "requested_at": 1.0}
+    one, other = _paused_on(reason, "i-1"), _paused_on(reason, "i-2")
+    assert one.native != other.native
+    assert one == other and hash(one.id) == hash(other.id)
+    assert "native" not in repr(one) and "i-1" not in repr(one)
+
+
+def test_approve_and_reject_return_the_approval_with_its_response() -> None:
+    approval = _paused_on({"approval_id": "a-1", "tool": "issue_refund"})
+    approved = approve(approval, by=" m.keller ")
+    assert isinstance(approved, Approval) and approved == approval
+    assert approved.native == {
         "interruptResponse": {
             "interruptId": "i-1",
             "response": {"approved": True, "by": "m.keller"},
         }
     }
-    assert reject(ours, by="a.ops")["interruptResponse"]["response"] == {
+    assert reject(approval, by="a.ops").native["interruptResponse"]["response"] == {
         "approved": False,
         "by": "a.ops",
     }
-    told = reject(ours, by="a.ops", message="no")
+    told = reject(approval, by="a.ops", message="no").native
     assert json.loads(json.dumps(told))["interruptResponse"]["response"]["message"] == "no"
+    # The input keeps its interrupt: it can be decided again, e.g. after a retry.
+    assert isinstance(approval.native, _Interrupt)
 
 
-def test_decisions_need_an_approver_and_an_approval_interrupt() -> None:
+def test_decisions_need_an_approver_and_a_paused_approval() -> None:
+    approval = _paused_on({"approval_id": "a-1"})
     with pytest.raises(ValueError, match="by must name"):
-        approve(_Interrupt("i-1"), by=" ")
+        approve(approval, by=" ")
     with pytest.raises(ValueError, match="by must name"):
-        reject(_Interrupt("i-1"), by=None)  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="not a DDK approval interrupt"):
-        approve(_Interrupt("i-2", name="other"), by="m.keller")
+        reject(approval, by=None)  # type: ignore[arg-type]
+    other = dataclasses.replace(approval, native=_Interrupt("i-2", name="other"))
+    with pytest.raises(ValueError, match="not a paused Strands approval"):
+        approve(other, by="m.keller")
+    # An approval from donkey.approvals, or one the helpers did not build.
+    with pytest.raises(ValueError, match="not a paused Strands approval"):
+        reject(dataclasses.replace(approval, native=None), by="m.keller")

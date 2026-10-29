@@ -3,7 +3,9 @@
 Inside a graph run with a checkpointer, a gated tool pauses with LangGraph's
 native ``interrupt()``, not an exception the framework cannot resume.
 ``Command(resume={"approved": True, "by": ...})`` records the approver and runs
-the tool; ``{"approved": False, ...}`` raises ``ApprovalRejected``. The pause
+the tool; ``{"approved": False, ...}`` raises ``ApprovalRejected``. The
+adapter's ``pending_approvals`` / ``approve`` / ``reject`` read the pause as an
+``Approval`` and build that ``Command`` on its ``native`` (#1422). The pause
 lives in the checkpointer, so it survives a process restart, and a refusal and
 the pause compose without either swallowing the other. The resumed tool runs as
 the user who paused the graph, whoever resumes it (#1416).
@@ -11,10 +13,13 @@ the user who paused the graph, whoever resumes it (#1416).
 
 from __future__ import annotations
 
+import dataclasses
+import operator
 import pickle
 import sys
 from collections import defaultdict
-from typing import Any
+from types import SimpleNamespace
+from typing import Annotated, Any, TypedDict
 
 import pytest
 
@@ -30,7 +35,8 @@ from donkey_kit import (
 )
 from donkey_kit.core import approvals as approvals_mod
 from donkey_kit.core import telemetry
-from donkey_kit.core.correlation import current_business_group
+from donkey_kit.core.approvals import Approval
+from donkey_kit.core.correlation import current_business_group, run_scope
 from donkey_kit.core.identity import current_user
 from donkey_kit.core.telemetry import current_correlation_id
 
@@ -42,6 +48,9 @@ from langgraph.types import Command
 from donkey_kit.integrations.langgraph import (
     APPROVAL_INTERRUPT,
     approval_interrupt,
+    approve,
+    pending_approvals,
+    reject,
 )
 
 _APPROVE = {"approved": True, "by": "m.keller"}
@@ -143,6 +152,7 @@ def test_a_gated_tool_in_a_graph_pauses_with_a_native_interrupt(spans: Any) -> N
         "arguments": {"ticket_id": "T-1", "amount": 140.0},
         "risk": "financial",
         "correlation_id": pause.value["correlation_id"],
+        "requested_at": pause.value["requested_at"],
     }
     # The checkpointer holds the pause; the in-memory registry is not used.
     assert Approvals().pending() == ()
@@ -307,6 +317,137 @@ def test_a_malformed_resume_value_is_a_value_error(resume: object) -> None:
     with pytest.raises(ValueError, match="Command\\(resume="):
         graph.invoke(Command(resume=resume), thread)
     assert ran == []
+
+
+# --- the helpers (#1422) -------------------------------------------------------
+def test_pending_approvals_reads_the_pause_from_the_result_or_the_state(spans: Any) -> None:
+    ran: list[tuple[str, float, str | None]] = []
+    graph = _refund_graph(ran).compile(checkpointer=MemorySaver())
+    thread = _thread("t-helpers")
+    with run_scope("run-h"):
+        paused = graph.invoke({"ticket_id": "T-1", "amount": 140.0}, thread)
+
+    (approval,) = pending_approvals(paused)
+    assert isinstance(approval, Approval)
+    (pause,) = paused["__interrupt__"]
+    assert approval.native is pause
+    assert approval.id == pause.value["approval_id"]
+    assert (approval.tool, approval.risk) == ("issue_refund", "financial")
+    assert dict(approval.arguments) == {"ticket_id": "T-1", "amount": 140.0}
+    assert approval.correlation_id == "run-h"
+    assert approval.requested_at == pause.value["requested_at"]
+    assert approval.expires_at == float("inf")
+    # The checkpointer's view of the same pause reads the same.
+    assert pending_approvals(graph.get_state(thread)) == (approval,)
+    # The pause was recorded when the graph paused; reading it records nothing.
+    assert [n for n, _ in _events(spans)] == ["donkey.approval.pending"]
+
+
+def test_approve_returns_the_command_that_resumes_the_graph(spans: Any) -> None:
+    ran: list[tuple[str, float, str | None]] = []
+    graph = _refund_graph(ran).compile(checkpointer=MemorySaver())
+    thread = _thread("t-helpers-approve")
+    (approval,) = pending_approvals(graph.invoke({"ticket_id": "T-1", "amount": 140.0}, thread))
+
+    approved = approve(approval, by=" m.keller ")
+    assert approved == approval and isinstance(approved.native, Command)
+    assert approved.native.resume == {approval.native.id: _APPROVE}
+    done = graph.invoke(approved.native, thread)
+
+    assert done["result"] == "refunded T-1"
+    assert [r[:2] for r in ran] == [("T-1", 140.0)]
+    _, attrs = _events(spans)[-1]
+    assert attrs["donkey.approval.approved_by"] == "m.keller"
+    assert pending_approvals(done) == () == pending_approvals(graph.get_state(thread))
+
+
+def test_reject_returns_the_command_that_raises_approval_rejected(spans: Any) -> None:
+    ran: list[tuple[str, float, str | None]] = []
+    graph = _refund_graph(ran).compile(checkpointer=MemorySaver())
+    thread = _thread("t-helpers-reject")
+    (approval,) = pending_approvals(graph.invoke({"ticket_id": "T-1", "amount": 140.0}, thread))
+
+    with pytest.raises(ApprovalRejected) as info:
+        graph.invoke(reject(approval, by="a.ops").native, thread)
+
+    assert ran == []
+    assert (info.value.approval.id, info.value.approval.tool) == (approval.id, approval.tool)
+    name, attrs = _events(spans)[-1]
+    assert (name, attrs["donkey.approval.rejected_by"]) == ("donkey.approval.rejected", "a.ops")
+
+
+class _Refunds(TypedDict, total=False):
+    done: Annotated[list[str], operator.add]
+
+
+def test_two_pauses_at_once_resume_on_one_merged_command() -> None:
+    ran: list[str] = []
+
+    @Donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a support ticket."""
+        ran.append(ticket_id)
+        return ticket_id
+
+    def refund(ticket: str) -> Any:
+        def node(_state: _Refunds) -> dict:
+            return {"done": [issue_refund(ticket)]}
+
+        return node
+
+    builder = StateGraph(_Refunds)
+    for ticket in ("T-1", "T-2"):
+        builder.add_node(ticket, refund(ticket))
+        builder.add_edge(START, ticket)
+        builder.add_edge(ticket, END)
+    graph = builder.compile(checkpointer=MemorySaver())
+    thread = _thread("t-helpers-two")
+
+    paused = pending_approvals(graph.invoke({}, thread))
+    assert sorted(a.arguments["ticket_id"] for a in paused) == ["T-1", "T-2"]
+    resume: dict[str, Any] = {}
+    for approval in paused:
+        resume.update(approve(approval, by="m.keller").native.resume)
+    # A bare decision cannot say which of two pauses it answers; the map can.
+    done = graph.invoke(Command(resume=resume), thread)
+
+    assert sorted(done["done"]) == sorted(ran) == ["T-1", "T-2"]
+
+
+def test_the_helpers_leave_other_interrupts_alone() -> None:
+    theirs = SimpleNamespace(id="i-2", value={"type": "someone_else"})
+    assert pending_approvals({"__interrupt__": [theirs, SimpleNamespace(value="ask")]}) == ()
+    assert pending_approvals(SimpleNamespace(interrupts=())) == ()
+    assert pending_approvals({"result": "done"}) == pending_approvals(object()) == ()
+
+
+def test_decisions_need_an_approver_and_a_paused_approval() -> None:
+    value = {"type": APPROVAL_INTERRUPT, "approval_id": "a-1", "tool": "issue_refund"}
+    (approval,) = pending_approvals({"__interrupt__": [SimpleNamespace(id="i-1", value=value)]})
+    assert approval.correlation_id == "a-1" and approval.requested_at > 0
+    with pytest.raises(ValueError, match="by must name"):
+        approve(approval, by=" ")
+    with pytest.raises(ValueError, match="by must name"):
+        reject(approval, by=None)  # type: ignore[arg-type]
+    for native in (None, SimpleNamespace(id="i-2", value={"type": "someone_else"})):
+        with pytest.raises(ValueError, match="not a paused LangGraph approval"):
+            approve(dataclasses.replace(approval, native=native), by="m.keller")
+
+
+def test_an_interrupt_without_an_id_resumes_on_the_bare_decision() -> None:
+    value = {"type": APPROVAL_INTERRUPT, "approval_id": "a-1"}
+    (approval,) = pending_approvals({"__interrupt__": [SimpleNamespace(value=value)]})
+    assert approve(approval, by="m.keller").native.resume == _APPROVE
+
+
+def test_native_is_left_out_of_equality_and_the_repr() -> None:
+    value = {"type": APPROVAL_INTERRUPT, "approval_id": "a-1", "requested_at": 1.0}
+    one, other = (
+        pending_approvals({"__interrupt__": [SimpleNamespace(id=i, value=value)]})[0]
+        for i in ("i-1", "i-2")
+    )
+    assert one.native != other.native and one == other
+    assert "native" not in repr(one) and "i-1" not in repr(one)
 
 
 # --- where the native pause does not apply ----------------------------------

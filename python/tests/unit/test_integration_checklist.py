@@ -50,21 +50,19 @@ _PYPROJECT = tomllib.loads((_PYTHON / "pyproject.toml").read_text())
 _CI = yaml.safe_load((_REPO / ".github" / "workflows" / "ci.yml").read_text())
 
 #: Module-level names in an adapter's ``__all__`` that are helpers, not factories.
-#: ``approval_interrupt`` is the gate's LangGraph pause hook (#212), not a factory.
-#: The OpenAI Agents SDK's approval mapping (#213) adds ``function_tool`` (wraps a
-#: ``@donkey.tool``), its pause hook ``approved_call`` and the decision helpers;
-#: Strands (#1234) adds the same decision helpers and ``approved_call``, and ADK
-#: (#1235) those plus ``approval_plugin`` (builds its ``BasePlugin``). ADK's
-#: ``last_call_bridged`` (#1218) returns a model class, not a governed object.
+#: The four deep-HITL adapters share the decision helpers ``pending_approvals``,
+#: ``approve`` and ``reject`` (#1422); the OpenAI Agents SDK adds ``function_tool``
+#: (wraps a ``@donkey.tool``, #213) and ADK ``approval_plugin`` (builds its
+#: ``BasePlugin``, #1235). ADK's ``last_call_bridged`` (#1218) returns a model
+#: class, not a governed object. The internal hooks (``approved_call``,
+#: ``approval_interrupt``, ``refusal_translator``) are in no ``__all__``
+#: (``test_adapter_roster.py``).
 _HELPERS = {
-    "approval_interrupt",
     "approval_plugin",
     "approve",
-    "approved_call",
     "function_tool",
     "last_call_bridged",
     "pending_approvals",
-    "refusal_translator",
     "reject",
     "typed_refusals",
 }

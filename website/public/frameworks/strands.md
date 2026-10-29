@@ -131,8 +131,10 @@ Strands forwards to its internal OpenAI client.
 - **Approval-gated tools pause the agent.** Add
   `ApprovalHook()` from `donkey_kit.integrations.strands` to the agent's
   `hooks`, and a `@donkey.tool(approval="required")` call stops the agent with
-  Strands' own interrupt. Resume it with `approve(...)` or `reject(...)`. See
-  [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
+  Strands' own interrupt. `pending_approvals(result)` returns each paused call
+  as an `Approval`; resume the agent on `approve(...).native` or
+  `reject(...).native`, the interrupt response each helper returns on the
+  `Approval`. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
 - **Refusals inside tools stop the agent.** With `ApprovalHook()` installed,
   a governed refusal inside an approved or ungated tool leaves the tool loop
   before a retry or another model turn. Use `donkey.run()` or `@donkey.governed`
