@@ -178,7 +178,7 @@ _BLOCKED_ONLY = {
 
 # Blocked-only types added to donkey_kit.experimental after #730. They were never
 # in the stable namespace, so they have no deprecated top-level alias.
-_NEW_IN_EXPERIMENTAL = {"UngovernedMcpServer"}
+_NEW_IN_EXPERIMENTAL = {"ToolNotInProfile", "UngovernedMcpServer", "tool_access_denial"}
 
 # Names of the refused provisioning control plane, deleted in #730.
 _REFUSED = {

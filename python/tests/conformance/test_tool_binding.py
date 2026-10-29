@@ -48,6 +48,7 @@ import pytest
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS, SCENARIO_BODIES
 
 from donkey_kit.core.errors import ConfigError
+from donkey_kit.core.tool_access import ToolNotInProfile, tool_access_denial
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
@@ -64,6 +65,7 @@ _GOVERNED = GovernanceReport(governed=True, checks=[Check("deployed", True, "loc
 _TOOLS = ["add", "lookup_sku"]
 _SERVER_MODULES = ("mcp", "uvicorn", "starlette")
 _MULTI = "multi_tool_multi_server"
+_DENIED = "tool_access_denied_typed"
 
 
 @dataclass(frozen=True)
@@ -155,6 +157,7 @@ class _Servers:
     def __init__(self) -> None:
         self._stack = ExitStack()
         self._pair: tuple[Any, Any] | None = None
+        self._denying: Any = None
         self.harness: ModuleType | None = None
 
     def pair(self) -> tuple[Any, Any]:
@@ -165,6 +168,13 @@ class _Servers:
                 self._stack.enter_context(self.harness.local_mcp_server()),
             )
         return self._pair
+
+    def denying(self) -> Any:
+        """A third server whose ``add`` gets the gateway's tool-access denial (#312)."""
+        if self._denying is None:
+            self.harness = _harness()
+            self._denying = self._stack.enter_context(self.harness.local_mcp_server(deny="add"))
+        return self._denying
 
     def requests(self, server: Any) -> int:
         assert self.harness is not None
@@ -458,12 +468,51 @@ async def _assert_routed(
         assert servers.requests(not_to) == before_other, f"{name} reached the other server"
 
 
+# --- tool_access_denied_typed ------------------------------------------------------
+
+
+async def test_tool_access_denied_typed(binding: Binding, servers: _Servers) -> None:
+    """The gateway's tool-access denial (JSON-RPC ``-32008``, docs/verified-apis.md
+    §9, #303) on a tool the set still lists. A per-tool binding raises
+    ``ToolNotInProfile`` naming the tool and server, and the other tool still
+    works. A whole-server binding is exempt (``KNOWN_LIMITATIONS``): the framework
+    makes the call, and what it does with the denial is asserted as recorded."""
+    denying = servers.denying()
+    async with _bound(binding, _toolset(("inv-d", denying))) as bound:
+        assert sorted(bound.names) == _TOOLS
+        if _DENIED not in KNOWN_LIMITATIONS.get(binding.adapter, {}):
+            with pytest.raises(ToolNotInProfile) as caught:
+                await bound.call("add", {"a": 2, "b": 3})
+            assert caught.value.tool_name == "add"
+            assert caught.value.server == "com.example/inv-d/1.0.0"
+            assert caught.value.profile is None
+            assert "API Manager" in caught.value.remediation
+            assert "SKU-9" in await bound.call("lookup_sku", {"sku": "SKU-9"})
+            return
+        try:
+            text = await bound.call("add", {"a": 2, "b": 3})
+        except Exception as exc:  # noqa: BLE001 - recording what the framework raises
+            assert binding.method in _RAISES_THE_MCP_ERROR, f"{binding.method} raised {exc!r}"
+            denied = tool_access_denial(exc, tool="add")
+            assert denied is not None, f"{binding.method} lost the denial: {exc!r}"
+            assert denied.tool_name == "add"
+        else:
+            assert binding.method in _RETURNS_AN_ERROR_RESULT, f"{binding.method} returned {text!r}"
+            assert "Unable to access" in text, text
+
+
+#: What each whole-server binding's framework does with the denial, recorded with
+#: scripts/mcp_binding/probe_denial.py (docs/verified-apis.md §9, #312).
+_RAISES_THE_MCP_ERROR = {"openai", "agent_framework", "crewai"}
+_RETURNS_AN_ERROR_RESULT = {"adk", "strands"}
+
+
 # --- the matrix itself (no framework needed) --------------------------------------
 
 
 def test_every_adapter_has_a_binding() -> None:
     assert set(BINDINGS) == set(ADAPTERS)
-    for scenario in ("single_tool_call", _MULTI, "tool_filtering"):
+    for scenario in ("single_tool_call", _MULTI, "tool_filtering", _DENIED):
         assert scenario in CONFORMANCE_SCENARIOS
         assert any("test_tool_binding.py" in node for node in SCENARIO_BODIES[scenario])
 
@@ -476,6 +525,21 @@ def test_the_whole_server_bindings_are_exactly_the_exempt_ones() -> None:
     for adapter in exempt:
         reason = KNOWN_LIMITATIONS[adapter][_MULTI]
         assert "cannot rename" in reason and "filter(deny=" in reason, reason
+
+
+def test_the_denial_exemptions_are_exactly_the_whole_server_bindings() -> None:
+    """``tool_access_denied_typed`` is exempt for exactly the whole-server
+    bindings, each one's recorded behaviour is asserted above, and its reason
+    names the helper that converts the denial."""
+    exempt = {adapter for adapter, limits in KNOWN_LIMITATIONS.items() if _DENIED in limits}
+    whole = {b.adapter for b in BINDINGS.values() if not b.per_tool}
+    assert exempt == whole
+    assert _RAISES_THE_MCP_ERROR | _RETURNS_AN_ERROR_RESULT == {BINDINGS[a].method for a in whole}
+    assert not _RAISES_THE_MCP_ERROR & _RETURNS_AN_ERROR_RESULT
+    for adapter in exempt:
+        assert "tool_access_denial" in KNOWN_LIMITATIONS[adapter][_DENIED] or (
+            "Unable to access" in KNOWN_LIMITATIONS[adapter][_DENIED]
+        )
 
 
 def test_no_other_tool_binding_scenario_is_exempt() -> None:

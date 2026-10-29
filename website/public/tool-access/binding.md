@@ -260,6 +260,46 @@ credential, `ToolInvocationError` when a server cannot list its tools, and
 no tool to bind, because `filter()` removed them all or the set is empty, logs
 why at info level and returns an empty list.
 
+### Tools outside your access profile
+
+The gateway's MCP access policies (MCP Global Access and Attribute-Based
+Access Control) decide which tools each consumer may call. They act in two
+places:
+
+- **Discovery is scoped by the server.** A tool you may not call is left out of
+  that server's `tools/list` for you, so the SDK never sees it and never binds
+  it. `ToolSet.excluded` lists only the tools your own `filter()` calls
+  removed (`reason="filter"`), not these.
+- **A call to a denied tool is refused.** A stale tool list, or a policy changed
+  after you bound, can still lead to one. The gateway answers with HTTP `200`
+  and the JSON-RPC error `-32008` `"Unable to access"`. It names the tool but not
+  the profile or rule that refused it.
+
+The LangGraph, LlamaIndex and Anthropic bindings raise `ToolNotInProfile` (in
+`donkey_kit.experimental`, a `PolicyViolation`) from that call, with
+`.tool_name` and the server's coordinates in `.server`. It is a configuration
+problem, so it is never retried. The whole-server bindings leave the call to
+the framework. The OpenAI Agents SDK and CrewAI raise the `mcp` package's
+`McpError`, and Agent Framework wraps it in its `ToolExecutionException`.
+`tool_access_denial()` turns any of them into the typed error:
+
+```python
+from donkey_kit.experimental import ToolNotInProfile, tool_access_denial
+
+try:
+    result = await server.call_tool("lookup_proxy", {"name": "orders"})
+except Exception as exc:
+    if (denied := tool_access_denial(exc)) is not None:
+        raise denied from exc
+    raise
+```
+
+ADK and Strands hand the agent an error result whose text is
+`... Unable to access`, without the JSON-RPC code. The SDK doesn't classify
+it, because the text alone could be any tool's failure. In the same way, a
+tool that ran and failed returns a result with `isError: true`, never
+`ToolNotInProfile`.
+
 ## Related
 
 - [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md) — produce the `ToolSet`.

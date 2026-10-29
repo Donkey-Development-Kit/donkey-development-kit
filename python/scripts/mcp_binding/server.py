@@ -6,6 +6,11 @@ A real MCP server (the official ``mcp`` SDK) served over streamable HTTP on
 only routes the path with the slash (ledger §6), so the probes bind to the same
 URL shape they would use against it. Two tools, ``lookup_sku`` and ``add``.
 
+``--deny <tool>`` answers a ``tools/call`` of that tool the way the gateway's
+MCP access policies refuse it (ledger §9, #303): HTTP 200 with the JSON-RPC
+error ``-32008`` "Unable to access", the tool still listed (a stale descriptor),
+for the #312 binding probes.
+
 ``--record <path>`` appends one JSON line per HTTP request: method, path, the
 lower-cased header names, and the values of only ``client_id``, ``client_secret``
 and ``x-correlation-id`` (the probes send fake values; nothing else is stored).
@@ -95,9 +100,71 @@ class RecordingMiddleware:
         await self.app(scope, receive, send)
 
 
-async def serve(port: int, record: Path | None) -> None:
+class DenyMiddleware:
+    """Pure-ASGI middleware refusing ``tools/call`` of one tool with the
+    gateway's captured access denial (``tests/fixtures/anypoint/mcp_access``)."""
+
+    def __init__(self, app: Any, tool: str | None) -> None:
+        self.app = app
+        self.tool = tool
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or self.tool is None or scope["method"] != "POST":
+            await self.app(scope, receive, send)
+            return
+        chunks: list[bytes] = []
+        while True:
+            message = await receive()
+            chunks.append(message.get("body", b""))
+            if not message.get("more_body"):
+                break
+        body = b"".join(chunks)
+        try:
+            request = json.loads(body)
+        except ValueError:
+            request = None
+        if (
+            isinstance(request, dict)
+            and request.get("method") == "tools/call"
+            and (request.get("params") or {}).get("name") == self.tool
+        ):
+            denial = {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "error": {
+                    "code": -32008,
+                    "message": "Unable to access",
+                    "data": f"Access denied to: {self.tool}",
+                },
+            }
+            payload = json.dumps(denial, separators=(",", ":")).encode()
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(payload)).encode()),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": payload})
+            return
+        sent = False
+
+        async def replay() -> Any:
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
+
+
+async def serve(port: int, record: Path | None, deny: str | None = None) -> None:
     """Serve until SIGTERM/SIGINT, printing READY once the socket is listening."""
-    app = RecordingMiddleware(build_app(), record)
+    app = RecordingMiddleware(DenyMiddleware(build_app(), deny), record)
     config = uvicorn.Config(app, host=HOST, port=port, log_level="warning", lifespan="on")
     server = uvicorn.Server(config)
     loop = asyncio.get_running_loop()
@@ -117,11 +184,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=summary)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--record", type=Path, default=None, help="append request JSON lines here")
+    parser.add_argument("--deny", default=None, help="refuse tools/call of this tool (#312)")
     args = parser.parse_args()
     if args.record is not None:
         args.record.parent.mkdir(parents=True, exist_ok=True)
         args.record.touch()
-    asyncio.run(serve(args.port, args.record))
+    asyncio.run(serve(args.port, args.record, args.deny))
     return 0
 
 

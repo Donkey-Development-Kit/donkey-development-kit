@@ -57,15 +57,24 @@ def stop_server(process: subprocess.Popen[str]) -> None:
 
 
 @contextmanager
-def local_mcp_server() -> Iterator[LocalServer]:
-    """Start server.py on a free port, wait for READY, yield it, stop it on exit."""
+def local_mcp_server(*, deny: str | None = None) -> Iterator[LocalServer]:
+    """Start server.py on a free port, wait for READY, yield it, stop it on exit.
+    ``deny`` names a tool whose ``tools/call`` gets the gateway's access denial."""
     port = free_port()
     with tempfile.TemporaryDirectory(prefix="ddk-mcpbind-") as tmp:
         record = Path(tmp) / "requests.jsonl"
         log = Path(tmp) / "server.log"
         with log.open("w", encoding="utf-8") as log_fh:
             process = subprocess.Popen(
-                [sys.executable, str(SERVER), "--port", str(port), "--record", str(record)],
+                [
+                    sys.executable,
+                    str(SERVER),
+                    "--port",
+                    str(port),
+                    "--record",
+                    str(record),
+                    *(["--deny", deny] if deny else []),
+                ],
                 stdout=subprocess.PIPE,
                 stderr=log_fh,
                 text=True,

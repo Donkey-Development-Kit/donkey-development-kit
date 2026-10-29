@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .filter import ToolDescriptor, ToolFilter, resolve_collisions
+from .filter import ToolDescriptor, ToolExclusion, ToolFilter, resolve_collisions
 from .session import ToolSet
 
-__all__ = ["ToolDescriptor", "ToolFilter", "ToolSet", "resolve_collisions"]
+__all__ = ["ToolDescriptor", "ToolExclusion", "ToolFilter", "ToolSet", "resolve_collisions"]

@@ -15,10 +15,17 @@ Files:
   HTTP request: method, path, header names, and the values of `client_id`,
   `client_secret` and `x-correlation-id` only). Prints `READY <port>` once
   listening; stops cleanly on SIGTERM. Works on `mcp` 1.x (`FastMCP`) and 2.x
-  (`MCPServer`).
+  (`MCPServer`). `--deny TOOL` answers a `tools/call` of that tool with the
+  gateway's MCP access denial (HTTP 200, JSON-RPC `-32008` "Unable to access",
+  ledger §9, #303) while still listing it.
 - `_harness.py` - what the probes import (see the contract below).
 - `probe_mcp_sdk.py` - the baseline: the plain `mcp` client against the server.
 - `probe_<framework>.py` - one per framework.
+- `probe_denial.py` - every installed framework against `server.py --deny add`:
+  whether its tool object raises the denial (and as what) or returns it (#312).
+  `--only NAME ...`, `--write --name VENV` writes
+  `tests/fixtures/mcp_binding/denial-<VENV>.json`. Run it in each venv, since
+  the frameworks' `mcp` pins conflict.
 - `bind_toolset.py` - the SDK's `ToolSet.<framework>()` bindings against two
   local servers: filter, collision rename and approval gate (ledger §9).
 - `bind_live.py` - the same bindings through a live gateway:
@@ -75,7 +82,8 @@ with local_mcp_server() as srv:  # starts server.py on a free port, waits for RE
 write_fixture("<framework>", fixture)  # tests/fixtures/mcp_binding/<framework>.json
 ```
 
-- `local_mcp_server()` - context manager yielding `LocalServer(url, record, process)`.
+- `local_mcp_server(*, deny=None)` - context manager yielding
+  `LocalServer(url, record, process)`; `deny` starts the server with `--deny`.
 - `read_requests(record) -> list[dict]` - every recorded request.
 - `headers_seen(record) -> {"client_id": ..., "client_secret": ...}` - values
   the server actually received (`None` if never sent).

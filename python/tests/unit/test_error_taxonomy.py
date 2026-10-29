@@ -74,6 +74,7 @@ _EXPERIMENTAL_ERRORS = {
     "PublicationDrift",
     "RegistryError",
     "ToolInvocationError",
+    "ToolNotInProfile",
     "UngovernedMcpServer",
 }
 

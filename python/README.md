@@ -212,7 +212,12 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 | OpenAI Agents SDK | multi-server name collision | For the same reason: `ToolSet.openai()` binds each server as one `MCPServerStreamableHttp`, filtered by a static `tool_filter`. Its model calls record no exemption. |
 | Microsoft Agent Framework | multi-server name collision | For the same reason: `ToolSet.agent_framework()` binds each server as one `MCPStreamableHTTPTool`, filtered by `allowed_tools`. |
 | CrewAI | multi-server name collision | For the same reason: `ToolSet.crewai()` binds each server as one `crewai_tools.MCPServerAdapter`, filtered by its `tool_names`. |
+| Google ADK | MCP tool denial typed | `ToolSet.adk()` leaves each tool call to `McpToolset`, which turns the gateway's MCP access denial (JSON-RPC `-32008` "Unable to access") into an error result whose text has lost the code, so the SDK cannot raise [`ToolNotInProfile`](https://docs.donkey-kit.dev/tool-access/binding#tools-outside-your-access-profile) from it. |
+| Strands Agents | MCP tool denial typed | For the same reason: `MCPClient` returns the denial as a `status: error` tool result without the code. |
+| OpenAI Agents SDK | MCP tool denial typed | `ToolSet.openai()` leaves each tool call to `MCPServerStreamableHttp`, which raises the `mcp` package's `McpError` with the code intact; `tool_access_denial(exc)` turns it into `ToolNotInProfile`. |
+| Microsoft Agent Framework | MCP tool denial typed | For the same reason: `MCPStreamableHTTPTool` raises its `ToolExecutionException` with the `McpError` as its cause; `tool_access_denial(exc)` converts it. |
+| CrewAI | MCP tool denial typed | For the same reason: `MCPServerAdapter`'s tools raise the `McpError`; `tool_access_denial(exc)` converts it. |
 
-Each transport exemption matches what the adapter reports in `donkey.<framework>.capabilities()` (a frozen `AdapterCapabilities` per factory), and a unit test keeps the two in step (#726). The multi-server rows are about binding MCP tools with [`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding), not the model transport, so `capabilities()` does not report them.
+Each transport exemption matches what the adapter reports in `donkey.<framework>.capabilities()` (a frozen `AdapterCapabilities` per factory), and a unit test keeps the two in step (#726). The multi-server and MCP tool denial rows are about binding MCP tools with [`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding), not the model transport, so `capabilities()` does not report them.
 
 <!-- Generated from the repository README.md by python/scripts/generate_docs.py; edit that file, then run the script. -->

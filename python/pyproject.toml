@@ -658,7 +658,9 @@ type = "layers"
 # everything reports through errors. classifier (the classify() registry,
 # #210) sits beside cost and the rest, over _policy_spec (its match-spec
 # checks); it fills a hook slot in errors, so errors never imports it. step_up
-# (the CIBA step-up types, #1320) fills another and sits just above errors.
+# (the CIBA step-up types, #1320) fills another and sits just above errors,
+# beside tool_access (the MCP tool-access denial, #312), which only subclasses
+# errors' PolicyViolation.
 # approvals (the @donkey.tool approval gate, #211) sits beside transport: it
 # reads correlation, errors and telemetry, and neither imports the other.
 # inbound (the run an inbound A2A task binds, #225) sits there too: it binds
@@ -681,7 +683,7 @@ layers = [
     "config",
     "classifier | cost | endpoints | header_names | reactions | refusals",
     "_policy_spec",
-    "step_up",
+    "step_up | tool_access",
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",

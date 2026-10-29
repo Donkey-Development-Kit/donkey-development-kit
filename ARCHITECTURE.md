@@ -186,8 +186,10 @@ Beside it:
   0012) over `_policy_spec`, its match-spec checks; it fills a hook slot in
   `errors`, so `errors` never imports it. `step_up` (#1320) holds the OAuth2
   OBO policy's CIBA step-up types, which subclass `errors`' own, and fills a
-  second hook slot there the same way, ahead of the auth rule. This contract is
-  exhaustive too.
+  second hook slot there the same way, ahead of the auth rule. `tool_access`
+  (#312) holds the MCP tool-access denial: `ToolNotInProfile`, a `PolicyViolation`
+  read from a JSON-RPC error rather than an HTTP response, so it fills no hook
+  slot. This contract is exhaustive too.
 
 Two rules the import graph can't express are tests in
 `tests/unit/test_architecture.py`:

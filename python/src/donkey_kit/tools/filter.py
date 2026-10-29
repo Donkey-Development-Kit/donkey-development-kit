@@ -51,6 +51,17 @@ class ToolDescriptor:
         return f"{self.server}__{self.name}"
 
 
+@dataclass(frozen=True)
+class ToolExclusion:
+    """A tool a server lists that a ``ToolSet`` does not expose (#312): its name,
+    its server's short name and why, such as ``"filter"`` for one a
+    ``filter()`` call removed."""
+
+    name: str
+    server: str
+    reason: str
+
+
 def _matches(patterns: Iterable[str], tool: ToolDescriptor) -> bool:
     return any(fnmatchcase(tool.name, p) or fnmatchcase(tool.qualified_name, p) for p in patterns)
 
