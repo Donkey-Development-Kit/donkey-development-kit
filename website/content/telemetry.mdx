@@ -877,6 +877,7 @@ such as `donkey_kit.core.auth`, instead of the package.
 | An auth provider in a `ChainedAuth` failing over to the next one (type names only) | `donkey_kit.core.auth` |
 | The OTLP export bootstrap: inert, kept your `TracerProvider`, or installed (global or DDK-scoped) | `donkey_kit.core.telemetry` |
 | How many tool descriptors a `ToolSet` exposes after its filter, out of the total | `donkey_kit.tools.session` |
+| A rate-limit reset header that was ignored as negative or out of range, naming the budget window (never the value) | `donkey_kit.core._window` |
 | A best-effort step that failed and was skipped (with the traceback), e.g. a refusal translator or recording usage on a span | the module that skipped it |
 
 <Callout type="info">

@@ -209,6 +209,21 @@ async def test_no_log_record_contains_a_request_header_value(
             assert all(value not in str(arg) for arg in (record.args or ()))
 
 
+def test_an_ignored_reset_header_is_logged_without_its_value(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#1444: the record names the window, never the header value it dropped."""
+    raw = "98765432109876543210987654321"
+    with caplog.at_level(logging.DEBUG, logger="donkey_kit.core._window"):
+        donkey_kit.Budget().observe(
+            httpx.Response(200, headers={"x-token-limit": "10", "x-token-reset": raw})
+        )
+
+    assert _debug(caplog) == ["ignored an out-of-range rate-limit reset on the Budget window"]
+    assert raw not in caplog.text
+    assert all(raw not in str(arg) for r in caplog.records for arg in (r.args or ()))
+
+
 def test_otlp_bootstrap_inert_path_logs_debug(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:

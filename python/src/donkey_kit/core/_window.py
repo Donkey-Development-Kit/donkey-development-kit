@@ -6,9 +6,12 @@ shares them. Private: ``budget`` is the public face.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 __all__ = ["Window", "reached", "record"]
+
+_log = logging.getLogger(__name__)
 
 
 class Window:
@@ -33,28 +36,48 @@ class Window:
         return min(1.0, max(0.0, used))
 
 
+def _reset_at(window: Window, reset_ms: float, ts: datetime) -> datetime | None:
+    """``ts`` plus ``reset_ms``, or ``None`` when that is no reset time: negative
+    (a time *until* reset never is), not a number, or past what a ``datetime``
+    holds. The value is the upstream's, so it never fails the send (#1444)."""
+    if reset_ms >= 0:  # False for NaN too
+        try:
+            return ts + timedelta(milliseconds=reset_ms)
+        except OverflowError:
+            pass
+    _log.debug("ignored an out-of-range rate-limit reset on the %s window", type(window).__name__)
+    return None
+
+
 def record(
     window: Window,
     limit: int | None,
     remaining: int | None,
     reset_ms: float | None,
     ts: datetime,
+    *,
+    replace: bool = False,
 ) -> bool:
     """Apply whichever fields resolved to ``window``, and say whether it applied.
     All ``None`` is a no-op, so a response without this window's signal leaves
     ``observed_at`` untouched. So is an observation older than the window's
-    ``observed_at``: the fresher state stays (#311)."""
-    if limit is None and remaining is None and reset_ms is None:
+    ``observed_at``: the fresher state stays (#311). A reset with no
+    representable time counts as ``None`` (#1444). ``replace`` clears the three
+    fields first, so the observation stands alone (the upstream window, #1025)."""
+    reset_at = None if reset_ms is None else _reset_at(window, reset_ms, ts)
+    if limit is None and remaining is None and reset_at is None:
         return False
     if window.observed_at is not None and ts < window.observed_at:
         return False
+    if replace:
+        window.limit = window.remaining = window.reset_at = None
     window.observed_at = ts
     if limit is not None:
         window.limit = limit
     if remaining is not None:
         window.remaining = remaining
-    if reset_ms is not None:
-        window.reset_at = ts + timedelta(milliseconds=reset_ms)
+    if reset_at is not None:
+        window.reset_at = reset_at
     return True
 
 
