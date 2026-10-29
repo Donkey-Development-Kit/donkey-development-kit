@@ -6,7 +6,7 @@
       "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
       "isProduction": false,
       "type": "design",
-      "clientId": "ce865cfbbed44bdb96b0ea6bdfd45fe6",
+      "clientId": "00000000000040008000246045305882",
       "arcNamespace": null
     },
     {
@@ -15,7 +15,7 @@
       "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
       "isProduction": false,
       "type": "sandbox",
-      "clientId": "f666f55df68d4ba0aca862a969175377",
+      "clientId": "000000000000400080000a1d4879623e",
       "arcNamespace": null
     }
   ],

@@ -11,6 +11,7 @@ A *call* is a JSON-RPC ``SendMessage`` or ``SendStreamingMessage`` POST. The
 fixture before the agent sees the call. Every other request (the agent card,
 ``GetTask``, ``CancelTask``, …) passes straight through, and so does a call no
 rule rejects; the ``request_limit`` trio rides on a passing call's response.
+A POST body over :data:`MAX_BODY_BYTES` is answered with a ``413`` instead.
 
 What it is NOT: no A2A agent instance's rejections have been captured live yet
 (#226/#1278), so the shapes are the LLM-proxy ones (docs/verified-apis.md §4),
@@ -39,10 +40,15 @@ from .scenarios import (
     ScenarioHit,
 )
 
-__all__ = ["CALL_METHODS", "build_ingress", "call_text", "check_scenarios"]
+__all__ = ["CALL_METHODS", "MAX_BODY_BYTES", "build_ingress", "call_text", "check_scenarios"]
 
 _Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
 _Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
+
+#: The largest POST body the ingress reads (4 MiB). A larger one is answered
+#: with a ``413`` and never reaches the agent, so a non-loopback ``donkey dev``
+#: cannot be made to buffer an unbounded body in memory.
+MAX_BODY_BYTES = 4 * 1024 * 1024
 
 # The JSON-RPC methods that hand the agent a message, named as the a2a-sdk's
 # JSON-RPC dispatcher names them (A2A 1.0). The scenario rules run on these only.
@@ -112,7 +118,10 @@ class _Ingress:
         if scope.get("type") != "http" or scope.get("method") != "POST":
             await self._agent(scope, receive, send)
             return
-        body = await _read_body(receive)
+        body = await _read_body(scope, receive)
+        if body is None:
+            await _send_too_large(send)
+            return
         try:
             payload: object = json.loads(body)
         except ValueError:
@@ -127,16 +136,52 @@ class _Ingress:
         await self._agent(scope, _replay(body, receive), _with_headers(send, extra))
 
 
-async def _read_body(receive: _Receive) -> bytes:
+def _declared_length(scope: MutableMapping[str, Any]) -> int | None:
+    for key, value in scope.get("headers", []):
+        if key.lower() == b"content-length":
+            try:
+                return int(value)
+            except ValueError:
+                return None
+    return None
+
+
+async def _read_body(scope: MutableMapping[str, Any], receive: _Receive) -> bytes | None:
+    """The request body, or ``None`` once it is over :data:`MAX_BODY_BYTES`. A
+    declared ``content-length`` over the cap is refused before any byte is read."""
+    declared = _declared_length(scope)
+    if declared is not None and declared > MAX_BODY_BYTES:
+        return None
     chunks: list[bytes] = []
+    size = 0
     while True:
         message = await receive()
         if message.get("type") != "http.request":
             break  # the client went away; the agent sees an empty body
-        chunks.append(message.get("body", b""))
+        chunk = message.get("body", b"")
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
+            return None
+        chunks.append(chunk)
         if not message.get("more_body", False):
             break
     return b"".join(chunks)
+
+
+async def _send_too_large(send: _Send) -> None:
+    body = f"request body over the donkey dev ingress limit of {MAX_BODY_BYTES} bytes\n".encode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"text/plain; charset=utf-8"),
+                (b"content-length", str(len(body)).encode("latin-1")),
+                (b"connection", b"close"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
 
 
 def _replay(body: bytes, receive: _Receive) -> _Receive:

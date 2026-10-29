@@ -491,6 +491,49 @@ def test_an_endpoint_with_credentials_is_refused_without_echoing_them(tmp_path: 
     assert "s3cret" not in issue.detail
 
 
+@pytest.mark.parametrize(
+    "param",
+    ["api_key", "X-Api-Key", "access_token", "client_secret", "client_id", "sig", "key", "pwd"],
+)
+def test_a_credential_in_the_query_string_is_refused_without_echoing_it(
+    tmp_path: Path, param: str
+) -> None:
+    """The endpoint is published verbatim to Exchange and the agent card (#1443)."""
+    root = _write(
+        tmp_path,
+        {
+            "m.py": SERVERS,
+            ".donkey-kit.toml": (
+                "[donkey.mcp_servers.hr-tools]\n"
+                'transport = "streamable-http"\n'
+                f'endpoint = "https://hr-tools.acme.com/mcp?region=eu&{param}=s3cret"\n'
+            ),
+        },
+    )
+    result = scan(root)
+    (issue,) = result.issues
+
+    assert issue.kind == "invalid-endpoint"
+    assert repr(param) in issue.detail
+    assert "s3cret" not in issue.detail
+    assert result.mcp_servers[0].endpoint is None
+
+
+@pytest.mark.parametrize("query", ["version=2", "region=eu&tenant=acme", "keyword=x", "monkey=1"])
+def test_an_ordinary_query_string_is_kept(tmp_path: Path, query: str) -> None:
+    url = f"https://hr-tools.acme.com/mcp?{query}"
+    root = _write(
+        tmp_path,
+        {
+            "m.py": SERVERS,
+            ".donkey-kit.toml": f'[donkey.mcp_servers.hr-tools]\nendpoint = "{url}"\n',
+        },
+    )
+    result = scan(root)
+    assert result.issues == ()
+    assert result.mcp_servers[0].endpoint == url
+
+
 def test_a_declaration_no_tool_names_is_reported(tmp_path: Path) -> None:
     root = _write(
         tmp_path,
@@ -657,3 +700,18 @@ def test_a_malformed_or_unknown_agent_table_is_an_issue(
 
     assert [(i.kind, i.subject) for i in result.issues] == [(kind, subject)]
     assert _agent(result) == (None, None)
+
+
+def test_an_agent_endpoint_with_a_query_credential_is_refused(tmp_path: Path) -> None:
+    toml = (
+        "[donkey.agents.support-triage]\n"
+        'protocol = "other"\n'
+        'endpoint = "https://agents.acme.com/triage/?token=s3cret"\n'
+    )
+    result = scan(_write(tmp_path, {"m.py": AGENTS, ".donkey-kit.toml": toml}))
+
+    (issue,) = result.issues
+    assert (issue.kind, issue.subject) == ("invalid-endpoint", "agent support-triage")
+    assert "'token'" in issue.detail
+    assert "s3cret" not in issue.detail
+    assert _agent(result) == ("other", None)

@@ -20,6 +20,7 @@ pytest.importorskip("a2a", reason="needs the [a2a] extra")
 from donkey_kit import A2ATask, Donkey, PIIDetected, PromptInjectionBlocked
 from donkey_kit.a2a import build_app
 from donkey_kit.core.errors import RequestRateLimitExceeded, classify
+from donkey_kit.simulator import ingress
 from donkey_kit.simulator.app import SIMULATOR_HEADER
 from donkey_kit.simulator.fixtures import load
 from donkey_kit.simulator.ingress import build_ingress, call_text
@@ -121,6 +122,56 @@ async def test_a_non_json_post_reaches_the_agent() -> None:
         direct = await bare.post("/", content=b"not json", headers=_HEADERS)
     assert via.content == direct.content
     assert via.headers[SIMULATOR_HEADER] == "true"
+
+
+async def test_a_declared_body_over_the_cap_is_a_413_before_the_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ingress, "MAX_BODY_BYTES", 64)
+    async with _client() as c:
+        response = await c.post("/", content=b"x" * 65, headers=_HEADERS)
+    assert response.status_code == 413
+    assert response.headers[SIMULATOR_HEADER] == "true"
+    assert b"64 bytes" in response.content
+
+
+async def test_a_body_at_the_cap_reaches_the_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    body = json.dumps(_send("hi")).encode()
+    monkeypatch.setattr(ingress, "MAX_BODY_BYTES", len(body))
+    async with _client() as c:
+        response = await c.post("/", content=body, headers=_HEADERS)
+    assert response.status_code == 200
+    assert response.json()["result"]["task"]["artifacts"][0]["parts"] == [{"text": "echo: hi"}]
+
+
+async def test_a_streamed_body_stops_being_read_at_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No ``content-length``: the ingress counts the chunks and stops at the cap."""
+    monkeypatch.setattr(ingress, "MAX_BODY_BYTES", 10)
+    reached: list[object] = []
+
+    async def agent(scope: Any, receive: Any, send: Any) -> None:
+        reached.append(scope)
+
+    chunks = [b"x" * 6, b"x" * 6, b"never read"]
+    read = 0
+
+    async def receive() -> dict[str, Any]:
+        nonlocal read
+        read += 1
+        return {"type": "http.request", "body": chunks[read - 1], "more_body": True}
+
+    sent: list[dict[str, Any]] = []
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    scope = {"type": "http", "method": "POST", "path": "/", "headers": []}
+    await build_ingress(agent)(scope, receive, send)
+    assert reached == []
+    assert read == 2
+    assert sent[0]["status"] == 413
 
 
 def test_budget_is_refused() -> None:

@@ -15,7 +15,9 @@ created on the shared managed gateway (scrubbed to
 Each control-plane file is the response body; each `traffic.*` file holds the status, headers and body.
 
 - `environments.json` — `GET /accounts/api/organizations/{org}/environments`:
-  the group's `Design` and `Sandbox` environments.
+  the group's `Design` and `Sandbox` environments. Each environment's
+  `clientId` is scrubbed to a 32-hex placeholder starting
+  `00000000000040008000` (#1443).
 - `apis.by-asset.json` — `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis`
   with `assetId`, `groupId` and `assetVersion`: one deployed MCP instance,
   label `ddk-verify1297-b`. A row has `endpointType`, `instanceLabel` and

@@ -84,8 +84,11 @@ transport = "stdio"
   `sse` (deprecated by the MCP specification, still accepted).
 - `endpoint` is the `http` or `https` URL a client connects to, normally the
   gateway-fronted one. A `stdio` server is started as a process and has no
-  endpoint. Don't put credentials in the URL: scan refuses one that carries
-  them.
+  endpoint. Don't put credentials in the URL. The endpoint is published as
+  written, so scan refuses a URL with a user name or password, or a query
+  parameter named like a credential (`token`, `secret`, `password`, `api_key`,
+  `client_id`, `key`, `sig` and similar). The issue names the parameter, never
+  its value.
 - A `.donkey-kit.local.toml` beside it (gitignored) overrides the project file
   key by key, so each environment can point at its own endpoint without editing
   the committed file:

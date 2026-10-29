@@ -1188,7 +1188,9 @@ class Donkey:
                 :class:`~donkey_kit.a2a.A2ATask` and returns a ``str`` or an
                 :class:`~donkey_kit.a2a.A2AResult`.
             host: The interface to bind. Pass ``"0.0.0.0"`` only when the
-                gateway reaches the agent over the network.
+                gateway reaches the agent over the network. The server
+                authenticates no caller, so a host that is not loopback emits
+                a :class:`~donkey_kit.core.errors.ConfigWarning`.
             port: The port to bind.
             url: The URL the card advertises; defaults to
                 ``http://<host>:<port>/``. Pass the gateway's URL when one
