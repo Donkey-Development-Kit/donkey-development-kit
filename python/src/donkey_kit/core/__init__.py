@@ -45,6 +45,7 @@ from .telemetry import (
     new_correlation_id,
     run_context,
 )
+from .tool_access import ToolNotInProfile
 from .transport import (
     DonkeyAsyncClient,
     DonkeyAsyncClientView,
@@ -99,6 +100,7 @@ __all__ = [
     "TTLCache",
     "TokenBudgetExceeded",
     "ToolInvocationError",
+    "ToolNotInProfile",
     "UpstreamModelError",
     "UpstreamQuota",
     "UpstreamRequestError",

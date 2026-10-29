@@ -164,6 +164,9 @@ _._check_approvals  # unused method (src/donkey_kit/tools/session.py)
 # code and tests/unit/test_discover.py read it.
 _.discovered_at  # unused property (src/donkey_kit/tools/session.py)
 _.is_stale  # unused property (src/donkey_kit/tools/session.py)
+# ToolSet.excluded (#312) is public API; only user code and
+# tests/unit/test_tool_access.py read it.
+_.excluded  # unused property (src/donkey_kit/tools/session.py)
 _.__signature__  # unused attribute (src/donkey_kit/tools/approval.py)
 # The a2a-sdk calls AgentExecutor.execute (BG §2.9.1, #224); a served handler
 # reads A2ATask.input.

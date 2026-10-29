@@ -110,6 +110,11 @@ CONFORMANCE_SCENARIOS = [
     # ToolSet.filter(allow=..., deny=...) decides what the framework itself lists:
     # a removed tool is never bound (BG §2.7, #222). Every binding passes.
     "tool_filtering",
+    # The gateway's MCP tool-access denial (HTTP 200, JSON-RPC -32008, BG §2.7,
+    # docs/verified-apis.md §9, #303) on a bound tool raises ToolNotInProfile
+    # through a per-tool binding (#312). The whole-server bindings leave the call
+    # to the framework and record an asserted exemption below.
+    "tool_access_denied_typed",
     # discover(governed=True) leaves out every MCP server whose governed state
     # fails the criteria, and logs why (BG §2.7, #221, #991). Discovery reads the
     # registry, not a framework, so no adapter is exempt.
@@ -197,6 +202,10 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
         "tests/unit/test_discover.py::test_a_whole_server_plan_refuses_a_rename_and_a_gate",
     ),
     "tool_filtering": (f"{_BINDING}::test_tool_filtering",),
+    "tool_access_denied_typed": (
+        f"{_BINDING}::test_tool_access_denied_typed",
+        f"{_BINDING}::test_the_denial_exemptions_are_exactly_the_whole_server_bindings",
+    ),
     "governed_filter_excludes": (
         "tests/unit/test_discover.py::test_governed_discover_leaves_out_ungoverned_with_reasons",
     ),
@@ -332,6 +341,24 @@ _WHOLE_SERVER_COLLISION = (
     "keeps one of each (#221, #991)."
 )
 
+# tool_access_denied_typed: a whole-server binding hands the framework the MCP
+# server, so the framework makes the tools/call and the SDK never sees the
+# answer. What each does with the gateway's denial was recorded with
+# scripts/mcp_binding/probe_denial.py (docs/verified-apis.md §9, #312): OpenAI
+# Agents, Agent Framework and CrewAI raise (the mcp error itself, or wrapped);
+# ADK and Strands turn it into an error result the model reads. Not a transport
+# limit, so it mirrors no AdapterCapabilities flag.
+_WHOLE_SERVER_DENIAL_RAISED = (
+    "{binding} lets {cls} make the tool call, and it raises the gateway's tool-access "
+    "denial as the mcp package's error{wrapped}, not ToolNotInProfile; "
+    "donkey_kit.experimental.tool_access_denial(exc) converts it (#312)."
+)
+_WHOLE_SERVER_DENIAL_RESULT = (
+    "{binding} lets {cls} make the tool call, and it turns the gateway's tool-access "
+    "denial into an error result the model reads ('...Unable to access'), so nothing is "
+    "raised to catch; the denial is the ToolSet's to prevent, by not binding the tool (#312)."
+)
+
 KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     # CrewAI raises a framework error the bridge cannot type. ADK records no
     # exemption: adk.gemini() (#955) and adk.model() (#969) are both bridge-tested
@@ -348,9 +375,15 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.crewai()", cls="crewai_tools MCPServerAdapter"
         ),
+        "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RAISED.format(
+            binding="ToolSet.crewai()", cls="crewai_tools MCPServerAdapter", wrapped=""
+        ),
     },
     "adk": {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
+            binding="ToolSet.adk()", cls="McpToolset"
+        ),
+        "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RESULT.format(
             binding="ToolSet.adk()", cls="McpToolset"
         ),
     },
@@ -358,10 +391,18 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.strands()", cls="MCPClient"
         ),
+        "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RESULT.format(
+            binding="ToolSet.strands()", cls="MCPClient"
+        ),
     },
     "agent_framework": {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.agent_framework()", cls="MCPStreamableHTTPTool"
+        ),
+        "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RAISED.format(
+            binding="ToolSet.agent_framework()",
+            cls="MCPStreamableHTTPTool",
+            wrapped=" (wrapped in its ToolExecutionException)",
         ),
     },
     # The OpenAI Agents SDK's model calls record no exemption: deep since #223,
@@ -370,6 +411,9 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     "openai_agents": {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.openai()", cls="MCPServerStreamableHttp"
+        ),
+        "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RAISED.format(
+            binding="ToolSet.openai()", cls="MCPServerStreamableHttp", wrapped=""
         ),
     },
 }

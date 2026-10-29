@@ -20,6 +20,7 @@ surface uses.
 from __future__ import annotations
 
 from .core.errors import PublicationDrift, RegistryError, ToolInvocationError
+from .core.tool_access import ToolNotInProfile, tool_access_denial
 from .registry import (
     STRICT,
     AssetRef,
@@ -42,5 +43,7 @@ __all__ = [
     "PublicationDrift",
     "RegistryError",
     "ToolInvocationError",
+    "ToolNotInProfile",
     "UngovernedMcpServer",
+    "tool_access_denial",
 ]

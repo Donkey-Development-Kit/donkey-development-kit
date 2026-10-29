@@ -37,6 +37,7 @@ _SCENARIOS = {
     "agent kill stops cleanly": "agent_killed_stops_cleanly",
     "approval round trip": "approval_round_trip",
     "multi-server name collision": "multi_tool_multi_server",
+    "MCP tool denial typed": "tool_access_denied_typed",
 }
 _PUBLIC_ONLY = {"retries_token_budget"}
 

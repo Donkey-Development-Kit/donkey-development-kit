@@ -1,0 +1,56 @@
+{
+  "denial": "HTTP 200, JSON-RPC -32008 'Unable to access' (ledger \u00a79, #303)",
+  "distributions": {
+    "mcp": "2.3.0",
+    "openai-agents": "0.24.0"
+  },
+  "observed": {
+    "mcp_sdk": {
+      "raised": [
+        {
+          "code": null,
+          "data": null,
+          "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+          "type": "builtins.ExceptionGroup"
+        },
+        {
+          "code": null,
+          "data": null,
+          "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+          "type": "builtins.ExceptionGroup"
+        },
+        {
+          "code": -32008,
+          "data": "Access denied to: add",
+          "message": "Unable to access",
+          "type": "mcp.shared.exceptions.MCPError"
+        }
+      ]
+    },
+    "openai_agents": {
+      "call_tool": {
+        "raised": [
+          {
+            "code": -32008,
+            "data": "Access denied to: add",
+            "message": "Unable to access",
+            "type": "mcp.shared.exceptions.MCPError"
+          }
+        ]
+      },
+      "invoke_mcp_tool": {
+        "raised": [
+          {
+            "code": -32008,
+            "data": "Access denied to: add",
+            "message": "Unable to access",
+            "type": "mcp.shared.exceptions.MCPError"
+          }
+        ]
+      }
+    }
+  },
+  "probe": "probe_denial.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}

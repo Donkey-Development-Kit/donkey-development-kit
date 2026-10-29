@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import functools
 import logging
 import time
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
@@ -40,11 +41,13 @@ from ..core.approvals import APPROVAL_TIMEOUT, NativePause, parse_timeout
 from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, ConfigError, DonkeyError
 from ..core.reactions import Duration
+from ..core.tool_access import tool_access_denial
 from ..registry.models import McpServerHandle
 from .approval import ApprovalRule, check_rules, gated_tool, rule_for
 from .auth import McpAuth
 from .filter import (
     ToolDescriptor,
+    ToolExclusion,
     ToolFilter,
     check_patterns,
     descriptor_tokens,
@@ -324,6 +327,22 @@ class ToolSet:
         _, name_map = resolve_collisions(self._descriptors())
         return name_map
 
+    @property
+    def excluded(self) -> tuple[ToolExclusion, ...]:
+        """The tools the servers list that this set does not expose, and why (#312).
+
+        Today every entry is a tool a :meth:`filter` call removed
+        (``reason="filter"``). A tool outside the consumer's MCP access profile is
+        not here: the gateway leaves it out of ``tools/list`` for that caller
+        (docs/verified-apis.md §9, #303), so the SDK never sees it. A server
+        whose descriptors are not known yet (see :meth:`describe`) adds nothing.
+        """
+        return tuple(
+            ToolExclusion(name=d.name, server=d.server, reason="filter")
+            for _, d in _index(self._servers, None)
+            if not all(f.accepts(d) for f in self._filters)
+        )
+
     def _descriptors(self, *, filtered: bool = True) -> list[ToolDescriptor]:
         return [d for _, d in _index(self._servers, self._filters if filtered else None)]
 
@@ -469,16 +488,24 @@ class ToolSet:
             )
         return [(servers[i], names) for i, names in sorted(tools.items())], headers
 
-    def _gate(self, tool: _Tool, invoke: Callable[..., Any]) -> Callable[..., Any] | None:
-        """``invoke`` behind ``tool``'s approval gate, or ``None`` when no rule gates it."""
+    def _invoker(
+        self, tool: _Tool, invoke: Callable[..., Any], server: McpServerHandle
+    ) -> Callable[..., Any]:
+        """``invoke`` raising :class:`~donkey_kit.core.tool_access.ToolNotInProfile` for
+        the gateway's tool-access denial (#312), behind ``tool``'s approval gate
+        when a rule gates it."""
+        refusing = _refusing(invoke, tool=tool.desc.name, server=server.ref.coordinates)
         if tool.rule is None:
-            return None
-        return self._bind_tool(tool.exposed, tool.desc, invoke, schema=tool.desc.input_schema)
+            return refusing
+        return self._bind_tool(tool.exposed, tool.desc, refusing, schema=tool.desc.input_schema)
 
     # ---- per-framework binding (native types BG §2.7, docs/verified-apis.md §9) --
     # Each method binds the framework's own MCP class, as the local round-trip in
     # scripts/mcp_binding verified it, and returns what that class returns. Each
     # first refuses an ungoverned set (ADR 0013), then loads the descriptors.
+    # The per-tool ones (LangGraph, LlamaIndex, Anthropic) wrap each tool's call so
+    # the gateway's tool-access denial raises ToolNotInProfile (#312); the
+    # whole-server ones leave the call to the framework (docs/verified-apis.md §9).
     async def langgraph(self) -> list[Any]:  # -> list[BaseTool]
         """Bind the tool set as LangChain ``BaseTool`` objects, a flat list for
         ``create_react_agent(tools=...)`` or a ``ToolNode``.
@@ -513,10 +540,8 @@ class ToolSet:
                 plan_tool = names.get(tool.name)
                 if plan_tool is None:
                     continue
-                gated = self._gate(plan_tool, tool.coroutine)
+                tool.coroutine = self._invoker(plan_tool, tool.coroutine, server)
                 tool.name = plan_tool.exposed
-                if gated is not None:
-                    tool.coroutine = gated
                 bound.append(tool)
         return bound
 
@@ -545,10 +570,10 @@ class ToolSet:
             for tool in await spec.to_tool_list_async():
                 plan_tool = names[tool.metadata.name]
                 tool.metadata.name = plan_tool.exposed
-                gated = self._gate(plan_tool, tool.async_fn)
-                if gated is not None:
-                    tool = FunctionTool.from_defaults(async_fn=gated, tool_metadata=tool.metadata)
-                bound.append(tool)
+                invoke = self._invoker(plan_tool, tool.async_fn, server)
+                bound.append(
+                    FunctionTool.from_defaults(async_fn=invoke, tool_metadata=tool.metadata)
+                )
         return bound
 
     @asynccontextmanager
@@ -588,15 +613,12 @@ class ToolSet:
                     if plan_tool is None:
                         continue
                     tool = async_mcp_tool(mcp_tool, session)
-                    gated = self._gate(plan_tool, tool.func)
-                    if gated is not None:
-                        tool = BetaAsyncFunctionTool(
-                            gated,
-                            name=plan_tool.exposed,
-                            description=tool.description,
-                            input_schema=tool.input_schema,
-                        )
-                    tool.name = plan_tool.exposed
+                    tool = BetaAsyncFunctionTool(
+                        self._invoker(plan_tool, tool.func, server),
+                        name=plan_tool.exposed,
+                        description=tool.description,
+                        input_schema=tool.input_schema,
+                    )
                     bound.append(tool)
             yield bound
 
@@ -752,6 +774,24 @@ class ToolSet:
         finally:
             for adapter in reversed(adapters):
                 await asyncio.to_thread(adapter.stop)
+
+
+def _refusing(invoke: Callable[..., Any], *, tool: str, server: str) -> Callable[..., Any]:
+    """``invoke``, an async MCP tool call, re-raising the gateway's tool-access
+    denial as :class:`~donkey_kit.core.tool_access.ToolNotInProfile` (#312). Every
+    other exception, and every result (an ``isError`` one too), passes through."""
+
+    @functools.wraps(invoke)
+    async def call(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        try:
+            return await invoke(*args, **kwargs)
+        except Exception as exc:
+            denied = tool_access_denial(exc, tool=tool, server=server)
+            if denied is None:
+                raise
+            raise denied from exc
+
+    return call
 
 
 def _select(servers: list[McpServerHandle], patterns: list[str]) -> list[McpServerHandle]:

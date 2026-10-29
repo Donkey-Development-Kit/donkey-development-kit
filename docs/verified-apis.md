@@ -1185,7 +1185,7 @@ access"`. `data` differs by policy and is informational. Three findings:
 - **It is not an HTTP error.** A check on the status sees a success, and the
   `open_session` status hook above records nothing. These captures were raw
   HTTP. How the `mcp` client and each framework binding surface the error is
-  not verified (#312).
+  the next paragraph (#312).
 - **The order depends on the instance's auth.** On the framework-built
   instance, JWT Validation runs only when `Authorization` is present, so Global
   Access also denied an unauthenticated call. On the Client ID Enforcement
@@ -1194,6 +1194,35 @@ access"`. `data` differs by policy and is informational. Three findings:
 - **A server's own tool failure looks different.** It comes back as
   `result.isError: true`, never as `error`. The Mule server puts a Java stack
   in the text.
+
+**How each framework surfaces the denial: `VERIFIED (local round-trip)`,
+2026-10-29, #312.** `python/scripts/mcp_binding/server.py --deny add` answers a
+`tools/call` of `add` with the captured denial above (HTTP 200, `-32008`
+"Unable to access", `data` `Access denied to: add`), leaving `add` listed, as a
+stale descriptor would. `python/scripts/mcp_binding/probe_denial.py` calls it
+through each framework's own tool object. Fixtures
+`mcp_binding/denial-<venv>.json`, one per throwaway venv, Python 3.12.16:
+
+| Framework | Surfaces the denial as |
+|---|---|
+| MCP Python SDK | raises `MCPError` (2.x) / `McpError` (1.x), `error.code == -32008`, inside two nested `ExceptionGroup`s from the client's task group (`mcp` 1.30.0, 2.1.1, 2.3.0) |
+| LangGraph | raises `McpError` from `coroutine`, `ainvoke` and the `ToolNode` tool-call path (`langchain-mcp-adapters` 0.3.2, `mcp` 1.30.0) |
+| LlamaIndex | raises the `ExceptionGroup` around `MCPError`, from `async_fn` and `acall` (`llama-index-tools-mcp` 0.6.0, `mcp` 2.3.0) |
+| Anthropic SDK | raises `MCPError` from `func` and `call` (`anthropic` 2.3.0 and 1.17.0, `mcp` 2.3.0) |
+| OpenAI Agents SDK | raises `MCPError` from `server.call_tool` and `MCPUtil.invoke_mcp_tool` (`openai-agents` 0.24.0, `mcp` 2.3.0) |
+| MS Agent Framework | raises `ToolExecutionException` with the `MCPError` as its cause (`agent-framework` 1.23.0, `mcp` 2.3.0) |
+| CrewAI | raises `McpError` from `run` (`crewai-tools` 1.15.33, `mcp` 1.30.0) |
+| Google ADK | **returns** `{'error': 'MCP tool execution failed: Unable to access'}` from `run_async`; the code and `data` are gone (`google-adk` 2.13.0, `mcp` 2.3.0) |
+| Strands | **returns** `status: error`, text `Tool execution failed: Unable to access`; the code and `data` are gone (`strands-agents` 1.62.0, `mcp` 2.1.1) |
+
+The `ToolSet` LangGraph, LlamaIndex and Anthropic bindings wrap each tool's call
+and raise `ToolNotInProfile` (`donkey_kit.experimental`) from it, naming the
+tool from `data` and the server's coordinates. The whole-server bindings leave
+the call to the framework, so they surface what the table says; for the ones
+that raise, `tool_access_denial(exc)` converts the error. ADK and Strands keep
+only the message text, which is not a discriminator, so the SDK does not
+classify it. `tests/conformance/test_tool_binding.py::test_tool_access_denied_typed`
+holds each binding to this in the venvs above.
 
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.

@@ -1,0 +1,79 @@
+{
+  "denial": "HTTP 200, JSON-RPC -32008 'Unable to access' (ledger \u00a79, #303)",
+  "distributions": {
+    "crewai-tools": "1.15.33",
+    "langchain-mcp-adapters": "0.3.2",
+    "mcp": "1.30.0"
+  },
+  "observed": {
+    "crewai": {
+      "run": {
+        "raised": [
+          {
+            "code": -32008,
+            "data": "Access denied to: add",
+            "message": "Unable to access",
+            "type": "mcp.shared.exceptions.McpError"
+          }
+        ]
+      }
+    },
+    "langgraph": {
+      "ainvoke": {
+        "raised": [
+          {
+            "code": -32008,
+            "data": "Access denied to: add",
+            "message": "Unable to access",
+            "type": "mcp.shared.exceptions.McpError"
+          }
+        ]
+      },
+      "ainvoke_tool_call": {
+        "raised": [
+          {
+            "code": -32008,
+            "data": "Access denied to: add",
+            "message": "Unable to access",
+            "type": "mcp.shared.exceptions.McpError"
+          }
+        ]
+      },
+      "coroutine": {
+        "raised": [
+          {
+            "code": -32008,
+            "data": "Access denied to: add",
+            "message": "Unable to access",
+            "type": "mcp.shared.exceptions.McpError"
+          }
+        ]
+      }
+    },
+    "mcp_sdk": {
+      "raised": [
+        {
+          "code": null,
+          "data": null,
+          "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+          "type": "builtins.ExceptionGroup"
+        },
+        {
+          "code": null,
+          "data": null,
+          "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+          "type": "builtins.ExceptionGroup"
+        },
+        {
+          "code": -32008,
+          "data": "Access denied to: add",
+          "message": "Unable to access",
+          "type": "mcp.shared.exceptions.McpError"
+        }
+      ]
+    }
+  },
+  "probe": "probe_denial.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}
