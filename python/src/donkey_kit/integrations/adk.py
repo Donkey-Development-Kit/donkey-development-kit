@@ -77,7 +77,7 @@ from ..core.lastcall import LastCallBridge, open_last_call_bridge
 from ..core.masking import masked
 from ..core.refusals import capture_refusals
 from ..core.toolspec import tool_spec
-from . import AdapterCapabilities
+from . import AdapterCapabilities, missing_framework_error
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
@@ -273,7 +273,10 @@ def last_call_bridged(model_class: type[_M]) -> type[_M]:
         TypeError: ``model_class`` is not a ``BaseLlm`` subclass.
         ImportError: ``google-adk`` is not installed.
     """
-    from google.adk.models import BaseLlm
+    try:
+        from google.adk.models import BaseLlm
+    except ModuleNotFoundError as exc:
+        raise missing_framework_error("adk", exc.name) from exc
 
     if not (isinstance(model_class, type) and issubclass(model_class, BaseLlm)):
         raise TypeError(f"expected a google.adk.models.BaseLlm subclass, got {model_class!r}")
@@ -434,7 +437,10 @@ def approval_plugin(name: str = "donkey_approval") -> BasePlugin:
 def _approval_plugin_class() -> type[BasePlugin]:
     """The ``BasePlugin`` subclass :func:`approval_plugin` builds, defined on
     first use so ``google.adk`` is imported lazily (§1.1)."""
-    from google.adk.plugins import BasePlugin
+    try:
+        from google.adk.plugins import BasePlugin
+    except ModuleNotFoundError as exc:
+        raise missing_framework_error("adk", exc.name) from exc
 
     class ApprovalPlugin(BasePlugin):
         """Pauses approval-gated tool calls with ADK's tool confirmation."""
@@ -628,6 +634,7 @@ def approve(approval: Approval, *, by: str) -> Approval:
     Raises:
         ValueError: ``by`` is empty, or ``approval`` is not one of
             :func:`pending_approvals`.
+        ImportError: ``google-adk`` is not installed.
     """
     return _response(approval, {"by": _who(by)}, confirmed=True)
 
@@ -643,6 +650,7 @@ def reject(approval: Approval, *, by: str, message: str | None = None) -> Approv
     Raises:
         ValueError: ``by`` is empty, or ``approval`` is not one of
             :func:`pending_approvals`.
+        ImportError: ``google-adk`` is not installed.
     """
     decision: dict[str, Any] = {"by": _who(by)}
     if message is not None:
@@ -681,7 +689,10 @@ def _response(approval: Approval, decision: dict[str, Any], *, confirmed: bool) 
         raise ValueError(
             f"not a paused ADK approval; pass one of pending_approvals(events), not {approval!r}"
         )
-    from google.genai import types
+    try:
+        from google.genai import types
+    except ModuleNotFoundError as exc:
+        raise missing_framework_error("adk", exc.name) from exc
 
     payload = {**request.args["toolConfirmation"]["payload"], **decision}
     part = types.Part(

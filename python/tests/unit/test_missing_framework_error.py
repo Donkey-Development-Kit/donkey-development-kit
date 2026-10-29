@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib
 import importlib.abc
 import importlib.machinery
+import math
 import sys
 import types
 from collections.abc import Callable, Iterator, Sequence
@@ -24,9 +25,10 @@ from typing import Any
 import pytest
 
 from donkey_kit import Donkey
+from donkey_kit.core.approvals import Approval
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import build_http_client
-from donkey_kit.integrations import ADAPTERS, _base
+from donkey_kit.integrations import ADAPTERS, _base, adk
 
 _MISSING_DEP = "_ddk_test_missing_dependency"
 
@@ -58,6 +60,39 @@ CASES = [
     for attr, factories in FACTORIES.items()
     for factory, module, call in factories
 ]
+
+
+def _paused_adk_approval() -> Approval:
+    """An approval as ADK's ``pending_approvals()`` returns it: ``approve()`` and
+    ``reject()`` check its ``native`` request before importing ``google.genai``."""
+    request = types.SimpleNamespace(
+        id="call-1",
+        name="adk_request_confirmation",
+        args={"toolConfirmation": {"payload": {"kind": adk.APPROVAL_KIND, "approval_id": "a1"}}},
+    )
+    return Approval(
+        id="a1",
+        tool="issue_refund",
+        arguments=types.MappingProxyType({}),
+        risk=None,
+        correlation_id="a1",
+        requested_at=0.0,
+        expires_at=math.inf,
+        native=request,
+    )
+
+
+# (helper, the module it imports lazily, call) for the module-level helpers that
+# import their framework with no adapter to go through (#1440). The call takes
+# the adapter's module.
+HELPERS: dict[str, list[tuple[str, str, _Call]]] = {
+    "adk": [
+        ("last_call_bridged", "google.adk.models", lambda m: m.last_call_bridged(object)),
+        ("approval_plugin", "google.adk.plugins", lambda m: m.approval_plugin()),
+        ("approve", "google.genai", lambda m: m.approve(_paused_adk_approval(), by="m.keller")),
+        ("reject", "google.genai", lambda m: m.reject(_paused_adk_approval(), by="m.keller")),
+    ],
+}
 
 
 def _cfg() -> DonkeyConfig:
@@ -185,6 +220,27 @@ def test_module_level_factory_raises_curated_error(
     # The autouse `_reset_module_state` fixture (tests/conftest.py, #750) already
     # clears `_DEFAULT_ADAPTERS` before this test runs.
     reported = missing(module)
+    adapter_module = importlib.import_module(f"donkey_kit.integrations{ADAPTERS[attr].module}")
+    with pytest.raises(ImportError) as exc:
+        call(adapter_module)
+    _assert_curated(exc, attr, reported)
+
+
+@pytest.mark.parametrize(
+    ("attr", "module", "call"),
+    [
+        pytest.param(attr, module, call, id=f"{attr}.{helper}")
+        for attr, helpers in HELPERS.items()
+        for helper, module, call in helpers
+    ],
+)
+def test_module_level_helper_raises_curated_error(
+    attr: str, module: str, call: _Call, missing: Callable[[str], str]
+) -> None:
+    reported = missing(module)
+    # approval_plugin() builds its class once; a class built by an earlier test
+    # would skip the import.
+    adk._approval_plugin_class.cache_clear()
     adapter_module = importlib.import_module(f"donkey_kit.integrations{ADAPTERS[attr].module}")
     with pytest.raises(ImportError) as exc:
         call(adapter_module)
