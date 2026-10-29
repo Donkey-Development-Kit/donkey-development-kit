@@ -1496,8 +1496,8 @@ overridable in config.
 | User-token request header | `core/transport/headers.py` `_apply_user_token`, `core/_verify.py` `USER_TOKEN_HEADER`; override `user_token_header` / `DONKEY_USER_TOKEN_HEADER` | UNVERIFIED | — (placeholder: `Authorization: Bearer <token>`, the header the Omni Gateway [OAuth 2.0 OBO Credential Injection policy](https://docs.mulesoft.com/gateway/latest/policies-outbound-oauth-obo) reads the incoming bearer from; a custom header carries the raw token) | — | — |
 | Exchange parameters beyond the subject token (`audience`, `resource`, `scope`, `requested_token_type`) | — | UNVERIFIED | — (none sent) | — | — |
 
-**Evidence so far (2026-10-29, #255).** Two related captures exist. Neither
-flips a row above.
+**Evidence so far (2026-10-29, #255).** None of the captures below flips a
+row above.
 
 - **User-token header, partial.** On 2026-10-28 a Keycloak user token sent as
   `Authorization: Bearer` straight to an A2A instance was accepted and
@@ -1506,12 +1506,21 @@ flips a row above.
   went to an A2A instance and not through `as_user()` or an LLM proxy, so the
   row stays `UNVERIFIED`. Provisioning #81 is the setup for a live
   `as_user()` call through an MCP instance.
+- **The placeholder path refuses the grant (LIVE, 2026-10-29).** A
+  `POST /accounts/api/v2/oauth2/token` on `anypoint.mulesoft.com` with the
+  form body above returns `401`
+  `{"error":"invalid_request","error_description":"Invalid grant_type"}`
+  (`application/json`, no `www-authenticate`). The subject token was a current
+  realm-`ddk` Keycloak `id_token`. The response is the same with valid
+  connected-app credentials and with none. The control request
+  (`client_credentials`, same app) got `200`, so the credentials were good and
+  the grant type itself is refused. The endpoint row stays `UNVERIFIED`: this
+  shows what the endpoint is not, not what it is.
 - **Who runs the exchange.** In every live OBO setup the *gateway* runs the
   RFC 8693 exchange, against the IdP realm's token endpoint
-  (`/protocol/openid-connect/token`). Nothing seen so far shows the Anypoint
-  control plane serving the grant at the placeholder path. If it doesn't,
-  `as_user()` should forward the user token and leave the exchange to the
-  policy, rather than flip this row to a different path.
+  (`/protocol/openid-connect/token`). Together with the refusal above, this
+  points to `as_user()` forwarding the user token and leaving the exchange to
+  the policy, rather than this row flipping to a different path.
 - **Step-up MFA** (`BG §2.3`). The OBO policy's CIBA step-up shapes are
   `VERIFIED (LIVE)` in §4 item 8 and typed as `GatewayApprovalPending` /
   `GatewayApprovalDenied` (#1320). The `502` `ciba_initiation_failed` shape is
