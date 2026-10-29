@@ -23,6 +23,7 @@ __all__ = [
     "allow_http_setting",
     "host_of",
     "is_loopback",
+    "is_loopback_host",
     "require_secure_url",
 ]
 
@@ -60,17 +61,22 @@ def host_of(url: str) -> str | None:
     return parts.hostname if parts else None
 
 
-def is_loopback(url: str) -> bool:
-    """True when ``url``'s host is ``localhost`` or a loopback IP address."""
-    host = host_of(url)
-    if host is None:
-        return False
+def is_loopback_host(host: str) -> bool:
+    """True when ``host`` is ``localhost`` or a loopback IP address (``127.0.0.0/8``,
+    ``::1``). ``0.0.0.0`` is not: it binds every interface."""
+    host = host.strip().strip("[]").lower()
     if host == "localhost":
         return True
     try:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def is_loopback(url: str) -> bool:
+    """True when ``url``'s host is ``localhost`` or a loopback IP address."""
+    host = host_of(url)
+    return host is not None and is_loopback_host(host)
 
 
 def require_secure_url(url: str, *, name: str) -> None:

@@ -1,7 +1,9 @@
 """The A2A server behind ``donkey.serve()`` (`BG §2.9.1`, #224).
 
 Every A2A behaviour here is the official ``a2a-sdk``'s: ``DefaultRequestHandler``
-runs the task lifecycle over an ``InMemoryTaskStore``, ``TaskUpdater`` publishes
+runs the task lifecycle over an ``InMemoryTaskStore`` (subclassed only to drop
+the oldest finished tasks, so a long-running server's memory stays bounded),
+``TaskUpdater`` publishes
 the status and artifact events, and ``create_agent_card_routes`` /
 ``create_jsonrpc_routes`` serve the card and the JSON-RPC endpoint. Never
 reimplement any of it here (the build plan's *Do not build* list). The class
@@ -15,11 +17,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import warnings
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Protocol
 
-from ..core.errors import DonkeyError, PolicyViolation
+from ..core.endpoints import is_loopback_host
+from ..core.errors import ConfigWarning, DonkeyError, PolicyViolation
 from ..core.inbound import InboundRun, inbound_task
 from ..core.refusals import TypedRefusals
 from ..core.toolspec import AgentSpec, agent_spec
@@ -27,8 +32,9 @@ from .types import A2AResult, A2ATask
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
+    from a2a.server.context import ServerCallContext
     from a2a.server.events import EventQueue
-    from a2a.types import Message
+    from a2a.types import Message, Task
 
 __all__ = ["build_app", "serve"]
 
@@ -37,6 +43,11 @@ _log = logging.getLogger(__name__)
 # The media types a served agent accepts and produces: text parts and data parts,
 # the two A2ATask and A2AResult carry.
 _MODES = ("text/plain", "application/json")
+
+# How many finished tasks (completed, failed, canceled or rejected) the server
+# keeps for GetTask; past it, the oldest finished task is dropped. A task still
+# running is never dropped.
+_MAX_FINISHED_TASKS = 1000
 
 
 class _ASGIApp(Protocol):
@@ -166,6 +177,13 @@ def build_app(
     ``DonkeyError`` first, so ``type`` is ``PIIDetected``, not the framework's
     wrapper. The message and stack trace go to this module's logger only.
 
+    Tasks live in memory, in the ``a2a-sdk``'s ``InMemoryTaskStore``. The 1000
+    most recently finished ones (completed, failed, canceled or rejected) stay
+    readable with ``GetTask``; an older one is dropped, so a long-running server
+    does not grow without bound. A running task is never dropped.
+
+    The app authenticates no caller: the gateway in front of it does.
+
     Args:
         handler: A callable marked with ``@donkey.agent``.
         url: The URL the card advertises for the JSON-RPC endpoint. When a
@@ -206,12 +224,41 @@ def build_app(
         from a2a.server.request_handlers import DefaultRequestHandler
         from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
         from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
-        from a2a.types import AgentCard
+        from a2a.types import AgentCard, TaskState
         from starlette.applications import Starlette
     except ImportError as exc:
         raise _missing_extra(exc) from exc
 
     bridge = refusals if refusals is not None else TypedRefusals()
+    finished_states = {
+        TaskState.TASK_STATE_COMPLETED,
+        TaskState.TASK_STATE_CANCELED,
+        TaskState.TASK_STATE_FAILED,
+        TaskState.TASK_STATE_REJECTED,
+    }
+
+    class _BoundedTaskStore(InMemoryTaskStore):
+        """The a2a-sdk's store, keeping at most ``_MAX_FINISHED_TASKS`` finished
+        tasks: the oldest is deleted through the store's own ``delete``."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._finished: OrderedDict[str, ServerCallContext] = OrderedDict()
+
+        async def save(self, task: Task, context: ServerCallContext) -> None:
+            await super().save(task, context)
+            if task.status.state not in finished_states:
+                self._finished.pop(task.id, None)
+                return
+            self._finished[task.id] = context
+            self._finished.move_to_end(task.id)
+            while len(self._finished) > _MAX_FINISHED_TASKS:
+                oldest, owner = self._finished.popitem(last=False)
+                await super().delete(oldest, owner)
+
+        async def delete(self, task_id: str, context: ServerCallContext) -> None:
+            self._finished.pop(task_id, None)
+            await super().delete(task_id, context)
 
     def _failed_message(exc: Exception, run: InboundRun | None, context: RequestContext) -> Message:
         text, error = _failure(exc, run)
@@ -272,7 +319,7 @@ def build_app(
 
     card = AgentCard(**_card_fields(spec, url=url, version=version))
     handler_ = DefaultRequestHandler(
-        agent_executor=_Executor(), task_store=InMemoryTaskStore(), agent_card=card
+        agent_executor=_Executor(), task_store=_BoundedTaskStore(), agent_card=card
     )
     routes = [*create_agent_card_routes(card), *create_jsonrpc_routes(handler_, "/")]
 
@@ -303,6 +350,10 @@ def serve(
     arguments and :func:`build_app` the governance ones; ``Donkey.serve()`` fills
     those from its configuration.
 
+    A ``host`` that is not loopback (``localhost``, ``127.0.0.0/8``, ``::1``)
+    emits a :class:`~donkey_kit.core.errors.ConfigWarning`: the server
+    authenticates no caller, so only the gateway should be able to reach it.
+
     Raises:
         TypeError: ``handler`` is not marked with ``@donkey.agent``.
         ImportError: The ``[a2a]`` extra is not installed.
@@ -321,4 +372,12 @@ def serve(
         import uvicorn
     except ImportError as exc:
         raise _missing_extra(exc) from exc
+    if not is_loopback_host(host):
+        warnings.warn(
+            f"donkey.serve() is binding {host}, which other machines can reach. The A2A "
+            "server authenticates no caller: put the gateway in front of it (donkey "
+            "expose) and let only the gateway reach this port.",
+            ConfigWarning,
+            stacklevel=2,
+        )
     uvicorn.run(app, host=host, port=port)

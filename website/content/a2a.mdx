@@ -138,6 +138,18 @@ gateway, not your laptop:
 donkey.serve(handle, port=9000, url="https://gw.example.com/agents/support-triage/")
 ```
 
+The server doesn't authenticate callers. It expects the gateway in front of it
+to do that. A `host=` that isn't loopback (`localhost`, `127.0.0.0/8`, `::1`),
+such as `"0.0.0.0"`, still binds, but it emits a `ConfigWarning`
+(`donkey_kit.core.errors.ConfigWarning`) saying so.
+Bind beyond localhost only when the gateway reaches the agent over the network,
+and make sure only the gateway can reach that port.
+
+Tasks are kept in memory, in the `a2a-sdk`'s task store. The 1,000 most
+recently finished tasks (completed, failed, canceled or rejected) stay readable
+with `GetTask`. Older ones are dropped, so a long-running server doesn't grow
+without bound. A task that is still running is never dropped.
+
 `donkey.serve()` blocks until the server stops. To mount the agent in your own
 ASGI server, or to test it in process, build the same app with
 `donkey_kit.a2a.build_app(handle)` and run it inside its ASGI lifespan, as
@@ -355,6 +367,12 @@ would advertise the gateway's.
   `PromptInjectionBlocked` rather than a raw `400`.
 - **Every response carries `x-donkey-simulator: true`.** That includes the
   responses the agent produced.
+- **Request bodies are capped at 4 MiB.** A larger `POST` gets a `413` from the
+  ingress and never reaches the agent.
+- **It binds `127.0.0.1` by default.** A `--host` that isn't loopback, such as
+  `0.0.0.0`, prints a warning: the simulated ingress enforces no policy and the
+  agent doesn't authenticate callers, so anyone who can reach the port can call
+  the agent.
 
 <Callout type="warning">
   **The rejection shapes are the LLM proxy's, not captured from an A2A

@@ -64,6 +64,20 @@ def test_dev_serves_the_target_behind_the_ingress(project: dict[str, Any]) -> No
     assert "x-donkey-simulator: true" in result.stdout
 
 
+def test_a_loopback_bind_prints_no_warning(project: dict[str, Any]) -> None:
+    result = runner.invoke(app, ["dev", "dev_agent_1284:handle"])
+    assert result.exit_code == 0, _combined(result)
+    assert "Warning" not in _combined(result)
+
+
+def test_a_non_loopback_bind_warns_and_still_serves(project: dict[str, Any]) -> None:
+    result = runner.invoke(app, ["dev", "dev_agent_1284:handle", "--host", "0.0.0.0"])
+    assert result.exit_code == 0, _combined(result)
+    assert project["host"] == "0.0.0.0"
+    assert "Warning: binding 0.0.0.0" in result.stderr
+    assert "authenticates no caller" in result.stderr
+
+
 def test_an_unmarked_handler_is_a_usage_error(project: dict[str, Any]) -> None:
     result = runner.invoke(app, ["dev", "dev_agent_1284:plain"])
     assert result.exit_code == 2

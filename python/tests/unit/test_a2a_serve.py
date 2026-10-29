@@ -8,10 +8,12 @@ any language sees, not just what the SDK's own client tolerates.
 
 from __future__ import annotations
 
+import asyncio
 import builtins
 import logging
 import subprocess
 import sys
+import warnings
 from typing import Any
 
 import httpx
@@ -20,7 +22,9 @@ import pytest
 pytest.importorskip("a2a", reason="needs the [a2a] extra")
 
 from donkey_kit import A2AResult, A2ATask, Donkey
+from donkey_kit.a2a import _server as a2a_server
 from donkey_kit.a2a import build_app, serve
+from donkey_kit.core.errors import ConfigWarning
 
 _CARD = "/.well-known/agent-card.json"
 
@@ -166,6 +170,89 @@ def test_serve_binds_to_localhost_by_default(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
     serve(_echo())
     assert calls == [{"host": "127.0.0.1", "port": 8000}]
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "127.0.0.2"])
+def test_a_loopback_bind_does_not_warn(monkeypatch: pytest.MonkeyPatch, host: str) -> None:
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: None)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        serve(_echo(), host=host)
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "::", "10.0.0.5", "agent.internal"])
+def test_a_non_loopback_bind_warns_that_the_gateway_belongs_in_front(
+    monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    import uvicorn
+
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
+    with pytest.warns(ConfigWarning, match="authenticates no caller") as record:
+        serve(_echo(), host=host, port=9002)
+    assert host in str(record[0].message)
+    assert "gateway" in str(record[0].message)
+    assert calls == [{"host": host, "port": 9002}]  # a warning, not a refusal
+
+
+async def _get_task(client: httpx.AsyncClient, task_id: str) -> dict[str, Any]:
+    body = {"jsonrpc": "2.0", "id": 2, "method": "GetTask", "params": {"id": task_id}}
+    response = await client.post("/", json=body, headers={"A2A-Version": "1.0"})
+    payload: dict[str, Any] = response.json()
+    return payload
+
+
+async def test_the_oldest_finished_task_is_dropped_past_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(a2a_server, "_MAX_FINISHED_TASKS", 2)
+    app: Any = build_app(_echo())
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://a") as c,
+    ):
+        ids = []
+        for n in range(3):
+            response = await c.post("/", json=_send(f"t{n}"), headers={"A2A-Version": "1.0"})
+            ids.append(response.json()["result"]["task"]["id"])
+        oldest, *kept = [await _get_task(c, task_id) for task_id in ids]
+    assert "error" in oldest, oldest
+    assert [k["result"]["artifacts"][0]["parts"] for k in kept] == [
+        [{"text": "echo: t1"}],
+        [{"text": "echo: t2"}],
+    ]
+
+
+async def test_a_running_task_is_never_dropped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(a2a_server, "_MAX_FINISHED_TASKS", 1)
+    release = asyncio.Event()
+    started: list[str] = []
+
+    @Donkey.agent(name="gate")
+    async def gate(task: A2ATask) -> str:
+        """Waits on the first task; answers the others at once."""
+        if task.input == "wait":
+            started.append(task.task_id)
+            await release.wait()
+        return task.input
+
+    app: Any = build_app(gate)
+    headers = {"A2A-Version": "1.0"}
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://a") as c,
+    ):
+        waiting = asyncio.create_task(c.post("/", json=_send("wait"), headers=headers))
+        while not started:
+            await asyncio.sleep(0)
+        for n in range(3):
+            await c.post("/", json=_send(f"done {n}"), headers=headers)
+        running = await _get_task(c, started[0])
+        release.set()
+        await waiting
+    assert running["result"]["status"]["state"] == "TASK_STATE_WORKING"
 
 
 def test_donkey_serve_delegates_with_its_governance_settings(

@@ -66,7 +66,8 @@ def dev(
 
     The ingress is SIMULATED: it enforces no policy. No A2A agent instance's
     rejections have been captured live yet, so the shapes are the LLM-proxy
-    ones.
+    ones. It answers a request body over 4 MiB with a ``413``, and a ``--host``
+    that is not loopback prints a warning: nothing authenticates the caller.
 
     Needs the ``[a2a]`` and ``[local]`` extras; a missing one is an install
     prompt (exit 1). A bad TARGET or ``--scenario`` is a usage error (exit 2).
@@ -88,6 +89,7 @@ def dev(
         raise typer.Exit(2) from exc
 
     from ..a2a import build_app
+    from ..core.endpoints import is_loopback_host
     from ..donkey import Donkey
     from ..integrations import typed_refusals
     from ..simulator.ingress import build_ingress
@@ -113,6 +115,14 @@ def dev(
     except ImportError as exc:
         raise _install_prompt(exc) from exc
 
+    if not is_loopback_host(host):
+        typer.secho(
+            f"Warning: binding {host}, which other machines can reach. The simulated "
+            "ingress enforces no policy and the agent authenticates no caller, so "
+            "anyone who reaches this port can call the agent.",
+            fg="yellow",
+            err=True,
+        )
     typer.echo(
         f"Agent {target} over A2A on {url}, behind a SIMULATED gateway ingress. "
         "Every response carries 'x-donkey-simulator: true'. Rejections replay the "
