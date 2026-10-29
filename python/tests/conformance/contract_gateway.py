@@ -178,30 +178,33 @@ class Gateway:
             return 403, headers, body
         if self.mode == "budget":
             return 429, _proxy_headers("reject.token-rate-limit.headers.txt"), b""
-        return self._success(record)
+        return success(record.path, record.body)
 
-    def _success(self, record: Recorded) -> tuple[int, dict[str, str], bytes]:
-        try:
-            payload = json.loads(record.body or b"{}")
-        except ValueError:
-            payload = {}
-        model = str(payload.get("model") or "m")
-        stream = payload.get("stream") is True
-        path = record.path.split("?", 1)[0]
-        ids = {"x-request-id": REQUEST_ID}
-        sse = {"content-type": "text/event-stream", **ids}
-        js = {"content-type": "application/json", **ids}
-        if path.endswith(":streamGenerateContent"):
-            body = (_FIXTURES / "gemini_inbound/responses.stream.body.txt").read_bytes()
-            return 200, _fixture_headers("gemini_inbound/responses.stream.headers.txt") | ids, body
-        if path.endswith(":generateContent"):
-            body = (_FIXTURES / "gemini_inbound/responses.success.body.json").read_bytes()
-            return 200, _fixture_headers("gemini_inbound/responses.success.headers.txt") | ids, body
-        if path.endswith("/messages"):
-            if stream:
-                return 200, sse, _anthropic_stream(model)
-            body = (_FIXTURES / "anthropic_inbound/responses.success.body.json").read_bytes()
-            return 200, js, body
-        route = "responses" if path.endswith("/responses") else "chat_completions"
-        headers, body = _route(f"{route}.{'stream' if stream else 'success'}")
-        return 200, headers | ids, body
+
+def success(path: str, body: bytes) -> tuple[int, dict[str, str], bytes]:
+    """The route-shaped success for a request to ``path`` with ``body``: status,
+    headers and payload, streamed when the body asks for a stream."""
+    try:
+        payload = json.loads(body or b"{}")
+    except ValueError:
+        payload = {}
+    model = str(payload.get("model") or "m")
+    stream = payload.get("stream") is True
+    path = path.split("?", 1)[0]
+    ids = {"x-request-id": REQUEST_ID}
+    sse = {"content-type": "text/event-stream", **ids}
+    js = {"content-type": "application/json", **ids}
+    if path.endswith(":streamGenerateContent"):
+        body = (_FIXTURES / "gemini_inbound/responses.stream.body.txt").read_bytes()
+        return 200, _fixture_headers("gemini_inbound/responses.stream.headers.txt") | ids, body
+    if path.endswith(":generateContent"):
+        body = (_FIXTURES / "gemini_inbound/responses.success.body.json").read_bytes()
+        return 200, _fixture_headers("gemini_inbound/responses.success.headers.txt") | ids, body
+    if path.endswith("/messages"):
+        if stream:
+            return 200, sse, _anthropic_stream(model)
+        body = (_FIXTURES / "anthropic_inbound/responses.success.body.json").read_bytes()
+        return 200, js, body
+    route = "responses" if path.endswith("/responses") else "chat_completions"
+    headers, body = _route(f"{route}.{'stream' if stream else 'success'}")
+    return 200, headers | ids, body

@@ -34,14 +34,17 @@ from __future__ import annotations
 
 import contextvars
 import importlib
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 import pytest
 
-# Sibling data module (tests/conformance/ is not a package).
+# Sibling data modules (tests/conformance/ is not a package).
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS
+from transport_surfaces import FACTORIES as TRANSPORT_FACTORIES
+from transport_surfaces import SURFACES as TRANSPORT_SURFACES
+from transport_surfaces import Call, adk_run, raw_openai
 
 from donkey_kit import (
     Donkey,
@@ -55,8 +58,6 @@ from donkey_kit._testing import http_clients, swap_transport
 from donkey_kit.core import _wire
 from donkey_kit.integrations import ADAPTERS
 
-Call = Callable[[Donkey], Awaitable[None]]
-
 
 def _cfg() -> DonkeyConfig:
     return DonkeyConfig(
@@ -69,94 +70,15 @@ def _cfg() -> DonkeyConfig:
 
 
 # --- the surfaces ------------------------------------------------------------
-
-
-async def _openai(donkey: Donkey) -> None:
-    pytest.importorskip("openai")
-    client = donkey.openai()
-    await client.chat.completions.create(
-        model="gpt-4o", messages=[{"role": "user", "content": "hi"}]
-    )
-
-
-async def _anthropic(donkey: Donkey) -> None:
-    pytest.importorskip("anthropic")
-    client = donkey.anthropic.client()
-    await client.messages.create(
-        model="claude-sonnet-4-5", max_tokens=16, messages=[{"role": "user", "content": "hi"}]
-    )
-
-
-async def _langgraph(donkey: Donkey) -> None:
-    pytest.importorskip("langchain_openai")
-    graph_mod = pytest.importorskip("langgraph.graph")
-    model = donkey.langgraph.chat_model("gpt-4o")
-
-    async def call_model(state: dict[str, Any]) -> dict[str, Any]:
-        await model.ainvoke(state["messages"])
-        return {}
-
-    builder = graph_mod.StateGraph(dict)
-    builder.add_node("call_model", call_model)
-    builder.set_entry_point("call_model")
-    builder.add_edge("call_model", graph_mod.END)
-    await builder.compile().ainvoke({"messages": [("user", "hi")]})
-
-
-async def _openai_agents(donkey: Donkey) -> None:
-    agents = pytest.importorskip("agents")
-    agent = agents.Agent(name="bridge", model=donkey.openai_agents.model("gpt-4o"))
-    # Tracing off: the Agents SDK would otherwise export spans to OpenAI.
-    await agents.Runner.run(agent, "hi", run_config=agents.RunConfig(tracing_disabled=True))
-
-
-async def _llamaindex(donkey: Donkey) -> None:
-    pytest.importorskip("llama_index.llms.openai_like")
-    workflow = pytest.importorskip("llama_index.core.agent.workflow")
-    agent = workflow.FunctionAgent(tools=[], llm=donkey.llamaindex.llm("gpt-4o"))
-    await agent.run(user_msg="hi")
-
-
-async def _adk_run(model: Any, *, streaming: bool = False) -> None:
-    """One ``LlmAgent`` turn on ``model`` through ADK's ``InMemoryRunner``."""
-    adk_agents = pytest.importorskip("google.adk.agents")
-    run_config = pytest.importorskip("google.adk.agents.run_config")
-    runners = pytest.importorskip("google.adk.runners")
-    types = pytest.importorskip("google.genai.types")
-    agent = adk_agents.LlmAgent(name="bridge", model=model)
-    runner = runners.InMemoryRunner(agent=agent, app_name="bridge")
-    session = await runner.session_service.create_session(app_name="bridge", user_id="u")
-    message = types.Content(role="user", parts=[types.Part(text="hi")])
-    mode = run_config.StreamingMode.SSE if streaming else run_config.StreamingMode.NONE
-    config = run_config.RunConfig(streaming_mode=mode)
-    async for _ in runner.run_async(
-        user_id="u", session_id=session.id, new_message=message, run_config=config
-    ):
-        pass
-
-
-async def _adk_gemini(donkey: Donkey) -> None:
-    pytest.importorskip("google.adk.models")
-    await _adk_run(donkey.adk.gemini("gemini-3.8-flash"))
-
-
-async def _adk_model(donkey: Donkey) -> None:
-    pytest.importorskip("google.adk.models.lite_llm")
-    await _adk_run(donkey.adk.model("gpt-4o"))
+# One per adapter factory that sends through the SDK's transport, shared with
+# the other transport scenarios (transport_surfaces.py, #1441), plus two cases
+# only the bridge needs: a streamed adk.model() turn and an approved Strands tool.
 
 
 async def _adk_model_streamed(donkey: Donkey) -> None:
     # LiteLlm awaits the same llm_client.acompletion for a streamed turn (#969).
     pytest.importorskip("google.adk.models.lite_llm")
-    await _adk_run(donkey.adk.model("gpt-4o"), streaming=True)
-
-
-async def _strands(donkey: Donkey) -> None:
-    strands = pytest.importorskip("strands")
-    pytest.importorskip("strands.models.openai")
-    # The default retry strategy, as a user's Agent has it (#951).
-    agent = strands.Agent(model=donkey.strands.model("gpt-4o"), callback_handler=None)
-    await agent.invoke_async("hi")
+    await adk_run(donkey.adk.model("gpt-4o"), streaming=True)
 
 
 async def _strands_tool(donkey: Donkey) -> None:
@@ -194,7 +116,7 @@ async def _strands_tool(donkey: Donkey) -> None:
     @Donkey.tool(approval="required")
     async def ask() -> str:
         """Ask the governed model."""
-        await _openai(donkey)
+        await raw_openai(donkey)
         pytest.fail("the governed tool call must refuse")
 
     agent = strands.Agent(
@@ -204,26 +126,10 @@ async def _strands_tool(donkey: Donkey) -> None:
     await agent.invoke_async([approve(interrupt, by="reviewer")])
 
 
-async def _agent_framework(donkey: Donkey) -> None:
-    af = pytest.importorskip("agent_framework")
-    pytest.importorskip("agent_framework.openai")
-    # No policy_middleware(): the run()/@governed scope alone bridges the refusal.
-    agent = af.Agent(client=donkey.agent_framework.chat_client("gpt-4o"))
-    await agent.run("hi")
-
-
 SURFACES: dict[str, Call] = {
-    "openai": _openai,
-    "anthropic": _anthropic,
-    "langgraph": _langgraph,
-    "openai_agents": _openai_agents,
-    "llamaindex": _llamaindex,
-    "adk.gemini": _adk_gemini,
-    "adk.model": _adk_model,
+    **TRANSPORT_SURFACES,
     "adk.model.streamed": _adk_model_streamed,
-    "strands": _strands,
     "strands.tool": _strands_tool,
-    "agent_framework": _agent_framework,
 }
 
 
@@ -280,16 +186,9 @@ def test_scenario_is_registered() -> None:
 
 #: The adapter factory behind each surface; the raw OpenAI client is no adapter.
 _FACTORIES = {
-    "anthropic": ("anthropic", "client"),
-    "langgraph": ("langgraph", "chat_model"),
-    "openai_agents": ("openai_agents", "model"),
-    "llamaindex": ("llamaindex", "llm"),
-    "adk.gemini": ("adk", "gemini"),
-    "adk.model": ("adk", "model"),
+    **TRANSPORT_FACTORIES,
     "adk.model.streamed": ("adk", "model"),
-    "strands": ("strands", "model"),
     "strands.tool": ("strands", "model"),
-    "agent_framework": ("agent_framework", "chat_client"),
 }
 
 

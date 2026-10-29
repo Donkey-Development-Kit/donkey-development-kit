@@ -9,7 +9,8 @@ exemption. Most rows come from ``KNOWN_LIMITATIONS`` in
 the internal matrix lacks comes from ``examples/crewai/main.py``, whose
 ``KNOWN_LIMITATIONS`` the public plugin reads. Both directions are checked: a
 row with no exemption in code fails, and so does an internal exemption that the
-README does not publish.
+README does not publish. A row that says "Every other adapter ..." must name a
+scenario whose coverage check fails when an adapter has no run of it (#1441).
 """
 
 from __future__ import annotations
@@ -50,24 +51,53 @@ _FRAMEWORKS = {
     "Microsoft Agent Framework": ("agent_framework",),
 }
 
+# Scenario -> the test that fails when an adapter factory has no run of it. A
+# row may say "Every other adapter ..." only for a scenario listed here (#1441).
+_EVERY_ADAPTER_RUNS = {
+    "retries_token_budget": (
+        "tests/unit/test_framework_retries.py::test_every_adapter_has_a_retry_case"
+    ),
+    "refusal_handler_cannot_unrefuse": (
+        "tests/conformance/test_handlers_cannot_unrefuse.py"
+        "::test_every_transport_factory_runs_the_scenario"
+    ),
+    "custom_policy_typed": (
+        "tests/conformance/test_custom_policy_typed.py"
+        "::test_every_transport_factory_runs_the_scenario"
+    ),
+    "agent_killed_stops_cleanly": (
+        "tests/conformance/test_agent_killed_stops_cleanly.py"
+        "::test_every_transport_factory_runs_the_scenario"
+    ),
+}
 
-def _published(readme: Path) -> set[tuple[str, str]]:
-    """The ``(framework, scenario)`` pairs the README table publishes."""
+
+def _rows(readme: Path) -> list[tuple[str, str, str]]:
+    """The README table's ``(framework, scenario, reason)`` rows, by table label."""
     text = readme.read_text()
     start = text.index("## Conformance exemptions")
     end = text.find("\n## ", start + 1)
     section = text[start : end if end != -1 else len(text)]
-    rows = [line for line in section.splitlines() if line.startswith("| ")][2:]
-    assert rows, f"no data rows under '## Conformance exemptions' in {readme}"
-    pairs: set[tuple[str, str]] = set()
-    for row in rows:
-        cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+    lines = [line for line in section.splitlines() if line.startswith("| ")][2:]
+    assert lines, f"no data rows under '## Conformance exemptions' in {readme}"
+    rows: list[tuple[str, str, str]] = []
+    for line in lines:
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
         assert len(cells) == 3, f"expected 3 cells, got {cells!r}"
-        framework, scenario = cells[0], cells[1]
+        framework, scenario, reason = cells
         assert scenario in _SCENARIOS, f"README scenario {scenario!r} is not in _SCENARIOS"
         assert framework in _FRAMEWORKS, f"README framework {framework!r} is not in _FRAMEWORKS"
-        pairs.update((fw, _SCENARIOS[scenario]) for fw in _FRAMEWORKS[framework])
-    return pairs
+        rows.append((framework, scenario, reason))
+    return rows
+
+
+def _published(readme: Path) -> set[tuple[str, str]]:
+    """The ``(framework, scenario)`` pairs the README table publishes."""
+    return {
+        (fw, _SCENARIOS[scenario])
+        for framework, scenario, _ in _rows(readme)
+        for fw in _FRAMEWORKS[framework]
+    }
 
 
 def _crewai_example_limits() -> dict[str, str]:
@@ -108,3 +138,19 @@ def test_every_internal_exemption_is_in_the_readme(readme: Path) -> None:
     }
     missing = asserted - _published(readme)
     assert not missing, f"KNOWN_LIMITATIONS entries missing from the README table: {missing}"
+
+
+@pytest.mark.parametrize("readme", _READMES, ids=_IDS)
+def test_every_other_adapter_claim_is_backed_by_a_coverage_check(readme: Path) -> None:
+    for _, scenario, reason in _rows(readme):
+        if "every other adapter" in reason.lower():
+            assert _SCENARIOS[scenario] in _EVERY_ADAPTER_RUNS, (
+                f"README row {scenario!r} claims every other adapter, but no test "
+                f"fails when an adapter has no run of it"
+            )
+
+
+@pytest.mark.parametrize("node", sorted(_EVERY_ADAPTER_RUNS.values()))
+def test_each_coverage_check_exists(node: str) -> None:
+    path, name = node.split("::")
+    assert f"def {name}(" in (_PYTHON_ROOT / path).read_text(), node

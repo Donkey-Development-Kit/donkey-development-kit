@@ -49,6 +49,17 @@ _EXAMPLES = _PYTHON / "examples"
 _NON_FRAMEWORK_EXTRAS = {"llm", "mcp", "a2a", "local", "otel", "cli", "test", "all", "dev"}
 _INDEPENDENCE = "integrations are mutually independent"
 
+# The scenarios that need a request on the SDK's own httpx client: an adapter
+# is exempt from each exactly when it declares transport="framework".
+_TRANSPORT_SCENARIOS = (
+    "agent_killed_stops_cleanly",
+    "approval_round_trip",
+    "correlation_id_propagated",
+    "custom_policy_typed",
+    "jwt_token_refreshed",
+    "refusal_handler_cannot_unrefuse",
+)
+
 
 def _pyproject() -> dict[str, Any]:
     with _PYPROJECT.open("rb") as f:
@@ -188,4 +199,5 @@ def test_known_limitations_name_roster_adapters_and_match_capabilities() -> None
         exempt = limits.get(attr, {})
         assert ("gateway_identity_observed" in exempt) is (not caps.observes_last_call), attr
         assert ("typed_refusal_bridged" in exempt) is (not caps.typed_refusals), attr
-        assert ("jwt_token_refreshed" in exempt) is (caps.transport == "framework"), attr
+        for scenario in _TRANSPORT_SCENARIOS:
+            assert (scenario in exempt) is (caps.transport == "framework"), (attr, scenario)
