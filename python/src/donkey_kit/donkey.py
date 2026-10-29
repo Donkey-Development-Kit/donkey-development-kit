@@ -881,7 +881,9 @@ class Donkey:
                 fallback to the service identity.
             ConfigError: The user token would ride in ``Authorization`` in the
                 ``jwt`` / ``bearer`` modes, where the data-plane token already
-                rides.
+                rides; or ``llm_proxy_url`` was read from the working
+                directory's config files, which only receive the token with
+                ``DONKEY_TRUST_PROJECT_CONFIG=1`` (#1439).
         """
         return UserScope(self._cfg, token)
 

@@ -21,6 +21,13 @@ outer user on exit.
 header the gateway's JWT Validation and OBO policies read (docs/verified-apis.md
 §13); ``user_token_header`` overrides it.
 
+**Checked endpoints only** (ADR 0005, #1439). The user token never comes from
+the working directory's config files, so it is never sent to an endpoint read
+from them unless ``DONKEY_TRUST_PROJECT_CONFIG`` opts in:
+:func:`check_user_token_endpoint` runs ``DonkeyConfig.check_endpoints`` for it,
+for the LLM proxy when the scope is built and for the control plane that MCP
+gateway URLs are read from before a ``ToolSet`` sends it.
+
 **No authorisation here.** The SDK forwards a token; what the user may do is
 decided by the gateway and the platform. Nothing in this module inspects the
 token's claims or expiry, or allows or refuses a call on its strength: an
@@ -56,7 +63,7 @@ from .errors import AuthError, ConfigError
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from .config import DonkeyConfig
+    from .config import Capability, DonkeyConfig
     from .cost import CostTags
 
 __all__ = [
@@ -64,6 +71,7 @@ __all__ = [
     "UserScope",
     "capture_requester",
     "check_requester",
+    "check_user_token_endpoint",
     "current_user",
     "requester_scope",
     "user_token_header",
@@ -74,6 +82,21 @@ def user_token_header(cfg: DonkeyConfig) -> str:
     """The request header the user token rides in: the ``user_token_header``
     override, else the placeholder default."""
     return cfg.user_token_header or _verify.USER_TOKEN_HEADER
+
+
+def check_user_token_endpoint(cfg: DonkeyConfig, *, need: Capability) -> None:
+    """Refuse to send the ``donkey.as_user()`` token to ``need``'s endpoint when
+    ``DonkeyConfig.check_endpoints`` would refuse a credential from outside the
+    project config files (ADR 0005, #1439). ``"control_plane"`` covers the MCP
+    gateway URLs, which are read from that endpoint.
+
+    Raises:
+        ConfigError: The endpoint was read from ``./.donkey-kit.toml`` or its
+            ``.local`` overlay and ``DONKEY_TRUST_PROJECT_CONFIG`` is not set
+            (for ``base_url``, unless it is a standard Anypoint host), or it is
+            not ``https://``.
+    """
+    cfg.check_endpoints(need=need, code_credential="the donkey.as_user() token")
 
 
 class _UserBinding:
@@ -97,7 +120,9 @@ class UserScope:
     """The async context manager ``donkey.as_user(...)`` returns (BG §2.4).
 
     Construction refuses a missing token with
-    :class:`~donkey_kit.core.errors.AuthError`, before the block runs. There is
+    :class:`~donkey_kit.core.errors.AuthError`, and an LLM proxy URL the token
+    may not be sent to with :class:`~donkey_kit.core.errors.ConfigError`
+    (#1439), before the block runs. There is
     no fallback to the service identity and no setting that enables one
     (#216): inside the block a data-plane request carries the user token or is
     not sent. Exit restores whatever was bound before, so nested scopes shadow
@@ -112,7 +137,10 @@ class UserScope:
             AuthError: ``token`` is missing or empty.
             ConfigError: The user token would ride in the default
                 ``Authorization`` header in the ``jwt`` / ``bearer`` modes,
-                where the data-plane token already rides.
+                where the data-plane token already rides; or ``llm_proxy_url``
+                was read from the working directory's config files and
+                ``DONKEY_TRUST_PROJECT_CONFIG`` is not set
+                (:func:`check_user_token_endpoint`).
         """
         if not isinstance(token, str) or not token.strip():
             # An AuthError, not a ConfigError: a request handler that lost the
@@ -137,6 +165,7 @@ class UserScope:
                 "Set user_token_header (env DONKEY_USER_TOKEN_HEADER) to the header "
                 "the gateway reads the user token from."
             )
+        check_user_token_endpoint(cfg, need="llm")
         self._binding = _UserBinding(token)
         self._reset: Token[_UserBinding | None] | None = None
 

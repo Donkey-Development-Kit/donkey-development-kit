@@ -29,7 +29,7 @@ from ..core.approvals import NativePause
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, RegistryError
-from ..core.identity import user_token_header
+from ..core.identity import check_user_token_endpoint, user_token_header
 from ..registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from ..registry.exchange import ExchangeRegistry
 from ..registry.models import AssetRef, McpServerHandle
@@ -124,7 +124,13 @@ class Discovery:
             _discovered=(found.at, found.started, self._cfg.registry_cache_ttl_s),
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
             _user_header=user_token_header(self._cfg),
+            _user_endpoint_check=self._user_endpoint_check,
         )
+
+    def _user_endpoint_check(self) -> None:
+        """Refuse to send a ``donkey.as_user()`` token to the servers when the
+        control plane their URLs came from may not receive it (#1439)."""
+        check_user_token_endpoint(self._cfg, need="control_plane")
 
     async def warm(
         self,
@@ -212,6 +218,7 @@ class Discovery:
             _auth=auth if auth is not None else self._auth,
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
             _user_header=user_token_header(self._cfg),
+            _user_endpoint_check=self._user_endpoint_check,
         )
 
     async def agent_card(self, ref: AssetRef | str) -> dict[str, Any]:
