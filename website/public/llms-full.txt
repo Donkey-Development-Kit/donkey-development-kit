@@ -4145,6 +4145,11 @@ transport does not see the context variable, so its calls are not steered.
 - The reset value (milliseconds *until* reset, in both `x-token-reset` and the
   prose `Reset in …ms`) is converted to a `datetime` anchored to
   `observed_at`, accurate to the second.
+- A malformed reset header never fails the call that carried it. A reset that
+  is negative, not a number, or too far away for a `datetime` to hold is
+  treated as if the header were absent. The window's other fields still
+  update, and a [DEBUG record](https://docs.donkey-kit.dev/telemetry.md#debug-logging) notes it without the
+  header value.
 - `pace()` raises before the request that would cross the reserve, never after
   a `429`.
 - After `reset_at`, `pace()` no longer refuses, so a wait-and-retry loop can
@@ -5745,6 +5750,7 @@ such as `donkey_kit.core.auth`, instead of the package.
 | An auth provider in a `ChainedAuth` failing over to the next one (type names only) | `donkey_kit.core.auth` |
 | The OTLP export bootstrap: inert, kept your `TracerProvider`, or installed (global or DDK-scoped) | `donkey_kit.core.telemetry` |
 | How many tool descriptors a `ToolSet` exposes after its filter, out of the total | `donkey_kit.tools.session` |
+| A rate-limit reset header that was ignored as negative or out of range, naming the budget window (never the value) | `donkey_kit.core._window` |
 | A best-effort step that failed and was skipped (with the traceback), e.g. a refusal translator or recording usage on a span | the module that skipped it |
 
   **A log record never carries a credential.** Records name a request by

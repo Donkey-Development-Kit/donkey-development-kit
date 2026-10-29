@@ -196,13 +196,8 @@ def _observe_upstream(
     is not older than the last (#311)."""
     limit, remaining = (_parse_int(headers.get(name)) for name in names[:2])
     reset_ms = _parse_go_duration(headers.get(names[2]))
-    if limit is None and remaining is None and reset_ms is None:
-        return
-    if window.observed_at is not None and ts < window.observed_at:
-        return
-    window.limit = window.remaining = window.reset_at = None
-    _record(window, limit, remaining, reset_ms, ts)
-    window.provider = headers.get(_wire.LLM_PROVIDER_HEADER)
+    if _record(window, limit, remaining, reset_ms, ts, replace=True):
+        window.provider = headers.get(_wire.LLM_PROVIDER_HEADER)
 
 
 class Budget(_Window):
@@ -294,7 +289,8 @@ class Budget(_Window):
         exactly as it was (``observed_at`` unchanged), so a happy-path call without
         budget headers never resets freshness or raises. If any field is resolved,
         ``observed_at`` is stamped and each resolved field is applied; a missing or
-        unparseable value leaves that field untouched.
+        unparseable value, or a reset that is negative or out of range (#1444),
+        leaves that field untouched.
 
         The same response also fills :attr:`requests` from the ``x-ratelimit-*``
         trio, independently: either window can be observed without the other.

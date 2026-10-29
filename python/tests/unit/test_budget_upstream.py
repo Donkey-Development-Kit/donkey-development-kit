@@ -140,6 +140,56 @@ def test_bedrock_capture_leaves_the_upstream_quota_unobserved() -> None:
     assert b.upstream.tokens.observed_at is None
 
 
+# --- an out-of-range Go duration is no signal, never a crash (#1444) -------------
+
+# Each matches the Go grammar but sums past what a ``datetime`` can hold.
+_HUGE_DURATIONS = [
+    "99999999999999999h",  # the issue's reproduction
+    "99999999999999999s",
+    "1" + "0" * 400 + "h",  # float() of it is inf
+    "1" + "0" * 400 + "ms",
+    "9" * 400 + "." + "9" * 400 + "s",
+    "8000000000h1s",  # fits a timedelta; reset_at lands past datetime.max
+]
+
+
+@pytest.mark.parametrize("raw", _HUGE_DURATIONS)
+def test_an_out_of_range_upstream_reset_is_ignored(raw: str) -> None:
+    b = Budget()
+    b.observe(
+        httpx.Response(
+            200,
+            headers={
+                "x-ratelimit-limit-tokens": "2000000",
+                "x-ratelimit-remaining-tokens": "1999990",
+                "x-ratelimit-reset-tokens": raw,
+                "x-ratelimit-reset-requests": raw,
+            },
+        ),
+        now=_FIXED_NOW,
+    )
+    tok = b.upstream.tokens
+    assert (tok.limit, tok.remaining, tok.reset_at) == (2_000_000, 1_999_990, None)
+    assert tok.observed_at == _FIXED_NOW
+    # The request window's only signal was the bad reset: nothing observed.
+    assert b.upstream.requests.observed_at is None
+
+
+@pytest.mark.parametrize("raw", _HUGE_DURATIONS)
+def test_a_bad_upstream_reset_alone_leaves_the_window_as_it_was(raw: str) -> None:
+    """A whole-window replacement needs a signal to replace it with."""
+    b = Budget()
+    b.observe(_captured("routes/openai.chat_completions.success.headers.txt"), now=_FIXED_NOW)
+    b.observe(
+        httpx.Response(200, headers={"x-ratelimit-reset-tokens": raw}),
+        now=_FIXED_NOW + timedelta(seconds=1),
+    )
+    tok = b.upstream.tokens
+    assert (tok.limit, tok.remaining, tok.reset_at) == (2_000_000, 1_999_990, _FIXED_NOW)
+    assert tok.observed_at == _FIXED_NOW
+    assert tok.provider == "openai"
+
+
 # --- the two sources never overwrite each other ---------------------------------
 
 
