@@ -159,10 +159,13 @@ Beside it:
 - **core is layered too:** `runtime` → `transport | approvals | inbound` → `budget | cache |
   cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
-  `_policy_spec` → `errors` → `_refusal_body | lastcall | masking` → `_verify` →
-  `_wire | _response | _budget_headers`.
+  `_policy_spec` → `runledger | step_up | tool_access` → `errors` →
+  `_refusal_body | lastcall | masking` → `_verify` →
+  `_wire | _response | _budget_headers | _window`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
-  through it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
+  through it. `runledger` holds the run ledger (#613): `correlation` binds one per
+  `donkey.run()` block and the transport appends each call's `lastcall` record and
+  each typed refusal to it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
   sans-IO, it decides each next step and the clients sleep and send.
   `approvals` holds the `@donkey.tool(approval="required")` gate and the
   `donkey.approvals` registry (#211): it reads correlation, errors and telemetry,

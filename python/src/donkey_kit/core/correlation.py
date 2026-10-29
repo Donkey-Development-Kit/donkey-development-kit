@@ -23,9 +23,19 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Literal
 
 from .cost import CostTags, validate_tag_value
+from .runledger import (
+    DEFAULT_MAX_ENTRIES,
+    RunLedger,
+    bind_run_ledger,
+    checked_max_entries,
+    unbind_run_ledger,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .refusals import TypedRefusals
+    from .runledger import _Ledger
 
 __all__ = [
     "AttributionScope",
@@ -158,6 +168,11 @@ class RunScope:
     block is first unbound and then re-raised as its typed
     :class:`~donkey_kit.core.errors.DonkeyError` when it stands for one, exactly
     as :class:`~donkey_kit.core.refusals.TypedRefusals` does on its own.
+
+    The block also binds a **run ledger** (#613): every governed call and
+    refusal in it, read inside at ``donkey.current_run`` and after exit at
+    :attr:`ledger`. A scope that rebinds the enclosing run's own id shares that
+    run's ledger.
     """
 
     __slots__ = (
@@ -170,6 +185,10 @@ class RunScope:
         "_cost_token",
         "_group_token",
         "_refusals",
+        "_max_entries",
+        "_surface",
+        "_ledger",
+        "_ledger_token",
     )
 
     def __init__(
@@ -179,10 +198,16 @@ class RunScope:
         refusals: TypedRefusals | None = None,
         business_group: str | None = None,
         source: CorrelationSource | None = None,
+        ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
+        surface: Callable[[], str | None] | None = None,
     ) -> None:
         self._run_id = run_id
         self._source = source
         self._refusals = refusals
+        self._max_entries = checked_max_entries(ledger_max_entries)
+        self._surface = surface
+        self._ledger: _Ledger | None = None
+        self._ledger_token: Any = None
         # Store only a non-empty override, so a plain ``donkey.run(id=...)`` binds
         # nothing on the cost contextvar and leaves any outer run's tags in place.
         self._cost = cost if (cost is not None and not cost.is_empty) else None
@@ -202,9 +227,21 @@ class RunScope:
             self._cost_token = _cost_tags.set(self._cost)
         if self._group is not None:
             self._group_token = _business_group.set(self._group)
+        self._ledger, self._ledger_token = bind_run_ledger(rid, self._max_entries)
         return rid
 
+    @property
+    def ledger(self) -> RunLedger | None:
+        """A snapshot of this run's ledger (#613), or ``None`` before the block
+        is entered. Still readable after the block exits, for what the run cost."""
+        if self._ledger is None:
+            return None
+        return self._ledger.snapshot(self._surface() if self._surface is not None else None)
+
     def _unbind(self) -> None:
+        if self._ledger_token is not None:
+            unbind_run_ledger(self._ledger_token)
+            self._ledger_token = None
         if self._group_token is not None:
             _business_group.reset(self._group_token)
             self._group_token = None
@@ -310,13 +347,16 @@ def run_scope(
     refusals: TypedRefusals | None = None,
     business_group: str | None = None,
     source: CorrelationSource | None = None,
+    ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
+    surface: Callable[[], str | None] | None = None,
 ) -> RunScope:
     """Build a :class:`RunScope` — the dual sync/async run correlation binding
     behind ``donkey.run(id=...)`` (BG §1.1, #195), optionally carrying per-run
     cost-tag overrides (#196), a per-request business group (#310), the
     typed-refusal bridge applied on exit (#724), and where an inbound run's id
-    came from (#308)."""
-    return RunScope(run_id, cost, refusals, business_group, source)
+    came from (#308), with a run ledger of ``ledger_max_entries`` (#613).
+    ``surface`` names the adapters that cannot feed the ledger, if any."""
+    return RunScope(run_id, cost, refusals, business_group, source, ledger_max_entries, surface)
 
 
 def run_context(run_id: str | None = None) -> RunScope:

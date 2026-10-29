@@ -35,6 +35,7 @@ from ..errors import (
 )
 from ..reactions import RefusalHandlers
 from ..refusals import capturing, record_outcome
+from ..runledger import record_refusal
 from ..telemetry import GenAiSpan
 from .failures import _gateway_unavailable, _lifecycle_error
 from .headers import (
@@ -52,6 +53,7 @@ from .policy import (
     Retry,
     RetryDecision,
     _mark_terminal,
+    _request_model,
     _substitution_error,
     decide_retry,
     refusal,
@@ -246,6 +248,11 @@ class _GovernedPipeline(_CheckedEndpoints):
             cost_tags=effective_cost_tags(self._cfg),
         )
         substitution = _substitution_error(self._cfg, request, response)
+        # The run ledger keeps every refusal on a model call, caught or not (#613).
+        if _request_model(request) is not None:
+            for outcome in (violation, substitution):
+                if outcome is not None:
+                    record_refusal(outcome)
         if capturing():
             _record_settled(response, substitution)
         return violation, substitution

@@ -83,6 +83,16 @@ donkey.last_call: LastCall
 
 The gateway's own metadata about the most recent governed model call in this context — its `request_id`, `api_instance_id` and `environment_id`; what the gateway *did* with the request — `served_provider` / `served_model` / `routing_type` and the `fallback` flag, with `substituted` true when the served model differs from `requested_model`; and the per-call usage token counts (`input_tokens` / `output_tokens` / `total_tokens` and the cost-relevant `cached_tokens` / `cache_write_tokens` / `reasoning_tokens`). The success-path counterpart to the ids `DonkeyError` hands you on a refusal.
 
+### `donkey.current_run`
+
+```python nocheck
+donkey.current_run: RunLedger | None
+```
+
+A snapshot of the bound `donkey.run()` block's ledger, or `None` outside a run.
+
+Guide: [`/telemetry#run-ledger`](/telemetry#run-ledger)
+
 ### `donkey.openai()`
 
 ```python nocheck
@@ -131,6 +141,7 @@ donkey.run(
     enduser_id: str | None = None,
     business_group: str | None = None,
     typed_refusals: bool = True,
+    ledger_max_entries: int = 1000,
 ) -> RunScope
 ```
 
@@ -148,6 +159,7 @@ donkey.run_from_headers(
     enduser_id: str | None = None,
     business_group: str | None = None,
     typed_refusals: bool = True,
+    ledger_max_entries: int = 1000,
 ) -> RunScope
 ```
 
@@ -629,7 +641,10 @@ is raised.
 | `RefusalContext` | class | What a `OnRefusal.call` handler is given: the refusal, a copy of the refused request's JSON body, and `resend`. |
 | `Region` | type alias | One of `us`, `eu`, `ca`, `jp`. |
 | `RequestWindow` | class | The gateway's request-count window, `donkey.budget.requests`. |
+| `RunLedger` | class | A snapshot of one run's ledger: every governed model call, every refusal, and the token totals, as of when it was read. |
+| `RunRefusal` | class | One refusal in a run's ledger: what refused the call and how to find it, with none of the response content. |
 | `RunScope` | class | A **dual sync/async** context manager that sets the run correlation id for the governed calls made in its block. |
+| `RunUsage` | class | Token totals across every call in a run, summed from each call's `usage`. A call that reported no count adds nothing, so a total is `0` both when nothing was used and when nothing was reported; `calls_with_usage` tells the two apart. |
 | `ToolSpec` | class | An introspectable record of a `@donkey.tool`-marked callable. |
 | `ToolsFacade` | class | `donkey.tools` — discovery + lock. |
 | `TypedRefusals` | class | Re-raise a refusal from the block as its typed `DonkeyError`. |
